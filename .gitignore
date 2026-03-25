@@ -1,0 +1,9 @@
+*.pyc
+__pycache__/
+*.bak
+*.prop
+.env
+db.sqlite3
+/media/
+/staticfiles_production/
+*_venv/
