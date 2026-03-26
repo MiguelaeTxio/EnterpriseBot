@@ -1,53 +1,39 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
 
 # ANEXO HITO 1: Test de prueba inicial y configuración de hitos
-# ESTADO: EN PROGRESO (Fase D: Conexión de Audio e Integración Final)
+# ESTADO: EN PROGRESO (Fase D: Rectificación del Puente y Validación Real)
 
 ---
 
-## 1. FUENTE DE LA VERDAD PARA LA SESIÓN AAAC
-Este documento es la LEY SUPREMA para la próxima sesión. Ningún modelo podrá suponer comportamientos no descritos aquí.
+## 1. FUENTE DE LA VERDAD PARA LA SESIÓN AAAD
+Este documento es la LEY SUPREMA para la próxima sesión. El sistema ha sido configurado con éxito en su capa de Back-end (Django), pero el puente de telecomunicaciones con MundoSMS ha sido rechazado por un error de validación XML (Error API 3).
 
-## 2. ESTADO TÉCNICO AL CIERRE DE AAAB
-- **Infraestructura:** Django 5.2.12 operativo en `enterprisebot-miguelaetxio.pythonanywhere.com`.
-- **Base de Datos:** MySQL `MiguelAeTxio$enterprisebot` migrada y conectada con persistencia activa.
-- **Cerebro IA:** `GeminiAudioService` implementado en `vox_bridge/services.py` usando exclusivamente el modelo `models/gemini-2.0-pro-exp-02-05`.
-- **Webhook:** Endpoint `/api/vox/inbound/` funcional, devolviendo el XML inicial de saludo y grabación de 5s.
+## 2. ESTADO TÉCNICO AL CIERRE DE AAAC
+- **Back-end Django**: `vox_bridge/views.py` refactorizado con máquina de estados síncrona.
+- **Servicios**: `vox_bridge/services.py` implementado con AudioHandlingService y GeminiAudioService (SDK 2026).
+- **Entorno**: Archivo `.env` actualizado con la variable `MUNDOSMS_PILOT_NUMBER=34858150405`.
+- **Bloqueo Actual**: El script `activate_bridge.py` devuelve `ERROR API: 3 - New XML not accepted`. El motor XML de MundoSMS rechaza la declaración de cabecera y requiere el uso de CDATA para la URL.
 
-## 3. HOJA DE RUTA TÉCNICA (Sesión AAAC - EXHAUSTIVA)
+## 3. HOJA DE RUTA TÉCNICA (Sesión AAAD - EXHAUSTIVA)
 
-### Fase D: El Cierre del Bucle Conversacional
-El objetivo es procesar el audio que MundoSMS envía tras la ejecución del comando `<record>`.
+### Tarea 1: Refactorización Quirúrgica de `activate_bridge.py`
+Se debe modificar la variable `dialplan_xml` en el script para eliminar la cabecera XML y encapsular la URL en un bloque CDATA para evitar conflictos de caracteres.
+- **Estructura Requerida**: 
+  `<dialplan><http-request method="post" mode="sync"><![CDATA[https://enterprisebot-miguelaetxio.pythonanywhere.com/api/vox/inbound/]]></http-request></dialplan>`
 
-1. **Implementación de AudioHandlingService (`vox_bridge/services.py`):**
-   - Crear función `download_remote_audio(url)` utilizando la librería `requests`.
-   - El audio debe guardarse temporalmente en `/home/MiguelAeTxio/SWAP/` con un nombre basado en el `call_id`.
-   - Debe manejar errores de red y validar que el archivo es un audio válido.
+### Tarea 2: Activación y Verificación del Puente
+1. Ejecutar `python -m dotenv run python activate_bridge.py`.
+2. Verificar que la respuesta de la API de MundoSMS devuelva `status_code: 0`.
 
-2. **Refactorización de la Vista Discriminadora (`vox_bridge/views.py`):**
-   - **Lógica de Bifurcación:** La vista debe detectar si la petición trae el parámetro `[LAST_RECORD]` (enviado por MundoSMS tras grabar).
-   - **Flujo de Audio:** 
-     a. Si no hay audio -> Enviar XML de saludo (ya implementado).
-     b. Si hay audio -> 
-        1. Descargar audio al SWAP.
-        2. Invocar `GeminiAudioService.classify_call_intent(path)`.
-        3. Eliminar archivo temporal del SWAP.
-        4. Generar respuesta XML dinámica.
+### Tarea 3: Prueba de Fuego Real
+1. Realizar llamada al `+34 858 150 405`.
+2. Verificar flujo completo: Saludo -> Grabación -> Proceso Gemini -> Transferencia.
+3. Auditar registros en el modelo `CallInteraction` (MySQL).
 
-3. **Definición de Extensiones de Redirección:**
-   - Según la respuesta de Gemini, el XML devuelto debe ser:
-     - VENTAS: `<dialplan><call destination="EXTENSION_VENTAS"/></dialplan>`
-     - SOPORTE: `<dialplan><call destination="EXTENSION_SOPORTE"/></dialplan>`
-     - ADMINISTRACION: `<dialplan><call destination="EXTENSION_ADMIN"/></dialplan>`
-     - ERROR_AMBIGUO: Reproducir un mensaje de disculpa y colgar o derivar a recepción general.
-
-4. **Registro de la Interacción:**
-   - Cada ciclo debe guardar en el modelo `CallInteraction` los datos de la llamada: ID, teléfono, URL del audio, transcripción y decisión final.
-
-### 4. VARIABLES Y CONSTANTES OBLIGATORIAS PARA AAAC
-- MODEL: `models/gemini-2.0-pro-exp-02-05`
-- TEMP_STORAGE: `/home/MiguelAeTxio/SWAP/`
-- DEPARTAMENTOS: VENTAS, SOPORTE, ADMINISTRACION.
+## 4. VARIABLES Y CONSTANTES OBLIGATORIAS PARA AAAD
+- DID: `34858150405`
+- WEBHOOK_URL: `https://enterprisebot-miguelaetxio.pythonanywhere.com/api/vox/inbound/`
+- MODELO IA: `models/gemini-3.1-pro-preview`
 
 ---
-## FIN DE LA LEY SUPREMA PARA AAAC
+## FIN DE LA LEY SUPREMA PARA AAAD

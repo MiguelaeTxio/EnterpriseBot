@@ -8,7 +8,9 @@
 ./vox_bridge/migrations/__init__.py
 ./vox_bridge/migrations/0001_initial.py
 ./vox_bridge/tests.py
+./vox_bridge/services.py
 ./manage.py
+./activate_bridge.py
 ./requirements.txt
 ./enterprise_core/urls.py
 ./enterprise_core/asgi.py
