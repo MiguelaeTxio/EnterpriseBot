@@ -1,54 +1,53 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
 
 # ANEXO HITO 1: Test de prueba inicial y configuración de hitos
-# ESTADO: EN PROGRESO
+# ESTADO: EN PROGRESO (Fase D: Conexión de Audio e Integración Final)
 
 ---
 
-## 1. FUENTE DE LA VERDAD PARA LA SESIÓN AAAB
-Este documento rige la lógica de la próxima sesión. El modelo no podrá suponer comportamientos no descritos aquí.
+## 1. FUENTE DE LA VERDAD PARA LA SESIÓN AAAC
+Este documento es la LEY SUPREMA para la próxima sesión. Ningún modelo podrá suponer comportamientos no descritos aquí.
 
-## 2. REFERENCIAS TÉCNICAS
-- **Documentación Base:** API MundoSMS VozPush v0.30.
-- **Arquitectura:** Inbound AI IVR (Recepcionista Inteligente).
-- **IA:** Google Gemini (models/gemini-1.5-flash para latencia mínima).
+## 2. ESTADO TÉCNICO AL CIERRE DE AAAB
+- **Infraestructura:** Django 5.2.12 operativo en `enterprisebot-miguelaetxio.pythonanywhere.com`.
+- **Base de Datos:** MySQL `MiguelAeTxio$enterprisebot` migrada y conectada con persistencia activa.
+- **Cerebro IA:** `GeminiAudioService` implementado en `vox_bridge/services.py` usando exclusivamente el modelo `models/gemini-2.0-pro-exp-02-05`.
+- **Webhook:** Endpoint `/api/vox/inbound/` funcional, devolviendo el XML inicial de saludo y grabación de 5s.
 
-## 3. HOJA DE RUTA TÉCNICA (Sesión AAAB)
+## 3. HOJA DE RUTA TÉCNICA (Sesión AAAC - EXHAUSTIVA)
 
-### Fase A: Inicialización del Proyecto Django
-1. Activar entorno virtual: `workon EnterpriseBot_venv`.
-2. Crear archivo `requirements.in` con: `django`, `python-dotenv`, `google-generativeai`, `requests`.
-3. Ejecutar `pip install -r requirements.txt` (tras compilar).
-4. Crear proyecto `enterprise_core` y aplicación `vox_bridge`.
+### Fase D: El Cierre del Bucle Conversacional
+El objetivo es procesar el audio que MundoSMS envía tras la ejecución del comando `<record>`.
 
-### Fase B: Configuración de Variables de Entorno (.env)
-Se deben configurar las siguientes claves obligatorias:
-- `MUNDOSMS_USER`: Usuario de la plataforma MundoSMS.
-- `MUNDOSMS_PASS`: Contraseña de la API.
-- `GEMINI_API_KEY`: Clave para la inferencia de IA.
+1. **Implementación de AudioHandlingService (`vox_bridge/services.py`):**
+   - Crear función `download_remote_audio(url)` utilizando la librería `requests`.
+   - El audio debe guardarse temporalmente en `/home/MiguelAeTxio/SWAP/` con un nombre basado en el `call_id`.
+   - Debe manejar errores de red y validar que el archivo es un audio válido.
 
-### Fase C: Implementación del Webhook "Discriminador"
-1. **URL de Entrada:** `/api/vox/inbound/`
-2. **Lógica de la Vista (`InboundCallView`):**
-   - Debe aceptar peticiones HTTP de MundoSMS.
-   - Debe generar un XML de respuesta inmediato para "saludar" y "grabar".
-3. **Flujo de Respuesta XML Inicial:**
-   ```xml
-   <?xml version="1.0" encoding="UTF-8"?>
-   <dialplan>
-       <read voice="es-es-f1">Bienvenido a Enterprise Bot. Por favor, diga su nombre y el departamento con el que desea hablar tras la señal.</read>
-       <record duration="5" b_beep="1" timeout_silence="2"/>
-   </dialplan>
-   ```
+2. **Refactorización de la Vista Discriminadora (`vox_bridge/views.py`):**
+   - **Lógica de Bifurcación:** La vista debe detectar si la petición trae el parámetro `[LAST_RECORD]` (enviado por MundoSMS tras grabar).
+   - **Flujo de Audio:** 
+     a. Si no hay audio -> Enviar XML de saludo (ya implementado).
+     b. Si hay audio -> 
+        1. Descargar audio al SWAP.
+        2. Invocar `GeminiAudioService.classify_call_intent(path)`.
+        3. Eliminar archivo temporal del SWAP.
+        4. Generar respuesta XML dinámica.
 
-### Fase D: Simulación y Verificación
-1. Uso de `curl` para simular la petición de MundoSMS al Webhook local/remoto.
-2. Verificación de que el XML devuelto cumple estrictamente el esquema de la API v0.30.
+3. **Definición de Extensiones de Redirección:**
+   - Según la respuesta de Gemini, el XML devuelto debe ser:
+     - VENTAS: `<dialplan><call destination="EXTENSION_VENTAS"/></dialplan>`
+     - SOPORTE: `<dialplan><call destination="EXTENSION_SOPORTE"/></dialplan>`
+     - ADMINISTRACION: `<dialplan><call destination="EXTENSION_ADMIN"/></dialplan>`
+     - ERROR_AMBIGUO: Reproducir un mensaje de disculpa y colgar o derivar a recepción general.
 
-## 4. VARIABLES Y CONSTANTES OBLIGATORIAS
-- APP_NAME: `vox_bridge`
-- DEFAULT_VOICE: `es-es-f1` (Sara)
-- RECORD_DURATION: `5` segundos.
+4. **Registro de la Interacción:**
+   - Cada ciclo debe guardar en el modelo `CallInteraction` los datos de la llamada: ID, teléfono, URL del audio, transcripción y decisión final.
+
+### 4. VARIABLES Y CONSTANTES OBLIGATORIAS PARA AAAC
+- MODEL: `models/gemini-2.0-pro-exp-02-05`
+- TEMP_STORAGE: `/home/MiguelAeTxio/SWAP/`
+- DEPARTAMENTOS: VENTAS, SOPORTE, ADMINISTRACION.
 
 ---
-## FIN DE LA LEY SUPREMA PARA AAAB
+## FIN DE LA LEY SUPREMA PARA AAAC
