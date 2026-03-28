@@ -8,12 +8,19 @@
 
 annotated-types==0.7.0
     # via pydantic
+anyio==4.13.0
+    # via
+    #   google-genai
+    #   httpx
 asgiref==3.11.1
     # via django
 build==1.4.2
     # via pip-tools
 certifi==2026.2.25
-    # via requests
+    # via
+    #   httpcore
+    #   httpx
+    #   requests
 cffi==2.0.0
     # via cryptography
 charset-normalizer==3.4.6
@@ -22,44 +29,27 @@ click==8.3.1
     # via pip-tools
 cryptography==46.0.6
     # via google-auth
+distro==1.9.0
+    # via google-genai
 django==5.2.12
     # via -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
-google-ai-generativelanguage==0.6.15
-    # via google-generativeai
-google-api-core[grpc]==2.30.0
-    # via
-    #   google-ai-generativelanguage
-    #   google-api-python-client
-    #   google-generativeai
-google-api-python-client==2.193.0
-    # via google-generativeai
-google-auth==2.49.1
-    # via
-    #   google-ai-generativelanguage
-    #   google-api-core
-    #   google-api-python-client
-    #   google-auth-httplib2
-    #   google-generativeai
-google-auth-httplib2==0.3.0
-    # via google-api-python-client
-google-generativeai==0.8.6
+exceptiongroup==1.3.1
+    # via anyio
+google-auth[requests]==2.49.1
+    # via google-genai
+google-genai==1.68.0
     # via -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
-googleapis-common-protos==1.73.0
-    # via
-    #   google-api-core
-    #   grpcio-status
-grpcio==1.78.0
-    # via
-    #   google-api-core
-    #   grpcio-status
-grpcio-status==1.71.2
-    # via google-api-core
-httplib2==0.31.2
-    # via
-    #   google-api-python-client
-    #   google-auth-httplib2
+h11==0.16.0
+    # via httpcore
+httpcore==1.0.9
+    # via httpx
+httpx==0.28.1
+    # via google-genai
 idna==3.11
-    # via requests
+    # via
+    #   anyio
+    #   httpx
+    #   requests
 mysqlclient==2.2.8
     # via -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
 packaging==26.0
@@ -68,18 +58,6 @@ packaging==26.0
     #   wheel
 pip-tools==7.5.3
     # via -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
-proto-plus==1.27.1
-    # via
-    #   google-ai-generativelanguage
-    #   google-api-core
-protobuf==5.29.6
-    # via
-    #   google-ai-generativelanguage
-    #   google-api-core
-    #   google-generativeai
-    #   googleapis-common-protos
-    #   grpcio-status
-    #   proto-plus
 pyasn1==0.6.3
     # via pyasn1-modules
 pyasn1-modules==0.4.2
@@ -87,11 +65,11 @@ pyasn1-modules==0.4.2
 pycparser==3.0
     # via cffi
 pydantic==2.12.5
-    # via google-generativeai
+    # via
+    #   -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
+    #   google-genai
 pydantic-core==2.41.5
     # via pydantic
-pyparsing==3.3.2
-    # via httplib2
 pyproject-hooks==1.2.0
     # via
     #   build
@@ -100,31 +78,36 @@ python-dotenv==1.2.2
     # via -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
 requests==2.33.0
     # via
-    #   -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
-    #   google-api-core
+    #   google-auth
+    #   google-genai
+sniffio==1.3.1
+    # via google-genai
 sqlparse==0.5.5
     # via django
+tenacity==9.1.4
+    # via google-genai
 tomli==2.4.1
     # via
     #   build
     #   pip-tools
-tqdm==4.67.3
-    # via google-generativeai
 typing-extensions==4.15.0
     # via
+    #   anyio
     #   asgiref
     #   cryptography
-    #   google-generativeai
-    #   grpcio
+    #   exceptiongroup
+    #   google-genai
     #   pydantic
     #   pydantic-core
     #   typing-inspection
 typing-inspection==0.4.2
     # via pydantic
-uritemplate==4.2.0
-    # via google-api-python-client
 urllib3==2.6.3
     # via requests
+websockets==16.0
+    # via
+    #   -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
+    #   google-genai
 wheel==0.46.3
     # via pip-tools
 

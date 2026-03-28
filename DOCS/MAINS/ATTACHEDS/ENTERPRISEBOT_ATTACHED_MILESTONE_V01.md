@@ -1,43 +1,34 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
-
-# ANEXO HITO 1: Validación e Implementación de Infraestructura de Voz
-# ESTADO: EN PROGRESO (Fase F: Implementación del Bridge de Voz asíncrono)
-# SESIÓN ANTERIOR: AAAE (Configuración de Infraestructura Twilio y Blindaje de Entorno)
-# PRÓXIMA SESIÓN: AAAF (Construcción del Consumer de WebSockets y Enrutamiento ASGI)
+# ANEXO HITO 1: VALIDACIÓN E IMPLEMENTACIÓN DE VOZ CONVERSACIONAL
+# ESTADO: EN PROGRESO (Fase: Pivotaje a Señalización Internacional)
+# PROYECTO: EnterpriseBot
 
 ---
 
-## 1. FUENTE DE LA VERDAD PARA LA SESIÓN AAAF
-Este documento es la LEY SUPREMA para la próxima sesión. El desarrollo debe ceñirse estrictamente a esta hoja de ruta y a la guía técnica satélite V01DOC_TWILIO_INFRASTRUCTURE_GUIDE.md. Queda terminantemente prohibido inventar o suponer lógica no descrita en estos documentos.
+## 1. FUENTE DE LA VERDAD PARA LA PRÓXIMA SESIÓN
+Este documento es la LEY SUPREMA. El modelo de IA en la siguiente sesión debe ignorar cualquier configuración de Twilio-US o Voximplant anterior y centrarse exclusivamente en la reactivación de Twilio mediante numeración internacional compatible con cuentas Trial.
 
 ## 2. ESTADO TÉCNICO AL CIERRE DE LA SESIÓN ACTUAL
-- **Infraestructura Externa:** Account SID, API Key SID y Secret verificados y operativos en Twilio.
-- **Identidad Telefónica:** Número +1 478 223 8292 vinculado a la TwiML App "EnterpriseBot_Voice_Bridge_App".
-- **Entorno del Servidor:** Archivo .env actualizado con credenciales de Twilio; variables de MundoSMS depreciadas mediante comentarios.
-- **Configuración Webhook:** Endpoint definido en https://MiguelAeTxio.pythonanywhere.com/vox/inbound/
+- **Infraestructura de Servidor:** Always-on Task activa y estable en PythonAnywhere.
+- **Motor de Voz:** `voice_sidecar_bridge.py` operando en "Modo Universal" (soporta JSON y Frames Binarios RAW).
+- **Socket:** Escucha activa en el puerto 8080.
+- **Integración IA:** Gemini 3.1 Pro estabilizado tras inyectar `GEMINI_API_KEY` en `settings.py`.
+- **Dependencias:** Entorno virtual sincronizado (V1.2) incluyendo `mysqlclient`, `websockets`, `google-genai` y `python-dotenv`.
+- **Logs:** Redirección configurada hacia `bridge_runtime.log`.
 
-## 3. HOJA DE RUTA TÉCNICA EXHAUSTIVA (Sesión AAAF)
+## 3. HOJA DE RUTA TÉCNICA EXHAUSTIVA (PRÓXIMA SESIÓN)
 
-### Tarea 1: Implementación del Consumer de Voz (vox_bridge/consumers.py)
-Desarrollar la lógica asíncrona para la gestión del flujo binario de Twilio.
-- **Clase:** VoiceConsumer(AsyncWebsocketConsumer).
-- **Evento "connect":** Aceptar la conexión y preparar buffers de audio.
-- **Evento "receive":** 
-    - Tipo "start": Capturar el "streamSid" para permitir el envío de audio de vuelta (Outbound).
-    - Tipo "media": Decodificar el payload Base64 (G.711 mu-law) y enviarlo al stream de Gemini 3.1 Pro.
-- **Evento "disconnect":** Cerrar la sesión de Gemini y registrar la duración en CallInteraction.
+### Tarea 1: Despliegue de Conectividad (Túnel)
+- Ejecutar el script de instalación de **ngrok** en el servidor para obtener una URL `wss://` pública.
+- El puerto de origen del túnel debe ser el **8080**.
 
-### Tarea 2: Configuración del Enrutamiento ASGI (enterprise_core/asgi.py)
-Establecer el protocolo de comunicación para WebSockets.
-- **ProtocolTypeRouter:** Mapear el protocolo "websocket" mediante URLRouter.
-- **Ruta:** path('media-stream', consumers.VoiceConsumer.as_view()).
+### Tarea 2: Adquisición de Numeración Internacional (Twilio)
+- Investigar la disponibilidad de números en regiones con menos restricciones trial (ej: **Alemania +49**).
+- Realizar la compra del número y verificar el cumplimiento de los "Geo-Permissions" para permitir el tráfico hacia España (+34).
 
-### Tarea 3: Vista de Inicialización TwiML (vox_bridge/views.py)
-Programar el receptor del Webhook POST de Twilio.
-- **Función:** inbound_voice(request).
-- **Respuesta:** TwiML XML que contenga <Response><Connect><Stream url="wss://{{host}}/media-stream" /></Connect></Response>.
-- **Seguridad:** Uso obligatorio de @csrf_exempt.
+### Tarea 3: Reconfiguración de Webhooks en Django
+- Actualizar `vox_bridge/views.py` para que la respuesta TwiML utilice la URL dinámica del túnel.
+- Ajustar el enrutador de señalización para que Telnyx/Voximplant (pausados) cedan el paso a la nueva señalización de Twilio.
 
-## 4. ESPECIFICACIONES TÉCNICAS (NO NEGOCIABLES)
-- Formato de Audio: G.711 mu-law (8000 Hz, 8-bit, Mono).
-- Latencia Objetivo: < 500ms para respuesta de IA.
+## 4. ESPECIFICACIONES DE IMPLEMENTACIÓN
+- **Protocolo de Audio:** G.711 mu-law (PCMU), 8000 Hz, Mono.
+- **Modo de Ejecución:** El bridge debe lanzarse siempre con el flag `-u` (unbuffered) para auditoría en tiempo real.
