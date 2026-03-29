@@ -14,7 +14,7 @@ A continuación se detallan los activos configurados en la consola de Twilio que
 
 - **Account SID:** AC67757db0d7ba0951546bf152b8cf9b1f
 - **API Key SID (SK):** SKd696318e9614df9052bd074e07b335ea
-- **Número de Teléfono Oficial:** +1 478 223 8292
+- **Número de Teléfono Oficial:** +1 260 346 6780 (Actualizado - US Paid)
 - **TwiML App:** EnterpriseBot_Voice_Bridge_App
 - **Endpoint Webhook (POST):** https://MiguelAeTxio.pythonanywhere.com/vox/inbound/
 
@@ -39,3 +39,8 @@ El bridge en Django debe procesar los eventos en el siguiente orden estricto:
 - La validación SSL debe permanecer activada en Twilio para proteger el túnel de datos.
 - Las credenciales (SID y Secret) deben residir exclusivamente en el archivo .env del servidor, nunca en el código fuente.
 - Se utilizará el API Key SID para la firma de peticiones, evitando el uso del Auth Token maestro de la cuenta.
+
+## 6. OPTIMIZACIÓN REGIONAL (IE1)
+- **Región Activa:** Ireland (IE1)
+- **Estado:** Active
+- **Latencia Objetivo:** < 300ms

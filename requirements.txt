@@ -70,12 +70,16 @@ pydantic==2.12.5
     #   google-genai
 pydantic-core==2.41.5
     # via pydantic
+pyngrok==7.5.1
+    # via -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
 pyproject-hooks==1.2.0
     # via
     #   build
     #   pip-tools
 python-dotenv==1.2.2
     # via -r /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
+pyyaml==6.0.3
+    # via pyngrok
 requests==2.33.0
     # via
     #   google-auth

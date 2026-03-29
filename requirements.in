@@ -5,4 +5,5 @@ websockets>=12.0     # Motor de audio en tiempo real
 google-genai         # SDK Gemini 3.1 Pro (2026)
 pydantic>=2.0        # Structured Outputs y validación
 python-dotenv        # CARGA DE VARIABLES DE ENTORNO (CRÍTICO)
+pyngrok              # GESTIÓN DE TÚNELES PARA SEÑALIZACIÓN (NUEVO)
 pip-tools            # Gestión de dependencias
