@@ -4,6 +4,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from .models import CallInteraction
+import requests
 import logging
 
 # Logger configuration for real-time monitoring
@@ -14,24 +15,45 @@ logger = logging.getLogger(__name__)
 class InboundCallView(View):
     """
     Webhook receiver for Twilio Inbound Calls.
-    Orchestrates the initial signaling, persists the call metadata in MySQL, 
-    and returns the TwiML to establish a Media Stream connection.
+    Dynamically discovers the ngrok public URL and returns TwiML for Media Streaming.
     ---
     Receptor de Webhook para llamadas entrantes de Twilio.
-    Orquesta la señalización inicial, persiste los metadatos de la llamada en MySQL
-    y devuelve el TwiML para establecer una conexión de Media Stream.
+    Descubre dinámicamente la URL pública de ngrok y devuelve TwiML para Media Streaming.
     """
     
+    def get_active_wss_url(self):
+        """
+        Queries the local ngrok API to find the current public endpoint.
+        Converts https:// to wss:// for Media Streams compatibility.
+        ---
+        Consulta la API local de ngrok para encontrar el endpoint público actual.
+        Convierte https:// a wss:// para compatibilidad con Media Streams.
+        """
+        try:
+            # Query the local agent API / Consultar la API del agente local
+            response = requests.get("http://127.0.0.1:4040/api/tunnels", timeout=1)
+            response.raise_for_status()
+            tunnels = response.json().get('tunnels', [])
+            
+            if tunnels:
+                # Extract the first available public URL
+                public_url = tunnels[0].get('public_url')
+                # Transform protocol to WebSocket Secure
+                return public_url.replace("https://", "wss://")
+        except Exception as e:
+            logger.error(f"# [ERROR] No se pudo recuperar la URL de ngrok: {str(e)}")
+        
+        # Fallback (This should be avoided in production)
+        return "wss://enterprisebot-bridge.ngrok-free.app"
+
     def post(self, request, *args, **kwargs):
         # 1. Extraction of signaling data / Extracción de datos de señalización
         call_sid = request.POST.get('CallSid')
-        from_number = request.POST.get('From')
-        to_number = request.POST.get('To')
+        from_number = request.POST.get('From', 'Unknown')
+        to_number = request.POST.get('To', 'Unknown')
         account_sid = request.POST.get('AccountSid')
         
-        # 2. Initial persistence in database / Persistencia inicial en base de datos
-        # We record the event immediately to ensure traceability
-        # Registramos el evento inmediatamente para asegurar la trazabilidad
+        # 2. Persistence / Persistencia
         try:
             CallInteraction.objects.create(
                 call_sid=call_sid,
@@ -40,21 +62,16 @@ class InboundCallView(View):
                 account_sid=account_sid,
                 status='ringing'
             )
-            # Log for the developer context / Log para el contexto del desarrollador
-            # print(f"# [INFO] Señalización recibida: {call_sid} desde {from_number}")
+            print(f"# [DJANGO] Llamada registrada: {call_sid} desde {from_number}", flush=True)
         except Exception as e:
-            # En caso de error en base de datos, el flujo de la llamada no debe morir
-            # logger.error(f"# [ERROR] Fallo en persistencia: {str(e)}")
-            pass
+            logger.error(f"# [ERROR DB] Fallo en persistencia inicial: {str(e)}")
 
-        # 3. WebSocket Endpoint Configuration (Sidecar Bridge) / Configuración del Endpoint
-        # NOTE: This URL must be updated with the active ngrok tunnel URL
-        # NOTA: Esta URL debe ser actualizada con la URL activa del túnel de ngrok
-        wss_url = "wss://tu-id-ngrok.ngrok-free.app"
+        # 3. Dynamic WebSocket Discovery / Descubrimiento Dinámico de WebSocket
+        wss_url = self.get_active_wss_url()
         
-        # 4. TwiML Response Generation / Generación de Respuesta TwiML
-        # We use <Connect><Stream> to deliver the raw audio to our Sidecar process
-        # Usamos <Connect><Stream> para entregar el audio RAW a nuestro proceso Sidecar
+        # 4. TwiML Generation / Generación de TwiML
+        # We use <Connect><Stream> to establish the bidirectional audio pipe.
+        # Usamos <Connect><Stream> para establecer el conducto de audio bidireccional.
         twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
             <Connect>
@@ -62,4 +79,5 @@ class InboundCallView(View):
             </Connect>
         </Response>"""
         
+        print(f"# [DJANGO] TwiML generado con URL: {wss_url}", flush=True)
         return HttpResponse(twiml_response, content_type='text/xml')

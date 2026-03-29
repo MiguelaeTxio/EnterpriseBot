@@ -1,4 +1,5 @@
 ./requirements.in
+./voice_orchestrator.py
 ./vox_bridge/urls.py
 ./vox_bridge/admin.py
 ./vox_bridge/__init__.py
@@ -12,6 +13,7 @@
 ./manage.py
 ./activate_bridge.py
 ./requirements.txt
+./trigger_outbound_call.py
 ./enterprise_core/urls.py
 ./enterprise_core/asgi.py
 ./enterprise_core/__init__.py
@@ -129,6 +131,7 @@
 ./DOCS/MAINS/ENTERPRISEBOT_MASTER_DOCUMENT.md
 ./DOCS/MAINS/SESSION_VARIABLES.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_VOICE_SIDECAR_ARCHITECTURE.md
+./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_CONNECTIVITY_TUNNEL_SPEC.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_TWILIO_INFRASTRUCTURE_GUIDE.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_MUNDOSMS_VIABILITY_TEST.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_PROJECT_PIVOT_HISTORY.md

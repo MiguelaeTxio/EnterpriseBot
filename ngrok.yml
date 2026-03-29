@@ -1,0 +1,11 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/ngrok.yml
+version: "3"
+agent:
+  log: stdout
+  log_level: info
+
+endpoints:
+  - name: enterprise_voice_bridge
+    upstream:
+      url: 8080
+    inspect: true
