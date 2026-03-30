@@ -17,6 +17,8 @@ class VoiceOrchestrator:
         self.config_path = os.path.join(self.project_root, "ngrok.yml")
         self.bridge_script = os.path.join(self.project_root, "voice_sidecar_bridge.py")
         self.python_bin = sys.executable
+        # Archivo compartido para publicar la URL hacia el nodo web
+        self.shared_url_file = os.path.join(self.project_root, "DOCS/SESSION/NGROK_URL.txt")
         
         # Carga explícita del entorno .env
         load_dotenv(os.path.join(self.project_root, ".env"))
@@ -27,7 +29,6 @@ class VoiceOrchestrator:
     def start_ngrok(self):
         self.flush_print("# [ORCHESTRATOR] Iniciando túnel ngrok v3 con inyección de Token por CLI...")
         
-        # Extraer token del entorno para inyectarlo directamente
         token = os.getenv('NGROK_AUTHTOKEN')
         if not token:
             self.flush_print("# [ERROR] Variable NGROK_AUTHTOKEN no encontrada en el entorno.")
@@ -37,7 +38,6 @@ class VoiceOrchestrator:
             self.flush_print("# [ERROR] Binario ngrok no encontrado.")
             return False
 
-        # Inyectamos el token vía --authtoken para evitar fallos de expansión en YAML
         cmd = [
             self.ngrok_bin, "start", 
             "--authtoken", token,
@@ -45,7 +45,6 @@ class VoiceOrchestrator:
             "enterprise_voice_bridge"
         ]
         
-        # Redirección directa a la consola (Dashboard)
         self.ngrok_process = subprocess.Popen(
             cmd, 
             stdout=sys.stdout, 
@@ -58,11 +57,25 @@ class VoiceOrchestrator:
         return True
 
     def get_public_url(self):
+        """
+        Queries ngrok API and PUBLISHES the URL to a shared file for the Web Node.
+        ---
+        Consulta la API de ngrok y PUBLICA la URL en un archivo compartido para el Nodo Web.
+        """
         try:
             response = requests.get("http://127.0.0.1:4040/api/tunnels", timeout=2)
             tunnels = response.json().get('tunnels', [])
             if tunnels:
                 url = tunnels[0].get('public_url')
+                
+                # PERSISTENCIA INTER-NODO: Escribir URL en archivo compartido
+                try:
+                    with open(self.shared_url_file, 'w') as f:
+                        f.write(url)
+                    self.flush_print(f"# [ORCHESTRATOR] URL persistida en: {self.shared_url_file}")
+                except Exception as e:
+                    self.flush_print(f"# [ERROR FS] No se pudo escribir la URL compartida: {str(e)}")
+
                 self.flush_print(f"\n# ########################################################")
                 self.flush_print(f"# [SUCCESS] CONECTIVIDAD ESTABLECIDA")
                 self.flush_print(f"# URL PÚBLICA: {url}")
@@ -107,8 +120,13 @@ class VoiceOrchestrator:
 
     def stop(self, *args):
         self.flush_print("# [ORCHESTRATOR] Finalizando procesos...")
-        if self.bridge_process: self.bridge_process.kill()
-        if self.ngrok_process: self.ngrok_process.kill()
+        # Limpieza de archivo de URL al apagar para evitar estados inconsistentes
+        if os.path.exists(self.shared_url_file):
+            try: os.remove(self.shared_url_file)
+            except: pass
+
+        if hasattr(self, 'bridge_process') and self.bridge_process: self.bridge_process.kill()
+        if hasattr(self, 'ngrok_process') and self.ngrok_process: self.ngrok_process.kill()
         sys.exit(0)
 
 if __name__ == "__main__":

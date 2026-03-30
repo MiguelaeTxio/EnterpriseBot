@@ -1,3 +1,4 @@
+./debug_webhook_locally.py
 ./requirements.in
 ./voice_orchestrator.py
 ./vox_bridge/urls.py
@@ -126,6 +127,7 @@
 ./static/admin/css/forms.css
 ./voice_sidecar_bridge.py
 ./DOCS/SESSION/GEMINI_SESSIONS_HISTORY.md
+./DOCS/SESSION/NGROK_URL.txt
 ./DOCS/SESSION/ENTERPRISEBOT_PROJECT_DIRECTORY.txt
 ./DOCS/SESSION/TEMP_SESSIONS_HISTORY.md
 ./DOCS/MAINS/ENTERPRISEBOT_MASTER_DOCUMENT.md
