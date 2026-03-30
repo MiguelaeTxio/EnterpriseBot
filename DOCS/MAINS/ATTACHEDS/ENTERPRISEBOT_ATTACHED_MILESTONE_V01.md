@@ -1,31 +1,34 @@
 # ANEXO HITO 1: VALIDACIÓN E IMPLEMENTACIÓN DE VOZ CONVERSACIONAL
-# ESTADO: EN PROGRESO (Fase: Validación de Audibilidad y Pivotaje Lingüístico)
+# ESTADO: EN PROGRESO (Fase: Estabilización de Protocolo Live 2026)
 
-## 1. FUENTE DE LA VERDAD PARA LA PRÓXIMA SESIÓN
-Este documento es la LEY SUPREMA. El modelo entrante debe ignorar cualquier suposición y ceñirse a los hechos técnicos aquí descritos. La infraestructura de red (ngrok v3 + Always-on Task) está verificada y operativa. El error de sintaxis del SDK de Google GenAI (`unexpected keyword argument 'contents'`) ha sido corregido usando `message=`.
+## 1. FUENTE DE LA VERDAD (LEY SUPREMA)
+Este documento es la única fuente de verdad. El modelo entrante tiene PROHIBIDO escribir una sola línea de código sin realizar antes una inmersión integral en las clases de unión (Union types) del SDK google-genai (v1alpha) de marzo de 2026. Se prohíbe el método de ensayo y error.
 
-## 2. ESTADO TÉCNICO AL CIERRE (HECHOS CONSUMADOS)
-*   **Identidad de Red:** Túnel ngrok activo en `https://deistical-rosalia-detonative.ngrok-free.dev`.
-*   **Señalización HTTP:** Django despacha TwiML dinámico que apunta al WebSocket `wss://` correcto.
-*   **Modo de Estabilidad:** El sistema está configurado en **INGLÉS** y con salida **WAV DIRECTA** (sin transcodificación audioop activa) para garantizar el éxito del primer contacto sonoro.
-*   **Terminal de Prueba:** El disparador de llamadas está fijado en el número **+34688360595**.
+## 2. BITÁCORA FORENSE DE ERRORES (MARZO 2026)
+Para evitar la repetición de fallos, el modelo debe conocer las colisiones técnicas ocurridas:
+- **Error 400:** `response_mime_type` solo acepta texto en la API de Chat. Prohibido usar audio/wav allí.
+- **Error 1007 (Invalid Frame):** Se dispara si se declara `response_mime_type` en LiveConnectConfig para audio, o si la jerarquía de `media_chunks` es incorrecta.
+- **Error 1011 (Internal Error):** Ocurre por Setup Frames incompletos. Requiere obligatoriamente `response_modalities=["AUDIO"]`.
+- **TypeError:** `AsyncSession.send()` NO acepta el argumento `end_of_batch` en sesiones Live.
+- **Deprecation:** `generation_config` debe estar aplanado directamente en la raíz de `LiveConnectConfig`.
 
-## 3. HOJA DE RUTA TÉCNICA EXHAUSTIVA (PRÓXIMA SESIÓN)
-El modelo entrante debe seguir este orden de operaciones sin desviaciones:
+## 3. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (ROADMAP)
+El modelo debe seguir este orden exacto:
 
-### Tarea 1: Prueba de Fuego (Ignición Inicial)
-1.  **Ejecución:** Lanzar el script de auditoría: `/home/MiguelAeTxio/PROJECTS/EnterpriseBot/audit_voice_session.sh`.
-2.  **Verificación:** Descolgar el teléfono y confirmar la recepción del saludo inicial en INGLÉS: "Hello, I am EnterpriseBot, how can I help you?".
-3.  **Auditoría de Logs:** Verificar en `bridge_runtime.log` que los eventos `[EVENT]` y `[STREAM]` fluyen sin excepciones `TypeError`.
+### Tarea 0: Auditoría Estructural del SDK
+1. Investigar la firma exacta de `LiveClientRealtimeInput`. Confirmar si `media_chunks` es una lista de `Blob` o de `Part`.
+2. Verificar el esquema de `LiveServerMessage` para la captura de audio en `stream_from_google`.
 
-### Tarea 2: Pivotaje Lingüístico al Castellano
-1.  **Refactorización:** Tras el éxito de la Tarea 1, modificar `vox_bridge/services.py`.
-2.  **Instrucción de Sistema:** Cambiar el prompt a: "Eres EnterpriseBot, asistente oficial. Responde SIEMPRE en CASTELLANO de España. Sé conciso y profesional."
-3.  **Prueba Inbound:** Realizar llamada entrante al número oficial para verificar la persistencia de la personalidad en castellano.
+### Tarea 1: Estabilización de Servicios (`vox_bridge/services.py`)
+1. Implementar `connect()` con `response_modalities=["AUDIO"]` y `system_instruction` como objeto `Content`.
+2. Asegurar que `send_audio_frame` envíe la jerarquía binaria exacta que no provoque el error 1007.
 
-### Tarea 3: Re-activación de Transcodificación (Opcional)
-1.  Si Twilio presenta latencia por el tamaño del WAV, implementar nuevamente `audioop` pero usando la firma corregida del SDK: `self.session.send_message(message=[types.Part.from_bytes(...)])`.
+### Tarea 2: Validación de Audio (Prueba de Ignición)
+1. Lanzar el Bridge en el puerto 8081.
+2. Levantar túnel ngrok con inyección de entorno (`python -m dotenv`).
+3. Realizar llamada al terminal +34688360595 y confirmar audibilidad en castellano.
 
-## 4. ESPECIFICACIONES DE IMPLEMENTACIÓN
-*   **Carga de Entorno:** Mandatorio usar `python -m dotenv -f /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.env run` para cualquier ejecución de script.
-*   **Logs:** Mantener `flush=True` en todos los procesos para visibilidad en el Dashboard.
+## 4. ESPECIFICACIONES TÉCNICAS MANDATORIAS
+- Puerto local: 8081 (El 8080 presenta bloqueos de kernel).
+- Versión API: v1alpha.
+- Idioma: Castellano de España.

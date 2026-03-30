@@ -7,67 +7,50 @@ from google import genai
 from google.genai import types
 
 """
-Service for real-time multimodal audio streaming using Gemini 3.1 Pro.
-Correction: Updated SDK method signature for send_message.
----
-Servicio para el streaming de audio multimodal en tiempo real usando Gemini 3.1 Pro.
-Corrección: Firma del método send_message actualizada para el SDK.
+Service for real-time bi-directional voice streaming using Gemini 3.1 Live API.
+FINAL AUDIT MARCH 2026: Direct Blob in media_chunks, No Part wrappers for audio.
 """
 
 logger = logging.getLogger(__name__)
 
 class GeminiStreamService:
     def __init__(self):
-        """
-        Initializes the GenAI Client.
-        """
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self.model_id = "gemini-3.1-pro-preview"
-        
-        system_instruction = (
-            "You are EnterpriseBot, a professional enterprise voice assistant. "
-            "Respond always in ENGLISH. Be concise. "
-            "You are in a live phone call, speak naturally."
+        self.client = genai.Client(
+            api_key=settings.GEMINI_API_KEY,
+            http_options={"api_version": "v1alpha"}
         )
+        self.model_id = "gemini-3.1-flash-live-preview"
+        self.session = None
 
-        self.session = self.client.chats.create(
-            model=self.model_id,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction
-            )
+    async def connect(self):
+        config = types.LiveConnectConfig(
+            system_instruction=types.Content(
+                parts=[types.Part(text="""Eres EnterpriseBot, asistente de voz. 
+                Responde SIEMPRE en CASTELLANO de España. Sé profesional y directo. 
+                Estás en una llamada telefónica, evita respuestas largas.""")]
+            ),
+            response_modalities=["AUDIO"]
         )
-        print("# [AI SERVICE] Gemini session initialized (SDK Sync).", flush=True)
+        self.session = self.client.aio.live.connect(model=self.model_id, config=config)
+        return self.session
 
-    async def get_initial_greeting(self) -> bytes:
-        """
-        Generates initial greeting using correct SDK signature.
-        """
+    async def send_initial_greeting(self, session):
         try:
-            def get_greeting():
-                # FIX: In google-genai SDK, prompt is positional or uses 'message' keyword
-                return self.session.send_message(
-                    message="Please introduce yourself briefly as EnterpriseBot and ask how you can help.",
-                    config=types.GenerateContentConfig(response_mime_type="audio/wav")
-                )
-            response = await asyncio.to_thread(get_greeting)
-            return response.audio_bytes if response.audio_bytes else b""
+            # turns -> list[Content] -> parts -> list[Part] (Correct for text)
+            content = types.Content(
+                parts=[types.Part(text="Preséntate como EnterpriseBot y saluda en castellano.")]
+            )
+            await session.send(input=types.LiveClientContent(turns=[content]))
+            logger.info("# [AI SERVICE] Greeting sent.")
         except Exception as e:
             logger.error(f"# [GREETING ERROR] {str(e)}")
-            return b""
 
-    async def process_audio_chunk(self, audio_data: bytes) -> bytes:
-        """
-        Processes audio chunk using correct SDK signature.
-        """
+    async def send_audio_frame(self, session, audio_pcm_bytes: bytes):
         try:
-            def get_gemini_response():
-                # FIX: Use 'message' instead of 'contents' for part-based input
-                return self.session.send_message(
-                    message=[types.Part.from_bytes(data=audio_data, mime_type="audio/x-mulaw")],
-                    config=types.GenerateContentConfig(response_mime_type="audio/wav")
-                )
-            response = await asyncio.to_thread(get_gemini_response)
-            return response.audio_bytes if response.audio_bytes else b""
+            # SDK 2026: media_chunks MUST be list[Blob]. Wrappers like Part cause 1007.
+            runtime_input = types.LiveClientRealtimeInput(
+                media_chunks=[types.Blob(data=audio_pcm_bytes, mime_type="audio/pcm")]
+            )
+            await session.send(input=runtime_input)
         except Exception as e:
-            logger.error(f"# [AI ERROR] {str(e)}")
-            return b""
+            logger.error(f"# [AI STREAM ERROR] {str(e)}")

@@ -1,0 +1,10 @@
+nohup: ignoring input
+t=2026-03-30T08:53:44+0000 lvl=info msg="open config file" path=/home/MiguelAeTxio/PROJECTS/EnterpriseBot/ngrok.yml err=nil
+t=2026-03-30T08:53:44+0000 lvl=info msg="FIPS 140 mode" enabled=false
+t=2026-03-30T08:53:44+0000 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+t=2026-03-30T08:53:45+0000 lvl=info msg="client session established" obj=tunnels.session
+t=2026-03-30T08:53:45+0000 lvl=info msg="tunnel session started" obj=tunnels.session
+t=2026-03-30T08:53:45+0000 lvl=info msg="started tunnel" obj=tunnels name=command_line addr=http://localhost:8081 url=https://deistical-rosalia-detonative.ngrok-free.dev
+t=2026-03-30T08:53:59+0000 lvl=info msg=start pg=/api/tunnels id=0e56f4821584663e
+t=2026-03-30T08:53:59+0000 lvl=info msg=end pg=/api/tunnels id=0e56f4821584663e status=200 dur=372.309µs
+t=2026-03-30T08:54:10+0000 lvl=info msg="join connections" obj=join id=b06c78da0ef3 l=127.0.0.1:8081 r=54.160.234.158:40848
