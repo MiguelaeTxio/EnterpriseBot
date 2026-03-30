@@ -1,34 +1,30 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
 # ANEXO HITO 1: VALIDACIÓN E IMPLEMENTACIÓN DE VOZ CONVERSACIONAL
-# ESTADO: EN PROGRESO (Fase: Estabilización de Protocolo Live 2026)
+# ESTADO: EN PROGRESO (Fase: Estabilización de Infraestructura y Audio)
 
-## 1. FUENTE DE LA VERDAD (LEY SUPREMA)
-Este documento es la única fuente de verdad. El modelo entrante tiene PROHIBIDO escribir una sola línea de código sin realizar antes una inmersión integral en las clases de unión (Union types) del SDK google-genai (v1alpha) de marzo de 2026. Se prohíbe el método de ensayo y error.
+## 1. FUENTE DE LA VERDAD (ESTADO ACTUAL MARZO 2026)
+Este documento refleja el estado técnico real al cierre de la sesión para que el modelo entrante inicie su investigación.
+- **Arquitectura:** Sidecar Bridge (WSS) mediando entre Twilio Media Streams y Gemini 3.1 Live.
+- **Persistencia de Red:** El nodo web de Django lee la URL dinámica desde `NGROK_URL.txt` para generar el TwiML.
+- **Entorno:** Puerto 8081 configurado en Bridge y ngrok.
 
-## 2. BITÁCORA FORENSE DE ERRORES (MARZO 2026)
-Para evitar la repetición de fallos, el modelo debe conocer las colisiones técnicas ocurridas:
-- **Error 400:** `response_mime_type` solo acepta texto en la API de Chat. Prohibido usar audio/wav allí.
-- **Error 1007 (Invalid Frame):** Se dispara si se declara `response_mime_type` en LiveConnectConfig para audio, o si la jerarquía de `media_chunks` es incorrecta.
-- **Error 1011 (Internal Error):** Ocurre por Setup Frames incompletos. Requiere obligatoriamente `response_modalities=["AUDIO"]`.
-- **TypeError:** `AsyncSession.send()` NO acepta el argumento `end_of_batch` en sesiones Live.
-- **Deprecation:** `generation_config` debe estar aplanado directamente en la raíz de `LiveConnectConfig`.
+## 2. BITÁCORA DE INCIDENCIAS (SÍNTOMAS OBSERVADOS)
+El modelo entrante DEBE investigar las causas de los siguientes hechos:
+- **Hecho A (Silencio Técnico):** Al realizar la llamada, Twilio conecta correctamente con el Bridge. Se escucha un sonido inicial (chasquido/pop), pero después el sistema entra en silencio total. No hay audibilidad de la IA a pesar de que la sesión Gemini Live figura como establecida.
+- **Hecho B (Bloqueo de Recursos):** Se han detectado colisiones recurrentes en el puerto 8081 (`OSError: [Errno 98]`) y en el endpoint de ngrok (`ERR_NGROK_334`). Estos procesos parecen persistir en segundo plano tras el cierre de la consola, impidiendo nuevas pruebas de ignición.
 
-## 3. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (ROADMAP)
-El modelo debe seguir este orden exacto:
+## 3. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN
+El modelo entrante debe actuar con rigor técnico sobre los siguientes puntos:
+### Tarea 1: Auditoría de Integridad del Código
+Investigar a fondo la lógica actual en `vox_bridge/services.py` y `voice_sidecar_bridge.py` para identificar por qué el flujo de audio se interrumpe o no se transmite tras la conexión inicial. El modelo debe decidir el diagnóstico basándose en la documentación del SDK de marzo de 2026.
 
-### Tarea 0: Auditoría Estructural del SDK
-1. Investigar la firma exacta de `LiveClientRealtimeInput`. Confirmar si `media_chunks` es una lista de `Blob` o de `Part`.
-2. Verificar el esquema de `LiveServerMessage` para la captura de audio en `stream_from_google`.
+### Tarea 2: Estabilización de la Capa de Transporte
+Asegurar un método de limpieza y arranque que garantice que el puerto 8081 y el túnel de ngrok estén plenamente disponibles antes de iniciar el flujo de voz.
 
-### Tarea 1: Estabilización de Servicios (`vox_bridge/services.py`)
-1. Implementar `connect()` con `response_modalities=["AUDIO"]` y `system_instruction` como objeto `Content`.
-2. Asegurar que `send_audio_frame` envíe la jerarquía binaria exacta que no provoque el error 1007.
+### Tarea 3: Prueba de Validación
+Una vez resueltos los puntos anteriores, validar la audibilidad bidireccional y la fluidez de la conversación.
 
-### Tarea 2: Validación de Audio (Prueba de Ignición)
-1. Lanzar el Bridge en el puerto 8081.
-2. Levantar túnel ngrok con inyección de entorno (`python -m dotenv`).
-3. Realizar llamada al terminal +34688360595 y confirmar audibilidad en castellano.
-
-## 4. ESPECIFICACIONES TÉCNICAS MANDATORIAS
-- Puerto local: 8081 (El 8080 presenta bloqueos de kernel).
-- Versión API: v1alpha.
-- Idioma: Castellano de España.
+## 4. ESPECIFICACIONES TÉCNICAS
+- Modelo: models/gemini-3.1-flash-live-preview.
+- Puerto: 8081.
+- SDK: google-genai (v1.68.0).

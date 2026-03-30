@@ -7,5 +7,5 @@ agent:
 endpoints:
   - name: enterprise_voice_bridge
     upstream:
-      url: 8080
+      url: 8081
     inspect: true

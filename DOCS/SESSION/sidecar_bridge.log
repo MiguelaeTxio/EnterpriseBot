@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/voice_sidecar_bridge.py", line 129, in <module>
+    asyncio.run(main())
+  File "/usr/local/lib/python3.10/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/usr/local/lib/python3.10/asyncio/base_events.py", line 646, in run_until_complete
+    return future.result()
+  File "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/voice_sidecar_bridge.py", line 121, in main
+    async with websockets.serve(bridge.handle_connection, "0.0.0.0", port):
+  File "/home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv/lib/python3.10/site-packages/websockets/asyncio/server.py", line 829, in __aenter__
+    return await self
+  File "/home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv/lib/python3.10/site-packages/websockets/asyncio/server.py", line 847, in __await_impl__
+    server = await self.create_server
+  File "/usr/local/lib/python3.10/asyncio/base_events.py", line 1505, in create_server
+    raise OSError(err.errno, 'error while attempting '
+OSError: [Errno 98] error while attempting to bind on address ('0.0.0.0', 8081): address already in use
