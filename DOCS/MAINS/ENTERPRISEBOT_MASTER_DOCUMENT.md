@@ -13,13 +13,13 @@ EnterpriseBot es una solución omnicanal de nivel empresarial orientada a la orq
 *   **Middleware de Audio (Sidecar):** Capa de transcodificación obligatoria entre Twilio (G.711 mu-law/A-law) y Gemini Live (PCM Linear 16-bit).
 
 ## 3. Hoja de Ruta Estratégica
-### Hito 1: Validación de Infraestructura de Voz en Tiempo Real (PAUSADO)
+### Hito 1: Validación de Infraestructura de Voz en Tiempo Real (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md`)
 - Implementación de puente con Twilio Media Streams.
 - Estabilización del flujo de transcodificación mu-law/A-law -> PCM.
 - Orquestación de audio nativo con Gemini 3.1 Live.
 
-### Hito 2: Validación y Aislamiento de Diagnóstico vía Aplicación test_live (EN PROGRESO)
+### Hito 2: Validación y Aislamiento de Diagnóstico vía Aplicación test_live (COMPLETADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md`)
 - Creación de aplicación Django `test_live` para aislamiento de API.
 - Implementación de interfaz "Walkie-Talkie" para pruebas directas.

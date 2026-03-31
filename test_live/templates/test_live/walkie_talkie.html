@@ -1,0 +1,31 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/test_live/templates/test_live/walkie_talkie.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>EnterpriseBot - Walkie-Talkie Diagnostic</title>
+    <style>
+        .status-indicator { width: 20px; height: 20px; border-radius: 50%; display: inline-block; background: gray; margin-right: 10px; }
+        .ready { background: green; box-shadow: 0 0 10px green; }
+        .waiting { background: orange; animation: blink 1s infinite; }
+        .error { background: red; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+        .panel { padding: 20px; border: 1px solid #ccc; border-radius: 8px; max-width: 400px; margin: 20px auto; text-align: center; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <h1>Sonda Gemini Live</h1>
+        <div style="margin-bottom: 20px;">
+            <span id="status-led" class="status-indicator"></span>
+            <strong id="status-text">Estado de Conexión</strong>
+        </div>
+        {% csrf_token %}
+        <button id="btn-init">VINCULAR API</button>
+        <button id="btn-talk" disabled>HABLAR (Mantener)</button>
+    </div>
+    <script src="{% static 'test_live/js/probe.js' %}"></script>
+</body>
+</html>

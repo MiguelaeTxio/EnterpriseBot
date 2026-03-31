@@ -9,5 +9,6 @@ pydantic>=2.0           # Structured Outputs y validación
 python-dotenv           # Carga de variables de entorno (CRÍTICO)
 pyngrok                 # Gestión de túneles (Wrapper opcional)
 pip-tools               # Gestión de dependencias (Compilación)
+esprima                 # Auditoría de sintaxis JavaScript (Barrera de Fuego)
 requests                # Peticiones HTTP internas (API ngrok)
 twilio                  # SDK Oficial de Twilio para Outbound Calls

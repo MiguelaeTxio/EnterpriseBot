@@ -1,30 +1,35 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
-# ANEXO HITO 1: VALIDACIÓN E IMPLEMENTACIÓN DE VOZ CONVERSACIONAL
-# ESTADO: EN PROGRESO (Fase: Estabilización de Infraestructura y Audio)
+# ANEXO HITO 1: INFRAESTRUCTURA DE VOZ (SIDECAR BRIDGE)
+# ESTADO: REACTIVADO (EN PROGRESO)
+# FECHA: 2026-03-31
+# LEY SUPREMA PARA LA PRÓXIMA SESIÓN
 
-## 1. FUENTE DE LA VERDAD (ESTADO ACTUAL MARZO 2026)
-Este documento refleja el estado técnico real al cierre de la sesión para que el modelo entrante inicie su investigación.
-- **Arquitectura:** Sidecar Bridge (WSS) mediando entre Twilio Media Streams y Gemini 3.1 Live.
-- **Persistencia de Red:** El nodo web de Django lee la URL dinámica desde `NGROK_URL.txt` para generar el TwiML.
-- **Entorno:** Puerto 8081 configurado en Bridge y ngrok.
+---
 
-## 2. BITÁCORA DE INCIDENCIAS (SÍNTOMAS OBSERVADOS)
-El modelo entrante DEBE investigar las causas de los siguientes hechos:
-- **Hecho A (Silencio Técnico):** Al realizar la llamada, Twilio conecta correctamente con el Bridge. Se escucha un sonido inicial (chasquido/pop), pero después el sistema entra en silencio total. No hay audibilidad de la IA a pesar de que la sesión Gemini Live figura como establecida.
-- **Hecho B (Bloqueo de Recursos):** Se han detectado colisiones recurrentes en el puerto 8081 (`OSError: [Errno 98]`) y en el endpoint de ngrok (`ERR_NGROK_334`). Estos procesos parecen persistir en segundo plano tras el cierre de la consola, impidiendo nuevas pruebas de ignición.
+## 1. DIRECTRIZ TÉCNICA VINCULANTE (MARZO 2026) - INMUTABLE
+Queda terminantemente prohibido el uso de datos de entrenamiento del modelo para la interacción con el SDK de Google GenAI. La implementación debe regirse exclusivamente por el estándar de Marzo 2026 validado en la sesión actual:
 
-## 3. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN
-El modelo entrante debe actuar con rigor técnico sobre los siguientes puntos:
-### Tarea 1: Auditoría de Integridad del Código
-Investigar a fondo la lógica actual en `vox_bridge/services.py` y `voice_sidecar_bridge.py` para identificar por qué el flujo de audio se interrumpe o no se transmite tras la conexión inicial. El modelo debe decidir el diagnóstico basándose en la documentación del SDK de marzo de 2026.
+*   **MODELO ESTÁNDAR:** `models/gemini-3.1-flash-live-preview` (Naturaleza Multimodal Live).
+*   **ENDPOINT:** `v1beta` (Mandatorio para AI Studio / API KEY).
+*   **MÉTODO DE ENVÍO:** `send_realtime_input`. Queda prohibido `send_client_content` para mensajería activa.
+*   **ESQUEMA DE MENSAJE:** No se debe incluir el atributo `role` en los envíos de contenido.
+*   **PARÁMETROS DE CONTROL:** Uso de `turn_complete=True`.
+*   **AUDIO OUTPUT:** 24000Hz PCM (Requiere remuestreo a 8000Hz para Twilio).
 
-### Tarea 2: Estabilización de la Capa de Transporte
-Asegurar un método de limpieza y arranque que garantice que el puerto 8081 y el túnel de ngrok estén plenamente disponibles antes de iniciar el flujo de voz.
+## 2. ARQUITECTURA DE SIDECAR (AlwaysOn Task)
+Debido a la incompatibilidad del proxy uWSGI con WebSockets persistentes, la orquestación de la IA se delega en la **AlwaysOn Task** ya existente.
 
-### Tarea 3: Prueba de Validación
-Una vez resueltos los puntos anteriores, validar la audibilidad bidireccional y la fluidez de la conversación.
+### Tarea 1: Adaptación del Voice Orchestrator Daemon
+1.  Modificar el script de la AlwaysOn Task para aplicar el **Patrón Maestro v7**.
+2.  Implementar la escucha de eventos desde la aplicación Django para disparar llamadas salientes o responder a flujos de Media Streams entrantes.
+3.  Configurar el loop asíncrono para manejar la concurrencia de múltiples llamadas.
 
-## 4. ESPECIFICACIONES TÉCNICAS
-- Modelo: models/gemini-3.1-flash-live-preview.
-- Puerto: 8081.
-- SDK: google-genai (v1.68.0).
+### Tarea 2: Puente de Comunicación Django <-> Sidecar
+1.  Establecer un canal de señalización (vía archivos en `SWAP` o Redis si está disponible) para que los webhooks de Twilio en `vox_bridge` informen al Sidecar del `stream_sid` activo.
+2.  Asegurar que el Sidecar sea capaz de leer el flujo binario de audio de Twilio y retransmitirlo mediante `send_realtime_input(audio=...)`.
+
+## 3. HOJA DE RUTA DETALLADA
+1.  **Validación de Salida:** Verificar la AlwaysOn Task con el script `test_connectivity_v7.py`.
+2.  **Transcodificación:** Implementar en el Sidecar la conversión G.711 mu-law (8kHz) <-> PCM (24kHz).
+3.  **Bidi Test:** Realizar la primera llamada real de Twilio conectada al Sidecar.
+
+---
