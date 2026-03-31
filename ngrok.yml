@@ -1,6 +1,7 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/ngrok.yml
 version: "3"
 agent:
+  authtoken: ${NGROK_AUTHTOKEN}
   log: stdout
   log_level: info
 

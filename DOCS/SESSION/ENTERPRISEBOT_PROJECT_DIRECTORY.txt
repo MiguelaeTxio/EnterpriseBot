@@ -1,6 +1,13 @@
 ./debug_webhook_locally.py
 ./requirements.in
 ./voice_orchestrator.py
+./test_live/admin.py
+./test_live/__init__.py
+./test_live/views.py
+./test_live/apps.py
+./test_live/models.py
+./test_live/migrations/__init__.py
+./test_live/tests.py
 ./vox_bridge/urls.py
 ./vox_bridge/admin.py
 ./vox_bridge/__init__.py
@@ -137,4 +144,5 @@
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_TWILIO_INFRASTRUCTURE_GUIDE.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_MUNDOSMS_VIABILITY_TEST.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_PROJECT_PIVOT_HISTORY.md
+./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md

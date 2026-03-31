@@ -1,8 +1,6 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/V01DOC_TWILIO_INFRASTRUCTURE_GUIDE.md
-
 # GUÍA TÉCNICA: INFRAESTRUCTURA DE VOZ TWILIO MEDIA STREAMS
-# Versión: 1.1 (Configuración Consolidada con Número Activo)
-# Fecha de Actualización: 2026-03-27
+# Versión: 1.2 (Optimización Regional IE1 y Códec Adaptativo)
+# Fecha de Actualización: 2026-03-31
 
 ---
 
@@ -18,10 +16,10 @@ A continuación se detallan los activos configurados en la consola de Twilio que
 - **TwiML App:** EnterpriseBot_Voice_Bridge_App
 - **Endpoint Webhook (POST):** https://MiguelAeTxio.pythonanywhere.com/vox/inbound/
 
-## 3. PROTOCOLO DE AUDIO (G.711 MU-LAW) / AUDIO PROTOCOL
-Twilio transmite el audio utilizando compresión logarítmica para telefonía digital. El bridge debe adherirse a los siguientes parámetros:
+## 3. PROTOCOLO DE AUDIO (G.711 ADAPTATIVO: MU-LAW/A-LAW) / AUDIO PROTOCOL
+Twilio transmite el audio utilizando compresión logarítmica para telefonía digital. El bridge se adapta dinámicamente al códec negociado por la región de borde:
 
-- **Codificación:** audio/x-mulaw (PCMU).
+- **Codificación:** audio/x-mulaw (PCMU) para US / audio/x-alaw (PCMA) para EU.
 - **Frecuencia de Muestreo:** 8000 Hz.
 - **Canales:** Mono (1 canal).
 - **Muestreo:** 8 bits por muestra.
@@ -31,8 +29,8 @@ Twilio transmite el audio utilizando compresión logarítmica para telefonía di
 El bridge en Django debe procesar los eventos en el siguiente orden estricto:
 
 1. **Evento "connected":** Se recibe al establecerse la conexión TCP. Sirve para inicializar buffers.
-2. **Evento "start":** Twilio envía metadatos de la llamada. Es obligatorio extraer el "streamSid". Este identificador es persistente durante toda la llamada y es necesario para enviar audio de respuesta hacia el usuario.
-3. **Evento "media":** Este evento se repite cada 20ms aproximadamente. Contiene el audio del usuario. El bridge debe decodificar el Base64 y pasar el flujo binario a Gemini.
+2. **Evento "start":** Twilio envía metadatos de la llamada. Es obligatorio extraer el "streamSid" y el "encoding" para configurar el DSP.
+3. **Evento "media":** Este evento se repite cada 20ms aproximadamente. Contiene el audio del usuario.
 4. **Evento "stop":** Indica que el usuario ha colgado. El bridge debe cerrar la sesión de Gemini y liberar recursos.
 
 ## 5. ARQUITECTURA DE SEGURIDAD / SECURITY ARCHITECTURE
@@ -40,7 +38,8 @@ El bridge en Django debe procesar los eventos en el siguiente orden estricto:
 - Las credenciales (SID y Secret) deben residir exclusivamente en el archivo .env del servidor, nunca en el código fuente.
 - Se utilizará el API Key SID para la firma de peticiones, evitando el uso del Auth Token maestro de la cuenta.
 
-## 6. OPTIMIZACIÓN REGIONAL (IE1)
-- **Región Activa:** Ireland (IE1)
-- **Estado:** Active
-- **Latencia Objetivo:** < 300ms
+## 6. OPTIMIZACIÓN REGIONAL (IE1 - IRELAND)
+- **Región Activa y Mandatoria:** Ireland (IE1).
+- **Justificación:** Optimización de latencia para terminales móviles en la Unión Europea.
+- **Estado:** Activo (Configurado en Dashboard Twilio).
+- **Latencia Objetivo:** < 300ms.

@@ -1,20 +1,15 @@
-t=2026-03-30T09:47:10+0000 lvl=info msg="FIPS 140 mode" enabled=false
-t=2026-03-30T09:47:10+0000 lvl=warn msg="can't bind default web address, trying alternatives" obj=web addr=127.0.0.1:4040
-t=2026-03-30T09:47:10+0000 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4041 allow_hosts=[]
-t=2026-03-30T09:47:10+0000 lvl=info msg="client session established" obj=tunnels.session
-t=2026-03-30T09:47:10+0000 lvl=info msg="tunnel session started" obj=tunnels.session
-t=2026-03-30T09:47:10+0000 lvl=eror msg="session closing" obj=tunnels.session err="failed to start tunnel: The endpoint 'https://deistical-rosalia-detonative.ngrok-free.dev' is already online. Either\n1. stop your existing endpoint first, or\n2. start both endpoints with `--pooling-enabled` to load balance between them.\r\n\r\nERR_NGROK_334\r\n"
-t=2026-03-30T09:47:10+0000 lvl=info msg="received stop request" obj=app stopReq="{err:{Inner:{Inner:0x1bda8ec876c0}} restart:false}"
-t=2026-03-30T09:47:10+000t=2026-03-30T10:11:51+0000 lvl=info msg="received stop request" obj=app stopReq="{err:<nil> restart:false}"
-t=2026-03-30T10:11:51+0000 lvl=info msg="session closing" obj=tunnels.session err=nil
-ndpoint first, or\n2. start both endpoints with `--pooling-enabled` to load balance between them.\r\n\r\nERR_NGROK_334\r\n"
-t=2026-03-30T09:47:10+0000 lvl=info msg="accept failed" obj=tunnels.session obj=csess id=299033aee060 err="reconnecting session closed"
-t=2026-03-30T09:47:10+0000 lvl=info msg="no more state changes" obj=tunnels.session
-t=2026-03-30T09:47:10+0000 lvl=crit msg="command failed" err="failed to start tunnel: The endpoint 'https://deistical-rosalia-detonative.ngrok-free.dev' is already online. Either\n1. stop your existing endpoint first, or\n2. start both endpoints with `--pooling-enabled` to load balance between them.\r\n\r\nERR_NGROK_334\r\n"
-ERROR:  failed to start tunnel: The endpoint 'https://deistical-rosalia-detonative.ngrok-free.dev' is already online. Either
-ERROR:  1. stop your existing endpoint first, or
-ERROR:  2. start both endpoints with `--pooling-enabled` to load balance between them.
+t=2026-03-30T16:29:20+0000 lvl=info msg="FIPS 140 mode" enabled=false
+t=2026-03-30T16:29:20+0000 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+t=2026-03-30T16:29:20+0000 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="authentication failed: The authtoken you specified does not look like a proper ngrok authtoken.\nYour authtoken: ${NGROK_AUTHTOKEN}\nInstructions to install your authtoken are on your ngrok dashboard:\nhttps://dashboard.ngrok.com/get-started/your-authtoken\r\n\r\nERR_NGROK_105\r\n"
+t=2026-03-30T16:29:20+0000 lvl=eror msg="session closing" obj=tunnels.session err="authentication failed: The authtoken you specified does not look like a proper ngrok authtoken.\nYour authtoken: ${NGROK_AUTHTOKEN}\nInstructions to install your authtoken are on your ngrok dashboard:\nhttps://dashboard.ngrok.com/get-started/your-authtoken\r\n\r\nERR_NGROK_105\r\n"
+t=2026-03-30T16:29:20+0000 lvl=info msg="received stop request" obj=app stopReq="{err:{Remote:true Inner:{Inner:0x3bedf0b451f0}} restart:false}"
+t=2026-03-30T16:29:20+0000 lvl=eror msg="terminating with error" obj=app err="authentication failed: The authtoken you specified does not look like a proper ngrok authtoken.\nYour authtoken: ${NGROK_AUTHTOKEN}\nInstructions to install your authtoken are on your ngrok dashboard:\nhttps://dashboard.ngrok.com/get-started/your-authtoken\r\n\r\nERR_NGROK_105\r\n"
+t=2026-03-30T16:29:20+0000 lvl=crit msg="command failed" err="authentication failed: The authtoken you specified does not look like a proper ngrok authtoken.\nYour authtoken: ${NGROK_AUTHTOKEN}\nInstructions to install your authtoken are on your ngrok dashboard:\nhttps://dashboard.ngrok.com/get-started/your-authtoken\r\n\r\nERR_NGROK_105\r\n"
+ERROR:  authentication failed: The authtoken you specified does not look like a proper ngrok authtoken.
+ERROR:  Your authtoken: ${NGROK_AUTHTOKEN}
+ERROR:  Instructions to install your authtoken are on your ngrok dashboard:
+ERROR:  https://dashboard.ngrok.com/get-started/your-authtoken
 ERROR:  
-ERROR:  ERR_NGROK_334
-ERROR:  https://ngrok.com/docs/errors/err_ngrok_334
+ERROR:  ERR_NGROK_105
+ERROR:  https://ngrok.com/docs/errors/err_ngrok_105
 ERROR:  
