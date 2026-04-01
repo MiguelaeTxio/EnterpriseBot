@@ -1,35 +1,26 @@
-# ANEXO HITO 1: INFRAESTRUCTURA DE VOZ (SIDECAR BRIDGE)
-# ESTADO: REACTIVADO (EN PROGRESO)
-# FECHA: 2026-03-31
-# LEY SUPREMA PARA LA PRÓXIMA SESIÓN
+# ANEXO HITO 1: INFRAESTRUCTURA DE VOZ (ESTABILIZACIÓN FINAL)
+# ESTADO: EN PROGRESO (REQUIERE REFACTORIZACIÓN URGENTE)
+# FECHA: 2026-04-01
 
 ---
 
-## 1. DIRECTRIZ TÉCNICA VINCULANTE (MARZO 2026) - INMUTABLE
-Queda terminantemente prohibido el uso de datos de entrenamiento del modelo para la interacción con el SDK de Google GenAI. La implementación debe regirse exclusivamente por el estándar de Marzo 2026 validado en la sesión actual:
+## 1. NOTA DE CIERRE DE SESIÓN ANTERIOR (MANDATORIA)
+El modelo anterior ha fallado por agotamiento de tokens y sesgo de entrenamiento (2025). La lógica actual en `vox_bridge/services.py` es **OBSOLETA** e **INCORRECTA**. No permite la interacción (cierra el turno) y persiste en el idioma inglés.
 
-*   **MODELO ESTÁNDAR:** `models/gemini-3.1-flash-live-preview` (Naturaleza Multimodal Live).
-*   **ENDPOINT:** `v1beta` (Mandatorio para AI Studio / API KEY).
-*   **MÉTODO DE ENVÍO:** `send_realtime_input`. Queda prohibido `send_client_content` para mensajería activa.
-*   **ESQUEMA DE MENSAJE:** No se debe incluir el atributo `role` en los envíos de contenido.
-*   **PARÁMETROS DE CONTROL:** Uso de `turn_complete=True`.
-*   **AUDIO OUTPUT:** 24000Hz PCM (Requiere remuestreo a 8000Hz para Twilio).
+## 2. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (LEY SUPREMA)
 
-## 2. ARQUITECTURA DE SIDECAR (AlwaysOn Task)
-Debido a la incompatibilidad del proxy uWSGI con WebSockets persistentes, la orquestación de la IA se delega en la **AlwaysOn Task** ya existente.
+**DIAGNÓSTICO Y ACCIÓN INMEDIATA:**
+1.  **IGNORAR** cualquier dato de entrenamiento previo sobre el SDK de Google GenAI.
+2.  **PRIORIDAD ABSOLUTA:** Consultar la documentación oficial online de la Multimodal Live API (v1beta) a fecha de Abril 2026.
 
-### Tarea 1: Adaptación del Voice Orchestrator Daemon
-1.  Modificar el script de la AlwaysOn Task para aplicar el **Patrón Maestro v7**.
-2.  Implementar la escucha de eventos desde la aplicación Django para disparar llamadas salientes o responder a flujos de Media Streams entrantes.
-3.  Configurar el loop asíncrono para manejar la concurrencia de múltiples llamadas.
+**REFACTORIZACIÓN DE `vox_bridge/services.py`:**
+- **OBJETO CONFIGURACIÓN:** El `language_code="es-ES"` DEBE anidarse dentro de `generation_config` -> `speech_config`. Cualquier otra ubicación es ignorada por el servidor de Google.
+- **VOZ CERTIFICADA:** Usar exclusivamente la voz **"Aoede"** o la indicada en la documentación live como HD Multilingual para castellano. "Puck" y "Kore" han dado errores de regresión al inglés.
+- **GESTIÓN DE TURNOS (TRIPLE CHECK):** El mensaje inicial de saludo generado por texto en `send_initial_greeting` **NO DEBE** llevar el parámetro `turn_complete=True`. Si se envía como `True`, la sesión se cierra tras el saludo. Debe quedar en `False` o nulo para mantener el micrófono abierto.
+- **DSP (AUDIOOP):**
+    - **Uplink:** 8kHz (Twilio) -> 16kHz (Google). Factor 2.
+    - **Downlink:** 24kHz (Google) -> 8kHz (Twilio). Factor 1/3 (Mandatorio para evitar aceleración de voz).
 
-### Tarea 2: Puente de Comunicación Django <-> Sidecar
-1.  Establecer un canal de señalización (vía archivos en `SWAP` o Redis si está disponible) para que los webhooks de Twilio en `vox_bridge` informen al Sidecar del `stream_sid` activo.
-2.  Asegurar que el Sidecar sea capaz de leer el flujo binario de audio de Twilio y retransmitirlo mediante `send_realtime_input(audio=...)`.
-
-## 3. HOJA DE RUTA DETALLADA
-1.  **Validación de Salida:** Verificar la AlwaysOn Task con el script `test_connectivity_v7.py`.
-2.  **Transcodificación:** Implementar en el Sidecar la conversión G.711 mu-law (8kHz) <-> PCM (24kHz).
-3.  **Bidi Test:** Realizar la primera llamada real de Twilio conectada al Sidecar.
+**OBJETIVO DE LA SESIÓN:** Conseguir que el bot salude en castellano y se quede escuchando la respuesta del usuario sin colgar.
 
 ---

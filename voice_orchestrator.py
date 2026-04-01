@@ -5,14 +5,15 @@ import time
 import requests
 import sys
 import signal
+import psutil
 from dotenv import load_dotenv
 
 """
 EnterpriseBot Voice Orchestrator: Master control for Tunneling and Sidecar.
-Publishes public URL to NGROK_URL.txt for Web Node synchronization.
+Refactored for Native Port Management using psutil (March 2026).
 ---
 Orquestador de Voz de EnterpriseBot: Control maestro para Túnel y Sidecar.
-Publica la URL pública en NGROK_URL.txt para la sincronización del Nodo Web.
+Refactorizado para Gestión Nativa de Puertos usando psutil (Marzo 2026).
 """
 
 # Forzar salida inmediata para visibilidad total en Dashboard
@@ -35,12 +36,43 @@ class VoiceOrchestrator:
         print(message, flush=True)
 
     def cleanup_ports(self):
-        """Force release of port 8081 to avoid Errno 98"""
-        self.flush_print("# [ORCHESTRATOR] Limpiando puerto 8081...")
-        try:
-            subprocess.run(["fuser", "-k", "8081/tcp"], stderr=subprocess.DEVNULL)
+        """
+        Natively releases port 8081 using psutil to avoid restricted system commands.
+        ---
+        Libera el puerto 8081 de forma nativa usando psutil para evitar comandos de sistema restringidos.
+        """
+        self.flush_print("# [ORCHESTRATOR] Auditando puerto 8081 (Método Nativo Python)...")
+        target_port = 8081
+        found = False
+        
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                # Iterate over connections of the current process
+                connections = proc.connections(kind='inet')
+                for conn in connections:
+                    if conn.laddr.port == target_port:
+                        found = True
+                        self.flush_print(f"# [CLEANUP] Detectado proceso '{proc.info['name']}' (PID: {proc.pid}) bloqueando el puerto {target_port}")
+                        
+                        # Attempt clean termination
+                        proc.terminate()
+                        # Wait up to 3 seconds for it to release the resource
+                        try:
+                            proc.wait(timeout=3)
+                            self.flush_print(f"# [CLEANUP] Proceso {proc.pid} finalizado correctamente.")
+                        except psutil.TimeoutExpired:
+                            self.flush_print(f"# [WARN] El proceso no respondió. Forzando cierre (kill)...")
+                            proc.kill()
+                            
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                # Ignore processes that disappear or don't belong to the user
+                continue
+        
+        if not found:
+            self.flush_print(f"# [ORCHESTRATOR] Puerto {target_port} libre. No se requiere limpieza.")
+        else:
+            # Small grace period for the OS to mark the port as available
             time.sleep(1)
-        except: pass
 
     def start_ngrok(self):
         self.cleanup_ports()
