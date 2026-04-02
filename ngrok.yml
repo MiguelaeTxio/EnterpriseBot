@@ -1,12 +1,7 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/ngrok.yml
 version: "3"
 agent:
-  authtoken: ${NGROK_AUTHTOKEN}
+  web_addr: 127.0.0.1:4041
   log: stdout
   log_level: info
-
-endpoints:
-  - name: enterprise_voice_bridge
-    upstream:
-      url: 8081
-    inspect: true
+# Sin endpoints estáticos para evitar el error 334/401 en el plan gratuito de 2026.

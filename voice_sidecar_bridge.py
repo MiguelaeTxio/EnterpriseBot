@@ -21,6 +21,11 @@ logging.basicConfig(
 logger = logging.getLogger("VoiceSidecar")
 
 class UniversalVoiceBridge:
+    """
+    WebSocket bridge between Twilio and Gemini Live.
+    ---
+    Puente WebSocket entre Twilio y Gemini Live.
+    """
     def __init__(self):
         self.gemini_service = GeminiStreamService()
         self.stream_sid = None
@@ -36,7 +41,8 @@ class UniversalVoiceBridge:
                 uplink = asyncio.create_task(self.stream_to_google(twilio_ws, google_session))
                 downlink = asyncio.create_task(self.stream_from_google(twilio_ws, google_session))
                 
-                # ✅ WAIT FOR BARRIER: This ensures the greeting is sent AFTER setup_complete
+                # ✅ APRIL 2026 FIX: Mandatory delay for Twilio buffer stabilization
+                await asyncio.sleep(0.5)
                 await self.gemini_service.send_initial_greeting(google_session)
 
                 await asyncio.wait([uplink, downlink], return_when=asyncio.FIRST_COMPLETED)
@@ -53,10 +59,9 @@ class UniversalVoiceBridge:
             event = data.get("event")
             if event == "start":
                 self.stream_sid = data["start"]["streamSid"]
-                logger.info(f"# [EVENT] Start SID: {self.stream_sid} (Regional Bypass Active)")
+                logger.info(f"# [EVENT] Start SID: {self.stream_sid}")
             elif event == "media":
                 if self.stream_sid:
-                    # send_audio_frame will ignore audio until setup is confirmed
                     await self.gemini_service.send_audio_frame(
                         google_session, data["media"]["payload"]
                     )

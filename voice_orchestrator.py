@@ -10,13 +10,12 @@ from dotenv import load_dotenv
 
 """
 EnterpriseBot Voice Orchestrator: Master control for Tunneling and Sidecar.
-Refactored for Native Port Management using psutil (March 2026).
+2026 Standard: psutil.net_connections & ngrok v3 Config-Driven.
 ---
 Orquestador de Voz de EnterpriseBot: Control maestro para Túnel y Sidecar.
-Refactorizado para Gestión Nativa de Puertos usando psutil (Marzo 2026).
+Estándar 2026: psutil.net_connections y ngrok v3 basado en Configuración.
 """
 
-# Forzar salida inmediata para visibilidad total en Dashboard
 os.environ["PYTHONUNBUFFERED"] = "1"
 
 class VoiceOrchestrator:
@@ -26,10 +25,9 @@ class VoiceOrchestrator:
         self.config_path = os.path.join(self.project_root, "ngrok.yml")
         self.bridge_script = os.path.join(self.project_root, "voice_sidecar_bridge.py")
         self.python_bin = sys.executable
-        # Shared file for inter-node communication
         self.shared_url_file = os.path.join(self.project_root, "DOCS/SESSION/NGROK_URL.txt")
-        
-        # Explicitly load .env from project root
+        # El puerto 4041 se define ahora en el ngrok.yml
+        self.api_url = "http://127.0.0.1:4041/api/tunnels"
         load_dotenv(os.path.join(self.project_root, ".env"))
 
     def flush_print(self, message):
@@ -37,137 +35,90 @@ class VoiceOrchestrator:
 
     def cleanup_ports(self):
         """
-        Natively releases port 8081 using psutil to avoid restricted system commands.
+        Natively releases ports using the 2026 net_connections standard.
         ---
-        Libera el puerto 8081 de forma nativa usando psutil para evitar comandos de sistema restringidos.
+        Libera los puertos usando el estándar net_connections de 2026.
         """
-        self.flush_print("# [ORCHESTRATOR] Auditando puerto 8081 (Método Nativo Python)...")
-        target_port = 8081
-        found = False
+        self.flush_print("# [ORCHESTRATOR] Auditando puertos (net_connections)...")
+        target_ports = [8081, 4041, 4040]
         
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                # Iterate over connections of the current process
-                connections = proc.connections(kind='inet')
-                for conn in connections:
-                    if conn.laddr.port == target_port:
-                        found = True
-                        self.flush_print(f"# [CLEANUP] Detectado proceso '{proc.info['name']}' (PID: {proc.pid}) bloqueando el puerto {target_port}")
-                        
-                        # Attempt clean termination
-                        proc.terminate()
-                        # Wait up to 3 seconds for it to release the resource
-                        try:
-                            proc.wait(timeout=3)
-                            self.flush_print(f"# [CLEANUP] Proceso {proc.pid} finalizado correctamente.")
-                        except psutil.TimeoutExpired:
-                            self.flush_print(f"# [WARN] El proceso no respondió. Forzando cierre (kill)...")
-                            proc.kill()
-                            
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                # Ignore processes that disappear or don't belong to the user
-                continue
-        
-        if not found:
-            self.flush_print(f"# [ORCHESTRATOR] Puerto {target_port} libre. No se requiere limpieza.")
-        else:
-            # Small grace period for the OS to mark the port as available
-            time.sleep(1)
+        # ✅ APRIL 2026 FIX: Use net_connections() instead of deprecated connections()
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.laddr.port in target_ports and conn.pid:
+                try:
+                    proc = psutil.Process(conn.pid)
+                    self.flush_print(f"# [CLEANUP] Finalizando proceso {conn.pid} ({proc.name()})")
+                    proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
 
     def start_ngrok(self):
+        """
+        Launches ngrok v3 using YAML-driven configuration.
+        ---
+        Lanza ngrok v3 utilizando configuración basada en YAML.
+        """
         self.cleanup_ports()
-        self.flush_print("# [ORCHESTRATOR] Iniciando túnel ngrok v3...")
+        self.flush_print("# [ORCHESTRATOR] Iniciando túnel HTTP (Puerto 8081)...")
         
-        token = os.getenv('NGROK_AUTHTOKEN')
-        if not token:
-            self.flush_print("# [ERROR] Variable NGROK_AUTHTOKEN no encontrada.")
-            return False
-
-        # Build command following ngrok v3 syntax
+        # ✅ APRIL 2026 FIX: Removed --web-addr flag to avoid 'unknown flag' error.
+        # The agent configuration is now handled entirely via --config ngrok.yml.
         cmd = [
-            self.ngrok_bin, "start", 
-            "--authtoken", token,
-            "--config", self.config_path, 
-            "enterprise_voice_bridge"
+            self.ngrok_bin, "http", "8081",
+            "--config", self.config_path,
+            "--log", "stdout"
         ]
         
         self.ngrok_process = subprocess.Popen(
-            cmd, 
-            stdout=sys.stdout, 
-            stderr=sys.stderr, 
-            env=os.environ,
-            text=True
+            cmd, stdout=sys.stdout, stderr=sys.stderr, env=os.environ, text=True
         )
-        
         time.sleep(5)
         return True
 
     def get_public_url(self):
-        """Queries local ngrok API and persists the URL for the Django Web Node"""
+        """
+        Queries the 2026 API endpoint for the dynamic URL.
+        """
         try:
-            response = requests.get("http://127.0.0.1:4040/api/tunnels", timeout=2)
+            response = requests.get(self.api_url, timeout=2)
             tunnels = response.json().get('tunnels', [])
             if tunnels:
                 url = tunnels[0].get('public_url')
-                # Persist URL to shared file
-                try:
-                    with open(self.shared_url_file, 'w') as f:
-                        f.write(url)
-                    self.flush_print(f"# [ORCHESTRATOR] URL persistida en: {self.shared_url_file}")
-                except Exception as e:
-                    self.flush_print(f"# [ERROR FS] Error al escribir NGROK_URL.txt: {str(e)}")
-
-                self.flush_print(f"\n# ########################################################")
-                self.flush_print(f"# [SUCCESS] CONECTIVIDAD ESTABLECIDA")
-                self.flush_print(f"# URL PÚBLICA: {url}")
-                self.flush_print(f"# ########################################################\n")
+                with open(self.shared_url_file, 'w') as f:
+                    f.write(url)
+                self.flush_print(f"\n# [SUCCESS] TÚNEL 2026 ACTIVO: {url}\n")
                 return url
         except: pass
         return None
 
     def start_bridge(self):
-        self.flush_print("# [ORCHESTRATOR] Lanzando Voice Sidecar Bridge (Gemini Live A2A)...")
-        # Ensure the bridge is launched with unbuffered output
+        self.flush_print("# [ORCHESTRATOR] Lanzando Sidecar Bridge...")
         self.bridge_process = subprocess.Popen(
             [self.python_bin, "-u", self.bridge_script], 
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            env=os.environ
+            stdout=sys.stdout, stderr=sys.stderr, env=os.environ
         )
 
     def run(self):
         signal.signal(signal.SIGTERM, self.stop)
         signal.signal(signal.SIGINT, self.stop)
-
         if not self.start_ngrok(): return
-
-        # Wait for ngrok to establish tunnel and publish URL
         for _ in range(5):
             if self.get_public_url(): break
             time.sleep(2)
-
         self.start_bridge()
-
         try:
             while True:
-                if self.ngrok_process.poll() is not None:
-                    self.flush_print("# [CRITICAL] ngrok ha fallado.")
-                    break
-                if self.bridge_process.poll() is not None:
-                    self.flush_print("# [CRITICAL] El Bridge de Voz ha fallado.")
-                    break
+                if self.ngrok_process.poll() is not None: break
+                if self.bridge_process.poll() is not None: break
                 time.sleep(10)
         except KeyboardInterrupt:
             self.stop()
 
     def stop(self, *args):
-        self.flush_print("# [ORCHESTRATOR] Finalizando procesos de infraestructura...")
-        if os.path.exists(self.shared_url_file):
-            try: os.remove(self.shared_url_file)
-            except: pass
-
-        if hasattr(self, 'bridge_process') and self.bridge_process: self.bridge_process.terminate()
-        if hasattr(self, 'ngrok_process') and self.ngrok_process: self.ngrok_process.terminate()
+        self.flush_print("# [ORCHESTRATOR] Apagando infraestructura 2026...")
+        if os.path.exists(self.shared_url_file): os.remove(self.shared_url_file)
+        if hasattr(self, 'bridge_process'): self.bridge_process.terminate()
+        if hasattr(self, 'ngrok_process'): self.ngrok_process.terminate()
         sys.exit(0)
 
 if __name__ == "__main__":

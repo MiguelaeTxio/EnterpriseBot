@@ -2,9 +2,15 @@
 from django.contrib import admin
 from django.urls import path, include
 
+"""
+Main routing configuration for EnterpriseBot Core.
+Cleaned: Removed legacy test_live application routes (April 2026).
+---
+Configuración principal de enrutamiento para EnterpriseBot Core.
+Saneado: Eliminadas las rutas de la aplicación legada test_live (Abril 2026).
+"""
+
 urlpatterns = [
-    # La propiedad .urls proporciona la terna (patterns, app_name, namespace) correcta
     path('admin/', admin.site.urls), 
     path('api/vox/', include('vox_bridge.urls')),
-    path('test/', include('test_live.urls')),
 ]

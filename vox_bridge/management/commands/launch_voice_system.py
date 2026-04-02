@@ -7,15 +7,20 @@ from django.conf import settings
 from twilio.rest import Client
 
 """
-EnterpriseBot Unified Voice Launcher: Orchestrates Ngrok, Sidecar and Twilio Outbound.
-Resilience Patch: Separates Signaling (Django Web Node) from Media (Ngrok/Sidecar).
+EnterpriseBot Unified Voice Launcher: Orchestrates Ngrok, Sidecar and Tunneling.
+Webhook Fix: Corrected URL path to include /api/ prefix (April 2026).
 ---
-Lanzador Unificado de Voz de EnterpriseBot: Orquesta Ngrok, Sidecar y llamada de Twilio.
-Parche de Resiliencia: Separa Señalización (Nodo Web Django) de Medios (Ngrok/Sidecar).
+Lanzador Unificado de Voz de EnterpriseBot: Orquesta Ngrok, Sidecar y Tunelización.
+Corrección de Webhook: Ruta ajustada para incluir el prefijo /api/ (Abril 2026).
 """
 
 class Command(BaseCommand):
-    help = 'Lanza la infraestructura de voz y dispara la llamada de validación.'
+    """
+    Management command to launch the voice infrastructure and trigger the validation call.
+    ---
+    Comando de gestión para lanzar la infraestructura de voz y disparar la llamada.
+    """
+    help = 'Lanza la infraestructura de voz y dispara la llamada de validación con el hostname correcto.'
 
     def handle(self, *args, **options):
         project_root = "/home/MiguelAeTxio/PROJECTS/EnterpriseBot"
@@ -23,10 +28,10 @@ class Command(BaseCommand):
         shared_url_file = os.path.join(project_root, "DOCS/SESSION/NGROK_URL.txt")
         log_file = "/home/MiguelAeTxio/SWAP/orchestrator_runtime.log"
 
-        self.stdout.write(self.style.SUCCESS("# [INIT] Iniciando Sistema Unificado de Voz EnterpriseBot..."))
+        self.stdout.write(self.style.SUCCESS("# [INIT] Iniciando Sistema EnterpriseBot (Sincronización de Hostname)..."))
 
-        # 1. LANZAMIENTO DE INFRAESTRUCTURA (NOHUP)
-        self.stdout.write("# [1/3] Lanzando Orquestador Maestro en segundo plano...")
+        # 1. LANZAMIENTO DE INFRAESTRUCTURA
+        self.stdout.write("# [1/3] Lanzando Orquestador Maestro...")
         try:
             with open(log_file, "w") as out:
                 subprocess.Popen(
@@ -41,7 +46,7 @@ class Command(BaseCommand):
             return
 
         # 2. SLEEPER INTELIGENTE (POLLING)
-        self.stdout.write("# [2/3] Esperando estabilización de túnel (Polling activo)...")
+        self.stdout.write("# [2/3] Esperando estabilización de túnel...")
         public_url = None
         for i in range(25):
             if os.path.exists(shared_url_file):
@@ -50,17 +55,15 @@ class Command(BaseCommand):
                     if public_url:
                         break
             time.sleep(1)
-            if (i+1) % 5 == 0:
-                self.stdout.write(f"# ... esperando conectividad ({i+1}s)")
 
         if not public_url:
-            self.stdout.write(self.style.ERROR("# [ERROR] El túnel no levantó. Revisa: " + log_file))
+            self.stdout.write(self.style.ERROR("# [ERROR] El túnel no levantó. Revisa logs en SWAP."))
             return
 
-        self.stdout.write(self.style.SUCCESS(f"# [READY] Infraestructura lista en: {public_url}"))
+        self.stdout.write(self.style.SUCCESS(f"# [READY] Túnel activo en: {public_url}"))
 
-        # 3. DISPARO DE LLAMADA TWILIO
-        self.stdout.write("# [3/3] Disparando llamada de validación...")
+        # 3. DISPARO DE LLAMADA TWILIO (WEBHOOK DE PRODUCCIÓN)
+        self.stdout.write("# [3/3] Disparando llamada de validación a +34688360595...")
         
         account_sid = os.getenv('TWILIO_ACCOUNT_SID')
         api_key_sid = os.getenv('TWILIO_API_KEY_SID')
@@ -68,10 +71,9 @@ class Command(BaseCommand):
         from_number = os.getenv('TWILIO_PHONE_NUMBER')
         to_number = "+34688360595"
         
-        # ✅ CRITICAL FIX: The webhook for the initial POST must be the Web Node (PythonAnywhere)
-        # Twilio will receive the TwiML here, which then points to the Ngrok WSS URL.
-        pa_domain = "MiguelAeTxio.pythonanywhere.com"
-        webhook_url = f"https://{pa_domain}/vox/inbound/"
+        # ✅ APRIL 2026 FIX: Corrected path with /api/ prefix
+        pa_domain = "enterprisebot-MiguelAeTxio.pythonanywhere.com"
+        webhook_url = f"https://{pa_domain}/api/vox/inbound/"
 
         try:
             client = Client(api_key_sid, api_key_secret, account_sid)
@@ -81,7 +83,7 @@ class Command(BaseCommand):
                 from_=from_number,
                 method='POST'
             )
-            self.stdout.write(self.style.SUCCESS(f"# [SUCCESS] Llamada en curso. CallSid: {call.sid}"))
-            self.stdout.write(f"# Escucha el Bridge con: tail -f {log_file}")
+            self.stdout.write(self.style.SUCCESS(f"# [SUCCESS] Llamada disparada. Webhook: {webhook_url}"))
+            self.stdout.write(f"# Auditoría: tail -f {log_file}")
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"# [ERROR TWILIO] {str(e)}"))

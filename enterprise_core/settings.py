@@ -32,7 +32,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'vox_bridge',
-    'test_live',
 ]
 
 MIDDLEWARE = [

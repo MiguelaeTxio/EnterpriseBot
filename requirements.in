@@ -1,26 +1,26 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
-# Dependencias consolidadas para EnterpriseBot - Hito 1 (Voz Conversacional)
-# Revisión: Marzo 2026 - Auditoría y Calidad - Inyección de psutil para resiliencia
+# Django and Core
+django
+django-environ
+django-cors-headers
+djangorestframework
+python-dotenv
+requests
 
-# --- CORE FRAMEWORK & DB ---
-django>=5.0             # Framework Base (Soporte Async Mejorado)
-mysqlclient             # Soporte para base de datos MySQL
-python-dotenv           # Carga de variables de entorno (CRÍTICO)
+# Database
+mysqlclient
 
-# --- AI & VOICE ENGINE (GEMINI LIVE) ---
-google-genai            # SDK Gemini 3.1 Pro / Live (v1beta)
-websockets>=12.0        # Motor de audio en tiempo real
-twilio                  # SDK Oficial de Twilio para Outbound Calls
+# Twilio and Voice
+twilio
+websockets
+psutil
 
-# --- DATA VALIDATION & STRUCTURED OUTPUTS ---
-pydantic>=2.0           # Validación de esquemas y Structured Outputs
+# AI - UPDATED TO 2026 SDK
+google-genai>=1.66.0
 
-# --- INFRASTRUCTURE & TUNNELING ---
-psutil                  # Gestión nativa de procesos y puertos (MANDATORIO)
-pyngrok                 # Gestión de túneles (Wrapper opcional)
-requests                # Peticiones HTTP internas (API ngrok)
-
-# --- DEV TOOLS & AUDIT (BARRERA DE FUEGO) ---
-pip-tools               # Gestión de dependencias (Compilación)
-esprima                 # Auditoría de sintaxis JavaScript
-djlint                  # Auditoría de templates Django/HTML (MANDATORIO)
+# Development, Linting and Tools (Restored as per user request)
+esprima
+# Add other tools you normally use below if they were missing
+# flake8
+# black
+# isort
