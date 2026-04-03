@@ -1,26 +1,44 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/requirements.in
-# Django and Core
-django
+# EnterpriseBot: Core Architecture Dependencies (April 2026 Standard)
+# This file defines the top-level dependencies for the PLUTO project.
+# Standard: Mandatory pinning for stability, security (CVE mitigation), and AI compliance.
+# ---
+# EnterpriseBot: Dependencias de Arquitectura Núcleo (Estándar Abril 2026)
+# Este archivo define las dependencias de alto nivel para el proyecto PLUTO.
+# Estándar: Fijación obligatoria para estabilidad, seguridad (mitigación de CVE) y cumplimiento de IA.
+
+# Django and Core Framework / Django y Framework Núcleo
+# Version 5.2.12 fixes CVE-2026-25674 regarding filesystem permissions in concurrent environments.
+# La versión 5.2.12 corrige el CVE-2026-25674 sobre permisos de sistema de archivos en entornos concurrentes.
+django==5.2.12
 django-environ
 django-cors-headers
 djangorestframework
 python-dotenv
-requests
+requests==2.33.1
 
-# Database
+# Database / Base de Datos
+# Required for persistent interaction logging in MySQL.
+# Requerido para el registro persistente de interacciones en MySQL.
 mysqlclient
 
-# Twilio and Voice
-twilio
-websockets
-psutil
+# Voice and Networking / Voz y Redes
+# ✅ SECURITY FIX APRIL 2026: Pinning aiohttp to 3.13.5 to mitigate CVE-2026-34517 (DoS vulnerability).
+# Mandatory for the Universal Hybrid Bridge (HTTP POST + WSS).
+# ✅ MEJORA DE SEGURIDAD ABRIL 2026: Fijando aiohttp a 3.13.5 para mitigar CVE-2026-34517 (Vulnerabilidad DoS).
+# Obligatorio para el Puente Híbrido Universal (HTTP POST + WSS).
+aiohttp==3.13.5
+twilio==9.10.4
+websockets==16.0
+psutil==7.2.2
 
-# AI - UPDATED TO 2026 SDK
-google-genai>=1.66.0
+# AI Orchestration (Standard 1.4) / Orquestación de IA (Estándar 1.4)
+# Explicit version for Google GenAI SDK (v1beta integration).
+# Versión explícita para el SDK de Google GenAI (integración v1beta).
+google-genai==1.69.0
 
-# Development, Linting and Tools (Restored as per user request)
+# Development and Linting / Desarrollo y Auditoría
+# Tools for code quality and protocol adherence (PEP8, DjLint).
+# Herramientas para calidad de código y adherencia a protocolos (PEP8, DjLint).
 esprima
-# Add other tools you normally use below if they were missing
-# flake8
-# black
-# isort
+djlint

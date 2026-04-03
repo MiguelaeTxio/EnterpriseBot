@@ -1,36 +1,37 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
 # ANEXO HITO 1: INFRAESTRUCTURA DE VOZ (ESTABILIZACIÓN FINAL)
-# ESTADO: LISTO PARA PRUEBAS DE CAMPO (READY FOR FIELD TESTING)
-# FECHA: 2026-04-02
+# ESTADO: EN PROGRESO (PENDIENTE DE HANDSHAKE v1beta)
+# FECHA ACTUALIZACIÓN: 2026-04-03
 
 ---
 
-## 1. CONTEXTO TÉCNICO CONSOLIDADO
-* **Arquitectura:** Sidecar Bridge asíncrono con Gemini 2.0 Flash Live (v1).
-* **Región Twilio:** Configurada en **US1** (EE. UU.) para sincronía con el Bridge.
-* **Transcodificación:** Validada mu-law (8kHz) <-> PCM Linear (16kHz).
-* **Seguridad:** Aplicación `test_live` eliminada; superficie de ataque reducida.
+## 1. ESTADO TÉCNICO AL CIERRE DE SESIÓN
+* **Infraestructura de Red:** Túnel Ngrok v3 y Sidecar Bridge (aiohttp) validados externamente. Resolución de URL dinámica operativa.
+* **Dependencias:** `requirements.in` blindado. `google-genai` fijado en 1.69.0. `aiohttp` fijado en 3.13.5 (CVE-2026-34517 Mitigado).
+* **Bloqueo Detectado:** Error HTTP 404 en el handshake de Gemini. Causa identificada: Uso de `api_version='v1'` en lugar de `v1beta` para el motor Live de Gemini 2.5 Flash en el SDK 1.69.0.
 
 ## 2. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (LEY SUPREMA)
-La próxima sesión debe ejecutar estrictamente las siguientes tareas en este orden:
+La próxima sesión DEBE seguir estrictamente estos pasos sin desviaciones ni suposiciones:
 
-1. **Activación de Infraestructura:**
-   - Ejecutar el orquestador: `python3 voice_orchestrator.py`.
-   - Verificar la creación del túnel ngrok y la escritura de la URL en `DOCS/SESSION/NGROK_URL.txt`.
+1. **Corrección Quirúrgica de Handshake (Prioridad Máxima):**
+   - Modificar `vox_bridge/services.py`.
+   - Localizar el constructor `genai.Client`.
+   - Cambiar EXCLUSIVAMENTE `http_options={'api_version': 'v1'}` por `http_options={'api_version': 'v1beta'}`.
+   - Prohibido alterar cualquier otra línea, comentario o docstring del archivo.
 
-2. **Monitoreo de Logs en Tiempo Real:**
-   - Establecer visualización activa de los logs de `VoiceSidecar` y `VoxServices` para auditar el handshake de Google Gemini.
+2. **Validación de Arquitectura de Extremo a Extremo (Zero-Cost):**
+   - Iniciar orquestador: `python3 voice_orchestrator.py`.
+   - En consola secundaria, ejecutar: `python -m dotenv run python test_bridge_connectivity.py`.
+   - Auditar en logs la recepción del evento `setup_complete` de Google.
 
-3. **Disparo de Llamada Saliente (Outbound Test):**
-   - Ejecutar `python3 trigger_outbound_call.py`.
-   - El sistema debe marcar al número +34688360595 desde el número USA de Twilio.
+3. **Prueba de Campo Outbound (Llamada Real):**
+   - Una vez validado el handshake, ejecutar: `python manage.py launch_voice_system`.
+   - Confirmar recepción de llamada en +34688360595.
+   - Verificar la inyección del saludo inicial: "Hola, soy EnterpriseBot. ¿En qué puedo ayudarte?".
 
-4. **Validación de Interacción Bidireccional:**
-   - Confirmar recepción de saludo inicial de Gemini ("Hola, soy EnterpriseBot...").
-   - Verificar capacidad de interrupción (Barge-in) y latencia percibida.
-
-5. **Auditoría de Persistencia:**
-   - Verificar la creación del registro en la tabla `vox_bridge_callinteraction` con el `call_sid` correspondiente.
+4. **Auditoría de Persistencia:**
+   - Verificar en la base de datos `MiguelAeTxio$enterprisebot` la creación del registro en `vox_bridge_callinteraction`.
+   - Comprobar que el campo `full_transcript` recoge el saludo inicial del bot.
 
 ---
 *Referencia Técnica Obligatoria:* `V01DOC_VOICE_SIDECAR_ARCHITECTURE.md`.

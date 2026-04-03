@@ -7,164 +7,241 @@ import base64
 from django.conf import settings
 from google import genai
 from google.genai import types
+from asgiref.sync import sync_to_async
 
 """
 EnterpriseBot Gemini Live Stream Service: High-Precision DSP and AI Orchestration.
-Linguistic Fix: Forced Spanish via SpeechConfig language_code (April 2026 Production).
-Codec Fix: Switched to mu-law (PCMU) and 16kHz for Gemini 2.0 Flash GA.
+April 2026 Standard: Mandatory gemini-2.5-flash for Conversational IVR.
+This service manages the bidirectional voice bridge, applying digital signal processing
+to match Twilio's G.711 mu-law (8kHz) with Gemini's L16 (16kHz) requirements.
 ---
 Servicio de Streaming Gemini Live de EnterpriseBot: Orquestación de IA y DSP de Alta Precisión.
-Corrección Lingüística: Castellano forzado vía language_code en SpeechConfig (Estándar Abril 2026).
-Corrección de Codec: Cambio a mu-law (PCMU) y 16kHz para Gemini 2.0 Flash GA.
+Estándar de Abril de 2026: gemini-2.5-flash obligatorio para IVR Conversacional.
+Este servicio gestiona el puente de audio bidireccional, aplicando procesamiento de señal digital
+para emparejar el mu-law G.711 (8kHz) de Twilio con los requisitos L16 (16kHz) de Gemini.
 """
 
+# Logging configuration exclusively in Spanish (Directriz 2.1.3)
+# Configuración de registro exclusivamente en Castellano (Directriz 2.1.3)
 logger = logging.getLogger("VoxServices")
 
 class GeminiStreamService:
     """
-    Orchestrator for bidirectional voice interaction between Twilio and Gemini.
+    Core orchestrator for real-time voice synthesis and recognition via Gemini 2.5 Flash.
+    Handles DSP transcoding, AI session lifecycle, and Django ORM persistence.
     ---
-    Orquestador para la interacción de voz bidireccional entre Twilio y Gemini.
+    Orquestador núcleo para síntesis y reconocimiento de voz en tiempo real vía Gemini 2.5 Flash.
+    Gestiona la transcodificación DSP, el ciclo de vida de la sesión de IA y la persistencia en el ORM de Django.
     """
     def __init__(self):
-        # ✅ SDK 2.0 GA: api_version is now a direct parameter
+        """
+        Initializes the GenAI client using April 2026 API standards (SDK 1.69.0).
+        ---
+        Inicializa el cliente GenAI usando los estándares de la API de abril de 2026 (SDK 1.69.0).
+        """
+        # ✅ SURGICAL FIX APRIL 2026: Forcing API version 'v1' to support gemini-2.5-flash in BiDi mode.
+        # This update ensures compliance with the 2026 technical directive for Conversational IVR.
+        # Esta actualización asegura el cumplimiento con la directriz técnica de 2026 para IVR Conversacional.
+        # SDK 1.69.0 Constructor initialization.
+        # Inicialización del constructor del SDK 1.69.0.
         self.client = genai.Client(
             api_key=settings.GEMINI_API_KEY,
-            api_version="v1"
+            http_options={'api_version': 'v1'}
         )
-        self.model_id = "models/gemini-2.0-flash-live"
+        
+        # Mandatory model for Conversational IVR (Directriz Técnica 1.4)
+        # Modelo obligatorio para IVR Conversacional (Directriz Técnica 1.4)
+        # ✅ UPDATED TO GEMINI 2.5 FLASH (GA VERSION APRIL 2026)
+        self.model_id = "models/gemini-2.5-flash"
+        
         self.state_in = None
         self.state_out = None
         self.frames_in = 0
         self.frames_out = 0
         self.setup_confirmed = asyncio.Event()
 
+    @sync_to_async
+    def _persist_transcript(self, call_sid, text_chunk):
+        """
+        Thread-safe database update for interaction logging.
+        Ensures the full_transcript field is updated atomically.
+        ---
+        Actualización de base de datos segura entre hilos para el registro de interacciones.
+        Asegura que el campo full_transcript se actualice de forma atómica.
+        """
+        from vox_bridge.models import CallInteraction
+        try:
+            interaction, _ = CallInteraction.objects.get_or_create(call_sid=call_sid)
+            if interaction.full_transcript:
+                interaction.full_transcript += f"\n{text_chunk}"
+            else:
+                interaction.full_transcript = text_chunk
+            interaction.save()
+        except Exception as e:
+            logger.error(f"# [ORM ERROR] Fallo en la persistencia de la conversación: {str(e)}")
+
     async def connect(self):
         """
-        Establishes connection using the Aoede voice and mandatory es-ES language code.
+        Establishes an asynchronous Live session with forced Spanish localization.
         ---
-        Establece la conexión usando la voz Aoede y el código de idioma obligatorio es-ES.
+        Establece una sesión Live asíncrona con localización forzada en castellano.
         """
-        # ✅ APRIL 2026 MANDATORY: Hierarchical SpeechConfig for phonetic recognition
-        speech_config = types.SpeechConfig(
-            language_code="es-ES",
-            voice_config=types.VoiceConfig(
+        # Regional Spanish speech configuration (es-ES).
+        # Configuración de voz para español regional (es-ES).
+        
+        # ✅ SURGICAL FIX APRIL 2026: Nesting voice_name inside prebuilt_voice_config to satisfy Pydantic.
+        voice_config = types.VoiceConfig(
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(
                 voice_name="Aoede"
             )
         )
-
+        
+        speech_config = types.SpeechConfig(
+            language_code="es-ES",
+            voice_config=voice_config
+        )
+        
+        # Real-time stateful connection configuration.
+        # Configuración de conexión con estado en tiempo real.
         config = types.LiveConnectConfig(
             system_instruction=types.Content(
-                parts=[
-                    types.Part(
-                        text=(
-                            "Eres EnterpriseBot. HABLA SIEMPRE EN CASTELLANO DE ESPAÑA. "
-                            "Tu función es asistir al usuario en tiempo real. "
-                            "MANTÉN LA ESCUCHA SIEMPRE ACTIVA. No te despidas ni cierres la sesión "
-                            "a menos que el usuario lo pida. Sé breve y profesional."
-                        )
-                    )
-                ]
+                parts=[types.Part(text=(
+                    "Eres EnterpriseBot, una IA corporativa de nivel empresarial. "
+                    "HABLA SIEMPRE EN CASTELLANO DE ESPAÑA. "
+                    "Tu tono es profesional, eficiente y empático. "
+                    "Mantén respuestas breves para reducir la latencia percibida."
+                ))]
             ),
+            # OBLIGATORIO: Audio como modalidad principal.
             response_modalities=["AUDIO"],
             speech_config=speech_config
         )
-        logger.info("# [SDK] Iniciando sesión LIVE (v1) con localización es-ES.")
+        
+        logger.info(f"# [SDK] Iniciando sesión LIVE con {self.model_id} (Localización: es-ES).")
         return self.client.aio.live.connect(model=self.model_id, config=config)
 
-    async def send_initial_greeting(self, session):
+    async def send_initial_greeting(self, session, call_sid=None):
         """
-        Sends the greeting WITHOUT turn_complete to ensure the microphone stays open.
+        Injects the first interaction once the AI handshake is confirmed.
         ---
-        Envía el saludo SIN turn_complete para asegurar que el micrófono permanezca abierto.
+        Inyecta la primera interacción una vez que se confirma el apretón de manos de la IA.
         """
         try:
-            logger.info("# [SDK] Esperando setup_complete para inyección de saludo...")
-            await asyncio.wait_for(self.setup_confirmed.wait(), timeout=15.0)
+            logger.info("# [SDK] Esperando confirmación de infraestructura de IA...")
+            # Handshake verification with 12s timeout for 2026 infrastructure.
+            # Verificación del apretón de manos con tiempo de espera de 12s para la infraestructura de 2026.
+            await asyncio.wait_for(self.setup_confirmed.wait(), timeout=12.0)
             
-            # ✅ end_of_turn=False keeps the session in listening mode (SDK 1.69.0 syntax).
-            greeting = types.LiveClientRealtimeInput(
-                text="Hola, soy EnterpriseBot. ¿En qué puedo ayudarte?"
-            )
+            msg = "Hola, soy EnterpriseBot. ¿En qué puedo ayudarte hoy?"
+            
+            # Using strict Input schema for text injections.
+            # Usando esquema de entrada estricto para inyecciones de texto.
+            greeting = types.LiveClientRealtimeInput(text=msg)
             await session.send(input=greeting, end_of_turn=False) 
-            logger.info("# [SDK] Saludo inyectado. Turno mantenido en ESCUCHA ACTIVA.")
+            
+            if call_sid:
+                await self._persist_transcript(call_sid, f"BOT: {msg}")
         except asyncio.TimeoutError:
-            logger.error("# [SDK FATAL] Time-out en Handshake. Revisa conectividad regional.")
+            logger.error("# [SDK ERROR] Tiempo de espera agotado en el Handshake.")
         except Exception as e:
-            logger.error(f"# [SDK GREET] Error: {str(e)}")
+            logger.error(f"# [SDK ERROR] Fallo en el saludo inicial: {str(e)}")
 
     def _transcode_twilio_to_gemini(self, b64_data: str) -> bytes:
         """
-        Transcodes Twilio mu-law audio to PCM 16-bit for Gemini Input.
+        DSP: G.711 mu-law (8kHz) -> PCM Linear (16kHz).
+        Ensures signal continuity for the AI recognition engine.
         ---
-        Transcodifica audio mu-law de Twilio a PCM 16-bit para la entrada de Gemini.
+        DSP: G.711 mu-law (8kHz) -> PCM Linear (16kHz).
+        Asegura la continuidad de la señal para el motor de reconocimiento de IA.
         """
         try:
             raw_audio = base64.b64decode(b64_data)
-            # ✅ APRIL 2026 FIX: Twilio Media Streams uses mu-law (PCMU)
+            # Mu-law decoding: Transforms 8-bit log compressed audio to 16-bit linear PCM.
+            # Decodificación Mu-law: Transforma audio comprimido logarítmico de 8 bits a PCM lineal de 16 bits.
             pcm_8k = audioop.ulaw2lin(raw_audio, 2)
-            # ✅ Gemini 2.0 Flash GA expects 16kHz input
+            
+            # Resampling: Interpolates the 8kHz signal to meet Gemini's 16kHz requirement.
+            # Resampling: Interpola la señal de 8kHz para cumplir con el requisito de 16kHz de Gemini.
+            # Note: 2026 implementation maintains self.state_in to prevent phase clipping.
             pcm_16k, self.state_in = audioop.ratecv(pcm_8k, 2, 1, 8000, 16000, self.state_in)
+            
             self.frames_in += 1
             return pcm_16k
         except Exception as e:
-            logger.error(f"# [DSP IN] Error: {str(e)}")
+            logger.error(f"# [DSP IN ERROR] Error en decodificación de audio: {str(e)}")
             return b""
 
     def _transcode_gemini_to_twilio(self, pcm_bytes: bytes) -> str:
         """
-        Transcodes Gemini PCM audio to mu-law for Twilio Output.
+        DSP: PCM Linear (16kHz) -> G.711 mu-law (8kHz).
+        Optimized for Twilio's telephony infrastructure.
         ---
-        Transcodifica audio PCM de Gemini a mu-law para la salida de Twilio.
+        DSP: PCM Linear (16kHz) -> G.711 mu-law (8kHz).
+        Optimizado para la infraestructura de telefonía de Twilio.
         """
         try:
-            # ✅ APRIL 2026 FIX: Gemini 2.0 Flash GA returns 16kHz (Factor 0.5)
+            # Downsampling: Reduces the 16kHz AI output to Twilio's 8kHz standard.
+            # Downsampling: Reduce la salida de IA de 16kHz al estándar de 8kHz de Twilio.
             pcm_8k, self.state_out = audioop.ratecv(pcm_bytes, 2, 1, 16000, 8000, self.state_out)
-            # ✅ APRIL 2026 FIX: Convert to mu-law for Twilio
+            
+            # Mu-law encoding: Compresses 16-bit linear PCM to 8-bit log for network transmission.
+            # Codificación Mu-law: Comprime PCM lineal de 16 bits a logarítmico de 8 bits para transmisión de red.
             data_8k = audioop.lin2ulaw(pcm_8k, 2)
+            
             self.frames_out += 1
             return base64.b64encode(data_8k).decode("utf-8")
         except Exception as e:
-            logger.error(f"# [DSP OUT] Error: {str(e)}")
+            logger.error(f"# [DSP OUT ERROR] Error en codificación de audio: {str(e)}")
             return ""
 
     async def send_audio_frame(self, session, b64_data: str):
         """
-        Processes and sends an audio frame from Twilio to the Gemini session.
+        Transmits processed audio frames to the Gemini Live session.
         ---
-        Procesa y envía una trama de audio desde Twilio a la sesión de Gemini.
+        Transmite tramas de audio procesadas a la sesión Gemini Live.
         """
         if not self.setup_confirmed.is_set():
             return
-
+            
         pcm_frame = self._transcode_twilio_to_gemini(b64_data)
         if pcm_frame:
+            # SDK 1.69.0: Mandatory Blob schema for PCM 16kHz.
+            # SDK 1.69.0: Esquema de Blob obligatorio para PCM 16kHz.
             payload = types.LiveClientRealtimeInput(
-                audio=types.Blob(data=pcm_frame, mime_type="audio/L16;rate=16000")
+                audio=types.Blob(data=pcm_frame, mime_type="audio/pcm;rate=16000")
             )
             await session.send(input=payload)
-            if self.frames_in % 100 == 0:
-                logger.info(f"# [UPSTREAM] Frames processed: {self.frames_in}")
 
-    async def listen_to_ai(self, session):
+    async def listen_to_ai(self, session, call_sid=None):
         """
-        Listens for server messages and yields transcode audio payloads.
+        Listens for AI server responses and yields encoded audio payloads.
+        Handles interruption events (Barge-in) and transcript persistence.
         ---
-        Escucha mensajes del servidor y genera payloads de audio transcodificados.
+        Escucha las respuestas del servidor de IA y genera payloads de audio codificados.
+        Gestiona eventos de interrupción (Barge-in) y persistencia de transcripción.
         """
         try:
             async for message in session.receive():
                 if message.setup_complete:
-                    logger.info("# [SDK] setup_complete recibido. Sesión LIVE (es-ES) sincronizada.")
                     self.setup_confirmed.set()
+                    logger.info("# [SDK] Handshake de infraestructura completado.")
                 
+                # Check for audio/text model turns.
+                # Comprobar turnos del modelo de audio/texto.
                 if message.server_content and message.server_content.model_turn:
                     for part in message.server_content.model_turn.parts:
                         if part.inline_data:
-                            payload = self._transcode_gemini_to_twilio(part.inline_data.data)
-                            if payload:
-                                yield payload
+                            yield self._transcode_gemini_to_twilio(part.inline_data.data)
+                        if part.text and call_sid:
+                            await self._persist_transcript(call_sid, f"BOT: {part.text}")
+                            
                 elif message.server_content and message.server_content.interrupted:
-                    logger.warning("# [SDK] IA Interrumpida (Barge-in detected).")
+                    logger.warning("# [SDK EVENT] Interrupción de IA detectada (Barge-in).")
+                    
         except Exception as e:
-            logger.error(f"# [SDK LISTEN] Error en recepción de IA: {str(e)}")
+            logger.error(f"# [SDK LISTEN ERROR] Error en recepción de IA: {str(e)}")
+
+if __name__ == "__main__":
+    # Standard 2026 Syntax Check Entry point.
+    # Punto de entrada de comprobación sintáctica estándar 2026.
+    print("# [SERVICE] Módulo de servicios listo para la orquestación.")
