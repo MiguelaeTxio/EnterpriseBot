@@ -130,6 +130,7 @@
 ./static/admin/css/forms.css
 ./voice_sidecar_bridge.py
 ./test_ia_locally.py
+./DOCS/SESSION/NGROK_URL.txt
 ./DOCS/SESSION/ENTERPRISEBOT_PROJECT_DIRECTORY.txt
 ./DOCS/MAINS/ENTERPRISEBOT_MASTER_DOCUMENT.md
 ./DOCS/MAINS/SESSION_VARIABLES.md

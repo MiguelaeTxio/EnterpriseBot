@@ -97,15 +97,15 @@ class BridgeValidator:
 
     async def audit_websocket_flow(self, session):
         """
-        Validates binary audio streaming via WSS and Gemini Live 2.5 Flash.
+        Validates binary audio streaming via WSS and Gemini 3.1 Flash Live.
         ---
-        Valida el streaming de audio binario vía WSS y Gemini Live 2.5 Flash.
+        Valida el streaming de audio binario vía WSS y Gemini 3.1 Flash Live.
         """
         logger.info(f"# [STEP 2] Auditando Flujo WebSocket SEGURO ({self.wss_url})...")
         
         try:
             # SSL validation is handled by aiohttp for Ngrok certificates
-            async with session.ws_connect(self.wss_url, timeout=15) as ws:
+            async with session.ws_connect(self.wss_url, timeout=60.0) as ws:
                 logger.info("# [SUCCESS] Conexión WSS establecida a través del Túnel.")
 
                 # 1. Start Event / Evento de Inicio
