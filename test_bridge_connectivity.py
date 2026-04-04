@@ -9,11 +9,11 @@ import os
 """
 EnterpriseBot Dynamic Architecture Validator (April 2026 Standard).
 Refactored to resolve public Ngrok URLs for cross-console auditing.
-Tests the full pipeline: Public Internet -> Tunnel -> Hybrid Bridge -> Gemini 2.5 Flash.
+Tests the full pipeline: Public Internet -> Tunnel -> Hybrid Bridge -> Gemini 3.1 Flash Live.
 ---
 Validador de Arquitectura Dinámico de EnterpriseBot (Estándar Abril 2026).
 Refactorizado para resolver URLs públicas de Ngrok para auditoría entre consolas.
-Prueba la tubería completa: Internet Pública -> Túnel -> Bridge Híbrido -> Gemini 2.5 Flash.
+Prueba la tubería completa: Internet Pública -> Túnel -> Bridge Híbrido -> Gemini 3.1 Flash Live.
 """
 
 # Advanced Logging Configuration / Configuración de Registro Avanzada
@@ -134,7 +134,7 @@ class BridgeValidator:
                 logger.info("# [WSS] Trama de audio enviada al Bridge Híbrido.")
 
                 # 3. Listening for AI Response / Escuchando Respuesta de la IA
-                logger.info("# [SDK] Esperando eco de Gemini 2.5 Flash a través del Bridge...")
+                logger.info("# [SDK] Esperando eco de Gemini 3.1 Flash Live a través del Bridge...")
                 
                 async for msg in ws:
                     if msg.type == aiohttp.WSMsgType.TEXT:

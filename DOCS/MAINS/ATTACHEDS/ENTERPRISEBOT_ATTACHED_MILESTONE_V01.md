@@ -1,37 +1,38 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
-# ANEXO HITO 1: INFRAESTRUCTURA DE VOZ (ESTABILIZACIÓN FINAL)
-# ESTADO: EN PROGRESO (PENDIENTE DE HANDSHAKE v1beta)
-# FECHA ACTUALIZACIÓN: 2026-04-03
+# ANEXO HITO 1: INFRAESTRUCTURA DE VOZ (ESTABILIZACIÓN CRÍTICA 3.1)
+# ESTADO: EN PROGRESO (BLOQUEO POR REGRESIÓN TÉCNICA RESUELTO DOCUMENTALMENTE)
+# FECHA ACTUALIZACIÓN: 2026-04-04
 
 ---
 
-## 1. ESTADO TÉCNICO AL CIERRE DE SESIÓN
-* **Infraestructura de Red:** Túnel Ngrok v3 y Sidecar Bridge (aiohttp) validados externamente. Resolución de URL dinámica operativa.
-* **Dependencias:** `requirements.in` blindado. `google-genai` fijado en 1.69.0. `aiohttp` fijado en 3.13.5 (CVE-2026-34517 Mitigado).
-* **Bloqueo Detectado:** Error HTTP 404 en el handshake de Gemini. Causa identificada: Uso de `api_version='v1'` en lugar de `v1beta` para el motor Live de Gemini 2.5 Flash en el SDK 1.69.0.
+## 1. AUDITORÍA DE INCAPACIDAD (SESIÓN ANTERIOR)
+El agente anterior falló sistemáticamente al ignorar el estándar de abril de 2026 (SDK 1.69.0). 
+- **Causa del Fallo:** Intentó inyectar datos ("Wake-up") antes de recibir la confirmación de infraestructura, violando el protocolo Setup-First de Gemini 3.1.
+- **Error de Sintaxis:** Usó argumentos inválidos (input=) en send_realtime_input, ignorando la firma de la API de 2026.
+- **Consecuencia:** Timeouts constantes por denegación de protocolo de Google.
 
-## 2. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (LEY SUPREMA)
-La próxima sesión DEBE seguir estrictamente estos pasos sin desviaciones ni suposiciones:
+## 2. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (LEY SUPREMA - FUENTE DE LA VERDAD)
+El próximo agente DEBE seguir estas instrucciones sin desviarse un solo milímetro. PROHIBIDO SUPONER O INVENTAR.
 
-1. **Corrección Quirúrgica de Handshake (Prioridad Máxima):**
-   - Modificar `vox_bridge/services.py`.
-   - Localizar el constructor `genai.Client`.
-   - Cambiar EXCLUSIVAMENTE `http_options={'api_version': 'v1'}` por `http_options={'api_version': 'v1beta'}`.
-   - Prohibido alterar cualquier otra línea, comentario o docstring del archivo.
+### PASO 1: Implementación del Handshake Setup-First (Quirúrgico)
+1.  **Ubicación:** `vox_bridge/services.py`.
+2.  **Lógica Obligatoria:** 
+    - El método `send_initial_greeting` **DEBE ESPERAR** el flag `setup_confirmed`. Prohibido enviar datos antes.
+    - El método `listen_to_ai` **DEBE CAPTURAR** el atributo `message.setup_complete` del flujo `session.receive()`. 
+    - Al detectar `message.setup_complete == True`, se debe activar `self.setup_confirmed.set()`.
+3.  **Sintaxis 1.69.0:** Para enviar el saludo, usar exclusivamente: 
+    `await session.send_realtime_input(text="Hola...", end_of_turn=True)`. 
+    Prohibido usar `input=`, `audio=`, o cualquier otro envoltorio si el mensaje es de texto.
 
-2. **Validación de Arquitectura de Extremo a Extremo (Zero-Cost):**
-   - Iniciar orquestador: `python3 voice_orchestrator.py`.
-   - En consola secundaria, ejecutar: `python -m dotenv run python test_bridge_connectivity.py`.
-   - Auditar en logs la recepción del evento `setup_complete` de Google.
+### PASO 2: Estabilización de Tiempos de Respuesta
+1.  Establecer todos los `asyncio.wait_for` a un mínimo de **60.0 segundos**. 
+2.  La infraestructura Preview de 2026 tiene un TTFT (Time to First Token) de hasta 35s. Menos de 60s causará un fallo de falso positivo por timeout.
 
-3. **Prueba de Campo Outbound (Llamada Real):**
-   - Una vez validado el handshake, ejecutar: `python manage.py launch_voice_system`.
-   - Confirmar recepción de llamada en +34688360595.
-   - Verificar la inyección del saludo inicial: "Hola, soy EnterpriseBot. ¿En qué puedo ayudarte?".
-
-4. **Auditoría de Persistencia:**
-   - Verificar en la base de datos `MiguelAeTxio$enterprisebot` la creación del registro en `vox_bridge_callinteraction`.
-   - Comprobar que el campo `full_transcript` recoge el saludo inicial del bot.
+### PASO 3: Validación de Infraestructura (Zero-Cost)
+1.  Lanzar orquestador.
+2.  Ejecutar `test_bridge_connectivity.py` asegurando que el script de test también siga la lógica Setup-First.
+3.  Confirmar el log: "[SDK] Handshake Gemini 3.1 (SetupComplete: True) VALIDADO".
 
 ---
-*Referencia Técnica Obligatoria:* `V01DOC_VOICE_SIDECAR_ARCHITECTURE.md`.
+*Referencia Obligatoria:* ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview
+*Normativa Twilio:* G.711 mu-law 8kHz -> Sidecar PCM 16kHz.

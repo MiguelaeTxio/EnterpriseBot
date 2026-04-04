@@ -76,7 +76,7 @@ class UniversalVoiceBridge:
         try:
             # AI Session Initialization / Inicialización de la sesión de IA
             async with await self.gemini_service.connect() as google_session:
-                logger.info("# [SDK] Handshake de Gemini 2.0 Flash completado.")
+                logger.info("# [SDK] Handshake de Gemini 3.1 Flash Live (A2A) completado.")
 
                 async def stream_to_google():
                     nonlocal stream_sid

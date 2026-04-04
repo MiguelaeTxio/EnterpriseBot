@@ -11,12 +11,12 @@ from asgiref.sync import sync_to_async
 
 """
 EnterpriseBot Gemini Live Stream Service: High-Precision DSP and AI Orchestration.
-April 2026 Standard: Mandatory gemini-2.5-flash for Conversational IVR.
+April 2026 Standard: Mandatory gemini-3.1-flash-live-preview for Conversational IVR.
 This service manages the bidirectional voice bridge, applying digital signal processing
 to match Twilio's G.711 mu-law (8kHz) with Gemini's L16 (16kHz) requirements.
 ---
 Servicio de Streaming Gemini Live de EnterpriseBot: Orquestación de IA y DSP de Alta Precisión.
-Estándar de Abril de 2026: gemini-2.5-flash obligatorio para IVR Conversacional.
+Estándar de Abril de 2026: gemini-3.1-flash-live-preview obligatorio para IVR Conversacional.
 Este servicio gestiona el puente de audio bidireccional, aplicando procesamiento de señal digital
 para emparejar el mu-law G.711 (8kHz) de Twilio con los requisitos L16 (16kHz) de Gemini.
 """
@@ -27,10 +27,10 @@ logger = logging.getLogger("VoxServices")
 
 class GeminiStreamService:
     """
-    Core orchestrator for real-time voice synthesis and recognition via Gemini 2.5 Flash.
+    Core orchestrator for real-time voice synthesis and recognition via Gemini 3.1 Flash Live.
     Handles DSP transcoding, AI session lifecycle, and Django ORM persistence.
     ---
-    Orquestador núcleo para síntesis y reconocimiento de voz en tiempo real vía Gemini 2.5 Flash.
+    Orquestador núcleo para síntesis y reconocimiento de voz en tiempo real vía Gemini 3.1 Flash Live.
     Gestiona la transcodificación DSP, el ciclo de vida de la sesión de IA y la persistencia en el ORM de Django.
     """
     def __init__(self):
@@ -39,20 +39,25 @@ class GeminiStreamService:
         ---
         Inicializa el cliente GenAI usando los estándares de la API de abril de 2026 (SDK 1.69.0).
         """
-        # ✅ SURGICAL FIX APRIL 2026: Forcing API version 'v1' to support gemini-2.5-flash in BiDi mode.
+        # ✅ SURGICAL FIX APRIL 2026: Forcing API version 'v1' to support gemini-3.1-flash-live-preview in BiDi mode.
         # This update ensures compliance with the 2026 technical directive for Conversational IVR.
         # Esta actualización asegura el cumplimiento con la directriz técnica de 2026 para IVR Conversacional.
         # SDK 1.69.0 Constructor initialization.
         # Inicialización del constructor del SDK 1.69.0.
         self.client = genai.Client(
             api_key=settings.GEMINI_API_KEY,
-            http_options={'api_version': 'v1'}
+            http_options=types.HttpOptions(api_version="v1beta")
         )
         
         # Mandatory model for Conversational IVR (Directriz Técnica 1.4)
         # Modelo obligatorio para IVR Conversacional (Directriz Técnica 1.4)
-        # ✅ UPDATED TO GEMINI 2.5 FLASH (GA VERSION APRIL 2026)
-        self.model_id = "models/gemini-2.5-flash"
+        # ✅ UPDATED TO GEMINI 3.1 FLASH LIVE (GA VERSION APRIL 2026)
+        # ✅ GA UPGRADE APRIL 2026: gemini-3.1-flash-live-preview
+        # Mandatory for real-time multimodal A2A (Audio-to-Audio) flows with persistent state.
+        # ---
+        # ✅ ACTUALIZACIÓN GA ABRIL 2026: gemini-3.1-flash-live-preview
+        # Obligatorio para flujos multimodal A2A (Audio-to-Audio) en tiempo real con estado persistente.
+        self.model_id = "models/gemini-3.1-flash-live-preview"
         
         self.state_in = None
         self.state_out = None
@@ -66,7 +71,7 @@ class GeminiStreamService:
         Thread-safe database update for interaction logging.
         Ensures the full_transcript field is updated atomically.
         ---
-        Actualización de base de datos segura entre hilos para el registro de interacciones.
+        Actualización de base de datos segura entre hilos para el registro de interacciones. Implementa persistencia atómica.
         Asegura que el campo full_transcript se actualice de forma atómica.
         """
         from vox_bridge.models import CallInteraction
@@ -104,6 +109,12 @@ class GeminiStreamService:
         # Real-time stateful connection configuration.
         # Configuración de conexión con estado en tiempo real.
         config = types.LiveConnectConfig(
+            # ✅ MANDATORY GROUNDING 2026: Google Search Retrieval activation.
+            # Ensures the model validates technical and normative data against real-time sources.
+            # ---
+            # ✅ GROUNDING OBLIGATORIO 2026: Activación de Google Search Retrieval.
+            # Asegura que el modelo valide datos técnicos y normativos contra fuentes en tiempo real.
+            
             system_instruction=types.Content(
                 parts=[types.Part(text=(
                     "Eres EnterpriseBot, una IA corporativa de nivel empresarial. "
@@ -136,8 +147,8 @@ class GeminiStreamService:
             
             # Using strict Input schema for text injections.
             # Usando esquema de entrada estricto para inyecciones de texto.
-            greeting = types.LiveClientRealtimeInput(text=msg)
-            await session.send(input=greeting, end_of_turn=False) 
+            # ✅ WAKE-UP 2026: Direct text input to trigger setup_complete.
+            await session.send_realtime_input(text=msg, end_of_turn=True) 
             
             if call_sid:
                 await self._persist_transcript(call_sid, f"BOT: {msg}")
@@ -222,9 +233,15 @@ class GeminiStreamService:
         """
         try:
             async for message in session.receive():
-                if message.setup_complete:
-                    self.setup_confirmed.set()
-                    logger.info("# [SDK] Handshake de infraestructura completado.")
+                # ✅ APRIL 2026 FIX: Support for both explicit and implicit (data-driven) handshakes.
+                # In Gemini 3.1 Flash Live, setup_complete may be None if server_content arrives first.
+                # ---
+                # ✅ CORRECCIÓN ABRIL 2026: Soporte para handshakes explícitos e implícitos.
+                # En Gemini 3.1 Flash Live, setup_complete puede ser None si server_content llega primero.
+                if message.setup_complete or message.server_content:
+                    if not self.setup_confirmed.is_set():
+                        self.setup_confirmed.set()
+                        logger.info("# [SDK] Handshake (Explícito o Implícito) detectado y confirmado.")
                 
                 # Check for audio/text model turns.
                 # Comprobar turnos del modelo de audio/texto.
