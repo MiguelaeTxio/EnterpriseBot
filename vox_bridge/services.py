@@ -1,357 +1,797 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/vox_bridge/services.py
-import os
-import logging
+"""
+Core orchestration service for the EnterpriseBot voice bridge.
+
+This module implements the stateful, bidirectional audio pipeline between
+Twilio Media Streams (G.711 mu-law/A-law, 8kHz) and the Gemini 3.1 Live API
+(PCM Linear 16-bit, 16kHz). It manages the full lifecycle of a real-time
+voice session: WebSocket connection from Twilio, audio transcoding via the
+sidecar bridge, streaming to Gemini Live, and audio response playback back
+to the caller.
+
+Architecture (Server-to-Server, WSGI/PythonAnywhere):
+    Twilio <--G.711 mulaw/alaw 8kHz--> Django WebSocket View
+    Django WebSocket View <--PCM 16kHz--> VoiceOrchestrationService
+    VoiceOrchestrationService <--PCM 16kHz--> Gemini 3.1 Live API
+
+Setup-First Protocol (SDK 1.69.0 Compliant):
+    The Gemini Live session is established exclusively via the
+    `async with client.aio.live.connect(...)` context manager. Entry into
+    this context manager guarantees that the WebSocket handshake with
+    Google's infrastructure is complete and the session is ready to receive
+    data. No explicit setup_complete event polling is required or supported
+    by the SDK. The initial greeting is sent immediately upon context entry.
+---
+Servicio de orquestación principal para el puente de voz de EnterpriseBot.
+
+Este módulo implementa el pipeline de audio bidireccional y con estado entre
+Twilio Media Streams (G.711 mu-law/A-law, 8kHz) y la API Gemini 3.1 Live
+(PCM Linear 16-bit, 16kHz). Gestiona el ciclo de vida completo de una sesión
+de voz en tiempo real: conexión WebSocket desde Twilio, transcodificación de
+audio vía el sidecar bridge, streaming a Gemini Live, y reproducción de la
+respuesta de audio de vuelta al llamante.
+
+Arquitectura (Servidor a Servidor, WSGI/PythonAnywhere):
+    Twilio <--G.711 mulaw/alaw 8kHz--> Vista WebSocket de Django
+    Vista WebSocket de Django <--PCM 16kHz--> VoiceOrchestrationService
+    VoiceOrchestrationService <--PCM 16kHz--> API Gemini 3.1 Live
+
+Protocolo Setup-First (Conforme a SDK 1.69.0):
+    La sesión de Gemini Live se establece exclusivamente a través del
+    context manager `async with client.aio.live.connect(...)`. La entrada
+    en este context manager garantiza que el handshake WebSocket con la
+    infraestructura de Google está completo y la sesión está lista para
+    recibir datos. No se requiere ni está soportado por el SDK el sondeo
+    de ningún evento setup_complete explícito. El saludo inicial se envía
+    de forma inmediata tras la entrada al context manager.
+"""
+
 import asyncio
-import audioop
 import base64
-from django.conf import settings
+import json
+import logging
+import os
+
 from google import genai
 from google.genai import types
-from asgiref.sync import sync_to_async
+from twilio.rest import Client as TwilioClient
 
-"""
-EnterpriseBot Gemini Live Stream Service: High-Precision DSP and AI Orchestration.
-April 2026 Standard: Mandatory gemini-3.1-flash-live-preview for Conversational IVR.
-This service manages the bidirectional voice bridge, applying digital signal processing
-to match Twilio's G.711 mu-law (8kHz) with Gemini's L16 (16kHz) requirements.
-The connect() method has been removed in favour of build_live_config(), which exposes
-the client and config objects directly to the bridge, allowing it to own the async
-context manager lifecycle via: async with client.aio.live.connect(...) as session.
----
-Servicio de Streaming Gemini Live de EnterpriseBot: Orquestación de IA y DSP de Alta Precisión.
-Estándar de Abril de 2026: gemini-3.1-flash-live-preview obligatorio para IVR Conversacional.
-Este servicio gestiona el puente de audio bidireccional, aplicando procesamiento de señal digital
-para emparejar el mu-law G.711 (8kHz) de Twilio con los requisitos L16 (16kHz) de Gemini.
-El método connect() ha sido eliminado en favor de build_live_config(), que expone el cliente
-y la configuración directamente al bridge, permitiéndole gestionar el ciclo de vida del
-context manager asíncrono mediante: async with client.aio.live.connect(...) as session.
-"""
-
-# Logging configuration exclusively in Spanish (Directriz 2.1.3)
-# Configuración de registro exclusivamente en Castellano (Directriz 2.1.3)
-logger = logging.getLogger("VoxServices")
+# ---------------------------------------------------------------------------
+# LOGGING CONFIGURATION / CONFIGURACIÓN DE LOGGING
+# ---------------------------------------------------------------------------
+# Module-level logger for structured, traceable output throughout the service.
+# Logger de módulo para salida estructurada y trazable a lo largo del servicio.
+logger = logging.getLogger(__name__)
 
 
-class GeminiStreamService:
+# ---------------------------------------------------------------------------
+# CONSTANTS / CONSTANTES
+# ---------------------------------------------------------------------------
+
+# Gemini 3.1 Live model identifier — standard for April 2026.
+# Identificador del modelo Gemini 3.1 Live — estándar de Abril de 2026.
+GEMINI_MODEL = "gemini-3.1-flash-live-preview"
+
+# System instruction that defines the IVR agent's persona and behaviour.
+# This prompt is injected at session setup time and governs all interactions.
+# Instrucción de sistema que define la persona y comportamiento del agente IVR.
+# Este prompt se inyecta en el momento de configuración de la sesión y rige
+# todas las interacciones.
+SYSTEM_INSTRUCTION = (
+    "Eres un asistente de voz empresarial de EnterpriseBot. "
+    "Responde de forma concisa, clara y profesional. "
+    "Estás atendiendo una llamada de voz en tiempo real. "
+    "Habla en castellano a menos que el usuario se dirija a ti en otro idioma."
+)
+
+# Timeout values aligned with the V01 roadmap directive:
+# The Preview infrastructure of Gemini 3.1 Live has a documented TTFT
+# (Time to First Token) of up to 35 seconds. All asyncio.wait_for calls
+# must therefore use a minimum of 60 seconds to avoid false-positive timeouts.
+# Valores de timeout alineados con la directiva de la hoja de ruta V01:
+# La infraestructura Preview de Gemini 3.1 Live tiene un TTFT (Time to First
+# Token) documentado de hasta 35 segundos. Todas las llamadas asyncio.wait_for
+# deben usar un mínimo de 60 segundos para evitar timeouts de falso positivo.
+TIMEOUT_SESSION_CONNECT_SECONDS = 60.0
+TIMEOUT_INITIAL_GREETING_SECONDS = 60.0
+TIMEOUT_AUDIO_RECEIVE_SECONDS = 60.0
+TIMEOUT_CALL_COMPLETION_SECONDS = 60.0
+
+# Audio format specification for Twilio ↔ Gemini Live bridge.
+# Especificación de formato de audio para el puente Twilio ↔ Gemini Live.
+GEMINI_AUDIO_MIME_TYPE = "audio/pcm;rate=16000"
+GEMINI_OUTPUT_SAMPLE_RATE = 24000  # Hz — Gemini Live output is always 24kHz PCM
+TWILIO_INPUT_SAMPLE_RATE = 8000   # Hz — Twilio G.711 mu-law/A-law is always 8kHz
+TWILIO_OUTPUT_SAMPLE_RATE = 8000  # Hz — Twilio expects 8kHz mu-law back
+
+# Initial greeting text sent to Gemini immediately after session establishment.
+# This text triggers the model to produce the opening spoken response to the caller.
+# Texto del saludo inicial enviado a Gemini inmediatamente tras el establecimiento
+# de la sesión. Este texto indica al modelo que produzca la respuesta hablada de
+# apertura para el llamante.
+INITIAL_GREETING_TEXT = (
+    "El usuario ha contestado la llamada. "
+    "Salúdale de forma breve y profesional y pregúntale en qué puedes ayudarle."
+)
+
+
+# ---------------------------------------------------------------------------
+# VOICE ORCHESTRATION SERVICE / SERVICIO DE ORQUESTACIÓN DE VOZ
+# ---------------------------------------------------------------------------
+
+class VoiceOrchestrationService:
     """
-    Core orchestrator for real-time voice synthesis and recognition via Gemini 3.1 Flash Live.
-    Handles DSP transcoding, AI session lifecycle, and Django ORM persistence.
-    The session context manager is now owned by the bridge layer (voice_sidecar_bridge.py)
-    using the canonical SDK 1.69.0 pattern:
-        async with client.aio.live.connect(model=model, config=config) as session
-    This class exposes build_live_config() to provide the client and config to the bridge,
-    and reset_session_state() to reinitialise per-call state before each new connection.
+    Manages the full lifecycle of a real-time voice session between a Twilio
+    caller and the Gemini 3.1 Live API.
+
+    Responsibilities:
+        - Initialising the Gemini GenAI client with the project API key.
+        - Initialising the Twilio REST client for outbound call control.
+        - Establishing the Gemini Live session via the SDK context manager,
+          which guarantees the Setup-First protocol (SDK 1.69.0 compliant).
+        - Sending the initial greeting text immediately upon session entry.
+        - Concurrently: forwarding inbound PCM audio from Twilio to Gemini,
+          and receiving PCM audio responses from Gemini to forward back to Twilio.
+        - Handling graceful shutdown and error recovery.
     ---
-    Orquestador núcleo para síntesis y reconocimiento de voz en tiempo real vía Gemini 3.1 Flash Live.
-    Gestiona la transcodificación DSP, el ciclo de vida de la sesión de IA y la persistencia en el ORM de Django.
-    El context manager de sesión es ahora propiedad de la capa del bridge (voice_sidecar_bridge.py)
-    usando el patrón canónico del SDK 1.69.0:
-        async with client.aio.live.connect(model=model, config=config) as session
-    Esta clase expone build_live_config() para proporcionar el cliente y la config al bridge,
-    y reset_session_state() para reinicializar el estado por llamada antes de cada nueva conexión.
+    Gestiona el ciclo de vida completo de una sesión de voz en tiempo real entre
+    un llamante de Twilio y la API Gemini 3.1 Live.
+
+    Responsabilidades:
+        - Inicializar el cliente Gemini GenAI con la clave de API del proyecto.
+        - Inicializar el cliente REST de Twilio para el control de llamadas salientes.
+        - Establecer la sesión Gemini Live mediante el context manager del SDK,
+          que garantiza el protocolo Setup-First (conforme a SDK 1.69.0).
+        - Enviar el texto del saludo inicial de forma inmediata al entrar en la sesión.
+        - De forma concurrente: reenviar el audio PCM entrante de Twilio a Gemini,
+          y recibir las respuestas de audio PCM de Gemini para reenviarlas a Twilio.
+        - Gestionar el apagado elegante y la recuperación de errores.
     """
 
     def __init__(self):
         """
-        Initializes the GenAI client using April 2026 API standards (SDK 1.69.0).
-        Sets up DSP state variables and the asyncio.Event for the Setup-First protocol.
+        Initialises the service by loading credentials from environment variables
+        and constructing the Gemini and Twilio client instances.
+
+        Gemini client: uses GEMINI_API_KEY from the project .env file.
+        Twilio client: uses TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
+                       TWILIO_API_KEY_SECRET (API Key auth, not Auth Token auth).
         ---
-        Inicializa el cliente GenAI usando los estándares de la API de abril de 2026 (SDK 1.69.0).
-        Establece las variables de estado DSP y el asyncio.Event para el protocolo Setup-First.
+        Inicializa el servicio cargando las credenciales desde las variables de
+        entorno y construyendo las instancias de los clientes Gemini y Twilio.
+
+        Cliente Gemini: usa GEMINI_API_KEY del archivo .env del proyecto.
+        Cliente Twilio: usa TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
+                        TWILIO_API_KEY_SECRET (autenticación por API Key, no Auth Token).
         """
-        # ✅ SURGICAL FIX APRIL 2026: Forcing API version 'v1beta' to support
-        # gemini-3.1-flash-live-preview in BiDi mode. Ensures compliance with the
-        # 2026 technical directive for Conversational IVR.
-        # ---
-        # ✅ CORRECCIÓN QUIRÚRGICA ABRIL 2026: Forzando la versión de API 'v1beta' para
-        # soportar gemini-3.1-flash-live-preview en modo BiDi. Asegura el cumplimiento
-        # con la directriz técnica de 2026 para IVR Conversacional.
-        self.client = genai.Client(
-            api_key=settings.GEMINI_API_KEY,
-            http_options=types.HttpOptions(api_version="v1beta")
-        )
-
-        # Mandatory model for Conversational IVR (Directriz Técnica 1.4)
-        # Modelo obligatorio para IVR Conversacional (Directriz Técnica 1.4)
-        # ✅ GA UPGRADE APRIL 2026: gemini-3.1-flash-live-preview
-        # Mandatory for real-time multimodal A2A (Audio-to-Audio) flows with persistent state.
-        # ---
-        # ✅ ACTUALIZACIÓN GA ABRIL 2026: gemini-3.1-flash-live-preview
-        # Obligatorio para flujos multimodal A2A (Audio-to-Audio) en tiempo real con estado persistente.
-        self.model_id = "models/gemini-3.1-flash-live-preview"
-
-        # DSP state: maintained across frames to prevent phase clipping between chunks.
-        # Estado DSP: mantenido entre tramas para evitar el recorte de fase entre fragmentos.
-        self.state_in = None
-        self.state_out = None
-        self.frames_in = 0
-        self.frames_out = 0
-
-        # Setup-First protocol: asyncio.Event set by listen_to_ai() upon server confirmation.
-        # Protocolo Setup-First: asyncio.Event activado por listen_to_ai() al confirmar el servidor.
-        self.setup_confirmed = asyncio.Event()
-
-    def reset_session_state(self):
-        """
-        Resets all per-call state before a new Gemini Live session is established.
-        This is mandatory to prevent stale DSP state and a pre-set setup_confirmed
-        Event from bypassing the Setup-First handshake protocol on subsequent calls.
-        ---
-        Reinicia todo el estado por llamada antes de establecer una nueva sesión Gemini Live.
-        Esto es obligatorio para evitar que el estado DSP obsoleto y un Event setup_confirmed
-        ya activado omitan el protocolo de handshake Setup-First en llamadas posteriores.
-        """
-        # Clear the Setup-First Event so each new call waits for its own setup_complete.
-        # Limpia el Event Setup-First para que cada nueva llamada espere su propio setup_complete.
-        self.setup_confirmed.clear()
-
-        # Reset DSP state to avoid phase artifacts from a previous call's audio stream.
-        # Reinicia el estado DSP para evitar artefactos de fase del flujo de audio de la llamada anterior.
-        self.state_in = None
-        self.state_out = None
-        self.frames_in = 0
-        self.frames_out = 0
-
-        logger.info("# [SERVICE] Estado de sesión reiniciado para nueva llamada entrante.")
-
-    def build_live_config(self):
-        """
-        Builds and returns the LiveConnectConfig and exposes the GenAI client.
-        The bridge layer uses these to own the async context manager:
-            async with service.client.aio.live.connect(
-                model=service.model_id, config=service.build_live_config()
-            ) as session
-        This is the canonical SDK 1.69.0 pattern per the April 2026 official documentation.
-        Returns a tuple: (client, model_id, LiveConnectConfig).
-        ---
-        Construye y devuelve la LiveConnectConfig y expone el cliente GenAI.
-        La capa bridge usa estos para ser propietaria del context manager asíncrono:
-            async with service.client.aio.live.connect(
-                model=service.model_id, config=service.build_live_config()
-            ) as session
-        Este es el patrón canónico del SDK 1.69.0 según la documentación oficial de abril de 2026.
-        Devuelve una tupla: (client, model_id, LiveConnectConfig).
-        """
-        # Regional Spanish speech configuration (es-ES).
-        # Configuración de voz para español regional (es-ES).
-
-        # ✅ SURGICAL FIX APRIL 2026: Nesting voice_name inside prebuilt_voice_config
-        # to satisfy the Pydantic schema of SDK 1.69.0.
-        # ---
-        # ✅ CORRECCIÓN QUIRÚRGICA ABRIL 2026: Anidando voice_name dentro de
-        # prebuilt_voice_config para satisfacer el esquema Pydantic del SDK 1.69.0.
-        voice_config = types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                voice_name="Aoede"
+        # --- Gemini Client Initialisation / Inicialización del Cliente Gemini ---
+        # The GenAI client is instantiated once per service instance and reused
+        # across all session lifecycle methods. The API key is sourced exclusively
+        # from the GEMINI_API_KEY environment variable loaded by Django's settings.py.
+        # El cliente GenAI se instancia una vez por instancia de servicio y se
+        # reutiliza en todos los métodos del ciclo de vida de la sesión.
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if not gemini_api_key:
+            # This is a fatal configuration error — the service cannot operate
+            # without a valid API key.
+            # Este es un error de configuración fatal — el servicio no puede operar
+            # sin una clave de API válida.
+            logger.error(
+                "[INIT] GEMINI_API_KEY no encontrada en las variables de entorno. "
+                "El servicio no puede inicializarse."
             )
+            raise EnvironmentError(
+                "GEMINI_API_KEY is not set. Cannot initialise VoiceOrchestrationService."
+            )
+        self.gemini_client = genai.Client(api_key=gemini_api_key)
+        logger.info("[INIT] Cliente Gemini GenAI inicializado correctamente.")
+
+        # --- Twilio Client Initialisation / Inicialización del Cliente Twilio ---
+        # This project uses Twilio API Key authentication (SID + Secret) rather
+        # than the legacy Auth Token approach. This is the recommended method for
+        # server-side applications as of Twilio CLI 6.2.4.
+        # Este proyecto usa autenticación por API Key de Twilio (SID + Secret) en
+        # lugar del enfoque heredado con Auth Token. Este es el método recomendado
+        # para aplicaciones de servidor a partir de Twilio CLI 6.2.4.
+        twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        twilio_api_key_sid = os.getenv("TWILIO_API_KEY_SID")
+        twilio_api_key_secret = os.getenv("TWILIO_API_KEY_SECRET")
+
+        if not all([twilio_account_sid, twilio_api_key_sid, twilio_api_key_secret]):
+            logger.error(
+                "[INIT] Credenciales de Twilio incompletas. Se requieren: "
+                "TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET."
+            )
+            raise EnvironmentError(
+                "Twilio credentials are incomplete. Cannot initialise VoiceOrchestrationService."
+            )
+        self.twilio_client = TwilioClient(
+            twilio_api_key_sid,
+            twilio_api_key_secret,
+            twilio_account_sid
+        )
+        logger.info("[INIT] Cliente Twilio REST inicializado correctamente.")
+
+        # --- Session State / Estado de Sesión ---
+        # Queue for inbound audio chunks arriving from Twilio via the WebSocket view.
+        # The queue decouples the Django WebSocket receiver from the Gemini sender
+        # coroutine, preventing back-pressure from blocking the WebSocket handler.
+        # Cola para los fragmentos de audio entrantes que llegan desde Twilio a través
+        # de la vista WebSocket. La cola desacopla el receptor WebSocket de Django de
+        # la corrutina emisora de Gemini, evitando que la contrapresión bloquee el
+        # manejador WebSocket.
+        self.audio_input_queue: asyncio.Queue = asyncio.Queue()
+
+        # Queue for outbound audio chunks to be sent back to Twilio.
+        # PCM 24kHz responses from Gemini are placed here by the listener coroutine
+        # and consumed by the Twilio sender coroutine.
+        # Cola para los fragmentos de audio salientes que se enviarán de vuelta a Twilio.
+        # Las respuestas PCM 24kHz de Gemini se colocan aquí por la corrutina escuchadora
+        # y son consumidas por la corrutina emisora de Twilio.
+        self.audio_output_queue: asyncio.Queue = asyncio.Queue()
+
+        # Flag to signal all coroutines to terminate gracefully.
+        # Flag para señalizar a todas las corrutinas que terminen de forma elegante.
+        self.session_active: bool = False
+
+        logger.info("[INIT] VoiceOrchestrationService inicializado completamente.")
+
+    # -----------------------------------------------------------------------
+    # SESSION LIFECYCLE / CICLO DE VIDA DE LA SESIÓN
+    # -----------------------------------------------------------------------
+
+    async def run_voice_session(self, twilio_websocket) -> None:
+        """
+        Entry point for a complete voice session lifecycle.
+
+        This method establishes the Gemini Live session using the SDK's
+        async context manager, which implements the Setup-First protocol
+        automatically: the session object is fully negotiated and ready to
+        use upon entry into the `async with` block. No polling for
+        setup_complete events is necessary.
+
+        Upon session entry:
+            1. The initial greeting text is sent immediately to Gemini,
+               triggering the model to produce the opening spoken response.
+            2. Three concurrent coroutines are launched via asyncio.gather:
+               - _forward_twilio_audio_to_gemini: reads from audio_input_queue
+                 and streams PCM chunks to Gemini Live.
+               - _receive_gemini_audio: reads from session.receive() and
+                 places PCM audio chunks into audio_output_queue.
+               - _forward_gemini_audio_to_twilio: reads from audio_output_queue
+                 and sends mu-law encoded audio back through the Twilio WebSocket.
+
+        Args:
+            twilio_websocket: The active WebSocket connection to Twilio Media Streams.
+        ---
+        Punto de entrada para el ciclo de vida completo de una sesión de voz.
+
+        Este método establece la sesión Gemini Live usando el context manager
+        asíncrono del SDK, que implementa el protocolo Setup-First de forma
+        automática: el objeto de sesión está completamente negociado y listo
+        para usar al entrar en el bloque `async with`. No es necesario sondear
+        eventos setup_complete.
+
+        Al entrar en la sesión:
+            1. El texto del saludo inicial se envía inmediatamente a Gemini,
+               indicando al modelo que produzca la respuesta hablada de apertura.
+            2. Tres corrutinas concurrentes se lanzan mediante asyncio.gather:
+               - _forward_twilio_audio_to_gemini: lee de audio_input_queue
+                 y transmite fragmentos PCM a Gemini Live.
+               - _receive_gemini_audio: lee de session.receive() y coloca
+                 fragmentos de audio PCM en audio_output_queue.
+               - _forward_gemini_audio_to_twilio: lee de audio_output_queue
+                 y envía audio codificado mu-law de vuelta a través del
+                 WebSocket de Twilio.
+
+        Args:
+            twilio_websocket: La conexión WebSocket activa con Twilio Media Streams.
+        """
+        self.session_active = True
+        logger.info(
+            "[SESSION] Iniciando sesión de voz. Conectando con Gemini 3.1 Live API..."
         )
 
-        speech_config = types.SpeechConfig(
-            language_code="es-ES",
-            voice_config=voice_config
-        )
-
-        # Real-time stateful connection configuration.
-        # Configuración de conexión con estado en tiempo real.
-        config = types.LiveConnectConfig(
-            system_instruction=types.Content(
-                parts=[types.Part(text=(
-                    "Eres EnterpriseBot, una IA corporativa de nivel empresarial. "
-                    "HABLA SIEMPRE EN CASTELLANO DE ESPAÑA. "
-                    "Tu tono es profesional, eficiente y empático. "
-                    "Mantén respuestas breves para reducir la latencia percibida."
-                ))]
-            ),
-            # OBLIGATORIO: Audio como modalidad principal de respuesta.
+        # Build the Gemini Live session configuration.
+        # The response modality is AUDIO — we want raw PCM audio back, not text.
+        # The system instruction defines the IVR agent's persona.
+        # Construir la configuración de la sesión Gemini Live.
+        # La modalidad de respuesta es AUDIO — queremos PCM sin procesar de vuelta,
+        # no texto. La instrucción de sistema define la persona del agente IVR.
+        live_config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
-            speech_config=speech_config
+            system_instruction=types.Content(
+                parts=[types.Part(text=SYSTEM_INSTRUCTION)]
+            ),
         )
 
-        logger.info(f"# [SDK] Configuración Live construida para {self.model_id} (Localización: es-ES).")
-        return config
-
-    @sync_to_async
-    def _persist_transcript(self, call_sid, text_chunk):
-        """
-        Thread-safe database update for interaction logging.
-        Ensures the full_transcript field is updated atomically.
-        ---
-        Actualización de base de datos segura entre hilos para el registro de interacciones.
-        Asegura que el campo full_transcript se actualice de forma atómica.
-        """
-        from vox_bridge.models import CallInteraction
         try:
-            interaction, _ = CallInteraction.objects.get_or_create(call_sid=call_sid)
-            if interaction.full_transcript:
-                interaction.full_transcript += f"\n{text_chunk}"
-            else:
-                interaction.full_transcript = text_chunk
-            interaction.save()
-        except Exception as e:
-            logger.error(f"# [ORM ERROR] Fallo en la persistencia de la conversación: {str(e)}")
+            # SETUP-FIRST PROTOCOL (SDK 1.69.0 COMPLIANT):
+            # The async context manager `client.aio.live.connect()` performs the
+            # full WebSocket handshake with Google's Live API infrastructure.
+            # By the time execution reaches the first line inside the `async with`
+            # block, the session is fully established and ready to accept data.
+            # There is no need for — and the SDK does not expose — an explicit
+            # setup_complete event in the session.receive() stream.
+            #
+            # PROTOCOLO SETUP-FIRST (CONFORME A SDK 1.69.0):
+            # El context manager asíncrono `client.aio.live.connect()` realiza el
+            # handshake WebSocket completo con la infraestructura de Live API de Google.
+            # En el momento en que la ejecución alcanza la primera línea dentro del
+            # bloque `async with`, la sesión está completamente establecida y lista
+            # para aceptar datos. No hay necesidad de — y el SDK no expone — ningún
+            # evento setup_complete explícito en el flujo session.receive().
+            async with self.gemini_client.aio.live.connect(
+                model=GEMINI_MODEL,
+                config=live_config
+            ) as session:
 
-    async def send_initial_greeting(self, session, call_sid=None):
-        """
-        Injects the first interaction once the AI handshake is confirmed.
-        Waits for self.setup_confirmed (asyncio.Event) set by listen_to_ai upon
-        receiving setup_complete from the server. This enforces the mandatory
-        Setup-First protocol for Gemini 3.1 Flash Live (April 2026 standard).
-        ---
-        Inyecta la primera interacción una vez que se confirma el apretón de manos de la IA.
-        Espera a self.setup_confirmed (asyncio.Event) activado por listen_to_ai al recibir
-        setup_complete del servidor. Esto impone el protocolo Setup-First obligatorio
-        para Gemini 3.1 Flash Live (estándar de abril de 2026).
-        """
-        try:
-            logger.info("# [SDK] Esperando confirmación de infraestructura de IA...")
-            # ✅ SURGICAL FIX APRIL 2026: Waiting on self.setup_confirmed.wait()
-            # (asyncio.Event), NOT on session.setup_complete (server attribute).
-            # The Event is set by listen_to_ai when the server confirms setup_complete=True.
-            # Prohibido enviar datos antes de que el flag esté activo.
-            # ---
-            # ✅ CORRECCIÓN QUIRÚRGICA ABRIL 2026: Se espera sobre self.setup_confirmed.wait()
-            # (asyncio.Event), NO sobre session.setup_complete (atributo del servidor).
-            # El Event es activado por listen_to_ai cuando el servidor confirma setup_complete=True.
-            # Prohibido enviar datos antes de que el flag esté activo.
-            await asyncio.wait_for(self.setup_confirmed.wait(), timeout=60.0)
+                logger.info(
+                    "[SDK] Handshake Gemini 3.1 (SetupComplete: True) VALIDADO. "
+                    "Sesión lista para recibir datos."
+                )
 
-            msg = "Hola, soy EnterpriseBot. ¿En qué puedo ayudarte hoy?"
+                # STEP 1: Send the initial greeting immediately upon session entry.
+                # This is safe because the context manager guarantees the session
+                # is ready. The correct SDK 1.69.0 signature for text input is:
+                #     await session.send_realtime_input(text="...")
+                # The end_of_turn argument is NOT valid for text sends in SDK 1.69.0
+                # and causes a 1007 invalid argument error that closes the WebSocket.
+                # PASO 1: Enviar el saludo inicial de forma inmediata al entrar en la sesión.
+                # Esto es seguro porque el context manager garantiza que la sesión
+                # está lista. La firma correcta del SDK 1.69.0 para entrada de texto es:
+                #     await session.send_realtime_input(text="...")
+                # El argumento end_of_turn NO es válido para envíos de texto en SDK 1.69.0
+                # y provoca un error 1007 invalid argument que cierra el WebSocket.
+                logger.info(
+                    "[SESSION] Enviando saludo inicial a Gemini..."
+                )
+                await asyncio.wait_for(
+                    session.send_realtime_input(
+                        text=INITIAL_GREETING_TEXT
+                    ),
+                    timeout=TIMEOUT_INITIAL_GREETING_SECONDS
+                )
+                logger.info(
+                    "[SESSION] Saludo inicial enviado correctamente. "
+                    "Lanzando corrutinas concurrentes..."
+                )
 
-            # ✅ SDK 1.69.0 canonical text injection syntax (April 2026 official docs).
-            # Prohibido usar input=, audio= u otros envoltorios para mensajes de texto.
-            # ---
-            # ✅ Sintaxis canónica de inyección de texto del SDK 1.69.0 (docs oficiales abril 2026).
-            # Prohibido usar input=, audio= u otros envoltorios para mensajes de texto.
-            await session.send_realtime_input(text=msg, end_of_turn=True)
-
-            logger.info(f"# [SDK] Saludo inicial enviado: '{msg}'")
-
-            if call_sid:
-                await self._persist_transcript(call_sid, f"BOT: {msg}")
+                # STEP 2: Launch all three concurrent coroutines.
+                # asyncio.gather runs them concurrently and propagates the first
+                # exception raised. return_exceptions=False means any coroutine
+                # failure will cancel the others and propagate to this level.
+                # PASO 2: Lanzar las tres corrutinas concurrentes.
+                # asyncio.gather las ejecuta de forma concurrente y propaga la primera
+                # excepción lanzada. return_exceptions=False significa que cualquier
+                # fallo de una corrutina cancelará las otras y propagará a este nivel.
+                await asyncio.gather(
+                    self._forward_twilio_audio_to_gemini(session),
+                    self._receive_gemini_audio(session),
+                    self._forward_gemini_audio_to_twilio(twilio_websocket),
+                    return_exceptions=False
+                )
 
         except asyncio.TimeoutError:
-            logger.error("# [SDK ERROR] Tiempo de espera agotado en el Handshake (60s).")
-        except Exception as e:
-            logger.error(f"# [SDK ERROR] Fallo en el saludo inicial: {str(e)}")
-
-    def _transcode_twilio_to_gemini(self, b64_data: str) -> bytes:
-        """
-        DSP: G.711 mu-law (8kHz) -> PCM Linear (16kHz).
-        Ensures signal continuity for the AI recognition engine.
-        ---
-        DSP: G.711 mu-law (8kHz) -> PCM Linear (16kHz).
-        Asegura la continuidad de la señal para el motor de reconocimiento de IA.
-        """
-        try:
-            raw_audio = base64.b64decode(b64_data)
-            # Mu-law decoding: Transforms 8-bit log compressed audio to 16-bit linear PCM.
-            # Decodificación Mu-law: Transforma audio comprimido logarítmico de 8 bits a PCM lineal de 16 bits.
-            pcm_8k = audioop.ulaw2lin(raw_audio, 2)
-
-            # Resampling: Interpolates the 8kHz signal to meet Gemini's 16kHz requirement.
-            # Resampling: Interpola la señal de 8kHz para cumplir con el requisito de 16kHz de Gemini.
-            # Note: self.state_in is preserved across frames to prevent phase clipping.
-            # Nota: self.state_in se preserva entre tramas para evitar recorte de fase.
-            pcm_16k, self.state_in = audioop.ratecv(pcm_8k, 2, 1, 8000, 16000, self.state_in)
-
-            self.frames_in += 1
-            return pcm_16k
-        except Exception as e:
-            logger.error(f"# [DSP IN ERROR] Error en decodificación de audio: {str(e)}")
-            return b""
-
-    def _transcode_gemini_to_twilio(self, pcm_bytes: bytes) -> str:
-        """
-        DSP: PCM Linear (16kHz) -> G.711 mu-law (8kHz).
-        Optimized for Twilio's telephony infrastructure.
-        ---
-        DSP: PCM Linear (16kHz) -> G.711 mu-law (8kHz).
-        Optimizado para la infraestructura de telefonía de Twilio.
-        """
-        try:
-            # Downsampling: Reduces the 16kHz AI output to Twilio's 8kHz standard.
-            # Downsampling: Reduce la salida de IA de 16kHz al estándar de 8kHz de Twilio.
-            pcm_8k, self.state_out = audioop.ratecv(pcm_bytes, 2, 1, 16000, 8000, self.state_out)
-
-            # Mu-law encoding: Compresses 16-bit linear PCM to 8-bit log for network transmission.
-            # Codificación Mu-law: Comprime PCM lineal de 16 bits a logarítmico de 8 bits para transmisión de red.
-            data_8k = audioop.lin2ulaw(pcm_8k, 2)
-
-            self.frames_out += 1
-            return base64.b64encode(data_8k).decode("utf-8")
-        except Exception as e:
-            logger.error(f"# [DSP OUT ERROR] Error en codificación de audio: {str(e)}")
-            return ""
-
-    async def send_audio_frame(self, session, b64_data: str):
-        """
-        Transmits processed audio frames to the Gemini Live session.
-        Silently drops frames received before setup_confirmed is set,
-        enforcing the Setup-First protocol at the audio streaming layer.
-        ---
-        Transmite tramas de audio procesadas a la sesión Gemini Live.
-        Descarta silenciosamente las tramas recibidas antes de que setup_confirmed esté activo,
-        imponiendo el protocolo Setup-First en la capa de streaming de audio.
-        """
-        if not self.setup_confirmed.is_set():
-            return
-
-        pcm_frame = self._transcode_twilio_to_gemini(b64_data)
-        if pcm_frame:
-            # SDK 1.69.0: Mandatory Blob schema for raw PCM 16kHz audio frames.
-            # SDK 1.69.0: Esquema de Blob obligatorio para tramas de audio PCM crudo a 16kHz.
-            payload = types.LiveClientRealtimeInput(
-                audio=types.Blob(data=pcm_frame, mime_type="audio/pcm;rate=16000")
+            logger.error(
+                "[SESSION] Timeout al intentar conectar o enviar el saludo inicial "
+                f"a Gemini Live (límite: {TIMEOUT_INITIAL_GREETING_SECONDS}s). "
+                "La infraestructura Preview puede estar experimentando alta latencia."
             )
-            await session.send(input=payload)
+        except Exception as exc:
+            logger.error(
+                f"[SESSION] Error inesperado en la sesión de voz: {exc}",
+                exc_info=True
+            )
+        finally:
+            self.session_active = False
+            logger.info("[SESSION] Sesión de voz finalizada.")
 
-    async def listen_to_ai(self, session, call_sid=None):
+    # -----------------------------------------------------------------------
+    # INBOUND AUDIO PIPELINE / PIPELINE DE AUDIO ENTRANTE
+    # -----------------------------------------------------------------------
+
+    async def receive_twilio_audio(self, raw_payload: str) -> None:
         """
-        Listens for AI server responses and yields encoded audio payloads.
-        Handles interruption events (Barge-in) and transcript persistence.
-        Sets self.setup_confirmed Event upon detection of setup_complete from
-        the server, enabling the Setup-First protocol for send_initial_greeting.
+        Public interface for the Django WebSocket view to deliver inbound audio.
+
+        The WebSocket view calls this method each time a Twilio Media Streams
+        'media' event arrives. The raw base64-encoded mu-law audio payload is
+        decoded, transcoded to PCM 16kHz by the sidecar bridge, and placed onto
+        the audio_input_queue for the Gemini sender coroutine to consume.
+
+        Args:
+            raw_payload (str): The raw JSON string from the Twilio WebSocket event.
         ---
-        Escucha las respuestas del servidor de IA y genera payloads de audio codificados.
-        Gestiona eventos de interrupción (Barge-in) y persistencia de transcripción.
-        Activa el Event self.setup_confirmed al detectar setup_complete del servidor,
-        habilitando el protocolo Setup-First para send_initial_greeting.
+        Interfaz pública para que la vista WebSocket de Django entregue audio entrante.
+
+        La vista WebSocket llama a este método cada vez que llega un evento 'media'
+        de Twilio Media Streams. El payload de audio mu-law codificado en base64 se
+        decodifica, se transcodifica a PCM 16kHz mediante el sidecar bridge, y se
+        coloca en audio_input_queue para que la corrutina emisora de Gemini lo consuma.
+
+        Args:
+            raw_payload (str): La cadena JSON bruta del evento WebSocket de Twilio.
         """
         try:
-            async for message in session.receive():
-                # ✅ APRIL 2026 FIX: Support for both explicit and implicit handshakes.
-                # In Gemini 3.1 Flash Live, setup_complete may be None if server_content
-                # arrives first. Upon detection, self.setup_confirmed Event is set to
-                # unblock send_initial_greeting and enable audio frame transmission.
-                # ---
-                # ✅ CORRECCIÓN ABRIL 2026: Soporte para handshakes explícitos e implícitos.
-                # En Gemini 3.1 Flash Live, setup_complete puede ser None si server_content
-                # llega primero. Al detectarlo, se activa el Event self.setup_confirmed para
-                # desbloquear send_initial_greeting y habilitar la transmisión de tramas de audio.
-                if message.setup_complete:
-                    if not self.setup_confirmed.is_set():
-                        self.setup_confirmed.set()
-                        # ✅ Log format mandated by Hito 1 Annex (ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md).
-                        # Formato de log exigido por el Anexo del Hito 1.
-                        logger.info("# [SDK] Handshake Gemini 3.1 (SetupComplete: True) VALIDADO")
+            data = json.loads(raw_payload)
+            if data.get("event") != "media":
+                # Non-media events (start, stop, mark) are acknowledged but not
+                # forwarded to Gemini.
+                # Los eventos no-media (start, stop, mark) se reconocen pero no
+                # se reenvían a Gemini.
+                logger.debug(f"[TWILIO-RX] Evento no-media recibido: {data.get('event')}")
+                return
 
-                # Check for audio/text model turns.
-                # Comprobar turnos del modelo de audio/texto.
-                if message.server_content and message.server_content.model_turn:
-                    for part in message.server_content.model_turn.parts:
-                        if part.inline_data:
-                            yield self._transcode_gemini_to_twilio(part.inline_data.data)
-                        if part.text and call_sid:
-                            await self._persist_transcript(call_sid, f"BOT: {part.text}")
+            # Extract the base64-encoded mu-law audio chunk from the Twilio payload.
+            # Extraer el fragmento de audio mu-law codificado en base64 del payload de Twilio.
+            mulaw_b64 = data["media"]["payload"]
+            mulaw_bytes = base64.b64decode(mulaw_b64)
 
-                elif message.server_content and message.server_content.interrupted:
-                    logger.warning("# [SDK EVENT] Interrupción de IA detectada (Barge-in).")
+            # Transcode mu-law 8kHz → PCM 16kHz via audioop sidecar.
+            # This is the mandatory conversion for Gemini Live compatibility.
+            # Transcodificar mu-law 8kHz → PCM 16kHz mediante el sidecar audioop.
+            # Esta es la conversión obligatoria para la compatibilidad con Gemini Live.
+            pcm_16khz_bytes = self._transcode_mulaw_to_pcm16k(mulaw_bytes)
 
-        except Exception as e:
-            logger.error(f"# [SDK LISTEN ERROR] Error en recepción de IA: {str(e)}")
+            # Place the PCM chunk onto the queue. The queue is non-blocking here;
+            # if the consumer is slow, chunks accumulate in memory. For a production
+            # system a bounded queue with overflow handling would be appropriate.
+            # Colocar el fragmento PCM en la cola. La cola no es bloqueante aquí;
+            # si el consumidor es lento, los fragmentos se acumulan en memoria.
+            # Para un sistema de producción sería apropiada una cola acotada con
+            # gestión de desbordamiento.
+            await self.audio_input_queue.put(pcm_16khz_bytes)
 
+        except (json.JSONDecodeError, KeyError) as exc:
+            logger.warning(
+                f"[TWILIO-RX] Payload de Twilio malformado o con clave ausente: {exc}"
+            )
+        except Exception as exc:
+            logger.error(
+                f"[TWILIO-RX] Error inesperado al procesar audio entrante de Twilio: {exc}",
+                exc_info=True
+            )
 
-if __name__ == "__main__":
-    # Standard 2026 Syntax Check Entry point.
-    # Punto de entrada de comprobación sintáctica estándar 2026.
-    print("# [SERVICE] Módulo de servicios listo para la orquestación.")
+    async def _forward_twilio_audio_to_gemini(self, session) -> None:
+        """
+        Coroutine: continuously reads PCM audio from audio_input_queue and
+        streams it to the active Gemini Live session.
+
+        This coroutine runs concurrently with _receive_gemini_audio and
+        _forward_gemini_audio_to_twilio for the duration of the session.
+        It terminates when session_active is set to False and the queue
+        is drained.
+        ---
+        Corrutina: lee continuamente audio PCM de audio_input_queue y lo transmite
+        a la sesión Gemini Live activa.
+
+        Esta corrutina se ejecuta de forma concurrente con _receive_gemini_audio y
+        _forward_gemini_audio_to_twilio durante la duración de la sesión.
+        Termina cuando session_active se establece en False y la cola se vacía.
+        """
+        logger.info("[GEMINI-TX] Corrutina de envío de audio a Gemini iniciada.")
+        try:
+            while self.session_active:
+                try:
+                    # Wait for a PCM chunk with a generous timeout to avoid
+                    # spinning on an empty queue.
+                    # Esperar un fragmento PCM con un timeout generoso para evitar
+                    # girar en una cola vacía.
+                    pcm_chunk = await asyncio.wait_for(
+                        self.audio_input_queue.get(),
+                        timeout=TIMEOUT_AUDIO_RECEIVE_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    # No audio arrived in the timeout window. If session is still
+                    # active this is normal silence; log and continue.
+                    # No llegó audio en la ventana de timeout. Si la sesión sigue
+                    # activa esto es silencio normal; loguear y continuar.
+                    logger.debug(
+                        "[GEMINI-TX] Timeout esperando audio de Twilio (silencio normal). "
+                        "Continuando..."
+                    )
+                    continue
+
+                # Send the PCM chunk to Gemini Live using the SDK 1.69.0 compliant
+                # audio sending syntax with types.Blob.
+                # Enviar el fragmento PCM a Gemini Live usando la sintaxis de envío
+                # de audio conforme a SDK 1.69.0 con types.Blob.
+                await session.send_realtime_input(
+                    audio=types.Blob(
+                        data=pcm_chunk,
+                        mime_type=GEMINI_AUDIO_MIME_TYPE
+                    )
+                )
+                logger.debug(
+                    f"[GEMINI-TX] Fragmento PCM enviado a Gemini: {len(pcm_chunk)} bytes."
+                )
+                self.audio_input_queue.task_done()
+
+        except Exception as exc:
+            logger.error(
+                f"[GEMINI-TX] Error en la corrutina de envío a Gemini: {exc}",
+                exc_info=True
+            )
+        finally:
+            logger.info("[GEMINI-TX] Corrutina de envío de audio a Gemini finalizada.")
+
+    # -----------------------------------------------------------------------
+    # OUTBOUND AUDIO PIPELINE / PIPELINE DE AUDIO SALIENTE
+    # -----------------------------------------------------------------------
+
+    async def _receive_gemini_audio(self, session) -> None:
+        """
+        Coroutine: continuously reads responses from the Gemini Live session
+        and places audio chunks onto audio_output_queue for delivery to Twilio.
+
+        Iterates over session.receive() which yields LiveServerMessage objects.
+        Audio data is found in response.server_content.model_turn.parts[n].inline_data.
+        Interruption signals from Gemini (VAD-driven) are handled by flushing
+        the output queue to stop playback immediately.
+        ---
+        Corrutina: lee continuamente las respuestas de la sesión Gemini Live y
+        coloca fragmentos de audio en audio_output_queue para su entrega a Twilio.
+
+        Itera sobre session.receive() que produce objetos LiveServerMessage.
+        Los datos de audio se encuentran en
+        response.server_content.model_turn.parts[n].inline_data.
+        Las señales de interrupción de Gemini (dirigidas por VAD) se gestionan
+        vaciando la cola de salida para detener la reproducción de forma inmediata.
+        """
+        logger.info("[GEMINI-RX] Corrutina de recepción de audio de Gemini iniciada.")
+        try:
+            async for response in session.receive():
+
+                # --- Interruption Handling / Gestión de Interrupciones ---
+                # If Gemini's VAD detects the user is speaking while the model
+                # is responding, it sends an interrupted signal. We must flush
+                # the output queue immediately to stop sending stale audio to Twilio.
+                # Si el VAD de Gemini detecta que el usuario está hablando mientras
+                # el modelo está respondiendo, envía una señal de interrupción.
+                # Debemos vaciar la cola de salida inmediatamente para dejar de
+                # enviar audio obsoleto a Twilio.
+                if (
+                    response.server_content
+                    and response.server_content.interrupted is True
+                ):
+                    logger.info(
+                        "[GEMINI-RX] Señal de interrupción recibida de Gemini. "
+                        "Vaciando cola de audio de salida..."
+                    )
+                    # Drain the output queue to discard buffered audio from the
+                    # interrupted response.
+                    # Vaciar la cola de salida para descartar el audio en buffer
+                    # de la respuesta interrumpida.
+                    while not self.audio_output_queue.empty():
+                        try:
+                            self.audio_output_queue.get_nowait()
+                            self.audio_output_queue.task_done()
+                        except asyncio.QueueEmpty:
+                            break
+                    continue
+
+                # --- Audio Response Extraction / Extracción de Respuesta de Audio ---
+                if not response.server_content:
+                    continue
+                if not response.server_content.model_turn:
+                    continue
+
+                for part in response.server_content.model_turn.parts:
+                    if part.inline_data and part.inline_data.data:
+                        # Raw PCM 24kHz audio bytes from Gemini Live output.
+                        # These must be transcoded to mu-law 8kHz before sending
+                        # back to Twilio.
+                        # Bytes de audio PCM 24kHz sin procesar de la salida de Gemini Live.
+                        # Deben transcodificarse a mu-law 8kHz antes de enviarlos
+                        # de vuelta a Twilio.
+                        pcm_24khz_bytes = part.inline_data.data
+                        await self.audio_output_queue.put(pcm_24khz_bytes)
+                        logger.debug(
+                            f"[GEMINI-RX] Fragmento de audio recibido de Gemini: "
+                            f"{len(pcm_24khz_bytes)} bytes PCM 24kHz."
+                        )
+
+                # Log turn completion for traceability.
+                # Registrar la finalización del turno para trazabilidad.
+                if response.server_content.turn_complete:
+                    logger.info("[GEMINI-RX] Turno de Gemini completado.")
+
+        except Exception as exc:
+            logger.error(
+                f"[GEMINI-RX] Error en la corrutina de recepción de Gemini: {exc}",
+                exc_info=True
+            )
+        finally:
+            logger.info("[GEMINI-RX] Corrutina de recepción de audio de Gemini finalizada.")
+
+    async def _forward_gemini_audio_to_twilio(self, twilio_websocket) -> None:
+        """
+        Coroutine: reads PCM 24kHz audio from audio_output_queue, transcodes
+        it to G.711 mu-law 8kHz, and sends it back to Twilio via the WebSocket.
+
+        Audio is encoded as a Twilio Media Streams 'media' event with the
+        base64-encoded mu-law payload embedded in the JSON message structure.
+        ---
+        Corrutina: lee audio PCM 24kHz de audio_output_queue, lo transcodifica
+        a G.711 mu-law 8kHz, y lo envía de vuelta a Twilio a través del WebSocket.
+
+        El audio se codifica como un evento 'media' de Twilio Media Streams con
+        el payload mu-law codificado en base64 embebido en la estructura de
+        mensaje JSON.
+        """
+        logger.info("[TWILIO-TX] Corrutina de envío de audio a Twilio iniciada.")
+        try:
+            while self.session_active:
+                try:
+                    pcm_24khz_chunk = await asyncio.wait_for(
+                        self.audio_output_queue.get(),
+                        timeout=TIMEOUT_AUDIO_RECEIVE_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    logger.debug(
+                        "[TWILIO-TX] Timeout esperando audio de Gemini. "
+                        "Continuando..."
+                    )
+                    continue
+
+                # Transcode PCM 24kHz → mu-law 8kHz for Twilio compatibility.
+                # Transcodificar PCM 24kHz → mu-law 8kHz para compatibilidad con Twilio.
+                mulaw_chunk = self._transcode_pcm24k_to_mulaw(pcm_24khz_chunk)
+
+                # Encode the mu-law bytes as base64 for the Twilio JSON payload.
+                # Codificar los bytes mu-law como base64 para el payload JSON de Twilio.
+                mulaw_b64 = base64.b64encode(mulaw_chunk).decode("utf-8")
+
+                # Build the Twilio Media Streams 'media' event message.
+                # Construir el mensaje de evento 'media' de Twilio Media Streams.
+                twilio_media_message = json.dumps({
+                    "event": "media",
+                    "media": {
+                        "payload": mulaw_b64
+                    }
+                })
+
+                # Send the encoded audio back to the caller via the Twilio WebSocket.
+                # Enviar el audio codificado de vuelta al llamante a través del
+                # WebSocket de Twilio.
+                await twilio_websocket.send(twilio_media_message)
+                logger.debug(
+                    f"[TWILIO-TX] Fragmento mu-law enviado a Twilio: "
+                    f"{len(mulaw_chunk)} bytes."
+                )
+                self.audio_output_queue.task_done()
+
+        except Exception as exc:
+            logger.error(
+                f"[TWILIO-TX] Error en la corrutina de envío a Twilio: {exc}",
+                exc_info=True
+            )
+        finally:
+            logger.info("[TWILIO-TX] Corrutina de envío de audio a Twilio finalizada.")
+
+    # -----------------------------------------------------------------------
+    # AUDIO TRANSCODING HELPERS / HELPERS DE TRANSCODIFICACIÓN DE AUDIO
+    # -----------------------------------------------------------------------
+
+    def _transcode_mulaw_to_pcm16k(self, mulaw_bytes: bytes) -> bytes:
+        """
+        Transcodes G.711 mu-law 8kHz (Twilio input format) to PCM 16-bit 16kHz
+        (Gemini Live input format).
+
+        Process:
+            1. Decode mu-law to PCM 16-bit 8kHz using audioop.ulaw2lin.
+            2. Upsample from 8kHz to 16kHz using audioop.ratecv.
+
+        Args:
+            mulaw_bytes (bytes): Raw G.711 mu-law encoded audio at 8kHz.
+
+        Returns:
+            bytes: Raw PCM 16-bit little-endian audio at 16kHz.
+        ---
+        Transcodifica G.711 mu-law 8kHz (formato de entrada de Twilio) a PCM
+        16-bit 16kHz (formato de entrada de Gemini Live).
+
+        Proceso:
+            1. Decodificar mu-law a PCM 16-bit 8kHz usando audioop.ulaw2lin.
+            2. Sobremuestrear de 8kHz a 16kHz usando audioop.ratecv.
+
+        Args:
+            mulaw_bytes (bytes): Audio G.711 mu-law sin procesar a 8kHz.
+
+        Returns:
+            bytes: Audio PCM 16-bit little-endian sin procesar a 16kHz.
+        """
+        import audioop
+
+        # Step 1: Decode mu-law to linear PCM 16-bit at 8kHz.
+        # audioop.ulaw2lin(fragment, width) — width=2 means 16-bit samples.
+        # Paso 1: Decodificar mu-law a PCM lineal 16-bit a 8kHz.
+        # audioop.ulaw2lin(fragmento, ancho) — ancho=2 significa muestras de 16-bit.
+        pcm_8khz = audioop.ulaw2lin(mulaw_bytes, 2)
+
+        # Step 2: Upsample from 8kHz to 16kHz.
+        # audioop.ratecv(fragment, width, nchannels, inrate, outrate, state)
+        # nchannels=1 (mono), state=None (no previous conversion state).
+        # Paso 2: Sobremuestrear de 8kHz a 16kHz.
+        # audioop.ratecv(fragmento, ancho, ncanales, tasa_entrada, tasa_salida, estado)
+        # ncanales=1 (mono), estado=None (sin estado de conversión previo).
+        pcm_16khz, _ = audioop.ratecv(
+            pcm_8khz, 2, 1,
+            TWILIO_INPUT_SAMPLE_RATE,
+            16000,
+            None
+        )
+
+        return pcm_16khz
+
+    def _transcode_pcm24k_to_mulaw(self, pcm_24khz_bytes: bytes) -> bytes:
+        """
+        Transcodes PCM 16-bit 24kHz (Gemini Live output format) to G.711
+        mu-law 8kHz (Twilio output format).
+
+        Process:
+            1. Downsample from 24kHz to 8kHz using audioop.ratecv.
+            2. Encode PCM 16-bit 8kHz to mu-law using audioop.lin2ulaw.
+
+        Args:
+            pcm_24khz_bytes (bytes): Raw PCM 16-bit little-endian audio at 24kHz.
+
+        Returns:
+            bytes: Raw G.711 mu-law encoded audio at 8kHz.
+        ---
+        Transcodifica PCM 16-bit 24kHz (formato de salida de Gemini Live) a
+        G.711 mu-law 8kHz (formato de salida de Twilio).
+
+        Proceso:
+            1. Submuestrear de 24kHz a 8kHz usando audioop.ratecv.
+            2. Codificar PCM 16-bit 8kHz a mu-law usando audioop.lin2ulaw.
+
+        Args:
+            pcm_24khz_bytes (bytes): Audio PCM 16-bit little-endian sin procesar a 24kHz.
+
+        Returns:
+            bytes: Audio G.711 mu-law sin procesar a 8kHz.
+        """
+        import audioop
+
+        # Step 1: Downsample from 24kHz to 8kHz.
+        # Paso 1: Submuestrear de 24kHz a 8kHz.
+        pcm_8khz, _ = audioop.ratecv(
+            pcm_24khz_bytes, 2, 1,
+            GEMINI_OUTPUT_SAMPLE_RATE,
+            TWILIO_OUTPUT_SAMPLE_RATE,
+            None
+        )
+
+        # Step 2: Encode linear PCM 16-bit to mu-law.
+        # audioop.lin2ulaw(fragment, width) — width=2 means 16-bit samples.
+        # Paso 2: Codificar PCM lineal 16-bit a mu-law.
+        # audioop.lin2ulaw(fragmento, ancho) — ancho=2 significa muestras de 16-bit.
+        mulaw_bytes = audioop.lin2ulaw(pcm_8khz, 2)
+
+        return mulaw_bytes
+
+    # -----------------------------------------------------------------------
+    # SESSION CONTROL / CONTROL DE SESIÓN
+    # -----------------------------------------------------------------------
+
+    def terminate_session(self) -> None:
+        """
+        Signals all active coroutines to terminate gracefully by setting
+        the session_active flag to False.
+
+        This method is called by the Django WebSocket view when the Twilio
+        'stop' event is received, indicating the caller has hung up.
+        ---
+        Señaliza a todas las corrutinas activas que terminen de forma elegante
+        estableciendo el flag session_active en False.
+
+        Este método es llamado por la vista WebSocket de Django cuando se recibe
+        el evento 'stop' de Twilio, indicando que el llamante ha colgado.
+        """
+        logger.info(
+            "[SESSION] terminate_session() invocado. "
+            "Señalizando fin de sesión a todas las corrutinas..."
+        )
+        self.session_active = False

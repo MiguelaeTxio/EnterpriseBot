@@ -35,13 +35,138 @@ class VoiceOrchestrator:
 
     def cleanup_ports(self):
         """
-        Natively releases ports using the 2026 net_connections standard.
+        Closes all active ngrok tunnel sessions via the ngrok cloud API
+        (api.ngrok.com) before killing local processes. This permanently
+        resolves ERR_NGROK_334 ('endpoint already online') caused by orphaned
+        remote tunnel sessions that survive after the local ngrok process is
+        killed.
+
+        Sequence:
+            1. Load NGROK_API_KEY from the environment (set by load_dotenv in
+               __init__).
+            2. Query GET https://api.ngrok.com/endpoints to list all active
+               remote endpoints and extract their tunnel_session IDs.
+            3. Issue POST .../tunnel_sessions/{id}/stop per session — this
+               instructs the ngrok cloud to terminate the remote ephemeral
+               endpoint cleanly, freeing the URL for reuse.
+            4. Wait 3 seconds for ngrok cloud propagation before the caller
+               attempts to open a new tunnel.
+            5. Kill any remaining local processes bound to target ports using
+               the 2026 net_connections standard.
         ---
-        Libera los puertos usando el estándar net_connections de 2026.
+        Cierra todas las tunnel sessions activas de ngrok vía la API cloud de
+        ngrok (api.ngrok.com) antes de matar los procesos locales. Esto resuelve
+        permanentemente ERR_NGROK_334 ('endpoint already online') causado por
+        tunnel sessions remotas huérfanas que sobreviven tras matar el proceso
+        ngrok local.
+
+        Secuencia:
+            1. Cargar NGROK_API_KEY del entorno (establecida por load_dotenv en
+               __init__).
+            2. Consultar GET https://api.ngrok.com/endpoints para listar todos
+               los endpoints remotos activos y extraer sus IDs de tunnel_session.
+            3. Emitir POST .../tunnel_sessions/{id}/stop por sesión — esto
+               instruye a la nube de ngrok a terminar el endpoint efímero remoto
+               de forma limpia, liberando la URL para su reutilización.
+            4. Esperar 3 segundos para la propagación en la nube de ngrok antes
+               de que el llamante intente abrir un nuevo túnel.
+            5. Matar los procesos locales restantes vinculados a los puertos
+               objetivo usando el estándar net_connections de 2026.
         """
-        self.flush_print("# [ORCHESTRATOR] Auditando puertos (net_connections)...")
+        self.flush_print("# [ORCHESTRATOR] Iniciando limpieza de infraestructura ngrok...")
+
+        # STEP 1: Load the ngrok cloud API key from the environment.
+        # PASO 1: Cargar la clave de API cloud de ngrok desde el entorno.
+        ngrok_api_key = os.getenv("NGROK_API_KEY")
+        cloud_api_base = "https://api.ngrok.com"
+        cloud_headers = {
+            "Authorization": f"Bearer {ngrok_api_key}",
+            "Ngrok-Version": "2",
+            "Content-Type": "application/json",
+        }
+
+        if not ngrok_api_key:
+            self.flush_print(
+                "# [CLEANUP] NGROK_API_KEY no encontrada en el entorno. "
+                "Omitiendo cierre de tunnel sessions remotas."
+            )
+        else:
+            # STEP 2: Query active endpoints from the ngrok cloud API.
+            # PASO 2: Consultar los endpoints activos desde la API cloud de ngrok.
+            try:
+                resp = requests.get(
+                    f"{cloud_api_base}/endpoints",
+                    headers=cloud_headers,
+                    timeout=10
+                )
+                if resp.status_code == 200:
+                    endpoints = resp.json().get("endpoints", [])
+                    if not endpoints:
+                        self.flush_print(
+                            "# [CLEANUP] No se encontraron endpoints activos en ngrok cloud."
+                        )
+                    else:
+                        # STEP 3: Stop each tunnel session associated with an active endpoint.
+                        # PASO 3: Detener cada tunnel session asociada a un endpoint activo.
+                        session_ids_stopped = set()
+                        for endpoint in endpoints:
+                            public_url = endpoint.get("public_url", "N/A")
+                            tunnel_session = endpoint.get("tunnel_session", {})
+                            session_id = tunnel_session.get("id", "")
+
+                            if not session_id:
+                                self.flush_print(
+                                    f"# [CLEANUP] Endpoint {public_url} sin tunnel_session.id. "
+                                    "Omitiendo."
+                                )
+                                continue
+
+                            if session_id in session_ids_stopped:
+                                # Avoid duplicate stop calls for shared sessions.
+                                # Evitar llamadas stop duplicadas para sesiones compartidas.
+                                continue
+
+                            stop_resp = requests.post(
+                                f"{cloud_api_base}/tunnel_sessions/{session_id}/stop",
+                                headers=cloud_headers,
+                                json={},
+                                timeout=10
+                            )
+                            session_ids_stopped.add(session_id)
+                            self.flush_print(
+                                f"# [CLEANUP] Tunnel session {session_id} "
+                                f"({public_url}) detenida "
+                                f"(HTTP {stop_resp.status_code})."
+                            )
+
+                        # STEP 4: Wait for ngrok cloud propagation.
+                        # PASO 4: Esperar la propagación en la nube de ngrok.
+                        if session_ids_stopped:
+                            self.flush_print(
+                                "# [CLEANUP] Esperando 3s para propagación en ngrok cloud..."
+                            )
+                            time.sleep(3)
+                else:
+                    self.flush_print(
+                        f"# [CLEANUP] API cloud ngrok respondió HTTP {resp.status_code}. "
+                        f"Respuesta: {resp.text[:200]}"
+                    )
+
+            except requests.exceptions.ConnectionError as exc:
+                self.flush_print(
+                    f"# [CLEANUP] Error de conexión con API cloud ngrok: {exc}. "
+                    "Continuando con limpieza de puertos locales."
+                )
+            except Exception as exc:
+                self.flush_print(
+                    f"# [CLEANUP] Error inesperado al limpiar ngrok cloud: {exc}"
+                )
+
+        # STEP 5: Kill local processes bound to target ports.
+        # PASO 5: Matar procesos locales vinculados a los puertos objetivo.
+        self.flush_print("# [ORCHESTRATOR] Auditando puertos locales (net_connections)...")
         target_ports = [8081, 4041, 4040]
-        
+
         # ✅ APRIL 2026 FIX: Use net_connections() instead of deprecated connections()
         for conn in psutil.net_connections(kind='inet'):
             if conn.laddr.port in target_ports and conn.pid:

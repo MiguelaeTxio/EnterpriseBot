@@ -1,271 +1,406 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/voice_sidecar_bridge.py
-import os
-import json
-import asyncio
-import logging
-import signal
-from aiohttp import web
-import django
-
 """
 EnterpriseBot Universal Hybrid Bridge (Standard April 2026).
-Exclusively uses aiohttp to handle Twilio's POST (TwiML) and GET (WebSocket) dual handshake.
-This eliminates the 'unsupported HTTP method' error by separating concerns via routing.
-ARCHITECTURAL FIX APRIL 2026: The Gemini Live session context manager is now owned
-by this bridge layer using the canonical SDK 1.69.0 pattern:
-    async with service.client.aio.live.connect(
-        model=service.model_id, config=service.build_live_config()
-    ) as session
-The previous anti-pattern of awaiting connect() before async with is eliminated.
-reset_session_state() is called before each new connection to ensure per-call isolation.
+
+Uses aiohttp exclusively to handle Twilio's dual HTTP handshake:
+    - POST /api/vox/inbound/  → TwiML response pointing to the WSS stream path.
+    - GET  /media             → WebSocket upgrade for binary audio streaming.
+
+This separation of concerns eliminates the 'unsupported HTTP method' conflict
+that arises when a single route attempts to serve both HTTP and WebSocket traffic.
+
+Session lifecycle ownership:
+    This bridge layer delegates the complete Gemini Live session lifecycle to
+    VoiceOrchestrationService.run_voice_session(). The service internally owns
+    the canonical SDK 1.69.0 async context manager:
+
+        async with client.aio.live.connect(model=..., config=...) as session
+
+    Entry into that context manager guarantees the WebSocket handshake with
+    Google's infrastructure is complete and the session is ready to accept data.
+    No setup_complete event polling is performed anywhere in this stack.
+
+Inbound audio delivery:
+    Each Twilio 'media' event is forwarded to
+    VoiceOrchestrationService.receive_twilio_audio() which decodes the
+    base64 mu-law payload, transcodes it to PCM 16kHz, and places it onto
+    the internal asyncio.Queue consumed by the Gemini sender coroutine.
+
+Session termination:
+    The Twilio 'stop' event triggers VoiceOrchestrationService.terminate_session(),
+    which sets session_active = False, causing all concurrent coroutines to drain
+    and exit gracefully.
+
+Usage:
+    Launched by voice_orchestrator.py as a subprocess:
+        python voice_sidecar_bridge.py
 ---
 Puente Híbrido Universal de EnterpriseBot (Estándar Abril 2026).
-Usa exclusivamente aiohttp para gestionar el handshake dual de Twilio: POST (TwiML) y GET (WebSocket).
-Esto elimina el error de 'método HTTP no soportado' separando responsabilidades vía enrutamiento.
-CORRECCIÓN ARQUITECTÓNICA ABRIL 2026: El context manager de sesión Gemini Live es ahora
-propiedad de esta capa bridge usando el patrón canónico del SDK 1.69.0:
-    async with service.client.aio.live.connect(
-        model=service.model_id, config=service.build_live_config()
-    ) as session
-El anti-patrón previo de awaiting connect() antes del async with queda eliminado.
-reset_session_state() se llama antes de cada nueva conexión para garantizar el aislamiento por llamada.
+
+Usa aiohttp exclusivamente para gestionar el doble handshake HTTP de Twilio:
+    - POST /api/vox/inbound/  → Respuesta TwiML apuntando a la ruta WSS de stream.
+    - GET  /media             → Actualización WebSocket para streaming de audio binario.
+
+Esta separación de responsabilidades elimina el conflicto de 'método HTTP no soportado'
+que surge cuando una sola ruta intenta servir tanto tráfico HTTP como WebSocket.
+
+Propiedad del ciclo de vida de la sesión:
+    Esta capa bridge delega el ciclo de vida completo de la sesión Gemini Live en
+    VoiceOrchestrationService.run_voice_session(). El servicio es internamente
+    propietario del context manager asíncrono canónico del SDK 1.69.0:
+
+        async with client.aio.live.connect(model=..., config=...) as session
+
+    La entrada en ese context manager garantiza que el handshake WebSocket con la
+    infraestructura de Google está completo y la sesión está lista para aceptar datos.
+    No se realiza sondeo de ningún evento setup_complete en ningún punto de esta pila.
+
+Entrega de audio entrante:
+    Cada evento 'media' de Twilio se reenvía a
+    VoiceOrchestrationService.receive_twilio_audio(), que decodifica el payload
+    mu-law en base64, lo transcodifica a PCM 16kHz y lo coloca en la
+    asyncio.Queue interna consumida por la corrutina emisora de Gemini.
+
+Terminación de sesión:
+    El evento 'stop' de Twilio activa VoiceOrchestrationService.terminate_session(),
+    que establece session_active = False, haciendo que todas las corrutinas
+    concurrentes drenen y salgan de forma elegante.
+
+Uso:
+    Lanzado por voice_orchestrator.py como subproceso:
+        python voice_sidecar_bridge.py
 """
 
-# Django Environment Initialization / Inicialización del Entorno Django
+import asyncio
+import json
+import logging
+import os
+import signal
+
+import django
+from aiohttp import web
+
+# ---------------------------------------------------------------------------
+# DJANGO ENVIRONMENT INITIALIZATION / INICIALIZACIÓN DEL ENTORNO DJANGO
+# ---------------------------------------------------------------------------
+# Must be performed before any Django model or app import.
+# Debe realizarse antes de cualquier importación de modelo o app de Django.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "enterprise_core.settings")
 django.setup()
 
-from vox_bridge.services import GeminiStreamService
+from vox_bridge.services import VoiceOrchestrationService
 
-# Advanced Logging Configuration / Configuración de Registro Avanzada
+# ---------------------------------------------------------------------------
+# LOGGING CONFIGURATION / CONFIGURACIÓN DE LOGGING
+# ---------------------------------------------------------------------------
+# Structured logging with timestamp and level for PythonAnywhere console output.
+# Logging estructurado con marca de tiempo y nivel para la salida de consola
+# de PythonAnywhere.
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s # [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s # [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("VoiceSidecar")
 
 
+# ---------------------------------------------------------------------------
+# UNIVERSAL VOICE BRIDGE / PUENTE DE VOZ UNIVERSAL
+# ---------------------------------------------------------------------------
+
 class UniversalVoiceBridge:
     """
-    Core Bridge using aiohttp for high-concurrency voice streaming.
-    Owns the Gemini Live session lifecycle using the canonical SDK 1.69.0 async
-    context manager pattern, ensuring correct Setup-First protocol execution.
+    Core bridge using aiohttp for high-concurrency voice streaming between
+    Twilio Media Streams and the Gemini 3.1 Live API.
+
+    Responsibilities:
+        - Serve TwiML via HTTP POST to instruct Twilio to open a Media Stream.
+        - Accept the WebSocket upgrade from Twilio via HTTP GET.
+        - Instantiate a fresh VoiceOrchestrationService per call to guarantee
+          complete per-call isolation of asyncio queues and session state.
+        - Delegate the full Gemini Live session lifecycle to
+          VoiceOrchestrationService.run_voice_session(), which internally owns
+          the SDK 1.69.0 canonical async context manager.
+        - Forward each incoming Twilio 'media' event to
+          VoiceOrchestrationService.receive_twilio_audio() for decoding and
+          transcoding before queuing to the Gemini sender coroutine.
+        - Signal session termination to VoiceOrchestrationService via
+          terminate_session() upon receiving the Twilio 'stop' event.
     ---
-    Puente núcleo usando aiohttp para streaming de voz de alta concurrencia.
-    Es propietario del ciclo de vida de la sesión Gemini Live usando el patrón canónico
-    de context manager asíncrono del SDK 1.69.0, asegurando la correcta ejecución
-    del protocolo Setup-First.
+    Puente núcleo usando aiohttp para streaming de voz de alta concurrencia entre
+    Twilio Media Streams y la API Gemini 3.1 Live.
+
+    Responsabilidades:
+        - Servir TwiML vía HTTP POST para instruir a Twilio a abrir un Media Stream.
+        - Aceptar la actualización WebSocket de Twilio vía HTTP GET.
+        - Instanciar un VoiceOrchestrationService fresco por llamada para garantizar
+          el aislamiento completo por llamada de las colas asyncio y el estado de sesión.
+        - Delegar el ciclo de vida completo de la sesión Gemini Live en
+          VoiceOrchestrationService.run_voice_session(), que internamente es propietario
+          del context manager asíncrono canónico del SDK 1.69.0.
+        - Reenviar cada evento 'media' entrante de Twilio a
+          VoiceOrchestrationService.receive_twilio_audio() para decodificación y
+          transcodificación antes de encolar en la corrutina emisora de Gemini.
+        - Señalizar la terminación de sesión a VoiceOrchestrationService vía
+          terminate_session() al recibir el evento 'stop' de Twilio.
     """
 
-    def __init__(self):
+    async def handle_twiml_post(self, request: web.Request) -> web.Response:
         """
-        Initializes a single GeminiStreamService instance shared across requests.
-        reset_session_state() is called per-connection to ensure per-call isolation.
-        ---
-        Inicializa una única instancia de GeminiStreamService compartida entre peticiones.
-        reset_session_state() se llama por conexión para garantizar el aislamiento por llamada.
-        """
-        self.gemini_service = GeminiStreamService()
+        Handles the initial HTTP POST from Twilio when a call is connected.
 
-    async def handle_twiml_post(self, request):
-        """
-        Handles initial POST from Twilio. Returns TwiML pointing to the WSS path.
+        Reads the active ngrok public URL from the shared session file
+        (DOCS/SESSION/NGROK_URL.txt) and returns a TwiML <Connect><Stream>
+        response pointing Twilio to the WSS WebSocket endpoint at /media.
+
+        Args:
+            request (web.Request): The incoming aiohttp HTTP request from Twilio.
+
+        Returns:
+            web.Response: A TwiML XML response with Content-Type text/xml.
         ---
-        Gestiona el POST inicial de Twilio. Devuelve TwiML apuntando a la ruta WSS.
+        Gestiona el HTTP POST inicial de Twilio cuando una llamada se conecta.
+
+        Lee la URL pública activa de ngrok desde el archivo de sesión compartido
+        (DOCS/SESSION/NGROK_URL.txt) y devuelve una respuesta TwiML <Connect><Stream>
+        apuntando a Twilio al endpoint WebSocket WSS en /media.
+
+        Args:
+            request (web.Request): La petición HTTP aiohttp entrante de Twilio.
+
+        Returns:
+            web.Response: Una respuesta XML TwiML con Content-Type text/xml.
         """
-        logger.info("# [HTTP POST] Recibida petición inicial de Twilio. Generando TwiML.")
+        logger.info("# [HTTP POST] Petición inicial de Twilio recibida. Generando TwiML.")
+
+        # Derive the WSS URL from the request host header so that the TwiML
+        # always points to the correct tunnel regardless of the ngrok session.
+        # The /media path is the registered WebSocket upgrade endpoint.
+        # Derivar la URL WSS desde la cabecera host de la petición para que el
+        # TwiML siempre apunte al túnel correcto independientemente de la sesión ngrok.
+        # La ruta /media es el endpoint de actualización WebSocket registrado.
         host = request.host
-        # The WebSocket upgrade path is explicitly defined as /media.
-        # La ruta de actualización WebSocket se define explícitamente como /media.
         wss_url = f"wss://{host}/media"
 
         twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
-            '<Response>'
-            '    <Connect>'
+            "<Response>"
+            "    <Connect>"
             f'        <Stream url="{wss_url}" />'
-            '    </Connect>'
-            '</Response>'
+            "    </Connect>"
+            "</Response>"
         )
-        return web.Response(text=twiml, content_type='text/xml')
 
-    async def handle_websocket_stream(self, request):
+        logger.info(f"# [HTTP POST] TwiML generado. WSS target: {wss_url}")
+        return web.Response(text=twiml, content_type="text/xml")
+
+    async def handle_websocket_stream(self, request: web.Request) -> web.WebSocketResponse:
         """
-        Processes the WebSocket upgrade for binary audio streaming.
-        Owns the Gemini Live session using the canonical SDK 1.69.0 async context manager.
-        Calls reset_session_state() before each new connection to guarantee per-call
-        isolation of DSP state and the Setup-First asyncio.Event.
+        Handles the WebSocket upgrade request from Twilio Media Streams.
+
+        A fresh VoiceOrchestrationService is instantiated per call to guarantee
+        complete isolation of asyncio.Queue state and session_active flag between
+        consecutive calls handled by the same bridge process.
+
+        The Gemini Live session lifecycle is delegated entirely to
+        VoiceOrchestrationService.run_voice_session(), launched as a concurrent
+        asyncio Task alongside the Twilio event reader loop.
+
+        Twilio event handling:
+            'start'  — logs stream and call SIDs for traceability.
+            'media'  — forwards the raw JSON payload to receive_twilio_audio()
+                       for mu-law decoding and PCM transcoding.
+            'stop'   — calls terminate_session() and breaks the reader loop.
+
+        Args:
+            request (web.Request): The incoming aiohttp WebSocket upgrade request.
+
+        Returns:
+            web.WebSocketResponse: The prepared WebSocket response object.
         ---
-        Procesa la actualización WebSocket para streaming de audio binario.
-        Es propietario de la sesión Gemini Live usando el context manager asíncrono
-        canónico del SDK 1.69.0. Llama a reset_session_state() antes de cada nueva
-        conexión para garantizar el aislamiento por llamada del estado DSP y del
-        asyncio.Event del protocolo Setup-First.
+        Gestiona la petición de actualización WebSocket de Twilio Media Streams.
+
+        Se instancia un VoiceOrchestrationService fresco por llamada para garantizar
+        el aislamiento completo del estado asyncio.Queue y el flag session_active entre
+        llamadas consecutivas gestionadas por el mismo proceso bridge.
+
+        El ciclo de vida de la sesión Gemini Live se delega completamente en
+        VoiceOrchestrationService.run_voice_session(), lanzado como una Task asyncio
+        concurrente junto al bucle lector de eventos de Twilio.
+
+        Gestión de eventos de Twilio:
+            'start'  — registra los SIDs de stream y llamada para trazabilidad.
+            'media'  — reenvía el payload JSON bruto a receive_twilio_audio()
+                       para decodificación mu-law y transcodificación PCM.
+            'stop'   — llama a terminate_session() y rompe el bucle lector.
+
+        Args:
+            request (web.Request): La petición de actualización WebSocket aiohttp entrante.
+
+        Returns:
+            web.WebSocketResponse: El objeto de respuesta WebSocket preparado.
         """
         ws = web.WebSocketResponse()
         await ws.prepare(request)
 
-        logger.info("# [WSS] Conexión de audio establecida en /media.")
-        stream_sid = None
+        logger.info("# [WSS] Conexión WebSocket establecida en /media.")
 
-        # ✅ ARCHITECTURAL FIX APRIL 2026: Reset per-call state (DSP + setup_confirmed Event)
-        # before opening a new Gemini Live session. This prevents a stale Event from bypassing
-        # the Setup-First handshake on subsequent calls to the same service instance.
-        # ---
-        # ✅ CORRECCIÓN ARQUITECTÓNICA ABRIL 2026: Reiniciar el estado por llamada
-        # (DSP + Event setup_confirmed) antes de abrir una nueva sesión Gemini Live.
-        # Esto evita que un Event obsoleto omita el handshake Setup-First en llamadas
-        # posteriores a la misma instancia del servicio.
-        self.gemini_service.reset_session_state()
+        # Instantiate a fresh service per call.
+        # Each call gets its own asyncio.Queue instances and a clean session_active
+        # flag, preventing any state bleed between consecutive calls.
+        # Instanciar un servicio fresco por llamada.
+        # Cada llamada obtiene sus propias instancias de asyncio.Queue y un flag
+        # session_active limpio, evitando cualquier contaminación de estado entre
+        # llamadas consecutivas.
+        service = VoiceOrchestrationService()
+
+        # Launch run_voice_session as a concurrent asyncio Task.
+        # This task owns the Gemini Live session lifecycle via the SDK context manager
+        # and runs concurrently with the Twilio event reader loop below.
+        # Lanzar run_voice_session como una Task asyncio concurrente.
+        # Esta tarea es propietaria del ciclo de vida de la sesión Gemini Live mediante
+        # el context manager del SDK y se ejecuta concurrentemente con el bucle lector
+        # de eventos de Twilio a continuación.
+        voice_task = asyncio.ensure_future(service.run_voice_session(ws))
 
         try:
-            # ✅ CANONICAL SDK 1.69.0 PATTERN (April 2026 official documentation):
-            # The bridge owns the async context manager directly.
-            # This replaces the previous anti-pattern:
-            #     async with await self.gemini_service.connect() as google_session
-            # which double-consumed the context manager before the server could send
-            # setup_complete, causing the systematic handshake timeout.
-            # ---
-            # ✅ PATRÓN CANÓNICO SDK 1.69.0 (documentación oficial abril 2026):
-            # El bridge es propietario del context manager asíncrono directamente.
-            # Esto reemplaza el anti-patrón previo:
-            #     async with await self.gemini_service.connect() as google_session
-            # que consumía doblemente el context manager antes de que el servidor pudiera
-            # enviar setup_complete, causando el timeout sistemático del handshake.
-            config = self.gemini_service.build_live_config()
+            # Twilio WebSocket event reader loop.
+            # Bucle lector de eventos WebSocket de Twilio.
+            async for msg in ws:
 
-            async with self.gemini_service.client.aio.live.connect(
-                model=self.gemini_service.model_id,
-                config=config
-            ) as google_session:
+                if msg.type == web.WSMsgType.TEXT:
+                    data = json.loads(msg.data)
+                    event = data.get("event")
 
-                logger.info("# [SDK] Sesión Gemini Live establecida. Esperando Setup-First.")
+                    if event == "start":
+                        # Extract and log stream and call identifiers.
+                        # Extraer y registrar los identificadores de stream y llamada.
+                        stream_sid = (
+                            data.get("start", {}).get("streamSid")
+                            or data.get("start", {}).get("stream_sid")
+                        )
+                        call_sid = (
+                            data.get("start", {}).get("callSid")
+                            or data.get("start", {}).get("call_sid")
+                        )
+                        logger.info(
+                            f"# [EVENT] Stream iniciado — streamSid: {stream_sid} | "
+                            f"callSid: {call_sid}"
+                        )
 
-                async def stream_to_google():
-                    """
-                    Reads Twilio WebSocket events and forwards audio to Gemini Live.
-                    Triggers send_initial_greeting on 'start' event after Setup-First confirmation.
-                    ---
-                    Lee los eventos WebSocket de Twilio y reenvía audio a Gemini Live.
-                    Dispara send_initial_greeting en el evento 'start' tras la confirmación Setup-First.
-                    """
-                    nonlocal stream_sid
-                    async for msg in ws:
-                        if msg.type == web.WSMsgType.TEXT:
-                            data = json.loads(msg.data)
-                            event = data.get("event")
+                    elif event == "media":
+                        # Forward the raw JSON payload to the service for mu-law
+                        # decoding, PCM transcoding, and queuing to Gemini.
+                        # Reenviar el payload JSON bruto al servicio para decodificación
+                        # mu-law, transcodificación PCM y encolado a Gemini.
+                        await service.receive_twilio_audio(msg.data)
 
-                            if event == "start":
-                                # Extract stream and call identifiers from the Twilio start event.
-                                # Extraer identificadores de stream y llamada del evento start de Twilio.
-                                stream_sid = (
-                                    data["start"].get("streamSid")
-                                    or data["start"].get("stream_sid")
-                                )
-                                call_sid = (
-                                    data["start"].get("callSid")
-                                    or data["start"].get("call_sid")
-                                )
-                                logger.info(f"# [EVENT] Stream Activo: {stream_sid}")
+                    elif event == "stop":
+                        # The caller has hung up. Signal the service to terminate
+                        # all concurrent coroutines gracefully.
+                        # El llamante ha colgado. Señalizar al servicio para que
+                        # termine todas las corrutinas concurrentes de forma elegante.
+                        logger.info("# [EVENT] Evento 'stop' recibido de Twilio.")
+                        service.terminate_session()
+                        break
 
-                                # send_initial_greeting internally awaits self.setup_confirmed
-                                # (set by listen_to_ai) before transmitting any data.
-                                # This coroutine is launched as a background task to avoid
-                                # blocking the Twilio event loop while waiting for the handshake.
-                                # ---
-                                # send_initial_greeting espera internamente self.setup_confirmed
-                                # (activado por listen_to_ai) antes de transmitir cualquier dato.
-                                # Esta corrutina se lanza como tarea en segundo plano para evitar
-                                # bloquear el bucle de eventos de Twilio durante la espera del handshake.
-                                asyncio.ensure_future(
-                                    self.gemini_service.send_initial_greeting(
-                                        google_session, call_sid
-                                    )
-                                )
+                    else:
+                        # Log unhandled event types for diagnostic traceability.
+                        # Registrar tipos de eventos no gestionados para trazabilidad diagnóstica.
+                        logger.debug(f"# [EVENT] Evento no gestionado recibido: {event}")
 
-                            elif event == "media":
-                                # Audio frames are silently dropped by send_audio_frame if
-                                # setup_confirmed is not yet set (Setup-First enforcement).
-                                # ---
-                                # Las tramas de audio son descartadas silenciosamente por
-                                # send_audio_frame si setup_confirmed aún no está activo
-                                # (imposición del protocolo Setup-First).
-                                if stream_sid:
-                                    await self.gemini_service.send_audio_frame(
-                                        google_session, data["media"]["payload"]
-                                    )
+                elif msg.type == web.WSMsgType.CLOSED:
+                    logger.info("# [WSS] WebSocket cerrado por Twilio.")
+                    service.terminate_session()
+                    break
 
-                            elif event == "stop":
-                                logger.info("# [EVENT] Evento 'stop' recibido de Twilio.")
-                                break
+                elif msg.type == web.WSMsgType.ERROR:
+                    logger.error(
+                        f"# [WSS] Error en el WebSocket de Twilio: {ws.exception()}"
+                    )
+                    service.terminate_session()
+                    break
 
-                        elif msg.type == web.WSMsgType.CLOSED:
-                            logger.info("# [WSS] WebSocket cerrado por Twilio.")
-                            break
+        except Exception as exc:
+            logger.error(
+                f"# [WSS] Error inesperado en el bucle de eventos de Twilio: {exc}",
+                exc_info=True,
+            )
+            service.terminate_session()
 
-                async def stream_from_google():
-                    """
-                    Receives audio responses from Gemini Live and forwards them to Twilio.
-                    listen_to_ai sets setup_confirmed upon receiving setup_complete from the server.
-                    ---
-                    Recibe respuestas de audio de Gemini Live y las reenvía a Twilio.
-                    listen_to_ai activa setup_confirmed al recibir setup_complete del servidor.
-                    """
-                    async for mu_law_payload in self.gemini_service.listen_to_ai(google_session):
-                        if stream_sid and not ws.closed:
-                            response = {
-                                "event": "media",
-                                "streamSid": stream_sid,
-                                "media": {"payload": mu_law_payload}
-                            }
-                            await ws.send_str(json.dumps(response))
-
-                # Both coroutines run concurrently:
-                # - stream_from_google: receives server messages and sets setup_confirmed.
-                # - stream_to_google: waits for start event, then launches greeting as background task.
-                # This ordering guarantees listen_to_ai is already running when setup_complete arrives.
-                # ---
-                # Ambas corrutinas corren concurrentemente:
-                # - stream_from_google: recibe mensajes del servidor y activa setup_confirmed.
-                # - stream_to_google: espera el evento start y lanza el saludo como tarea en segundo plano.
-                # Este orden garantiza que listen_to_ai ya está corriendo cuando llega setup_complete.
-                await asyncio.gather(stream_to_google(), stream_from_google())
-
-        except Exception as e:
-            logger.error(f"# [ERROR] Fallo en el flujo de sesión: {str(e)}")
         finally:
-            logger.info("# [WSS] Cerrando conexión WebSocket.")
-            return ws
+            # Ensure the voice task is cancelled if the WebSocket closes before
+            # the session completes naturally.
+            # Asegurar que la tarea de voz se cancela si el WebSocket se cierra antes
+            # de que la sesión se complete de forma natural.
+            if not voice_task.done():
+                voice_task.cancel()
+                try:
+                    await voice_task
+                except asyncio.CancelledError:
+                    logger.info("# [WSS] Tarea de sesión de voz cancelada correctamente.")
+
+            logger.info("# [WSS] Conexión WebSocket finalizada.")
+
+        return ws
 
 
-async def main():
+# ---------------------------------------------------------------------------
+# APPLICATION ENTRY POINT / PUNTO DE ENTRADA DE LA APLICACIÓN
+# ---------------------------------------------------------------------------
+
+async def main() -> None:
     """
-    Application entry point. Configures aiohttp routing and starts the TCP server.
+    Application entry point. Configures aiohttp routing and starts the TCP server
+    on port 8081.
+
+    Routes:
+        POST /api/vox/inbound/  → handle_twiml_post
+        GET  /media             → handle_websocket_stream
+
+    Signal handling:
+        SIGINT and SIGTERM trigger a clean shutdown via asyncio.Event.
     ---
-    Punto de entrada de la aplicación. Configura el enrutamiento aiohttp e inicia el servidor TCP.
+    Punto de entrada de la aplicación. Configura el enrutamiento aiohttp e inicia
+    el servidor TCP en el puerto 8081.
+
+    Rutas:
+        POST /api/vox/inbound/  → handle_twiml_post
+        GET  /media             → handle_websocket_stream
+
+    Gestión de señales:
+        SIGINT y SIGTERM activan un apagado limpio vía asyncio.Event.
     """
     bridge = UniversalVoiceBridge()
     app = web.Application()
 
-    # Separation of paths to avoid HTTP method conflicts between TwiML and WebSocket.
-    # Separación de rutas para evitar conflictos de método HTTP entre TwiML y WebSocket.
-    app.router.add_post('/api/vox/inbound/', bridge.handle_twiml_post)
-    app.router.add_get('/media', bridge.handle_websocket_stream)
+    # Separation of HTTP method concerns via distinct route paths.
+    # This eliminates the 'unsupported HTTP method' error that occurs when a
+    # single route attempts to serve both POST (TwiML) and GET (WebSocket) traffic.
+    # Separación de responsabilidades de método HTTP mediante rutas distintas.
+    # Esto elimina el error de 'método HTTP no soportado' que ocurre cuando una
+    # sola ruta intenta servir tanto tráfico POST (TwiML) como GET (WebSocket).
+    app.router.add_post("/api/vox/inbound/", bridge.handle_twiml_post)
+    app.router.add_get("/media", bridge.handle_websocket_stream)
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8081)
-
-    logger.info("# [READY] Puente HÍBRIDO (aiohttp) activo en puerto 8081.")
+    site = web.TCPSite(runner, "0.0.0.0", 8081)
     await site.start()
 
+    logger.info("# [READY] Puente HÍBRIDO (aiohttp) activo en puerto 8081.")
+
+    # Graceful shutdown via OS signal handling.
+    # Apagado elegante mediante gestión de señales del SO.
     stop_event = asyncio.Event()
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop_event.set)
+
     await stop_event.wait()
+    logger.info("# [SHUTDOWN] Señal de apagado recibida. Limpiando recursos...")
     await runner.cleanup()
+    logger.info("# [SHUTDOWN] Puente detenido correctamente.")
 
 
 if __name__ == "__main__":
