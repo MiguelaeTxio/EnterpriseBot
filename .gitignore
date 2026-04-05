@@ -7,3 +7,4 @@ db.sqlite3
 /media/
 /staticfiles_production/
 *_venv/
+gcp_credentials.json

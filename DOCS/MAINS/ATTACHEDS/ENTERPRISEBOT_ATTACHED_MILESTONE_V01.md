@@ -1,172 +1,181 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
-# ANEXO HITO 1: INFRAESTRUCTURA DE VOZ (ESTABILIZACIÓN CRÍTICA 3.1)
-# ESTADO: EN PROGRESO
-# FECHA ACTUALIZACIÓN: 2026-04-04
+
+# ENTERPRISEBOT — ANEXO HITO V01
+**Estado:** EN PROGRESO
+**Título:** Validación E2E del Flujo de Voz Real: Twilio → ngrok → Gemini 2.5 Native Audio (Vertex AI)
+**Fecha de última actualización:** 2026-04-05
 
 ---
 
-## 1. RESUMEN DE SESIÓN (2026-04-04)
+## 1. OBJETIVO DEL HITO
 
-### Problema de Partida
-El sidecar bridge (voice_sidecar_bridge.py) intentaba importar una clase
-GeminiStreamService que no existía en vox_bridge/services.py. La clase real
-es VoiceOrchestrationService. Adicionalmente, test_bridge_connectivity.py
-usaba send_client_content (inválido para Gemini 3.1 en conversación) y
-end_of_turn=True (argumento no válido para envíos de texto en SDK 1.69.0),
-causando error 1007 y cierre inmediato del WebSocket.
+Demostrar en una llamada telefónica real y completa que el pipeline IVR conversacional
+bidireccional funciona end-to-end:
+```
+Llamada outbound Twilio → ngrok → aiohttp WebSocket Bridge → Gemini 2.5 Live API (Vertex AI)
+```
 
-### Intervenciones Realizadas
-
-1. test_bridge_connectivity.py:
-   - Sustituido send_client_content(turns=..., turn_complete=True) por
-     send_realtime_input(text=TEST_PROBE_TEXT).
-   - Eliminado end_of_turn=True — argumento invalido para texto en SDK 1.69.0.
-   - Comentarios inline sincronizados con la firma real del SDK.
-
-2. voice_sidecar_bridge.py:
-   - Reescrito por completo. Eliminada interfaz fantasma GeminiStreamService
-     y toda la logica de setup_confirmed, reset_session_state,
-     build_live_config, send_audio_frame, listen_to_ai.
-   - Integrado VoiceOrchestrationService con su interfaz real:
-     run_voice_session(ws), receive_twilio_audio(payload),
-     terminate_session().
-   - Preservada arquitectura aiohttp: POST /api/vox/inbound/ (TwiML) +
-     GET /media (WebSocket upgrade).
-   - Instanciacion de VoiceOrchestrationService fresca por llamada para
-     aislamiento completo de estado entre llamadas consecutivas.
-
-3. voice_orchestrator.py:
-   - cleanup_ports ampliado con cierre de tunnel sessions via API cloud
-     ngrok (https://api.ngrok.com) usando NGROK_API_KEY del .env.
-   - Secuencia: GET /endpoints -> POST /tunnel_sessions/{id}/stop por
-     cada sesion activa -> espera 3s de propagacion -> kill puertos locales.
-   - Resuelto definitivamente ERR_NGROK_334.
-
-4. vox_bridge/services.py:
-   - Eliminado end_of_turn=True del bloque send_initial_greeting.
-   - Comentarios inline sincronizados con la firma real del SDK 1.69.0.
-
-### Resultado de Validacion Zero-Cost
-Log canonico obtenido:
-    [SDK] Handshake Gemini 3.1 (SetupComplete: True) VALIDADO
-    RESULTADO: VALIDACION DE INFRAESTRUCTURA SUPERADA
-    Audio recibido: 9604 bytes PCM 24kHz.
+Alia (asistente virtual del Grupo Álvarez) debe:
+1. Saludar al llamante al descolgar.
+2. Escuchar la petición del llamante en castellano.
+3. Responder con audio en tiempo real siguiendo el organigrama de atención.
+4. Mantener una conversación multi-turno hasta que el llamante cuelgue.
 
 ---
 
-## 2. ESTADO TECNICO VALIDADO
+## 2. ESTADO ACTUAL AL CIERRE DE SESIÓN 2026-04-05
 
-- SDK: google-genai 1.69.0
-- Modelo: gemini-3.1-flash-live-preview
-- Protocolo Setup-First: Context manager async with client.aio.live.connect(...)
-- Firma texto SDK 1.69.0: await session.send_realtime_input(text="...")
-- Firma audio SDK 1.69.0: await session.send_realtime_input(audio=types.Blob(data=..., mime_type="audio/pcm;rate=16000"))
-- Recepcion audio: response.server_content.model_turn.parts[n].inline_data.data
-- Transcodificacion: mu-law 8kHz <-> PCM 16kHz <-> PCM 24kHz via audioop
-- Infraestructura: ngrok v3 + aiohttp 8081 + Django 5.2.12 WSGI
+### 2.1. Lo que funciona
+- Llamada outbound disparada desde trigger_outbound_call.py.
+- Handshake Gemini (SetupComplete: True) con Vertex AI y Service Account JSON.
+- Autenticación Vertex AI con google.oauth2.service_account.Credentials.
+- TwiML generado correctamente (HTTP 200).
+- WebSocket Twilio conecta a /media en el bridge aiohttp (puerto 8081).
+- ngrok tunnel estable con URL fija: https://deistical-rosalia-detonative.ngrok-free.dev
+- Alia saluda correctamente — el primer turno (saludo inicial vía send_client_content) genera audio y se escucha en la llamada.
+
+### 2.2. Lo que NO funciona
+- Turno 2 completamente muerto: cuando el llamante habla tras el saludo de Alia,
+  Gemini no genera ninguna respuesta. El log muestra cero fragmentos [GEMINI-RX]
+  entre el fin del saludo y el evento stop de Twilio.
+- El log de INFO no muestra ningún evento media de Twilio (se loguean en DEBUG),
+  por lo que no se puede confirmar visualmente si el audio del llamante llega a la cola.
+- La arquitectura de tres corrutinas + asyncio.Queue no ha podido ser validada
+  en el turno 2 con ningún modelo Gemini Live probado.
+
+### 2.3. Hipótesis investigadas y descartadas
+- thinking_level no soportado por Gemini 2.5 → corregido.
+- speech_config ausente → añadido voz Aoede.
+- audioStreamEnd no enviado tras turn_complete → añadido.
+- Service Account sin rol Vertex AI User → verificado y correcto.
+- Gemini API Preview inestable → migrado a Vertex AI GA.
+
+### 2.4. Hipótesis activa — Causa Raíz Probable
+La investigación en foros confirma que la arquitectura actual de tres corrutinas
+con asyncio.Queue es propensa a problemas de sincronización en el turno 2.
+
+La arquitectura documentada por Google (Christopher Brox, Google Cloud) y
+probada en producción para exactamente este caso de uso usa
+session.start_stream(stream=async_generator, mime_type='audio/pcm') —
+un patrón radicalmente diferente donde el generador asíncrono de Twilio alimenta
+directamente el stream de Gemini, eliminando las colas y la sincronización manual.
 
 ---
 
-## 3. HOJA DE RUTA PARA LA SIGUIENTE SESION (LEY SUPREMA)
+## 3. STACK TÉCNICO CONFIRMADO
 
-### OBJETIVO
-Validar el flujo de voz extremo a extremo con una llamada Twilio real:
-Twilio -> ngrok -> sidecar bridge -> Gemini 3.1 Live -> audio de vuelta al llamante.
+| Componente | Valor |
+|---|---|
+| Modelo Gemini | gemini-live-2.5-flash-native-audio |
+| Auth | Vertex AI — Service Account JSON |
+| GCP Project | gen-lang-client-0961484137 |
+| GCP Location | us-central1 |
+| Service Account | enterprisebot-vertex@gen-lang-client-0961484137.iam.gserviceaccount.com |
+| Credenciales | /home/MiguelAeTxio/PROJECTS/EnterpriseBot/gcp_credentials.json |
+| Twilio número | +12603466780 |
+| Número destino demo | +34688360595 |
+| ngrok URL | https://deistical-rosalia-detonative.ngrok-free.dev |
+| Bridge | aiohttp 3.13.5 — puerto 8081 |
+| Framework | Django 5.2.12 |
+| SDK Gemini | google-genai (instalado en venv) |
+| Voz | Aoede |
 
-### ARQUITECTURA DE REFERENCIA (INMUTABLE)
+---
 
-Twilio Media Streams (G.711 mu-law 8kHz)
-    WebSocket WSS
-ngrok tunnel -> aiohttp puerto 8081
-    POST /api/vox/inbound/  ->  TwiML con Connect/Stream url wss://{host}/media
-    GET  /media             ->  WebSocket upgrade
-UniversalVoiceBridge.handle_websocket_stream()
-    instancia fresca por llamada
-VoiceOrchestrationService
-    run_voice_session(ws)
-        async with gemini_client.aio.live.connect(
-            model="gemini-3.1-flash-live-preview",
-            config=LiveConnectConfig(
-                response_modalities=["AUDIO"],
-                system_instruction=Content(parts=[Part(text=SYSTEM_INSTRUCTION)])
-            )
-        ) as session:
-            send_realtime_input(text=INITIAL_GREETING_TEXT)
-            gather(
-                _forward_twilio_audio_to_gemini(session),
-                _receive_gemini_audio(session),
-                _forward_gemini_audio_to_twilio(ws)
-            )
+## 4. ARCHIVOS CLAVE MODIFICADOS EN ESTA SESIÓN
 
-### PASO 1: Verificacion de Configuracion Twilio
+| Archivo | Cambio |
+|---|---|
+| .env | Añadidas variables GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GCP_CREDENTIALS_PATH |
+| vox_bridge/services.py | Migración completa Gemini API → Vertex AI; eliminado thinking_config; añadido speech_config voz Aoede; send_client_content para saludo; audioStreamEnd tras turn_complete |
+| gcp_credentials.json | Subido al servidor (Service Account JSON) |
 
-1. Confirmar que el webhook de voz entrante del numero Twilio apunta a:
-   https://{ngrok_url}/api/vox/inbound/
-   Metodo: HTTP POST.
-2. Confirmar que las variables de entorno estan completas en .env:
-   - TWILIO_ACCOUNT_SID
-   - TWILIO_API_KEY_SID
-   - TWILIO_API_KEY_SECRET
-   - GEMINI_API_KEY
-   - NGROK_API_KEY
-3. Verificar que DOCS/SESSION/NGROK_URL.txt se escribe correctamente al
-   arrancar el orquestador y que vox_bridge/views.py lo lee bien para
-   construir la URL WSS del TwiML.
+---
 
-### PASO 2: Lanzamiento del Sistema
+## 5. HOJA DE RUTA PARA LA SIGUIENTE SESIÓN
 
-    cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot
-    python -m dotenv run python voice_orchestrator.py
+### OBJETIVO ÚNICO: Refactorizar vox_bridge/services.py con arquitectura start_stream
 
-Confirmar en consola:
-    # [SUCCESS] TUNEL 2026 ACTIVO: https://{url}.ngrok-free.dev
-    # [READY] Puente HIBRIDO (aiohttp) activo en puerto 8081.
+#### 5.1. Contexto y Motivación
 
-### PASO 3: Configuracion del Webhook Twilio
+La arquitectura actual usa tres corrutinas independientes con asyncio.Queue:
+- _forward_twilio_audio_to_gemini(session) — consume la cola y envía audio a Gemini.
+- _receive_gemini_audio(session) — recibe audio de Gemini y lo pone en otra cola.
+- _forward_gemini_audio_to_twilio(twilio_websocket) — consume la segunda cola y envía audio a Twilio.
 
-En la consola de Twilio o via CLI:
-    twilio phone-numbers:update {NUMERO} --voice-url https://{ngrok_url}/api/vox/inbound/
+Esta arquitectura introduce sincronización manual propensa a fallos en el turno 2.
 
-Verificar respuesta HTTP 200 y TwiML valido con:
-    curl -s -X POST https://{ngrok_url}/api/vox/inbound/
+La arquitectura probada usa:
 
-Respuesta esperada:
-    <?xml version="1.0" encoding="UTF-8"?>
-    <Response><Connect><Stream url="wss://{ngrok_url}/media"/></Connect></Response>
+    async with self.client.aio.live.connect(model=self.model_id, config=self.config) as session:
+        async for response in session.start_stream(stream=self.twilio_audio_stream(), mime_type='audio/pcm'):
+            if data := response.data:
+                # enviar audio a Twilio
 
-### PASO 4: Llamada de Prueba y Validacion de Logs
+Donde twilio_audio_stream() es un generador asíncrono que:
+1. Lee mensajes del WebSocket de Twilio.
+2. Extrae el payload base64.
+3. Decodifica de mu-law 8kHz a PCM 16kHz.
+4. Hace yield del PCM.
 
-Realizar llamada entrante al numero Twilio configurado.
-Secuencia de logs esperada en consola del sidecar:
+#### 5.2. Pasos de Implementación
 
-    # [HTTP POST] Peticion inicial de Twilio recibida. Generando TwiML.
-    # [HTTP POST] TwiML generado. WSS target: wss://{url}/media
-    # [WSS] Conexion WebSocket establecida en /media.
-    # [EVENT] Stream iniciado -- streamSid: ... | callSid: ...
-    [SDK] Handshake Gemini 3.1 (SetupComplete: True) VALIDADO. Sesion lista.
-    [SESSION] Enviando saludo inicial a Gemini...
-    [SESSION] Saludo inicial enviado correctamente. Lanzando corrutinas...
-    [GEMINI-TX] Corrutina de envio de audio a Gemini iniciada.
-    [GEMINI-RX] Corrutina de recepcion de audio de Gemini iniciada.
-    [TWILIO-TX] Corrutina de envio de audio a Twilio iniciada.
-    [GEMINI-RX] Fragmento de audio recibido de Gemini: XXXX bytes PCM 24kHz.
-    [TWILIO-TX] Fragmento mu-law enviado a Twilio: XXX bytes.
+PASO 1 — Antes de tocar código: Actualizar web y verificar si session.start_stream
+sigue disponible en la versión actual del SDK google-genai instalada en el venv:
 
-### PASO 5: Diagnostico de Fallos Conocidos
+    python -m dotenv run python -c "from google.genai import live; print(dir(live))"
 
-FALLO: TwiML llega pero WebSocket no conecta.
-CAUSA: ngrok no apunta a puerto 8081 o sidecar no esta escuchando.
-ACCION: Verificar DOCS/SESSION/NGROK_URL.txt y puerto 8081 activo.
+Y verificar la versión del SDK:
 
-FALLO: WebSocket conecta pero Gemini falla en handshake.
-CAUSA: GEMINI_API_KEY invalida o infraestructura Preview no disponible.
-ACCION: Verificar clave en .env. El TTFT puede alcanzar 35s -- timeout minimo 60s.
+    python -m dotenv run pip show google-genai
 
-FALLO: Audio llega a Gemini pero no vuelve a Twilio.
-CAUSA: Fallo en transcodificacion PCM 24kHz -> mu-law 8kHz en _transcode_pcm24k_to_mulaw.
-ACCION: Auditar _forward_gemini_audio_to_twilio -- verificar logs [TWILIO-TX].
+PASO 2 — Leer el archivo actual completo antes de proponer ningún PMA:
 
-FALLO: Audio llega distorsionado al llamante.
-CAUSA: Fallo en la cadena de transcodificacion audioop.
-ACCION: Auditar _transcode_mulaw_to_pcm16k y _transcode_pcm24k_to_mulaw en services.py.
+    sftp MiguelAeTxio@ssh.pythonanywhere.com
+    get /home/MiguelAeTxio/PROJECTS/EnterpriseBot/vox_bridge/services.py "/sdcard/Download/temp_01"
+    !cat "/sdcard/Download/temp_01" > "/sdcard/Download/file00.txt"
+    !rm "/sdcard/Download/temp_01"
+    exit
+
+PASO 3 — Refactorizar vox_bridge/services.py mediante PMA:
+
+La nueva arquitectura de run_voice_session debe:
+
+1. Mantener el __init__ y VoiceOrchestrationService tal como están.
+2. Mantener el LiveConnectConfig con speech_config, system_instruction, Aoede.
+3. Eliminar las tres corrutinas _forward_twilio_audio_to_gemini,
+   _receive_gemini_audio, _forward_gemini_audio_to_twilio.
+4. Eliminar asyncio.Queue y asyncio.gather.
+5. Implementar twilio_audio_stream() como generador asíncrono que consume
+   self._audio_input_queue (que el sidecar sigue llenando sin cambios).
+6. Implementar run_voice_session con start_stream.
+7. Mantener receive_twilio_audio, terminate_session y set_stream_sid sin cambios.
+
+#### 5.3. Conversión de audio a verificar
+
+El audio de salida de Gemini es PCM 24kHz. Twilio espera mu-law 8kHz base64.
+La conversión actual usa audioop y debe mantenerse en el nuevo flujo:
+
+    data, _ = audioop.ratecv(audio_data, 2, 1, 24000, 8000, None)
+    mulaw = audioop.lin2ulaw(data, 2)
+    encoded = base64.b64encode(mulaw).decode('utf-8')
+
+#### 5.4. Refuerzo de Skills obligatorio al cierre de la refactorización
+
+Reforzar la skill session-standards añadiendo la Directriz 4.4 de forma explícita:
+"OBLIGATORIO actualizar web antes de cualquier implementación con APIs externas,
+incluyendo Google Gemini, Twilio y cualquier SDK de terceros."
+Esta directriz fue violada en múltiples ocasiones durante la sesión 2026-04-05,
+causando horas de trabajo perdido.
+
+---
+
+## 6. PAH — REGISTRO DE SESIÓN
+
+**Título:** Validación E2E del Flujo de Voz Real: Twilio → ngrok → Gemini 3.1 Live
+**Descripción:** Sesión de migración Gemini API Preview → Vertex AI GA, depuración
+exhaustiva del pipeline de audio bidireccional IVR. Se resolvieron múltiples bloqueantes
+de configuración (Vertex AI, Service Account, thinking_config, speech_config) pero
+el turno 2 del pipeline de audio sigue sin funcionar. Identificada la causa raíz probable
+y definida la hoja de ruta de refactorización arquitectural para la siguiente sesión.
 

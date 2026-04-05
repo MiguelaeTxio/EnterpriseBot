@@ -68,9 +68,17 @@ logger = logging.getLogger(__name__)
 # CONSTANTS / CONSTANTES
 # ---------------------------------------------------------------------------
 
-# Gemini 3.1 Live model identifier — standard for April 2026.
-# Identificador del modelo Gemini 3.1 Live — estándar de Abril de 2026.
-GEMINI_MODEL = "gemini-3.1-flash-live-preview"
+# Gemini Live 2.5 Flash Native Audio — GA stable model on Vertex AI.
+# Migrated from gemini-3.1-flash-live-preview (Gemini API Preview) on 2026-04-05
+# due to Preview infrastructure instability causing silent audio generation failures.
+# gemini-live-2.5-flash-native-audio is GA on Vertex AI with no published
+# deprecation date and production-grade SLA guarantees.
+# Gemini Live 2.5 Flash Native Audio — modelo GA estable en Vertex AI.
+# Migrado desde gemini-3.1-flash-live-preview (Gemini API Preview) el 2026-04-05
+# debido a inestabilidad de la infraestructura Preview que causaba fallos silenciosos
+# en la generación de audio. gemini-live-2.5-flash-native-audio es GA en Vertex AI
+# sin fecha de deprecación publicada y con garantías SLA de producción.
+GEMINI_MODEL = "gemini-live-2.5-flash-native-audio"
 
 # System instruction that defines the IVR agent's persona and behaviour.
 # This prompt is injected at session setup time and governs all interactions.
@@ -78,10 +86,50 @@ GEMINI_MODEL = "gemini-3.1-flash-live-preview"
 # Este prompt se inyecta en el momento de configuración de la sesión y rige
 # todas las interacciones.
 SYSTEM_INSTRUCTION = (
-    "Eres un asistente de voz empresarial de EnterpriseBot. "
-    "Responde de forma concisa, clara y profesional. "
-    "Estás atendiendo una llamada de voz en tiempo real. "
-    "Habla en castellano a menos que el usuario se dirija a ti en otro idioma."
+    "Eres Alia, la asistente virtual del Grupo Álvarez. "
+    "Atiendes llamadas de voz en tiempo real. "
+    "Tu tono es profesional, cálido y conciso. "
+    "Habla siempre en castellano, salvo que el llamante se dirija a ti en otro idioma. "
+    "\n\n"
+    "ORGANIGRAMA DE ATENCIÓN:\n"
+    "\n"
+    "1. ELEVACIÓN (alquiler de plataformas elevadoras):\n"
+    "   Si el llamante pregunta por el departamento de Elevación o por el alquiler "
+    "de plataformas elevadoras, infórmale de que el horario de atención es de lunes "
+    "a viernes de 8:00 a 18:00 horas, y despídete amablemente.\n"
+    "\n"
+    "2. ASISTENCIA (rescate de vehículos pesados):\n"
+    "   Si el llamante pregunta por el departamento de Asistencia o por el rescate "
+    "de vehículos pesados, infórmale de que el servicio está disponible las 24 horas "
+    "del día, los 7 días de la semana, y despídete amablemente.\n"
+    "\n"
+    "3. PREGUNTA POR ALGUIEN CON APELLIDO ÁLVAREZ:\n"
+    "   Si el llamante pregunta por cualquier persona cuyo apellido sea Álvarez, "
+    "indícale que en estos momentos está reunida. "
+    "Ofrécete a tomar nota del recado. "
+    "Pídele su nombre y, una vez que te lo facilite, confirma que transmitirás el "
+    "mensaje y despídete amablemente.\n"
+    "\n"
+    "4. PREGUNTA POR ALGUIEN SIN APELLIDO ÁLVAREZ:\n"
+    "   Si el llamante pregunta por una persona cuyo apellido NO es Álvarez, "
+    "pregúntale el motivo de su llamada y redirígele según su respuesta conforme "
+    "a las categorías anteriores (Elevación o Asistencia). "
+    "Si el motivo no encaja en ninguna categoría, pasa a la regla 5.\n"
+    "\n"
+    "5. MOTIVO AMBIGUO O SIN CATEGORÍA:\n"
+    "   Si el motivo de la llamada no encaja en ninguna de las categorías anteriores, "
+    "indícale al llamante que un comercial se pondrá en contacto con él a la mayor "
+    "brevedad posible. "
+    "Solicítale sus datos de contacto (nombre y número de teléfono) y, "
+    "una vez recogidos, despídete amablemente.\n"
+    "\n"
+    "REGLAS GENERALES:\n"
+    "- Nunca inventes información que no figure en este organigrama.\n"
+    "- Nunca menciones que eres una inteligencia artificial salvo que el llamante "
+    "te lo pregunte directamente.\n"
+    "- Mantén siempre un tono sereno y profesional, independientemente del tono "
+    "del llamante.\n"
+    "- Sé concisa: no des explicaciones innecesarias.\n"
 )
 
 # Timeout values aligned with the V01 roadmap directive:
@@ -110,8 +158,11 @@ TWILIO_OUTPUT_SAMPLE_RATE = 8000  # Hz — Twilio expects 8kHz mu-law back
 # de la sesión. Este texto indica al modelo que produzca la respuesta hablada de
 # apertura para el llamante.
 INITIAL_GREETING_TEXT = (
-    "El usuario ha contestado la llamada. "
-    "Salúdale de forma breve y profesional y pregúntale en qué puedes ayudarle."
+    "El llamante acaba de contestar la llamada. "
+    "Salúdale presentándote como Alia, asistente virtual del Grupo Álvarez, "
+    "con el siguiente mensaje exacto, sin añadir ni modificar nada: "
+    "'Hola, me llamo Alia, soy la asistente virtual del Grupo Álvarez. "
+    "¿En qué puedo ayudarle?'"
 )
 
 
@@ -170,21 +221,51 @@ class VoiceOrchestrationService:
         # from the GEMINI_API_KEY environment variable loaded by Django's settings.py.
         # El cliente GenAI se instancia una vez por instancia de servicio y se
         # reutiliza en todos los métodos del ciclo de vida de la sesión.
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if not gemini_api_key:
-            # This is a fatal configuration error — the service cannot operate
-            # without a valid API key.
-            # Este es un error de configuración fatal — el servicio no puede operar
-            # sin una clave de API válida.
+        # VERTEX AI AUTHENTICATION — SERVICE ACCOUNT JSON:
+        # Authentication uses a Google Cloud service account JSON key file.
+        # The path is sourced from GCP_CREDENTIALS_PATH in the project .env.
+        # The client is initialised with vertexai=True, project and location
+        # from GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION env vars.
+        # This replaces the Gemini Developer API key authentication used
+        # with gemini-3.1-flash-live-preview (migrated 2026-04-05).
+        #
+        # AUTENTICACIÓN VERTEX AI — SERVICE ACCOUNT JSON:
+        # La autenticación usa un fichero JSON de cuenta de servicio de Google Cloud.
+        # La ruta se obtiene de GCP_CREDENTIALS_PATH en el .env del proyecto.
+        # El cliente se inicializa con vertexai=True, proyecto y ubicación
+        # desde las variables GOOGLE_CLOUD_PROJECT y GOOGLE_CLOUD_LOCATION.
+        # Reemplaza la autenticación por API Key de Gemini Developer API usada
+        # con gemini-3.1-flash-live-preview (migrado 2026-04-05).
+        from google.oauth2.service_account import Credentials as GCPCredentials
+
+        gcp_credentials_path = os.getenv("GCP_CREDENTIALS_PATH")
+        gcp_project = os.getenv("GOOGLE_CLOUD_PROJECT")
+        gcp_location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+        if not all([gcp_credentials_path, gcp_project]):
             logger.error(
-                "[INIT] GEMINI_API_KEY no encontrada en las variables de entorno. "
-                "El servicio no puede inicializarse."
+                "[INIT] Credenciales Vertex AI incompletas. Se requieren: "
+                "GCP_CREDENTIALS_PATH, GOOGLE_CLOUD_PROJECT."
             )
             raise EnvironmentError(
-                "GEMINI_API_KEY is not set. Cannot initialise VoiceOrchestrationService."
+                "Vertex AI credentials are incomplete. "
+                "Cannot initialise VoiceOrchestrationService."
             )
-        self.gemini_client = genai.Client(api_key=gemini_api_key)
-        logger.info("[INIT] Cliente Gemini GenAI inicializado correctamente.")
+
+        gcp_credentials = GCPCredentials.from_service_account_file(
+            gcp_credentials_path,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        self.gemini_client = genai.Client(
+            vertexai=True,
+            project=gcp_project,
+            location=gcp_location,
+            credentials=gcp_credentials
+        )
+        logger.info(
+            f"[INIT] Cliente Gemini GenAI (Vertex AI) inicializado correctamente. "
+            f"Proyecto: {gcp_project} | Ubicación: {gcp_location}"
+        )
 
         # --- Twilio Client Initialisation / Inicialización del Cliente Twilio ---
         # This project uses Twilio API Key authentication (SID + Secret) rather
@@ -313,21 +394,40 @@ class VoiceOrchestrationService:
             system_instruction=types.Content(
                 parts=[types.Part(text=SYSTEM_INSTRUCTION)]
             ),
-            # THINKING LEVEL: explicitly set to 'minimal' to force the
-            # lowest possible Time to First Token (TTFT). For telephony
-            # IVR use cases, every millisecond of silence before the first
-            # audio chunk is perceived as a dead line by the caller.
-            # gemini-3.1-flash-live-preview supports thinkingLevel as per
-            # the Live API capabilities guide (updated 2026-03-26).
-            # NIVEL DE PENSAMIENTO: establecido explícitamente a 'minimal'
-            # para forzar el menor TTFT posible. En casos de uso IVR de
-            # telefonía, cada milisegundo de silencio antes del primer
-            # fragmento de audio es percibido como línea muerta por el
-            # llamante. gemini-3.1-flash-live-preview soporta thinkingLevel
-            # según la guía de capacidades de Live API (actualizada 2026-03-26).
-            thinking_config=types.ThinkingConfig(
-                thinking_level="minimal"
+            # SPEECH CONFIG — VOICE REQUIRED FOR NATIVE AUDIO MODEL:
+            # gemini-live-2.5-flash-native-audio requires an explicit voice
+            # in speech_config to guarantee audio generation. Without it the
+            # model may generate silence or text instead of audio.
+            # Voice 'Aoede' is a female voice suitable for IVR telephony.
+            # Language is selected automatically from system_instruction content.
+            # Source: googleapis/python-genai issue #1725 + Live API capabilities
+            # guide, verified 2026-04-05.
+            #
+            # SPEECH CONFIG — VOZ OBLIGATORIA PARA MODELO DE AUDIO NATIVO:
+            # gemini-live-2.5-flash-native-audio requiere una voz explícita en
+            # speech_config para garantizar la generación de audio. Sin ella el
+            # modelo puede generar silencio o texto en lugar de audio.
+            # La voz 'Aoede' es una voz femenina adecuada para telefonía IVR.
+            # El idioma se selecciona automáticamente del contenido del system_instruction.
+            # Fuente: issue #1725 de googleapis/python-genai + guía de capacidades
+            # de Live API, verificado 2026-04-05.
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name="Aoede"
+                    )
+                )
             ),
+            # THINKING CONFIG: Not supported by gemini-live-2.5-flash-native-audio.
+            # Gemini 2.5 models use thinkingBudget (token count) instead of
+            # thinkingLevel. Omitting thinking_config uses the model default,
+            # which is optimised for low latency in native audio sessions.
+            # Source: Vertex AI Live API capabilities guide, verified 2026-04-05.
+            # THINKING CONFIG: No soportado por gemini-live-2.5-flash-native-audio.
+            # Los modelos Gemini 2.5 usan thinkingBudget (número de tokens) en lugar
+            # de thinkingLevel. Omitir thinking_config usa el valor por defecto del
+            # modelo, optimizado para baja latencia en sesiones de audio nativo.
+            # Fuente: guía de capacidades de Live API en Vertex AI, verificado 2026-04-05.
             # REALTIME INPUT CONFIG — VAD DISABLED FOR TELEPHONY:
             # Server-side automatic VAD must be disabled for telephony
             # bridges. In a phone call, the outbound audio played to the
@@ -400,14 +500,38 @@ class VoiceOrchestrationService:
                 logger.info(
                     "[SESSION] Enviando saludo inicial a Gemini..."
                 )
+                # GREETING TRIGGER — send_client_content FOR GEMINI 2.5:
+                # Unlike Gemini 3.1 (where send_client_content was restricted
+                # to initial history seeding), Gemini 2.5 supports
+                # send_client_content with turn_complete=True to send text
+                # and trigger an immediate audio response from the model.
+                # This is the documented pattern for Vertex AI Live API
+                # with gemini-live-2.5-flash-native-audio.
+                # Source: Vertex AI configure-gemini-capabilities guide,
+                # verified 2026-04-05.
+                #
+                # TRIGGER DE SALUDO — send_client_content PARA GEMINI 2.5:
+                # A diferencia de Gemini 3.1 (donde send_client_content estaba
+                # restringido al sembrado de historial inicial), Gemini 2.5
+                # soporta send_client_content con turn_complete=True para enviar
+                # texto y disparar una respuesta de audio inmediata del modelo.
+                # Este es el patrón documentado para Live API en Vertex AI
+                # con gemini-live-2.5-flash-native-audio.
+                # Fuente: guía configure-gemini-capabilities de Vertex AI,
+                # verificado 2026-04-05.
                 await asyncio.wait_for(
-                    session.send_realtime_input(
-                        text=INITIAL_GREETING_TEXT
+                    session.send_client_content(
+                        turns=types.Content(
+                            role="user",
+                            parts=[types.Part(text=INITIAL_GREETING_TEXT)]
+                        ),
+                        turn_complete=True
                     ),
                     timeout=TIMEOUT_INITIAL_GREETING_SECONDS
                 )
                 logger.info(
-                    "[SESSION] Saludo inicial enviado correctamente. "
+                    "[SESSION] Saludo inicial enviado correctamente "
+                    "(send_client_content Gemini 2.5). "
                     "Lanzando corrutinas concurrentes..."
                 )
 
@@ -684,10 +808,40 @@ class VoiceOrchestrationService:
                                 f"{len(pcm_24khz_bytes)} bytes PCM 24kHz."
                             )
 
-                    # Log turn completion for traceability.
-                    # Registrar la finalización del turno para trazabilidad.
+                    # Log turn completion and send audioStreamEnd to flush
+                    # cached audio on the server side. This is MANDATORY when
+                    # using automatic VAD: after Gemini finishes speaking, the
+                    # audio stream from Twilio is effectively paused (the caller
+                    # has been listening, not speaking). Without audioStreamEnd,
+                    # the server VAD gets stuck waiting for the end of the
+                    # caller's 'utterance' and never triggers a new response.
+                    # Source: Vertex AI Live API reference + Google AI Developers
+                    # Forum 'Turn 1 works, Turn 2 dies' pattern, verified 2026-04-05.
+                    #
+                    # Registrar fin de turno y enviar audioStreamEnd para vaciar
+                    # el audio en caché del lado del servidor. Esto es OBLIGATORIO
+                    # con VAD automático: tras que Gemini termina de hablar, el
+                    # stream de audio de Twilio está efectivamente pausado (el
+                    # llamante ha estado escuchando, no hablando). Sin audioStreamEnd,
+                    # el VAD del servidor queda bloqueado esperando el fin del
+                    # 'turno' del llamante y nunca dispara una nueva respuesta.
+                    # Fuente: referencia Live API Vertex AI + foro Google AI
+                    # Developers patrón 'Turn 1 works, Turn 2 dies', 2026-04-05.
                     if response.server_content and response.server_content.turn_complete:
-                        logger.info("[GEMINI-RX] Turno de Gemini completado.")
+                        logger.info("[GEMINI-RX] Turno de Gemini completado. "
+                                    "Enviando audioStreamEnd para flush del VAD...")
+                        try:
+                            await session.send_realtime_input(
+                                audio_stream_end=True
+                            )
+                            logger.info(
+                                "[GEMINI-RX] audioStreamEnd enviado correctamente. "
+                                "VAD listo para escuchar al llamante."
+                            )
+                        except Exception as ase_exc:
+                            logger.warning(
+                                f"[GEMINI-RX] Error al enviar audioStreamEnd: {ase_exc}"
+                            )
 
         except Exception as exc:
             logger.error(

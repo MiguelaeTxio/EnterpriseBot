@@ -32,4 +32,39 @@ EnterpriseBot es una solución omnicanal de nivel empresarial orientada a la orq
 - Panel de administración de producción con vistas Django personalizadas.
 
 ---
-## 4. Sistema de Ruegos y Preguntas (Stand-by)
+## 4. Directrices Técnicas Vinculantes
+
+Estas directrices son de **OBLIGADO CUMPLIMIENTO** en todas las sesiones
+de desarrollo del proyecto. El modelo las carga al inicio de sesión desde
+este documento y las aplica sin excepción.
+
+### 4.1. Inteligencia Artificial
+- **SDK:** `google-genai 1.69.0`
+- **Modelo IVR Conversacional:** `gemini-3.1-flash-live-preview`
+- **Protocolo de sesión:** Setup-First via `async with client.aio.live.connect(...)`
+- **Thinking level:** `minimal` (obligatorio para TTFT mínimo en telefonía)
+- **VAD servidor:** `disabled=True` (obligatorio para puentes de telefonía)
+- **Firma texto SDK 1.69.0:** `await session.send_realtime_input(text='...')`
+- **Firma audio SDK 1.69.0:** `await session.send_realtime_input(audio=types.Blob(data=..., mime_type='audio/pcm;rate=16000'))`
+
+### 4.2. Telefonía
+- **Twilio SDK Python:** `twilio 9.10.4`
+- **Autenticación Twilio:** API Key (TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET)
+- **Transcodificación:** mu-law 8kHz ↔ PCM 16kHz ↔ PCM 24kHz via `audioop`
+- **streamSid:** OBLIGATORIO en nivel raíz de cada mensaje `media` saliente
+
+### 4.3. Infraestructura y Framework
+- **Framework:** Django `5.2.12`
+- **Servidor async:** aiohttp `3.13.5` — puerto `8081`
+- **Túnel:** ngrok v3 — API local en puerto `4041`
+- **Entorno:** PythonAnywhere WSGI — Python `3.10.5`
+- **Entorno virtual:** `EnterpriseBot_venv`
+- **Base de datos:** MySQL — `MiguelAeTxio$enterprisebot`
+- **Gestión de dependencias:** `pip-tools` (requirements.in → requirements.txt)
+
+### 4.4. Requisito SINE QUA NON
+Antes de entregar o implementar cualquier código que involucre servicios
+externos o APIs, el modelo **DEBE** actualizarse en línea obligatoriamente
+para usar datos actuales de implementación en lugar de datos obsoletos.
+
+## 5. Sistema de Ruegos y Preguntas (Stand-by)
