@@ -207,7 +207,9 @@ class UniversalVoiceBridge:
         asyncio Task alongside the Twilio event reader loop.
 
         Twilio event handling:
-            'start'  — logs stream and call SIDs for traceability.
+            'start'  — stores streamSid on the service via set_stream_sid()
+                       (mandatory for Twilio bidirectional Media Streams protocol)
+                       and logs stream and call SIDs for traceability.
             'media'  — forwards the raw JSON payload to receive_twilio_audio()
                        for mu-law decoding and PCM transcoding.
             'stop'   — calls terminate_session() and breaks the reader loop.
@@ -229,7 +231,10 @@ class UniversalVoiceBridge:
         concurrente junto al bucle lector de eventos de Twilio.
 
         Gestión de eventos de Twilio:
-            'start'  — registra los SIDs de stream y llamada para trazabilidad.
+            'start'  — almacena el streamSid en el servicio mediante set_stream_sid()
+                       (obligatorio para el protocolo bidireccional de Twilio Media
+                       Streams) y registra los SIDs de stream y llamada para
+                       trazabilidad.
             'media'  — reenvía el payload JSON bruto a receive_twilio_audio()
                        para decodificación mu-law y transcodificación PCM.
             'stop'   — llama a terminate_session() y rompe el bucle lector.
@@ -273,8 +278,15 @@ class UniversalVoiceBridge:
                     event = data.get("event")
 
                     if event == "start":
-                        # Extract and log stream and call identifiers.
-                        # Extraer y registrar los identificadores de stream y llamada.
+                        # Extract stream and call identifiers from the Twilio
+                        # 'start' event payload. Both camelCase (streamSid,
+                        # callSid) and snake_case variants are checked for
+                        # forward compatibility with Twilio API changes.
+                        # Extraer los identificadores de stream y llamada del
+                        # payload del evento 'start' de Twilio. Se comprueban
+                        # tanto las variantes camelCase (streamSid, callSid)
+                        # como snake_case para compatibilidad futura con cambios
+                        # en la API de Twilio.
                         stream_sid = (
                             data.get("start", {}).get("streamSid")
                             or data.get("start", {}).get("stream_sid")
@@ -283,6 +295,26 @@ class UniversalVoiceBridge:
                             data.get("start", {}).get("callSid")
                             or data.get("start", {}).get("call_sid")
                         )
+
+                        # Store the streamSid on the service instance.
+                        # This is MANDATORY for the Twilio Media Streams
+                        # bidirectional protocol: every outbound 'media' message
+                        # must include 'streamSid' at the root level. Omitting
+                        # it causes Warning 31951 and silent audio discard.
+                        # Almacenar el streamSid en la instancia del servicio.
+                        # Esto es OBLIGATORIO para el protocolo bidireccional de
+                        # Twilio Media Streams: cada mensaje 'media' saliente debe
+                        # incluir 'streamSid' en el nivel raíz. Su omisión provoca
+                        # el Warning 31951 y el descarte silencioso del audio.
+                        if stream_sid:
+                            service.set_stream_sid(stream_sid)
+                        else:
+                            logger.warning(
+                                "# [EVENT] Evento 'start' recibido sin streamSid. "
+                                "Los mensajes 'media' salientes no incluirán streamSid "
+                                "y podrían ser descartados por Twilio (Warning 31951)."
+                            )
+
                         logger.info(
                             f"# [EVENT] Stream iniciado — streamSid: {stream_sid} | "
                             f"callSid: {call_sid}"

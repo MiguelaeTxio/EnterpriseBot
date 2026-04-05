@@ -25,5 +25,11 @@ EnterpriseBot es una solución omnicanal de nivel empresarial orientada a la orq
 - Implementación de interfaz "Walkie-Talkie" para pruebas directas.
 - Auditoría de Handshake de Google GenAI (v1beta) sin dependencias externas.
 
+### Hito 3: IVR Conversacional Configurable desde Producción (PAUSADO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md`)
+- Diseño del modelo de datos del IVR configurable (Django ORM).
+- Motor de inyección dinámica de configuración en LiveConnectConfig.
+- Panel de administración de producción con vistas Django personalizadas.
+
 ---
 ## 4. Sistema de Ruegos y Preguntas (Stand-by)

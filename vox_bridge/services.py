@@ -234,6 +234,16 @@ class VoiceOrchestrationService:
         # Flag para señalizar a todas las corrutinas que terminen de forma elegante.
         self.session_active: bool = False
 
+        # Stream SID assigned by Twilio for this Media Stream session.
+        # This value is populated via set_stream_sid() when the Twilio 'start'
+        # event is received, and must be included in every outbound 'media' message
+        # to comply with the Twilio Media Streams bidirectional protocol.
+        # SID del stream asignado por Twilio para esta sesión de Media Stream.
+        # Este valor se rellena mediante set_stream_sid() cuando se recibe el evento
+        # 'start' de Twilio, y debe incluirse en cada mensaje 'media' saliente para
+        # cumplir con el protocolo bidireccional de Twilio Media Streams.
+        self.stream_sid: str = ""
+
         logger.info("[INIT] VoiceOrchestrationService inicializado completamente.")
 
     # -----------------------------------------------------------------------
@@ -303,6 +313,50 @@ class VoiceOrchestrationService:
             system_instruction=types.Content(
                 parts=[types.Part(text=SYSTEM_INSTRUCTION)]
             ),
+            # THINKING LEVEL: explicitly set to 'minimal' to force the
+            # lowest possible Time to First Token (TTFT). For telephony
+            # IVR use cases, every millisecond of silence before the first
+            # audio chunk is perceived as a dead line by the caller.
+            # gemini-3.1-flash-live-preview supports thinkingLevel as per
+            # the Live API capabilities guide (updated 2026-03-26).
+            # NIVEL DE PENSAMIENTO: establecido explícitamente a 'minimal'
+            # para forzar el menor TTFT posible. En casos de uso IVR de
+            # telefonía, cada milisegundo de silencio antes del primer
+            # fragmento de audio es percibido como línea muerta por el
+            # llamante. gemini-3.1-flash-live-preview soporta thinkingLevel
+            # según la guía de capacidades de Live API (actualizada 2026-03-26).
+            thinking_config=types.ThinkingConfig(
+                thinking_level="minimal"
+            ),
+            # REALTIME INPUT CONFIG — VAD DISABLED FOR TELEPHONY:
+            # Server-side automatic VAD must be disabled for telephony
+            # bridges. In a phone call, the outbound audio played to the
+            # caller is captured by the handset microphone and returned
+            # as acoustic echo into the inbound audio stream. With VAD
+            # enabled, Gemini interprets this echo as user speech,
+            # immediately fires an 'interrupted' signal, cancels the
+            # ongoing audio generation, and drains the output queue —
+            # producing total silence on the caller's end.
+            # Disabling VAD removes this echo-triggered self-interruption.
+            # Standard pattern per Gemini Live API guide (2026-03-26).
+            # CONFIGURACIÓN DE ENTRADA EN TIEMPO REAL — VAD DESHABILITADO
+            # PARA TELEFONÍA:
+            # El VAD automático del servidor debe deshabilitarse en puentes
+            # de telefonía. En una llamada telefónica, el audio de salida
+            # reproducido al llamante es capturado por el micrófono del
+            # auricular y devuelto como eco acústico al flujo de audio
+            # entrante. Con el VAD habilitado, Gemini interpreta este eco
+            # como voz del usuario, activa inmediatamente una señal
+            # 'interrupted', cancela la generación de audio en curso y
+            # vacía la cola de salida — produciendo silencio total en el
+            # lado del llamante.
+            # Deshabilitar el VAD elimina esta auto-interrupción por eco.
+            # Patrón estándar según la guía de Live API (2026-03-26).
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    disabled=True
+                )
+            ),
         )
 
         try:
@@ -365,12 +419,38 @@ class VoiceOrchestrationService:
                 # asyncio.gather las ejecuta de forma concurrente y propaga la primera
                 # excepción lanzada. return_exceptions=False significa que cualquier
                 # fallo de una corrutina cancelará las otras y propagará a este nivel.
-                await asyncio.gather(
+                # return_exceptions=True prevents a single coroutine failure
+                # from cancelling its siblings. Each coroutine handles its own
+                # errors internally; gather collects results/exceptions without
+                # propagating them upward. This is essential for the outer
+                # while self.session_active loop to remain stable across
+                # multiple Gemini turns and interruption events.
+                # return_exceptions=True evita que el fallo de una corrutina
+                # cancele a sus hermanas. Cada corrutina gestiona sus propios
+                # errores internamente; gather recopila resultados/excepciones
+                # sin propagarlas hacia arriba. Esto es esencial para que el
+                # bucle externo while self.session_active permanezca estable
+                # a través de múltiples turnos e interrupciones de Gemini.
+                gather_results = await asyncio.gather(
                     self._forward_twilio_audio_to_gemini(session),
                     self._receive_gemini_audio(session),
                     self._forward_gemini_audio_to_twilio(twilio_websocket),
-                    return_exceptions=False
+                    return_exceptions=True
                 )
+                # Log any exceptions collected by gather for full traceability.
+                # Registrar cualquier excepción recopilada por gather para
+                # trazabilidad completa.
+                coroutine_names = [
+                    "_forward_twilio_audio_to_gemini",
+                    "_receive_gemini_audio",
+                    "_forward_gemini_audio_to_twilio",
+                ]
+                for coro_name, result in zip(coroutine_names, gather_results):
+                    if isinstance(result, Exception):
+                        logger.error(
+                            f"[SESSION] Excepción en corrutina '{coro_name}': "
+                            f"{type(result).__name__}: {result}"
+                        )
 
         except asyncio.TimeoutError:
             logger.error(
@@ -541,7 +621,19 @@ class VoiceOrchestrationService:
         """
         logger.info("[GEMINI-RX] Corrutina de recepción de audio de Gemini iniciada.")
         try:
-            async for response in session.receive():
+            # OUTER LOOP: The google-genai SDK's session.receive() async iterator
+            # is exhausted and terminates after each `turn_complete` or `interrupted`
+            # signal from Gemini (documented in googleapis/python-genai issue #1224).
+            # To maintain continuous listening across multiple turns, we re-enter
+            # the iterator on each exhaustion by wrapping it in this outer while loop.
+            # BUCLE EXTERNO: El iterador asíncrono session.receive() del SDK
+            # google-genai se agota y termina tras cada señal `turn_complete` o
+            # `interrupted` de Gemini (documentado en el issue #1224 de
+            # googleapis/python-genai). Para mantener la escucha continua a través
+            # de múltiples turnos, re-entramos en el iterador en cada agotamiento
+            # envolviendo el bucle interno en este while externo.
+            while self.session_active:
+                async for response in session.receive():
 
                 # --- Interruption Handling / Gestión de Interrupciones ---
                 # If Gemini's VAD detects the user is speaking while the model
@@ -551,51 +643,51 @@ class VoiceOrchestrationService:
                 # el modelo está respondiendo, envía una señal de interrupción.
                 # Debemos vaciar la cola de salida inmediatamente para dejar de
                 # enviar audio obsoleto a Twilio.
-                if (
-                    response.server_content
-                    and response.server_content.interrupted is True
-                ):
-                    logger.info(
-                        "[GEMINI-RX] Señal de interrupción recibida de Gemini. "
-                        "Vaciando cola de audio de salida..."
-                    )
-                    # Drain the output queue to discard buffered audio from the
-                    # interrupted response.
-                    # Vaciar la cola de salida para descartar el audio en buffer
-                    # de la respuesta interrumpida.
-                    while not self.audio_output_queue.empty():
-                        try:
-                            self.audio_output_queue.get_nowait()
-                            self.audio_output_queue.task_done()
-                        except asyncio.QueueEmpty:
-                            break
-                    continue
-
-                # --- Audio Response Extraction / Extracción de Respuesta de Audio ---
-                if not response.server_content:
-                    continue
-                if not response.server_content.model_turn:
-                    continue
-
-                for part in response.server_content.model_turn.parts:
-                    if part.inline_data and part.inline_data.data:
-                        # Raw PCM 24kHz audio bytes from Gemini Live output.
-                        # These must be transcoded to mu-law 8kHz before sending
-                        # back to Twilio.
-                        # Bytes de audio PCM 24kHz sin procesar de la salida de Gemini Live.
-                        # Deben transcodificarse a mu-law 8kHz antes de enviarlos
-                        # de vuelta a Twilio.
-                        pcm_24khz_bytes = part.inline_data.data
-                        await self.audio_output_queue.put(pcm_24khz_bytes)
-                        logger.debug(
-                            f"[GEMINI-RX] Fragmento de audio recibido de Gemini: "
-                            f"{len(pcm_24khz_bytes)} bytes PCM 24kHz."
+                    if (
+                        response.server_content
+                        and response.server_content.interrupted is True
+                    ):
+                        logger.info(
+                            "[GEMINI-RX] Señal de interrupción recibida de Gemini. "
+                            "Vaciando cola de audio de salida..."
                         )
+                        # Drain the output queue to discard buffered audio from the
+                        # interrupted response.
+                        # Vaciar la cola de salida para descartar el audio en buffer
+                        # de la respuesta interrumpida.
+                        while not self.audio_output_queue.empty():
+                            try:
+                                self.audio_output_queue.get_nowait()
+                                self.audio_output_queue.task_done()
+                            except asyncio.QueueEmpty:
+                                break
+                        continue
 
-                # Log turn completion for traceability.
-                # Registrar la finalización del turno para trazabilidad.
-                if response.server_content.turn_complete:
-                    logger.info("[GEMINI-RX] Turno de Gemini completado.")
+                    # --- Audio Response Extraction / Extracción de Respuesta de Audio ---
+                    if not response.server_content:
+                        continue
+                    if not response.server_content.model_turn:
+                        continue
+
+                    for part in response.server_content.model_turn.parts:
+                        if part.inline_data and part.inline_data.data:
+                            # Raw PCM 24kHz audio bytes from Gemini Live output.
+                            # These must be transcoded to mu-law 8kHz before sending
+                            # back to Twilio.
+                            # Bytes de audio PCM 24kHz sin procesar de la salida de Gemini Live.
+                            # Deben transcodificarse a mu-law 8kHz antes de enviarlos
+                            # de vuelta a Twilio.
+                            pcm_24khz_bytes = part.inline_data.data
+                            await self.audio_output_queue.put(pcm_24khz_bytes)
+                            logger.debug(
+                                f"[GEMINI-RX] Fragmento de audio recibido de Gemini: "
+                                f"{len(pcm_24khz_bytes)} bytes PCM 24kHz."
+                            )
+
+                    # Log turn completion for traceability.
+                    # Registrar la finalización del turno para trazabilidad.
+                    if response.server_content and response.server_content.turn_complete:
+                        logger.info("[GEMINI-RX] Turno de Gemini completado.")
 
         except Exception as exc:
             logger.error(
@@ -644,9 +736,16 @@ class VoiceOrchestrationService:
                 mulaw_b64 = base64.b64encode(mulaw_chunk).decode("utf-8")
 
                 # Build the Twilio Media Streams 'media' event message.
+                # The 'streamSid' field at the root level is MANDATORY for
+                # bidirectional Media Streams. Its absence causes Twilio to
+                # silently discard the audio and emit Warning 31951.
                 # Construir el mensaje de evento 'media' de Twilio Media Streams.
+                # El campo 'streamSid' en el nivel raíz es OBLIGATORIO para
+                # Media Streams bidireccionales. Su ausencia hace que Twilio
+                # descarte silenciosamente el audio y emita el Warning 31951.
                 twilio_media_message = json.dumps({
                     "event": "media",
+                    "streamSid": self.stream_sid,
                     "media": {
                         "payload": mulaw_b64
                     }
@@ -655,7 +754,7 @@ class VoiceOrchestrationService:
                 # Send the encoded audio back to the caller via the Twilio WebSocket.
                 # Enviar el audio codificado de vuelta al llamante a través del
                 # WebSocket de Twilio.
-                await twilio_websocket.send(twilio_media_message)
+                await twilio_websocket.send_str(twilio_media_message)
                 logger.debug(
                     f"[TWILIO-TX] Fragmento mu-law enviado a Twilio: "
                     f"{len(mulaw_chunk)} bytes."
@@ -775,6 +874,33 @@ class VoiceOrchestrationService:
     # -----------------------------------------------------------------------
     # SESSION CONTROL / CONTROL DE SESIÓN
     # -----------------------------------------------------------------------
+
+    def set_stream_sid(self, stream_sid: str) -> None:
+        """
+        Stores the Twilio Stream SID for the current Media Stream session.
+
+        This method must be called by the Django WebSocket view immediately
+        upon receiving the Twilio 'start' event. The stored SID is then
+        embedded in every outbound 'media' event message to comply with the
+        Twilio Media Streams bidirectional protocol. Omitting it causes
+        Warning 31951 and silent audio discard on Twilio's side.
+        ---
+        Almacena el Stream SID de Twilio para la sesión de Media Stream actual.
+
+        Este método debe ser invocado por la vista WebSocket de Django de forma
+        inmediata al recibir el evento 'start' de Twilio. El SID almacenado se
+        embebe en cada mensaje de evento 'media' saliente para cumplir con el
+        protocolo bidireccional de Twilio Media Streams. Su omisión provoca el
+        Warning 31951 y el descarte silencioso del audio en el lado de Twilio.
+
+        Args:
+            stream_sid (str): The Twilio Stream SID from the 'start' event.
+                              / El Stream SID de Twilio del evento 'start'.
+        """
+        self.stream_sid = stream_sid
+        logger.info(
+            f"[SESSION] Stream SID de Twilio almacenado correctamente: {stream_sid}"
+        )
 
     def terminate_session(self) -> None:
         """

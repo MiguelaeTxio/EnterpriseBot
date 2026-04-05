@@ -213,7 +213,34 @@ class VoiceOrchestrator:
                     f.write(url)
                 self.flush_print(f"\n# [SUCCESS] TÚNEL 2026 ACTIVO: {url}\n")
                 return url
-        except: pass
+        except requests.exceptions.ConnectionError:
+            self.flush_print(
+                "# [ORCHESTRATOR] Error de conexión con API local ngrok "
+                f"({self.api_url}). El proceso ngrok puede no estar listo todavía. "
+                "Reintentando en el siguiente ciclo..."
+            )
+        except requests.exceptions.Timeout:
+            self.flush_print(
+                "# [ORCHESTRATOR] Timeout consultando API local ngrok "
+                f"({self.api_url}). El agente ngrok no respondió en el plazo fijado. "
+                "Reintentando en el siguiente ciclo..."
+            )
+        except (KeyError, IndexError) as exc:
+            self.flush_print(
+                f"# [ORCHESTRATOR] Respuesta de API local ngrok inesperada o "
+                f"estructura JSON no reconocida: {exc}. "
+                "Verifique que el agente ngrok está activo y la clave 'tunnels' existe."
+            )
+        except ValueError as exc:
+            self.flush_print(
+                f"# [ORCHESTRATOR] Error al decodificar JSON de la API local ngrok: {exc}. "
+                "La respuesta recibida no es JSON válido."
+            )
+        except Exception as exc:
+            self.flush_print(
+                f"# [ORCHESTRATOR] Error inesperado en get_public_url(): "
+                f"{type(exc).__name__}: {exc}"
+            )
         return None
 
     def start_bridge(self):
