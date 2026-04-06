@@ -50,7 +50,9 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import os
+import struct
 
 from google import genai
 from google.genai import types
@@ -151,6 +153,47 @@ GEMINI_AUDIO_MIME_TYPE = "audio/pcm;rate=16000"
 GEMINI_OUTPUT_SAMPLE_RATE = 24000  # Hz — Gemini Live output is always 24kHz PCM
 TWILIO_INPUT_SAMPLE_RATE = 8000   # Hz — Twilio G.711 mu-law/A-law is always 8kHz
 TWILIO_OUTPUT_SAMPLE_RATE = 8000  # Hz — Twilio expects 8kHz mu-law back
+
+# ---------------------------------------------------------------------------
+# ACTIVITY DETECTION CONSTANTS / CONSTANTES DE DETECCIÓN DE ACTIVIDAD
+# ---------------------------------------------------------------------------
+
+# RMS energy threshold below which a PCM frame is considered silence.
+# Twilio G.711 mu-law decoded to PCM 16-bit yields values in [-32768, 32767].
+# 200 RMS (~-44 dBFS) is a conservative threshold that reliably separates
+# background line noise from actual speech in telephony conditions.
+# Umbral de energía RMS por debajo del cual un frame PCM se considera silencio.
+# El mu-law G.711 de Twilio decodificado a PCM 16-bit da valores en [-32768, 32767].
+# 200 RMS (~-44 dBFS) es un umbral conservador que separa de forma fiable el
+# ruido de línea de fondo del habla real en condiciones de telefonía.
+SILENCE_THRESHOLD_RMS = 200
+
+# Number of consecutive silent frames required to close an activity window.
+# At Twilio's 8kHz mu-law encoding, each media event carries ~20ms of audio,
+# so 30 frames ≈ 600ms of silence before activity_end is sent.
+# Increased from 20 to 30 on 2026-04-06 to give the caller more inter-phrase
+# margin and avoid premature activity_end during natural speech pauses.
+# Número de frames silenciosos consecutivos requeridos para cerrar una ventana
+# de actividad. Con la codificación mu-law a 8kHz de Twilio, cada evento media
+# lleva ~20ms de audio, por lo que 30 frames ≈ 600ms de silencio antes de que
+# se envíe activity_end.
+# Aumentado de 20 a 30 el 2026-04-06 para dar más margen al llamante entre
+# frases y evitar activity_end prematuro durante pausas naturales del habla.
+SILENCE_FRAMES_TO_END_ACTIVITY = 30
+
+# Number of consecutive speech frames required to open an activity window.
+# Increased from 3 to 10 on 2026-04-06 (~200ms) to filter out acoustic echo
+# of Alia's own playback being captured by the handset microphone. At 3 frames
+# (~60ms) the detector was firing on the model's own audio output, causing
+# spurious activity_start signals that triggered Gemini self-interruptions.
+# Número de frames de voz consecutivos requeridos para abrir una ventana de
+# actividad. Aumentado de 3 a 10 el 2026-04-06 (~200ms) para filtrar el eco
+# acústico de la reproducción del propio audio de Alia capturado por el
+# micrófono del auricular. Con 3 frames (~60ms) el detector disparaba sobre
+# la propia salida de audio del modelo, causando señales activity_start
+# espurias que provocaban auto-interrupciones de Gemini.
+SPEECH_FRAMES_TO_START_ACTIVITY = 10
+
 
 # Initial greeting text sent to Gemini immediately after session establishment.
 # This text triggers the model to produce the opening spoken response to the caller.
@@ -659,48 +702,188 @@ class VoiceOrchestrationService:
 
     async def _forward_twilio_audio_to_gemini(self, session) -> None:
         """
-        Coroutine: continuously reads PCM audio from audio_input_queue and
-        streams it to the active Gemini Live session.
+        Coroutine: continuously reads PCM 16kHz audio from audio_input_queue,
+        detects speech activity via RMS energy analysis, and streams audio to
+        the active Gemini Live session using the official send_realtime_input
+        pattern with explicit activity_start / activity_end signals.
+
+        Activity Management (VAD disabled=True):
+            When server-side VAD is disabled (mandatory for telephony to prevent
+            acoustic echo self-interruption), the client MUST signal manually when
+            the user starts and stops speaking. Without these signals Gemini never
+            knows a new caller turn has begun and produces no response after turn 1.
+
+            The detection algorithm:
+                - Computes RMS energy of each PCM frame.
+                - Speech confirmed: SPEECH_FRAMES_TO_START_ACTIVITY consecutive
+                  frames above SILENCE_THRESHOLD_RMS → emit activity_start.
+                - Silence confirmed: SILENCE_FRAMES_TO_END_ACTIVITY consecutive
+                  frames below SILENCE_THRESHOLD_RMS → emit activity_end.
+                - Audio is streamed continuously regardless of activity state;
+                  the signals bracket the speech segment for Gemini's turn logic.
 
         This coroutine runs concurrently with _receive_gemini_audio and
         _forward_gemini_audio_to_twilio for the duration of the session.
-        It terminates when session_active is set to False and the queue
-        is drained.
+        It terminates when session_active is set to False and the queue is drained.
         ---
-        Corrutina: lee continuamente audio PCM de audio_input_queue y lo transmite
-        a la sesión Gemini Live activa.
+        Corrutina: lee continuamente audio PCM 16kHz de audio_input_queue,
+        detecta actividad de voz mediante análisis de energía RMS, y transmite
+        el audio a la sesión Gemini Live activa usando el patrón oficial
+        send_realtime_input con señales explícitas activity_start / activity_end.
+
+        Gestión de Actividad (VAD disabled=True):
+            Cuando el VAD del servidor está deshabilitado (obligatorio para telefonía
+            para evitar la auto-interrupción por eco acústico), el cliente DEBE señalizar
+            manualmente cuándo el usuario empieza y termina de hablar. Sin estas señales
+            Gemini nunca sabe que ha comenzado un nuevo turno del llamante y no produce
+            respuesta tras el turno 1.
+
+            El algoritmo de detección:
+                - Calcula la energía RMS de cada frame PCM.
+                - Voz confirmada: SPEECH_FRAMES_TO_START_ACTIVITY frames consecutivos
+                  por encima de SILENCE_THRESHOLD_RMS → emitir activity_start.
+                - Silencio confirmado: SILENCE_FRAMES_TO_END_ACTIVITY frames consecutivos
+                  por debajo de SILENCE_THRESHOLD_RMS → emitir activity_end.
+                - El audio se transmite continuamente independientemente del estado de
+                  actividad; las señales delimitan el segmento de voz para la lógica
+                  de turnos de Gemini.
 
         Esta corrutina se ejecuta de forma concurrente con _receive_gemini_audio y
         _forward_gemini_audio_to_twilio durante la duración de la sesión.
         Termina cuando session_active se establece en False y la cola se vacía.
         """
         logger.info("[GEMINI-TX] Corrutina de envío de audio a Gemini iniciada.")
+
+        # --- Activity Detection State / Estado de Detección de Actividad ---
+        # Tracks whether an activity_start has been sent to Gemini and not yet
+        # closed with activity_end. Essential to avoid duplicate signals.
+        # Rastrea si se ha enviado un activity_start a Gemini que aún no ha sido
+        # cerrado con activity_end. Esencial para evitar señales duplicadas.
+        is_speaking: bool = False
+
+        # Consecutive frame counters for hysteresis:
+        #   - speech_frame_count: frames above threshold since last silence.
+        #   - silence_frame_count: frames below threshold since last speech.
+        # Contadores de frames consecutivos para histéresis:
+        #   - speech_frame_count: frames por encima del umbral desde el último silencio.
+        #   - silence_frame_count: frames por debajo del umbral desde la última voz.
+        speech_frame_count: int = 0
+        silence_frame_count: int = 0
+
         try:
             while self.session_active:
                 try:
-                    # Wait for a PCM chunk with a generous timeout to avoid
-                    # spinning on an empty queue.
-                    # Esperar un fragmento PCM con un timeout generoso para evitar
-                    # girar en una cola vacía.
+                    # Wait for a PCM 16kHz chunk from the input queue.
+                    # The chunk was already transcoded from mu-law 8kHz by
+                    # receive_twilio_audio before being enqueued.
+                    # Esperar un fragmento PCM 16kHz de la cola de entrada.
+                    # El fragmento ya fue transcodificado desde mu-law 8kHz por
+                    # receive_twilio_audio antes de ser encolado.
                     pcm_chunk = await asyncio.wait_for(
                         self.audio_input_queue.get(),
                         timeout=TIMEOUT_AUDIO_RECEIVE_SECONDS
                     )
                 except asyncio.TimeoutError:
-                    # No audio arrived in the timeout window. If session is still
-                    # active this is normal silence; log and continue.
-                    # No llegó audio en la ventana de timeout. Si la sesión sigue
-                    # activa esto es silencio normal; loguear y continuar.
-                    logger.debug(
-                        "[GEMINI-TX] Timeout esperando audio de Twilio (silencio normal). "
-                        "Continuando..."
-                    )
+                    # No audio in the timeout window — normal inter-utterance silence.
+                    # If an activity window is open, the extended silence should
+                    # close it to avoid Gemini waiting indefinitely for activity_end.
+                    # Sin audio en la ventana de timeout — silencio normal entre turnos.
+                    # Si hay una ventana de actividad abierta, el silencio extendido
+                    # debe cerrarla para evitar que Gemini espere indefinidamente.
+                    if is_speaking:
+                        logger.info(
+                            "[GEMINI-TX] Silencio extendido detectado (timeout de cola). "
+                            "Cerrando ventana de actividad con activity_end..."
+                        )
+                        try:
+                            await session.send_realtime_input(
+                                activity_end=types.ActivityEnd()
+                            )
+                            logger.info("[GEMINI-TX] activity_end enviado (timeout de cola).")
+                        except Exception as ae_exc:
+                            logger.warning(
+                                f"[GEMINI-TX] Error al enviar activity_end por timeout: {ae_exc}"
+                            )
+                        is_speaking = False
+                        speech_frame_count = 0
+                        silence_frame_count = 0
                     continue
 
-                # Send the PCM chunk to Gemini Live using the SDK 1.69.0 compliant
-                # audio sending syntax with types.Blob.
-                # Enviar el fragmento PCM a Gemini Live usando la sintaxis de envío
-                # de audio conforme a SDK 1.69.0 con types.Blob.
+                # -----------------------------------------------------------
+                # RMS ENERGY COMPUTATION / CÁLCULO DE ENERGÍA RMS
+                # -----------------------------------------------------------
+                # PCM 16kHz audio is 16-bit signed little-endian (2 bytes/sample).
+                # struct.unpack reads the raw bytes as an array of signed shorts.
+                # El audio PCM 16kHz es signed little-endian de 16-bit (2 bytes/muestra).
+                # struct.unpack lee los bytes brutos como un array de shorts con signo.
+                num_samples = len(pcm_chunk) // 2
+                if num_samples == 0:
+                    self.audio_input_queue.task_done()
+                    continue
+
+                samples = struct.unpack(f"<{num_samples}h", pcm_chunk[:num_samples * 2])
+                rms = math.sqrt(sum(s * s for s in samples) / num_samples)
+
+                # -----------------------------------------------------------
+                # ACTIVITY STATE MACHINE / MÁQUINA DE ESTADOS DE ACTIVIDAD
+                # -----------------------------------------------------------
+                if rms >= SILENCE_THRESHOLD_RMS:
+                    # Frame with speech energy detected.
+                    # Frame con energía de voz detectada.
+                    silence_frame_count = 0
+                    speech_frame_count += 1
+
+                    if not is_speaking and speech_frame_count >= SPEECH_FRAMES_TO_START_ACTIVITY:
+                        # Sufficient consecutive speech frames — open activity window.
+                        # Suficientes frames consecutivos de voz — abrir ventana de actividad.
+                        logger.info(
+                            f"[GEMINI-TX] Voz detectada ({speech_frame_count} frames). "
+                            "Enviando activity_start a Gemini..."
+                        )
+                        try:
+                            await session.send_realtime_input(
+                                activity_start=types.ActivityStart()
+                            )
+                            logger.info("[GEMINI-TX] activity_start enviado correctamente.")
+                        except Exception as as_exc:
+                            logger.warning(
+                                f"[GEMINI-TX] Error al enviar activity_start: {as_exc}"
+                            )
+                        is_speaking = True
+                else:
+                    # Frame with silence energy detected.
+                    # Frame con energía de silencio detectada.
+                    speech_frame_count = 0
+                    silence_frame_count += 1
+
+                    if is_speaking and silence_frame_count >= SILENCE_FRAMES_TO_END_ACTIVITY:
+                        # Sufficient consecutive silence frames — close activity window.
+                        # Suficientes frames consecutivos de silencio — cerrar ventana.
+                        logger.info(
+                            f"[GEMINI-TX] Silencio detectado ({silence_frame_count} frames). "
+                            "Enviando activity_end a Gemini..."
+                        )
+                        try:
+                            await session.send_realtime_input(
+                                activity_end=types.ActivityEnd()
+                            )
+                            logger.info("[GEMINI-TX] activity_end enviado correctamente.")
+                        except Exception as ae_exc:
+                            logger.warning(
+                                f"[GEMINI-TX] Error al enviar activity_end: {ae_exc}"
+                            )
+                        is_speaking = False
+                        silence_frame_count = 0
+
+                # -----------------------------------------------------------
+                # AUDIO FORWARDING / REENVÍO DE AUDIO
+                # -----------------------------------------------------------
+                # Audio is sent to Gemini regardless of activity state.
+                # The activity signals bracket the speech for turn logic;
+                # the audio stream must be continuous to avoid buffer gaps.
+                # El audio se envía a Gemini independientemente del estado de actividad.
+                # Las señales de actividad delimitan la voz para la lógica de turnos;
+                # el stream de audio debe ser continuo para evitar huecos en el buffer.
                 await session.send_realtime_input(
                     audio=types.Blob(
                         data=pcm_chunk,
@@ -708,7 +891,9 @@ class VoiceOrchestrationService:
                     )
                 )
                 logger.debug(
-                    f"[GEMINI-TX] Fragmento PCM enviado a Gemini: {len(pcm_chunk)} bytes."
+                    f"[GEMINI-TX] Fragmento PCM enviado a Gemini: "
+                    f"{len(pcm_chunk)} bytes | RMS: {rms:.1f} | "
+                    f"Hablando: {is_speaking}"
                 )
                 self.audio_input_queue.task_done()
 
@@ -718,6 +903,20 @@ class VoiceOrchestrationService:
                 exc_info=True
             )
         finally:
+            # If the session ends while an activity window is open, close it cleanly
+            # to avoid leaving Gemini in a waiting state.
+            # Si la sesión termina con una ventana de actividad abierta, cerrarla
+            # limpiamente para evitar dejar a Gemini en estado de espera.
+            if is_speaking:
+                try:
+                    await session.send_realtime_input(
+                        activity_end=types.ActivityEnd()
+                    )
+                    logger.info(
+                        "[GEMINI-TX] activity_end enviado en finally (cierre de sesión)."
+                    )
+                except Exception:
+                    pass
             logger.info("[GEMINI-TX] Corrutina de envío de audio a Gemini finalizada.")
 
     # -----------------------------------------------------------------------
