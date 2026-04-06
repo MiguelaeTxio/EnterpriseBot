@@ -97,7 +97,7 @@ from vox_bridge.services import VoiceOrchestrationService
 # Logging estructurado con marca de tiempo y nivel para la salida de consola
 # de PythonAnywhere.
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s # [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
