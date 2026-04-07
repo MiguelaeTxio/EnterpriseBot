@@ -1,4 +1,3 @@
-./debug_webhook_locally.py
 ./requirements.in
 ./voice_orchestrator.py
 ./vox_bridge/urls.py
@@ -14,7 +13,6 @@
 ./vox_bridge/management/commands/launch_voice_system.py
 ./vox_bridge/management/__init__.py
 ./vox_bridge/services.py
-./test_bridge_locally.py
 ./manage.py
 ./requirements.txt
 ./trigger_outbound_call.py
@@ -129,12 +127,13 @@
 ./static/admin/css/vendor/select2/select2.min.css
 ./static/admin/css/forms.css
 ./voice_sidecar_bridge.py
-./test_ia_locally.py
 ./DOCS/SESSION/NGROK_URL.txt
 ./DOCS/SESSION/ENTERPRISEBOT_PROJECT_DIRECTORY.txt
 ./DOCS/MAINS/ENTERPRISEBOT_MASTER_DOCUMENT.md
 ./DOCS/MAINS/SESSION_VARIABLES.md
+./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/API_HANDSHAKE_PROTOCOL.md
+./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/ARCH_VOICE_INFRASTRUCTURE.md
+./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/TRANSCODING_ENGINE_SPECS.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
-./test_bridge_connectivity.py
 ./gcp_credentials.json

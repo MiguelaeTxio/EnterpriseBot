@@ -1,45 +1,35 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
 
-# ENTERPRISEBOT — ANEXO HITO V01 — RECUPERACIÓN DE SESIÓN
+# ENTERPRISEBOT — ANEXO HITO V01 — VALIDACIÓN DE INFRAESTRUCTURA DE VOZ
 **Estado:** EN PROGRESO
-**Tipo:** ANEXO DE RECUPERACIÓN — generado automáticamente a partir de diferencias git observadas tras cierre abrupto de sesión.
-**Fecha de recuperación:** 2026-04-06
-**ADVERTENCIA:** La hoja de ruta de este anexo ha sido reconstruida por el modelo a partir de los cambios observados en git. Puede no reflejar con exactitud el estado mental de la sesión interrumpida. Revisar antes de continuar el desarrollo.
+**Última actualización:** 2026-04-07
 
 ---
 
-## SECCION 2 — ESTADO RECONSTRUIDO
-
-La sesión se interrumpió mientras se realizaban pruebas de depuración en el componente `voice_sidecar_bridge.py`. El último cambio técnico registrado fue la elevación del nivel de log a `DEBUG`, lo que indica una fase de observación de trazas de datos para validar la integración de voz en tiempo real. 
-
-Simultáneamente, se realizaron mejoras en la documentación del sistema (`SYSTEM_DOCS`), optimizando la legibilidad de los protocolos de comandos.
-
----
-
-## SECCION 3 — DIFF RESUMIDO
-
-| Archivo | Tipo de cambio | Descripción inferida |
-|---------|---------------|----------------------|
-| `voice_sidecar_bridge.py` | modified | Cambio de `logging.INFO` a `DEBUG` para inspección técnica. |
-| `SPECIAL_GEMINI_RECOVERY_SYSTEM_PROMPTS.md` | modified | Limpieza de prefijos `sftp> ` en documentación. |
-| `SPECIAL_GEMINI_SYSTEM_PROMPTS.md` | modified | Limpieza de prefijos `sftp> ` en documentación. |
-| `get` | untracked | Archivo residual (error de comando). Eliminar. |
+## SECCIÓN 1 — LOGROS DE LA SESIÓN ACTUAL
+1.  **Saneamiento de Entorno:** Eliminación de scripts de prueba obsoletos (`test_ia_locally.py`, `debug_webhook_locally.py`, etc.) y archivos residuales.
+2.  **Persistencia Documental:** Generación de la Constelación Documental Satélite del Hito 1 en `DOCS_ATTACHED_2_ANNEX_V01/`:
+    - `ARCH_VOICE_INFRASTRUCTURE.md`: Flujo multi-salto Twilio-Ngrok-Bridge-Gemini.
+    - `API_HANDSHAKE_PROTOCOL.md`: Técnica de doble handshake HTTP/WSS.
+    - `TRANSCODING_ENGINE_SPECS.md`: Detalles de audioop y gestión de `streamSid`.
+3.  **Validación Técnica E2E:** Confirmación mediante logs `DEBUG` del funcionamiento del bridge:
+    - Handshake con Gemini 3.1 Live exitoso.
+    - Transcodificación bidireccional (mu-law 8kHz ↔ PCM 24kHz) operativa.
+    - Orquestación de eventos de Twilio (`start`, `media`, `stop`) estabilizada.
 
 ---
 
-## SECCION 4 — HOJA DE RUTA PARA LA SIGUIENTE SESIÓN
+## SECCIÓN 2 — HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (LEY SUPREMA)
 
-**ADVERTENCIA:** Esta hoja de ruta ha sido reconstruida automáticamente. El desarrollador debe validarla antes de comenzar.
-
-1.  **Limpieza inicial:** Eliminar el archivo residual `get` en el raíz.
-2.  **Pruebas de flujo de voz:** Ejecutar el `voice_sidecar_bridge.py` con el nivel `DEBUG` actual para verificar que los paquetes de audio PCM y los eventos de Gemini se procesan correctamente.
-3.  **Validación de RMS:** Confirmar que la detección de actividad implementada en el commit `5aa59a7` funciona como se espera bajo la nueva verbosidad de logs.
-4.  **Reversión de logs:** Una vez validado el flujo, devolver el nivel de log a `INFO` para producción.
-5.  **Cierre de Hito:** El hito se considerará completado cuando se verifique una llamada de voz E2E sin latencia perceptible ni fallos en el handshake.
+1.  **Calibración de VAD (RMS):**
+    - Auditar los valores de RMS reportados en los logs de la sesión actual (rango observado: 8.0 a 485.0).
+    - Ajustar los umbrales de `activity_start` y `activity_end` en `vox_bridge/services.py` para evitar falsos positivos por ruido de línea.
+    - Implementar un mecanismo de "histeresis" o conteo de frames para estabilizar la transición `Hablando: True/False`.
+2.  **Validación de Latencia:** Realizar pruebas de estrés para medir el TTFT (Time to First Token) tras el ajuste del VAD.
+3.  **Cierre de Hito 1:** Una vez calibrado el RMS, proceder al marcado del hito como COMPLETADO en el Master Document.
 
 ---
 
-## SECCION 5 — PAH — REGISTRO DE RECUPERACIÓN
-
-**Título:** Recuperación de sesión — EnterpriseBot — 2026-04-06
-**Descripción:** Anexo generado automáticamente tras cierre abrupto de sesión. Reconstruido a partir de diferencias git observadas en 3 archivos modificados y 1 archivo residual.
+## SECCIÓN 3 — PAH — REGISTRO DE SESIÓN
+**Título:** Depuración de Infraestructura de Voz y Documentación Satélite del Hito 1
+**Descripción:** Sesión centrada en la validación técnica del Hito 1. Se ha purgado el entorno de scripts obsoletos y se ha generado la Constelación Documental Satélite (Arquitectura, Handshake y Transcodificación). Las pruebas en DEBUG confirman que el bridge gestiona el flujo A2A con Gemini 3.1 Live satisfactoriamente, habiéndose identificado la necesidad de calibrar los umbrales de RMS para optimizar la detección de voz (VAD) en la próxima sesión.
