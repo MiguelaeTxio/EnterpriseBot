@@ -13,11 +13,12 @@ EnterpriseBot es una solución omnicanal de nivel empresarial orientada a la orq
 *   **Middleware de Audio (Sidecar):** Capa de transcodificación obligatoria entre Twilio (G.711 mu-law/A-law) y Gemini Live (PCM Linear 16-bit).
 
 ## 3. Hoja de Ruta Estratégica
-### Hito 1: Validación de Infraestructura de Voz en Tiempo Real (EN PROGRESO)
+### Hito 1: Validación de Infraestructura de Voz en Tiempo Real (COMPLETADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md`)
 - Implementación de puente con Twilio Media Streams.
 - Estabilización del flujo de transcodificación mu-law/A-law -> PCM.
-- Orquestación de audio nativo con Gemini 3.1 Live.
+- Orquestación de audio nativo con Gemini Live 2.5 Flash Native Audio (Vertex AI).
+- Validación E2E con llamada real confirmada.
 
 ### Hito 2: Validación y Aislamiento de Diagnóstico vía Aplicación test_live (COMPLETADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md`)
@@ -25,11 +26,13 @@ EnterpriseBot es una solución omnicanal de nivel empresarial orientada a la orq
 - Implementación de interfaz "Walkie-Talkie" para pruebas directas.
 - Auditoría de Handshake de Google GenAI (v1beta) sin dependencias externas.
 
-### Hito 3: IVR Conversacional Configurable desde Producción (PAUSADO)
+### Hito 3: IVR Conversacional Configurable desde Producción (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md`)
-- Diseño del modelo de datos del IVR configurable (Django ORM).
-- Motor de inyección dinámica de configuración en LiveConnectConfig.
-- Panel de administración de producción con vistas Django personalizadas.
+- Diseño del modelo de datos multiempresa (Company, CompanyUser, Contact, Section,
+  PhoneNumber, CallFlow, PresenceStatus, CorporateVoiceProfile, DataCaptureSet).
+- Sistema de presencia con gestión de ausencias temporales y persistentes.
+- Panel de administración personalizado para empresas cliente (sin acceso al admin Django).
+- Motor de inyección dinámica de configuración IVR en LiveConnectConfig.
 
 ---
 ## 4. Directrices Técnicas Vinculantes
@@ -40,11 +43,13 @@ este documento y las aplica sin excepción.
 
 ### 4.1. Inteligencia Artificial
 - **SDK:** `google-genai 1.69.0`
-- **Modelo IVR Conversacional:** `gemini-3.1-flash-live-preview`
+- **Modelo IVR Conversacional:** `gemini-live-2.5-flash-native-audio`
+- **Plataforma:** Vertex AI — autenticación via Service Account JSON
+- **Variables de entorno:** `GCP_CREDENTIALS_PATH`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`
 - **Protocolo de sesión:** Setup-First via `async with client.aio.live.connect(...)`
-- **Thinking level:** `minimal` (obligatorio para TTFT mínimo en telefonía)
+- **Voice:** `Aoede` — obligatorio en `speech_config` para modelo de audio nativo
 - **VAD servidor:** `disabled=True` (obligatorio para puentes de telefonía)
-- **Firma texto SDK 1.69.0:** `await session.send_realtime_input(text='...')`
+- **Greeting:** `await session.send_client_content(turns=..., turn_complete=True)`
 - **Firma audio SDK 1.69.0:** `await session.send_realtime_input(audio=types.Blob(data=..., mime_type='audio/pcm;rate=16000'))`
 
 ### 4.2. Telefonía

@@ -245,9 +245,30 @@ class VoiceOrchestrator:
 
     def start_bridge(self):
         self.flush_print("# [ORCHESTRATOR] Lanzando Sidecar Bridge...")
+        # PIPE FIX: Launching the bridge with stdout=sys.stdout / stderr=sys.stderr
+        # causes a deadlock when the parent process (orchestrator) shares those
+        # descriptors with the ngrok subprocess output. The bridge blocks on its
+        # first write attempt because the shared pipe is not being drained.
+        # Solution: open a dedicated log file for the bridge and redirect both
+        # stdout and stderr to it. This decouples the bridge output from the
+        # orchestrator's stdout and eliminates the deadlock entirely.
+        # CORRECCIÓN DE PIPE: Lanzar el bridge con stdout=sys.stdout / stderr=sys.stderr
+        # provoca un deadlock cuando el proceso padre (orquestador) comparte esos
+        # descriptores con la salida del subproceso ngrok. El bridge se bloquea en su
+        # primer intento de escritura porque el pipe compartido no está siendo drenado.
+        # Solución: abrir un archivo de log dedicado para el bridge y redirigir tanto
+        # stdout como stderr a él. Esto desacopla la salida del bridge del stdout del
+        # orquestador y elimina el deadlock completamente.
+        bridge_log_path = "/home/MiguelAeTxio/SWAP/bridge.log"
+        bridge_log_fh = open(bridge_log_path, "a", buffering=1, encoding="utf-8")
+        self.flush_print(
+            f"# [ORCHESTRATOR] Salida del bridge redirigida a: {bridge_log_path}"
+        )
         self.bridge_process = subprocess.Popen(
-            [self.python_bin, "-u", self.bridge_script], 
-            stdout=sys.stdout, stderr=sys.stderr, env=os.environ
+            [self.python_bin, "-u", self.bridge_script],
+            stdout=bridge_log_fh,
+            stderr=bridge_log_fh,
+            env=os.environ
         )
 
     def run(self):

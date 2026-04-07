@@ -425,7 +425,14 @@ async def main() -> None:
     # Graceful shutdown via OS signal handling.
     # Apagado elegante mediante gestión de señales del SO.
     stop_event = asyncio.Event()
-    loop = asyncio.get_event_loop()
+    # PYTHON 3.10+ FIX: asyncio.get_event_loop() is deprecated inside a coroutine
+    # launched by asyncio.run() — it may return a different loop or block indefinitely.
+    # asyncio.get_running_loop() is the correct call inside a running coroutine.
+    # CORRECCIÓN PYTHON 3.10+: asyncio.get_event_loop() está deprecado dentro de una
+    # corrutina lanzada por asyncio.run() — puede devolver un loop diferente o bloquearse
+    # indefinidamente. asyncio.get_running_loop() es la llamada correcta dentro de una
+    # corrutina en ejecución.
+    loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop_event.set)
 
