@@ -73,8 +73,8 @@ El comando de seed acepta la lista de números como argumento dinámico
 Define la personalidad y el comportamiento del agente IVR para un número concreto.
 El `system_instruction` y el `initial_greeting` se inyectan dinámicamente en el
 `LiveConnectConfig` de Gemini en tiempo de llamada, sustituyendo las constantes
-hardcodeadas actuales (`SYSTEM_INSTRUCTION`, `INITIAL_GREETING_TEXT`) de
-`vox_bridge/services.py`.
+hardcodeadas actuales (`SYSTEM_INSTRUCTION_FALLBACK`, `INITIAL_GREETING_FALLBACK`)
+de `vox_bridge/services.py`.
 
 #### `PresenceStatus` — Estado de presencia del usuario
     id, company_user (FK), status (AVAILABLE|IN_MEETING|BUSY_UNTIL|
@@ -143,136 +143,241 @@ Vistas Django class-based (no Django admin) que permiten a cada empresa:
 
 ## SECCIÓN 4 — INYECCIÓN DINÁMICA EN EL IVR
 
-### 4.1. Flujo de llamada entrante con configuración dinámica
-Cuando Twilio llama al endpoint `/api/vox/inbound/`:
-1. La vista identifica el número Twilio receptor (`PhoneNumber`).
-2. Carga el `CallFlow` asociado al número.
-3. Construye el `SYSTEM_INSTRUCTION` dinámico combinando:
-   - `CallFlow.system_instruction` (base del flujo).
-   - `CorporateVoiceProfile.tone_guidelines` + `sample_responses` (sonoridad).
-   - Estado de presencia activo de cada `Contact` interno relevante.
-4. Construye el `INITIAL_GREETING` desde `CallFlow.initial_greeting`.
-5. Inyecta ambos en el `LiveConnectConfig` de Gemini en tiempo de llamada.
+### 4.1. Flujo de llamada entrante con configuración dinámica (IMPLEMENTADO)
 
-### 4.2. Impacto en `vox_bridge/services.py`
-Las constantes hardcodeadas actuales:
-    SYSTEM_INSTRUCTION = "Eres Alia..."
-    INITIAL_GREETING_TEXT = "El llamante acaba de contestar..."
-Serán reemplazadas por un método de carga dinámica desde la base de datos,
-recibiendo el número Twilio como parámetro de entrada.
+El flujo real de ejecución de una llamada entrante es el siguiente:
 
----
+1. Twilio realiza POST `/api/vox/inbound/`
+   → `UniversalVoiceBridge.handle_twiml_post()` en `voice_sidecar_bridge.py`
+   → Responde con TwiML `<Connect><Stream url="wss://{host}/media" />`
 
-## SECCIÓN 5 — HOJA DE RUTA (SESIÓN 2026-04-08) — COMPLETADA ✅
+2. Twilio abre WebSocket GET `/media`
+   → `UniversalVoiceBridge.handle_websocket_stream()` en `voice_sidecar_bridge.py`
+   → Se inicia el bucle lector de eventos de Twilio.
+   → `VoiceOrchestrationService` NO se instancia todavía.
 
-### Paso 1 — Nueva app Django: `ivr_config` ✅ COMPLETADO
-App creada con `python manage.py startapp ivr_config` y registrada en
-`INSTALLED_APPS` de `enterprise_core/settings.py`.
-Dependencia añadida: `Pillow` (requerido por `ImageField` en `Company.logo`).
+3. Twilio envía evento `start` por el WebSocket
+   → `handle_websocket_stream()` extrae `twilio_number` de `data["start"]["to"]`
+   → Se instancia `VoiceOrchestrationService(twilio_number=twilio_number)`
+   → En `__init__()` se llama a `build_live_config(twilio_number)`:
+       a. Resuelve `PhoneNumber` activo por `twilio_number`.
+       b. Carga `CallFlow` asociado.
+       c. Carga `CorporateVoiceProfile` de la `Company`.
+       d. Consulta `PresenceStatus` activo de todos los `Contact` internos.
+       e. Ensambla `system_instruction` dinámico.
+       f. Retorna `(system_instruction, initial_greeting)`.
+   → Fallback automático a `SYSTEM_INSTRUCTION_FALLBACK` / `INITIAL_GREETING_FALLBACK`
+     si `build_live_config()` lanza cualquier excepción.
+   → Se lanza `run_voice_session()` como asyncio.Task concurrente.
 
-### Paso 2 — Modelos Django ✅ COMPLETADO
-Implementados en `ivr_config/models.py` los 9 modelos en orden estricto de
-dependencias FK:
-1. `Company`
-2. `CompanyUser`
-3. `CorporateVoiceProfile`
-4. `DataCaptureSet`
-5. `Section`
-6. `Contact`
-7. `CallFlow`
-8. `PhoneNumber`
-9. `PresenceStatus`
+4. Twilio envía eventos `media` sucesivos
+   → Se reenvían a `service.receive_twilio_audio()`.
 
-Todos incluyen docstring bilingüe, `__str__`, `class Meta` con verbose names
-en castellano, `created_at` y `updated_at` (excepto `PresenceStatus`).
+5. Twilio envía evento `stop`
+   → `service.terminate_session()` señaliza el fin de sesión.
 
-### Paso 3 — Migraciones ✅ COMPLETADO
-    python -m dotenv run python manage.py makemigrations ivr_config
-    python -m dotenv run python manage.py migrate
-WARNING conocido no bloqueante: `mysql.W002` — MySQL Strict Mode no activado.
-Queda como deuda técnica menor para una sesión futura.
-
-### Paso 4 — Superusuario inicial ✅ COMPLETADO
-Superusuario `admin` creado con email `nummenor@proton.me`.
-Credenciales registradas en `.env` bajo `SUPERUSER_USERNAME` y `SUPERUSER_EMAIL`.
-
-### Paso 5 — Admin Django para gestión interna ✅ COMPLETADO
-Todos los modelos de `ivr_config` registrados en `ivr_config/admin.py` con
-`list_display`, `list_filter` y `search_fields` apropiados por entidad.
-
-### Paso 6 — Seed de datos piloto (Grupo Álvarez) ✅ COMPLETADO
-Script `ivr_config/management/commands/seed_grupo_alvarez.py` creado y ejecutado.
-Acepta `--phone-numbers` como argumento dinámico E.164 (uno o varios números).
-Ejecutado con:
-    python manage.py seed_grupo_alvarez --phone-numbers +12603466780
-Registros creados en BD:
-- `Company`: Grupo Álvarez
-- `CompanyUser`: alvarez_admin (ADMIN, is_staff=False, contraseña inutilizable)
-- `CorporateVoiceProfile`: tono profesional, cálido y conciso
-- `CallFlow`: Recepción principal — Alia (SYSTEM_INSTRUCTION e INITIAL_GREETING
-  migrados literalmente desde `vox_bridge/services.py`)
-- `PhoneNumber`: +12603466780 vinculado al CallFlow principal
-- `Section`: Elevación, Asistencia
+### 4.2. Archivos modificados en esta implementación
+- `ivr_config/services.py` — NUEVO. Contiene `build_live_config()`.
+- `vox_bridge/services.py` — `SYSTEM_INSTRUCTION` → `SYSTEM_INSTRUCTION_FALLBACK`,
+  `INITIAL_GREETING_TEXT` → `INITIAL_GREETING_FALLBACK`. Constructor acepta
+  `twilio_number: str`. Llama a `build_live_config()` con fallback.
+- `voice_sidecar_bridge.py` — Instanciación de `VoiceOrchestrationService`
+  diferida al evento `start`. Extracción de `twilio_number` de `data["start"]["to"]`.
+  Guardias defensivas en todos los manejadores de eventos.
 
 ---
 
-## SECCIÓN 6 — PENDIENTES DIFERIDOS
+## SECCIÓN 5 — COMANDOS DE GESTIÓN
 
-Los siguientes elementos se abordarán en sesiones posteriores, preferiblemente
-tras reunión de refinamiento con el Grupo Álvarez:
+Los scripts standalone de laboratorio han sido migrados a comandos Django reales
+bajo `vox_bridge/management/commands/`, siguiendo el estándar Django de gestión.
+
+### Comandos disponibles
+    python -m dotenv run python manage.py update_twilio_webhook
+        Actualiza el webhook de voz de Twilio para que apunte al túnel ngrok
+        activo. Lee la URL desde DOCS/SESSION/NGROK_URL.txt. Debe ejecutarse
+        tras levantar voice_orchestrator.py y antes de cualquier prueba de
+        llamada entrante.
+
+    python -m dotenv run python manage.py trigger_outbound_call
+        Dispara una llamada saliente de validación desde +12603466780 al número
+        por defecto (+34688360595). Admite --to +34XXXXXXXXX para especificar
+        un destino distinto.
+
+    python -m dotenv run python manage.py seed_grupo_alvarez --phone-numbers +12603466780
+        Siembra los datos piloto de Grupo Álvarez en la base de datos.
+        Admite múltiples números E.164 en una única ejecución.
+
+### Secuencia de arranque del laboratorio
+    1. python voice_orchestrator.py
+       Esperar: "# [READY] Puente HÍBRIDO (aiohttp) activo en puerto 8081."
+       Esperar: "# [SUCCESS] TÚNEL 2026 ACTIVO: https://xxxx.ngrok-free.app"
+    2. (Segunda consola) python -m dotenv run python manage.py update_twilio_webhook
+    3. Realizar llamada entrante al +12603466780 o ejecutar trigger_outbound_call.
+
+---
+
+## SECCIÓN 6 — HITOS COMPLETADOS EN ESTE HITO
+
+### Sesión 2026-04-07 — Inicio del Hito 3
+- Diseño completo de la arquitectura de datos multiempresa.
+- Implementación de los 9 modelos Django en `ivr_config/models.py`.
+- Migraciones aplicadas correctamente.
+- Superusuario `admin` creado.
+- Admin Django configurado para todos los modelos de `ivr_config`.
+- Seed de datos piloto Grupo Álvarez ejecutado correctamente.
+- Constelación documental satélite inicial creada (3 documentos).
+
+### Sesión 2026-04-08 — Inyección Dinámica + Refactorización
+- `ivr_config/services.py` implementado (PEA) con `build_live_config()`.
+- `vox_bridge/services.py` refactorizado (PMA): constantes → fallback,
+  constructor acepta `twilio_number`, llama a `build_live_config()`.
+- `voice_sidecar_bridge.py` refactorizado (PMA): instanciación diferida
+  al evento `start`, extracción de `twilio_number`, guardias defensivas.
+- `V03DOC_DYNAMIC_IVR_INJECTION.md` corregido (PMA): flujo real documentado.
+- Scripts standalone migrados a comandos Django reales:
+    `vox_bridge/management/commands/update_twilio_webhook.py`
+    `vox_bridge/management/commands/trigger_outbound_call.py`
+- Prueba E2E de llamada entrante real pendiente por ausencia de números
+  españoles Twilio (entrega estimada 1-3 días desde 2026-04-07).
+
+---
+
+## SECCIÓN 7 — PENDIENTES DIFERIDOS
 
 1. `DataCaptureSet` por sección: Estructura exacta de campos para Elevación,
    Asistencia y Grúas. Campos comunes heredados de plantilla base.
 2. Recepción de ubicaciones: Integración de geolocalización en el flujo de
    toma de datos.
-3. Panel `/panel/` personalizado: Vistas class-based para gestión autónoma
-   por empresa.
-4. Sistema de recordatorios de presencia: Integración Celery + Twilio SMS/WhatsApp
+3. Sistema de recordatorios de presencia: Integración Celery + Twilio SMS/WhatsApp
    para el mecanismo de "¿sigues reunido?".
-5. Registro de usuarios empresa: Flujo de alta de nuevos `CompanyUser` con
+4. Registro de usuarios empresa: Flujo de alta de nuevos `CompanyUser` con
    invitación por email.
-6. Números españoles Twilio: Configuración de los 2 números ES aprobados
+5. Números españoles Twilio: Configuración de los 2 números ES aprobados
    (entrega estimada 1-3 días desde 2026-04-07) y calibración VAD para líneas ES.
    Cuando lleguen, ejecutar:
        python manage.py seed_grupo_alvarez --phone-numbers +34XXXXXXXXX +34XXXXXXXXX
-7. Deuda técnica — `mysql.W002`: Activación del Strict Mode de MySQL para la
-   conexión `default`. Consultar documentación Django:
+6. Deuda técnica — `mysql.W002`: Activación del Strict Mode de MySQL para la
+   conexión `default`.
    https://docs.djangoproject.com/en/5.2/ref/databases/#mysql-sql-mode
+7. Prueba E2E de llamada entrante real con número español y teléfono de empresa.
 
 ---
 
-## SECCIÓN 7 — HOJA DE RUTA SIGUIENTE SESIÓN
+## SECCIÓN 8 — HOJA DE RUTA SIGUIENTE SESIÓN
 
-### Paso 7 — Cargador dinámico `ivr_config/services.py`
-Implementar la función `build_live_config(twilio_number: str) -> tuple[str, str]`
-según la especificación de `V03DOC_DYNAMIC_IVR_INJECTION.md`:
-- Obtener `PhoneNumber` activo por `twilio_number`.
-- Obtener `CallFlow` asociado.
-- Obtener `CorporateVoiceProfile` de la `Company`.
-- Consultar `PresenceStatus` activo de todos los `Contact` internos.
-- Ensamblar `system_instruction` dinámico con contexto de presencia.
-- Retornar `(system_instruction, initial_greeting)`.
-- Implementar fallback de seguridad con constantes hardcodeadas actuales
-  (`SYSTEM_INSTRUCTION_FALLBACK`, `INITIAL_GREETING_FALLBACK`).
+### Paso 10 — App Django `panel` y estructura base
 
-### Paso 8 — Modificación de `vox_bridge/services.py`
-- Añadir parámetro `twilio_number: str` al constructor de `VoiceOrchestrationService`.
-- Llamar a `build_live_config(twilio_number)` en `__init__()`.
-- Sustituir referencias a `SYSTEM_INSTRUCTION` y `INITIAL_GREETING_TEXT` por
-  `self.system_instruction` y `self.initial_greeting_text`.
-- Las constantes originales pasan a ser `SYSTEM_INSTRUCTION_FALLBACK` e
-  `INITIAL_GREETING_FALLBACK`.
+Crear la app Django `panel` con `python manage.py startapp panel` y registrarla
+en `INSTALLED_APPS`. Crear la estructura de directorios:
 
-### Paso 9 — Modificación de `vox_bridge/views.py`
-- Extraer `twilio_number = request.POST.get('To', '')` en `InboundCallView`.
-- Pasar `twilio_number` al constructor de `VoiceOrchestrationService`.
+    panel/
+        __init__.py
+        apps.py
+        urls.py
+        views.py
+        mixins.py          ← Mixins de autenticación y autorización
+        forms.py           ← Formularios para cada entidad
+        templates/
+            panel/
+                base.html
+                dashboard.html
+                login.html
+                presence/
+                    status.html
+                company/
+                    detail.html
+                users/
+                    list.html
+                    form.html
+                sections/
+                    list.html
+                    form.html
+                contacts/
+                    list.html
+                    form.html
+                callflows/
+                    list.html
+                    form.html
+                phonenumbers/
+                    list.html
+
+### Paso 11 — Middleware de bloqueo de admin para CompanyUser
+
+Implementar `CompanyUserAdminBlockMiddleware` en `panel/middleware.py`:
+- Si el usuario autenticado tiene un `CompanyUser` vinculado (es decir,
+  `hasattr(request.user, 'company_user')`), bloquear el acceso a cualquier
+  ruta que empiece por `/admin/` devolviendo `HttpResponseForbidden`.
+- Si el usuario tiene `is_staff=True`, dejar pasar sin restricción.
+- Registrar el middleware en `MIDDLEWARE` de `enterprise_core/settings.py`
+  DESPUÉS de `AuthenticationMiddleware`.
+
+### Paso 12 — Mixin de autenticación de panel (`PanelLoginRequiredMixin`)
+
+Implementar en `panel/mixins.py`:
+- `PanelLoginRequiredMixin`: hereda de `LoginRequiredMixin`. Redirige a
+  `/panel/login/` si el usuario no está autenticado.
+- `CompanyUserRequiredMixin`: hereda de `PanelLoginRequiredMixin`. Verifica
+  que el usuario tiene un `CompanyUser` activo vinculado. Si no, redirige
+  a `/panel/login/` con mensaje de error.
+- `AdminRoleRequiredMixin`: hereda de `CompanyUserRequiredMixin`. Verifica
+  que el `CompanyUser.role == 'ADMIN'`. Si no, devuelve 403.
+
+### Paso 13 — Vistas base del panel
+
+Implementar en `panel/views.py` las siguientes vistas class-based:
+
+    PanelLoginView(LoginView)
+        template_name = 'panel/login.html'
+        redirect_authenticated_user = True
+        next_page = '/panel/'
+
+    PanelLogoutView(LogoutView)
+        next_page = '/panel/login/'
+
+    PanelDashboardView(CompanyUserRequiredMixin, TemplateView)
+        template_name = 'panel/dashboard.html'
+        Contexto: company, company_user, presencia propia activa,
+        resumen de secciones activas, número de contactos.
+
+### Paso 14 — URLs del panel
+
+Crear `panel/urls.py` con todas las rutas del panel bajo el prefijo `/panel/`.
+Incluir en `enterprise_core/urls.py` con:
+    path('panel/', include('panel.urls')),
+
+### Paso 15 — Templates base y login
+
+Implementar `panel/templates/panel/base.html` con:
+- Navegación lateral con enlaces a todas las secciones del panel.
+- Indicador del estado de presencia propio en la cabecera.
+- Bloque `{% block content %}` para el contenido específico de cada vista.
+- Diseño limpio, sin dependencias externas de CSS (usar Bootstrap CDN).
+
+Implementar `panel/templates/panel/login.html` con:
+- Formulario de login estándar Django.
+- Mensaje de error si las credenciales son incorrectas.
+- Sin enlace de registro (el alta de usuarios es por invitación).
 
 ---
 
-## SECCIÓN 8 — PAH — REGISTRO DE SESIÓN
+## SECCIÓN 9 — PAH — REGISTRO DE SESIONES
+
+### Sesión 2026-04-07
 **Título:** Inicio del Hito 3 — Arquitectura IVR Multiempresa Configurable
 **Descripción:** Sesión de arranque del Hito 3. Se define la arquitectura completa
 del sistema IVR configurable desde producción: modelo de datos multiempresa,
 sistema de presencia con gestión de ausencias, panel de administración personalizado
 y mecanismo de inyección dinámica de configuración en Gemini Live. Se crea la
 constelación documental satélite inicial del hito.
+
+### Sesión 2026-04-08
+**Título:** Inyección Dinámica de Configuración IVR: build_live_config + Refactor services.py
+**Descripción:** Sesión de implementación de los Pasos 7, 8 y 9 de la hoja de ruta
+del Hito 3. Se implementa build_live_config() en ivr_config/services.py, se refactoriza
+VoiceOrchestrationService para carga dinámica desde BD con fallback de seguridad, y
+se refactoriza voice_sidecar_bridge.py para diferir la instanciación del servicio al
+evento start de Twilio donde el número To está disponible. Se corrige la documentación
+satélite V03DOC_DYNAMIC_IVR_INJECTION.md con el flujo real de ejecución. Los scripts
+standalone de laboratorio se migran a comandos Django reales bajo
+vox_bridge/management/commands/.

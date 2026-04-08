@@ -82,12 +82,16 @@ logger = logging.getLogger(__name__)
 # sin fecha de deprecación publicada y con garantías SLA de producción.
 GEMINI_MODEL = "gemini-live-2.5-flash-native-audio"
 
-# System instruction that defines the IVR agent's persona and behaviour.
-# This prompt is injected at session setup time and governs all interactions.
-# Instrucción de sistema que define la persona y comportamiento del agente IVR.
-# Este prompt se inyecta en el momento de configuración de la sesión y rige
-# todas las interacciones.
-SYSTEM_INSTRUCTION = (
+# Fallback system instruction used when build_live_config() fails to load
+# the dynamic configuration from the database (e.g. number not configured,
+# CallFlow missing). Contains the original hardcoded Grupo Álvarez / Alia
+# persona definition as a safety net to prevent silent call failures.
+# Instrucción de sistema de fallback usada cuando build_live_config() no puede
+# cargar la configuración dinámica desde la base de datos (p. ej. número no
+# configurado, CallFlow ausente). Contiene la definición original hardcodeada
+# de la persona Grupo Álvarez / Alia como red de seguridad para evitar fallos
+# silenciosos en llamadas.
+SYSTEM_INSTRUCTION_FALLBACK = (
     "Eres Alia, la asistente virtual del Grupo Álvarez. "
     "Atiendes llamadas de voz en tiempo real. "
     "Tu tono es profesional, cálido y conciso. "
@@ -195,12 +199,13 @@ SILENCE_FRAMES_TO_END_ACTIVITY = 30
 SPEECH_FRAMES_TO_START_ACTIVITY = 10
 
 
-# Initial greeting text sent to Gemini immediately after session establishment.
-# This text triggers the model to produce the opening spoken response to the caller.
-# Texto del saludo inicial enviado a Gemini inmediatamente tras el establecimiento
-# de la sesión. Este texto indica al modelo que produzca la respuesta hablada de
-# apertura para el llamante.
-INITIAL_GREETING_TEXT = (
+# Fallback initial greeting used when build_live_config() fails to load
+# the dynamic configuration from the database. Contains the original hardcoded
+# Alia / Grupo Álvarez greeting as a safety net.
+# Saludo inicial de fallback usado cuando build_live_config() no puede cargar
+# la configuración dinámica desde la base de datos. Contiene el saludo original
+# hardcodeado de Alia / Grupo Álvarez como red de seguridad.
+INITIAL_GREETING_FALLBACK = (
     "El llamante acaba de contestar la llamada. "
     "Salúdale presentándote como Alia, asistente virtual del Grupo Álvarez, "
     "con el siguiente mensaje exacto, sin añadir ni modificar nada: "
@@ -242,20 +247,48 @@ class VoiceOrchestrationService:
         - Gestionar el apagado elegante y la recuperación de errores.
     """
 
-    def __init__(self):
+    def __init__(self, twilio_number: str = ""):
         """
-        Initialises the service by loading credentials from environment variables
-        and constructing the Gemini and Twilio client instances.
+        Initialises the service by loading credentials from environment variables,
+        constructing the Gemini and Twilio client instances, and resolving the
+        dynamic IVR configuration for the inbound call via build_live_config().
 
-        Gemini client: uses GEMINI_API_KEY from the project .env file.
-        Twilio client: uses TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
+        If build_live_config() raises any exception (e.g. the Twilio number is
+        not yet registered in the database, or has no active CallFlow assigned),
+        the service falls back silently to the hardcoded SYSTEM_INSTRUCTION_FALLBACK
+        and INITIAL_GREETING_FALLBACK constants, logging the failure at ERROR level
+        so it is visible in the PythonAnywhere error log for diagnosis.
+
+        Args:
+            twilio_number (str): The Twilio E.164 number that received the inbound
+                                 call (e.g. '+12603466780'). Passed by InboundCallView
+                                 from request.POST.get('To', ''). Defaults to empty
+                                 string, which will trigger the fallback path.
+
+        Gemini client: Vertex AI service account JSON — GCP_CREDENTIALS_PATH.
+        Twilio client: TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
                        TWILIO_API_KEY_SECRET (API Key auth, not Auth Token auth).
         ---
         Inicializa el servicio cargando las credenciales desde las variables de
-        entorno y construyendo las instancias de los clientes Gemini y Twilio.
+        entorno, construyendo las instancias de los clientes Gemini y Twilio, y
+        resolviendo la configuración IVR dinámica para la llamada entrante mediante
+        build_live_config().
 
-        Cliente Gemini: usa GEMINI_API_KEY del archivo .env del proyecto.
-        Cliente Twilio: usa TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
+        Si build_live_config() lanza cualquier excepción (p. ej. el número Twilio
+        aún no está registrado en la base de datos, o no tiene ningún CallFlow
+        activo asignado), el servicio cae silenciosamente al fallback de las
+        constantes hardcodeadas SYSTEM_INSTRUCTION_FALLBACK e INITIAL_GREETING_FALLBACK,
+        registrando el fallo a nivel ERROR para que sea visible en el log de errores
+        de PythonAnywhere para su diagnóstico.
+
+        Args:
+            twilio_number (str): El número Twilio E.164 que recibió la llamada
+                                 entrante (p. ej. '+12603466780'). Pasado por
+                                 InboundCallView desde request.POST.get('To', '').
+                                 Por defecto cadena vacía, que activará el fallback.
+
+        Cliente Gemini: Service account JSON de Vertex AI — GCP_CREDENTIALS_PATH.
+        Cliente Twilio: TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
                         TWILIO_API_KEY_SECRET (autenticación por API Key, no Auth Token).
         """
         # --- Gemini Client Initialisation / Inicialización del Cliente Gemini ---
@@ -368,6 +401,32 @@ class VoiceOrchestrationService:
         # cumplir con el protocolo bidireccional de Twilio Media Streams.
         self.stream_sid: str = ""
 
+        # --- Dynamic IVR Configuration / Configuración IVR Dinámica ---
+        # Attempt to load the system_instruction and initial_greeting from the
+        # database via build_live_config(). If this fails for any reason, fall
+        # back to the hardcoded constants so the call is never left unanswered.
+        # Intentar cargar system_instruction e initial_greeting desde la base de
+        # datos mediante build_live_config(). Si falla por cualquier razón, caer
+        # al fallback de constantes hardcodeadas para que la llamada nunca quede
+        # sin respuesta.
+        try:
+            from ivr_config.services import build_live_config
+            self.system_instruction, self.initial_greeting_text = (
+                build_live_config(twilio_number)
+            )
+            logger.info(
+                f"[INIT] Configuración IVR dinámica cargada correctamente "
+                f"para el número {twilio_number}."
+            )
+        except Exception as config_exc:
+            logger.error(
+                f"[INIT] No se pudo cargar la configuración dinámica para el "
+                f"número '{twilio_number}': {type(config_exc).__name__}: {config_exc}. "
+                "Usando SYSTEM_INSTRUCTION_FALLBACK e INITIAL_GREETING_FALLBACK."
+            )
+            self.system_instruction = SYSTEM_INSTRUCTION_FALLBACK
+            self.initial_greeting_text = INITIAL_GREETING_FALLBACK
+
         logger.info("[INIT] VoiceOrchestrationService inicializado completamente.")
 
     # -----------------------------------------------------------------------
@@ -435,7 +494,7 @@ class VoiceOrchestrationService:
         live_config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             system_instruction=types.Content(
-                parts=[types.Part(text=SYSTEM_INSTRUCTION)]
+                parts=[types.Part(text=self.system_instruction)]
             ),
             # SPEECH CONFIG — VOICE REQUIRED FOR NATIVE AUDIO MODEL:
             # gemini-live-2.5-flash-native-audio requires an explicit voice
@@ -566,7 +625,7 @@ class VoiceOrchestrationService:
                     session.send_client_content(
                         turns=types.Content(
                             role="user",
-                            parts=[types.Part(text=INITIAL_GREETING_TEXT)]
+                            parts=[types.Part(text=self.initial_greeting_text)]
                         ),
                         turn_complete=True
                     ),

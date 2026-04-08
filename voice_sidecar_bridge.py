@@ -250,23 +250,26 @@ class UniversalVoiceBridge:
 
         logger.info("# [WSS] Conexión WebSocket establecida en /media.")
 
-        # Instantiate a fresh service per call.
-        # Each call gets its own asyncio.Queue instances and a clean session_active
-        # flag, preventing any state bleed between consecutive calls.
-        # Instanciar un servicio fresco por llamada.
-        # Cada llamada obtiene sus propias instancias de asyncio.Queue y un flag
-        # session_active limpio, evitando cualquier contaminación de estado entre
-        # llamadas consecutivas.
-        service = VoiceOrchestrationService()
-
-        # Launch run_voice_session as a concurrent asyncio Task.
-        # This task owns the Gemini Live session lifecycle via the SDK context manager
-        # and runs concurrently with the Twilio event reader loop below.
-        # Lanzar run_voice_session como una Task asyncio concurrente.
-        # Esta tarea es propietaria del ciclo de vida de la sesión Gemini Live mediante
-        # el context manager del SDK y se ejecuta concurrentemente con el bucle lector
-        # de eventos de Twilio a continuación.
-        voice_task = asyncio.ensure_future(service.run_voice_session(ws))
+        # SERVICE INSTANTIATION DEFERRED TO 'start' EVENT:
+        # VoiceOrchestrationService requires the Twilio 'To' number (E.164) to
+        # load the dynamic IVR configuration via build_live_config(). This number
+        # is only available in the Twilio 'start' WebSocket event payload, not at
+        # WebSocket upgrade time. Therefore, both the service instantiation and the
+        # voice_task launch are deferred until the 'start' event is received.
+        # voice_task is initialised to None here and assigned inside the 'start'
+        # handler; all subsequent event handlers guard against voice_task being None.
+        #
+        # INSTANCIACIÓN DEL SERVICIO DIFERIDA AL EVENTO 'start':
+        # VoiceOrchestrationService requiere el número Twilio 'To' (E.164) para
+        # cargar la configuración IVR dinámica mediante build_live_config(). Este
+        # número solo está disponible en el payload del evento WebSocket 'start' de
+        # Twilio, no en el momento de la actualización WebSocket. Por tanto, tanto
+        # la instanciación del servicio como el lanzamiento de voice_task se difieren
+        # hasta que se recibe el evento 'start'. voice_task se inicializa a None aquí
+        # y se asigna dentro del manejador de 'start'; todos los manejadores de eventos
+        # posteriores protegen contra voice_task siendo None.
+        service: VoiceOrchestrationService | None = None
+        voice_task: asyncio.Task | None = None
 
         try:
             # Twilio WebSocket event reader loop.
@@ -287,25 +290,79 @@ class UniversalVoiceBridge:
                         # tanto las variantes camelCase (streamSid, callSid)
                         # como snake_case para compatibilidad futura con cambios
                         # en la API de Twilio.
+                        start_payload = data.get("start", {})
+
                         stream_sid = (
-                            data.get("start", {}).get("streamSid")
-                            or data.get("start", {}).get("stream_sid")
+                            start_payload.get("streamSid")
+                            or start_payload.get("stream_sid")
                         )
                         call_sid = (
-                            data.get("start", {}).get("callSid")
-                            or data.get("start", {}).get("call_sid")
+                            start_payload.get("callSid")
+                            or start_payload.get("call_sid")
                         )
 
+                        # Extract the Twilio 'To' number from the 'start' payload.
+                        # This is the E.164 number that received the inbound call
+                        # and is used by build_live_config() to resolve the active
+                        # CallFlow and CorporateVoiceProfile from the database.
+                        # Both camelCase and snake_case variants are checked.
+                        # Extraer el número Twilio 'To' del payload 'start'.
+                        # Es el número E.164 que recibió la llamada entrante y es
+                        # usado por build_live_config() para resolver el CallFlow
+                        # activo y el CorporateVoiceProfile desde la base de datos.
+                        # Se comprueban tanto las variantes camelCase como snake_case.
+                        twilio_number = (
+                            start_payload.get("to")
+                            or start_payload.get("To")
+                            or ""
+                        )
+
+                        if twilio_number:
+                            logger.info(
+                                f"# [EVENT] Número Twilio receptor extraído del "
+                                f"evento 'start': {twilio_number}"
+                            )
+                        else:
+                            logger.warning(
+                                "# [EVENT] Evento 'start' recibido sin campo 'to'. "
+                                "VoiceOrchestrationService usará la configuración "
+                                "de fallback hardcodeada (SYSTEM_INSTRUCTION_FALLBACK)."
+                            )
+
+                        # Instantiate a fresh VoiceOrchestrationService per call,
+                        # passing the resolved Twilio number so that build_live_config()
+                        # can load the dynamic IVR configuration from the database.
+                        # Each call gets its own asyncio.Queue instances and a clean
+                        # session_active flag, preventing state bleed between consecutive
+                        # calls handled by the same bridge process.
+                        # Instanciar un VoiceOrchestrationService fresco por llamada,
+                        # pasando el número Twilio resuelto para que build_live_config()
+                        # pueda cargar la configuración IVR dinámica desde la base de datos.
+                        # Cada llamada obtiene sus propias instancias de asyncio.Queue y
+                        # un flag session_active limpio, evitando contaminación de estado
+                        # entre llamadas consecutivas gestionadas por el mismo proceso bridge.
+                        service = VoiceOrchestrationService(twilio_number=twilio_number)
+
+                        # Launch run_voice_session as a concurrent asyncio Task.
+                        # This task owns the Gemini Live session lifecycle via the SDK
+                        # context manager and runs concurrently with the Twilio event
+                        # reader loop below.
+                        # Lanzar run_voice_session como una Task asyncio concurrente.
+                        # Esta tarea es propietaria del ciclo de vida de la sesión Gemini
+                        # Live mediante el context manager del SDK y se ejecuta
+                        # concurrentemente con el bucle lector de eventos de Twilio.
+                        voice_task = asyncio.ensure_future(service.run_voice_session(ws))
+
                         # Store the streamSid on the service instance.
-                        # This is MANDATORY for the Twilio Media Streams
-                        # bidirectional protocol: every outbound 'media' message
-                        # must include 'streamSid' at the root level. Omitting
-                        # it causes Warning 31951 and silent audio discard.
+                        # This is MANDATORY for the Twilio Media Streams bidirectional
+                        # protocol: every outbound 'media' message must include 'streamSid'
+                        # at the root level. Omitting it causes Warning 31951 and silent
+                        # audio discard on Twilio's side.
                         # Almacenar el streamSid en la instancia del servicio.
-                        # Esto es OBLIGATORIO para el protocolo bidireccional de
-                        # Twilio Media Streams: cada mensaje 'media' saliente debe
-                        # incluir 'streamSid' en el nivel raíz. Su omisión provoca
-                        # el Warning 31951 y el descarte silencioso del audio.
+                        # Esto es OBLIGATORIO para el protocolo bidireccional de Twilio
+                        # Media Streams: cada mensaje 'media' saliente debe incluir
+                        # 'streamSid' en el nivel raíz. Su omisión provoca el Warning
+                        # 31951 y el descarte silencioso del audio en el lado de Twilio.
                         if stream_sid:
                             service.set_stream_sid(stream_sid)
                         else:
@@ -323,9 +380,20 @@ class UniversalVoiceBridge:
                     elif event == "media":
                         # Forward the raw JSON payload to the service for mu-law
                         # decoding, PCM transcoding, and queuing to Gemini.
+                        # Guard against receiving 'media' before 'start' (should not
+                        # happen per Twilio protocol but defensive programming applies).
                         # Reenviar el payload JSON bruto al servicio para decodificación
                         # mu-law, transcodificación PCM y encolado a Gemini.
-                        await service.receive_twilio_audio(msg.data)
+                        # Proteger contra la recepción de 'media' antes de 'start' (no
+                        # debería ocurrir según el protocolo de Twilio, pero aplica
+                        # programación defensiva).
+                        if service is not None:
+                            await service.receive_twilio_audio(msg.data)
+                        else:
+                            logger.warning(
+                                "# [EVENT] Evento 'media' recibido antes del evento "
+                                "'start'. Fragmento de audio descartado."
+                            )
 
                     elif event == "stop":
                         # The caller has hung up. Signal the service to terminate
@@ -333,7 +401,8 @@ class UniversalVoiceBridge:
                         # El llamante ha colgado. Señalizar al servicio para que
                         # termine todas las corrutinas concurrentes de forma elegante.
                         logger.info("# [EVENT] Evento 'stop' recibido de Twilio.")
-                        service.terminate_session()
+                        if service is not None:
+                            service.terminate_session()
                         break
 
                     else:
@@ -343,14 +412,16 @@ class UniversalVoiceBridge:
 
                 elif msg.type == web.WSMsgType.CLOSED:
                     logger.info("# [WSS] WebSocket cerrado por Twilio.")
-                    service.terminate_session()
+                    if service is not None:
+                        service.terminate_session()
                     break
 
                 elif msg.type == web.WSMsgType.ERROR:
                     logger.error(
                         f"# [WSS] Error en el WebSocket de Twilio: {ws.exception()}"
                     )
-                    service.terminate_session()
+                    if service is not None:
+                        service.terminate_session()
                     break
 
         except Exception as exc:
@@ -358,14 +429,18 @@ class UniversalVoiceBridge:
                 f"# [WSS] Error inesperado en el bucle de eventos de Twilio: {exc}",
                 exc_info=True,
             )
-            service.terminate_session()
+            if service is not None:
+                service.terminate_session()
 
         finally:
             # Ensure the voice task is cancelled if the WebSocket closes before
-            # the session completes naturally.
+            # the session completes naturally. Guard against voice_task being None
+            # in the edge case where the WebSocket closes before 'start' is received.
             # Asegurar que la tarea de voz se cancela si el WebSocket se cierra antes
-            # de que la sesión se complete de forma natural.
-            if not voice_task.done():
+            # de que la sesión se complete de forma natural. Proteger contra voice_task
+            # siendo None en el caso extremo de que el WebSocket se cierre antes de
+            # recibir el evento 'start'.
+            if voice_task is not None and not voice_task.done():
                 voice_task.cancel()
                 try:
                     await voice_task

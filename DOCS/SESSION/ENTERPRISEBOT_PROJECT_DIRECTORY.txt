@@ -9,13 +9,14 @@
 ./vox_bridge/migrations/__init__.py
 ./vox_bridge/migrations/0001_initial.py
 ./vox_bridge/tests.py
+./vox_bridge/management/commands/update_twilio_webhook.py
+./vox_bridge/management/commands/trigger_outbound_call.py
 ./vox_bridge/management/commands/__init__.py
 ./vox_bridge/management/commands/launch_voice_system.py
 ./vox_bridge/management/__init__.py
 ./vox_bridge/services.py
 ./manage.py
 ./requirements.txt
-./trigger_outbound_call.py
 ./enterprise_core/urls.py
 ./enterprise_core/asgi.py
 ./enterprise_core/__init__.py
@@ -127,6 +128,7 @@
 ./static/admin/css/vendor/select2/select2.min.css
 ./static/admin/css/forms.css
 ./voice_sidecar_bridge.py
+./DOCS/SESSION/NGROK_URL.txt
 ./DOCS/SESSION/ENTERPRISEBOT_PROJECT_DIRECTORY.txt
 ./DOCS/MAINS/ENTERPRISEBOT_MASTER_DOCUMENT.md
 ./DOCS/MAINS/SESSION_VARIABLES.md
@@ -150,4 +152,5 @@
 ./ivr_config/management/commands/seed_grupo_alvarez.py
 ./ivr_config/management/commands/__init__.py
 ./ivr_config/management/__init__.py
+./ivr_config/services.py
 ./gcp_credentials.json
