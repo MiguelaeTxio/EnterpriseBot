@@ -61,7 +61,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # Core voice bridge — puente de voz principal.
     'vox_bridge',
+    # Multicompany IVR configuration engine — motor de configuración IVR multiempresa.
+    'ivr_config',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
@@ -109,6 +112,15 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': 'MiguelAeTxio.mysql.pythonanywhere-services.com',
         'PORT': '3306',
+        'OPTIONS': {
+            # Activates MySQL Strict Mode to enforce data integrity.
+            # Escalates truncation and type mismatch warnings into errors,
+            # preventing silent data corruption on insert/update operations.
+            # Activa el Strict Mode de MySQL para reforzar la integridad de datos.
+            # Convierte en errores los avisos de truncado e incompatibilidad de tipo,
+            # evitando la corrupción silenciosa de datos en operaciones de inserción/actualización.
+            'sql_mode': 'STRICT_TRANS_TABLES',
+        },
     }
 }
 

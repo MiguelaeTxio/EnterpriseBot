@@ -55,8 +55,16 @@ se definirá con la empresa piloto en sesiones posteriores.
 #### `PhoneNumber` — Número Twilio asignado
     id, company (FK), number, friendly_name, call_flow (FK), is_active
 
-Número de teléfono Twilio vinculado a la empresa. Cada número tiene asociado
-un `CallFlow` que determina el comportamiento del IVR al recibir una llamada.
+Número de teléfono Twilio vinculado a la empresa. Una empresa puede tener
+**cualquier número de líneas Twilio simultáneas** — no existe límite superior.
+Cada `PhoneNumber` tiene asociado de forma independiente un `CallFlow` propio,
+lo que permite que una misma empresa opere centralitas con comportamientos IVR
+distintos en cada número (24/7, horario restringido, idioma diferente, etc.).
+
+El comando de seed acepta la lista de números como argumento dinámico
+`--phone-numbers` en formato E.164, admitiendo uno o varios números en una
+única ejecución:
+    python manage.py seed_grupo_alvarez --phone-numbers +12603466780 +34XXXXXXXXX
 
 #### `CallFlow` — Flujo IVR
     id, company (FK), name, system_instruction (TextField),
@@ -155,16 +163,16 @@ recibiendo el número Twilio como parámetro de entrada.
 
 ---
 
-## SECCIÓN 5 — HOJA DE RUTA PARA LA SIGUIENTE SESIÓN (LEY SUPREMA)
+## SECCIÓN 5 — HOJA DE RUTA (SESIÓN 2026-04-08) — COMPLETADA ✅
 
-### Paso 1 — Nueva app Django: `ivr_config`
-Crear la app `ivr_config` dentro del proyecto EnterpriseBot:
-    python manage.py startapp ivr_config
-Registrarla en `INSTALLED_APPS` de `enterprise_core/settings.py`.
+### Paso 1 — Nueva app Django: `ivr_config` ✅ COMPLETADO
+App creada con `python manage.py startapp ivr_config` y registrada en
+`INSTALLED_APPS` de `enterprise_core/settings.py`.
+Dependencia añadida: `Pillow` (requerido por `ImageField` en `Company.logo`).
 
-### Paso 2 — Modelos Django
-Implementar en `ivr_config/models.py` los siguientes modelos en este orden
-exacto (respetando dependencias FK):
+### Paso 2 — Modelos Django ✅ COMPLETADO
+Implementados en `ivr_config/models.py` los 9 modelos en orden estricto de
+dependencias FK:
 1. `Company`
 2. `CompanyUser`
 3. `CorporateVoiceProfile`
@@ -175,37 +183,36 @@ exacto (respetando dependencias FK):
 8. `PhoneNumber`
 9. `PresenceStatus`
 
-Todos los modelos deben incluir:
-- `__str__` en inglés con formato `f"{self.company.name} — {self.name}"`.
-- `class Meta` con `verbose_name` y `verbose_name_plural` en castellano.
-- Docstring bilingüe (EN/ES) completo.
-- `created_at = models.DateTimeField(auto_now_add=True)` en todos.
-- `updated_at = models.DateTimeField(auto_now=True)` en todos excepto `PresenceStatus`.
+Todos incluyen docstring bilingüe, `__str__`, `class Meta` con verbose names
+en castellano, `created_at` y `updated_at` (excepto `PresenceStatus`).
 
-### Paso 3 — Migraciones
+### Paso 3 — Migraciones ✅ COMPLETADO
     python -m dotenv run python manage.py makemigrations ivr_config
     python -m dotenv run python manage.py migrate
+WARNING conocido no bloqueante: `mysql.W002` — MySQL Strict Mode no activado.
+Queda como deuda técnica menor para una sesión futura.
 
-### Paso 4 — Superusuario inicial
-    python -m dotenv run python manage.py createsuperuser
-Datos: usuario `admin`, email del proyecto, contraseña segura.
-Registrar credenciales en el `.env` bajo `SUPERUSER_USERNAME` y `SUPERUSER_EMAIL`.
+### Paso 4 — Superusuario inicial ✅ COMPLETADO
+Superusuario `admin` creado con email `nummenor@proton.me`.
+Credenciales registradas en `.env` bajo `SUPERUSER_USERNAME` y `SUPERUSER_EMAIL`.
 
-### Paso 5 — Admin Django para gestión interna
-Registrar todos los modelos de `ivr_config` en `ivr_config/admin.py` con
-`list_display`, `list_filter` y `search_fields` apropiados. Esto permite la
-gestión interna vía `/admin/` exclusivamente para el superusuario de la plataforma.
+### Paso 5 — Admin Django para gestión interna ✅ COMPLETADO
+Todos los modelos de `ivr_config` registrados en `ivr_config/admin.py` con
+`list_display`, `list_filter` y `search_fields` apropiados por entidad.
 
-### Paso 6 — Seed de datos piloto (Grupo Álvarez)
-Crear un script de seed `ivr_config/management/commands/seed_grupo_alvarez.py`
-que cree los datos iniciales del piloto:
+### Paso 6 — Seed de datos piloto (Grupo Álvarez) ✅ COMPLETADO
+Script `ivr_config/management/commands/seed_grupo_alvarez.py` creado y ejecutado.
+Acepta `--phone-numbers` como argumento dinámico E.164 (uno o varios números).
+Ejecutado con:
+    python manage.py seed_grupo_alvarez --phone-numbers +12603466780
+Registros creados en BD:
 - `Company`: Grupo Álvarez
-- `CompanyUser`: superusuario administrador de la empresa (1 usuario inicial)
-- `Section`: Elevación, Asistencia (las dos secciones actualmente hardcodeadas)
-- `CallFlow`: flujo actual de Alia con el `SYSTEM_INSTRUCTION` y
-  `INITIAL_GREETING_TEXT` actuales migrados desde `vox_bridge/services.py`
-- `CorporateVoiceProfile`: tono profesional, cálido y conciso — extraído del
-  `SYSTEM_INSTRUCTION` actual
+- `CompanyUser`: alvarez_admin (ADMIN, is_staff=False, contraseña inutilizable)
+- `CorporateVoiceProfile`: tono profesional, cálido y conciso
+- `CallFlow`: Recepción principal — Alia (SYSTEM_INSTRUCTION e INITIAL_GREETING
+  migrados literalmente desde `vox_bridge/services.py`)
+- `PhoneNumber`: +12603466780 vinculado al CallFlow principal
+- `Section`: Elevación, Asistencia
 
 ---
 
@@ -219,17 +226,50 @@ tras reunión de refinamiento con el Grupo Álvarez:
 2. Recepción de ubicaciones: Integración de geolocalización en el flujo de
    toma de datos.
 3. Panel `/panel/` personalizado: Vistas class-based para gestión autónoma
-   por empresa (Paso 5 de la hoja de ruta de sesiones siguientes).
+   por empresa.
 4. Sistema de recordatorios de presencia: Integración Celery + Twilio SMS/WhatsApp
    para el mecanismo de "¿sigues reunido?".
 5. Registro de usuarios empresa: Flujo de alta de nuevos `CompanyUser` con
    invitación por email.
 6. Números españoles Twilio: Configuración de los 2 números ES aprobados
    (entrega estimada 1-3 días desde 2026-04-07) y calibración VAD para líneas ES.
+   Cuando lleguen, ejecutar:
+       python manage.py seed_grupo_alvarez --phone-numbers +34XXXXXXXXX +34XXXXXXXXX
+7. Deuda técnica — `mysql.W002`: Activación del Strict Mode de MySQL para la
+   conexión `default`. Consultar documentación Django:
+   https://docs.djangoproject.com/en/5.2/ref/databases/#mysql-sql-mode
 
 ---
 
-## SECCIÓN 7 — PAH — REGISTRO DE SESIÓN
+## SECCIÓN 7 — HOJA DE RUTA SIGUIENTE SESIÓN
+
+### Paso 7 — Cargador dinámico `ivr_config/services.py`
+Implementar la función `build_live_config(twilio_number: str) -> tuple[str, str]`
+según la especificación de `V03DOC_DYNAMIC_IVR_INJECTION.md`:
+- Obtener `PhoneNumber` activo por `twilio_number`.
+- Obtener `CallFlow` asociado.
+- Obtener `CorporateVoiceProfile` de la `Company`.
+- Consultar `PresenceStatus` activo de todos los `Contact` internos.
+- Ensamblar `system_instruction` dinámico con contexto de presencia.
+- Retornar `(system_instruction, initial_greeting)`.
+- Implementar fallback de seguridad con constantes hardcodeadas actuales
+  (`SYSTEM_INSTRUCTION_FALLBACK`, `INITIAL_GREETING_FALLBACK`).
+
+### Paso 8 — Modificación de `vox_bridge/services.py`
+- Añadir parámetro `twilio_number: str` al constructor de `VoiceOrchestrationService`.
+- Llamar a `build_live_config(twilio_number)` en `__init__()`.
+- Sustituir referencias a `SYSTEM_INSTRUCTION` y `INITIAL_GREETING_TEXT` por
+  `self.system_instruction` y `self.initial_greeting_text`.
+- Las constantes originales pasan a ser `SYSTEM_INSTRUCTION_FALLBACK` e
+  `INITIAL_GREETING_FALLBACK`.
+
+### Paso 9 — Modificación de `vox_bridge/views.py`
+- Extraer `twilio_number = request.POST.get('To', '')` en `InboundCallView`.
+- Pasar `twilio_number` al constructor de `VoiceOrchestrationService`.
+
+---
+
+## SECCIÓN 8 — PAH — REGISTRO DE SESIÓN
 **Título:** Inicio del Hito 3 — Arquitectura IVR Multiempresa Configurable
 **Descripción:** Sesión de arranque del Hito 3. Se define la arquitectura completa
 del sistema IVR configurable desde producción: modelo de datos multiempresa,

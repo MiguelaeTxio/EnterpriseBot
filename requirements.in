@@ -22,6 +22,11 @@ requests==2.33.1
 # Requerido para el registro persistente de interacciones en MySQL.
 mysqlclient
 
+# Image Processing / Procesamiento de imágenes
+# Required by Django's ImageField in ivr_config.Company (logo field).
+# Requerido por el ImageField de Django en ivr_config.Company (campo logo).
+Pillow
+
 # Voice and Networking / Voz y Redes
 # ✅ SECURITY FIX APRIL 2026: Pinning aiohttp to 3.13.5 to mitigate CVE-2026-34517 (DoS vulnerability).
 # Mandatory for the Universal Hybrid Bridge (HTTP POST + WSS).
