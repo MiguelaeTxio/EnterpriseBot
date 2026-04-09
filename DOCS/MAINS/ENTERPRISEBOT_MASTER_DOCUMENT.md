@@ -26,7 +26,7 @@ EnterpriseBot es una solución omnicanal de nivel empresarial orientada a la orq
 - Implementación de interfaz "Walkie-Talkie" para pruebas directas.
 - Auditoría de Handshake de Google GenAI (v1beta) sin dependencias externas.
 
-### Hito 3: IVR Conversacional Configurable desde Producción (EN PROGRESO)
+### Hito 3: IVR Conversacional Configurable desde Producción (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md`)
 - Diseño del modelo de datos multiempresa (Company, CompanyUser, Contact, Section,
   PhoneNumber, CallFlow, PresenceStatus, CorporateVoiceProfile, DataCaptureSet).
@@ -71,5 +71,13 @@ este documento y las aplica sin excepción.
 Antes de entregar o implementar cualquier código que involucre servicios
 externos o APIs, el modelo **DEBE** actualizarse en línea obligatoriamente
 para usar datos actuales de implementación en lugar de datos obsoletos.
+
+### Hito 4: Canal WhatsApp — Chatbot Conversacional y Sistema de Presencia (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V04.md`)
+- Integración de WhatsApp como canal bidireccional sobre infraestructura Twilio existente.
+- Chatbot conversacional impulsado por Gemini 2.5 Flash (texto) con contexto multiempresa.
+- Cierre del bucle de presencia del Hito 3: webhook /api/whatsapp/presence/ y tareas Celery.
+- Nueva app Django `whatsapp` con modelos WhatsAppSession, WhatsAppMessage, WhatsAppTemplate.
+- Templates Meta gestionados via Content Template Builder (SID prefijo HX).
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)
