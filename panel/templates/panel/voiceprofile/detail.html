@@ -1,0 +1,126 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/voiceprofile/detail.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Perfil de voz corporativa{% endblock %}
+{% block page_title %}Perfil de voz corporativa{% endblock %}
+{% block nav_voiceprofile %}active{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+
+        <div class="mb-4">
+            <p class="text-muted mb-0" style="font-size:0.875rem;">
+                Define el tono, las respuestas de ejemplo y las frases prohibidas que
+                el agente IVR de <strong>{{ company.name }}</strong> debe respetar en
+                cada llamada. Este perfil se inyecta automáticamente en la instrucción
+                de sistema de Gemini Live.
+            </p>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-mic me-2 text-primary"></i>Perfil de voz corporativa
+                </h6>
+            </div>
+            <div class="card-body p-4">
+
+                <form method="post" action="{% url 'panel:voiceprofile_detail' %}">
+                    {% csrf_token %}
+
+                    <!-- tone_guidelines field — Campo de directrices de tono -->
+                    <div class="mb-4">
+                        <label for="{{ form.tone_guidelines.id_for_label }}"
+                               class="form-label fw-medium">
+                            Directrices de tono
+                        </label>
+                        {{ form.tone_guidelines }}
+                        {% if form.tone_guidelines.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.tone_guidelines.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Describe el tono y estilo de comunicación que debe mantener
+                            el agente IVR (p. ej. formal, cercano, conciso, empático).
+                        </div>
+                    </div>
+
+                    <!-- sample_responses field — Campo de respuestas de ejemplo -->
+                    <div class="mb-4">
+                        <label for="{{ form.sample_responses.id_for_label }}"
+                               class="form-label fw-medium">
+                            Respuestas de ejemplo
+                            <span class="text-muted fw-normal">(JSON)</span>
+                        </label>
+                        {{ form.sample_responses }}
+                        {% if form.sample_responses.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.sample_responses.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Lista de ejemplos de respuestas correctas en formato JSON.
+                            Ejemplo: <code>["Buenos días, le atiende Alia.", "¿En qué puedo ayudarle?"]</code>
+                        </div>
+                    </div>
+
+                    <!-- forbidden_phrases field — Campo de frases prohibidas -->
+                    <div class="mb-4">
+                        <label for="{{ form.forbidden_phrases.id_for_label }}"
+                               class="form-label fw-medium">
+                            Frases prohibidas
+                            <span class="text-muted fw-normal">(JSON)</span>
+                        </label>
+                        {{ form.forbidden_phrases }}
+                        {% if form.forbidden_phrases.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.forbidden_phrases.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Lista de expresiones que el agente debe evitar en formato JSON.
+                            Ejemplo: <code>["no lo sé", "espere un momento", "no puedo ayudarle"]</code>
+                        </div>
+                    </div>
+
+                    <!-- is_active field — Campo de estado activo -->
+                    <div class="mb-4">
+                        <div class="form-check">
+                            {{ form.is_active }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.is_active.id_for_label }}">
+                                Perfil activo
+                            </label>
+                        </div>
+                        {% if form.is_active.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.is_active.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Solo los perfiles activos se inyectan en las llamadas entrantes.
+                        </div>
+                    </div>
+
+                    <!-- Submit button — Botón de envío -->
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-dark px-4">
+                            <i class="bi bi-check-lg me-2"></i>Guardar perfil de voz
+                        </button>
+                        <a href="{% url 'panel:dashboard' %}"
+                           class="btn btn-outline-secondary px-4">
+                            Cancelar
+                        </a>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

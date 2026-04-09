@@ -1,0 +1,97 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/users/list.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Usuarios{% endblock %}
+{% block page_title %}Usuarios{% endblock %}
+{% block nav_users %}active{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <p class="text-muted mb-0" style="font-size:0.875rem;">
+            Usuarios con acceso al panel de <strong>{{ company.name }}</strong>.
+        </p>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">
+            <i class="bi bi-people me-2 text-primary"></i>Listado de usuarios
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        {% if company_users %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" style="font-size:0.875rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Usuario</th>
+                        <th>Nombre completo</th>
+                        <th>Rol</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cu in company_users %}
+                    <tr>
+                        <td class="ps-4 fw-medium">
+                            <i class="bi bi-person-circle me-2 text-muted"></i>
+                            {{ cu.user.username }}
+                        </td>
+                        <td class="text-muted">
+                            {{ cu.user.get_full_name|default:"—" }}
+                        </td>
+                        <td>
+                            {% if cu.role == 'ADMIN' %}
+                                <span class="badge"
+                                      style="background-color:#e2d9f3;color:#432874;font-weight:500;">
+                                    <i class="bi bi-shield-check me-1"></i>Administrador
+                                </span>
+                            {% else %}
+                                <span class="badge"
+                                      style="background-color:#e9ecef;color:#495057;font-weight:500;">
+                                    <i class="bi bi-person me-1"></i>Operador
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if cu.is_active %}
+                                <span class="badge"
+                                      style="background-color:#d1e7dd;color:#0a3622;font-weight:500;">
+                                    Activo
+                                </span>
+                            {% else %}
+                                <span class="badge"
+                                      style="background-color:#f8d7da;color:#58151c;font-weight:500;">
+                                    Inactivo
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if cu != company_user %}
+                            <a href="{% url 'panel:user_edit' cu.pk %}"
+                               class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-pencil me-1"></i>Editar
+                            </a>
+                            {% else %}
+                            <span class="text-muted" style="font-size:0.8rem;">Tu cuenta</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted" style="font-size:0.875rem;">
+            <i class="bi bi-info-circle me-2"></i>
+            No hay usuarios registrados para esta empresa.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

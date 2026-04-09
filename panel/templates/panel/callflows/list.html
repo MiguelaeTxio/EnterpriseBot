@@ -1,0 +1,81 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/callflows/list.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Flujos IVR{% endblock %}
+{% block page_title %}Flujos IVR{% endblock %}
+{% block nav_callflows %}active{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <p class="text-muted mb-0" style="font-size:0.875rem;">
+        Flujos IVR configurados para <strong>{{ company.name }}</strong>.
+    </p>
+    <a href="{% url 'panel:callflow_create' %}" class="btn btn-dark btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>Nuevo flujo IVR
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">
+            <i class="bi bi-gear-wide-connected me-2 text-primary"></i>Listado de flujos IVR
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        {% if call_flows %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" style="font-size:0.875rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Nombre</th>
+                        <th>Saludo inicial</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for flow in call_flows %}
+                    <tr>
+                        <td class="ps-4 fw-medium">
+                            <i class="bi bi-gear-wide-connected me-2 text-muted"></i>
+                            {{ flow.name }}
+                        </td>
+                        <td class="text-muted">
+                            {{ flow.initial_greeting|truncatechars:80 }}
+                        </td>
+                        <td class="text-center">
+                            {% if flow.is_active %}
+                                <span class="badge"
+                                      style="background-color:#d1e7dd;color:#0a3622;font-weight:500;">
+                                    Activo
+                                </span>
+                            {% else %}
+                                <span class="badge"
+                                      style="background-color:#f8d7da;color:#58151c;font-weight:500;">
+                                    Inactivo
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'panel:callflow_edit' flow.pk %}"
+                               class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-pencil me-1"></i>Editar
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted" style="font-size:0.875rem;">
+            <i class="bi bi-info-circle me-2"></i>
+            No hay flujos IVR configurados para esta empresa.
+            <a href="{% url 'panel:callflow_create' %}" class="ms-1">Crear el primer flujo IVR.</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

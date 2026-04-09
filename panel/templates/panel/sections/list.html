@@ -1,0 +1,87 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/sections/list.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Secciones{% endblock %}
+{% block page_title %}Secciones{% endblock %}
+{% block nav_sections %}active{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <p class="text-muted mb-0" style="font-size:0.875rem;">
+        Secciones o departamentos de <strong>{{ company.name }}</strong>.
+    </p>
+    <a href="{% url 'panel:section_create' %}" class="btn btn-dark btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>Nueva sección
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">
+            <i class="bi bi-diagram-3 me-2 text-primary"></i>Listado de secciones
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        {% if sections %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" style="font-size:0.875rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Nombre</th>
+                        <th>Descripción</th>
+                        <th class="text-center">Contactos</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for section in sections %}
+                    <tr>
+                        <td class="ps-4 fw-medium">
+                            <i class="bi bi-diagram-3 me-2 text-muted"></i>
+                            {{ section.name }}
+                        </td>
+                        <td class="text-muted">
+                            {{ section.description|default:"—"|truncatechars:60 }}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-light text-dark border">
+                                {{ section.contacts.count }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            {% if section.is_active %}
+                                <span class="badge"
+                                      style="background-color:#d1e7dd;color:#0a3622;font-weight:500;">
+                                    Activa
+                                </span>
+                            {% else %}
+                                <span class="badge"
+                                      style="background-color:#f8d7da;color:#58151c;font-weight:500;">
+                                    Inactiva
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'panel:section_edit' section.pk %}"
+                               class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-pencil me-1"></i>Editar
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted" style="font-size:0.875rem;">
+            <i class="bi bi-info-circle me-2"></i>
+            No hay secciones configuradas para esta empresa.
+            <a href="{% url 'panel:section_create' %}" class="ms-1">Crear la primera sección.</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

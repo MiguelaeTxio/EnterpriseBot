@@ -1,0 +1,89 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/contacts/list.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Contactos{% endblock %}
+{% block page_title %}Contactos{% endblock %}
+{% block nav_contacts %}active{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <p class="text-muted mb-0" style="font-size:0.875rem;">
+        Contactos registrados en <strong>{{ company.name }}</strong>.
+    </p>
+    <a href="{% url 'panel:contact_create' %}" class="btn btn-dark btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>Nuevo contacto
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">
+            <i class="bi bi-person-lines-fill me-2 text-primary"></i>Listado de contactos
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        {% if contacts %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" style="font-size:0.875rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Nombre</th>
+                        <th>Teléfono</th>
+                        <th class="text-center">Tipo</th>
+                        <th>Usuario vinculado</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for contact in contacts %}
+                    <tr>
+                        <td class="ps-4 fw-medium">
+                            <i class="bi bi-person me-2 text-muted"></i>
+                            {{ contact.name }}
+                        </td>
+                        <td class="text-muted">
+                            {{ contact.phone_number|default:"—" }}
+                        </td>
+                        <td class="text-center">
+                            {% if contact.is_internal %}
+                                <span class="badge"
+                                      style="background-color:#cfe2ff;color:#084298;font-weight:500;">
+                                    <i class="bi bi-building me-1"></i>Interno
+                                </span>
+                            {% else %}
+                                <span class="badge"
+                                      style="background-color:#e9ecef;color:#495057;font-weight:500;">
+                                    <i class="bi bi-person me-1"></i>Externo
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted">
+                            {% if contact.company_user %}
+                                {{ contact.company_user.user.username }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'panel:contact_edit' contact.pk %}"
+                               class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-pencil me-1"></i>Editar
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted" style="font-size:0.875rem;">
+            <i class="bi bi-info-circle me-2"></i>
+            No hay contactos registrados para esta empresa.
+            <a href="{% url 'panel:contact_create' %}" class="ms-1">Crear el primer contacto.</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

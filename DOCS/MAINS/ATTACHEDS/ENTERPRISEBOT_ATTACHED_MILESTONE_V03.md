@@ -36,13 +36,16 @@ a una `Company`.
 - `ADMIN`: puede configurar la empresa completa.
 - `OPERATOR`: solo puede gestionar su propia presencia.
 - **PROHIBIDO** el acceso al `/admin/` estándar de Django para cualquier `CompanyUser`.
+- El accessor ORM desde `auth.User` es `user.company_user` (related_name definido en modelo).
 
 #### `Contact` — Persona contactable
     id, company (FK), name, phone_number, is_internal (bool), company_user (FK nullable)
 
-Personas a las que el IVR puede llamar o enviar mensajes. Los usuarios internos
-(`is_internal=True`) tienen un `CompanyUser` asociado y pueden tener `PresenceStatus`.
-Los trabajadores externos (`is_internal=False`) son contactos sin acceso al sistema.
+Personas a las que el IVR puede llamar, transferir llamadas o enviar mensajes.
+Los usuarios internos (`is_internal=True`) tienen un `CompanyUser` asociado y pueden
+tener `PresenceStatus`. Los trabajadores externos (`is_internal=False`) son contactos
+sin acceso al sistema. El campo `phone_number` en formato E.164 es el número que
+Twilio marca cuando el IVR decide transferir o llamar a ese contacto.
 
 #### `Section` — Sección o departamento
     id, company (FK), name, description, contacts (M2M→Contact),
@@ -112,40 +115,51 @@ por sección se definirán en sesiones posteriores con el Grupo Álvarez.
 
 ### 3.1. Autenticación
 - Los `CompanyUser` se autentican mediante el sistema de autenticación estándar
-  de Django (`auth.User`), pero con un middleware o mixin que bloquea el acceso
+  de Django (`auth.User`), pero con un middleware que bloquea el acceso
   a `/admin/` si el usuario no tiene `is_staff=True`.
 - El superusuario de la plataforma (`is_staff=True`, `is_superuser=True`) tiene
   acceso completo a todo, incluyendo el admin de Django.
 - Los `CompanyUser` acceden exclusivamente al panel personalizado en una ruta
   dedicada `/panel/`.
+- URL estable de producción: `https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/`
+- El túnel ngrok es exclusivo para el webhook de Twilio — nunca para el panel.
 
-### 3.2. Panel de Administración Personalizado (`/panel/`)
-Vistas Django class-based (no Django admin) que permiten a cada empresa:
-- Gestionar sus usuarios (`CompanyUser`).
-- Configurar sus secciones (`Section`).
-- Gestionar sus contactos (`Contact`).
-- Configurar sus números Twilio (`PhoneNumber`) y flujos (`CallFlow`).
-- Editar su perfil de voz corporativa (`CorporateVoiceProfile`).
-- Ver y gestionar el estado de presencia de sus usuarios (`PresenceStatus`).
+### 3.2. Panel de Administración Personalizado (`/panel/`) — IMPLEMENTADO
+Vistas Django class-based que permiten a cada empresa gestionar:
+- `CompanyUser` — usuarios con roles ADMIN/OPERATOR.
+- `Section` — secciones o departamentos de enrutamiento IVR.
+- `Contact` — contactos internos y externos (números a los que el IVR puede llamar).
+- `PhoneNumber` — números Twilio asignados (solo lectura para CompanyUser).
+- `CallFlow` — flujos IVR con system_instruction e initial_greeting editables.
+- `CorporateVoiceProfile` — perfil de voz corporativa inyectado en Gemini Live.
+- `PresenceStatus` — estado de presencia propio (todos los roles).
 
-### 3.3. Gestión de Presencia
-- Cada usuario puede activar/desactivar su estado desde el panel o desde
-  un endpoint simple (para futura integración con botón físico o app móvil).
+### 3.3. Lecciones Aprendidas — Implementación del Panel
+- El accessor ORM correcto desde `auth.User` hacia `CompanyUser` es `user.company_user`
+  (related_name="company_user" definido en el modelo — NO `user.companyuser`).
+- `redirect_authenticated_user = True` en `LoginView` provoca bucle de redirección
+  infinito. Solución: sobrescribir `dispatch()` en `PanelLoginView` con comprobación
+  explícita del `company_user` antes de redirigir.
+- El hash SRI de Bootstrap JS en CDN jsDelivr varía según el edge node. Se elimina
+  el atributo `integrity` del script JS para evitar bloqueos intermitentes.
+- Para forzar la invalidación del bytecode en PythonAnywhere WSGI:
+      find /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/__pycache__ -name "*.pyc" -delete
+      touch /var/www/enterprisebot-miguelaetxio_pythonanywhere_com_wsgi.py
+- La recarga correcta de la aplicación es desde el botón verde del panel web de
+  PythonAnywhere — siempre verificar que se recarga EnterpriseBot y no otro proyecto.
+
+### 3.4. Gestión de Presencia
+- Cada usuario puede activar/desactivar su estado desde `/panel/presence/`.
 - Al activar `IN_MEETING` sin `ends_at`: Celery Beat programa una tarea que
-  a las 3 horas envía un recordatorio (SMS/WhatsApp vía Twilio) preguntando
-  si sigue reunido, con opciones de respuesta.
-- Al activar `BUSY_UNTIL`: Celery Beat programa la expiración automática a
-  la hora indicada.
-- `ABSENT_SCHEDULED` y `ABSENT_VACATION`: el sistema gestiona la activación
-  y desactivación automática según el rango de fechas, sin recordatorios.
+  a las 3 horas envía un recordatorio (SMS/WhatsApp vía Twilio).
+- Al activar `BUSY_UNTIL`: Celery Beat programa la expiración automática.
+- `ABSENT_SCHEDULED` y `ABSENT_VACATION`: gestión automática por rango de fechas.
 
 ---
 
 ## SECCIÓN 4 — INYECCIÓN DINÁMICA EN EL IVR
 
 ### 4.1. Flujo de llamada entrante con configuración dinámica (IMPLEMENTADO)
-
-El flujo real de ejecución de una llamada entrante es el siguiente:
 
 1. Twilio realiza POST `/api/vox/inbound/`
    → `UniversalVoiceBridge.handle_twiml_post()` en `voice_sidecar_bridge.py`
@@ -178,35 +192,24 @@ El flujo real de ejecución de una llamada entrante es el siguiente:
 
 ### 4.2. Archivos modificados en esta implementación
 - `ivr_config/services.py` — NUEVO. Contiene `build_live_config()`.
-- `vox_bridge/services.py` — `SYSTEM_INSTRUCTION` → `SYSTEM_INSTRUCTION_FALLBACK`,
-  `INITIAL_GREETING_TEXT` → `INITIAL_GREETING_FALLBACK`. Constructor acepta
-  `twilio_number: str`. Llama a `build_live_config()` con fallback.
-- `voice_sidecar_bridge.py` — Instanciación de `VoiceOrchestrationService`
-  diferida al evento `start`. Extracción de `twilio_number` de `data["start"]["to"]`.
-  Guardias defensivas en todos los manejadores de eventos.
+- `vox_bridge/services.py` — constantes → fallback, constructor acepta `twilio_number`.
+- `voice_sidecar_bridge.py` — instanciación diferida al evento `start`, guardias defensivas.
 
 ---
 
 ## SECCIÓN 5 — COMANDOS DE GESTIÓN
 
-Los scripts standalone de laboratorio han sido migrados a comandos Django reales
-bajo `vox_bridge/management/commands/`, siguiendo el estándar Django de gestión.
-
 ### Comandos disponibles
     python -m dotenv run python manage.py update_twilio_webhook
         Actualiza el webhook de voz de Twilio para que apunte al túnel ngrok
-        activo. Lee la URL desde DOCS/SESSION/NGROK_URL.txt. Debe ejecutarse
-        tras levantar voice_orchestrator.py y antes de cualquier prueba de
-        llamada entrante.
+        activo. Lee la URL desde DOCS/SESSION/NGROK_URL.txt.
 
     python -m dotenv run python manage.py trigger_outbound_call
         Dispara una llamada saliente de validación desde +12603466780 al número
-        por defecto (+34688360595). Admite --to +34XXXXXXXXX para especificar
-        un destino distinto.
+        por defecto (+34688360595). Admite --to +34XXXXXXXXX.
 
     python -m dotenv run python manage.py seed_grupo_alvarez --phone-numbers +12603466780
         Siembra los datos piloto de Grupo Álvarez en la base de datos.
-        Admite múltiples números E.164 en una única ejecución.
 
 ### Secuencia de arranque del laboratorio
     1. python voice_orchestrator.py
@@ -238,8 +241,38 @@ bajo `vox_bridge/management/commands/`, siguiendo el estándar Django de gestió
 - Scripts standalone migrados a comandos Django reales:
     `vox_bridge/management/commands/update_twilio_webhook.py`
     `vox_bridge/management/commands/trigger_outbound_call.py`
-- Prueba E2E de llamada entrante real pendiente por ausencia de números
-  españoles Twilio (entrega estimada 1-3 días desde 2026-04-07).
+
+### Sesión 2026-04-09 — Panel de Administración Personalizado Completo
+- App Django `panel` creada manualmente vía heredoc (sin `startapp`).
+- Ficheros PEA creados:
+    `panel/__init__.py`
+    `panel/apps.py`
+    `panel/middleware.py`   ← CompanyUserAdminBlockMiddleware
+    `panel/mixins.py`       ← PanelLoginRequiredMixin, CompanyUserRequiredMixin, AdminRoleRequiredMixin
+    `panel/forms.py`        ← PanelAuthenticationForm, PresenceStatusForm, ContactForm,
+                               SectionForm, CallFlowForm, CorporateVoiceProfileForm
+    `panel/views.py`        ← 11 vistas class-based completas
+    `panel/urls.py`         ← 13 rutas bajo /panel/
+    `panel/templates/panel/base.html`
+    `panel/templates/panel/login.html`
+    `panel/templates/panel/dashboard.html`
+    `panel/templates/panel/presence/status.html`
+    `panel/templates/panel/users/list.html`
+    `panel/templates/panel/users/form.html`
+    `panel/templates/panel/sections/list.html`
+    `panel/templates/panel/sections/form.html`
+    `panel/templates/panel/contacts/list.html`
+    `panel/templates/panel/contacts/form.html`
+    `panel/templates/panel/callflows/list.html`
+    `panel/templates/panel/callflows/form.html`
+    `panel/templates/panel/phonenumbers/list.html`
+    `panel/templates/panel/voiceprofile/detail.html`
+- Ficheros PMA modificados:
+    `enterprise_core/settings.py` — panel en INSTALLED_APPS + middleware registrado.
+    `enterprise_core/urls.py`     — panel/ incluido en urlpatterns.
+- CompanyUser vinculado al usuario `admin` con rol ADMIN en Grupo Álvarez.
+- Validación E2E completa de todos los módulos del panel en producción.
+- Skill PMP (Protocolo de Modificación Puntual) documentada y registrada.
 
 ---
 
@@ -254,110 +287,78 @@ bajo `vox_bridge/management/commands/`, siguiendo el estándar Django de gestió
 4. Registro de usuarios empresa: Flujo de alta de nuevos `CompanyUser` con
    invitación por email.
 5. Números españoles Twilio: Configuración de los 2 números ES aprobados
-   (entrega estimada 1-3 días desde 2026-04-07) y calibración VAD para líneas ES.
-   Cuando lleguen, ejecutar:
+   y calibración VAD para líneas ES. Cuando lleguen, ejecutar:
        python manage.py seed_grupo_alvarez --phone-numbers +34XXXXXXXXX +34XXXXXXXXX
-6. Deuda técnica — `mysql.W002`: Activación del Strict Mode de MySQL para la
-   conexión `default`.
-   https://docs.djangoproject.com/en/5.2/ref/databases/#mysql-sql-mode
-7. Prueba E2E de llamada entrante real con número español y teléfono de empresa.
+6. Prueba E2E de llamada entrante real con número español y teléfono de empresa.
+7. Seed de Grupo Álvarez — Contactos: El seed actual no siembra contactos.
+   Revisar y completar el comando `seed_grupo_alvarez` con contactos de prueba
+   para Elevación, Asistencia y Grúas.
 
 ---
 
 ## SECCIÓN 8 — HOJA DE RUTA SIGUIENTE SESIÓN
 
-### Paso 10 — App Django `panel` y estructura base
+### Contexto de arranque
+El panel de administración está completo y validado E2E en producción.
+La siguiente sesión se enfoca en poblar el sistema con datos reales de
+Grupo Álvarez y validar el flujo IVR dinámico completo extremo a extremo.
 
-Crear la app Django `panel` con `python manage.py startapp panel` y registrarla
-en `INSTALLED_APPS`. Crear la estructura de directorios:
+### Paso 23 — Completar seed de Grupo Álvarez con contactos reales
 
-    panel/
-        __init__.py
-        apps.py
-        urls.py
-        views.py
-        mixins.py          ← Mixins de autenticación y autorización
-        forms.py           ← Formularios para cada entidad
-        templates/
-            panel/
-                base.html
-                dashboard.html
-                login.html
-                presence/
-                    status.html
-                company/
-                    detail.html
-                users/
-                    list.html
-                    form.html
-                sections/
-                    list.html
-                    form.html
-                contacts/
-                    list.html
-                    form.html
-                callflows/
-                    list.html
-                    form.html
-                phonenumbers/
-                    list.html
+Actualizar el comando `ivr_config/management/commands/seed_grupo_alvarez.py`
+para que siembre contactos reales de Grupo Álvarez. Para cada sección
+(Elevación, Asistencia, Grúas) crear al menos un contacto interno vinculado
+a un `CompanyUser` y asignarlo a la sección correspondiente.
 
-### Paso 11 — Middleware de bloqueo de admin para CompanyUser
+Estructura esperada de contactos:
+- Elevación: responsable interno con teléfono E.164 real.
+- Asistencia: responsable interno con teléfono E.164 real (servicio 24h).
+- Grúas: responsable interno con teléfono E.164 real.
 
-Implementar `CompanyUserAdminBlockMiddleware` en `panel/middleware.py`:
-- Si el usuario autenticado tiene un `CompanyUser` vinculado (es decir,
-  `hasattr(request.user, 'company_user')`), bloquear el acceso a cualquier
-  ruta que empiece por `/admin/` devolviendo `HttpResponseForbidden`.
-- Si el usuario tiene `is_staff=True`, dejar pasar sin restricción.
-- Registrar el middleware en `MIDDLEWARE` de `enterprise_core/settings.py`
-  DESPUÉS de `AuthenticationMiddleware`.
+Tras actualizar el seed, ejecutar:
+    python -m dotenv run python manage.py seed_grupo_alvarez --phone-numbers +12603466780
 
-### Paso 12 — Mixin de autenticación de panel (`PanelLoginRequiredMixin`)
+Verificar en `/panel/contacts/` que los contactos aparecen correctamente
+vinculados a sus secciones en `/panel/sections/`.
 
-Implementar en `panel/mixins.py`:
-- `PanelLoginRequiredMixin`: hereda de `LoginRequiredMixin`. Redirige a
-  `/panel/login/` si el usuario no está autenticado.
-- `CompanyUserRequiredMixin`: hereda de `PanelLoginRequiredMixin`. Verifica
-  que el usuario tiene un `CompanyUser` activo vinculado. Si no, redirige
-  a `/panel/login/` con mensaje de error.
-- `AdminRoleRequiredMixin`: hereda de `CompanyUserRequiredMixin`. Verifica
-  que el `CompanyUser.role == 'ADMIN'`. Si no, devuelve 403.
+### Paso 24 — Actualizar CorporateVoiceProfile de Grupo Álvarez
 
-### Paso 13 — Vistas base del panel
+Desde `/panel/voiceprofile/` rellenar el perfil de voz corporativa con:
+- `tone_guidelines`: directrices de tono reales de Grupo Álvarez.
+- `sample_responses`: ejemplos de respuestas correctas de Alia.
+- `forbidden_phrases`: expresiones que Alia debe evitar.
 
-Implementar en `panel/views.py` las siguientes vistas class-based:
+Este perfil se inyecta automáticamente en el `system_instruction` de Gemini
+Live en cada llamada entrante a través de `build_live_config()`.
 
-    PanelLoginView(LoginView)
-        template_name = 'panel/login.html'
-        redirect_authenticated_user = True
-        next_page = '/panel/'
+### Paso 25 — Validación E2E del flujo IVR dinámico con BD
 
-    PanelLogoutView(LogoutView)
-        next_page = '/panel/login/'
+Con los contactos y el perfil de voz correctamente configurados, validar
+el flujo IVR dinámico completo:
 
-    PanelDashboardView(CompanyUserRequiredMixin, TemplateView)
-        template_name = 'panel/dashboard.html'
-        Contexto: company, company_user, presencia propia activa,
-        resumen de secciones activas, número de contactos.
+    1. Arrancar el laboratorio:
+           python voice_orchestrator.py
+           python -m dotenv run python manage.py update_twilio_webhook
+    2. Realizar una llamada entrante real al +12603466780.
+    3. Verificar en los logs que `build_live_config()` carga correctamente
+       desde BD (no desde el fallback hardcodeado):
+           grep "build_live_config\|CONFIG\|FALLBACK" /home/MiguelAeTxio/SWAP/bridge.log
+    4. Verificar que Alia responde con el tono corporativo definido en el
+       CorporateVoiceProfile y menciona correctamente la disponibilidad de
+       los contactos internos según su PresenceStatus activo.
 
-### Paso 14 — URLs del panel
+Criterio de éxito: llamada real completada con configuración 100% dinámica
+desde BD, sin fallback, con presencia de contactos reflejada en el IVR.
 
-Crear `panel/urls.py` con todas las rutas del panel bajo el prefijo `/panel/`.
-Incluir en `enterprise_core/urls.py` con:
-    path('panel/', include('panel.urls')),
+### Paso 26 — Configuración de números españoles Twilio (cuando lleguen)
 
-### Paso 15 — Templates base y login
+Cuando se reciban los 2 números ES aprobados, ejecutar:
+    python -m dotenv run python manage.py seed_grupo_alvarez \
+        --phone-numbers +12603466780 +34XXXXXXXXX +34XXXXXXXXX
 
-Implementar `panel/templates/panel/base.html` con:
-- Navegación lateral con enlaces a todas las secciones del panel.
-- Indicador del estado de presencia propio en la cabecera.
-- Bloque `{% block content %}` para el contenido específico de cada vista.
-- Diseño limpio, sin dependencias externas de CSS (usar Bootstrap CDN).
-
-Implementar `panel/templates/panel/login.html` con:
-- Formulario de login estándar Django.
-- Mensaje de error si las credenciales son incorrectas.
-- Sin enlace de registro (el alta de usuarios es por invitación).
+Verificar en `/panel/phonenumbers/` que los nuevos números aparecen
+vinculados al CallFlow de Alia. Realizar prueba de llamada entrante
+desde teléfono español para calibrar VAD en líneas ES.
 
 ---
 
@@ -381,3 +382,16 @@ evento start de Twilio donde el número To está disponible. Se corrige la docum
 satélite V03DOC_DYNAMIC_IVR_INJECTION.md con el flujo real de ejecución. Los scripts
 standalone de laboratorio se migran a comandos Django reales bajo
 vox_bridge/management/commands/.
+
+### Sesión 2026-04-09
+**Título:** Panel de Administración Personalizado EnterpriseBot: 7 Módulos E2E en Producción
+**Descripción:** Sesión de implementación de los Pasos 10 al 22 de la hoja de ruta
+del Hito 3. Se crea la app Django panel manualmente vía heredoc evitando ficheros
+residuales. Se implementan middleware de bloqueo de admin, mixins de autenticación
+por capas, 11 vistas class-based y 14 templates con Bootstrap 5.3 CDN. Los módulos
+implementados y validados E2E en producción son: login, dashboard, presencia propia,
+usuarios, secciones, contactos, flujos IVR, números de teléfono y perfil de voz
+corporativa. Se documentan y resuelven lecciones aprendidas sobre el accessor ORM
+company_user, el bucle de redirección de LoginView y la invalidación de bytecode WSGI.
+Se documenta y registra la skill PMP (Protocolo de Modificación Puntual) para
+sustituciones atómicas con grep + sed como alternativa ligera al PMA completo.

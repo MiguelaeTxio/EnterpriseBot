@@ -1,0 +1,84 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/phonenumbers/list.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Números de teléfono{% endblock %}
+{% block page_title %}Números de teléfono{% endblock %}
+{% block nav_phonenumbers %}active{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <p class="text-muted mb-0" style="font-size:0.875rem;">
+        Números Twilio asignados a <strong>{{ company.name }}</strong>.
+        La asignación de nuevos números la gestiona el administrador de la plataforma.
+    </p>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">
+            <i class="bi bi-telephone-inbound me-2 text-primary"></i>Números de teléfono
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        {% if phone_numbers %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" style="font-size:0.875rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Número</th>
+                        <th>Nombre amigable</th>
+                        <th>Flujo IVR asignado</th>
+                        <th class="text-center">Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for phone in phone_numbers %}
+                    <tr>
+                        <td class="ps-4 fw-medium">
+                            <i class="bi bi-telephone me-2 text-muted"></i>
+                            {{ phone.number }}
+                        </td>
+                        <td class="text-muted">
+                            {{ phone.friendly_name|default:"—" }}
+                        </td>
+                        <td>
+                            {% if phone.call_flow %}
+                                <span class="badge"
+                                      style="background-color:#e8f4fd;color:#084298;font-weight:500;">
+                                    <i class="bi bi-gear-wide-connected me-1"></i>
+                                    {{ phone.call_flow.name }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted">Sin flujo asignado</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if phone.is_active %}
+                                <span class="badge"
+                                      style="background-color:#d1e7dd;color:#0a3622;font-weight:500;">
+                                    Activo
+                                </span>
+                            {% else %}
+                                <span class="badge"
+                                      style="background-color:#f8d7da;color:#58151c;font-weight:500;">
+                                    Inactivo
+                                </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted" style="font-size:0.875rem;">
+            <i class="bi bi-info-circle me-2"></i>
+            No hay números de teléfono Twilio asignados a esta empresa.
+            Contacta con el administrador de la plataforma para solicitar la asignación.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

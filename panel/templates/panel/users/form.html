@@ -1,0 +1,105 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/users/form.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Editar usuario{% endblock %}
+{% block page_title %}Editar usuario{% endblock %}
+{% block nav_users %}active{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-6">
+
+        <div class="mb-3">
+            <a href="{% url 'panel:user_list' %}" class="text-muted text-decoration-none"
+               style="font-size:0.875rem;">
+                <i class="bi bi-arrow-left me-1"></i>Volver al listado
+            </a>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-pencil-square me-2 text-primary"></i>
+                    Editar usuario — {{ object.user.username }}
+                </h6>
+            </div>
+            <div class="card-body p-4">
+
+                <!-- User info summary — Resumen de información del usuario -->
+                <div class="d-flex align-items-center gap-3 p-3 rounded-3 mb-4"
+                     style="background-color:#f8f9fa;">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center"
+                         style="width:48px;height:48px;background-color:#e9ecef;">
+                        <i class="bi bi-person-circle text-secondary" style="font-size:1.5rem;"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">{{ object.user.username }}</div>
+                        <div class="text-muted" style="font-size:0.82rem;">
+                            {{ object.user.get_full_name|default:"Sin nombre completo" }}
+                        </div>
+                        <div class="text-muted" style="font-size:0.82rem;">
+                            {{ object.user.email|default:"Sin email registrado" }}
+                        </div>
+                    </div>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <!-- Role field — Campo de rol -->
+                    <div class="mb-4">
+                        <label for="{{ form.role.id_for_label }}" class="form-label fw-medium">
+                            Rol
+                        </label>
+                        {{ form.role }}
+                        {% if form.role.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.role.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            <strong>Administrador:</strong> acceso completo a la configuración
+                            de la empresa.<br>
+                            <strong>Operador:</strong> solo puede gestionar su propia presencia.
+                        </div>
+                    </div>
+
+                    <!-- is_active field — Campo de estado activo -->
+                    <div class="mb-4">
+                        <div class="form-check">
+                            {{ form.is_active }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.is_active.id_for_label }}">
+                                Usuario activo
+                            </label>
+                        </div>
+                        {% if form.is_active.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.is_active.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Los usuarios inactivos no pueden acceder al panel.
+                        </div>
+                    </div>
+
+                    <!-- Submit buttons — Botones de envío -->
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-dark px-4">
+                            <i class="bi bi-check-lg me-2"></i>Guardar cambios
+                        </button>
+                        <a href="{% url 'panel:user_list' %}"
+                           class="btn btn-outline-secondary px-4">
+                            Cancelar
+                        </a>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

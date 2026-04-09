@@ -1,0 +1,120 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/callflows/form.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}{{ action }} flujo IVR{% endblock %}
+{% block page_title %}{{ action }} flujo IVR{% endblock %}
+{% block nav_callflows %}active{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+
+        <div class="mb-3">
+            <a href="{% url 'panel:callflow_list' %}" class="text-muted text-decoration-none"
+               style="font-size:0.875rem;">
+                <i class="bi bi-arrow-left me-1"></i>Volver al listado
+            </a>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-gear-wide-connected me-2 text-primary"></i>
+                    {{ action }} flujo IVR
+                </h6>
+            </div>
+            <div class="card-body p-4">
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <!-- Name field — Campo de nombre -->
+                    <div class="mb-4">
+                        <label for="{{ form.name.id_for_label }}" class="form-label fw-medium">
+                            Nombre del flujo
+                        </label>
+                        {{ form.name }}
+                        {% if form.name.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.name.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Nombre descriptivo del flujo IVR (p. ej. Recepción principal Grupo Álvarez).
+                        </div>
+                    </div>
+
+                    <!-- initial_greeting field — Campo de saludo inicial -->
+                    <div class="mb-4">
+                        <label for="{{ form.initial_greeting.id_for_label }}"
+                               class="form-label fw-medium">
+                            Saludo inicial
+                        </label>
+                        {{ form.initial_greeting }}
+                        {% if form.initial_greeting.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.initial_greeting.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Texto que el agente IVR pronuncia al conectar la llamada.
+                        </div>
+                    </div>
+
+                    <!-- system_instruction field — Campo de instrucción de sistema -->
+                    <div class="mb-4">
+                        <label for="{{ form.system_instruction.id_for_label }}"
+                               class="form-label fw-medium">
+                            Instrucción de sistema
+                        </label>
+                        {{ form.system_instruction }}
+                        {% if form.system_instruction.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.system_instruction.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Instrucción completa que define el rol, las reglas y el comportamiento
+                            del agente Gemini Live. Se inyecta dinámicamente en cada llamada entrante.
+                        </div>
+                    </div>
+
+                    <!-- is_active field — Campo de estado activo -->
+                    <div class="mb-4">
+                        <div class="form-check">
+                            {{ form.is_active }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.is_active.id_for_label }}">
+                                Flujo activo
+                            </label>
+                        </div>
+                        {% if form.is_active.errors %}
+                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                            {% for error in form.is_active.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Solo los flujos activos pueden asignarse a números de teléfono.
+                        </div>
+                    </div>
+
+                    <!-- Submit buttons — Botones de envío -->
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-dark px-4">
+                            <i class="bi bi-check-lg me-2"></i>{{ action }} flujo IVR
+                        </button>
+                        <a href="{% url 'panel:callflow_list' %}"
+                           class="btn btn-outline-secondary px-4">
+                            Cancelar
+                        </a>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

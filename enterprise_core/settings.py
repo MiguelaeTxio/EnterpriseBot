@@ -65,6 +65,8 @@ INSTALLED_APPS = [
     'vox_bridge',
     # Multicompany IVR configuration engine — motor de configuración IVR multiempresa.
     'ivr_config',
+    # Custom administration panel for CompanyUser accounts — panel de administración personalizado para cuentas CompanyUser.
+    'panel',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
@@ -75,6 +77,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Blocks CompanyUser access to /admin/ — bloquea el acceso de CompanyUser a /admin/.
+    'panel.middleware.CompanyUserAdminBlockMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
