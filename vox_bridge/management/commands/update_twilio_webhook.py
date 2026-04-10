@@ -70,57 +70,35 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """
-        Entry point for the management command. Executes the full webhook
-        update sequence: credential validation, ngrok URL resolution, Twilio
-        client instantiation, phone number lookup, webhook update and verification.
+        Thin wrapper entry point for the management command. Delegates the
+        full webhook update logic to VoiceOrchestrator.update_twilio_webhook()
+        — the single source of truth for this operation — to avoid duplication
+        between the orchestrator auto-update on startup and this manual command.
 
-        Raises CommandError on any unrecoverable failure so that Django's
-        management framework can report the error cleanly and exit with a
-        non-zero status code.
+        Reads the active ngrok URL from NGROK_URL_FILE (written by the
+        orchestrator on startup) and passes it to the orchestrator method.
+        Raises CommandError on any unrecoverable failure.
         ---
-        Punto de entrada del comando de gestión. Ejecuta la secuencia completa
-        de actualización del webhook: validación de credenciales, resolución de
-        URL ngrok, instanciación del cliente Twilio, búsqueda del número de
-        teléfono, actualización del webhook y verificación.
+        Punto de entrada thin wrapper del comando de gestión. Delega la lógica
+        completa de actualización del webhook en
+        VoiceOrchestrator.update_twilio_webhook() — única fuente de verdad para
+        esta operación — para evitar duplicación entre el auto-update del
+        orquestador en el arranque y este comando manual.
 
-        Lanza CommandError ante cualquier fallo irrecuperable para que el
-        framework de gestión de Django pueda reportar el error de forma limpia
-        y salir con un código de estado no nulo.
+        Lee la URL activa de ngrok desde NGROK_URL_FILE (escrita por el
+        orquestador en el arranque) y la pasa al método del orquestador.
+        Lanza CommandError ante cualquier fallo irrecuperable.
         """
 
         # ------------------------------------------------------------------
-        # STEP 1 — Validate required environment variables.
-        # PASO 1 — Validar las variables de entorno requeridas.
-        # ------------------------------------------------------------------
-        required_env_vars = [
-            "TWILIO_ACCOUNT_SID",
-            "TWILIO_API_KEY_SID",
-            "TWILIO_API_KEY_SECRET",
-            "TWILIO_PHONE_NUMBER",
-        ]
-        missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-        if missing_vars:
-            raise CommandError(
-                f"Las siguientes variables de entorno son obligatorias y no están "
-                f"definidas: {', '.join(missing_vars)}. "
-                "Verifique el archivo .env del proyecto y ejecute con "
-                "'python -m dotenv run python manage.py update_twilio_webhook'."
-            )
-
-        twilio_account_sid    = os.environ["TWILIO_ACCOUNT_SID"]
-        twilio_api_key_sid    = os.environ["TWILIO_API_KEY_SID"]
-        twilio_api_key_secret = os.environ["TWILIO_API_KEY_SECRET"]
-        twilio_phone_number   = os.environ["TWILIO_PHONE_NUMBER"]
-
-        # ------------------------------------------------------------------
-        # STEP 2 — Read the active ngrok HTTPS URL from the shared session file.
-        # PASO 2 — Leer la URL HTTPS activa de ngrok desde el archivo de sesión.
+        # STEP 1 — Read the active ngrok HTTPS URL from the shared session file.
+        # PASO 1 — Leer la URL HTTPS activa de ngrok desde el archivo de sesión.
         # ------------------------------------------------------------------
         if not os.path.exists(NGROK_URL_FILE):
             raise CommandError(
                 f"El archivo de sesión ngrok no existe: {NGROK_URL_FILE}. "
                 "Asegúrese de que el orquestador de voz está activo y ha escrito "
-                "la URL correctamente."
+                "la URL correctamente antes de ejecutar este comando."
             )
 
         with open(NGROK_URL_FILE, "r", encoding="utf-8") as fh:
@@ -132,124 +110,35 @@ class Command(BaseCommand):
                 "Reinicie el orquestador de voz y vuelva a intentarlo."
             )
 
-        voice_webhook_url = f"{raw_ngrok_url}/api/vox/inbound/"
-
         self.stdout.write(f"# [INFO] URL activa de ngrok leída: {raw_ngrok_url}")
-        self.stdout.write(f"# [INFO] Webhook de voz a configurar: {voice_webhook_url}")
 
         # ------------------------------------------------------------------
-        # STEP 3 — Instantiate the Twilio REST client using API Key credentials.
-        # The SDK 9.x supports ApiKeySid/ApiKeySecret authentication, which is
-        # preferred for production use as it allows credential rotation without
-        # modifying the account auth token.
-        # PASO 3 — Instanciar el cliente REST de Twilio usando API Key.
-        # El SDK 9.x soporta autenticación ApiKeySid/ApiKeySecret, preferida en
-        # producción ya que permite rotación de credenciales sin modificar el
-        # auth token de cuenta.
+        # STEP 2 — Import VoiceOrchestrator and delegate webhook update.
+        # PASO 2 — Importar VoiceOrchestrator y delegar la actualización.
         # ------------------------------------------------------------------
-        twilio_client = TwilioClient(
-            twilio_api_key_sid,
-            twilio_api_key_secret,
-            twilio_account_sid,
-        )
-        self.stdout.write(
-            f"# [INFO] Cliente Twilio instanciado correctamente para la cuenta: "
-            f"{twilio_account_sid[:8]}...{twilio_account_sid[-4:]}"
-        )
+        if PROJECT_ROOT not in sys.path:
+            sys.path.insert(0, PROJECT_ROOT)
 
-        # ------------------------------------------------------------------
-        # STEP 4 — Locate the IncomingPhoneNumber SID matching TWILIO_PHONE_NUMBER.
-        # PASO 4 — Localizar el SID de IncomingPhoneNumber que coincide con
-        #          TWILIO_PHONE_NUMBER.
-        # ------------------------------------------------------------------
-        self.stdout.write(
-            f"# [INFO] Buscando número {twilio_phone_number} en la cuenta Twilio..."
-        )
         try:
-            matching_numbers = twilio_client.incoming_phone_numbers.list(
-                phone_number=twilio_phone_number
-            )
-        except Exception as exc:
+            from voice_orchestrator import VoiceOrchestrator
+        except ImportError as exc:
             raise CommandError(
-                f"Fallo al consultar la API de Twilio (incoming_phone_numbers.list): "
-                f"{type(exc).__name__}: {exc}"
+                f"No se pudo importar VoiceOrchestrator desde {PROJECT_ROOT}: "
+                f"{exc}"
             )
 
-        if not matching_numbers:
+        orchestrator = VoiceOrchestrator()
+        success = orchestrator.update_twilio_webhook(raw_ngrok_url)
+
+        if not success:
             raise CommandError(
-                f"El número {twilio_phone_number} no se encontró en la cuenta "
-                f"{twilio_account_sid}. "
-                "Verifique que TWILIO_PHONE_NUMBER está en formato E.164 "
-                "(p. ej. +12603466780) y que pertenece a esta cuenta."
+                "La actualización de uno o más webhooks de Twilio falló. "
+                "Revise los mensajes anteriores para más detalles."
             )
-
-        if len(matching_numbers) > 1:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"# [WARNING] Se encontraron {len(matching_numbers)} números "
-                    "coincidentes. Se actualizará únicamente el primero de la lista."
-                )
-            )
-
-        target_number_resource = matching_numbers[0]
-        phone_number_sid = target_number_resource.sid
 
         self.stdout.write(
-            f"# [INFO] Número encontrado: {target_number_resource.phone_number} "
-            f"| SID: {phone_number_sid}"
+            self.style.SUCCESS(
+                "# [SUCCESS] Todos los webhooks de Twilio actualizados correctamente "
+                "desde el comando de gestión."
+            )
         )
-        self.stdout.write(
-            f"# [INFO] Webhook de voz actual registrado en Twilio: "
-            f"{target_number_resource.voice_url or '(vacío)'}"
-        )
-
-        # ------------------------------------------------------------------
-        # STEP 5 — Update voice_url and voice_method on the located phone number.
-        # voice_method is explicitly set to POST to match the UniversalVoiceBridge
-        # handle_twiml_post() handler in voice_sidecar_bridge.py.
-        # PASO 5 — Actualizar voice_url y voice_method en el número localizado.
-        # voice_method se establece explícitamente a POST para coincidir con el
-        # handler handle_twiml_post() de UniversalVoiceBridge en
-        # voice_sidecar_bridge.py.
-        # ------------------------------------------------------------------
-        self.stdout.write(
-            f"# [INFO] Actualizando webhook de voz a: {voice_webhook_url} "
-            "(método: POST)..."
-        )
-        try:
-            updated_resource = twilio_client.incoming_phone_numbers(
-                phone_number_sid
-            ).update(
-                voice_url=voice_webhook_url,
-                voice_method="POST",
-            )
-        except Exception as exc:
-            raise CommandError(
-                f"Fallo al actualizar el webhook de voz en Twilio: "
-                f"{type(exc).__name__}: {exc}"
-            )
-
-        # ------------------------------------------------------------------
-        # STEP 6 — Confirm the update by comparing the returned voice_url.
-        # PASO 6 — Confirmar la actualización comparando el voice_url devuelto.
-        # ------------------------------------------------------------------
-        if updated_resource.voice_url == voice_webhook_url:
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"# [SUCCESS] Webhook de voz actualizado y verificado correctamente.\n"
-                    f"#           Número  : {updated_resource.phone_number}\n"
-                    f"#           SID     : {updated_resource.sid}\n"
-                    f"#           URL     : {updated_resource.voice_url}\n"
-                    f"#           Método  : {updated_resource.voice_method}"
-                )
-            )
-        else:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"# [WARNING] La URL devuelta por Twilio no coincide con la "
-                    f"URL solicitada.\n"
-                    f"#           URL solicitada : {voice_webhook_url}\n"
-                    f"#           URL devuelta   : {updated_resource.voice_url}\n"
-                    "# Verifique manualmente en la consola de Twilio."
-                )
-            )

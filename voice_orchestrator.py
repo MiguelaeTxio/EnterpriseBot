@@ -243,6 +243,164 @@ class VoiceOrchestrator:
             )
         return None
 
+    def update_twilio_webhook(self, ngrok_url: str) -> bool:
+        """
+        Updates the Twilio voice webhook for all active PhoneNumber records
+        in the database to point to the currently active ngrok tunnel URL.
+        Reads Twilio credentials from the environment loaded by load_dotenv()
+        in __init__(). Iterates over all active PhoneNumber records with
+        VOICE or BOTH capabilities and updates each one independently.
+        Returns True if all updates succeeded, False if any failed.
+        ---
+        Actualiza el webhook de voz de Twilio para todos los registros
+        PhoneNumber activos en la base de datos para que apunten a la URL
+        activa del túnel ngrok. Lee las credenciales de Twilio del entorno
+        cargado por load_dotenv() en __init__(). Itera sobre todos los
+        registros PhoneNumber activos con capabilities VOICE o BOTH y
+        actualiza cada uno de forma independiente.
+        Devuelve True si todas las actualizaciones tuvieron éxito,
+        False si alguna falló.
+        """
+        import django
+        import sys as _sys
+
+        # Bootstrap Django ORM — required to query PhoneNumber records.
+        # Arranque del ORM de Django — necesario para consultar registros PhoneNumber.
+        _sys.path.insert(0, self.project_root)
+        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "enterprise_core.settings")
+        try:
+            django.setup()
+        except RuntimeError:
+            # django.setup() raises RuntimeError if called more than once.
+            # django.setup() lanza RuntimeError si se llama más de una vez.
+            pass
+
+        from ivr_config.models import PhoneNumber
+        from twilio.rest import Client as TwilioClient
+
+        # ------------------------------------------------------------------
+        # Validate required Twilio credentials from environment.
+        # Validar credenciales Twilio requeridas desde el entorno.
+        # ------------------------------------------------------------------
+        required_vars = [
+            "TWILIO_ACCOUNT_SID",
+            "TWILIO_API_KEY_SID",
+            "TWILIO_API_KEY_SECRET",
+        ]
+        missing = [v for v in required_vars if not os.getenv(v)]
+        if missing:
+            self.flush_print(
+                f"# [WEBHOOK] ERROR: Variables de entorno Twilio no encontradas: "
+                f"{', '.join(missing)}. Abortando actualización de webhook."
+            )
+            return False
+
+        twilio_account_sid    = os.environ["TWILIO_ACCOUNT_SID"]
+        twilio_api_key_sid    = os.environ["TWILIO_API_KEY_SID"]
+        twilio_api_key_secret = os.environ["TWILIO_API_KEY_SECRET"]
+
+        voice_webhook_url = f"{ngrok_url.rstrip('/')}/api/vox/inbound/"
+
+        self.flush_print(
+            f"# [WEBHOOK] Iniciando actualización de webhooks Twilio..."
+        )
+        self.flush_print(
+            f"# [WEBHOOK] URL destino: {voice_webhook_url}"
+        )
+
+        # ------------------------------------------------------------------
+        # Instantiate Twilio client with API Key credentials.
+        # Instanciar cliente Twilio con credenciales API Key.
+        # ------------------------------------------------------------------
+        try:
+            twilio_client = TwilioClient(
+                twilio_api_key_sid,
+                twilio_api_key_secret,
+                twilio_account_sid,
+            )
+        except Exception as exc:
+            self.flush_print(
+                f"# [WEBHOOK] ERROR al instanciar cliente Twilio: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            return False
+
+        # ------------------------------------------------------------------
+        # Query all active PhoneNumber records with voice capability.
+        # Consultar todos los registros PhoneNumber activos con capacidad de voz.
+        # ------------------------------------------------------------------
+        voice_numbers = PhoneNumber.objects.filter(
+            is_active=True,
+            capabilities__in=["VOICE", "BOTH"],
+        )
+
+        if not voice_numbers.exists():
+            self.flush_print(
+                "# [WEBHOOK] AVISO: No se encontraron PhoneNumbers activos con "
+                "capacidad de voz en la BD. No hay webhooks que actualizar."
+            )
+            return True
+
+        all_succeeded = True
+
+        for phone_record in voice_numbers:
+            number_e164 = phone_record.number
+            self.flush_print(
+                f"# [WEBHOOK] Actualizando número: {number_e164}..."
+            )
+            try:
+                # Locate the IncomingPhoneNumber SID on the Twilio account.
+                # Localizar el SID de IncomingPhoneNumber en la cuenta Twilio.
+                matching = twilio_client.incoming_phone_numbers.list(
+                    phone_number=number_e164
+                )
+                if not matching:
+                    self.flush_print(
+                        f"# [WEBHOOK] AVISO: {number_e164} no encontrado en la "
+                        "cuenta Twilio. Omitiendo."
+                    )
+                    all_succeeded = False
+                    continue
+
+                phone_sid = matching[0].sid
+                updated = twilio_client.incoming_phone_numbers(phone_sid).update(
+                    voice_url=voice_webhook_url,
+                    voice_method="POST",
+                )
+
+                if updated.voice_url == voice_webhook_url:
+                    self.flush_print(
+                        f"# [WEBHOOK] ✓ {number_e164} actualizado correctamente "
+                        f"| SID: {phone_sid} | URL: {updated.voice_url}"
+                    )
+                else:
+                    self.flush_print(
+                        f"# [WEBHOOK] AVISO: URL devuelta por Twilio no coincide "
+                        f"para {number_e164}. "
+                        f"Solicitada: {voice_webhook_url} | "
+                        f"Devuelta: {updated.voice_url}"
+                    )
+                    all_succeeded = False
+
+            except Exception as exc:
+                self.flush_print(
+                    f"# [WEBHOOK] ERROR al actualizar {number_e164}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                all_succeeded = False
+
+        if all_succeeded:
+            self.flush_print(
+                "# [WEBHOOK] Todos los webhooks actualizados correctamente."
+            )
+        else:
+            self.flush_print(
+                "# [WEBHOOK] AVISO: Algunos webhooks no pudieron actualizarse. "
+                "Revise los mensajes anteriores."
+            )
+
+        return all_succeeded
+
     def start_bridge(self):
         self.flush_print("# [ORCHESTRATOR] Lanzando Sidecar Bridge...")
         # PIPE FIX: Launching the bridge with stdout=sys.stdout / stderr=sys.stderr
@@ -275,9 +433,21 @@ class VoiceOrchestrator:
         signal.signal(signal.SIGTERM, self.stop)
         signal.signal(signal.SIGINT, self.stop)
         if not self.start_ngrok(): return
+        ngrok_url = None
         for _ in range(5):
-            if self.get_public_url(): break
+            ngrok_url = self.get_public_url()
+            if ngrok_url:
+                break
             time.sleep(2)
+
+        if ngrok_url:
+            self.update_twilio_webhook(ngrok_url)
+        else:
+            self.flush_print(
+                "# [ORCHESTRATOR] AVISO: No se pudo obtener la URL de ngrok. "
+                "Los webhooks de Twilio no han sido actualizados."
+            )
+
         self.start_bridge()
         try:
             while True:

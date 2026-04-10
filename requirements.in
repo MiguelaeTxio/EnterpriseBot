@@ -42,6 +42,14 @@ psutil==7.2.2
 # Versión explícita para el SDK de Google GenAI (integración v1beta).
 google-genai==1.69.0
 
+# Task Queue / Cola de Tareas Asíncronas
+# Required for background task processing and scheduled jobs (presence reminders, etc.).
+# La versión 5.6.3 incluye correcciones críticas de memory leaks en Python 3.10+ y
+# sanitización de credenciales en logs de broker — ambas relevantes para producción.
+# Requerido para el procesamiento de tareas en segundo plano y trabajos programados
+# (recordatorios de presencia, expiración automática de estados, etc.).
+celery==5.6.3
+
 # Development and Linting / Desarrollo y Auditoría
 # Tools for code quality and protocol adherence (PEP8, DjLint).
 # Herramientas para calidad de código y adherencia a protocolos (PEP8, DjLint).
