@@ -483,12 +483,34 @@ class PhoneNumber(models.Model):
     Each PhoneNumber is linked to a CallFlow that determines the IVR behaviour
     when an inbound call is received on that number.
     The 'number' field stores the number in E.164 format (+XXXXXXXXXXX).
+    The 'capabilities' field declares the communication channels this number
+    is authorised to handle: voice IVR only, WhatsApp messaging only, or both.
+    This distinction is used by IncomingWhatsAppView and the IVR webhook to
+    resolve the correct company from the inbound Twilio number.
     ---
     Representa un número de teléfono Twilio asignado a una empresa.
     Cada PhoneNumber está vinculado a un CallFlow que determina el comportamiento
     IVR cuando se recibe una llamada entrante en ese número.
     El campo 'number' almacena el número en formato E.164 (+XXXXXXXXXXX).
+    El campo 'capabilities' declara los canales de comunicación que este número
+    está autorizado a gestionar: solo IVR de voz, solo mensajería WhatsApp, o ambos.
+    Esta distinción es utilizada por IncomingWhatsAppView y el webhook IVR para
+    resolver la empresa correcta a partir del número Twilio entrante.
     """
+
+    # ------------------------------------------------------------------
+    # Capabilities choices — communication channel authorisation flags.
+    # Choices de capacidades — indicadores de autorización de canal.
+    # ------------------------------------------------------------------
+    CAPABILITY_VOICE     = "VOICE"
+    CAPABILITY_WHATSAPP  = "WHATSAPP"
+    CAPABILITY_BOTH      = "BOTH"
+
+    CAPABILITY_CHOICES = [
+        (CAPABILITY_VOICE,    "Solo voz (IVR)"),
+        (CAPABILITY_WHATSAPP, "Solo WhatsApp"),
+        (CAPABILITY_BOTH,     "Voz + WhatsApp"),
+    ]
 
     company = models.ForeignKey(
         Company,
@@ -522,6 +544,17 @@ class PhoneNumber(models.Model):
         default=True,
         verbose_name="Activo",
         help_text="Indica si este número está operativo para recibir llamadas.",
+    )
+    capabilities = models.CharField(
+        max_length=10,
+        choices=CAPABILITY_CHOICES,
+        default=CAPABILITY_VOICE,
+        verbose_name="Capacidades",
+        help_text=(
+            "Canal o canales de comunicación autorizados para este número: "
+            "VOICE (solo IVR de voz), WHATSAPP (solo mensajería WhatsApp) "
+            "o BOTH (voz e IVR + WhatsApp simultáneamente)."
+        ),
     )
     created_at = models.DateTimeField(
         auto_now_add=True,

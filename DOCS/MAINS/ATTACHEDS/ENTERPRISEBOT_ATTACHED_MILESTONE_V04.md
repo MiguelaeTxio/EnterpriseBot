@@ -1,7 +1,7 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V04.md
 
 # ENTERPRISEBOT — ANEXO HITO V04 — CANAL WHATSAPP: CHATBOT CONVERSACIONAL Y SISTEMA DE PRESENCIA
-**Estado:** EN PROGRESO
+**Estado:** PAUSADO
 **Fecha de inicio:** 2026-04-09
 **Prerequisito:** Hito 3 completado (Pasos 23–26 finalizados y validados E2E).
 
@@ -71,16 +71,29 @@ WhatsAppSession), reconstruyendo el historial en cada llamada al webhook.
 Variables de entorno: GCP_CREDENTIALS_PATH, GOOGLE_CLOUD_PROJECT,
 GOOGLE_CLOUD_LOCATION.
 
-### 2.3. Gestión de número WhatsApp en Twilio
+### 2.3. Gestión de números de Grupo Álvarez en Twilio
 
-**Fase de desarrollo:** Sandbox de Twilio para WhatsApp. Número compartido
-Twilio (~+14155238886). Los testers deben unirse al sandbox enviando el código
-de unión al número de sandbox.
+**Decisión sesión 2026-04-10:** El número US +12603466780 fue eliminado del
+Dashboard de Twilio. Los números operativos de Grupo Álvarez son números
+geográficos de Málaga, ambos con capabilities=BOTH (voz + WhatsApp):
 
-**Fase de producción:** El número Twilio existente +12603466780 se habilita
-para WhatsApp a través del proceso de registro de sender en el Twilio Console
-(Messaging → Senders → WhatsApp Senders → Self Sign-Up). No requiere número
-nuevo si el número ya está aprobado por Meta.
+- **+34951799117** — Designado como WhatsApp sender principal.
+  TwiML Bin de reenvío configurado para verificación Meta:
+  https://handler.twilio.com/twiml/EH74e61da4b7fa2592034e77c8626af1b0
+  Reenvía llamadas entrantes a +34711509585 durante la verificación.
+  Estado: verificación Meta bloqueada temporalmente por exceso de intentos.
+  Acción pendiente: relanzar verificación tras 30-60 min de espera.
+
+- **+34951796832** — Designado para pruebas IVR de voz.
+  Configurar webhook Twilio apuntando al bridge aiohttp para validación
+  del IVR conversacional con Alia (Hito 3 reactivado).
+
+Ambos números sembrados en BD: capabilities=BOTH.
+Variable de entorno requerida: TWILIO_WHATSAPP_SENDER=+34951799117
+
+**Fase de desarrollo WhatsApp:** Sandbox de Twilio (~+14155238886).
+Los testers deben unirse al sandbox enviando el código de unión.
+Webhook sandbox: https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
 
 **Nota crítica:** A partir del 17 de julio de 2024, Twilio eliminó los Legacy
 WhatsApp Templates. Las plantillas se gestionan exclusivamente a través del
@@ -399,74 +412,126 @@ No requiere ngrok — Django WSGI en PythonAnywhere es accesible públicamente.
 
 ## SECCIÓN 8 — HOJA DE RUTA
 
-### Paso 1 — Creación de templates en Twilio Console
+### Paso 1 — Creación de templates en Twilio Console ⏳ PENDIENTE (manual)
+Templates creados en Content Template Builder pero pendientes de aprobación Meta
+para WhatsApp business initiated. Los templates presence_reminder y welcome_message
+existen en el Console con sus SID pero sin ContentSid definitivo aprobado.
+Acción: esperar aprobación Meta y actualizar TEMPLATE_DEFINITIONS en
+seed_whatsapp_templates.py con los HX... reales. Re-ejecutar el seed.
 
-Acceder al Content Template Builder (Messaging → Content Template Builder).
-Crear y someter a aprobación de Meta:
-- Template presence_reminder (UTILITY, es).
-- Template welcome_message (UTILITY, es) — opcional fase inicial.
-Anotar los ContentSid (HX...) resultantes para usarlos en el seed.
-Criterio de éxito: templates con estado Approved en el Console de Twilio.
-
-### Paso 2 — Activación del Sandbox de Twilio para WhatsApp
-
-Desde el Twilio Console (Messaging → Try it out → Send a WhatsApp message):
-- Aceptar términos y activar el Sandbox.
-- Conectar el teléfono de prueba enviando el código de unión al número sandbox.
-- Configurar el webhook entrante del Sandbox:
+### Paso 2 — Activación del Sandbox de Twilio para WhatsApp ⏳ PENDIENTE (manual)
+Pendiente de completar. Requiere:
+- Conectar teléfono de prueba al sandbox (+14155238886).
+- Configurar webhook entrante del Sandbox:
   https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
-Criterio de éxito: enviar un mensaje al sandbox y recibir respuesta del chatbot.
 
-### Paso 3 — PEA: whatsapp/__init__.py
-Archivo vacío. Marca el directorio como paquete Python.
+### Paso 3 — PEA: whatsapp/__init__.py ✅ COMPLETADO
 
-### Paso 4 — PEA: whatsapp/apps.py
-Configuración de la app Django whatsapp.
+### Paso 4 — PEA: whatsapp/apps.py ✅ COMPLETADO
 
-### Paso 5 — PEA: whatsapp/models.py
-Implementación completa de WhatsAppSession, WhatsAppMessage y WhatsAppTemplate
-según la especificación de la Sección 3.
+### Paso 5 — PEA: whatsapp/models.py ✅ COMPLETADO
+WhatsAppSession, WhatsAppMessage, WhatsAppTemplate implementados.
+Índices: whatsapp_session_lookup_idx, whatsapp_message_history_idx.
+Constraint: unique_whatsapp_template_per_company.
 
-### Paso 6 — Migraciones
-    python -m dotenv run python manage.py makemigrations whatsapp
-    python -m dotenv run python manage.py migrate whatsapp
-Verificar que las tres tablas se crean correctamente en MySQL.
+### Paso 6 — Migraciones ✅ COMPLETADO
+Tres tablas creadas en MySQL. whatsapp/migrations/0001_initial.py aplicado.
 
-### Paso 7 — PEA: whatsapp/admin.py
-Registro de WhatsAppSession, WhatsAppMessage y WhatsAppTemplate en el admin
-de Django para inspección durante el desarrollo.
+### Paso 7 — PEA: whatsapp/admin.py ✅ COMPLETADO
+WhatsAppSessionAdmin con WhatsAppMessageInline, WhatsAppMessageAdmin,
+WhatsAppTemplateAdmin registrados.
 
-### Paso 8 — PEA: whatsapp/services.py
-Implementación completa de WhatsAppChatService (build_system_prompt,
-build_history, send_reply) y PresenceResponseService (process_response).
+### Paso 8 — PEA: whatsapp/services.py ✅ COMPLETADO
+WhatsAppChatService (build_system_prompt, build_history, get_gemini_reply,
+send_reply) y PresenceResponseService (process_response, _apply_response)
+implementados.
 
-### Paso 9 — PEA: whatsapp/tasks.py
-Implementación completa de las tres tareas Celery:
-- expire_whatsapp_sessions
-- check_in_meeting_reminders
-- expire_presence_statuses
+### Paso 9 — PEA: whatsapp/tasks.py ✅ COMPLETADO
+expire_whatsapp_sessions (*/30min), check_in_meeting_reminders (*/15min),
+expire_presence_statuses (*/5min) implementadas.
 
-### Paso 10 — PEA: whatsapp/views.py
-Implementación de IncomingWhatsAppView y PresenceWhatsAppView según
-el flujo detallado en la Sección 4.
+### Paso 10 — PEA: whatsapp/views.py ✅ COMPLETADO
+IncomingWhatsAppView y PresenceWhatsAppView implementadas.
 
-### Paso 11 — PEA: whatsapp/urls.py
-Definición de las dos rutas: /api/whatsapp/incoming/ y /api/whatsapp/presence/
+### Paso 11 — PEA: whatsapp/urls.py ✅ COMPLETADO
+/api/whatsapp/incoming/ y /api/whatsapp/presence/ registradas.
 
-### Paso 12 — PMA: enterprise_core/settings.py
-Añadir whatsapp a INSTALLED_APPS y las tres tareas al CELERY_BEAT_SCHEDULE.
+### Paso 12 — PMA: enterprise_core/settings.py ✅ COMPLETADO
+whatsapp en INSTALLED_APPS. CELERY_BEAT_SCHEDULE con las tres tareas.
+CELERY_BROKER_URL, CELERY_RESULT_BACKEND y demás variables Celery añadidas.
 
-### Paso 13 — PMA: enterprise_core/urls.py
-Añadir path('api/whatsapp/', include('whatsapp.urls')).
+### Paso 13 — PMA: enterprise_core/urls.py ✅ COMPLETADO
+path('api/whatsapp/', include('whatsapp.urls')) registrado.
 
-### Paso 14 — PEA: whatsapp/management/commands/seed_whatsapp_templates.py
-Comando de gestión que siembra los WhatsAppTemplate de Grupo Álvarez con
-los ContentSid reales. Idempotente: usa get_or_create.
+### Paso 14 — PEA: whatsapp/management/commands/seed_whatsapp_templates.py ✅ COMPLETADO
+Comando idempotente con TEMPLATE_DEFINITIONS y lógica de actualización
+de ContentSid existente.
 
-### Paso 15 — Ejecución del seed de templates
-    python -m dotenv run python manage.py seed_whatsapp_templates
-Verificar en /admin/whatsapp/whatsapptemplate/ que los templates aparecen
-con sus ContentSid correctos.
+### Paso 15 — Ejecución del seed de templates ✅ COMPLETADO
+presence_reminder y welcome_message creados en BD con ContentSid PENDING.
+Pendiente: actualizar con HX... reales tras aprobación Meta y re-ejecutar.
+
+### Paso 16 — Validación E2E del chatbot de texto ⏳ PENDIENTE
+Bloqueado por Pasos 1 y 2.
+
+### Paso 17 — Validación E2E del webhook de presencia ⏳ PENDIENTE
+Bloqueado por Pasos 1 y 2.
+
+---
+
+## SECCIÓN 8B — HOJA DE RUTA PARA LA SIGUIENTE SESIÓN DE ESTE HITO
+
+Cuando se reactive el Hito 4, ejecutar en este orden exacto:
+
+**Prerrequisito 1 — Verificación Meta del número +34951799117:**
+- El TwiML Bin de reenvío ya está configurado:
+  https://handler.twilio.com/twiml/EH74e61da4b7fa2592034e77c8626af1b0
+- El número +34951799117 en Twilio tiene Voice Configuration → Webhook apuntando
+  a ese TwiML Bin (HTTP GET). Esta configuración ya está activa.
+- Ruta Console: Messaging → Senders → WhatsApp Senders → Add new Sender.
+- Selección de tipo: Direct Customer → My business → I manage WhatsApp for my company.
+- Introducir +34951799117 como Twilio phone number.
+- Seleccionar verificación por llamada telefónica.
+- La llamada de Meta llegará al TwiML Bin y se redirigirá al móvil +34711509585.
+- Anotar el código de 6 dígitos e introducirlo en la pantalla de verificación.
+- Criterio de éxito: sender +34951799117 en estado Approved en WhatsApp Senders.
+
+**Prerrequisito 2 — Obtener ContentSid reales de los templates:**
+- Ruta Console: Messaging → Content Template Builder.
+- Localizar presence_reminder y welcome_message con estado Approved.
+- Copiar sus ContentSid (formato HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx).
+- Aplicar PMP sobre seed_whatsapp_templates.py:
+  Sustituir PENDING_HX_PRESENCE_REMINDER por el SID real.
+  Sustituir PENDING_HX_WELCOME_MESSAGE por el SID real.
+- Re-ejecutar: python -m dotenv run python manage.py seed_whatsapp_templates
+- Verificar en /admin/whatsapp/whatsapptemplate/ que los SIDs son correctos.
+
+**Prerrequisito 3 — Activar Sandbox y conectar teléfono de prueba:**
+- Ruta Console: Messaging → Try it out → Send a WhatsApp message.
+- Conectar teléfono enviando código de unión al +14155238886.
+- Configurar webhook entrante del Sandbox:
+  https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
+
+**Paso 16 — Validación E2E del chatbot de texto:**
+1. Enviar mensaje al sandbox desde teléfono de prueba.
+2. Verificar en logs PythonAnywhere que IncomingWhatsAppView recibe el webhook.
+3. Verificar que WhatsAppChatService construye el prompt con contexto correcto.
+4. Verificar que Gemini 2.5 Flash responde con coherencia corporativa.
+5. Verificar que la respuesta llega al teléfono de prueba por WhatsApp.
+6. Verificar en /admin/whatsapp/ que WhatsAppSession y WhatsAppMessage se crean.
+Criterio de éxito: conversación de al menos 3 turnos con contexto persistente.
+
+**Paso 17 — Validación E2E del webhook de presencia:**
+1. Crear PresenceStatus IN_MEETING para alvarez_admin con ends_at=None.
+2. Forzar check_in_meeting_reminders desde shell Django:
+   python -m dotenv run python manage.py shell
+   from whatsapp.tasks import check_in_meeting_reminders
+   check_in_meeting_reminders()
+3. Verificar que llega template de recordatorio al teléfono del CompanyUser.
+4. Responder con "1h", "2h" o "disponible" desde WhatsApp.
+5. Verificar que PresenceWhatsAppView procesa la respuesta.
+6. Verificar PresenceStatus actualizado en BD.
+Criterio de éxito: ciclo completo sin intervención manual en BD.
 
 ### Paso 16 — Validación E2E del chatbot de texto
 
@@ -543,6 +608,18 @@ V04DOC_WHATSAPP_RICH_CONTENT.md bajo DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_
 ---
 
 ## SECCIÓN 10 — PAH — REGISTRO DE SESIONES
+
+### Sesión 2026-04-10
+**Título:** Hito 4 — Implementación Canal WhatsApp: Modelos, App Django y Flujos Base
+**Descripción:** Sesión de implementación del canal WhatsApp. Se incorporan los
+números ES +34951799117 y +34951796832 (geográficos Málaga, capabilities=BOTH)
+sustituyendo el número US eliminado. Se añade el campo capabilities al modelo
+PhoneNumber con migración. Se implementan todos los archivos de la app whatsapp
+(models, admin, services, tasks, views, urls), las migraciones, el seed de
+templates y los PMA sobre settings.py y urls.py. Se inicia el proceso de
+registro del sender WhatsApp en Twilio/Meta para +34951799117, quedando
+bloqueado temporalmente por exceso de intentos de verificación. El hito se
+pausa para reactivar el Hito 3 y probar el IVR con los nuevos números ES.
 
 ### Sesión 2026-04-09
 **Título:** Cambio Estratégico: Diseño del Hito 4 — Chatbot WhatsApp sobre Twilio

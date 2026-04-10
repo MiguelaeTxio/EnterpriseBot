@@ -67,6 +67,8 @@ INSTALLED_APPS = [
     'ivr_config',
     # Custom administration panel for CompanyUser accounts — panel de administración personalizado para cuentas CompanyUser.
     'panel',
+    # WhatsApp channel app — app del canal WhatsApp.
+    'whatsapp',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
@@ -152,3 +154,42 @@ STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# 7. CELERY CONFIGURATION
+# Broker, result backend and periodic task schedule for Celery Beat.
+# Broker, backend de resultados y schedule de tareas periódicas para Celery Beat.
+from celery.schedules import crontab
+
+CELERY_BROKER_URL        = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND    = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+CELERY_TIMEZONE          = TIME_ZONE
+CELERY_ENABLE_UTC        = True
+CELERY_TASK_TRACK_STARTED = True
+
+CELERY_BEAT_SCHEDULE = {
+    # ---------------------------------------------------------------------------
+    # WHATSAPP CHANNEL TASKS
+    # Tareas del canal WhatsApp — Hito 4.
+    # ---------------------------------------------------------------------------
+
+    # Deactivates WhatsApp sessions whose Meta 24-hour window has expired.
+    # Desactiva sesiones WhatsApp cuya ventana Meta de 24 horas ha expirado.
+    'expire-whatsapp-sessions': {
+        'task':     'whatsapp.tasks.expire_whatsapp_sessions',
+        'schedule': crontab(minute='*/30'),
+    },
+
+    # Sends presence reminders to CompanyUsers stuck in IN_MEETING for 3+ hours.
+    # Envía recordatorios de presencia a CompanyUsers en IN_MEETING durante 3+ horas.
+    'check-in-meeting-reminders': {
+        'task':     'whatsapp.tasks.check_in_meeting_reminders',
+        'schedule': crontab(minute='*/15'),
+    },
+
+    # Restores CompanyUsers to AVAILABLE when their PresenceStatus ends_at has passed.
+    # Restaura CompanyUsers a AVAILABLE cuando su PresenceStatus ends_at ha expirado.
+    'expire-presence-statuses': {
+        'task':     'whatsapp.tasks.expire_presence_statuses',
+        'schedule': crontab(minute='*/5'),
+    },
+}

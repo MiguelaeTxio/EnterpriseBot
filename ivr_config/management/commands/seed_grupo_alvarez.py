@@ -182,30 +182,71 @@ class Command(BaseCommand):
             required=True,
             metavar="E164_NUMBER",
             help=(
-                "Uno o más números Twilio en formato E.164 (p. ej. +12603466780 +34XXXXXXXXX). "
+                "Uno o más números Twilio en formato E.164 (p. ej. +34951799117 +34951796832). "
                 "Cada número se registrará como PhoneNumber activo vinculado al CallFlow principal."
+            ),
+        )
+
+        parser.add_argument(
+            "--capabilities",
+            nargs="+",
+            type=str,
+            required=False,
+            metavar="CAPABILITY",
+            default=None,
+            help=(
+                "Capacidades de canal para cada número en --phone-numbers, en el mismo orden. "
+                "Valores válidos: VOICE, WHATSAPP, BOTH. "
+                "Si se omite, todos los números reciben BOTH por defecto. "
+                "Ejemplo: --capabilities BOTH VOICE"
             ),
         )
 
     def handle(self, *args, **options):
         """
         Main entry point for the seed command.
-        Validates the supplied phone numbers and wraps the entire seeding
-        operation in an atomic transaction to guarantee database consistency.
+        Validates the supplied phone numbers and their capabilities, then wraps
+        the entire seeding operation in an atomic transaction to guarantee
+        database consistency. The --capabilities argument must match the length
+        of --phone-numbers when supplied; if omitted, all numbers default to BOTH.
         ---
         Punto de entrada principal del comando de seed.
-        Valida los números de teléfono suministrados y envuelve toda la operación
-        de seed en una transacción atómica para garantizar la consistencia de la BD.
+        Valida los números de teléfono suministrados y sus capacidades de canal,
+        y envuelve toda la operación de seed en una transacción atómica para
+        garantizar la consistencia de la BD. El argumento --capabilities debe
+        coincidir en longitud con --phone-numbers cuando se suministra; si se
+        omite, todos los números reciben BOTH por defecto.
         """
-        phone_numbers = options["phone_numbers"]
+        phone_numbers  = options["phone_numbers"]
+        raw_caps       = options["capabilities"]
 
-        # Validate that every supplied number starts with '+' (E.164 format).
-        # Validar que cada número suministrado empieza por '+' (formato E.164).
+        # Validate E.164 format for every supplied number.
+        # Validar formato E.164 para cada número suministrado.
         invalid = [n for n in phone_numbers if not n.startswith("+")]
         if invalid:
             raise CommandError(
                 f"# [SEED] Números inválidos (deben estar en formato E.164): {invalid}"
             )
+
+        # Validate or default capabilities list.
+        # Validar o establecer por defecto la lista de capacidades.
+        valid_caps = {"VOICE", "WHATSAPP", "BOTH"}
+        if raw_caps is None:
+            capabilities = ["BOTH"] * len(phone_numbers)
+        else:
+            if len(raw_caps) != len(phone_numbers):
+                raise CommandError(
+                    f"# [SEED] --capabilities debe tener el mismo número de valores "
+                    f"que --phone-numbers ({len(phone_numbers)} esperado, "
+                    f"{len(raw_caps)} recibido)."
+                )
+            invalid_caps = [c for c in raw_caps if c not in valid_caps]
+            if invalid_caps:
+                raise CommandError(
+                    f"# [SEED] Capacidades inválidas: {invalid_caps}. "
+                    f"Valores permitidos: {sorted(valid_caps)}."
+                )
+            capabilities = raw_caps
 
         self.stdout.write(
             f"# [SEED] Iniciando seed de datos piloto: Grupo Álvarez "
@@ -218,7 +259,7 @@ class Command(BaseCommand):
                 self._seed_admin_user(company)
                 self._seed_voice_profile(company)
                 call_flow = self._seed_call_flow(company)
-                self._seed_phone_numbers(company, call_flow, phone_numbers)
+                self._seed_phone_numbers(company, call_flow, phone_numbers, capabilities)
                 self._seed_sections(company)
 
             self.stdout.write(
@@ -352,21 +393,26 @@ class Command(BaseCommand):
         company: Company,
         call_flow: CallFlow,
         phone_numbers: list,
+        capabilities: list,
     ) -> None:
         """
         Creates or retrieves a PhoneNumber record for each number supplied
-        via the --phone-numbers argument. All numbers are linked to the
-        company's main CallFlow and marked as active.
+        via the --phone-numbers argument. Each number is paired with its
+        corresponding capability from the --capabilities argument (VOICE,
+        WHATSAPP or BOTH). All numbers are linked to the company's main
+        CallFlow and marked as active.
         A company may register any number of Twilio lines simultaneously —
         this method enforces no upper limit.
         ---
         Crea o recupera un registro PhoneNumber para cada número suministrado
-        a través del argumento --phone-numbers. Todos los números se vinculan
-        al CallFlow principal de la empresa y se marcan como activos.
+        a través del argumento --phone-numbers. Cada número se empareja con su
+        capacidad de canal correspondiente del argumento --capabilities (VOICE,
+        WHATSAPP o BOTH). Todos los números se vinculan al CallFlow principal
+        de la empresa y se marcan como activos.
         Una empresa puede registrar cualquier número de líneas Twilio
         simultáneamente — este método no impone ningún límite superior.
         """
-        for number in phone_numbers:
+        for number, capability in zip(phone_numbers, capabilities):
             phone_number, created = PhoneNumber.objects.get_or_create(
                 number=number,
                 defaults={
@@ -374,10 +420,26 @@ class Command(BaseCommand):
                     "friendly_name": f"Línea Twilio — {company.name} — {number}",
                     "call_flow": call_flow,
                     "is_active": True,
+                    "capabilities": capability,
                 },
             )
-            status = "creado" if created else "ya existente"
-            self.stdout.write(f"# [SEED] PhoneNumber '{number}' {status}.")
+            if not created and phone_number.capabilities != capability:
+                # Update capabilities if the record already existed with a
+                # different value — supports re-seeding after capability changes.
+                # Actualizar capabilities si el registro ya existía con un valor
+                # diferente — soporta re-sembrado tras cambios de capacidad.
+                phone_number.capabilities = capability
+                phone_number.save(update_fields=["capabilities"])
+                self.stdout.write(
+                    f"# [SEED] PhoneNumber '{number}' ya existente — "
+                    f"capabilities actualizado a '{capability}'."
+                )
+            else:
+                status = "creado" if created else "ya existente"
+                self.stdout.write(
+                    f"# [SEED] PhoneNumber '{number}' {status} "
+                    f"[capabilities={capability}]."
+                )
 
     def _seed_sections(self, company: Company) -> None:
         """
