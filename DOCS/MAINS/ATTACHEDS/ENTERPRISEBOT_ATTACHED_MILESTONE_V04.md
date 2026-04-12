@@ -1,7 +1,7 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V04.md
 
 # ENTERPRISEBOT — ANEXO HITO V04 — CANAL WHATSAPP: CHATBOT CONVERSACIONAL Y SISTEMA DE PRESENCIA
-**Estado:** PAUSADO
+**Estado:** EN PROGRESO
 **Fecha de inicio:** 2026-04-09
 **Prerequisito:** Hito 3 completado (Pasos 23–26 finalizados y validados E2E).
 

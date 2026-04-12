@@ -1,8 +1,9 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
 
 # ENTERPRISEBOT — ANEXO HITO V03 — IVR CONVERSACIONAL CONFIGURABLE DESDE PRODUCCIÓN
-**Estado:** EN PROGRESO
+**Estado:** PAUSADO
 **Fecha de inicio:** 2026-04-07
+**Fecha de pausa:** 2026-04-12
 
 ---
 
@@ -334,80 +335,68 @@ Vistas Django class-based que permiten a cada empresa gestionar:
    speech 15 frames) son una primera iteración. Pendiente ajuste fino tras más
    pruebas con distintos dispositivos y condiciones de llamada.
 6. Sección Grúas: No existe aún en BD. Añadir cuando se disponga de contacto real.
-7. Validación de carga dinámica completa desde BD: Pendiente llamada real con
-   `twilio_number` correctamente resuelto para confirmar que `build_live_config()`
-   retorna la configuración de la empresa desde BD y no el fallback.
+7. ✅ RESUELTO (sesión 2026-04-12): Validación de carga dinámica completa desde BD.
+   `build_live_config()` confirmado operativo con configuración de Grupo Álvarez
+   desde BD para `+34951796832`. Bug `InterfaceError` por conexión MySQL stale
+   resuelto mediante `connection.close()` al inicio de `build_live_config()`.
+8. Configuración real de producción del `CallFlow` y `CorporateVoiceProfile` de
+   Grupo Álvarez: BLOQUEADO — pendiente de que Grupo Álvarez facilite el organigrama
+   real, personas, números de teléfono y función de cada uno para definir el flujo
+   IVR de producción definitivo.
 
 ---
 
-## SECCIÓN 8 — HOJA DE RUTA SIGUIENTE SESIÓN
+## SECCIÓN 8 — HOJA DE RUTA PARA LA REANUDACIÓN DE ESTE HITO
 
-### Contexto de arranque
-El sistema IVR está operativo con números españoles reales, always-on task activa,
-webhook regional IE1 automatizado y carga dinámica de configuración implementada.
-La siguiente sesión valida la carga dinámica completa desde BD y configura el
-perfil de voz corporativa real de Grupo Álvarez.
+### Contexto de pausa (2026-04-12)
+El hito se pausa con el sistema IVR completamente operativo en producción:
+- Carga dinámica de configuración desde BD validada E2E (`build_live_config()` ✅).
+- Bug `InterfaceError` por conexión MySQL stale resuelto en `ivr_config/services.py`.
+- Panel de administración `/panel/` operativo con todos los módulos validados.
+- Always-on task activa con webhook regional IE1 automatizado.
+- El `CallFlow` y `CorporateVoiceProfile` actuales contienen configuración
+  funcional de demostración — pendiente de sustitución por configuración real.
 
-### Paso 30 — Validación de carga dinámica completa desde BD
+El hito se reactiva cuando Grupo Álvarez facilite su organigrama real.
 
-**Objetivo:** Confirmar que `build_live_config()` resuelve correctamente la
-configuración desde BD para los números españoles y que Alia responde con el
-`system_instruction` e `initial_greeting` definidos en el `CallFlow` de BD,
-no con el fallback hardcodeado.
+### Paso 31 — Configuración real de producción de Grupo Álvarez
 
-**Procedimiento:**
-1. Arrancar el sistema (always-on task lo hace automáticamente).
-2. Revisar `bridge.log` tras una llamada real y buscar:
+**Prerrequisito BLOQUEANTE:** Grupo Álvarez debe facilitar antes de la sesión:
+- Organigrama completo: nombres, apellidos, cargo y número de teléfono E.164
+  de cada persona que debe estar en el sistema.
+- Función de cada persona: qué tipo de llamadas gestiona (Elevación, Asistencia,
+  Grúas u otras categorías que definan).
+- Horarios de atención por departamento.
+- Cualquier regla especial de enrutamiento (p. ej. fuera de horario, idiomas,
+  prioridades de escalado).
+
+**Procedimiento una vez disponible la información:**
+1. Actualizar `Contact` y `Section` en BD desde el panel `/panel/` o mediante
+   script `seed_grupo_alvarez` con los datos reales.
+2. Redactar el `system_instruction` definitivo de Alia con el organigrama real:
+   - Identificar a cada persona por nombre y función.
+   - Definir reglas de enrutamiento por categoría de llamada.
+   - Incorporar horarios de atención por departamento.
+   - Incluir reglas de escalado para casos no contemplados.
+3. Redactar el `initial_greeting` de producción.
+4. Actualizar el `CorporateVoiceProfile`:
+   - `tone_guidelines`: tono y estilo corporativo real de Grupo Álvarez.
+   - `sample_responses`: ejemplos de respuestas reales del agente.
+   - `forbidden_phrases`: frases que Alia no debe usar en ningún caso.
+5. Acceder a `https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/`
+   con el usuario `alvarez_admin` y actualizar los campos desde el panel.
+6. Realizar llamada real al `+34951796832` y verificar en `bridge.log`:
    `[CONFIG] Configuración IVR dinámica cargada correctamente para el número '+34951796832'`
-   Sin ningún `[ERROR]` ni `FALLBACK` en los logs de CONFIG.
-3. Si aparece el error `DoesNotExist: PhoneNumber matching query does not exist`,
-   verificar que el número `+34951796832` está registrado en BD como `PhoneNumber`
-   activo con `capabilities=BOTH` y con un `CallFlow` activo asignado.
+   con `system_instruction` de longitud coherente con el organigrama real.
 
-**Archivos a revisar si hay fallo:**
-- `ivr_config/models.py` — verificar estructura de `PhoneNumber`.
-- `ivr_config/services.py` — verificar lógica de `build_live_config()`.
+**Criterio de éxito:** Alia atiende una llamada real respondiendo íntegramente
+con la configuración de producción de Grupo Álvarez, sin usar el fallback.
 
-**Criterio de éxito:** Log muestra `[CONFIG] Configuración IVR dinámica cargada`
-sin errores y la conversación responde con el texto del `CallFlow` de BD.
+### Paso 32 — Sección Grúas
 
-### Paso 31 — Configuración del perfil de voz corporativa de Grupo Álvarez
-
-**Objetivo:** Rellenar desde el panel `/panel/` los campos del `CorporateVoiceProfile`
-y el `CallFlow` de Grupo Álvarez con el contenido real de producción, sustituyendo
-el fallback hardcodeado por una configuración real multiempresa.
-
-**Procedimiento:**
-1. Acceder a `https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/`
-   con el usuario `alvarez_admin`.
-2. Editar el `CallFlow` "Grupo Álvarez — Recepción principal — Alia":
-   - `system_instruction`: instrucción completa de Alia con organigrama real.
-   - `initial_greeting`: saludo inicial de producción.
-3. Editar el `CorporateVoiceProfile`:
-   - `tone_guidelines`: directrices de tono corporativo de Grupo Álvarez.
-   - `sample_responses`: ejemplos de respuestas tipo.
-   - `forbidden_phrases`: frases que Alia no debe usar.
-4. Realizar llamada de prueba y verificar que la configuración de BD es la que
-   responde, no el fallback.
-
-**Criterio de éxito:** Alia saluda y responde exactamente con el texto configurado
-desde el panel, sin usar el fallback hardcodeado.
-
-### Paso 32 — Creación de skill PIEE
-
-**Objetivo:** Formalizar el protocolo `PIEE` (Protocolo de Información de Entorno
-de Ejecución) como skill del sistema, basándose en la versión histórica recuperada
-del `TOTAL_COMMANDER.md` (commit `5095c26`) y adaptándola a la arquitectura actual.
-
-**Contexto:** El protocolo existía en la plataforma y se usaba constantemente.
-La versión actual simplifica la distinción de rutas — solo cambia la barra inicial
-(`/sdcard/Download/` en Android, `sdcard/Download/` en PC). El `exit` en cajas
-sftp es siempre obligatorio en Android. Los entornos son:
-    `A`    → Android (entorno actual de trabajo).
-    `PC`   → PC configurado.
-    `PCv`  → PC configurado con VS Code (Archivos E activos).
-    `PCiv` → PC nuevo con VS Code (requiere configuración SSH inicial).
-    `PCi`  → PC nuevo sin VS Code.
+**Prerrequisito:** Disponibilidad del contacto real del departamento de Grúas.
+Añadir `Section` "Grúas" en BD con el contacto asignado y actualizar el
+`system_instruction` del `CallFlow` para incluir la categoría de enrutamiento.
 
 ---
 
@@ -465,3 +454,14 @@ start de Twilio Media Streams no incluye el campo To — solución: captura desd
 HTTP inicial en handle_twiml_post(). Se elimina de BD el número de Indiana +12603466780.
 Se calibra el VAD con valores optimizados para telefonía española. Validación E2E exitosa
 con llamada real al +34951796832 procesada en IE1 con coste confirmado de 0.01 USD.
+
+### Sesión 2026-04-12
+**Título:** Validación Dinámica BD + Fix InterfaceError MySQL Stale + Pausa Hito 3
+**Descripción:** Sesión de validación y cierre del Hito 3. Se diagnostica el bug
+InterfaceError (0, '') que afectaba a todas las llamadas posteriores a la primera
+exitosa: la conexión MySQL queda stale entre llamadas en el proceso de larga duración
+always-on task. Solución: connection.close() al inicio de build_live_config() en
+ivr_config/services.py, forzando reconexión fresca en cada llamada (PMA). Validación
+E2E exitosa: llamada real al +34951796832 con carga dinámica completa confirmada en
+logs. El Paso 31 queda bloqueado pendiente de que Grupo Álvarez facilite su organigrama
+real, personas, teléfonos y funciones. El hito se pausa y se reactiva el Hito 4.

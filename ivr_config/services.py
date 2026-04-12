@@ -32,6 +32,7 @@ capturar y gestionar cayendo a las constantes hardcodeadas.
 
 import logging
 
+from django.db import connection
 from django.db.models import Q
 from django.utils.timezone import now
 
@@ -289,6 +290,19 @@ def build_live_config(twilio_number: str) -> tuple[str, str]:
         ValueError: Si el PhoneNumber encontrado no tiene ningún CallFlow
                     activo asignado.
     """
+    # Close any stale database connection before querying.
+    # Cierra cualquier conexión de base de datos obsoleta antes de consultar.
+    # Long-running processes (always-on task) keep the connection open between
+    # calls. MySQL closes idle connections after wait_timeout seconds, causing
+    # OperationalError / InterfaceError on the next query. Calling close()
+    # forces Django to open a fresh connection on the next ORM operation.
+    # Los procesos de larga duración (always-on task) mantienen la conexión
+    # abierta entre llamadas. MySQL cierra las conexiones inactivas tras
+    # wait_timeout segundos, provocando OperationalError / InterfaceError en
+    # la siguiente consulta. Llamar a close() fuerza a Django a abrir una
+    # conexión fresca en la siguiente operación ORM.
+    connection.close()
+
     logger.info(
         f"[CONFIG] Iniciando carga dinámica de configuración IVR "
         f"para el número Twilio: {twilio_number}"
