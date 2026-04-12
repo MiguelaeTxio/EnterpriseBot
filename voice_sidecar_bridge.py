@@ -153,6 +153,15 @@ class UniversalVoiceBridge:
         (DOCS/SESSION/NGROK_URL.txt) and returns a TwiML <Connect><Stream>
         response pointing Twilio to the WSS WebSocket endpoint at /media.
 
+        DESTINATION NUMBER CAPTURE (2026-04-11):
+            The Twilio Media Streams WebSocket 'start' event does NOT carry
+            the destination phone number ('To') in its payload — confirmed by
+            the DEBUG-P28 diagnostic. The number is exclusively available here,
+            in the initial HTTP POST body sent by Twilio before the WebSocket
+            is opened. It is captured and stored in self._pending_twilio_number
+            so handle_websocket_stream() can pass it to VoiceOrchestrationService
+            when instantiating the service upon receiving the 'start' event.
+
         Args:
             request (web.Request): The incoming aiohttp HTTP request from Twilio.
 
@@ -165,6 +174,15 @@ class UniversalVoiceBridge:
         (DOCS/SESSION/NGROK_URL.txt) y devuelve una respuesta TwiML <Connect><Stream>
         apuntando a Twilio al endpoint WebSocket WSS en /media.
 
+        CAPTURA DEL NÚMERO DESTINO (2026-04-11):
+            El evento 'start' del WebSocket de Twilio Media Streams NO transporta
+            el número de teléfono destino ('To') en su payload — confirmado por
+            el diagnóstico DEBUG-P28. El número está disponible exclusivamente aquí,
+            en el body del POST HTTP inicial enviado por Twilio antes de abrir el
+            WebSocket. Se captura y almacena en self._pending_twilio_number para
+            que handle_websocket_stream() pueda pasarlo a VoiceOrchestrationService
+            al instanciar el servicio al recibir el evento 'start'.
+
         Args:
             request (web.Request): La petición HTTP aiohttp entrante de Twilio.
 
@@ -172,6 +190,41 @@ class UniversalVoiceBridge:
             web.Response: Una respuesta XML TwiML con Content-Type text/xml.
         """
         logger.info("# [HTTP POST] Petición inicial de Twilio recibida. Generando TwiML.")
+
+        # --- Capture destination phone number from POST body ---
+        # Twilio sends the call parameters as application/x-www-form-urlencoded.
+        # The 'To' field contains the E.164 number that received the inbound call.
+        # This is the only point in the Media Streams pipeline where this number
+        # is available — it does NOT appear in the WebSocket 'start' event payload.
+        # --- Capturar número de teléfono destino del body del POST ---
+        # Twilio envía los parámetros de la llamada como application/x-www-form-urlencoded.
+        # El campo 'To' contiene el número E.164 que recibió la llamada entrante.
+        # Este es el único punto del pipeline de Media Streams donde este número
+        # está disponible — NO aparece en el payload del evento 'start' del WebSocket.
+        try:
+            post_data = await request.post()
+            twilio_number = post_data.get("To", "")
+            if twilio_number:
+                logger.info(
+                    f"# [HTTP POST] Número destino capturado del POST: {twilio_number}"
+                )
+            else:
+                logger.warning(
+                    "# [HTTP POST] Campo 'To' ausente en el body del POST de Twilio. "
+                    "VoiceOrchestrationService usará configuración de fallback."
+                )
+        except Exception as post_exc:
+            logger.error(
+                f"# [HTTP POST] Error al leer body del POST: {post_exc}. "
+                "Usando cadena vacía como número destino."
+            )
+            twilio_number = ""
+
+        # Store the captured number so handle_websocket_stream() can access it
+        # when the WebSocket 'start' event arrives for this call.
+        # Almacenar el número capturado para que handle_websocket_stream() pueda
+        # acceder a él cuando llegue el evento 'start' del WebSocket para esta llamada.
+        self._pending_twilio_number = twilio_number
 
         # Derive the WSS URL from the request host header so that the TwiML
         # always points to the correct tunnel regardless of the ngrok session.
@@ -301,30 +354,35 @@ class UniversalVoiceBridge:
                             or start_payload.get("call_sid")
                         )
 
-                        # Extract the Twilio 'To' number from the 'start' payload.
-                        # This is the E.164 number that received the inbound call
-                        # and is used by build_live_config() to resolve the active
-                        # CallFlow and CorporateVoiceProfile from the database.
-                        # Both camelCase and snake_case variants are checked.
-                        # Extraer el número Twilio 'To' del payload 'start'.
-                        # Es el número E.164 que recibió la llamada entrante y es
-                        # usado por build_live_config() para resolver el CallFlow
-                        # activo y el CorporateVoiceProfile desde la base de datos.
-                        # Se comprueban tanto las variantes camelCase como snake_case.
-                        twilio_number = (
-                            start_payload.get("to")
-                            or start_payload.get("To")
-                            or ""
-                        )
+                        # DESTINATION NUMBER RESOLUTION (2026-04-11 — Paso 28 closed):
+                        # The Twilio Media Streams 'start' event does NOT carry the
+                        # destination number ('To') in its payload — confirmed by the
+                        # DEBUG-P28 diagnostic. The number was captured from the initial
+                        # HTTP POST body in handle_twiml_post() and stored in
+                        # self._pending_twilio_number. It is consumed here once and
+                        # reset to empty string to prevent stale values leaking into
+                        # subsequent calls handled by the same bridge process.
+                        #
+                        # RESOLUCIÓN DEL NÚMERO DESTINO (2026-04-11 — Paso 28 cerrado):
+                        # El evento 'start' de Twilio Media Streams NO transporta el
+                        # número destino ('To') en su payload — confirmado por el
+                        # diagnóstico DEBUG-P28. El número fue capturado del body del
+                        # POST HTTP inicial en handle_twiml_post() y almacenado en
+                        # self._pending_twilio_number. Se consume aquí una única vez y
+                        # se resetea a cadena vacía para evitar que valores obsoletos
+                        # contaminen llamadas posteriores gestionadas por el mismo proceso.
+                        twilio_number = getattr(self, "_pending_twilio_number", "")
+                        self._pending_twilio_number = ""
 
                         if twilio_number:
                             logger.info(
-                                f"# [EVENT] Número Twilio receptor extraído del "
-                                f"evento 'start': {twilio_number}"
+                                f"# [EVENT] Número Twilio receptor resuelto desde "
+                                f"POST HTTP: {twilio_number}"
                             )
                         else:
                             logger.warning(
-                                "# [EVENT] Evento 'start' recibido sin campo 'to'. "
+                                "# [EVENT] Número Twilio destino no disponible "
+                                "(campo 'To' ausente en el POST inicial). "
                                 "VoiceOrchestrationService usará la configuración "
                                 "de fallback hardcodeada (SYSTEM_INSTRUCTION_FALLBACK)."
                             )

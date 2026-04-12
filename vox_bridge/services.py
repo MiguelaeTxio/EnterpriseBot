@@ -170,7 +170,7 @@ TWILIO_OUTPUT_SAMPLE_RATE = 8000  # Hz — Twilio expects 8kHz mu-law back
 # El mu-law G.711 de Twilio decodificado a PCM 16-bit da valores en [-32768, 32767].
 # 200 RMS (~-44 dBFS) es un umbral conservador que separa de forma fiable el
 # ruido de línea de fondo del habla real en condiciones de telefonía.
-SILENCE_THRESHOLD_RMS = 200
+SILENCE_THRESHOLD_RMS = 300
 
 # Number of consecutive silent frames required to close an activity window.
 # At Twilio's 8kHz mu-law encoding, each media event carries ~20ms of audio,
@@ -183,7 +183,7 @@ SILENCE_THRESHOLD_RMS = 200
 # se envíe activity_end.
 # Aumentado de 20 a 30 el 2026-04-06 para dar más margen al llamante entre
 # frases y evitar activity_end prematuro durante pausas naturales del habla.
-SILENCE_FRAMES_TO_END_ACTIVITY = 30
+SILENCE_FRAMES_TO_END_ACTIVITY = 50
 
 # Number of consecutive speech frames required to open an activity window.
 # Increased from 3 to 10 on 2026-04-06 (~200ms) to filter out acoustic echo
@@ -196,7 +196,7 @@ SILENCE_FRAMES_TO_END_ACTIVITY = 30
 # micrófono del auricular. Con 3 frames (~60ms) el detector disparaba sobre
 # la propia salida de audio del modelo, causando señales activity_start
 # espurias que provocaban auto-interrupciones de Gemini.
-SPEECH_FRAMES_TO_START_ACTIVITY = 10
+SPEECH_FRAMES_TO_START_ACTIVITY = 15
 
 
 # Fallback initial greeting used when build_live_config() fails to load
@@ -402,32 +402,44 @@ class VoiceOrchestrationService:
         self.stream_sid: str = ""
 
         # --- Dynamic IVR Configuration / Configuración IVR Dinámica ---
-        # Attempt to load the system_instruction and initial_greeting from the
-        # database via build_live_config(). If this fails for any reason, fall
-        # back to the hardcoded constants so the call is never left unanswered.
-        # Intentar cargar system_instruction e initial_greeting desde la base de
-        # datos mediante build_live_config(). Si falla por cualquier razón, caer
-        # al fallback de constantes hardcodeadas para que la llamada nunca quede
-        # sin respuesta.
-        try:
-            from ivr_config.services import build_live_config
-            self.system_instruction, self.initial_greeting_text = (
-                build_live_config(twilio_number)
-            )
-            logger.info(
-                f"[INIT] Configuración IVR dinámica cargada correctamente "
-                f"para el número {twilio_number}."
-            )
-        except Exception as config_exc:
-            logger.error(
-                f"[INIT] No se pudo cargar la configuración dinámica para el "
-                f"número '{twilio_number}': {type(config_exc).__name__}: {config_exc}. "
-                "Usando SYSTEM_INSTRUCTION_FALLBACK e INITIAL_GREETING_FALLBACK."
-            )
-            self.system_instruction = SYSTEM_INSTRUCTION_FALLBACK
-            self.initial_greeting_text = INITIAL_GREETING_FALLBACK
+        # ARCHITECTURE NOTE (2026-04-11 — SynchronousOnlyOperation fix):
+        # build_live_config() executes synchronous Django ORM queries. Calling
+        # it here from __init__() would raise SynchronousOnlyOperation because
+        # __init__() is invoked from inside handle_websocket_stream(), which is
+        # an async coroutine running in the aiohttp event loop.
+        #
+        # Solution: store twilio_number and initialise system_instruction /
+        # initial_greeting_text with the hardcoded fallback values here so the
+        # service is always in a consistent, callable state after __init__().
+        # The real dynamic configuration is loaded asynchronously at the very
+        # start of run_voice_session() using:
+        #     await sync_to_async(build_live_config)(self.twilio_number)
+        # This executes the ORM queries in a dedicated thread pool thread,
+        # fully satisfying Django's async safety requirements.
+        #
+        # NOTA DE ARQUITECTURA (2026-04-11 — corrección SynchronousOnlyOperation):
+        # build_live_config() ejecuta queries ORM síncronas de Django. Llamarla
+        # aquí desde __init__() lanzaría SynchronousOnlyOperation porque __init__()
+        # se invoca desde dentro de handle_websocket_stream(), que es una corrutina
+        # async ejecutándose en el bucle de eventos de aiohttp.
+        #
+        # Solución: almacenar twilio_number e inicializar system_instruction /
+        # initial_greeting_text con los valores de fallback hardcodeados aquí para
+        # que el servicio esté siempre en un estado consistente y llamable tras
+        # __init__(). La configuración dinámica real se carga de forma asíncrona al
+        # inicio de run_voice_session() usando:
+        #     await sync_to_async(build_live_config)(self.twilio_number)
+        # Esto ejecuta las queries ORM en un hilo dedicado del pool de hilos,
+        # satisfaciendo completamente los requisitos de seguridad async de Django.
+        self.twilio_number: str = twilio_number
+        self.system_instruction: str = SYSTEM_INSTRUCTION_FALLBACK
+        self.initial_greeting_text: str = INITIAL_GREETING_FALLBACK
 
-        logger.info("[INIT] VoiceOrchestrationService inicializado completamente.")
+        logger.info(
+            f"[INIT] VoiceOrchestrationService inicializado. "
+            f"Número: '{twilio_number}'. "
+            "Configuración IVR dinámica se cargará al inicio de run_voice_session()."
+        )
 
     # -----------------------------------------------------------------------
     # SESSION LIFECYCLE / CICLO DE VIDA DE LA SESIÓN
@@ -484,6 +496,44 @@ class VoiceOrchestrationService:
         logger.info(
             "[SESSION] Iniciando sesión de voz. Conectando con Gemini 3.1 Live API..."
         )
+
+        # --- Async Dynamic IVR Configuration Load / Carga Asíncrona de Config IVR ---
+        # build_live_config() performs synchronous Django ORM queries. It is
+        # wrapped with sync_to_async() so it executes in a dedicated thread pool
+        # thread, fully satisfying Django's async safety requirements (Django 5.2.x).
+        # On success, self.system_instruction and self.initial_greeting_text are
+        # updated with the real database values for this call. On any exception
+        # (number not in DB, no active CallFlow, DB unreachable), the fallback
+        # constants set in __init__() are preserved and the session continues.
+        #
+        # build_live_config() realiza queries ORM síncronas de Django. Se envuelve
+        # con sync_to_async() para que se ejecute en un hilo dedicado del pool de
+        # hilos, satisfaciendo completamente los requisitos de seguridad async de
+        # Django (Django 5.2.x). Si tiene éxito, self.system_instruction y
+        # self.initial_greeting_text se actualizan con los valores reales de la
+        # base de datos para esta llamada. Ante cualquier excepción (número no en
+        # BD, sin CallFlow activo, BD inaccesible), las constantes de fallback
+        # establecidas en __init__() se preservan y la sesión continúa.
+        try:
+            from asgiref.sync import sync_to_async
+            from ivr_config.services import build_live_config
+            (
+                self.system_instruction,
+                self.initial_greeting_text,
+            ) = await sync_to_async(build_live_config)(self.twilio_number)
+            logger.info(
+                f"[CONFIG] Configuración IVR dinámica cargada correctamente "
+                f"para el número '{self.twilio_number}'."
+            )
+        except Exception as config_exc:
+            logger.error(
+                f"[CONFIG] No se pudo cargar la configuración dinámica para "
+                f"'{self.twilio_number}': {type(config_exc).__name__}: {config_exc}. "
+                "Usando SYSTEM_INSTRUCTION_FALLBACK e INITIAL_GREETING_FALLBACK."
+            )
+            # Fallback values were already set in __init__() — no reassignment needed.
+            # Los valores de fallback ya fueron establecidos en __init__() — no se
+            # necesita reasignación.
 
         # Build the Gemini Live session configuration.
         # The response modality is AUDIO — we want raw PCM audio back, not text.

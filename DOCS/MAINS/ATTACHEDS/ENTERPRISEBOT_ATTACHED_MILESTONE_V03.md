@@ -64,11 +64,6 @@ Cada `PhoneNumber` tiene asociado de forma independiente un `CallFlow` propio,
 lo que permite que una misma empresa opere centralitas con comportamientos IVR
 distintos en cada número (24/7, horario restringido, idioma diferente, etc.).
 
-El comando de seed acepta la lista de números como argumento dinámico
-`--phone-numbers` en formato E.164, admitiendo uno o varios números en una
-única ejecución:
-    python manage.py seed_grupo_alvarez --phone-numbers +12603466780 +34XXXXXXXXX
-
 #### `CallFlow` — Flujo IVR
     id, company (FK), name, system_instruction (TextField),
     initial_greeting (TextField), is_active
@@ -76,7 +71,7 @@ El comando de seed acepta la lista de números como argumento dinámico
 Define la personalidad y el comportamiento del agente IVR para un número concreto.
 El `system_instruction` y el `initial_greeting` se inyectan dinámicamente en el
 `LiveConnectConfig` de Gemini en tiempo de llamada, sustituyendo las constantes
-hardcodeadas actuales (`SYSTEM_INSTRUCTION_FALLBACK`, `INITIAL_GREETING_FALLBACK`)
+hardcodeadas (`SYSTEM_INSTRUCTION_FALLBACK`, `INITIAL_GREETING_FALLBACK`)
 de `vox_bridge/services.py`.
 
 #### `PresenceStatus` — Estado de presencia del usuario
@@ -163,6 +158,7 @@ Vistas Django class-based que permiten a cada empresa gestionar:
 
 1. Twilio realiza POST `/api/vox/inbound/`
    → `UniversalVoiceBridge.handle_twiml_post()` en `voice_sidecar_bridge.py`
+   → Captura el campo `To` del body del POST y lo almacena en `self._pending_twilio_number`.
    → Responde con TwiML `<Connect><Stream url="wss://{host}/media" />`
 
 2. Twilio abre WebSocket GET `/media`
@@ -171,9 +167,15 @@ Vistas Django class-based que permiten a cada empresa gestionar:
    → `VoiceOrchestrationService` NO se instancia todavía.
 
 3. Twilio envía evento `start` por el WebSocket
-   → `handle_websocket_stream()` extrae `twilio_number` de `data["start"]["to"]`
+   → `handle_websocket_stream()` lee `twilio_number` de `self._pending_twilio_number`
+     (el evento `start` de Twilio Media Streams NO incluye el campo `To` en su payload
+     — confirmado por diagnóstico DEBUG-P28 en sesión 2026-04-11).
    → Se instancia `VoiceOrchestrationService(twilio_number=twilio_number)`
-   → En `__init__()` se llama a `build_live_config(twilio_number)`:
+   → En `__init__()` se almacena `self.twilio_number` con valores de fallback iniciales.
+   → Se lanza `run_voice_session()` como asyncio.Task concurrente.
+
+4. Al inicio de `run_voice_session()`:
+   → `await sync_to_async(build_live_config)(self.twilio_number)` carga desde BD:
        a. Resuelve `PhoneNumber` activo por `twilio_number`.
        b. Carga `CallFlow` asociado.
        c. Carga `CorporateVoiceProfile` de la `Company`.
@@ -182,18 +184,18 @@ Vistas Django class-based que permiten a cada empresa gestionar:
        f. Retorna `(system_instruction, initial_greeting)`.
    → Fallback automático a `SYSTEM_INSTRUCTION_FALLBACK` / `INITIAL_GREETING_FALLBACK`
      si `build_live_config()` lanza cualquier excepción.
-   → Se lanza `run_voice_session()` como asyncio.Task concurrente.
 
-4. Twilio envía eventos `media` sucesivos
+5. Twilio envía eventos `media` sucesivos
    → Se reenvían a `service.receive_twilio_audio()`.
 
-5. Twilio envía evento `stop`
+6. Twilio envía evento `stop`
    → `service.terminate_session()` señaliza el fin de sesión.
 
-### 4.2. Archivos modificados en esta implementación
-- `ivr_config/services.py` — NUEVO. Contiene `build_live_config()`.
-- `vox_bridge/services.py` — constantes → fallback, constructor acepta `twilio_number`.
-- `voice_sidecar_bridge.py` — instanciación diferida al evento `start`, guardias defensivas.
+### 4.2. Archivos del pipeline de voz
+- `ivr_config/services.py` — Contiene `build_live_config()`.
+- `vox_bridge/services.py` — Orquestación de sesión Gemini Live con carga async de config.
+- `voice_sidecar_bridge.py` — Bridge aiohttp: captura `To` en POST, instancia servicio en `start`.
+- `voice_orchestrator.py` — Arranque de ngrok + actualización webhook regional IE1/US1.
 
 ---
 
@@ -201,22 +203,33 @@ Vistas Django class-based que permiten a cada empresa gestionar:
 
 ### Comandos disponibles
     python -m dotenv run python manage.py update_twilio_webhook
-        Actualiza el webhook de voz de Twilio para que apunte al túnel ngrok
-        activo. Lee la URL desde DOCS/SESSION/NGROK_URL.txt.
+        Thin wrapper que delega en VoiceOrchestrator.update_twilio_webhook().
+        Actualiza webhooks en el endpoint regional correcto (US1/IE1) para cada
+        PhoneNumber activo con capacidad de voz.
 
     python -m dotenv run python manage.py trigger_outbound_call
-        Dispara una llamada saliente de validación desde +12603466780 al número
-        por defecto (+34688360595). Admite --to +34XXXXXXXXX.
+        Dispara una llamada saliente de validación. Admite --to +34XXXXXXXXX.
 
-    python -m dotenv run python manage.py seed_grupo_alvarez --phone-numbers +12603466780
+    python -m dotenv run python manage.py seed_grupo_alvarez --phone-numbers +34XXXXXXXXX
         Siembra los datos piloto de Grupo Álvarez en la base de datos.
 
-### Secuencia de arranque del laboratorio
-    1. python voice_orchestrator.py
-       Esperar: "# [READY] Puente HÍBRIDO (aiohttp) activo en puerto 8081."
-       Esperar: "# [SUCCESS] TÚNEL 2026 ACTIVO: https://xxxx.ngrok-free.app"
-    2. (Segunda consola) python -m dotenv run python manage.py update_twilio_webhook
-    3. Realizar llamada entrante al +12603466780 o ejecutar trigger_outbound_call.
+### Secuencia de arranque (always-on task — automática)
+    La always-on task en PythonAnywhere ejecuta voice_orchestrator.py de forma
+    autónoma. Al arrancar:
+    1. Limpia infraestructura ngrok previa (API cloud ngrok).
+    2. Lanza ngrok v3 en puerto 8081.
+    3. Obtiene la URL pública del túnel.
+    4. Actualiza el webhook de voz de cada PhoneNumber activo en su región
+       correcta (US1 o IE1) consultando la Routes API de Twilio.
+    5. Lanza voice_sidecar_bridge.py (bridge aiohttp).
+
+### Credenciales regionales Twilio en `.env`
+    TWILIO_ACCOUNT_SID         — universal (todas las regiones)
+    TWILIO_API_KEY_SID         — API Key US1
+    TWILIO_API_KEY_SECRET      — Secret US1
+    TWILIO_API_KEY_SID_IE1     — API Key IE1 (para números españoles)
+    TWILIO_API_KEY_SECRET_IE1  — Secret IE1
+    TWILIO_AUTH_TOKEN_IE1      — Auth Token IE1
 
 ---
 
@@ -244,61 +257,66 @@ Vistas Django class-based que permiten a cada empresa gestionar:
 
 ### Sesión 2026-04-09 — Panel de Administración Personalizado Completo
 - App Django `panel` creada manualmente vía heredoc (sin `startapp`).
-- Ficheros PEA creados:
-    `panel/__init__.py`
-    `panel/apps.py`
-    `panel/middleware.py`   ← CompanyUserAdminBlockMiddleware
-    `panel/mixins.py`       ← PanelLoginRequiredMixin, CompanyUserRequiredMixin, AdminRoleRequiredMixin
-    `panel/forms.py`        ← PanelAuthenticationForm, PresenceStatusForm, ContactForm,
-                               SectionForm, CallFlowForm, CorporateVoiceProfileForm
-    `panel/views.py`        ← 11 vistas class-based completas
-    `panel/urls.py`         ← 13 rutas bajo /panel/
-    `panel/templates/panel/base.html`
-    `panel/templates/panel/login.html`
-    `panel/templates/panel/dashboard.html`
-    `panel/templates/panel/presence/status.html`
-    `panel/templates/panel/users/list.html`
-    `panel/templates/panel/users/form.html`
-    `panel/templates/panel/sections/list.html`
-    `panel/templates/panel/sections/form.html`
-    `panel/templates/panel/contacts/list.html`
-    `panel/templates/panel/contacts/form.html`
-    `panel/templates/panel/callflows/list.html`
-    `panel/templates/panel/callflows/form.html`
-    `panel/templates/panel/phonenumbers/list.html`
-    `panel/templates/panel/voiceprofile/detail.html`
-- Ficheros PMA modificados:
-    `enterprise_core/settings.py` — panel en INSTALLED_APPS + middleware registrado.
-    `enterprise_core/urls.py`     — panel/ incluido en urlpatterns.
+- Ficheros PEA creados: middleware, mixins, forms, 11 vistas class-based,
+  urls, y 14 templates con Bootstrap 5.3 CDN.
+- Ficheros PMA modificados: `enterprise_core/settings.py`, `enterprise_core/urls.py`.
 - CompanyUser vinculado al usuario `admin` con rol ADMIN en Grupo Álvarez.
 - Validación E2E completa de todos los módulos del panel en producción.
 - Skill PMP (Protocolo de Modificación Puntual) documentada y registrada.
 
-### Sesión 2026-04-10 — Saneamiento de BD + Always-On Task + Validación E2E con Número Español Real
-- Auditoría completa de BD mediante script no interactivo (`audit_bd_enterprisebot.py`).
-- Dependencia `celery==5.6.3` añadida a `requirements.in` y compilada con `pip-tools`
-  (resuelve `ModuleNotFoundError` que impedía el arranque de scripts Django standalone).
-- Reestructuración canónica de usuarios de la plataforma y Grupo Álvarez:
-    - `admin` (id=2) eliminado de BD — era un CompanyUser anómalo (is_staff=True).
-    - `alvarez_admin` actualizado: email `administracion@gruasalvarez.com`, contraseña usable.
-    - `alvarez_staff_01` creado: email `nummenor@gmail.com`, rol OPERATOR, para pruebas.
-    - `Contact` Miguel Ángel Muñoz Cara reasignado a `CompanyUser` `alvarez_staff_01` (id=3).
-- Arquitectura canónica de usuarios definida y documentada:
-    `{empresa}_admin`        → CompanyUser ADMIN, acceso completo al /panel/.
-    `{empresa}_staff_{id}`   → CompanyUser OPERATOR, acceso solo a presencia propia.
-- `voice_orchestrator.py` refactorizado (PMA): nuevo método `update_twilio_webhook()`
-  que actualiza automáticamente los webhooks de todos los PhoneNumbers activos con
-  capacidad de voz consultando la BD, eliminando la intervención manual en el arranque.
-- `update_twilio_webhook.py` (management command) refactorizado (PMA) a thin wrapper
-  que delega en `VoiceOrchestrator.update_twilio_webhook()` — única fuente de verdad.
-- Always-on task activada en PythonAnywhere: la infraestructura arranca de forma
-  completamente autónoma sin intervención manual.
-- **Validación E2E exitosa**: llamada entrante real al `+34951796832` completada con
-  conversación fluida — Alia saluda, conversa y se despide correctamente.
-- Identificado problema de routing regional IE1 de Twilio: la API estándar actualiza
-  el webhook en US1 pero los números españoles tienen routing activo en IE1, que
-  requiere el endpoint regional `api.dublin.ie1.twilio.com` para la actualización
-  automática completa.
+### Sesión 2026-04-10 — Saneamiento de BD + Always-On Task + Validación E2E
+- Auditoría completa de BD mediante script no interactivo.
+- Dependencia `celery==5.6.3` añadida a `requirements.in`.
+- Reestructuración canónica de usuarios de la plataforma y Grupo Álvarez.
+- `voice_orchestrator.py` refactorizado: `update_twilio_webhook()` automático
+  consultando BD y actualizando todos los PhoneNumbers activos con capacidad de voz.
+- Always-on task activada en PythonAnywhere.
+- Validación E2E exitosa: llamada entrante real al `+34951796832` con conversación fluida.
+- Identificado problema de routing regional IE1: webhook actualizado en US1 pero
+  números españoles procesan en IE1.
+
+### Sesión 2026-04-11 — Routing Regional IE1 + Carga Dinámica + Calibración VAD
+
+#### Infraestructura regional Twilio (Paso 26)
+- Diagnóstico completo de la arquitectura regional Twilio: confirmado que
+  `+34951796832` y `+34951799117` tienen `voice_region: IE1` vía Routes API.
+- Credenciales IE1 obtenidas en consola Twilio y añadidas al `.env`.
+- Script de diagnóstico `ie1_diagnostic.py` ejecutado: autenticación IE1 validada,
+  SIDs de ambos números localizados en endpoint `api.dublin.ie1.twilio.com`.
+- `voice_orchestrator.py` refactorizado (PMA): `update_twilio_webhook()` ahora
+  consulta la Routes API por cada número, detecta su `voice_region` y actualiza
+  el webhook en el endpoint regional correcto usando credenciales regionales.
+  Dominio correcto para IE1: `api.dublin.ie1.twilio.com` (el patrón
+  `api.ie1.twilio.com` está deprecado y dejará de funcionar el 2026-04-28).
+
+#### Carga dinámica de configuración IVR (Paso 27)
+- `vox_bridge/services.py` refactorizado (PMA): `build_live_config()` extraída
+  de `__init__()` (que es síncrono y se invoca desde contexto async aiohttp,
+  causando `SynchronousOnlyOperation`) y movida al inicio de `run_voice_session()`
+  usando `await sync_to_async(build_live_config)(self.twilio_number)`.
+
+#### Resolución del campo `To` ausente en evento `start` (Paso 28)
+- Diagnóstico definitivo: el evento `start` de Twilio Media Streams NO incluye
+  el número destino (`To`) en su payload WebSocket — confirmado por log DEBUG-P28
+  en ambas llamadas de prueba.
+- Solución implementada (PMA sobre `voice_sidecar_bridge.py`): el campo `To`
+  se captura del body del POST HTTP inicial en `handle_twiml_post()` y se
+  almacena en `self._pending_twilio_number`. Al recibir el evento `start`,
+  `handle_websocket_stream()` consume ese valor para instanciar el servicio
+  con el número correcto.
+
+#### Eliminación número Indiana (Paso 29)
+- `PhoneNumber` `+12603466780` eliminado de BD mediante script no interactivo.
+  El número no pertenecía a la cuenta Twilio activa.
+
+#### Calibración VAD (Frente B)
+- `vox_bridge/services.py` (PMP): ajuste de constantes de detección de actividad
+  basado en análisis de logs RMS de las llamadas de prueba:
+    `SILENCE_THRESHOLD_RMS`: 200 → 300
+    `SILENCE_FRAMES_TO_END_ACTIVITY`: 30 → 50 (600ms → 1000ms)
+    `SPEECH_FRAMES_TO_START_ACTIVITY`: 10 → 15 (200ms → 300ms)
+- Validación E2E: llamada real al `+34951796832` procesada en IE1 con coste
+  confirmado de 0.01 USD. Conversación fluida validada.
 
 ---
 
@@ -312,98 +330,84 @@ Vistas Django class-based que permiten a cada empresa gestionar:
    para el mecanismo de "¿sigues reunido?".
 4. Registro de usuarios empresa: Flujo de alta de nuevos `CompanyUser` con
    invitación por email.
-5. Número de Indiana `+12603466780`: Presente en BD como PhoneNumber activo pero
-   no pertenece a la cuenta Twilio activa. Eliminar de BD en próxima sesión de
-   limpieza o reasignar cuando sea necesario.
-6. Calibración VAD para líneas ES: Pendiente de pruebas con los números españoles
-   ya activos `+34951799117` y `+34951796832`.
-7. Sección Grúas: No existe aún en BD. Añadir cuando se disponga de contacto real.
+5. Calibración VAD adicional: Los valores actuales (RMS 300, silence 50 frames,
+   speech 15 frames) son una primera iteración. Pendiente ajuste fino tras más
+   pruebas con distintos dispositivos y condiciones de llamada.
+6. Sección Grúas: No existe aún en BD. Añadir cuando se disponga de contacto real.
+7. Validación de carga dinámica completa desde BD: Pendiente llamada real con
+   `twilio_number` correctamente resuelto para confirmar que `build_live_config()`
+   retorna la configuración de la empresa desde BD y no el fallback.
 
 ---
 
 ## SECCIÓN 8 — HOJA DE RUTA SIGUIENTE SESIÓN
 
 ### Contexto de arranque
-El sistema IVR está operativo con números españoles reales y always-on task activa.
-La validación E2E con conversación fluida ha sido completada en sesión 2026-04-10.
-La siguiente sesión se centra en completar la automatización del webhook regional
-IE1 de Twilio, resolver el fallback activo por campo `to` ausente y validar la
-carga dinámica completa desde BD.
+El sistema IVR está operativo con números españoles reales, always-on task activa,
+webhook regional IE1 automatizado y carga dinámica de configuración implementada.
+La siguiente sesión valida la carga dinámica completa desde BD y configura el
+perfil de voz corporativa real de Grupo Álvarez.
 
-### Paso 26 — Automatización del webhook regional IE1 de Twilio
+### Paso 30 — Validación de carga dinámica completa desde BD
 
-**Problema identificado:** La API estándar de Twilio (`api.twilio.com`) actualiza
-el webhook en la región US1. Los números españoles tienen routing activo en IE1,
-cuya configuración se gestiona a través del endpoint regional:
-    `https://api.dublin.ie1.twilio.com/2010-04-01/Accounts/{SID}/IncomingPhoneNumbers/{SID}.json`
+**Objetivo:** Confirmar que `build_live_config()` resuelve correctamente la
+configuración desde BD para los números españoles y que Alia responde con el
+`system_instruction` e `initial_greeting` definidos en el `CallFlow` de BD,
+no con el fallback hardcodeado.
 
-**Solución a implementar en `VoiceOrchestrator.update_twilio_webhook()`:**
-1. Para cada `PhoneNumber` activo con capacidad de voz, determinar su región
-   activa consultando la Inbound Processing Region API de Twilio:
-       `GET https://routes.twilio.com/v2/PhoneNumbers/{number_e164}`
-   El campo `voice_region` de la respuesta indica la región activa (`IE1`, `US1`, etc.).
-2. Construir el endpoint correcto según la región:
-   - `US1` (defecto): `https://api.twilio.com/...`
-   - `IE1`: `https://api.dublin.ie1.twilio.com/...`
-   - `AU1`: `https://api.sydney.au1.twilio.com/...`
-3. Instanciar el `TwilioClient` con el parámetro `region` correspondiente:
-       `TwilioClient(api_key_sid, api_key_secret, account_sid, region='ie1')`
-4. Ejecutar la actualización del webhook sobre ese cliente regional.
+**Procedimiento:**
+1. Arrancar el sistema (always-on task lo hace automáticamente).
+2. Revisar `bridge.log` tras una llamada real y buscar:
+   `[CONFIG] Configuración IVR dinámica cargada correctamente para el número '+34951796832'`
+   Sin ningún `[ERROR]` ni `FALLBACK` en los logs de CONFIG.
+3. Si aparece el error `DoesNotExist: PhoneNumber matching query does not exist`,
+   verificar que el número `+34951796832` está registrado en BD como `PhoneNumber`
+   activo con `capabilities=BOTH` y con un `CallFlow` activo asignado.
 
-**Criterio de éxito:** Al arrancar la always-on task, todos los números se
-actualizan automáticamente en su región correcta sin intervención manual.
+**Archivos a revisar si hay fallo:**
+- `ivr_config/models.py` — verificar estructura de `PhoneNumber`.
+- `ivr_config/services.py` — verificar lógica de `build_live_config()`.
 
-### Paso 27 — Resolver SynchronousOnlyOperation en build_live_config()
+**Criterio de éxito:** Log muestra `[CONFIG] Configuración IVR dinámica cargada`
+sin errores y la conversación responde con el texto del `CallFlow` de BD.
 
-**Problema identificado:** `build_live_config()` ejecuta queries ORM síncronas
-desde el contexto async de `VoiceOrchestrationService.__init__()`. Esto provoca:
-    `SynchronousOnlyOperation: You cannot call this from an async context`
-El sistema cae al fallback hardcodeado en cada llamada, impidiendo la carga
-dinámica de configuración desde BD.
+### Paso 31 — Configuración del perfil de voz corporativa de Grupo Álvarez
 
-**Solución a implementar en `vox_bridge/services.py`:**
-Envolver la llamada a `build_live_config()` con `sync_to_async`:
-```python
-    from asgiref.sync import sync_to_async
-    # En __init__() no se puede usar await — mover la carga al arranque de la sesión.
-    # La instanciación del servicio debe separarse de la carga de configuración.
-```
-La estrategia correcta es mover `build_live_config()` fuera de `__init__()` y
-llamarla desde `run_voice_session()` usando `await sync_to_async(build_live_config)(twilio_number)`.
-Esto requiere que `self.system_instruction` y `self.initial_greeting_text` se
-asignen de forma asíncrona al inicio de `run_voice_session()`, antes del saludo.
+**Objetivo:** Rellenar desde el panel `/panel/` los campos del `CorporateVoiceProfile`
+y el `CallFlow` de Grupo Álvarez con el contenido real de producción, sustituyendo
+el fallback hardcodeado por una configuración real multiempresa.
 
-**Archivos afectados:**
-- `vox_bridge/services.py` — PMA: mover carga de config a `run_voice_session()`.
+**Procedimiento:**
+1. Acceder a `https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/`
+   con el usuario `alvarez_admin`.
+2. Editar el `CallFlow` "Grupo Álvarez — Recepción principal — Alia":
+   - `system_instruction`: instrucción completa de Alia con organigrama real.
+   - `initial_greeting`: saludo inicial de producción.
+3. Editar el `CorporateVoiceProfile`:
+   - `tone_guidelines`: directrices de tono corporativo de Grupo Álvarez.
+   - `sample_responses`: ejemplos de respuestas tipo.
+   - `forbidden_phrases`: frases que Alia no debe usar.
+4. Realizar llamada de prueba y verificar que la configuración de BD es la que
+   responde, no el fallback.
 
-**Criterio de éxito:** Los logs muestran `[CONFIG] Configuración dinámica cargada`
-sin `[ERROR]` ni `FALLBACK`, y `build_live_config()` devuelve el `system_instruction`
-y `initial_greeting` correctos desde BD para el número llamado.
+**Criterio de éxito:** Alia saluda y responde exactamente con el texto configurado
+desde el panel, sin usar el fallback hardcodeado.
 
-### Paso 28 — Resolver campo `to` ausente en evento `start` de Twilio
+### Paso 32 — Creación de skill PIEE
 
-**Problema identificado:** El evento `start` de Twilio llega sin el campo `to`
-en el payload WebSocket, por lo que `twilio_number` es una cadena vacía.
+**Objetivo:** Formalizar el protocolo `PIEE` (Protocolo de Información de Entorno
+de Ejecución) como skill del sistema, basándose en la versión histórica recuperada
+del `TOTAL_COMMANDER.md` (commit `5095c26`) y adaptándola a la arquitectura actual.
 
-**Investigación necesaria:** Revisar el payload completo del evento `start` en
-los logs para identificar el campo correcto donde Twilio envía el número destino.
-Puede ser `data["start"]["to"]`, `data["start"]["To"]` o un campo anidado diferente.
-
-**Solución provisional:** Añadir logging exhaustivo del payload completo del
-evento `start` para identificar la estructura real:
-    `self.flush_print(f"# [DEBUG] Payload evento start completo: {data}")`
-
-**Archivos afectados:**
-- `voice_sidecar_bridge.py` — PMP o PMA según el campo identificado.
-
-### Paso 29 — Eliminar número de Indiana de BD
-
-El `PhoneNumber` `+12603466780` está registrado en BD con `capabilities=VOICE`
-pero no pertenece a la cuenta Twilio activa. Eliminarlo con script no interactivo:
-```python
-    PhoneNumber.objects.filter(number="+12603466780").delete()
-```
-Verificar en la auditoría de BD que el registro ha sido eliminado.
+**Contexto:** El protocolo existía en la plataforma y se usaba constantemente.
+La versión actual simplifica la distinción de rutas — solo cambia la barra inicial
+(`/sdcard/Download/` en Android, `sdcard/Download/` en PC). El `exit` en cajas
+sftp es siempre obligatorio en Android. Los entornos son:
+    `A`    → Android (entorno actual de trabajo).
+    `PC`   → PC configurado.
+    `PCv`  → PC configurado con VS Code (Archivos E activos).
+    `PCiv` → PC nuevo con VS Code (requiere configuración SSH inicial).
+    `PCi`  → PC nuevo sin VS Code.
 
 ---
 
@@ -440,3 +444,24 @@ corporativa. Se documentan y resuelven lecciones aprendidas sobre el accessor OR
 company_user, el bucle de redirección de LoginView y la invalidación de bytecode WSGI.
 Se documenta y registra la skill PMP (Protocolo de Modificación Puntual) para
 sustituciones atómicas con grep + sed como alternativa ligera al PMA completo.
+
+### Sesión 2026-04-10
+**Título:** Saneamiento de BD + Always-On Task + Validación E2E con Número Español Real
+**Descripción:** Sesión de saneamiento canónico de la base de datos, activación de la
+always-on task en PythonAnywhere y primera validación E2E exitosa con número español
+real. Se audita la BD completa, se reestructura la arquitectura canónica de usuarios
+de la plataforma, se refactoriza update_twilio_webhook() para operar de forma autónoma
+consultando la BD, y se activa la always-on task. Se identifica el problema de routing
+regional IE1 de Twilio como bloqueo para la automatización completa del webhook.
+
+### Sesión 2026-04-11
+**Título:** IE1 Regional Webhook + SynchronousOnlyOperation Fix + Payload start Debug
+**Descripción:** Sesión centrada en tres frentes técnicos críticos que bloqueaban la
+carga dinámica completa desde BD. Se implementa la detección automática de región vía
+Routes API de Twilio y actualización de webhook en endpoint regional correcto IE1/US1
+en voice_orchestrator.py. Se resuelve SynchronousOnlyOperation moviendo build_live_config()
+a run_voice_session() con sync_to_async. Se diagnostica definitivamente que el evento
+start de Twilio Media Streams no incluye el campo To — solución: captura desde el POST
+HTTP inicial en handle_twiml_post(). Se elimina de BD el número de Indiana +12603466780.
+Se calibra el VAD con valores optimizados para telefonía española. Validación E2E exitosa
+con llamada real al +34951796832 procesada en IE1 con coste confirmado de 0.01 USD.

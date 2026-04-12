@@ -247,17 +247,43 @@ class VoiceOrchestrator:
         """
         Updates the Twilio voice webhook for all active PhoneNumber records
         in the database to point to the currently active ngrok tunnel URL.
-        Reads Twilio credentials from the environment loaded by load_dotenv()
-        in __init__(). Iterates over all active PhoneNumber records with
-        VOICE or BOTH capabilities and updates each one independently.
+
+        Regional routing logic (2026-04-11):
+            Each PhoneNumber is interrogated against the Twilio Routes API
+            (routes.twilio.com/v2/PhoneNumbers/{number}) to determine its
+            active voice_region (IE1, US1, AU1, etc.). The webhook update
+            request is then routed to the correct regional API endpoint using
+            the matching regional credentials from the environment:
+                US1 → api.twilio.com           + TWILIO_API_KEY_SID/SECRET
+                IE1 → api.dublin.ie1.twilio.com + TWILIO_API_KEY_SID_IE1/SECRET_IE1
+
+            This resolves the IE1 routing problem identified on 2026-04-10,
+            where the standard api.twilio.com endpoint silently updated the
+            US1 webhook configuration while leaving the IE1 configuration
+            (the one actually serving inbound calls for Spanish numbers)
+            unchanged and pointing to a stale URL.
+
         Returns True if all updates succeeded, False if any failed.
         ---
         Actualiza el webhook de voz de Twilio para todos los registros
         PhoneNumber activos en la base de datos para que apunten a la URL
-        activa del túnel ngrok. Lee las credenciales de Twilio del entorno
-        cargado por load_dotenv() en __init__(). Itera sobre todos los
-        registros PhoneNumber activos con capabilities VOICE o BOTH y
-        actualiza cada uno de forma independiente.
+        activa del túnel ngrok.
+
+        Lógica de routing regional (2026-04-11):
+            Cada PhoneNumber se interroga contra la Routes API de Twilio
+            (routes.twilio.com/v2/PhoneNumbers/{number}) para determinar su
+            voice_region activo (IE1, US1, AU1, etc.). La solicitud de
+            actualización del webhook se enruta al endpoint regional correcto
+            usando las credenciales regionales correspondientes del entorno:
+                US1 → api.twilio.com            + TWILIO_API_KEY_SID/SECRET
+                IE1 → api.dublin.ie1.twilio.com + TWILIO_API_KEY_SID_IE1/SECRET_IE1
+
+            Esto resuelve el problema de routing IE1 identificado el 2026-04-10,
+            donde el endpoint estándar api.twilio.com actualizaba silenciosamente
+            la configuración del webhook en US1 mientras dejaba la configuración
+            IE1 (la que realmente sirve las llamadas entrantes de los números
+            españoles) sin cambios y apuntando a una URL obsoleta.
+
         Devuelve True si todas las actualizaciones tuvieron éxito,
         False si alguna falló.
         """
@@ -276,54 +302,61 @@ class VoiceOrchestrator:
             pass
 
         from ivr_config.models import PhoneNumber
-        from twilio.rest import Client as TwilioClient
 
         # ------------------------------------------------------------------
-        # Validate required Twilio credentials from environment.
-        # Validar credenciales Twilio requeridas desde el entorno.
+        # Validate required US1 credentials (mandatory baseline).
+        # Validar credenciales US1 requeridas (línea base obligatoria).
         # ------------------------------------------------------------------
-        required_vars = [
+        required_us1_vars = [
             "TWILIO_ACCOUNT_SID",
             "TWILIO_API_KEY_SID",
             "TWILIO_API_KEY_SECRET",
         ]
-        missing = [v for v in required_vars if not os.getenv(v)]
-        if missing:
+        missing_us1 = [v for v in required_us1_vars if not os.getenv(v)]
+        if missing_us1:
             self.flush_print(
-                f"# [WEBHOOK] ERROR: Variables de entorno Twilio no encontradas: "
-                f"{', '.join(missing)}. Abortando actualización de webhook."
+                f"# [WEBHOOK] ERROR: Variables de entorno US1 no encontradas: "
+                f"{', '.join(missing_us1)}. Abortando actualización de webhook."
             )
             return False
 
         twilio_account_sid    = os.environ["TWILIO_ACCOUNT_SID"]
-        twilio_api_key_sid    = os.environ["TWILIO_API_KEY_SID"]
-        twilio_api_key_secret = os.environ["TWILIO_API_KEY_SECRET"]
+        us1_api_key_sid       = os.environ["TWILIO_API_KEY_SID"]
+        us1_api_key_secret    = os.environ["TWILIO_API_KEY_SECRET"]
+
+        # IE1 credentials — optional but required for Spanish numbers.
+        # If absent, IE1 numbers are logged as skipped.
+        # Credenciales IE1 — opcionales pero necesarias para números españoles.
+        # Si están ausentes, los números IE1 se registran como omitidos.
+        ie1_api_key_sid    = os.getenv("TWILIO_API_KEY_SID_IE1", "")
+        ie1_api_key_secret = os.getenv("TWILIO_API_KEY_SECRET_IE1", "")
+
+        if not ie1_api_key_sid or not ie1_api_key_secret:
+            self.flush_print(
+                "# [WEBHOOK] AVISO: Credenciales IE1 no configuradas "
+                "(TWILIO_API_KEY_SID_IE1 / TWILIO_API_KEY_SECRET_IE1). "
+                "Los números con voice_region IE1 serán omitidos."
+            )
 
         voice_webhook_url = f"{ngrok_url.rstrip('/')}/api/vox/inbound/"
 
-        self.flush_print(
-            f"# [WEBHOOK] Iniciando actualización de webhooks Twilio..."
-        )
-        self.flush_print(
-            f"# [WEBHOOK] URL destino: {voice_webhook_url}"
-        )
+        self.flush_print("# [WEBHOOK] Iniciando actualización de webhooks Twilio...")
+        self.flush_print(f"# [WEBHOOK] URL destino: {voice_webhook_url}")
 
         # ------------------------------------------------------------------
-        # Instantiate Twilio client with API Key credentials.
-        # Instanciar cliente Twilio con credenciales API Key.
+        # Regional endpoint map — valid as of 2026-04-11.
+        # api.ie1.twilio.com is deprecated (stops working 2026-04-28).
+        # Must use api.dublin.ie1.twilio.com for IE1.
+        # Mapa de endpoints regionales — válido a 2026-04-11.
+        # api.ie1.twilio.com está deprecado (deja de funcionar 2026-04-28).
+        # Debe usarse api.dublin.ie1.twilio.com para IE1.
         # ------------------------------------------------------------------
-        try:
-            twilio_client = TwilioClient(
-                twilio_api_key_sid,
-                twilio_api_key_secret,
-                twilio_account_sid,
-            )
-        except Exception as exc:
-            self.flush_print(
-                f"# [WEBHOOK] ERROR al instanciar cliente Twilio: "
-                f"{type(exc).__name__}: {exc}"
-            )
-            return False
+        REGIONAL_API_ENDPOINTS = {
+            "US1": "https://api.twilio.com",
+            "IE1": "https://api.dublin.ie1.twilio.com",
+            "AU1": "https://api.sydney.au1.twilio.com",
+        }
+        ROUTES_API_BASE = "https://routes.twilio.com/v2/PhoneNumbers"
 
         # ------------------------------------------------------------------
         # Query all active PhoneNumber records with voice capability.
@@ -345,47 +378,186 @@ class VoiceOrchestrator:
 
         for phone_record in voice_numbers:
             number_e164 = phone_record.number
-            self.flush_print(
-                f"# [WEBHOOK] Actualizando número: {number_e164}..."
+            self.flush_print(f"# [WEBHOOK] ── Procesando: {number_e164} ──")
+
+            # --------------------------------------------------------------
+            # STEP 1: Detect active voice_region via Twilio Routes API.
+            # The Routes API is a global resource — authenticates with US1
+            # API Key credentials regardless of the number's region.
+            # PASO 1: Detectar voice_region activo vía Routes API de Twilio.
+            # La Routes API es un recurso global — se autentica con credenciales
+            # API Key US1 independientemente de la región del número.
+            # --------------------------------------------------------------
+            routes_url = (
+                f"{ROUTES_API_BASE}/"
+                f"{requests.utils.quote(number_e164, safe='')}"
             )
+            voice_region = "US1"  # safe default / valor por defecto seguro
+
             try:
-                # Locate the IncomingPhoneNumber SID on the Twilio account.
-                # Localizar el SID de IncomingPhoneNumber en la cuenta Twilio.
-                matching = twilio_client.incoming_phone_numbers.list(
-                    phone_number=number_e164
+                routes_resp = requests.get(
+                    routes_url,
+                    auth=(us1_api_key_sid, us1_api_key_secret),
+                    timeout=15,
                 )
-                if not matching:
+                if routes_resp.status_code == 200:
+                    voice_region = (
+                        routes_resp.json().get("voice_region", "us1").upper()
+                    )
                     self.flush_print(
-                        f"# [WEBHOOK] AVISO: {number_e164} no encontrado en la "
-                        "cuenta Twilio. Omitiendo."
+                        f"# [WEBHOOK] Routes API → voice_region: '{voice_region}'"
+                    )
+                elif routes_resp.status_code == 404:
+                    # No explicit routing config — defaults to US1 per Twilio docs.
+                    # Sin config de routing explícita — US1 por defecto según docs Twilio.
+                    self.flush_print(
+                        f"# [WEBHOOK] Routes API → 404 (sin routing explícito). "
+                        "Usando US1 por defecto."
+                    )
+                else:
+                    self.flush_print(
+                        f"# [WEBHOOK] AVISO: Routes API respondió HTTP "
+                        f"{routes_resp.status_code} para {number_e164}. "
+                        "Usando US1 como fallback seguro."
+                    )
+            except Exception as routes_exc:
+                self.flush_print(
+                    f"# [WEBHOOK] AVISO: Error consultando Routes API para "
+                    f"{number_e164}: {routes_exc}. Usando US1 como fallback."
+                )
+
+            # --------------------------------------------------------------
+            # STEP 2: Select regional credentials and API endpoint.
+            # PASO 2: Seleccionar credenciales y endpoint regional.
+            # --------------------------------------------------------------
+            api_base = REGIONAL_API_ENDPOINTS.get(
+                voice_region, REGIONAL_API_ENDPOINTS["US1"]
+            )
+
+            if voice_region == "IE1":
+                if not ie1_api_key_sid or not ie1_api_key_secret:
+                    self.flush_print(
+                        f"# [WEBHOOK] OMITIDO: {number_e164} requiere credenciales "
+                        "IE1 que no están configuradas en el .env."
+                    )
+                    all_succeeded = False
+                    continue
+                regional_auth = (ie1_api_key_sid, ie1_api_key_secret)
+            elif voice_region == "US1":
+                regional_auth = (us1_api_key_sid, us1_api_key_secret)
+            else:
+                self.flush_print(
+                    f"# [WEBHOOK] OMITIDO: {number_e164} tiene voice_region "
+                    f"'{voice_region}' sin credenciales configuradas."
+                )
+                all_succeeded = False
+                continue
+
+            # --------------------------------------------------------------
+            # STEP 3: Locate the IncomingPhoneNumber SID on the regional
+            # endpoint using the correct regional credentials.
+            # PASO 3: Localizar el SID de IncomingPhoneNumber en el endpoint
+            # regional usando las credenciales regionales correctas.
+            # --------------------------------------------------------------
+            try:
+                list_url = (
+                    f"{api_base}/2010-04-01/Accounts/{twilio_account_sid}"
+                    f"/IncomingPhoneNumbers.json"
+                    f"?PhoneNumber={requests.utils.quote(number_e164, safe='')}"
+                )
+                list_resp = requests.get(
+                    list_url, auth=regional_auth, timeout=15
+                )
+
+                if list_resp.status_code != 200:
+                    self.flush_print(
+                        f"# [WEBHOOK] ERROR: HTTP {list_resp.status_code} al "
+                        f"buscar SID de {number_e164} en {voice_region}. "
+                        f"Respuesta: {list_resp.text[:300]}"
                     )
                     all_succeeded = False
                     continue
 
-                phone_sid = matching[0].sid
-                updated = twilio_client.incoming_phone_numbers(phone_sid).update(
-                    voice_url=voice_webhook_url,
-                    voice_method="POST",
+                incoming_numbers = list_resp.json().get(
+                    "incoming_phone_numbers", []
+                )
+                if not incoming_numbers:
+                    self.flush_print(
+                        f"# [WEBHOOK] AVISO: {number_e164} no encontrado en "
+                        f"la cuenta Twilio bajo la región {voice_region}. "
+                        "Omitiendo."
+                    )
+                    all_succeeded = False
+                    continue
+
+                phone_sid = incoming_numbers[0]["sid"]
+                self.flush_print(
+                    f"# [WEBHOOK] SID localizado: {phone_sid} "
+                    f"(región {voice_region})"
                 )
 
-                if updated.voice_url == voice_webhook_url:
+            except Exception as sid_exc:
+                self.flush_print(
+                    f"# [WEBHOOK] ERROR al localizar SID de {number_e164}: "
+                    f"{type(sid_exc).__name__}: {sid_exc}"
+                )
+                all_succeeded = False
+                continue
+
+            # --------------------------------------------------------------
+            # STEP 4: Update the voice webhook on the correct regional
+            # endpoint using requests.post() with HTTP Basic Auth.
+            # Using requests directly (not TwilioClient SDK) avoids the need
+            # for region-specific SDK client instantiation and is fully
+            # supported per Twilio REST API documentation (2026-04-11).
+            # PASO 4: Actualizar el webhook de voz en el endpoint regional
+            # correcto usando requests.post() con autenticación HTTP Basic.
+            # Usar requests directamente (no el SDK TwilioClient) evita la
+            # necesidad de instanciar el cliente SDK con parámetros regionales
+            # y está completamente soportado según la documentación de la
+            # API REST de Twilio (2026-04-11).
+            # --------------------------------------------------------------
+            try:
+                update_url = (
+                    f"{api_base}/2010-04-01/Accounts/{twilio_account_sid}"
+                    f"/IncomingPhoneNumbers/{phone_sid}.json"
+                )
+                update_resp = requests.post(
+                    update_url,
+                    auth=regional_auth,
+                    data={"VoiceUrl": voice_webhook_url, "VoiceMethod": "POST"},
+                    timeout=15,
+                )
+
+                if update_resp.status_code not in (200, 201):
+                    self.flush_print(
+                        f"# [WEBHOOK] ERROR: HTTP {update_resp.status_code} al "
+                        f"actualizar {number_e164} en {voice_region}. "
+                        f"Respuesta: {update_resp.text[:400]}"
+                    )
+                    all_succeeded = False
+                    continue
+
+                returned_url = update_resp.json().get("voice_url", "")
+                if returned_url == voice_webhook_url:
                     self.flush_print(
                         f"# [WEBHOOK] ✓ {number_e164} actualizado correctamente "
-                        f"| SID: {phone_sid} | URL: {updated.voice_url}"
+                        f"| Región: {voice_region} | SID: {phone_sid} "
+                        f"| URL: {returned_url}"
                     )
                 else:
                     self.flush_print(
-                        f"# [WEBHOOK] AVISO: URL devuelta por Twilio no coincide "
-                        f"para {number_e164}. "
+                        f"# [WEBHOOK] AVISO: URL devuelta no coincide para "
+                        f"{number_e164} en {voice_region}. "
                         f"Solicitada: {voice_webhook_url} | "
-                        f"Devuelta: {updated.voice_url}"
+                        f"Devuelta: {returned_url}"
                     )
                     all_succeeded = False
 
-            except Exception as exc:
+            except Exception as upd_exc:
                 self.flush_print(
                     f"# [WEBHOOK] ERROR al actualizar {number_e164}: "
-                    f"{type(exc).__name__}: {exc}"
+                    f"{type(upd_exc).__name__}: {upd_exc}"
                 )
                 all_succeeded = False
 
