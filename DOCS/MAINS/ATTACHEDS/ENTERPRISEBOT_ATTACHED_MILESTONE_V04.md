@@ -73,30 +73,37 @@ GOOGLE_CLOUD_LOCATION.
 
 ### 2.3. Gestión de números de Grupo Álvarez en Twilio
 
-**Decisión sesión 2026-04-10:** El número US +12603466780 fue eliminado del
-Dashboard de Twilio. Los números operativos de Grupo Álvarez son números
-geográficos de Málaga, ambos con capabilities=BOTH (voz + WhatsApp):
+**Estado sesión 2026-04-13:**
 
 - **+34951799117** — Designado como WhatsApp sender principal.
-  TwiML Bin de reenvío configurado para verificación Meta:
-  https://handler.twilio.com/twiml/EH74e61da4b7fa2592034e77c8626af1b0
-  Reenvía llamadas entrantes a +34711509585 durante la verificación.
-  Estado: verificación Meta bloqueada temporalmente por exceso de intentos.
-  Acción pendiente: relanzar verificación tras 30-60 min de espera.
+  Estado: verificación Meta bloqueada por exceso de intentos (~72h desde 2026-04-12 17:21).
+  Bloqueo estimado hasta: 2026-04-15 17:21 CEST.
+  Procedimiento correcto para el siguiente intento:
+    1. Console → Messaging → Senders → WhatsApp Senders → Create new sender.
+    2. Seleccionar +34951799117.
+    3. Continue with Facebook → ventana Meta.
+    4. Seleccionar verificación por VOICE CALL (no Text message — número sin SMS capability).
+    5. Meta enviará el OTP al email de la cuenta Twilio: nummenor@gmail.com.
+    6. Introducir el OTP en la ventana Meta antes de que expire.
+    No hacer más de 1-2 intentos seguidos. No usar VPN durante el proceso.
+  Voice Configuration IE1: apunta a ngrok (gestionado por orchestrator).
+  NOTA CRÍTICA: Los webhooks de voz de ambos números ES son gestionados
+  exclusivamente por voice_orchestrator.py al arrancar. NUNCA modificarlos
+  manualmente salvo causa justificada y documentada.
 
 - **+34951796832** — Designado para pruebas IVR de voz.
-  Configurar webhook Twilio apuntando al bridge aiohttp para validación
-  del IVR conversacional con Alia (Hito 3 reactivado).
+  Voice Configuration IE1: apunta a ngrok (gestionado por orchestrator).
 
 Ambos números sembrados en BD: capabilities=BOTH.
-Variable de entorno requerida: TWILIO_WHATSAPP_SENDER=+34951799117
+Variable de entorno: TWILIO_WHATSAPP_SENDER=+34951799117 (en .env).
+Número Sandbox: +14155238886 (sembrado en BD para Grupo Álvarez, capabilities=BOTH).
+Código de unión Sandbox: join kept-title — la sesión expira 3 días tras unirse.
 
 **Fase de desarrollo WhatsApp:** Sandbox de Twilio (~+14155238886).
-Los testers deben unirse al sandbox enviando el código de unión.
-Webhook sandbox: https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
+Webhook sandbox configurado:
+https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
 
-**Nota crítica:** A partir del 17 de julio de 2024, Twilio eliminó los Legacy
-WhatsApp Templates. Las plantillas se gestionan exclusivamente a través del
+**Nota crítica:** Las plantillas se gestionan exclusivamente a través del
 Content Template Builder del Console de Twilio o la Content API. Los templates
 tienen SID con prefijo HX y se envían vía el parámetro ContentSid en la API
 de mensajería.
@@ -127,11 +134,39 @@ WhatsApp con vox_bridge (IVR) ni con panel (administración).
 La app whatsapp es sincrónica (Django WSGI estándar). No requiere aiohttp
 ni WebSocket. Los webhooks de Twilio son llamadas HTTP POST síncronas estándar.
 
+### 2.6. Extensiones de modelo de datos aprobadas en sesión 2026-04-13
+
+Se aprueba la extensión del modelo de datos para soportar:
+
+**A) Captura de ubicación geográfica del cliente:**
+El modelo WhatsAppSession debe admitir opcionalmente la ubicación geográfica
+del cliente (latitud, longitud, dirección formateada). La captura es opcional
+— nunca obligatoria. La ubicación puede llegar por WhatsApp (mensaje de
+localización nativo de WhatsApp, campos Latitude/Longitude en webhook Twilio)
+o por IVR (captura de datos DataCaptureSet). El modelo debe permitir guardar
+estos datos sin forzar su captura.
+
+**B) Sección de destino del cliente:**
+En todo momento debe conocerse a qué sección desea ser dirigido el cliente,
+tanto en el canal WhatsApp como en el IVR. El agente debe capturar esta
+intención y registrarla en la sesión para permitir el enrutamiento correcto.
+
+**C) Toma de datos por ambos canales:**
+Los modelos de captura de datos (DataCaptureSet del Hito 3) deben integrarse
+con el canal WhatsApp, permitiendo que el chatbot capture los mismos datos
+estructurados que el IVR. El canal de captura (voz o WhatsApp) queda registrado.
+
+**D) Grounding con Google Maps:**
+Para consultas que requieran información geográfica o de ubicación, el chatbot
+puede usar Grounding with Google Maps vía Vertex AI para proporcionar
+información precisa de rutas, distancias o puntos de referencia. Se activa
+cuando el cliente comparte su ubicación o solicita información geolocalizada.
+
 ---
 
 ## SECCIÓN 3 — MODELO DE DATOS WHATSAPP
 
-### 3.1. Nuevos modelos en whatsapp/models.py
+### 3.1. Modelos actuales en whatsapp/models.py (implementados)
 
 #### WhatsAppSession — Sesión de conversación WhatsApp
     id                  AutoField (PK)
@@ -141,48 +176,57 @@ ni WebSocket. Los webhooks de Twilio son llamadas HTTP POST síncronas estándar
     last_message_at     DateTimeField(auto_now=True)
     is_active           BooleanField(default=True)
 
-Una sesión agrupa todos los mensajes de un número de teléfono concreto con
-una empresa concreta. Es activa mientras la ventana de 24h de Meta esté abierta.
-
-La expiración de sesiones se gestiona mediante la tarea Celery
-expire_whatsapp_sessions, que desactiva sesiones cuyo last_message_at sea
-anterior a 24 horas.
-
 #### WhatsAppMessage — Mensaje individual
     id                  AutoField (PK)
     session             ForeignKey(WhatsAppSession, on_delete=CASCADE)
     direction           CharField(choices=[('IN','Entrante'),('OUT','Saliente')])
     body                TextField()
-    message_sid         CharField(max_length=50, blank=True)  # SID de Twilio
-    content_sid         CharField(max_length=50, blank=True)  # HX... para templates
+    message_sid         CharField(max_length=50, blank=True)
+    content_sid         CharField(max_length=50, blank=True)
     timestamp           DateTimeField(auto_now_add=True)
-
-Almacena el historial completo de la conversación. Se usa para reconstruir
-el contexto de la sesión de chat de Gemini en cada llamada al webhook.
 
 #### WhatsAppTemplate — Template aprobado por Meta
     id                  AutoField (PK)
     company             ForeignKey(Company, on_delete=CASCADE)
     name                CharField(max_length=200)
-    content_sid         CharField(max_length=50)   # HX...
-    category            CharField(choices=[
-                            ('UTILITY','Utilidad'),
-                            ('MARKETING','Marketing'),
-                            ('AUTHENTICATION','Autenticación'),
-                        ])
+    content_sid         CharField(max_length=50)
+    category            CharField(choices=[UTILITY, MARKETING, AUTHENTICATION])
     language            CharField(max_length=10, default='es')
     is_active           BooleanField(default=True)
     created_at          DateTimeField(auto_now_add=True)
 
-Registro centralizado de todos los templates aprobados disponibles para
-la empresa. Permite gestionar el envío de templates desde código sin hardcodear
-los SIDs.
+### 3.2. Extensiones de modelo pendientes de implementación
 
-### 3.2. Relación con modelos del Hito 3
+#### Extensión WhatsAppSession — campos de ubicación y sección destino
+Los siguientes campos deben añadirse mediante migración:
+
+    latitude            DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude           DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    location_address    CharField(max_length=500, blank=True)  # dirección formateada
+    location_captured_at DateTimeField(null=True, blank=True)  # cuándo se capturó
+    target_section      ForeignKey(Section, null=True, blank=True, on_delete=SET_NULL,
+                                   related_name='whatsapp_sessions')  # sección de destino
+
+Reglas:
+- Todos los campos de ubicación son opcionales (null=True, blank=True).
+- target_section se actualiza cuando el agente detecta la intención de sección.
+- location_captured_at registra el momento de captura para auditoría.
+
+#### Extensión WhatsAppMessage — tipo de mensaje
+    message_type        CharField(max_length=20, default='text',
+                                  choices=[('text','Texto'),('location','Ubicación'),
+                                           ('media','Media'),('template','Template')])
+    latitude            DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude           DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+
+Para mensajes de tipo 'location', el webhook de Twilio proporciona los campos
+Latitude y Longitude. Se almacenan en el mensaje y se propagan a la sesión.
+
+### 3.3. Relación con modelos del Hito 3
 
 Los modelos WhatsApp* se integran con la base de datos multiempresa existente:
-
 - WhatsAppSession.company → ivr_config.Company
+- WhatsAppSession.target_section → ivr_config.Section
 - El chatbot consulta ivr_config.Section, ivr_config.Contact y
   ivr_config.PresenceStatus para construir el contexto del agente.
 - El webhook de presencia identifica al CompanyUser por
@@ -192,16 +236,18 @@ Los modelos WhatsApp* se integran con la base de datos multiempresa existente:
 
 ## SECCIÓN 4 — ARQUITECTURA DE LA APP whatsapp
 
-### 4.1. Estructura de archivos
+### 4.1. Estructura de archivos (estado actual)
 
     whatsapp/
     ├── __init__.py
     ├── apps.py
     ├── models.py
-    ├── views.py          <- webhook entrante + webhook de presencia
+    ├── views.py          <- IncomingWhatsAppView + PresenceWhatsAppView
     ├── urls.py           <- /api/whatsapp/incoming/ + /api/whatsapp/presence/
     ├── services.py       <- WhatsAppChatService + PresenceResponseService
-    ├── admin.py          <- registro de modelos en Django admin
+    ├── admin.py
+    ├── tasks.py          <- expire_whatsapp_sessions + check_in_meeting_reminders
+    │                        + expire_presence_statuses
     ├── migrations/
     │   ├── __init__.py
     │   └── 0001_initial.py
@@ -213,116 +259,33 @@ Los modelos WhatsApp* se integran con la base de datos multiempresa existente:
 ### 4.2. URLs registradas
 
     /api/whatsapp/incoming/   <- POST — webhook mensajes entrantes de usuarios
-    /api/whatsapp/presence/   <- POST — webhook respuestas de presencia (1h/2h/disponible)
+    /api/whatsapp/presence/   <- POST — webhook respuestas de presencia
 
-Ambas rutas se registran en enterprise_core/urls.py bajo el prefijo
-api/whatsapp/, junto a api/vox/ del IVR existente.
+### 4.3. Bugs corregidos en sesión 2026-04-13
 
-### 4.3. Flujo de mensaje entrante (/api/whatsapp/incoming/)
+Los siguientes bugs fueron detectados y corregidos durante la validación E2E:
 
-    1. Twilio POST /api/whatsapp/incoming/
-       → IncomingWhatsAppView (csrf_exempt, POST)
-       → Extraer: From (whatsapp:+34XXXXXXXXX), To (whatsapp:+12603466780), Body
+1. whatsapp/services.py: `models.Q` no importado → corregido con
+   `from django.db.models import Q`. Uso actualizado a `Q(...)` directo.
+2. whatsapp/services.py: `status.ends_at:%H:%M` con valor None en STATUS_BUSY_UNTIL
+   → corregido con `status.ends_at.strftime('%H:%M') if status.ends_at else 'hora desconocida'`.
+3. whatsapp/tasks.py: accessor `company_user__contact_profile` inexistente
+   → corregido a `Contact.objects.get(company_user=company_user, is_internal=True)`.
+4. whatsapp/tasks.py: `Contact` no importado → añadido a imports de ivr_config.models.
+5. whatsapp/tasks.py: modo sandbox para content_sid PENDING → lógica condicional
+   `_use_freeform = template.content_sid.startswith("PENDING_")` añadida.
+   NOTA: esta lógica debe eliminarse cuando los ContentSid reales estén sembrados.
 
-    2. Resolver empresa:
-       → PhoneNumber.objects.get(number=to_number, is_active=True)
-       → company = phone_number.company
+### 4.4. vox_bridge — añadidos en sesión 2026-04-13
 
-    3. Gestionar sesión:
-       → Buscar WhatsAppSession activa para (company, from_number).
-       → Si no existe o expiró → crear nueva WhatsAppSession.
-       → Registrar WhatsAppMessage(direction='IN', body=body).
-
-    4. Construir contexto del agente:
-       → WhatsAppChatService.build_system_prompt(company, phone_number)
-       → Incluye: nombre empresa, secciones activas, contactos internos
-         con su PresenceStatus actual, forbidden_phrases del CorporateVoiceProfile.
-
-    5. Reconstruir historial de chat:
-       → WhatsAppMessage.objects.filter(session=session).order_by('timestamp')
-       → Construir lista de turns para client.chats.create(history=[...])
-
-    6. Enviar mensaje a Gemini:
-       → chat = client.chats.create(
-             model='gemini-2.5-flash',
-             config=GenerateContentConfig(system_instruction=system_prompt),
-             history=history_turns,
-         )
-       → response = chat.send_message(body)
-       → reply_text = response.text
-
-    7. Registrar respuesta:
-       → WhatsAppMessage(direction='OUT', body=reply_text)
-
-    8. Enviar respuesta por Twilio:
-       → client.messages.create(
-             from_='whatsapp:+12603466780',
-             to=f'whatsapp:{from_number}',
-             body=reply_text,
-         )
-
-    9. Retornar HTTP 200 vacío.
-
-### 4.4. Flujo de webhook de presencia (/api/whatsapp/presence/)
-
-Este webhook implementa la pieza diferida del Hito 3 documentada en
-V03DOC_PRESENCE_SYSTEM.md, sección 4.
-
-    1. Twilio POST /api/whatsapp/presence/
-       → PresenceWhatsAppView (csrf_exempt, POST)
-       → Extraer: From (whatsapp:+34XXXXXXXXX), Body ("1h" | "2h" | "disponible")
-
-    2. Identificar CompanyUser:
-       → Contact.objects.get(phone_number=from_number, is_internal=True)
-       → company_user = contact.company_user
-
-    3. Parsear respuesta:
-       → "1h"          → ends_at = now() + timedelta(hours=1)
-       → "2h"          → ends_at = now() + timedelta(hours=2)
-       → "disponible"  → cerrar PresenceStatus activo, crear AVAILABLE
-
-    4. Actualizar PresenceStatus:
-       → PresenceResponseService.process_response(company_user, body)
-
-    5. Enviar confirmación por WhatsApp:
-       → Mensaje de texto libre dentro de la ventana de 24h.
-
-    6. Retornar HTTP 200.
-
-### 4.5. WhatsAppChatService en whatsapp/services.py
-
-Servicio principal del chatbot. Responsabilidades:
-
-- build_system_prompt(company, phone_number): construye el system prompt
-  dinámico con el contexto de la empresa, secciones y presencia en tiempo real.
-  Análogo a build_live_config() de ivr_config/services.py pero orientado
-  a texto y WhatsApp.
-- build_history(session): convierte los WhatsAppMessage de la sesión en
-  la lista de turns compatible con client.chats.create(history=[...]).
-- send_reply(from_number, to_number, reply_text): envía la respuesta usando
-  el SDK de Twilio con prefijo whatsapp: en los números.
-
-### 4.6. Tareas Celery en whatsapp/tasks.py
-
-#### expire_whatsapp_sessions
-Periodicidad: cada 30 minutos (Celery Beat).
-Desactiva WhatsAppSession cuyo last_message_at sea anterior a 24 horas.
-
-#### check_in_meeting_reminders
-Implementación del pendiente del Hito 3 (V03DOC_PRESENCE_SYSTEM.md, seccion 3).
-Periodicidad: cada 15 minutos (Celery Beat).
-Lógica completa:
-- Busca todos los PresenceStatus activos con status='IN_MEETING',
-  ends_at=None y reminder_sent_at=None.
-- Para cada uno, comprueba si han transcurrido 3 horas desde starts_at.
-- Si es así, envía WhatsApp al Contact.phone_number del CompanyUser usando
-  el template de recordatorio (WhatsAppTemplate con name='presence_reminder').
-- Actualiza reminder_sent_at = now().
-
-#### expire_presence_statuses
-Implementación del pendiente del Hito 3 (V03DOC_PRESENCE_SYSTEM.md, seccion 3).
-Periodicidad: cada 5 minutos (Celery Beat).
-Lógica: igual a la especificada en V03DOC_PRESENCE_SYSTEM.md.
+Se añadió ForwardToMobileView a vox_bridge/views.py y su ruta correspondiente
+en vox_bridge/urls.py: /api/vox/forward-to-mobile/ (GET y POST, csrf_exempt,
+sin validación de firma Twilio). Endpoint creado para el flujo de verificación
+Meta, en el que Twilio recibe una llamada de Meta y la reenvía con
+<Dial callerId="+34951799117">+34711509585</Dial>.
+NOTA: este endpoint quedó sin uso en producción porque el flujo correcto para
+números Twilio de voz es Voice→email (OTP llega a nummenor@gmail.com).
+Puede eliminarse o reutilizarse en futuros flujos de reenvío.
 
 ---
 
@@ -331,261 +294,122 @@ Lógica: igual a la especificada en V03DOC_PRESENCE_SYSTEM.md.
 ### 5.1. Template de recordatorio de presencia
 
 Nombre: presence_reminder
-Categoría: UTILITY
-Idioma: es
-Cuerpo del template:
-    ¿Sigues reunido? Responde con una de estas opciones:
-    1h — Seguiré ocupado 1 hora más
-    2h — Seguiré ocupado 2 horas más
-    disponible — Ya estoy disponible
+Categoría: UTILITY — Idioma: es
+Cuerpo: ¿Sigues reunido? Responde: 1h / 2h / disponible
+ContentSid en BD: PENDING_HX_PRESENCE_REMINDER (pendiente aprobación Meta)
 
-Este template debe crearse en el Content Template Builder del Console de Twilio
-(Messaging → Content Template Builder → Create new) y someterse a aprobación
-de Meta antes de su uso en producción. El ContentSid (HX...) resultante se
-siembra en WhatsAppTemplate mediante el comando seed_whatsapp_templates.
-
-### 5.2. Template de bienvenida fuera de sesión (opcional)
+### 5.2. Template de bienvenida fuera de sesión
 
 Nombre: welcome_message
-Categoría: UTILITY
-Idioma: es
-Cuerpo del template:
-    Hola {{1}}, soy el asistente virtual de {{2}}. ¿En qué puedo ayudarte hoy?
-
-Para iniciar conversaciones proactivas business-initiated. Opcional en la
-primera implementación — el chatbot opera en modo reactivo en la fase inicial.
+Categoría: UTILITY — Idioma: es
+Cuerpo: Hola {{1}}, soy el asistente virtual de {{2}}. ¿En qué puedo ayudarte hoy?
+ContentSid en BD: PENDING_HX_WELCOME_MESSAGE (pendiente aprobación Meta)
 
 ---
 
-## SECCIÓN 6 — MODIFICACIONES A ARCHIVOS EXISTENTES
+## SECCIÓN 6 — MODIFICACIONES A ARCHIVOS EXISTENTES (completadas)
 
-### 6.1. enterprise_core/settings.py
+### 6.1. enterprise_core/settings.py ✅
+whatsapp en INSTALLED_APPS. CELERY_BEAT_SCHEDULE con las tres tareas Celery.
 
-Añadir 'whatsapp' a INSTALLED_APPS.
+### 6.2. enterprise_core/urls.py ✅
+path('api/whatsapp/', include('whatsapp.urls')) registrado.
 
-Añadir al CELERY_BEAT_SCHEDULE:
-    'expire-whatsapp-sessions': {
-        'task': 'whatsapp.tasks.expire_whatsapp_sessions',
-        'schedule': crontab(minute='*/30'),
-    },
-    'check-in-meeting-reminders': {
-        'task': 'whatsapp.tasks.check_in_meeting_reminders',
-        'schedule': crontab(minute='*/15'),
-    },
-    'expire-presence-statuses': {
-        'task': 'whatsapp.tasks.expire_presence_statuses',
-        'schedule': crontab(minute='*/5'),
-    },
-
-### 6.2. enterprise_core/urls.py
-
-Añadir:
-    path('api/whatsapp/', include('whatsapp.urls')),
-
-### 6.3. requirements.in
-
-Sin cambios. twilio 9.10.4 y google-genai 1.69.0 cubren todos los requisitos.
+### 6.3. .env ✅
+TWILIO_WHATSAPP_SENDER=+14155238886 (Sandbox — cambiar a +34951799117 en producción).
 
 ---
 
 ## SECCIÓN 7 — COMANDOS DE GESTIÓN
 
 ### Comando: seed_whatsapp_templates
-
     python -m dotenv run python manage.py seed_whatsapp_templates
 
-Siembra en BD los WhatsAppTemplate de Grupo Álvarez con los ContentSid
-reales obtenidos del Content Template Builder de Twilio. Requiere que los
-templates estén previamente creados y aprobados en el Console de Twilio.
-
-### Secuencia de arranque del laboratorio
-
-El canal WhatsApp opera sobre Django WSGI estándar (PythonAnywhere). No
-requiere arrancar el bridge aiohttp para el chatbot de texto.
-
-El webhook WhatsApp apunta a la URL estable de PythonAnywhere:
-    https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
-
-No requiere ngrok — Django WSGI en PythonAnywhere es accesible públicamente.
+### Secuencia de arranque
+El canal WhatsApp opera sobre Django WSGI (PythonAnywhere). No requiere bridge.
+El IVR requiere voice_orchestrator.py activo (always-on task).
 
 ---
 
 ## SECCIÓN 8 — HOJA DE RUTA
 
-### Paso 1 — Creación de templates en Twilio Console ⏳ PENDIENTE (manual)
-Templates creados en Content Template Builder pero pendientes de aprobación Meta
-para WhatsApp business initiated. Los templates presence_reminder y welcome_message
-existen en el Console con sus SID pero sin ContentSid definitivo aprobado.
-Acción: esperar aprobación Meta y actualizar TEMPLATE_DEFINITIONS en
-seed_whatsapp_templates.py con los HX... reales. Re-ejecutar el seed.
+### Paso 1 — Verificación Meta de +34951799117 ⏳ PENDIENTE (bloqueado ~hasta 2026-04-15 17:21)
+Ver procedimiento detallado en Sección 2.3.
 
-### Paso 2 — Activación del Sandbox de Twilio para WhatsApp ⏳ PENDIENTE (manual)
-Pendiente de completar. Requiere:
-- Conectar teléfono de prueba al sandbox (+14155238886).
-- Configurar webhook entrante del Sandbox:
-  https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
+### Paso 2 — Sandbox ✅ COMPLETADO
+Teléfono +34688360595 conectado con código join kept-title.
+Webhook configurado en Sandbox settings.
 
-### Paso 3 — PEA: whatsapp/__init__.py ✅ COMPLETADO
+### Pasos 3–15 ✅ COMPLETADOS
+Ver historial de sesiones en Sección 10.
 
-### Paso 4 — PEA: whatsapp/apps.py ✅ COMPLETADO
+### Paso 16 — Validación E2E chatbot de texto ✅ COMPLETADO (sesión 2026-04-13)
+3 turnos con contexto persistente validados. Agente responde con coherencia
+corporativa de Grupo Álvarez. WhatsAppSession y WhatsAppMessage creados en BD.
 
-### Paso 5 — PEA: whatsapp/models.py ✅ COMPLETADO
-WhatsAppSession, WhatsAppMessage, WhatsAppTemplate implementados.
-Índices: whatsapp_session_lookup_idx, whatsapp_message_history_idx.
-Constraint: unique_whatsapp_template_per_company.
+### Paso 17 — Validación E2E webhook de presencia ✅ COMPLETADO (sesión 2026-04-13)
+Ciclo completo validado: IN_MEETING → recordatorio enviado → respuesta 'disponible'
+→ AVAILABLE creado en BD sin intervención manual.
+NOTA: validado con texto libre (content_sid PENDING). En producción usará template HX.
 
-### Paso 6 — Migraciones ✅ COMPLETADO
-Tres tablas creadas en MySQL. whatsapp/migrations/0001_initial.py aplicado.
+### Paso 18 — Extensión del modelo de datos ⏳ PENDIENTE
+Añadir campos de ubicación y sección destino a WhatsAppSession y WhatsAppMessage.
+Ver Sección 3.2 para especificación completa de campos y tipos.
+Requiere migración Django y actualización de admin.py.
 
-### Paso 7 — PEA: whatsapp/admin.py ✅ COMPLETADO
-WhatsAppSessionAdmin con WhatsAppMessageInline, WhatsAppMessageAdmin,
-WhatsAppTemplateAdmin registrados.
+### Paso 19 — Integración de captura de ubicación en el chatbot ⏳ PENDIENTE
+Actualizar IncomingWhatsAppView para detectar mensajes de tipo location:
+- Twilio envía Latitude, Longitude en el POST cuando el usuario comparte ubicación.
+- Extraer y almacenar en WhatsAppMessage (message_type='location') y propagar
+  a WhatsAppSession (latitude, longitude, location_address, location_captured_at).
+- Actualizar WhatsAppChatService.build_system_prompt para incluir la ubicación
+  del cliente en el contexto del agente cuando esté disponible.
 
-### Paso 8 — PEA: whatsapp/services.py ✅ COMPLETADO
-WhatsAppChatService (build_system_prompt, build_history, get_gemini_reply,
-send_reply) y PresenceResponseService (process_response, _apply_response)
-implementados.
+### Paso 20 — Grounding con Google Maps ⏳ PENDIENTE
+Cuando el cliente comparte su ubicación o solicita información geolocalizada,
+activar Grounding with Google Maps en la invocación a Gemini:
+- Requiere investigación en línea del estado actual de la API de Grounding
+  with Google Maps en Vertex AI (google-genai 1.69.0).
+- Implementar en WhatsAppChatService.get_gemini_reply como tool opcional.
+- Activar únicamente cuando session.latitude/longitude no sea None o cuando
+  el texto del usuario contenga referencias geográficas explícitas.
 
-### Paso 9 — PEA: whatsapp/tasks.py ✅ COMPLETADO
-expire_whatsapp_sessions (*/30min), check_in_meeting_reminders (*/15min),
-expire_presence_statuses (*/5min) implementadas.
+### Paso 21 — Detección y registro de sección destino ⏳ PENDIENTE
+El agente debe detectar a qué sección desea ser dirigido el cliente y registrarlo:
+- Actualizar build_system_prompt para instruir al agente a identificar la sección
+  destino y estructurar su respuesta con un campo JSON embebido cuando lo detecte.
+- Actualizar IncomingWhatsAppView para parsear la intención de sección de la
+  respuesta de Gemini y actualizar WhatsAppSession.target_section.
+- La sección destino debe ser también capturable por IVR — revisar integración
+  con DataCaptureSet del Hito 3 (diferido a reactivación del Hito 3).
 
-### Paso 10 — PEA: whatsapp/views.py ✅ COMPLETADO
-IncomingWhatsAppView y PresenceWhatsAppView implementadas.
+### Paso 22 — Eliminación de lógica sandbox de tasks.py ⏳ PENDIENTE
+Cuando ContentSid reales estén sembrados en BD, eliminar el bloque condicional
+_use_freeform de check_in_meeting_reminders y restaurar el envío puro por template.
+Aplicar PMP sobre whatsapp/tasks.py tras actualizar seed_whatsapp_templates.
 
-### Paso 11 — PEA: whatsapp/urls.py ✅ COMPLETADO
-/api/whatsapp/incoming/ y /api/whatsapp/presence/ registradas.
+### Paso 23 — Habilitación del número de producción para WhatsApp ⏳ PENDIENTE
+Una vez verificado +34951799117 con Meta:
+1. Actualizar TWILIO_WHATSAPP_SENDER en .env a +34951799117.
+2. Configurar webhook del sender en Twilio Console.
+3. Realizar prueba E2E con número de producción.
+4. Actualizar seed_whatsapp_templates.py con ContentSid reales y re-ejecutar.
 
-### Paso 12 — PMA: enterprise_core/settings.py ✅ COMPLETADO
-whatsapp en INSTALLED_APPS. CELERY_BEAT_SCHEDULE con las tres tareas.
-CELERY_BROKER_URL, CELERY_RESULT_BACKEND y demás variables Celery añadidas.
-
-### Paso 13 — PMA: enterprise_core/urls.py ✅ COMPLETADO
-path('api/whatsapp/', include('whatsapp.urls')) registrado.
-
-### Paso 14 — PEA: whatsapp/management/commands/seed_whatsapp_templates.py ✅ COMPLETADO
-Comando idempotente con TEMPLATE_DEFINITIONS y lógica de actualización
-de ContentSid existente.
-
-### Paso 15 — Ejecución del seed de templates ✅ COMPLETADO
-presence_reminder y welcome_message creados en BD con ContentSid PENDING.
-Pendiente: actualizar con HX... reales tras aprobación Meta y re-ejecutar.
-
-### Paso 16 — Validación E2E del chatbot de texto ⏳ PENDIENTE
-Bloqueado por Pasos 1 y 2.
-
-### Paso 17 — Validación E2E del webhook de presencia ⏳ PENDIENTE
-Bloqueado por Pasos 1 y 2.
-
----
-
-## SECCIÓN 8B — HOJA DE RUTA PARA LA SIGUIENTE SESIÓN DE ESTE HITO
-
-Cuando se reactive el Hito 4, ejecutar en este orden exacto:
-
-**Prerrequisito 1 — Verificación Meta del número +34951799117:**
-- El TwiML Bin de reenvío ya está configurado:
-  https://handler.twilio.com/twiml/EH74e61da4b7fa2592034e77c8626af1b0
-- El número +34951799117 en Twilio tiene Voice Configuration → Webhook apuntando
-  a ese TwiML Bin (HTTP GET). Esta configuración ya está activa.
-- Ruta Console: Messaging → Senders → WhatsApp Senders → Add new Sender.
-- Selección de tipo: Direct Customer → My business → I manage WhatsApp for my company.
-- Introducir +34951799117 como Twilio phone number.
-- Seleccionar verificación por llamada telefónica.
-- La llamada de Meta llegará al TwiML Bin y se redirigirá al móvil +34711509585.
-- Anotar el código de 6 dígitos e introducirlo en la pantalla de verificación.
-- Criterio de éxito: sender +34951799117 en estado Approved en WhatsApp Senders.
-
-**Prerrequisito 2 — Obtener ContentSid reales de los templates:**
-- Ruta Console: Messaging → Content Template Builder.
-- Localizar presence_reminder y welcome_message con estado Approved.
-- Copiar sus ContentSid (formato HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx).
-- Aplicar PMP sobre seed_whatsapp_templates.py:
-  Sustituir PENDING_HX_PRESENCE_REMINDER por el SID real.
-  Sustituir PENDING_HX_WELCOME_MESSAGE por el SID real.
-- Re-ejecutar: python -m dotenv run python manage.py seed_whatsapp_templates
-- Verificar en /admin/whatsapp/whatsapptemplate/ que los SIDs son correctos.
-
-**Prerrequisito 3 — Activar Sandbox y conectar teléfono de prueba:**
-- Ruta Console: Messaging → Try it out → Send a WhatsApp message.
-- Conectar teléfono enviando código de unión al +14155238886.
-- Configurar webhook entrante del Sandbox:
-  https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
-
-**Paso 16 — Validación E2E del chatbot de texto:**
-1. Enviar mensaje al sandbox desde teléfono de prueba.
-2. Verificar en logs PythonAnywhere que IncomingWhatsAppView recibe el webhook.
-3. Verificar que WhatsAppChatService construye el prompt con contexto correcto.
-4. Verificar que Gemini 2.5 Flash responde con coherencia corporativa.
-5. Verificar que la respuesta llega al teléfono de prueba por WhatsApp.
-6. Verificar en /admin/whatsapp/ que WhatsAppSession y WhatsAppMessage se crean.
-Criterio de éxito: conversación de al menos 3 turnos con contexto persistente.
-
-**Paso 17 — Validación E2E del webhook de presencia:**
-1. Crear PresenceStatus IN_MEETING para alvarez_admin con ends_at=None.
-2. Forzar check_in_meeting_reminders desde shell Django:
-   python -m dotenv run python manage.py shell
-   from whatsapp.tasks import check_in_meeting_reminders
-   check_in_meeting_reminders()
-3. Verificar que llega template de recordatorio al teléfono del CompanyUser.
-4. Responder con "1h", "2h" o "disponible" desde WhatsApp.
-5. Verificar que PresenceWhatsAppView procesa la respuesta.
-6. Verificar PresenceStatus actualizado en BD.
-Criterio de éxito: ciclo completo sin intervención manual en BD.
-
-### Paso 16 — Validación E2E del chatbot de texto
-
-Con el Sandbox configurado y los templates sembrados, validar:
-1. Enviar mensaje al número sandbox desde el teléfono de prueba.
-2. Verificar en logs Django que IncomingWhatsAppView recibe el webhook.
-3. Verificar que WhatsAppChatService construye el prompt con contexto correcto.
-4. Verificar que Gemini responde con coherencia corporativa.
-5. Verificar que la respuesta llega al teléfono de prueba por WhatsApp.
-6. Verificar que WhatsAppSession y WhatsAppMessage se crean en BD.
-
-Criterio de éxito: conversación de al menos 3 turnos con contexto persistente
-(el agente recuerda lo dicho en turnos anteriores de la misma sesión).
-
-### Paso 17 — Validación E2E del webhook de presencia
-
-Con un PresenceStatus de tipo IN_MEETING activo para un CompanyUser cuyo
-Contact tenga phone_number válido:
-1. Forzar check_in_meeting_reminders manualmente desde la shell de Django.
-2. Verificar que llega el template de recordatorio al teléfono del CompanyUser.
-3. Responder con "1h", "2h" o "disponible".
-4. Verificar que PresenceWhatsAppView procesa la respuesta correctamente.
-5. Verificar el PresenceStatus actualizado en BD y en /panel/presence/.
-
-Criterio de éxito: ciclo completo recordatorio → respuesta → actualización de
-presencia validado sin intervención manual en BD.
-
-### Paso 18 — Habilitación del número de producción para WhatsApp
-
-Cuando el desarrollo y validación en Sandbox sean satisfactorios:
-1. Iniciar registro del sender +12603466780 para WhatsApp via Self Sign-Up.
-2. Completar verificación Meta Business si no está completada.
-3. Asociar el número al WhatsApp Business Account (WABA).
-4. Actualizar webhook del número de producción a:
-   https://enterprisebot-miguelaetxio.pythonanywhere.com/api/whatsapp/incoming/
-5. Realizar prueba E2E con número de producción y teléfono real.
-
-Criterio de éxito: el número +12603466780 opera simultáneamente como número
-IVR de voz y número de chatbot WhatsApp.
-
-### Paso 19 — Extensión del Panel: gestión de templates WhatsApp
-
-Añadir al panel personalizado (/panel/) vistas para que el ADMIN de cada empresa
-gestione sus WhatsAppTemplate:
-- Listado de templates con estado de aprobación Meta.
-- Detalle de template (solo lectura para ContentSid).
+### Paso 24 — Panel: gestión de templates WhatsApp ⏳ PENDIENTE
+Añadir al panel personalizado (/panel/) vistas responsive para que el ADMIN
+gestione sus WhatsAppTemplate (listado + detalle solo lectura).
+La interfaz del panel debe ser completamente responsive (Bootstrap 5.3
+breakpoints móvil/tablet/escritorio). Ver nota en Sección 9.
 
 ---
 
 ## SECCIÓN 9 — PENDIENTES DIFERIDOS
 
-Nota: Cuando se aborden los puntos 2, 3 y 4 de esta sección (media, quick replies,
-escalado a voz), evaluar obligatoriamente la creación del documento satélite
-V04DOC_WHATSAPP_RICH_CONTENT.md bajo DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V04/
+**NOTA RESPONSIVE:** La interfaz del panel (/panel/) debe ser completamente
+responsive. La mayoría de accesos se realizarán desde dispositivos móviles y
+tablets. Aplicar en todas las vistas: uso correcto de col-12/col-md-*/col-lg-*,
+tablas con table-responsive, formularios con inputs de tamaño adecuado para
+pantalla táctil, navegación colapsable en móvil.
 
 1. Mensajes proactivos (business-initiated): Envío fuera de sesión con templates.
    Se implementará cuando haya un caso de uso real definido con Grupo Álvarez.
@@ -603,11 +427,29 @@ V04DOC_WHATSAPP_RICH_CONTENT.md bajo DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_
    soporta llamadas de voz por WhatsApp. Se implementará en un hito posterior.
 
 5. Números ES para WhatsApp: Cuando lleguen los números españoles aprobados,
-   registrarlos también como senders WhatsApp para operar en el mercado español.
+   registrarlos también como senders WhatsApp.
+
+6. Revisión de roles, grupos y flujos del Hito 3: Pendiente de reactivación
+   del Hito 3. Incluye diseño del diagrama de flujo de Grupo Álvarez, revisión
+   de permisos por rol (ADMIN/STAFF) y configuración del enrutamiento IVR
+   por sección según disponibilidad en tiempo real.
 
 ---
 
 ## SECCIÓN 10 — PAH — REGISTRO DE SESIONES
+
+### Sesión 2026-04-13
+**Título:** Hito 4 — Verificación Meta, Sandbox WhatsApp y Validación E2E del Chatbot
+**Descripción:** Sesión dedicada a desbloquear los prerrequisitos externos del
+Hito 4 y ejecutar las validaciones E2E pendientes. Se diagnostica y resuelve el
+fallo de verificación Meta del número +34951799117 (flujo correcto: Voice→email,
+OTP a nummenor@gmail.com). Se implementa ForwardToMobileView en vox_bridge para
+reenvío de llamadas. Se configura el Sandbox de Twilio y se conecta el teléfono
+de prueba. Se corrigen 5 bugs en whatsapp/services.py y whatsapp/tasks.py
+detectados durante la validación. Se valida el Paso 16 (chatbot, 3 turnos con
+contexto) y el Paso 17 (webhook de presencia, ciclo completo IN_MEETING→AVAILABLE).
+Se aprueban extensiones de modelo para ubicación geográfica, sección destino,
+captura de datos por ambos canales y grounding con Google Maps.
 
 ### Sesión 2026-04-10
 **Título:** Hito 4 — Implementación Canal WhatsApp: Modelos, App Django y Flujos Base
@@ -629,7 +471,6 @@ investigación en línea comparativa entre Twilio for WhatsApp y Meta Cloud API
 directa, concluyendo con Twilio como plataforma por reutilización total de
 infraestructura, SDK ya instalado y sinergia con el IVR. Se analiza la
 constelación documental del Hito 3, identificando dos puntos de integración
-WhatsApp ya predefinidos en el sistema de presencia (webhook de respuesta a
-recordatorios y tareas Celery). Se establece que el Hito 4 cierra el bucle del
-sistema de presencia del Hito 3 además de añadir el canal de atención al cliente
-por WhatsApp.
+WhatsApp ya predefinidos en el sistema de presencia. Se establece que el Hito 4
+cierra el bucle del sistema de presencia del Hito 3 además de añadir el canal
+de atención al cliente por WhatsApp.

@@ -17,6 +17,7 @@ import logging
 import os
 from datetime import timedelta
 
+from django.db.models import Q
 from django.utils.timezone import now
 from google import genai
 from google.auth.transport.requests import Request
@@ -210,13 +211,13 @@ class WhatsAppChatService:
             ).filter(
                 starts_at__lte=now(),
             ).filter(
-                models.Q(ends_at__isnull=True) | models.Q(ends_at__gt=now())
+                Q(ends_at__isnull=True) | Q(ends_at__gt=now())
             ).latest("starts_at")
 
             label_map = {
                 PresenceStatus.STATUS_AVAILABLE:        "Disponible",
                 PresenceStatus.STATUS_IN_MEETING:       "Reunido/a",
-                PresenceStatus.STATUS_BUSY_UNTIL:       f"Ocupado/a hasta {status.ends_at:%H:%M}",
+                PresenceStatus.STATUS_BUSY_UNTIL:       f"Ocupado/a hasta {status.ends_at.strftime('%H:%M') if status.ends_at else 'hora desconocida'}",
                 PresenceStatus.STATUS_ABSENT_SCHEDULED: "Ausente (programado)",
                 PresenceStatus.STATUS_ABSENT_VACATION:  "De vacaciones",
             }

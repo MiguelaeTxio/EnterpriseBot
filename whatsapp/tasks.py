@@ -23,7 +23,7 @@ from celery import shared_task
 from django.utils.timezone import now
 from twilio.rest import Client as TwilioClient
 
-from ivr_config.models import PresenceStatus
+from ivr_config.models import Contact, PresenceStatus
 from .models import WhatsAppSession, WhatsAppTemplate
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ def check_in_meeting_reminders() -> str:
         reminder_sent_at__isnull=True,
         starts_at__lte=reminder_threshold,
     ).select_related(
-        "company_user__contact_profile",
+        "company_user__user",
         "company_user__company",
     )
 
@@ -169,7 +169,7 @@ def check_in_meeting_reminders() -> str:
         # Resolve the internal Contact for this CompanyUser.
         # Resolver el Contact interno para este CompanyUser.
         try:
-            contact = company_user.contact_profile.get(is_internal=True)
+            contact = Contact.objects.get(company_user=company_user, is_internal=True)
         except Exception:
             logger.warning(
                 "# [CELERY] check_in_meeting_reminders: "
@@ -207,12 +207,27 @@ def check_in_meeting_reminders() -> str:
 
         # Send the reminder via Twilio ContentSid template.
         # Enviar el recordatorio vía plantilla ContentSid de Twilio.
+        # SANDBOX VALIDATION MODE: using free-form text while ContentSid is PENDING.
+        # MODO VALIDACIÓN SANDBOX: usando texto libre mientras ContentSid está PENDING.
+        _use_freeform = template.content_sid.startswith("PENDING_")
         try:
-            twilio_client.messages.create(
-                from_=f"whatsapp:{sender_number}",
-                to=f"whatsapp:{contact.phone_number}",
-                content_sid=template.content_sid,
-            )
+            if _use_freeform:
+                twilio_client.messages.create(
+                    from_=f"whatsapp:{sender_number}",
+                    to=f"whatsapp:{contact.phone_number}",
+                    body=(
+                        "¿Sigues reunido/a? Responde con una de estas opciones:\n"
+                        "1h — Seguiré ocupado/a 1 hora más\n"
+                        "2h — Seguiré ocupado/a 2 horas más\n"
+                        "disponible — Ya estoy disponible"
+                    ),
+                )
+            else:
+                twilio_client.messages.create(
+                    from_=f"whatsapp:{sender_number}",
+                    to=f"whatsapp:{contact.phone_number}",
+                    content_sid=template.content_sid,
+                )
 
             # Mark reminder as sent to prevent duplicate dispatch.
             # Marcar el recordatorio como enviado para evitar despacho duplicado.
