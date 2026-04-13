@@ -1,9 +1,9 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
 
 # ENTERPRISEBOT — ANEXO HITO V03 — IVR CONVERSACIONAL CONFIGURABLE DESDE PRODUCCIÓN
-**Estado:** PAUSADO
+**Estado:** EN PROGRESO
 **Fecha de inicio:** 2026-04-07
-**Fecha de pausa:** 2026-04-12
+**Fecha de reanudación:** 2026-04-13
 
 ---
 
@@ -25,85 +25,31 @@ configuración en sesiones posteriores.
 
 ### 2.1. Modelo de Entidades Principal
 
-#### `Company` — Empresa cliente
-    id, name, slug, logo, is_active, created_at
+Ver especificación técnica completa en el documento satélite:
+`DOCS_ATTACHED_2_ANNEX_V03/V03DOC_DATA_MODEL.md`
 
-Entidad raíz del sistema multiempresa. Todo dato de configuración IVR pertenece
-a una `Company`.
+Resumen de entidades:
 
-#### `CompanyUser` — Usuario de empresa
-    id, company (FK), user (FK→auth.User), role (ADMIN|OPERATOR), is_active
+#### Entidades base (implementadas en sesiones anteriores)
+- `Company` — Empresa cliente raíz del sistema multiempresa.
+- `CompanyUser` — Usuario de empresa con rol ADMIN u OPERATOR.
+- `Contact` — Persona contactable, interna o externa.
+- `Section` — Sección o departamento de enrutamiento IVR.
+- `PhoneNumber` — Número Twilio asignado a la empresa.
+- `CallFlow` — Flujo IVR con system_instruction e initial_greeting.
+- `PresenceStatus` — Estado de presencia del usuario interno.
+- `CorporateVoiceProfile` — Perfil de voz corporativa inyectado en Gemini Live.
+- `DataCaptureSet` — Conjunto de toma de datos por sección.
 
-- `ADMIN`: puede configurar la empresa completa.
-- `OPERATOR`: solo puede gestionar su propia presencia.
-- **PROHIBIDO** el acceso al `/admin/` estándar de Django para cualquier `CompanyUser`.
-- El accessor ORM desde `auth.User` es `user.company_user` (related_name definido en modelo).
+#### Entidades nuevas (acordadas sesión 2026-04-13)
+- `SectionSchedule` — Horario por día de la semana para cada sección.
+- `BlockedCaller` — Registro de números bloqueados por empresa.
 
-#### `Contact` — Persona contactable
-    id, company (FK), name, phone_number, is_internal (bool), company_user (FK nullable)
-
-Personas a las que el IVR puede llamar, transferir llamadas o enviar mensajes.
-Los usuarios internos (`is_internal=True`) tienen un `CompanyUser` asociado y pueden
-tener `PresenceStatus`. Los trabajadores externos (`is_internal=False`) son contactos
-sin acceso al sistema. El campo `phone_number` en formato E.164 es el número que
-Twilio marca cuando el IVR decide transferir o llamar a ese contacto.
-
-#### `Section` — Sección o departamento
-    id, company (FK), name, description, contacts (M2M→Contact),
-    data_capture_set (FK nullable), is_active
-
-Unidad de enrutamiento del IVR. Ejemplos: Elevación, Asistencia, Grúas.
-Cada sección tiene un conjunto de toma de datos propio (`DataCaptureSet`) que
-se definirá con la empresa piloto en sesiones posteriores.
-
-#### `PhoneNumber` — Número Twilio asignado
-    id, company (FK), number, friendly_name, call_flow (FK), is_active
-
-Número de teléfono Twilio vinculado a la empresa. Una empresa puede tener
-**cualquier número de líneas Twilio simultáneas** — no existe límite superior.
-Cada `PhoneNumber` tiene asociado de forma independiente un `CallFlow` propio,
-lo que permite que una misma empresa opere centralitas con comportamientos IVR
-distintos en cada número (24/7, horario restringido, idioma diferente, etc.).
-
-#### `CallFlow` — Flujo IVR
-    id, company (FK), name, system_instruction (TextField),
-    initial_greeting (TextField), is_active
-
-Define la personalidad y el comportamiento del agente IVR para un número concreto.
-El `system_instruction` y el `initial_greeting` se inyectan dinámicamente en el
-`LiveConnectConfig` de Gemini en tiempo de llamada, sustituyendo las constantes
-hardcodeadas (`SYSTEM_INSTRUCTION_FALLBACK`, `INITIAL_GREETING_FALLBACK`)
-de `vox_bridge/services.py`.
-
-#### `PresenceStatus` — Estado de presencia del usuario
-    id, company_user (FK), status (AVAILABLE|IN_MEETING|BUSY_UNTIL|
-    ABSENT_SCHEDULED|ABSENT_VACATION), starts_at, ends_at (nullable),
-    reminder_sent_at (nullable), created_at, updated_at
-
-Estados posibles:
-- `AVAILABLE`: disponible, estado por defecto.
-- `IN_MEETING`: reunido. Sin `ends_at` → Celery envía recordatorio a las 3 horas.
-- `BUSY_UNTIL`: ocupado hasta hora concreta. Expira automáticamente.
-- `ABSENT_SCHEDULED`: ausente programado de fecha a fecha.
-- `ABSENT_VACATION`: vacaciones de fecha a fecha.
-
-Solo puede existir un `PresenceStatus` activo por usuario en cada momento.
-
-#### `CorporateVoiceProfile` — Perfil de voz corporativa
-    id, company (FK), tone_guidelines (TextField), sample_responses (JSONField),
-    forbidden_phrases (JSONField), is_active
-
-Semillero de respuestas y directrices de sonoridad corporativa. Se inyecta en el
-`system_instruction` del `CallFlow` para que la IA mantenga la identidad de marca.
-
-#### `DataCaptureSet` — Conjunto de toma de datos
-    id, company (FK), section (FK nullable), name, fields (JSONField)
-
-Define los campos que el IVR debe recopilar del cliente durante la llamada.
-Cada sección puede tener su propio `DataCaptureSet` con campos específicos.
-Los campos comunes (nombre, teléfono) se heredan de una plantilla base.
-PENDIENTE DE DEFINICIÓN: La estructura exacta de `fields` y los conjuntos
-por sección se definirán en sesiones posteriores con el Grupo Álvarez.
+#### Extensiones sobre entidades existentes (acordadas sesión 2026-04-13)
+- `Contact.email` — EmailField para notificaciones por correo.
+- `Contact.gender` — CharField M/F para tratamiento Sr./Sra. por Alia.
+- `Section.is_24h` — BooleanField que cortocircuita la comprobación de horario.
+- `CallFlow.notification_contact` — FK a Contact designado para actividad no recogida.
 
 ---
 
@@ -124,11 +70,13 @@ por sección se definirán en sesiones posteriores con el Grupo Álvarez.
 Vistas Django class-based que permiten a cada empresa gestionar:
 - `CompanyUser` — usuarios con roles ADMIN/OPERATOR.
 - `Section` — secciones o departamentos de enrutamiento IVR.
-- `Contact` — contactos internos y externos (números a los que el IVR puede llamar).
+- `SectionSchedule` — horarios por día de la semana para cada sección. ← NUEVO
+- `Contact` — contactos internos y externos.
 - `PhoneNumber` — números Twilio asignados (solo lectura para CompanyUser).
 - `CallFlow` — flujos IVR con system_instruction e initial_greeting editables.
 - `CorporateVoiceProfile` — perfil de voz corporativa inyectado en Gemini Live.
 - `PresenceStatus` — estado de presencia propio (todos los roles).
+- `BlockedCaller` — números bloqueados activos e historial. ← NUEVO
 
 ### 3.3. Lecciones Aprendidas — Implementación del Panel
 - El accessor ORM correcto desde `auth.User` hacia `CompanyUser` es `user.company_user`
@@ -151,15 +99,23 @@ Vistas Django class-based que permiten a cada empresa gestionar:
 - Al activar `BUSY_UNTIL`: Celery Beat programa la expiración automática.
 - `ABSENT_SCHEDULED` y `ABSENT_VACATION`: gestión automática por rango de fechas.
 
+### 3.5. Nota Responsive — Panel
+La interfaz del panel (`/panel/`) debe ser completamente responsive. La mayoría
+de accesos se realizarán desde dispositivos móviles y tablets. Aplicar en todas
+las vistas: uso correcto de col-12/col-md-*/col-lg-*, tablas con table-responsive,
+formularios con inputs de tamaño adecuado para pantalla táctil, navegación
+colapsable en móvil.
+
 ---
 
 ## SECCIÓN 4 — INYECCIÓN DINÁMICA EN EL IVR
 
-### 4.1. Flujo de llamada entrante con configuración dinámica (IMPLEMENTADO)
+### 4.1. Flujo de llamada entrante con configuración dinámica
 
 1. Twilio realiza POST `/api/vox/inbound/`
    → `UniversalVoiceBridge.handle_twiml_post()` en `voice_sidecar_bridge.py`
    → Captura el campo `To` del body del POST y lo almacena en `self._pending_twilio_number`.
+   → Captura el campo `From` del body del POST y lo almacena en `self._pending_caller_number`.
    → Responde con TwiML `<Connect><Stream url="wss://{host}/media" />`
 
 2. Twilio abre WebSocket GET `/media`
@@ -169,20 +125,21 @@ Vistas Django class-based que permiten a cada empresa gestionar:
 
 3. Twilio envía evento `start` por el WebSocket
    → `handle_websocket_stream()` lee `twilio_number` de `self._pending_twilio_number`
-     (el evento `start` de Twilio Media Streams NO incluye el campo `To` en su payload
-     — confirmado por diagnóstico DEBUG-P28 en sesión 2026-04-11).
-   → Se instancia `VoiceOrchestrationService(twilio_number=twilio_number)`
-   → En `__init__()` se almacena `self.twilio_number` con valores de fallback iniciales.
+     y `caller_number` de `self._pending_caller_number`.
+   → Se instancia `VoiceOrchestrationService(twilio_number, caller_number)`.
    → Se lanza `run_voice_session()` como asyncio.Task concurrente.
 
 4. Al inicio de `run_voice_session()`:
-   → `await sync_to_async(build_live_config)(self.twilio_number)` carga desde BD:
-       a. Resuelve `PhoneNumber` activo por `twilio_number`.
-       b. Carga `CallFlow` asociado.
-       c. Carga `CorporateVoiceProfile` de la `Company`.
-       d. Consulta `PresenceStatus` activo de todos los `Contact` internos.
-       e. Ensambla `system_instruction` dinámico.
-       f. Retorna `(system_instruction, initial_greeting)`.
+   → `await sync_to_async(build_live_config)(self.twilio_number, self.caller_number)`
+       a. Comprueba `BlockedCaller` activo para (company, caller_number).
+          Si bloqueado → retorna config de bloqueo → Alia responde y termina.
+       b. Resuelve `PhoneNumber` activo por `twilio_number`.
+       c. Carga `CallFlow` asociado.
+       d. Carga `CorporateVoiceProfile` de la `Company`.
+       e. Carga todas las `Section` activas con sus `SectionSchedule` y `Contact`.
+       f. Consulta `PresenceStatus` activo de todos los `Contact` internos.
+       g. Ensambla `system_instruction` dinámico con toda la información anterior.
+       h. Retorna `(system_instruction, initial_greeting)`.
    → Fallback automático a `SYSTEM_INSTRUCTION_FALLBACK` / `INITIAL_GREETING_FALLBACK`
      si `build_live_config()` lanza cualquier excepción.
 
@@ -195,7 +152,8 @@ Vistas Django class-based que permiten a cada empresa gestionar:
 ### 4.2. Archivos del pipeline de voz
 - `ivr_config/services.py` — Contiene `build_live_config()`.
 - `vox_bridge/services.py` — Orquestación de sesión Gemini Live con carga async de config.
-- `voice_sidecar_bridge.py` — Bridge aiohttp: captura `To` en POST, instancia servicio en `start`.
+- `voice_sidecar_bridge.py` — Bridge aiohttp: captura `To` y `From` en POST,
+  instancia servicio en `start`.
 - `voice_orchestrator.py` — Arranque de ngrok + actualización webhook regional IE1/US1.
 
 ---
@@ -277,126 +235,122 @@ Vistas Django class-based que permiten a cada empresa gestionar:
   números españoles procesan en IE1.
 
 ### Sesión 2026-04-11 — Routing Regional IE1 + Carga Dinámica + Calibración VAD
+- Implementación detección automática de región vía Routes API (Paso 26).
+- Fix `SynchronousOnlyOperation`: `build_live_config()` movida a `run_voice_session()`
+  con `sync_to_async` (Paso 27).
+- Diagnóstico definitivo: evento `start` Twilio no incluye campo `To` — captura
+  desde POST HTTP inicial en `handle_twiml_post()` (Paso 28).
+- Eliminación número Indiana `+12603466780` de BD (Paso 29).
+- Calibración VAD: `SILENCE_THRESHOLD_RMS=300`, `SILENCE_FRAMES=50`, `SPEECH_FRAMES=15`.
+- Validación E2E exitosa: llamada real al `+34951796832` procesada en IE1 (0.01 USD).
 
-#### Infraestructura regional Twilio (Paso 26)
-- Diagnóstico completo de la arquitectura regional Twilio: confirmado que
-  `+34951796832` y `+34951799117` tienen `voice_region: IE1` vía Routes API.
-- Credenciales IE1 obtenidas en consola Twilio y añadidas al `.env`.
-- Script de diagnóstico `ie1_diagnostic.py` ejecutado: autenticación IE1 validada,
-  SIDs de ambos números localizados en endpoint `api.dublin.ie1.twilio.com`.
-- `voice_orchestrator.py` refactorizado (PMA): `update_twilio_webhook()` ahora
-  consulta la Routes API por cada número, detecta su `voice_region` y actualiza
-  el webhook en el endpoint regional correcto usando credenciales regionales.
-  Dominio correcto para IE1: `api.dublin.ie1.twilio.com` (el patrón
-  `api.ie1.twilio.com` está deprecado y dejará de funcionar el 2026-04-28).
+### Sesión 2026-04-12 — Validación Dinámica BD + Fix InterfaceError + Pausa
+- Diagnóstico y fix de `InterfaceError` por conexión MySQL stale entre llamadas:
+  `connection.close()` al inicio de `build_live_config()` (Paso 30).
+- Validación E2E exitosa: carga dinámica completa desde BD confirmada en logs.
+- Hito pausado: Paso 31 bloqueado pendiente organigrama Grupo Álvarez.
+- Hito 4 activado para desarrollo canal WhatsApp.
 
-#### Carga dinámica de configuración IVR (Paso 27)
-- `vox_bridge/services.py` refactorizado (PMA): `build_live_config()` extraída
-  de `__init__()` (que es síncrono y se invoca desde contexto async aiohttp,
-  causando `SynchronousOnlyOperation`) y movida al inicio de `run_voice_session()`
-  usando `await sync_to_async(build_live_config)(self.twilio_number)`.
-
-#### Resolución del campo `To` ausente en evento `start` (Paso 28)
-- Diagnóstico definitivo: el evento `start` de Twilio Media Streams NO incluye
-  el número destino (`To`) en su payload WebSocket — confirmado por log DEBUG-P28
-  en ambas llamadas de prueba.
-- Solución implementada (PMA sobre `voice_sidecar_bridge.py`): el campo `To`
-  se captura del body del POST HTTP inicial en `handle_twiml_post()` y se
-  almacena en `self._pending_twilio_number`. Al recibir el evento `start`,
-  `handle_websocket_stream()` consume ese valor para instanciar el servicio
-  con el número correcto.
-
-#### Eliminación número Indiana (Paso 29)
-- `PhoneNumber` `+12603466780` eliminado de BD mediante script no interactivo.
-  El número no pertenecía a la cuenta Twilio activa.
-
-#### Calibración VAD (Frente B)
-- `vox_bridge/services.py` (PMP): ajuste de constantes de detección de actividad
-  basado en análisis de logs RMS de las llamadas de prueba:
-    `SILENCE_THRESHOLD_RMS`: 200 → 300
-    `SILENCE_FRAMES_TO_END_ACTIVITY`: 30 → 50 (600ms → 1000ms)
-    `SPEECH_FRAMES_TO_START_ACTIVITY`: 10 → 15 (200ms → 300ms)
-- Validación E2E: llamada real al `+34951796832` procesada en IE1 con coste
-  confirmado de 0.01 USD. Conversación fluida validada.
+### Sesión 2026-04-13 — Reanudación + Diseño de Flujo Completo
+- MASTER_DOCUMENT corregido: Hito 3 → EN PROGRESO, Hito 4 → PAUSADO (PMP).
+- Diseño completo del flujo IVR de producción acordado:
+    · 9 tipos de llamada identificados y comportamiento definido para cada uno.
+    · Toma de datos conversacional con ubicación textual (sin GPS en fase actual).
+    · Notificación al responsable: llamada saliente Twilio + correo electrónico.
+    · Bloqueo de números maliciosos con duración configurable.
+    · Modo demo con frase clave + DTMF 7463.
+- Extensiones de modelo acordadas y documentadas en `V03DOC_DATA_MODEL.md` (PMA):
+    · `Contact`: campos `email` y `gender`.
+    · `Section`: campo `is_24h`.
+    · `CallFlow`: campo `notification_contact`.
+    · Nuevo modelo `SectionSchedule`.
+    · Nuevo modelo `BlockedCaller`.
 
 ---
 
 ## SECCIÓN 7 — PENDIENTES DIFERIDOS
 
-1. `DataCaptureSet` por sección: Estructura exacta de campos para Elevación,
-   Asistencia y Grúas. Campos comunes heredados de plantilla base.
-2. Recepción de ubicaciones: Integración de geolocalización en el flujo de
-   toma de datos.
-3. Sistema de recordatorios de presencia: Integración Celery + Twilio SMS/WhatsApp
-   para el mecanismo de "¿sigues reunido?".
-4. Registro de usuarios empresa: Flujo de alta de nuevos `CompanyUser` con
+1. `DataCaptureSet` por sección: campos específicos para Elevación, Asistencia y Grúas
+   a definir con Grupo Álvarez (tipo_grua, tonelaje, tipo_vehiculo, matricula, etc.).
+2. Recepción de ubicación GPS: integración con localización nativa WhatsApp +
+   Grounding Google Maps (diferido a reactivación del Hito 4).
+3. Sistema de recordatorios de presencia vía WhatsApp: diferido al Hito 4.
+4. Registro de usuarios empresa: flujo de alta de nuevos `CompanyUser` con
    invitación por email.
-5. Calibración VAD adicional: Los valores actuales (RMS 300, silence 50 frames,
-   speech 15 frames) son una primera iteración. Pendiente ajuste fino tras más
-   pruebas con distintos dispositivos y condiciones de llamada.
-6. Sección Grúas: No existe aún en BD. Añadir cuando se disponga de contacto real.
-7. ✅ RESUELTO (sesión 2026-04-12): Validación de carga dinámica completa desde BD.
-   `build_live_config()` confirmado operativo con configuración de Grupo Álvarez
-   desde BD para `+34951796832`. Bug `InterfaceError` por conexión MySQL stale
-   resuelto mediante `connection.close()` al inicio de `build_live_config()`.
-8. Configuración real de producción del `CallFlow` y `CorporateVoiceProfile` de
-   Grupo Álvarez: BLOQUEADO — pendiente de que Grupo Álvarez facilite el organigrama
-   real, personas, números de teléfono y función de cada uno para definir el flujo
-   IVR de producción definitivo.
+5. Calibración VAD adicional: ajuste fino pendiente tras más pruebas con
+   distintos dispositivos y condiciones de llamada.
+6. Configuración real de producción de Grupo Álvarez: `CallFlow` y
+   `CorporateVoiceProfile` definitivos pendientes de organigrama real.
+7. Sección Grúas: no existe aún en BD. Añadir cuando se disponga del contacto real.
 
 ---
 
-## SECCIÓN 8 — HOJA DE RUTA PARA LA REANUDACIÓN DE ESTE HITO
+## SECCIÓN 8 — HOJA DE RUTA
 
-### Contexto de pausa (2026-04-12)
-El hito se pausa con el sistema IVR completamente operativo en producción:
-- Carga dinámica de configuración desde BD validada E2E (`build_live_config()` ✅).
-- Bug `InterfaceError` por conexión MySQL stale resuelto en `ivr_config/services.py`.
-- Panel de administración `/panel/` operativo con todos los módulos validados.
-- Always-on task activa con webhook regional IE1 automatizado.
-- El `CallFlow` y `CorporateVoiceProfile` actuales contienen configuración
-  funcional de demostración — pendiente de sustitución por configuración real.
+### Pasos 1–30 ✅ COMPLETADOS
+Ver registro de sesiones en Sección 6.
 
-El hito se reactiva cuando Grupo Álvarez facilite su organigrama real.
+### Paso 31 — Extensiones de modelo en `ivr_config/models.py` ✅ COMPLETADO (sesión 2026-04-13)
+Añadir a `ivr_config/models.py`:
+- Campo `email` (EmailField, blank=True) en `Contact`.
+- Campo `gender` (CharField M/F, blank=True) en `Contact`.
+- Campo `is_24h` (BooleanField, default=False) en `Section`.
+- Campo `notification_contact` (FK→Contact, null=True) en `CallFlow`.
+- Modelo nuevo `SectionSchedule` con FK a Section, weekday, time_open, time_close.
+- Modelo nuevo `BlockedCaller` con FK a Company, phone_number, blocked_until, blocked_by.
+Generar y aplicar migraciones incrementales.
+Actualizar `ivr_config/admin.py` con los nuevos modelos y campos.
 
-### Paso 31 — Configuración real de producción de Grupo Álvarez
+### Paso 32 — Extensión del panel (`/panel/`) con nuevos módulos ✅ COMPLETADO (sesión 2026-04-13)
+Añadir al panel personalizado:
+- Gestión de `SectionSchedule`: inline dentro de la vista de edición de Section,
+  permitiendo añadir/editar/eliminar franjas horarias por día de la semana.
+- Gestión de `BlockedCaller`: listado de bloqueados activos, alta manual,
+  desbloqueo manual antes de vencimiento, historial de expirados.
+Criterio de éxito: el ADMIN puede configurar el horario completo de una sección
+y bloquear/desbloquear un número desde el panel sin tocar la BD directamente.
 
-**Prerrequisito BLOQUEANTE:** Grupo Álvarez debe facilitar antes de la sesión:
-- Organigrama completo: nombres, apellidos, cargo y número de teléfono E.164
-  de cada persona que debe estar en el sistema.
-- Función de cada persona: qué tipo de llamadas gestiona (Elevación, Asistencia,
-  Grúas u otras categorías que definan).
-- Horarios de atención por departamento.
-- Cualquier regla especial de enrutamiento (p. ej. fuera de horario, idiomas,
-  prioridades de escalado).
+### Paso 33 — Actualización de `build_live_config()` ⏳ PENDIENTE
+Actualizar `ivr_config/services.py`:
+- Añadir parámetro `caller_number: str` a `build_live_config()`.
+- Implementar comprobación de `BlockedCaller` activo al inicio de la función.
+- Cargar `SectionSchedule` de cada `Section` activa.
+- Implementar función `is_section_available(section, now)` que evalúa
+  `is_24h` y franjas `SectionSchedule` para el weekday y hora actuales.
+- Inyectar en `system_instruction` la disponibilidad real de cada sección,
+  el estado de presencia de cada `Contact` interno, el tratamiento Sr./Sra.
+  según `Contact.gender`, y el `notification_contact` del `CallFlow`.
+Criterio de éxito: `build_live_config()` retorna un `system_instruction`
+que refleja disponibilidad real de secciones y presencia real de personas.
 
-**Procedimiento una vez disponible la información:**
-1. Actualizar `Contact` y `Section` en BD desde el panel `/panel/` o mediante
-   script `seed_grupo_alvarez` con los datos reales.
-2. Redactar el `system_instruction` definitivo de Alia con el organigrama real:
-   - Identificar a cada persona por nombre y función.
-   - Definir reglas de enrutamiento por categoría de llamada.
-   - Incorporar horarios de atención por departamento.
-   - Incluir reglas de escalado para casos no contemplados.
-3. Redactar el `initial_greeting` de producción.
-4. Actualizar el `CorporateVoiceProfile`:
-   - `tone_guidelines`: tono y estilo corporativo real de Grupo Álvarez.
-   - `sample_responses`: ejemplos de respuestas reales del agente.
-   - `forbidden_phrases`: frases que Alia no debe usar en ningún caso.
-5. Acceder a `https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/`
-   con el usuario `alvarez_admin` y actualizar los campos desde el panel.
-6. Realizar llamada real al `+34951796832` y verificar en `bridge.log`:
-   `[CONFIG] Configuración IVR dinámica cargada correctamente para el número '+34951796832'`
-   con `system_instruction` de longitud coherente con el organigrama real.
+### Paso 34 — Captura del número llamante en `voice_sidecar_bridge.py` ⏳ PENDIENTE
+Capturar el campo `From` del POST HTTP inicial en `handle_twiml_post()` y
+almacenarlo en `self._pending_caller_number`, siguiendo el mismo patrón
+implementado para `To` en el Paso 28.
+Pasar `caller_number` al constructor de `VoiceOrchestrationService`.
+Criterio de éxito: `build_live_config()` recibe el número llamante real
+en todas las llamadas entrantes.
 
-**Criterio de éxito:** Alia atiende una llamada real respondiendo íntegramente
-con la configuración de producción de Grupo Álvarez, sin usar el fallback.
+### Paso 35 — Seed de datos piloto Grupo Álvarez actualizado ⏳ PENDIENTE
+Actualizar `ivr_config/management/commands/seed_grupo_alvarez.py` con:
+- Secciones: Grúas, Asistencia (is_24h=True), Elevación, Administración, Taller.
+- SectionSchedule para cada sección con horario representativo de demostración.
+- BlockedCaller vacío (sin bloqueados iniciales).
+- Contact con campos email y gender rellenos para los contactos existentes.
+Criterio de éxito: ejecución del seed recrea el estado piloto completo
+con la nueva estructura de datos sin errores.
 
-### Paso 32 — Sección Grúas
-
-**Prerrequisito:** Disponibilidad del contacto real del departamento de Grúas.
-Añadir `Section` "Grúas" en BD con el contacto asignado y actualizar el
-`system_instruction` del `CallFlow` para incluir la categoría de enrutamiento.
+### Paso 36 — Validación E2E del flujo completo ⏳ PENDIENTE
+Realizar llamada real al `+34951796832` y verificar:
+- Alia identifica correctamente el tipo de servicio solicitado.
+- Alia informa correctamente de la disponibilidad de la sección (horario).
+- Alia recoge datos conversacionalmente (nombre, teléfono, servicio, ubicación).
+- Alia notifica al responsable (llamada saliente + correo).
+- Alia responde correctamente ante llamada fuera de actividad.
+- Modo demo funciona con frase clave + DTMF 7463.
+- Número bloqueado recibe respuesta estándar y cierre inmediato.
+Criterio de éxito: todos los tipos de llamada se comportan según la tabla
+de la Sección 4.1 sin intervención manual en BD ni código.
 
 ---
 
@@ -457,11 +411,39 @@ con llamada real al +34951796832 procesada en IE1 con coste confirmado de 0.01 U
 
 ### Sesión 2026-04-12
 **Título:** Validación Dinámica BD + Fix InterfaceError MySQL Stale + Pausa Hito 3
-**Descripción:** Sesión de validación y cierre del Hito 3. Se diagnostica el bug
-InterfaceError (0, '') que afectaba a todas las llamadas posteriores a la primera
+**Descripción:** Sesión de validación y cierre temporal del Hito 3. Se diagnostica el
+bug InterfaceError (0, '') que afectaba a todas las llamadas posteriores a la primera
 exitosa: la conexión MySQL queda stale entre llamadas en el proceso de larga duración
 always-on task. Solución: connection.close() al inicio de build_live_config() en
 ivr_config/services.py, forzando reconexión fresca en cada llamada (PMA). Validación
 E2E exitosa: llamada real al +34951796832 con carga dinámica completa confirmada en
-logs. El Paso 31 queda bloqueado pendiente de que Grupo Álvarez facilite su organigrama
-real, personas, teléfonos y funciones. El hito se pausa y se reactiva el Hito 4.
+logs. El hito se pausa para reactivar el Hito 4 (canal WhatsApp).
+
+### Sesión 2026-04-13 — Primera parte
+**Título:** Reanudación Hito 3 — Diseño de Flujo IVR Completo y Extensiones de Modelo
+**Descripción:** Sesión de reanudación del Hito 3 tras pausa del Hito 4 por bloqueo
+de Meta. Se corrige el MASTER_DOCUMENT permutando estados de Hito 3 (EN PROGRESO) e
+Hito 4 (PAUSADO) mediante PMP. Se diseña el flujo IVR completo de producción: 9 tipos
+de llamada con comportamiento definido, toma de datos conversacional con ubicación
+textual, notificación al responsable por llamada saliente Twilio y correo electrónico,
+bloqueo de números maliciosos con duración configurable, y modo demo con frase clave
+más DTMF 7463. Se acuerdan y documentan las extensiones de modelo necesarias
+(SectionSchedule, BlockedCaller, campos email/gender/is_24h/notification_contact).
+Se actualiza V03DOC_DATA_MODEL.md con la especificación técnica completa (PMA) y
+se reescribe el presente anexo con la hoja de ruta actualizada (Pasos 31–36).
+
+### Sesión 2026-04-13 — Segunda parte
+**Título:** Implementación Pasos 31 y 32 — Modelos, Migraciones y Panel Extendido
+**Descripción:** Implementación completa de los Pasos 31 y 32 de la hoja de ruta.
+Paso 31: extensiones de modelo en ivr_config/models.py (campos email y gender en
+Contact, is_24h en Section, notification_contact en CallFlow, nuevos modelos
+SectionSchedule y BlockedCaller), migración 0003 aplicada correctamente en producción.
+Paso 32: extensión del panel con SectionScheduleForm y BlockedCallerForm en forms.py,
+nuevas vistas BlockedCallerListView/CreateView/DeleteView y refactorización de
+SectionCreateView/UpdateView con formset inline en views.py, nuevas rutas en urls.py,
+tres templates nuevos de blockedcallers (list, form, confirm_delete) y actualización
+de templates existentes (sections/form, contacts/form, callflows/form, base.html).
+Limpieza global de 100 errores H021 (inline styles) en todos los templates del panel.
+Añadido JavaScript dinámico para añadir franjas horarias sin recargar la página.
+Validación E2E completa en producción: badges, formset de horarios, bloqueados,
+contactos con email/gender, flujos IVR con notification_contact y dashboard. ✅

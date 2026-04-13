@@ -103,6 +103,65 @@
             padding: 2rem 1.5rem;
             flex: 1;
         }
+        /* ---------------------------------------------------------------
+           Utility classes — replacing inline styles across all templates.
+           Clases utilitarias — sustituyen estilos inline en todos los templates.
+           --------------------------------------------------------------- */
+        .text-xs   { font-size: 0.75rem; }
+        .text-sm   { font-size: 0.85rem; }
+        .text-nav  { font-size: 0.875rem; }
+        .text-err  { font-size: 0.8rem; }
+        .icon-xs   { font-size: 0.6rem; }
+        .panel-logout {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .panel-page-title { font-size: 0.9rem; }
+        .panel-logout-link {
+            color: rgba(255,255,255,0.5);
+            padding: 1rem 1.25rem;
+        }
+        /* ---------------------------------------------------------------
+           Badge state colours — Colores de badges de estado en listados.
+           --------------------------------------------------------------- */
+        .badge-active   { background-color:#d1e7dd; color:#0a3622; font-weight:500; border:1px solid #a3cfbb; }
+        .badge-inactive { background-color:#f8d7da; color:#58151c; font-weight:500; border:1px solid #f1aeb5; }
+        .badge-internal { background-color:#cfe2ff; color:#084298; font-weight:500; border:1px solid #9ec5fe; }
+        .badge-external { background-color:#e9ecef; color:#495057; font-weight:500; border:1px solid #ced4da; }
+        .badge-admin    { background-color:#e2d9f3; color:#432874; font-weight:500; border:1px solid #c5b3e6; }
+        .badge-flow     { background-color:#e8f4fd; color:#084298; font-weight:500; border:1px solid #9ec5fe; }
+        /* ---------------------------------------------------------------
+           Dashboard stat cards — Tarjetas de estadísticas del dashboard.
+           --------------------------------------------------------------- */
+        .stat-icon     { font-size:1.5rem; }
+        .stat-value    { font-size:1.6rem; line-height:1.2; }
+        .stat-label    { font-size:0.78rem; font-weight:500; }
+        .stat-presence { font-size:0.95rem; line-height:1.3; }
+        .stat-bg-blue  { background-color:#e8f4fd; }
+        .stat-bg-green { background-color:#e8f8f0; }
+        .stat-bg-yellow{ background-color:#fef9e7; }
+        .stat-bg-purple{ background-color:#f3eefe; }
+        /* ---------------------------------------------------------------
+           Presence status circles — Círculos de estado de presencia.
+           --------------------------------------------------------------- */
+        .presence-circle { width:72px; height:72px; }
+        .presence-icon   { font-size:2rem; }
+        .presence-note   { font-size:0.82rem; }
+        /* ---------------------------------------------------------------
+           User summary card — Tarjeta de resumen de usuario en formulario.
+           --------------------------------------------------------------- */
+        .user-avatar { width:48px; height:48px; background-color:#e9ecef; }
+        .user-detail { font-size:0.82rem; }
+        /* ---------------------------------------------------------------
+           Login icon — Icono principal de la pantalla de login.
+           --------------------------------------------------------------- */
+        .login-icon  { font-size:2rem; }
+        /* ---------------------------------------------------------------
+           Panel page title — Título de página en top navbar.
+           --------------------------------------------------------------- */
+        .panel-page-title { font-size:0.9rem; }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -179,15 +238,21 @@
                     <i class="bi bi-mic"></i>Perfil de voz
                 </a>
             </li>
+
+            <li class="nav-item">
+                <a class="nav-link {% block nav_blockedcallers %}{% endblock %}"
+                   href="{% url 'panel:blockedcaller_list' %}">
+                    <i class="bi bi-slash-circle"></i>Bloqueados
+                </a>
+            </li>
             {% endif %}
 
         </ul>
 
         <!-- Logout link at the bottom of sidebar -->
         <!-- Enlace de logout al pie de la barra lateral -->
-        <div style="position:absolute; bottom:0; width:100%; border-top: 1px solid rgba(255,255,255,0.1);">
-            <a class="nav-link" href="{% url 'panel:logout' %}"
-               style="color:rgba(255,255,255,0.5); padding: 1rem 1.25rem; font-size:0.875rem;">
+        <div class="panel-logout">
+            <a class="nav-link text-nav panel-logout-link" href="{% url 'panel:logout' %}">
                 <i class="bi bi-box-arrow-left"></i>Cerrar sesión
             </a>
         </div>
@@ -202,7 +267,7 @@
         <!-- Barra superior con indicador de presencia -->
         <div class="top-navbar d-flex align-items-center justify-content-between">
             <div>
-                <span class="fw-semibold text-dark" style="font-size:0.9rem;">
+                <span class="fw-semibold text-dark panel-page-title">
                     {% block page_title %}Panel{% endblock %}
                 </span>
             </div>
@@ -211,24 +276,24 @@
                 {% if own_presence %}
                     <span class="presence-badge presence-{{ own_presence.status }}">
                         {% if own_presence.status == 'AVAILABLE' %}
-                            <i class="bi bi-circle-fill me-1" style="font-size:0.6rem;"></i>Disponible
+                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Disponible
                         {% elif own_presence.status == 'IN_MEETING' %}
-                            <i class="bi bi-circle-fill me-1" style="font-size:0.6rem;"></i>Reunido
+                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Reunido
                         {% elif own_presence.status == 'BUSY_UNTIL' %}
-                            <i class="bi bi-circle-fill me-1" style="font-size:0.6rem;"></i>Ocupado
+                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Ocupado
                         {% elif own_presence.status == 'ABSENT_SCHEDULED' %}
-                            <i class="bi bi-circle-fill me-1" style="font-size:0.6rem;"></i>Ausente
+                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Ausente
                         {% elif own_presence.status == 'ABSENT_VACATION' %}
-                            <i class="bi bi-circle-fill me-1" style="font-size:0.6rem;"></i>Vacaciones
+                            <i class="bi bi-circle-fill me-1 icon-xs"></i>Vacaciones
                         {% endif %}
                     </span>
                 {% else %}
                     <span class="presence-badge presence-unknown">
-                        <i class="bi bi-circle me-1" style="font-size:0.6rem;"></i>Sin estado
+                        <i class="bi bi-circle me-1 icon-xs"></i>Sin estado
                     </span>
                 {% endif %}
                 <!-- Authenticated user name — Nombre del usuario autenticado -->
-                <span class="text-muted" style="font-size:0.85rem;">
+                <span class="text-muted text-sm">
                     <i class="bi bi-person-circle me-1"></i>{{ request.user.get_full_name|default:request.user.username }}
                 </span>
             </div>

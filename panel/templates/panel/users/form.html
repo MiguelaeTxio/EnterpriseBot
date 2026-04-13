@@ -12,7 +12,7 @@
 
         <div class="mb-3">
             <a href="{% url 'panel:user_list' %}" class="text-muted text-decoration-none"
-               style="font-size:0.875rem;">
+              >
                 <i class="bi bi-arrow-left me-1"></i>Volver al listado
             </a>
         </div>
@@ -28,17 +28,17 @@
 
                 <!-- User info summary — Resumen de información del usuario -->
                 <div class="d-flex align-items-center gap-3 p-3 rounded-3 mb-4"
-                     style="background-color:#f8f9fa;">
+                     class="bg-light">
                     <div class="rounded-circle d-flex align-items-center justify-content-center"
-                         style="width:48px;height:48px;background-color:#e9ecef;">
-                        <i class="bi bi-person-circle text-secondary" style="font-size:1.5rem;"></i>
+                         class="rounded-circle user-avatar d-flex align-items-center justify-content-center">
+                        <i class="bi bi-person-circle text-secondary stat-icon"></i>
                     </div>
                     <div>
                         <div class="fw-semibold">{{ object.user.username }}</div>
-                        <div class="text-muted" style="font-size:0.82rem;">
+                        <div class="text-muted user-detail">
                             {{ object.user.get_full_name|default:"Sin nombre completo" }}
                         </div>
-                        <div class="text-muted" style="font-size:0.82rem;">
+                        <div class="text-muted user-detail">
                             {{ object.user.email|default:"Sin email registrado" }}
                         </div>
                     </div>
@@ -54,7 +54,7 @@
                         </label>
                         {{ form.role }}
                         {% if form.role.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1">
                             {% for error in form.role.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -75,7 +75,7 @@
                             </label>
                         </div>
                         {% if form.is_active.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1">
                             {% for error in form.is_active.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}

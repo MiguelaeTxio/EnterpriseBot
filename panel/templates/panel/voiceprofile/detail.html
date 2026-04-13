@@ -11,7 +11,7 @@
     <div class="col-12 col-lg-8">
 
         <div class="mb-4">
-            <p class="text-muted mb-0" style="font-size:0.875rem;">
+            <p class="text-muted mb-0">
                 Define el tono, las respuestas de ejemplo y las frases prohibidas que
                 el agente IVR de <strong>{{ company.name }}</strong> debe respetar en
                 cada llamada. Este perfil se inyecta automáticamente en la instrucción
@@ -38,7 +38,7 @@
                         </label>
                         {{ form.tone_guidelines }}
                         {% if form.tone_guidelines.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1">
                             {% for error in form.tone_guidelines.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -57,7 +57,7 @@
                         </label>
                         {{ form.sample_responses }}
                         {% if form.sample_responses.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1">
                             {% for error in form.sample_responses.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -76,7 +76,7 @@
                         </label>
                         {{ form.forbidden_phrases }}
                         {% if form.forbidden_phrases.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1">
                             {% for error in form.forbidden_phrases.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -96,7 +96,7 @@
                             </label>
                         </div>
                         {% if form.is_active.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1">
                             {% for error in form.is_active.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}

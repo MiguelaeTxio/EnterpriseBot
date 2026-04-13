@@ -21,17 +21,17 @@
                 {% if own_presence %}
                     {% if own_presence.status == 'AVAILABLE' %}
                         <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             style="width:72px;height:72px;background-color:#d1e7dd;">
-                            <i class="bi bi-circle-fill text-success" style="font-size:2rem;"></i>
+                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#d1e7dd;">
+                            <i class="bi bi-circle-fill text-success presence-icon"></i>
                         </div>
                         <div class="fw-bold fs-5">Disponible</div>
                     {% elif own_presence.status == 'IN_MEETING' %}
                         <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             style="width:72px;height:72px;background-color:#fff3cd;">
-                            <i class="bi bi-people-fill text-warning" style="font-size:2rem;"></i>
+                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#fff3cd;">
+                            <i class="bi bi-people-fill text-warning presence-icon"></i>
                         </div>
                         <div class="fw-bold fs-5">Reunido/a</div>
-                        <div class="text-muted mt-1" style="font-size:0.82rem;">
+                        <div class="text-muted mt-1 presence-note">
                             Desde {{ own_presence.starts_at|date:"H:i" }}
                             {% if own_presence.ends_at %}
                                 hasta {{ own_presence.ends_at|date:"H:i" }}
@@ -39,42 +39,42 @@
                         </div>
                     {% elif own_presence.status == 'BUSY_UNTIL' %}
                         <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             style="width:72px;height:72px;background-color:#f8d7da;">
-                            <i class="bi bi-clock-fill text-danger" style="font-size:2rem;"></i>
+                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#f8d7da;">
+                            <i class="bi bi-clock-fill text-danger presence-icon"></i>
                         </div>
                         <div class="fw-bold fs-5">Ocupado/a</div>
                         {% if own_presence.ends_at %}
-                        <div class="text-muted mt-1" style="font-size:0.82rem;">
+                        <div class="text-muted mt-1 presence-note">
                             Hasta {{ own_presence.ends_at|date:"H:i" }}
                         </div>
                         {% endif %}
                     {% elif own_presence.status == 'ABSENT_SCHEDULED' %}
                         <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             style="width:72px;height:72px;background-color:#cfe2ff;">
-                            <i class="bi bi-calendar-x-fill text-primary" style="font-size:2rem;"></i>
+                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#cfe2ff;">
+                            <i class="bi bi-calendar-x-fill text-primary presence-icon"></i>
                         </div>
                         <div class="fw-bold fs-5">Ausente programado</div>
                         {% if own_presence.ends_at %}
-                        <div class="text-muted mt-1" style="font-size:0.82rem;">
+                        <div class="text-muted mt-1 presence-note">
                             Hasta {{ own_presence.ends_at|date:"d/m/Y H:i" }}
                         </div>
                         {% endif %}
                     {% elif own_presence.status == 'ABSENT_VACATION' %}
                         <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             style="width:72px;height:72px;background-color:#e2d9f3;">
-                            <i class="bi bi-umbrella-fill" style="font-size:2rem;color:#7c3aed;"></i>
+                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#e2d9f3;">
+                            <i class="bi bi-umbrella-fill presence-icon" style="color:#7c3aed;"></i>
                         </div>
                         <div class="fw-bold fs-5">Vacaciones</div>
                         {% if own_presence.ends_at %}
-                        <div class="text-muted mt-1" style="font-size:0.82rem;">
+                        <div class="text-muted mt-1 presence-note">
                             Hasta {{ own_presence.ends_at|date:"d/m/Y" }}
                         </div>
                         {% endif %}
                     {% endif %}
                 {% else %}
                     <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                         style="width:72px;height:72px;background-color:#e9ecef;">
-                        <i class="bi bi-circle text-secondary" style="font-size:2rem;"></i>
+                         class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#e9ecef;">
+                        <i class="bi bi-circle text-secondary presence-icon"></i>
                     </div>
                     <div class="fw-bold fs-5 text-muted">Sin estado activo</div>
                 {% endif %}
@@ -101,7 +101,7 @@
                         </label>
                         {{ form.status }}
                         {% if form.status.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1">
                             {% for error in form.status.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -118,7 +118,7 @@
                         </label>
                         {{ form.ends_at }}
                         {% if form.ends_at.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1">
                             {% for error in form.ends_at.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}

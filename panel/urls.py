@@ -27,6 +27,9 @@ from panel.views import (
     CallFlowUpdateView,
     PhoneNumberListView,
     CorporateVoiceProfileUpdateView,
+    BlockedCallerListView,
+    BlockedCallerCreateView,
+    BlockedCallerDeleteView,
 )
 
 app_name = "panel"
@@ -66,4 +69,9 @@ urlpatterns = [
 
     # CorporateVoiceProfile management — Gestión de perfil de voz corporativa.
     path("voiceprofile/", CorporateVoiceProfileUpdateView.as_view(), name="voiceprofile_detail"),
+
+    # BlockedCaller management — Gestión de números bloqueados.
+    path("blockedcallers/", BlockedCallerListView.as_view(), name="blockedcaller_list"),
+    path("blockedcallers/create/", BlockedCallerCreateView.as_view(), name="blockedcaller_create"),
+    path("blockedcallers/<int:pk>/delete/", BlockedCallerDeleteView.as_view(), name="blockedcaller_delete"),
 ]

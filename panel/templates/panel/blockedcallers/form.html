@@ -1,0 +1,108 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/blockedcallers/form.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}{{ action }}{% endblock %}
+{% block page_title %}{{ action }}{% endblock %}
+{% block nav_blockedcallers %}active{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-6">
+
+        <div class="mb-3">
+            <a href="{% url 'panel:blockedcaller_list' %}" class="text-muted text-decoration-none text-nav">
+                <i class="bi bi-arrow-left me-1"></i>Volver al listado
+            </a>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-slash-circle me-2 text-danger"></i>
+                    Bloquear número de teléfono
+                </h6>
+            </div>
+            <div class="card-body p-4">
+
+                <div class="alert alert-warning py-2 px-3 mb-4">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    El número bloqueado no podrá conectar con el IVR durante el período indicado.
+                    Alia responderá con un mensaje estándar educado y cerrará la llamada.
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <!-- phone_number field — Campo de número de teléfono -->
+                    <div class="mb-4">
+                        <label for="{{ form.phone_number.id_for_label }}"
+                               class="form-label fw-medium">
+                            Número de teléfono
+                        </label>
+                        {{ form.phone_number }}
+                        {% if form.phone_number.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.phone_number.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Formato E.164 obligatorio (p. ej. +34600000000).
+                        </div>
+                    </div>
+
+                    <!-- reason field — Campo de motivo -->
+                    <div class="mb-4">
+                        <label for="{{ form.reason.id_for_label }}"
+                               class="form-label fw-medium">
+                            Motivo
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.reason }}
+                        {% if form.reason.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.reason.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Descripción interna del motivo del bloqueo. No es visible para el llamante.
+                        </div>
+                    </div>
+
+                    <!-- blocked_until field — Campo de expiración -->
+                    <div class="mb-4">
+                        <label for="{{ form.blocked_until.id_for_label }}"
+                               class="form-label fw-medium">
+                            Bloqueado hasta
+                            <span class="text-muted fw-normal">(opcional — vacío = 24 horas)</span>
+                        </label>
+                        {{ form.blocked_until }}
+                        {% if form.blocked_until.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.blocked_until.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Si se deja vacío, el bloqueo expira automáticamente a las 24 horas.
+                        </div>
+                    </div>
+
+                    <!-- Submit buttons — Botones de envío -->
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger px-4">
+                            <i class="bi bi-slash-circle me-2"></i>Bloquear número
+                        </button>
+                        <a href="{% url 'panel:blockedcaller_list' %}"
+                           class="btn btn-outline-secondary px-4">
+                            Cancelar
+                        </a>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

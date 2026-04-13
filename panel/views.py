@@ -8,14 +8,34 @@ Implementa vistas basadas en clases para autenticación y el panel principal.
 """
 
 from django.contrib.auth.views import LoginView, LogoutView
-from django.views.generic import TemplateView, View, ListView, UpdateView, CreateView
+from django.views.generic import TemplateView, View, ListView, UpdateView, CreateView, DeleteView
 from django.shortcuts import redirect
 from django.db.models import Q
 from django.utils.timezone import now
+from django.forms import modelformset_factory
 
 from panel.mixins import CompanyUserRequiredMixin, AdminRoleRequiredMixin
-from panel.forms import PanelAuthenticationForm, PresenceStatusForm, SectionForm, ContactForm, CallFlowForm, CorporateVoiceProfileForm
-from ivr_config.models import Section, Contact, PresenceStatus, CompanyUser, CallFlow, PhoneNumber, CorporateVoiceProfile
+from panel.forms import (
+    PanelAuthenticationForm,
+    PresenceStatusForm,
+    SectionForm,
+    SectionScheduleForm,
+    ContactForm,
+    CallFlowForm,
+    CorporateVoiceProfileForm,
+    BlockedCallerForm,
+)
+from ivr_config.models import (
+    Section,
+    SectionSchedule,
+    Contact,
+    PresenceStatus,
+    CompanyUser,
+    CallFlow,
+    PhoneNumber,
+    CorporateVoiceProfile,
+    BlockedCaller,
+)
 
 
 class CompanyUserListView(AdminRoleRequiredMixin, ListView):
@@ -191,14 +211,29 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
     """
     Allows an ADMIN to create a new Section for their company.
     Automatically assigns the company from the authenticated user's CompanyUser.
+    Manages an inline SectionSchedule formset for time slot configuration.
     ---
     Permite a un ADMIN crear una nueva Section para su empresa.
     Asigna automáticamente la empresa desde el CompanyUser del usuario autenticado.
+    Gestiona un formset inline de SectionSchedule para la configuración de horarios.
     """
 
     model = Section
     form_class = SectionForm
     template_name = "panel/sections/form.html"
+
+    def _get_schedule_formset_class(self):
+        """
+        Returns the SectionSchedule inline formset class with 5 empty extra forms.
+        ---
+        Retorna la clase de formset inline de SectionSchedule con 5 formularios extra vacíos.
+        """
+        return modelformset_factory(
+            SectionSchedule,
+            form=SectionScheduleForm,
+            extra=5,
+            can_delete=True,
+        )
 
     def get_form(self, form_class=None):
         """
@@ -212,39 +247,81 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
         )
         return form
 
-    def form_valid(self, form):
+    def get(self, request, *args, **kwargs):
         """
-        Assigns the company before saving the new Section.
+        Renders the section form with an empty schedule formset.
         ---
-        Asigna la empresa antes de guardar la nueva Section.
+        Renderiza el formulario de sección con un formset de horarios vacío.
         """
-        form.instance.company = self.request.user.company_user.company
-        return super().form_valid(form)
+        self.object = None
+        form = self.get_form()
+        ScheduleFormSet = self._get_schedule_formset_class()
+        schedule_formset = ScheduleFormSet(
+            queryset=SectionSchedule.objects.none(),
+            prefix="schedules",
+        )
+        return self.render_to_response(
+            self.get_context_data(form=form, schedule_formset=schedule_formset)
+        )
 
-    def get_success_url(self):
+    def post(self, request, *args, **kwargs):
         """
-        Redirects to the section list after a successful creation.
+        Validates and saves both the section form and the schedule formset.
         ---
-        Redirige a la lista de secciones tras una creación correcta.
+        Valida y guarda tanto el formulario de sección como el formset de horarios.
+        """
+        self.object = None
+        form = self.get_form()
+        ScheduleFormSet = self._get_schedule_formset_class()
+        schedule_formset = ScheduleFormSet(
+            request.POST,
+            queryset=SectionSchedule.objects.none(),
+            prefix="schedules",
+        )
+        if form.is_valid() and schedule_formset.is_valid():
+            return self._form_valid(form, schedule_formset)
+        return self.render_to_response(
+            self.get_context_data(form=form, schedule_formset=schedule_formset)
+        )
+
+    def _form_valid(self, form, schedule_formset):
+        """
+        Saves the Section and all valid SectionSchedule entries.
+        ---
+        Guarda la Section y todas las entradas SectionSchedule válidas.
         """
         from django.contrib import messages as django_messages
+        form.instance.company = self.request.user.company_user.company
+        self.object = form.save()
+        schedules = schedule_formset.save(commit=False)
+        for schedule in schedules:
+            schedule.section = self.object
+            schedule.save()
+        for deleted in schedule_formset.deleted_objects:
+            deleted.delete()
         django_messages.success(
             self.request,
             f"Sección '{self.object.name}' creada correctamente."
         )
-        return "/panel/sections/"
+        return redirect("/panel/sections/")
 
     def get_context_data(self, **kwargs):
         """
-        Adds company, company_user, own_presence and action flag to template context.
+        Adds company, company_user, own_presence, action flag and schedule_formset.
         ---
-        Añade company, company_user, own_presence y flag de acción al contexto de la plantilla.
+        Añade company, company_user, own_presence, flag de acción y schedule_formset.
         """
         context = super().get_context_data(**kwargs)
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
         context["action"] = "Crear"
+        if "schedule_formset" not in context:
+            ScheduleFormSet = self._get_schedule_formset_class()
+            context["schedule_formset"] = ScheduleFormSet(
+                queryset=SectionSchedule.objects.none(),
+                prefix="schedules",
+            )
         return context
 
     def _get_own_presence(self):
@@ -268,14 +345,29 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
     """
     Allows an ADMIN to update an existing Section belonging to their company.
     Prevents editing sections from other companies.
+    Manages an inline SectionSchedule formset pre-populated with existing time slots.
     ---
     Permite a un ADMIN actualizar una Section existente de su empresa.
     Impide editar secciones de otras empresas.
+    Gestiona un formset inline de SectionSchedule prerellenado con las franjas existentes.
     """
 
     model = Section
     form_class = SectionForm
     template_name = "panel/sections/form.html"
+
+    def _get_schedule_formset_class(self):
+        """
+        Returns the SectionSchedule inline formset class with 3 extra empty forms.
+        ---
+        Retorna la clase de formset inline de SectionSchedule con 3 formularios extra vacíos.
+        """
+        return modelformset_factory(
+            SectionSchedule,
+            form=SectionScheduleForm,
+            extra=3,
+            can_delete=True,
+        )
 
     def get_queryset(self):
         """
@@ -299,30 +391,82 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
         )
         return form
 
-    def get_success_url(self):
+    def get(self, request, *args, **kwargs):
         """
-        Redirects to the section list after a successful update.
+        Renders the section form pre-populated with existing schedules.
         ---
-        Redirige a la lista de secciones tras una actualización correcta.
+        Renderiza el formulario de sección prerellenado con los horarios existentes.
+        """
+        self.object = self.get_object()
+        form = self.get_form()
+        ScheduleFormSet = self._get_schedule_formset_class()
+        schedule_formset = ScheduleFormSet(
+            queryset=SectionSchedule.objects.filter(section=self.object).order_by("weekday", "time_open"),
+            prefix="schedules",
+        )
+        return self.render_to_response(
+            self.get_context_data(form=form, schedule_formset=schedule_formset)
+        )
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates and saves both the section form and the schedule formset.
+        ---
+        Valida y guarda tanto el formulario de sección como el formset de horarios.
+        """
+        self.object = self.get_object()
+        form = self.get_form()
+        ScheduleFormSet = self._get_schedule_formset_class()
+        schedule_formset = ScheduleFormSet(
+            request.POST,
+            queryset=SectionSchedule.objects.filter(section=self.object).order_by("weekday", "time_open"),
+            prefix="schedules",
+        )
+        if form.is_valid() and schedule_formset.is_valid():
+            return self._form_valid(form, schedule_formset)
+        return self.render_to_response(
+            self.get_context_data(form=form, schedule_formset=schedule_formset)
+        )
+
+    def _form_valid(self, form, schedule_formset):
+        """
+        Saves the Section and all valid SectionSchedule entries.
+        Handles deletion of removed schedule entries.
+        ---
+        Guarda la Section y todas las entradas SectionSchedule válidas.
+        Gestiona la eliminación de las franjas horarias eliminadas.
         """
         from django.contrib import messages as django_messages
+        self.object = form.save()
+        schedules = schedule_formset.save(commit=False)
+        for schedule in schedules:
+            schedule.section = self.object
+            schedule.save()
+        for deleted in schedule_formset.deleted_objects:
+            deleted.delete()
         django_messages.success(
             self.request,
             f"Sección '{self.object.name}' actualizada correctamente."
         )
-        return "/panel/sections/"
+        return redirect("/panel/sections/")
 
     def get_context_data(self, **kwargs):
         """
-        Adds company, company_user, own_presence and action flag to template context.
+        Adds company, company_user, own_presence, action flag and schedule_formset.
         ---
-        Añade company, company_user, own_presence y flag de acción al contexto de la plantilla.
+        Añade company, company_user, own_presence, flag de acción y schedule_formset.
         """
         context = super().get_context_data(**kwargs)
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
         context["action"] = "Editar"
+        if "schedule_formset" not in context:
+            ScheduleFormSet = self._get_schedule_formset_class()
+            context["schedule_formset"] = ScheduleFormSet(
+                queryset=SectionSchedule.objects.filter(section=self.object).order_by("weekday", "time_open"),
+                prefix="schedules",
+            )
         return context
 
     def _get_own_presence(self):
@@ -611,14 +755,29 @@ class CallFlowCreateView(AdminRoleRequiredMixin, CreateView):
     """
     Allows an ADMIN to create a new CallFlow for their company.
     Automatically assigns the company from the authenticated user's CompanyUser.
+    Restricts the notification_contact queryset to the company's own contacts.
     ---
     Permite a un ADMIN crear un nuevo CallFlow para su empresa.
     Asigna automáticamente la empresa desde el CompanyUser del usuario autenticado.
+    Restringe el queryset de notification_contact a los contactos de la empresa.
     """
 
     model = CallFlow
     form_class = CallFlowForm
     template_name = "panel/callflows/form.html"
+
+    def get_form(self, form_class=None):
+        """
+        Restricts the notification_contact queryset to the authenticated user's company.
+        ---
+        Restringe el queryset de notification_contact a la empresa del usuario autenticado.
+        """
+        form = super().get_form(form_class)
+        form.fields["notification_contact"].queryset = Contact.objects.filter(
+            company=self.request.user.company_user.company
+        ).order_by("name")
+        form.fields["notification_contact"].required = False
+        return form
 
     def form_valid(self, form):
         """
@@ -694,6 +853,19 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
         return CallFlow.objects.filter(
             company=self.request.user.company_user.company
         )
+
+    def get_form(self, form_class=None):
+        """
+        Restricts the notification_contact queryset to the authenticated user's company.
+        ---
+        Restringe el queryset de notification_contact a la empresa del usuario autenticado.
+        """
+        form = super().get_form(form_class)
+        form.fields["notification_contact"].queryset = Contact.objects.filter(
+            company=self.request.user.company_user.company
+        ).order_by("name")
+        form.fields["notification_contact"].required = False
+        return form
 
     def get_success_url(self):
         """
@@ -876,6 +1048,191 @@ class CorporateVoiceProfileUpdateView(AdminRoleRequiredMixin, View):
 
         ctx["form"] = form
         return render(request, self.template_name, ctx)
+
+
+class BlockedCallerListView(AdminRoleRequiredMixin, ListView):
+    """
+    Lists all BlockedCaller records for the authenticated user's company.
+    Shows active blocks (blocked_until > now) and expired history separately.
+    Accessible only to users with the ADMIN role.
+    ---
+    Lista todos los registros BlockedCaller de la empresa del usuario autenticado.
+    Muestra los bloqueos activos (blocked_until > now) e historial expirado por separado.
+    Solo accesible para usuarios con rol ADMIN.
+    """
+
+    model = BlockedCaller
+    template_name = "panel/blockedcallers/list.html"
+    context_object_name = "blocked_callers"
+
+    def get_queryset(self):
+        """
+        Returns all BlockedCaller records for the company, ordered by most recent first.
+        ---
+        Retorna todos los registros BlockedCaller de la empresa, ordenados por más reciente primero.
+        """
+        return BlockedCaller.objects.filter(
+            company=self.request.user.company_user.company
+        ).select_related("blocked_by").order_by("-blocked_at")
+
+    def get_context_data(self, **kwargs):
+        """
+        Adds active/expired partition, company, company_user and own_presence to context.
+        ---
+        Añade la partición activos/expirados, company, company_user y own_presence al contexto.
+        """
+        context = super().get_context_data(**kwargs)
+        company_user = self.request.user.company_user
+        all_records = context["blocked_callers"]
+        context["active_blocks"] = [b for b in all_records if b.is_active]
+        context["expired_blocks"] = [b for b in all_records if not b.is_active]
+        context["company"] = company_user.company
+        context["company_user"] = company_user
+        context["own_presence"] = self._get_own_presence()
+        return context
+
+    def _get_own_presence(self):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = self.request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+
+class BlockedCallerCreateView(AdminRoleRequiredMixin, CreateView):
+    """
+    Allows an ADMIN to manually block a phone number for their company.
+    Automatically assigns the company and blocked_by from the authenticated user.
+    ---
+    Permite a un ADMIN bloquear manualmente un número de teléfono para su empresa.
+    Asigna automáticamente la empresa y blocked_by desde el usuario autenticado.
+    """
+
+    model = BlockedCaller
+    form_class = BlockedCallerForm
+    template_name = "panel/blockedcallers/form.html"
+
+    def form_valid(self, form):
+        """
+        Assigns company and blocked_by before saving the new BlockedCaller.
+        ---
+        Asigna company y blocked_by antes de guardar el nuevo BlockedCaller.
+        """
+        from django.contrib import messages as django_messages
+        form.instance.company = self.request.user.company_user.company
+        form.instance.blocked_by = self.request.user
+        response = super().form_valid(form)
+        django_messages.success(
+            self.request,
+            f"Número {self.object.phone_number} bloqueado hasta {self.object.blocked_until:%d/%m/%Y %H:%M}."
+        )
+        return response
+
+    def get_success_url(self):
+        """
+        Redirects to the blocked callers list after a successful creation.
+        ---
+        Redirige a la lista de bloqueados tras una creación correcta.
+        """
+        return "/panel/blockedcallers/"
+
+    def get_context_data(self, **kwargs):
+        """
+        Adds company, company_user, own_presence and action flag to template context.
+        ---
+        Añade company, company_user, own_presence y flag de acción al contexto de la plantilla.
+        """
+        context = super().get_context_data(**kwargs)
+        context["company"] = self.request.user.company_user.company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = self._get_own_presence()
+        context["action"] = "Bloquear número"
+        return context
+
+    def _get_own_presence(self):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = self.request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+
+class BlockedCallerDeleteView(AdminRoleRequiredMixin, DeleteView):
+    """
+    Allows an ADMIN to manually unblock a phone number before its expiry.
+    Restricted to BlockedCaller records belonging to the authenticated user's company.
+    Uses DELETE method via a confirmation form in the template.
+    ---
+    Permite a un ADMIN desbloquear manualmente un número antes de su vencimiento.
+    Restringido a registros BlockedCaller de la empresa del usuario autenticado.
+    Usa el método DELETE mediante un formulario de confirmación en la plantilla.
+    """
+
+    model = BlockedCaller
+    template_name = "panel/blockedcallers/confirm_delete.html"
+
+    def get_queryset(self):
+        """
+        Restricts deletion to BlockedCaller records of the authenticated user's company.
+        ---
+        Restringe la eliminación a registros BlockedCaller de la empresa del usuario autenticado.
+        """
+        return BlockedCaller.objects.filter(
+            company=self.request.user.company_user.company
+        )
+
+    def get_success_url(self):
+        """
+        Redirects to the blocked callers list after successful deletion.
+        ---
+        Redirige a la lista de bloqueados tras la eliminación correcta.
+        """
+        from django.contrib import messages as django_messages
+        django_messages.success(
+            self.request,
+            f"Número {self.object.phone_number} desbloqueado correctamente."
+        )
+        return "/panel/blockedcallers/"
+
+    def get_context_data(self, **kwargs):
+        """
+        Adds company, company_user and own_presence to template context.
+        ---
+        Añade company, company_user y own_presence al contexto de la plantilla.
+        """
+        context = super().get_context_data(**kwargs)
+        context["company"] = self.request.user.company_user.company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = self._get_own_presence()
+        return context
+
+    def _get_own_presence(self):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = self.request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
 
 
 class PanelLoginView(LoginView):

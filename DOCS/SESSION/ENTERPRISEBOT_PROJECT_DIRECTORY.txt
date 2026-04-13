@@ -29,6 +29,9 @@
 ./panel/templates/panel/contacts/form.html
 ./panel/templates/panel/callflows/list.html
 ./panel/templates/panel/callflows/form.html
+./panel/templates/panel/blockedcallers/list.html
+./panel/templates/panel/blockedcallers/form.html
+./panel/templates/panel/blockedcallers/confirm_delete.html
 ./panel/templates/panel/login.html
 ./panel/__init__.py
 ./panel/views.py
@@ -181,6 +184,7 @@
 ./ivr_config/views.py
 ./ivr_config/apps.py
 ./ivr_config/models.py
+./ivr_config/migrations/0003_callflow_notification_contact_contact_email_and_more.py
 ./ivr_config/migrations/__init__.py
 ./ivr_config/migrations/0002_phonenumber_capabilities.py
 ./ivr_config/migrations/0001_initial.py

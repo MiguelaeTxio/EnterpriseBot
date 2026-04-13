@@ -12,7 +12,7 @@
 
         <div class="mb-3">
             <a href="{% url 'panel:contact_list' %}" class="text-muted text-decoration-none"
-               style="font-size:0.875rem;">
+               class="text-nav">
                 <i class="bi bi-arrow-left me-1"></i>Volver al listado
             </a>
         </div>
@@ -36,7 +36,7 @@
                         </label>
                         {{ form.name }}
                         {% if form.name.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.name.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -49,12 +49,47 @@
                         </label>
                         {{ form.phone_number }}
                         {% if form.phone_number.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.phone_number.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
                         <div class="form-text">
                             Formato E.164 obligatorio (p. ej. +34600000000).
+                        </div>
+                    </div>
+
+                    <!-- email field — Campo de correo electrónico -->
+                    <div class="mb-4">
+                        <label for="{{ form.email.id_for_label }}" class="form-label fw-medium">
+                            Correo electrónico
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.email }}
+                        {% if form.email.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.email.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Dirección de correo para recibir notificaciones de llamada del IVR.
+                        </div>
+                    </div>
+
+                    <!-- gender field — Campo de tratamiento -->
+                    <div class="mb-4">
+                        <label for="{{ form.gender.id_for_label }}" class="form-label fw-medium">
+                            Tratamiento
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.gender }}
+                        {% if form.gender.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.gender.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Permite que el agente IVR se dirija al contacto como
+                            <strong>Sr.</strong> o <strong>Sra.</strong> en las llamadas salientes.
                         </div>
                     </div>
 
@@ -68,7 +103,7 @@
                             </label>
                         </div>
                         {% if form.is_internal.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.is_internal.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -86,7 +121,7 @@
                         </label>
                         {{ form.company_user }}
                         {% if form.company_user.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.company_user.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}

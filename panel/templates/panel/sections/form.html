@@ -2,6 +2,97 @@
 {% extends "panel/base.html" %}
 
 {% block title %}{{ action }} sección{% endblock %}
+
+{% block extra_scripts %}
+<script>
+/*
+ * Dynamic SectionSchedule formset row addition.
+ * Adds a new empty schedule row by cloning the last empty row in the formset,
+ * updating all field name/id attributes to use the new form index, and
+ * incrementing the TOTAL_FORMS management form counter.
+ *
+ * Adición dinámica de filas al formset de SectionSchedule.
+ * Añade una nueva fila vacía clonando la última fila vacía del formset,
+ * actualizando todos los atributos name/id de campos al nuevo índice de formulario,
+ * e incrementando el contador TOTAL_FORMS del management form.
+ */
+(function () {
+    'use strict';
+
+    const addBtn     = document.getElementById('add-schedule-row');
+    const tableBody  = document.querySelector('#schedule-table tbody');
+    const totalForms = document.getElementById('id_schedules-TOTAL_FORMS');
+
+    if (!addBtn || !tableBody || !totalForms) return;
+
+    addBtn.addEventListener('click', function () {
+        /* Current total number of forms — Número total actual de formularios */
+        const formCount = parseInt(totalForms.value, 10);
+
+        /* Find the last schedule row to use as clone template.
+           Buscar la última fila de horario para usar como plantilla de clonación. */
+        const rows = tableBody.querySelectorAll('tr.schedule-row');
+        if (rows.length === 0) return;
+
+        const lastRow   = rows[rows.length - 1];
+        const newRow    = lastRow.cloneNode(true);
+
+        /* Update all name and id attributes from the last index to the new one.
+           Actualizar todos los atributos name e id del último índice al nuevo. */
+        const lastIndex = formCount - 1;
+        const newIndex  = formCount;
+
+        newRow.querySelectorAll('input, select').forEach(function (el) {
+            if (el.name) {
+                el.name = el.name.replace(
+                    'schedules-' + lastIndex + '-',
+                    'schedules-' + newIndex + '-'
+                );
+            }
+            if (el.id) {
+                el.id = el.id.replace(
+                    'id_schedules-' + lastIndex + '-',
+                    'id_schedules-' + newIndex + '-'
+                );
+            }
+            /* Reset field values — Reiniciar valores de los campos */
+            if (el.tagName === 'SELECT') {
+                el.selectedIndex = 0;
+            } else if (el.type === 'time') {
+                el.value = '';
+            } else if (el.type === 'checkbox') {
+                el.checked = false;
+            } else if (el.type === 'hidden') {
+                /* Clear hidden id field (pk) for new rows.
+                   Limpiar el campo id oculto (pk) para filas nuevas. */
+                if (el.name && el.name.endsWith('-id')) {
+                    el.value = '';
+                }
+            }
+        });
+
+        /* Hide DELETE checkbox on new rows (no pk yet).
+           Ocultar checkbox DELETE en filas nuevas (aún sin pk). */
+        const deleteCell = newRow.querySelector('td:last-child');
+        if (deleteCell) {
+            deleteCell.innerHTML = '';
+        }
+
+        /* Clear any validation error messages from the cloned row.
+           Limpiar mensajes de error de validación de la fila clonada. */
+        newRow.querySelectorAll('.text-danger').forEach(function (el) {
+            el.textContent = '';
+        });
+
+        tableBody.appendChild(newRow);
+
+        /* Increment TOTAL_FORMS counter.
+           Incrementar el contador TOTAL_FORMS. */
+        totalForms.value = newIndex + 1;
+    });
+}());
+</script>
+{% endblock %}
 {% block page_title %}{{ action }} sección{% endblock %}
 {% block nav_sections %}active{% endblock %}
 
@@ -11,8 +102,7 @@
     <div class="col-12 col-lg-7">
 
         <div class="mb-3">
-            <a href="{% url 'panel:section_list' %}" class="text-muted text-decoration-none"
-               style="font-size:0.875rem;">
+            <a href="{% url 'panel:section_list' %}" class="text-muted text-decoration-none text-nav">
                 <i class="bi bi-arrow-left me-1"></i>Volver al listado
             </a>
         </div>
@@ -36,7 +126,7 @@
                         </label>
                         {{ form.name }}
                         {% if form.name.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.name.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -53,7 +143,7 @@
                         </label>
                         {{ form.description }}
                         {% if form.description.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.description.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -71,13 +161,34 @@
                         </label>
                         {{ form.contacts }}
                         {% if form.contacts.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.contacts.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
                         <div class="form-text">
                             Mantén pulsado <kbd>Ctrl</kbd> (o <kbd>Cmd</kbd> en Mac)
                             para seleccionar varios contactos.
+                        </div>
+                    </div>
+
+                    <!-- is_24h field — Disponibilidad 24 horas -->
+                    <div class="mb-4">
+                        <div class="form-check form-switch">
+                            {{ form.is_24h }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.is_24h.id_for_label }}">
+                                Disponible 24 horas
+                            </label>
+                        </div>
+                        {% if form.is_24h.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.is_24h.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Si está activo, la sección estará siempre disponible y se ignorará
+                            el horario configurado más abajo. Usar para servicios de guardia permanente
+                            (p. ej. Asistencia en carretera).
                         </div>
                     </div>
 
@@ -91,7 +202,7 @@
                             </label>
                         </div>
                         {% if form.is_active.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.is_active.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -99,6 +210,87 @@
                             Las secciones inactivas no aparecen en el dashboard ni
                             están disponibles para el enrutamiento IVR.
                         </div>
+                    </div>
+
+                    <!-- SectionSchedule formset — Horarios de la sección -->
+                    <hr class="my-4">
+                    <h6 class="fw-semibold mb-1">
+                        <i class="bi bi-clock me-2 text-primary"></i>Horario de atención
+                    </h6>
+                    <p class="text-muted mb-3 text-sm">
+                        Define las franjas horarias en las que esta sección está disponible.
+                        Si la sección es 24 horas, estas franjas se ignoran.
+                        Puedes añadir varias franjas por día para horarios partidos.
+                    </p>
+
+                    {{ schedule_formset.management_form }}
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle" id="schedule-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Día</th>
+                                    <th>Apertura</th>
+                                    <th>Cierre</th>
+                                    <th class="text-center">Eliminar</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sched_form in schedule_formset %}
+                                <tr class="schedule-row">
+                                    <td>
+                                        {{ sched_form.id }}
+                                        {{ sched_form.weekday }}
+                                        {% if sched_form.weekday.errors %}
+                                        <div class="text-danger text-xs">
+                                            {% for e in sched_form.weekday.errors %}{{ e }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {{ sched_form.time_open }}
+                                        {% if sched_form.time_open.errors %}
+                                        <div class="text-danger text-xs">
+                                            {% for e in sched_form.time_open.errors %}{{ e }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {{ sched_form.time_close }}
+                                        {% if sched_form.time_close.errors %}
+                                        <div class="text-danger text-xs">
+                                            {% for e in sched_form.time_close.errors %}{{ e }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if sched_form.instance.pk %}
+                                        <div class="form-check d-flex justify-content-center">
+                                            {{ sched_form.DELETE }}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% if sched_form.non_field_errors %}
+                                <tr>
+                                    <td colspan="4">
+                                        <div class="text-danger text-xs">
+                                            {% for e in sched_form.non_field_errors %}{{ e }}{% endfor %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Add schedule row button — Botón de añadir franja horaria -->
+                    <div class="mb-4">
+                        <button type="button" class="btn btn-outline-primary btn-sm"
+                                id="add-schedule-row">
+                            <i class="bi bi-plus-lg me-1"></i>Añadir franja horaria
+                        </button>
                     </div>
 
                     <!-- Submit buttons — Botones de envío -->

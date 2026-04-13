@@ -1,0 +1,121 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/blockedcallers/list.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Llamantes bloqueados{% endblock %}
+{% block page_title %}Llamantes bloqueados{% endblock %}
+{% block nav_blockedcallers %}active{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <p class="text-muted mb-0">
+        Números de teléfono bloqueados para <strong>{{ company.name }}</strong>.
+    </p>
+    <a href="{% url 'panel:blockedcaller_create' %}" class="btn btn-dark btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>Bloquear número
+    </a>
+</div>
+
+<!-- Active blocks — Bloqueos activos -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold">
+            <i class="bi bi-slash-circle me-2 text-danger"></i>Bloqueos activos
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        {% if active_blocks %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Número</th>
+                        <th>Motivo</th>
+                        <th>Bloqueado por</th>
+                        <th class="text-center">Bloqueado en</th>
+                        <th class="text-center">Expira</th>
+                        <th class="text-center">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for block in active_blocks %}
+                    <tr>
+                        <td class="ps-4 fw-medium">
+                            <i class="bi bi-telephone-x me-2 text-danger"></i>
+                            {{ block.phone_number }}
+                        </td>
+                        <td class="text-muted">
+                            {{ block.reason|default:"—"|truncatechars:60 }}
+                        </td>
+                        <td class="text-muted">
+                            {{ block.blocked_by.username|default:"Sistema" }}
+                        </td>
+                        <td class="text-center text-muted">
+                            {{ block.blocked_at|date:"d/m/Y H:i" }}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge badge-inactive">
+                                {{ block.blocked_until|date:"d/m/Y H:i" }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'panel:blockedcaller_delete' block.pk %}"
+                               class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-unlock me-1"></i>Desbloquear
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-muted">
+            <i class="bi bi-check-circle me-2 text-success"></i>
+            No hay números bloqueados actualmente.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Expired blocks history — Historial de bloqueos expirados -->
+{% if expired_blocks %}
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+        <h6 class="mb-0 fw-semibold text-muted">
+            <i class="bi bi-clock-history me-2"></i>Historial de bloqueos expirados
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Número</th>
+                        <th>Motivo</th>
+                        <th>Bloqueado por</th>
+                        <th class="text-center">Bloqueado en</th>
+                        <th class="text-center">Expiró</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for block in expired_blocks %}
+                    <tr class="text-muted">
+                        <td class="ps-4">
+                            <i class="bi bi-telephone me-2"></i>
+                            {{ block.phone_number }}
+                        </td>
+                        <td>{{ block.reason|default:"—"|truncatechars:60 }}</td>
+                        <td>{{ block.blocked_by.username|default:"Sistema" }}</td>
+                        <td class="text-center">{{ block.blocked_at|date:"d/m/Y H:i" }}</td>
+                        <td class="text-center">{{ block.blocked_until|date:"d/m/Y H:i" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

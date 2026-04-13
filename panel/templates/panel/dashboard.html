@@ -14,14 +14,14 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded-3 p-3"
-                     style="background-color:#e8f4fd;">
-                    <i class="bi bi-diagram-3 text-primary" style="font-size:1.5rem;"></i>
+                     class="stat-bg-blue">
+                    <i class="bi bi-diagram-3 text-primary stat-icon"></i>
                 </div>
                 <div>
-                    <div class="text-muted" style="font-size:0.78rem; font-weight:500;">
+                    <div class="text-muted stat-label">
                         Secciones activas
                     </div>
-                    <div class="fw-bold" style="font-size:1.6rem; line-height:1.2;">
+                    <div class="fw-bold stat-value">
                         {{ active_sections_count }}
                     </div>
                 </div>
@@ -34,14 +34,14 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded-3 p-3"
-                     style="background-color:#e8f8f0;">
-                    <i class="bi bi-person-lines-fill text-success" style="font-size:1.5rem;"></i>
+                     class="stat-bg-green">
+                    <i class="bi bi-person-lines-fill text-success stat-icon"></i>
                 </div>
                 <div>
-                    <div class="text-muted" style="font-size:0.78rem; font-weight:500;">
+                    <div class="text-muted stat-label">
                         Contactos
                     </div>
-                    <div class="fw-bold" style="font-size:1.6rem; line-height:1.2;">
+                    <div class="fw-bold stat-value">
                         {{ total_contacts }}
                     </div>
                 </div>
@@ -54,14 +54,14 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded-3 p-3"
-                     style="background-color:#fef9e7;">
-                    <i class="bi bi-person-check text-warning" style="font-size:1.5rem;"></i>
+                     class="stat-bg-yellow">
+                    <i class="bi bi-person-check text-warning stat-icon"></i>
                 </div>
                 <div>
-                    <div class="text-muted" style="font-size:0.78rem; font-weight:500;">
+                    <div class="text-muted stat-label">
                         Mi presencia
                     </div>
-                    <div class="fw-semibold" style="font-size:0.95rem; line-height:1.3;">
+                    <div class="fw-semibold stat-presence">
                         {% if own_presence %}
                             {% if own_presence.status == 'AVAILABLE' %}
                                 Disponible
@@ -91,14 +91,14 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded-3 p-3"
-                     style="background-color:#f3eefe;">
-                    <i class="bi bi-shield-check text-purple" style="font-size:1.5rem; color:#7c3aed;"></i>
+                     class="stat-bg-purple">
+                    <i class="bi bi-shield-check stat-icon" style="color:#7c3aed;"></i>
                 </div>
                 <div>
-                    <div class="text-muted" style="font-size:0.78rem; font-weight:500;">
+                    <div class="text-muted stat-label">
                         Rol
                     </div>
-                    <div class="fw-semibold" style="font-size:0.95rem;">
+                    <div class="fw-semibold stat-presence">
                         {% if company_user.role == 'ADMIN' %}
                             Administrador
                         {% else %}
@@ -122,7 +122,7 @@
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0" style="font-size:0.875rem;">
+            <table class="table table-hover mb-0">
                 <thead class="table-light">
                     <tr>
                         <th class="ps-4">Nombre</th>
@@ -150,7 +150,7 @@
     </div>
 </div>
 {% else %}
-<div class="alert alert-light border text-muted" style="font-size:0.875rem;">
+<div class="alert alert-light border text-muted">
     <i class="bi bi-info-circle me-2"></i>
     No hay secciones activas configuradas para tu empresa.
 </div>

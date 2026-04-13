@@ -2,14 +2,19 @@
 """
 Data models for the ivr_config multicompany IVR configuration engine.
 Defines the full entity graph: Company, CompanyUser, CorporateVoiceProfile,
-DataCaptureSet, Section, Contact, CallFlow, PhoneNumber and PresenceStatus.
+DataCaptureSet, Section, Contact, CallFlow, PhoneNumber, PresenceStatus,
+SectionSchedule and BlockedCaller.
 Creation order respects all FK dependencies to avoid circular references.
 ---
 Modelos de datos para el motor de configuración IVR multiempresa ivr_config.
 Define el grafo completo de entidades: Company, CompanyUser, CorporateVoiceProfile,
-DataCaptureSet, Section, Contact, CallFlow, PhoneNumber y PresenceStatus.
+DataCaptureSet, Section, Contact, CallFlow, PhoneNumber, PresenceStatus,
+SectionSchedule y BlockedCaller.
 El orden de creación respeta todas las dependencias FK para evitar referencias circulares.
+Última actualización: 2026-04-13 — Extensiones de modelo acordadas en sesión.
 """
+
+from datetime import timedelta
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -279,11 +284,21 @@ class Section(models.Model):
     Represents a business unit or department within a company (e.g. Elevación,
     Asistencia, Grúas). Sections are the primary routing units of the IVR system.
     Each section may have its own DataCaptureSet and a set of associated contacts.
+    Availability is controlled by is_24h and SectionSchedule records:
+    - is_24h=True  → always available, SectionSchedule is ignored.
+    - is_24h=False → availability is determined by SectionSchedule for the
+                     current weekday and time. If no schedule exists for the
+                     current day, the section is considered unavailable.
     ---
     Representa una unidad de negocio o departamento dentro de una empresa (p. ej.
     Elevación, Asistencia, Grúas). Las secciones son las unidades primarias de
     enrutamiento del sistema IVR. Cada sección puede tener su propio DataCaptureSet
     y un conjunto de contactos asociados.
+    La disponibilidad se controla mediante is_24h y los registros SectionSchedule:
+    - is_24h=True  → siempre disponible, SectionSchedule se ignora.
+    - is_24h=False → la disponibilidad la determinan los SectionSchedule para el
+                     día de la semana y hora actuales. Si no existe horario para el
+                     día actual, la sección se considera no disponible.
     """
 
     company = models.ForeignKey(
@@ -318,6 +333,15 @@ class Section(models.Model):
         related_name="sections",
         verbose_name="Conjunto de captura de datos",
         help_text="Conjunto de datos a recopilar para las llamadas de esta sección.",
+    )
+    is_24h = models.BooleanField(
+        default=False,
+        verbose_name="Disponible 24 horas",
+        help_text=(
+            "Si está activo, la sección se considera siempre disponible independientemente "
+            "del horario definido en SectionSchedule. Usar para servicios de guardia permanente "
+            "(p. ej. Asistencia en carretera)."
+        ),
     )
     is_active = models.BooleanField(
         default=True,
@@ -354,12 +378,20 @@ class Contact(models.Model):
     may have an active PresenceStatus. External contacts are simple records
     with no platform access.
     Constraint: if is_internal=True, company_user must not be null.
+    The 'email' field is used to send call summary notifications to the responsible
+    contact after a caller's data has been collected by Alia.
+    The 'gender' field (M/F) controls Alia's verbal treatment: "Sr. {name}" or
+    "Sra. {name}". If blank, Alia addresses the contact by name only.
     ---
     Representa una persona a la que el sistema IVR puede llamar o derivar interacciones.
     Los contactos internos (is_internal=True) tienen un CompanyUser asociado y pueden
     tener un PresenceStatus activo. Los contactos externos son registros simples
     sin acceso a la plataforma.
     Restricción: si is_internal=True, company_user no puede ser null.
+    El campo 'email' se usa para enviar notificaciones de resumen de llamada al
+    responsable tras la toma de datos del llamante por parte de Alia.
+    El campo 'gender' (M/F) controla el tratamiento verbal de Alia: "Sr. {nombre}"
+    o "Sra. {nombre}". Si está vacío, Alia se dirige al contacto solo por nombre.
     """
 
     company = models.ForeignKey(
@@ -378,6 +410,21 @@ class Contact(models.Model):
         max_length=20,
         verbose_name="Número de teléfono",
         help_text="Número de teléfono en formato E.164 (p. ej. +34XXXXXXXXX).",
+    )
+    email = models.EmailField(
+        blank=True,
+        verbose_name="Correo electrónico",
+        help_text="Dirección de correo electrónico para notificaciones de llamada al responsable.",
+    )
+    gender = models.CharField(
+        max_length=1,
+        choices=[("M", "Sr."), ("F", "Sra.")],
+        blank=True,
+        verbose_name="Género",
+        help_text=(
+            "Género del contacto para tratamiento verbal por Alia (Sr./Sra.). "
+            "Si está vacío, Alia usará el nombre sin tratamiento."
+        ),
     )
     is_internal = models.BooleanField(
         default=False,
@@ -422,11 +469,15 @@ class CallFlow(models.Model):
     The system_instruction and initial_greeting fields are injected dynamically
     into Gemini Live's LiveConnectConfig at call time, replacing the hardcoded
     constants SYSTEM_INSTRUCTION and INITIAL_GREETING_TEXT in vox_bridge/services.py.
+    The notification_contact field designates the person to be notified (outbound
+    call + email) when an inbound call does not match any known section.
     ---
     Define la personalidad y el comportamiento del agente IVR para un número Twilio concreto.
     Los campos system_instruction e initial_greeting se inyectan dinámicamente en el
     LiveConnectConfig de Gemini Live en tiempo de llamada, sustituyendo las constantes
     hardcodeadas SYSTEM_INSTRUCTION e INITIAL_GREETING_TEXT en vox_bridge/services.py.
+    El campo notification_contact designa a la persona que debe recibir la notificación
+    (llamada saliente + correo) cuando una llamada entrante no encaja en ninguna sección conocida.
     """
 
     company = models.ForeignKey(
@@ -448,6 +499,19 @@ class CallFlow(models.Model):
     initial_greeting = models.TextField(
         verbose_name="Saludo inicial",
         help_text="Texto del saludo inicial que el agente pronuncia al conectar la llamada.",
+    )
+    notification_contact = models.ForeignKey(
+        "Contact",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="notification_flows",
+        verbose_name="Contacto de notificación",
+        help_text=(
+            "Contacto designado para recibir la notificación (llamada saliente + correo) "
+            "cuando una llamada no encaja en ninguna sección conocida del flujo IVR. "
+            "Si está vacío, las llamadas de actividad no recogida no generan notificación."
+        ),
     )
     is_active = models.BooleanField(
         default=True,
@@ -657,3 +721,179 @@ class PresenceStatus(models.Model):
 
     def __str__(self):
         return f"{self.company_user} — {self.get_status_display()} desde {self.starts_at:%Y-%m-%d %H:%M}"
+
+
+# ---------------------------------------------------------------------------
+# 10. SECTION SCHEDULE — Weekly timetable for a section's availability.
+#     Horario semanal de disponibilidad de una sección.
+# ---------------------------------------------------------------------------
+
+class SectionSchedule(models.Model):
+    """
+    Defines a time slot during which a Section is available for IVR routing.
+    Multiple records per (section, weekday) pair are allowed to model split
+    schedules (e.g. 08:00–14:00 and 16:00–20:00 on the same day).
+    A section is considered available if the current time falls within ANY
+    of the time slots defined for the current weekday.
+    This model is only consulted when Section.is_24h is False.
+    ---
+    Define una franja horaria durante la cual una Section está disponible para
+    el enrutamiento IVR. Se permiten múltiples registros por par (section, weekday)
+    para modelar horarios partidos (p. ej. 08:00–14:00 y 16:00–20:00 el mismo día).
+    Una sección se considera disponible si la hora actual cae en CUALQUIERA de las
+    franjas definidas para el día de la semana en curso.
+    Este modelo solo se consulta cuando Section.is_24h es False.
+    """
+
+    WEEKDAY_CHOICES = [
+        (0, "Lunes"),
+        (1, "Martes"),
+        (2, "Miércoles"),
+        (3, "Jueves"),
+        (4, "Viernes"),
+        (5, "Sábado"),
+        (6, "Domingo"),
+    ]
+
+    section = models.ForeignKey(
+        Section,
+        on_delete=models.CASCADE,
+        related_name="schedules",
+        verbose_name="Sección",
+        help_text="Sección a la que pertenece esta franja horaria.",
+    )
+    weekday = models.IntegerField(
+        choices=WEEKDAY_CHOICES,
+        verbose_name="Día de la semana",
+        help_text="Día de la semana al que aplica esta franja horaria (0=Lunes, 6=Domingo).",
+    )
+    time_open = models.TimeField(
+        verbose_name="Hora de apertura",
+        help_text="Hora de inicio de la franja de disponibilidad (formato HH:MM).",
+    )
+    time_close = models.TimeField(
+        verbose_name="Hora de cierre",
+        help_text="Hora de fin de la franja de disponibilidad (formato HH:MM).",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Horario de sección"
+        verbose_name_plural = "Horarios de sección"
+        ordering = ["section__company__name", "section__name", "weekday", "time_open"]
+
+    def __str__(self):
+        return (
+            f"{self.section.name} — "
+            f"{self.get_weekday_display()} "
+            f"{self.time_open:%H:%M}–{self.time_close:%H:%M}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 11. BLOCKED CALLER — Temporarily blocked inbound phone number.
+#     Número de teléfono entrante bloqueado temporalmente.
+# ---------------------------------------------------------------------------
+
+class BlockedCaller(models.Model):
+    """
+    Records a phone number that has been blocked from reaching the IVR system
+    for a given company. The block is active while blocked_until > now().
+    At the start of every inbound call, build_live_config() checks whether
+    the caller's number (From) has an active BlockedCaller record for the
+    company. If blocked, Alia responds with a standard polite message and
+    terminates the call immediately without any data capture or notification.
+    The block duration defaults to 24 hours but is configurable per record.
+    Admins can manually unblock a number before expiry from the panel.
+    ---
+    Registra un número de teléfono que ha sido bloqueado para acceder al sistema
+    IVR de una empresa concreta. El bloqueo está activo mientras blocked_until > now().
+    Al inicio de cada llamada entrante, build_live_config() comprueba si el número
+    del llamante (From) tiene un registro BlockedCaller activo para la empresa.
+    Si está bloqueado, Alia responde con un mensaje estándar educado y termina la
+    llamada inmediatamente sin toma de datos ni notificación.
+    La duración del bloqueo es 24 horas por defecto, pero es configurable por registro.
+    Los administradores pueden desbloquear manualmente un número antes del vencimiento
+    desde el panel.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="blocked_callers",
+        verbose_name="Empresa",
+        help_text="Empresa para la que se aplica este bloqueo.",
+    )
+    phone_number = models.CharField(
+        max_length=20,
+        verbose_name="Número de teléfono",
+        help_text="Número de teléfono bloqueado en formato E.164 (p. ej. +34XXXXXXXXX).",
+    )
+    reason = models.TextField(
+        blank=True,
+        verbose_name="Motivo",
+        help_text="Descripción del motivo del bloqueo para registro interno.",
+    )
+    blocked_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de bloqueo",
+    )
+    blocked_until = models.DateTimeField(
+        verbose_name="Bloqueado hasta",
+        help_text="Fecha y hora de expiración del bloqueo. Por defecto: 24 horas desde el bloqueo.",
+    )
+    blocked_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="blocked_callers",
+        verbose_name="Bloqueado por",
+        help_text="Usuario administrador que aplicó el bloqueo.",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+
+    class Meta:
+        verbose_name = "Llamante bloqueado"
+        verbose_name_plural = "Llamantes bloqueados"
+        ordering = ["-blocked_at"]
+        indexes = [
+            # Fast lookup by company + phone_number at call time.
+            # Búsqueda rápida por empresa + número en tiempo de llamada.
+            models.Index(
+                fields=["company", "phone_number"],
+                name="ivr_blocked_company_phone_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.company.name} — {self.phone_number} (hasta {self.blocked_until:%Y-%m-%d %H:%M})"
+
+    def save(self, *args, **kwargs):
+        """
+        Sets blocked_until to 24 hours after creation if not explicitly provided.
+        ---
+        Establece blocked_until a 24 horas tras la creación si no se ha indicado explícitamente.
+        """
+        if not self.pk and not self.blocked_until:
+            self.blocked_until = now() + timedelta(hours=24)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_active(self):
+        """
+        Returns True if the block is currently in effect.
+        ---
+        Retorna True si el bloqueo está actualmente en vigor.
+        """
+        return self.blocked_until > now()

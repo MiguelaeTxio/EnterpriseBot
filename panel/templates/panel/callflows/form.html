@@ -12,7 +12,7 @@
 
         <div class="mb-3">
             <a href="{% url 'panel:callflow_list' %}" class="text-muted text-decoration-none"
-               style="font-size:0.875rem;">
+               class="text-nav">
                 <i class="bi bi-arrow-left me-1"></i>Volver al listado
             </a>
         </div>
@@ -36,7 +36,7 @@
                         </label>
                         {{ form.name }}
                         {% if form.name.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.name.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -53,7 +53,7 @@
                         </label>
                         {{ form.initial_greeting }}
                         {% if form.initial_greeting.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.initial_greeting.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
@@ -70,13 +70,32 @@
                         </label>
                         {{ form.system_instruction }}
                         {% if form.system_instruction.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.system_instruction.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
                         <div class="form-text">
                             Instrucción completa que define el rol, las reglas y el comportamiento
                             del agente Gemini Live. Se inyecta dinámicamente en cada llamada entrante.
+                        </div>
+                    </div>
+
+                    <!-- notification_contact field — Contacto de notificación -->
+                    <div class="mb-4">
+                        <label for="{{ form.notification_contact.id_for_label }}"
+                               class="form-label fw-medium">
+                            Contacto de notificación
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.notification_contact }}
+                        {% if form.notification_contact.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.notification_contact.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Persona que recibirá una llamada saliente y un correo electrónico
+                            cuando el IVR atienda una llamada que no encaje en ninguna sección conocida.
                         </div>
                     </div>
 
@@ -90,7 +109,7 @@
                             </label>
                         </div>
                         {% if form.is_active.errors %}
-                        <div class="text-danger mt-1" style="font-size:0.8rem;">
+                        <div class="text-danger mt-1 text-err">
                             {% for error in form.is_active.errors %}{{ error }}{% endfor %}
                         </div>
                         {% endif %}
