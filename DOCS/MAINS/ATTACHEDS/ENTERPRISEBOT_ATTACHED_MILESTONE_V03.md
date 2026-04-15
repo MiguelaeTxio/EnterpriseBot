@@ -4,6 +4,7 @@
 **Estado:** EN PROGRESO
 **Fecha de inicio:** 2026-04-07
 **Fecha de reanudación:** 2026-04-13
+**Última actualización:** 2026-04-15
 
 ---
 
@@ -51,6 +52,16 @@ Resumen de entidades:
 - `Section.is_24h` — BooleanField que cortocircuita la comprobación de horario.
 - `CallFlow.notification_contact` — FK a Contact designado para actividad no recogida.
 
+#### Extensiones sobre entidades existentes (acordadas sesión 2026-04-15)
+- `CompanyUser.must_change_password` — BooleanField (default=True). Fuerza cambio
+  de contraseña en el primer acceso o tras reset del ADMIN. Migración 0004 aplicada.
+- `CorporateVoiceProfile.voice_name` — CharField selección de voz Gemini Live
+  por empresa. Pendiente migración (Paso 33-D).
+- `CallFlow.backup_system_instruction` / `backup_initial_greeting` /
+  `backup_notification_contact` — campos de snapshot para restauración (Paso 33-E).
+- `CorporateVoiceProfile.backup_tone_guidelines` / `backup_sample_responses` /
+  `backup_forbidden_phrases` — campos de snapshot para restauración (Paso 33-E).
+
 ---
 
 ## SECCIÓN 3 — ARQUITECTURA DE AUTENTICACIÓN Y PANEL
@@ -68,15 +79,19 @@ Resumen de entidades:
 
 ### 3.2. Panel de Administración Personalizado (`/panel/`) — IMPLEMENTADO
 Vistas Django class-based que permiten a cada empresa gestionar:
-- `CompanyUser` — usuarios con roles ADMIN/OPERATOR.
+- `CompanyUser` — usuarios con roles ADMIN/OPERATOR. Alta desde panel con contraseña
+  inicial configurable y cambio obligatorio en primer acceso. ← ACTUALIZADO
 - `Section` — secciones o departamentos de enrutamiento IVR.
-- `SectionSchedule` — horarios por día de la semana para cada sección. ← NUEVO
+- `SectionSchedule` — horarios por día de la semana para cada sección.
 - `Contact` — contactos internos y externos.
 - `PhoneNumber` — números Twilio asignados (solo lectura para CompanyUser).
 - `CallFlow` — flujos IVR con system_instruction e initial_greeting editables.
+  Botón de restauración al estado anterior (Paso 33-E pendiente).
 - `CorporateVoiceProfile` — perfil de voz corporativa inyectado en Gemini Live.
+  Selector de voz Gemini por empresa (Paso 33-D pendiente).
+  Botón de restauración al estado anterior (Paso 33-E pendiente).
 - `PresenceStatus` — estado de presencia propio (todos los roles).
-- `BlockedCaller` — números bloqueados activos e historial. ← NUEVO
+- `BlockedCaller` — números bloqueados activos e historial.
 
 ### 3.3. Lecciones Aprendidas — Implementación del Panel
 - El accessor ORM correcto desde `auth.User` hacia `CompanyUser` es `user.company_user`
@@ -91,6 +106,11 @@ Vistas Django class-based que permiten a cada empresa gestionar:
       touch /var/www/enterprisebot-miguelaetxio_pythonanywhere_com_wsgi.py
 - La recarga correcta de la aplicación es desde el botón verde del panel web de
   PythonAnywhere — siempre verificar que se recarga EnterpriseBot y no otro proyecto.
+- `data-bs-dismiss="offcanvas"` en los enlaces de navegación del sidebar offcanvas
+  impide la navegación en algunos navegadores móviles. Solución: eliminar el atributo
+  de los enlaces y mantenerlo solo en el `btn-close` del header del offcanvas.
+- El `btn-close` del offcanvas debe estar dentro de un `offcanvas-header` estándar de
+  Bootstrap (no en un div custom) para que `data-bs-dismiss` funcione correctamente.
 
 ### 3.4. Gestión de Presencia
 - Cada usuario puede activar/desactivar su estado desde `/panel/presence/`.
@@ -99,12 +119,30 @@ Vistas Django class-based que permiten a cada empresa gestionar:
 - Al activar `BUSY_UNTIL`: Celery Beat programa la expiración automática.
 - `ABSENT_SCHEDULED` y `ABSENT_VACATION`: gestión automática por rango de fechas.
 
-### 3.5. Nota Responsive — Panel
-La interfaz del panel (`/panel/`) debe ser completamente responsive. La mayoría
-de accesos se realizarán desde dispositivos móviles y tablets. Aplicar en todas
-las vistas: uso correcto de col-12/col-md-*/col-lg-*, tablas con table-responsive,
-formularios con inputs de tamaño adecuado para pantalla táctil, navegación
-colapsable en móvil.
+### 3.5. Responsive — Panel
+La interfaz del panel (`/panel/`) es completamente responsive desde la sesión
+2026-04-15. Implementación:
+- Sidebar fijo en escritorio (`>=lg`, `d-lg-flex`). Offcanvas Bootstrap con botón
+  hamburguesa en móvil/tablet (`<lg`, `d-lg-none`).
+- `margin-left: 260px` restringido a `@media (min-width: 992px)`.
+- `page-content` con padding adaptativo: `1rem` en móvil, `2rem 1.5rem` en `>=md`.
+- Tablas con `table-responsive` en todos los listados.
+- Cabeceras de acciones con `flex-wrap gap-2` para evitar solapamiento en móvil.
+- Campos del formset de horarios con `w-100` para usabilidad táctil.
+- Nombre de usuario en top navbar con `d-none d-sm-inline`.
+
+### 3.6. Gestión de Contraseñas de CompanyUser ← NUEVO (sesión 2026-04-15)
+- Al crear un `CompanyUser` desde el panel, el ADMIN asigna una contraseña inicial
+  (por defecto `1234`). El campo `must_change_password` se activa automáticamente.
+- `CompanyUserRequiredMixin` redirige a `/panel/password/change/` en cada request
+  mientras `must_change_password=True`, bloqueando el acceso al resto del panel.
+- En `/panel/password/change/` el usuario establece su contraseña definitiva.
+  Al guardar, `must_change_password` se limpia y el hash de sesión se refresca
+  para que el usuario permanezca autenticado.
+- El ADMIN puede forzar un reset desde `/panel/users/{pk}/edit/` — botón
+  "Forzar cambio de contraseña" que reactiva `must_change_password=True`.
+- Los campos de contraseña en login, cambio y creación de usuario incluyen:
+  toggle mostrar/ocultar (icono ojo) y barra de nivel de seguridad en tiempo real.
 
 ---
 
@@ -135,13 +173,13 @@ colapsable en móvil.
           Si bloqueado → retorna config de bloqueo → Alia responde y termina.
        b. Resuelve `PhoneNumber` activo por `twilio_number`.
        c. Carga `CallFlow` asociado.
-       d. Carga `CorporateVoiceProfile` de la `Company`.
+       d. Carga `CorporateVoiceProfile` de la `Company` (incluye `voice_name`).
        e. Carga todas las `Section` activas con sus `SectionSchedule` y `Contact`.
        f. Consulta `PresenceStatus` activo de todos los `Contact` internos.
        g. Ensambla `system_instruction` dinámico con toda la información anterior.
-       h. Retorna `(system_instruction, initial_greeting)`.
+       h. Retorna `(system_instruction, initial_greeting, voice_name)`.
    → Fallback automático a `SYSTEM_INSTRUCTION_FALLBACK` / `INITIAL_GREETING_FALLBACK`
-     si `build_live_config()` lanza cualquier excepción.
+     / `VOICE_NAME_FALLBACK = 'Aoede'` si `build_live_config()` lanza excepción.
 
 5. Twilio envía eventos `media` sucesivos
    → Se reenvían a `service.receive_twilio_audio()`.
@@ -149,7 +187,18 @@ colapsable en móvil.
 6. Twilio envía evento `stop`
    → `service.terminate_session()` señaliza el fin de sesión.
 
-### 4.2. Archivos del pipeline de voz
+### 4.2. Notificación al responsable de sección ← NUEVO (sesión 2026-04-15)
+Una vez que Alia completa la toma de datos del llamante, notifica al responsable:
+1. **Llamada saliente Twilio** al teléfono del `Contact` responsable de la sección.
+   Alia lee el resumen: nombre cliente, teléfono, servicio, ubicación.
+2. **WhatsApp** al responsable (cuando Hito 4 esté operativo).
+3. **Email vía SendGrid** al `Contact.email` del responsable (diferido al Hito 4).
+
+El mecanismo de notificación se implementa mediante **function calling de Gemini Live**:
+Alia invoca `notify_section_contact(section_name, client_name, phone, service, location)`
+y el backend ejecuta las acciones reales sin interrumpir el audio en curso.
+
+### 4.3. Archivos del pipeline de voz
 - `ivr_config/services.py` — Contiene `build_live_config()`.
 - `vox_bridge/services.py` — Orquestación de sesión Gemini Live con carga async de config.
 - `voice_sidecar_bridge.py` — Bridge aiohttp: captura `To` y `From` en POST,
@@ -256,7 +305,7 @@ colapsable en móvil.
 - Diseño completo del flujo IVR de producción acordado:
     · 9 tipos de llamada identificados y comportamiento definido para cada uno.
     · Toma de datos conversacional con ubicación textual (sin GPS en fase actual).
-    · Notificación al responsable: llamada saliente Twilio + correo electrónico.
+    · Notificación al responsable: llamada saliente Twilio + WhatsApp (Hito 4).
     · Bloqueo de números maliciosos con duración configurable.
     · Modo demo con frase clave + DTMF 7463.
 - Extensiones de modelo acordadas y documentadas en `V03DOC_DATA_MODEL.md` (PMA):
@@ -265,6 +314,29 @@ colapsable en móvil.
     · `CallFlow`: campo `notification_contact`.
     · Nuevo modelo `SectionSchedule`.
     · Nuevo modelo `BlockedCaller`.
+- Pasos 31 y 32 implementados y validados E2E en producción.
+
+### Sesión 2026-04-15 — Responsive + Gestión de Contraseñas + Hoja de Ruta
+- Auditoría y corrección responsive completa del panel (Sección 3.5):
+    · Sidebar offcanvas con hamburguesa en móvil.
+    · Padding adaptativo, tablas responsive, formset táctil-friendly.
+    · Fix navegación offcanvas (`data-bs-dismiss` eliminado de enlaces).
+    · Fix btn-close offcanvas (movido a `offcanvas-header` estándar Bootstrap).
+    · Clases de color de círculos de presencia migradas de inline a CSS.
+- Gestión de contraseñas CompanyUser implementada (Paso 33-B):
+    · Campo `must_change_password` en `CompanyUser`. Migración 0004 aplicada.
+    · `CompanyUserCreateView`: alta de usuarios desde panel con contraseña inicial.
+    · `PanelPasswordChangeView`: cambio de contraseña propio con forced-redirect.
+    · `CompanyUserUpdateView`: acción `force_reset` para el ADMIN.
+    · Toggle mostrar/ocultar y barra de seguridad en todos los campos de contraseña.
+    · Templates: `password/change.html`, `users/create.html` (neonatos puros).
+    · Templates actualizados: `users/list.html`, `users/form.html`, `login.html`.
+- Hoja de ruta ampliada con Pasos 33-A, 33-C, 33-D, 33-E acordados en sesión.
+- Decisiones de arquitectura acordadas:
+    · Notificación al responsable: llamada saliente Twilio + WhatsApp (email diferido).
+    · Mecanismo de notificación: function calling de Gemini Live.
+    · Voz del agente configurable por empresa vía `CorporateVoiceProfile.voice_name`.
+    · Restauración de CallFlow y CorporateVoiceProfile: campos backup_* en modelo.
 
 ---
 
@@ -275,13 +347,13 @@ colapsable en móvil.
 2. Recepción de ubicación GPS: integración con localización nativa WhatsApp +
    Grounding Google Maps (diferido a reactivación del Hito 4).
 3. Sistema de recordatorios de presencia vía WhatsApp: diferido al Hito 4.
-4. Registro de usuarios empresa: flujo de alta de nuevos `CompanyUser` con
-   invitación por email.
+4. Email vía SendGrid al responsable tras toma de datos: diferido al Hito 4.
 5. Calibración VAD adicional: ajuste fino pendiente tras más pruebas con
    distintos dispositivos y condiciones de llamada.
 6. Configuración real de producción de Grupo Álvarez: `CallFlow` y
    `CorporateVoiceProfile` definitivos pendientes de organigrama real.
 7. Sección Grúas: no existe aún en BD. Añadir cuando se disponga del contacto real.
+8. Registro de usuarios empresa: flujo de alta con invitación por email (diferido).
 
 ---
 
@@ -290,25 +362,71 @@ colapsable en móvil.
 ### Pasos 1–30 ✅ COMPLETADOS
 Ver registro de sesiones en Sección 6.
 
-### Paso 31 — Extensiones de modelo en `ivr_config/models.py` ✅ COMPLETADO (sesión 2026-04-13)
-Añadir a `ivr_config/models.py`:
-- Campo `email` (EmailField, blank=True) en `Contact`.
-- Campo `gender` (CharField M/F, blank=True) en `Contact`.
-- Campo `is_24h` (BooleanField, default=False) en `Section`.
-- Campo `notification_contact` (FK→Contact, null=True) en `CallFlow`.
-- Modelo nuevo `SectionSchedule` con FK a Section, weekday, time_open, time_close.
-- Modelo nuevo `BlockedCaller` con FK a Company, phone_number, blocked_until, blocked_by.
-Generar y aplicar migraciones incrementales.
-Actualizar `ivr_config/admin.py` con los nuevos modelos y campos.
+### Paso 31 — Extensiones de modelo en `ivr_config/models.py` ✅ COMPLETADO (2026-04-13)
+Campos `email`, `gender` en `Contact`; `is_24h` en `Section`;
+`notification_contact` en `CallFlow`; nuevos modelos `SectionSchedule` y
+`BlockedCaller`. Migraciones aplicadas.
 
-### Paso 32 — Extensión del panel (`/panel/`) con nuevos módulos ✅ COMPLETADO (sesión 2026-04-13)
-Añadir al panel personalizado:
-- Gestión de `SectionSchedule`: inline dentro de la vista de edición de Section,
-  permitiendo añadir/editar/eliminar franjas horarias por día de la semana.
-- Gestión de `BlockedCaller`: listado de bloqueados activos, alta manual,
-  desbloqueo manual antes de vencimiento, historial de expirados.
-Criterio de éxito: el ADMIN puede configurar el horario completo de una sección
-y bloquear/desbloquear un número desde el panel sin tocar la BD directamente.
+### Paso 32 — Extensión del panel con nuevos módulos ✅ COMPLETADO (2026-04-13)
+Gestión de `SectionSchedule` (inline en Section) y `BlockedCaller` (listado,
+alta, desbloqueo, historial). Validación E2E en producción.
+
+### Paso 33-A — Configuración SendGrid ⏳ PENDIENTE
+Añadir a `.env`: `SENDGRID_API_KEY`, `DEFAULT_FROM_EMAIL`.
+Configurar `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`
+en `enterprise_core/settings.py`.
+Implementar utilidad `send_notification_email()` en `ivr_config/services.py`
+(esqueleto sin uso activo — se activará en Hito 4).
+Criterio de éxito: Django puede enviar email vía SendGrid desde consola de gestión.
+
+### Paso 33-B — Gestión de contraseñas CompanyUser ✅ COMPLETADO (2026-04-15)
+Campo `must_change_password` en `CompanyUser`. Migración 0004 aplicada.
+`CompanyUserCreateView`, `PanelPasswordChangeView`, acción `force_reset`.
+Toggle mostrar/ocultar + barra de seguridad en todos los campos de contraseña.
+Templates: `password/change.html`, `users/create.html`, actualizaciones en
+`users/list.html`, `users/form.html`, `login.html`.
+
+### Paso 33-C — Function calling Gemini Live: notify_section_contact ⏳ PENDIENTE
+Definir tool `notify_section_contact(section_name, client_name, phone, service,
+location)` en `LiveConnectConfig` de `vox_bridge/services.py`.
+Implementar handler en `vox_bridge/services.py` que ejecute:
+  · Llamada saliente Twilio al `Contact.phone_number` del responsable.
+  · WhatsApp al responsable (stub hasta activación Hito 4).
+Alia invoca la función al completar la toma de datos, espera confirmación
+del handler e informa al cliente del resultado.
+Criterio de éxito: llamada real genera llamada saliente al responsable confirmada
+en logs de Twilio y en la conversación con el llamante.
+
+### Paso 33-D — Selector de voz Gemini por empresa ⏳ PENDIENTE
+Añadir campo `voice_name` (CharField, max_length=50, default='Aoede') a
+`CorporateVoiceProfile`. Generar y aplicar migración incremental.
+Actualizar `build_live_config()` para retornar `voice_name`.
+Actualizar `vox_bridge/services.py`: usar `voice_profile.voice_name` en
+`SpeechConfig` en lugar de la constante `'Aoede'`.
+Actualizar `CorporateVoiceProfileForm` con `Select` de voces disponibles
+verificadas en Vertex AI IE1 (`gemini-live-2.5-flash-native-audio`).
+Actualizar template `voiceprofile/detail.html` con el nuevo campo.
+Criterio de éxito: cambiar la voz desde el panel afecta a la siguiente llamada
+entrante sin reiniciar ningún proceso.
+
+### Paso 33-E — Restauración de CallFlow y CorporateVoiceProfile ⏳ PENDIENTE
+Añadir campos de backup a `CallFlow`:
+  · `backup_system_instruction` (TextField, blank=True)
+  · `backup_initial_greeting` (TextField, blank=True)
+  · `backup_notification_contact` (FK→Contact, null=True, blank=True)
+Añadir campos de backup a `CorporateVoiceProfile`:
+  · `backup_tone_guidelines` (TextField, blank=True)
+  · `backup_sample_responses` (JSONField, default=list)
+  · `backup_forbidden_phrases` (JSONField, default=list)
+Generar y aplicar migraciones incrementales.
+En `CallFlowUpdateView` y `CorporateVoiceProfileUpdateView`: antes de guardar
+los nuevos valores, copiar los actuales a los campos backup_.
+Añadir vistas de restauración: POST a `/panel/callflows/{pk}/restore/` y
+`/panel/voiceprofile/restore/` que intercambian activo ↔ backup.
+Añadir botón "Restaurar versión anterior" en templates `callflows/form.html`
+y `voiceprofile/detail.html`.
+Criterio de éxito: el ADMIN puede guardar cambios en un flujo IVR o perfil
+de voz y restaurar el estado anterior con un solo clic desde el panel.
 
 ### Paso 33 — Actualización de `build_live_config()` ⏳ PENDIENTE
 Actualizar `ivr_config/services.py`:
@@ -320,8 +438,10 @@ Actualizar `ivr_config/services.py`:
 - Inyectar en `system_instruction` la disponibilidad real de cada sección,
   el estado de presencia de cada `Contact` interno, el tratamiento Sr./Sra.
   según `Contact.gender`, y el `notification_contact` del `CallFlow`.
+- Retornar `(system_instruction, initial_greeting, voice_name)`.
 Criterio de éxito: `build_live_config()` retorna un `system_instruction`
-que refleja disponibilidad real de secciones y presencia real de personas.
+que refleja disponibilidad real de secciones y presencia real de personas,
+junto con la voz configurada para la empresa.
 
 ### Paso 34 — Captura del número llamante en `voice_sidecar_bridge.py` ⏳ PENDIENTE
 Capturar el campo `From` del POST HTTP inicial en `handle_twiml_post()` y
@@ -345,7 +465,7 @@ Realizar llamada real al `+34951796832` y verificar:
 - Alia identifica correctamente el tipo de servicio solicitado.
 - Alia informa correctamente de la disponibilidad de la sección (horario).
 - Alia recoge datos conversacionalmente (nombre, teléfono, servicio, ubicación).
-- Alia notifica al responsable (llamada saliente + correo).
+- Alia notifica al responsable (llamada saliente Twilio).
 - Alia responde correctamente ante llamada fuera de actividad.
 - Modo demo funciona con frase clave + DTMF 7463.
 - Número bloqueado recibe respuesta estándar y cierre inmediato.
@@ -381,7 +501,8 @@ vox_bridge/management/commands/.
 del Hito 3. Se crea la app Django panel manualmente vía heredoc evitando ficheros
 residuales. Se implementan middleware de bloqueo de admin, mixins de autenticación
 por capas, 11 vistas class-based y 14 templates con Bootstrap 5.3 CDN. Los módulos
-implementados y validados E2E en producción son: login, dashboard, presencia propia,
+implementados y validados E2E en producción son:
+ login, dashboard, presencia propia,
 usuarios, secciones, contactos, flujos IVR, números de teléfono y perfil de voz
 corporativa. Se documentan y resuelven lecciones aprendidas sobre el accessor ORM
 company_user, el bucle de redirección de LoginView y la invalidación de bytecode WSGI.
@@ -425,12 +546,12 @@ logs. El hito se pausa para reactivar el Hito 4 (canal WhatsApp).
 de Meta. Se corrige el MASTER_DOCUMENT permutando estados de Hito 3 (EN PROGRESO) e
 Hito 4 (PAUSADO) mediante PMP. Se diseña el flujo IVR completo de producción: 9 tipos
 de llamada con comportamiento definido, toma de datos conversacional con ubicación
-textual, notificación al responsable por llamada saliente Twilio y correo electrónico,
-bloqueo de números maliciosos con duración configurable, y modo demo con frase clave
-más DTMF 7463. Se acuerdan y documentan las extensiones de modelo necesarias
-(SectionSchedule, BlockedCaller, campos email/gender/is_24h/notification_contact).
-Se actualiza V03DOC_DATA_MODEL.md con la especificación técnica completa (PMA) y
-se reescribe el presente anexo con la hoja de ruta actualizada (Pasos 31–36).
+textual, notificación al responsable por llamada saliente Twilio y WhatsApp, bloqueo
+de números maliciosos con duración configurable, y modo demo con frase clave más DTMF
+7463. Se acuerdan y documentan las extensiones de modelo necesarias (SectionSchedule,
+BlockedCaller, campos email/gender/is_24h/notification_contact). Se actualiza
+V03DOC_DATA_MODEL.md con la especificación técnica completa (PMA) y se reescribe el
+presente anexo con la hoja de ruta actualizada (Pasos 31–36).
 
 ### Sesión 2026-04-13 — Segunda parte
 **Título:** Implementación Pasos 31 y 32 — Modelos, Migraciones y Panel Extendido
@@ -447,3 +568,7 @@ Limpieza global de 100 errores H021 (inline styles) en todos los templates del p
 Añadido JavaScript dinámico para añadir franjas horarias sin recargar la página.
 Validación E2E completa en producción: badges, formset de horarios, bloqueados,
 contactos con email/gender, flujos IVR con notification_contact y dashboard. ✅
+
+### Sesión 2026-04-15
+**Título:** Responsive Panel + Gestión de Contraseñas + Hoja de Ruta Ampliada
+**Descripción:** {PAH_DESCRIPTION}
