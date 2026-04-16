@@ -1,10 +1,9 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
 
 # ENTERPRISEBOT — ANEXO HITO V03 — IVR CONVERSACIONAL CONFIGURABLE DESDE PRODUCCIÓN
-**Estado:** COMPLETADO
+**Estado:** EN PROGRESO
 **Fecha de inicio:** 2026-04-07
-**Fecha de reanudación:** 2026-04-13
-**Fecha de cierre:** 2026-04-16
+**Fecha de reanudación:** 2026-04-16 (segunda reactivación)
 **Última actualización:** 2026-04-16
 
 ---
@@ -63,6 +62,20 @@ Resumen de entidades:
   Migración 0006 aplicada ✅.
 - `CorporateVoiceProfile.backup_tone_guidelines` / `backup_sample_responses` /
   `backup_forbidden_phrases` — campos de snapshot para restauración (Paso 33-E).
+
+#### Extensiones sobre entidades existentes (acordadas sesión 2026-04-16 — Estrategia B)
+- `Section.call_flow` — ForeignKey('CallFlow', null=True, blank=True, SET_NULL,
+  related_name='sections'). Flujo IVR específico de la sección, cargado dinámicamente
+  cuando el agente detecta que el llamante desea ser atendido por esa sección.
+  Las secciones sin call_flow asignado son IGNORADAS por el motor en tiempo de llamada.
+  Migración 0007 aplicada ✅.
+- `CallFlow.fallback_section` — ForeignKey('Section', null=True, blank=True, SET_NULL,
+  related_name='fallback_for_call_flows'). Sección de último recurso designada para
+  este flujo: cuando ninguna sección activa puede atender al llamante, el agente
+  transfiere la llamada al responsable humano de esta sección. Cada PhoneNumber
+  (y por tanto cada CallFlow) tiene su propia fallback_section independiente,
+  permitiendo delegar responsabilidades por número.
+  Migración 0007 aplicada ✅.
 
 ---
 
@@ -169,19 +182,36 @@ La interfaz del panel (`/panel/`) es completamente responsive desde la sesión
    → Se instancia `VoiceOrchestrationService(twilio_number, caller_number)`.
    → Se lanza `run_voice_session()` como asyncio.Task concurrente.
 
-4. Al inicio de `run_voice_session()`:
+4. Al inicio de `run_voice_session()` — FASE 1 (Bienvenida):
    → `await sync_to_async(build_live_config)(self.twilio_number, self.caller_number)`
        a. Comprueba `BlockedCaller` activo para (company, caller_number).
           Si bloqueado → retorna config de bloqueo → Alia responde y termina.
        b. Resuelve `PhoneNumber` activo por `twilio_number`.
-       c. Carga `CallFlow` asociado.
+       c. Carga `CallFlow` general asociado al PhoneNumber.
        d. Carga `CorporateVoiceProfile` de la `Company` (incluye `voice_name`).
-       e. Carga todas las `Section` activas con sus `SectionSchedule` y `Contact`.
+       e. Carga todas las `Section` activas con `call_flow` asignado + `SectionSchedule`
+          + `Contact`. Las secciones sin `call_flow` asignado se IGNORAN.
        f. Consulta `PresenceStatus` activo de todos los `Contact` internos.
-       g. Ensambla `system_instruction` dinámico con toda la información anterior.
-       h. Retorna `(system_instruction, initial_greeting, voice_name)`.
+       g. Ensambla `system_instruction` del CallFlow general (bienvenida + organigrama
+          de secciones activas con sus horarios y presencia).
+       h. Retorna `(system_instruction, initial_greeting, voice_name,
+          section_callflow_map)` donde `section_callflow_map` es un dict
+          `{section_id: CallFlow}` con los flujos de las secciones activas.
    → Fallback automático a `SYSTEM_INSTRUCTION_FALLBACK` / `INITIAL_GREETING_FALLBACK`
      / `VOICE_NAME_FALLBACK = 'Aoede'` si `build_live_config()` lanza excepción.
+
+   FASE 2 — Identificación de sección destino (Estrategia B — PENDIENTE PASO 37):
+   → El agente (Alia) identifica la intención del llamante mediante conversación.
+   → Cuando la sección destino queda clara, `VoiceOrchestrationService` carga el
+     `CallFlow` específico de esa sección desde `section_callflow_map`.
+   → Se reinyecta el nuevo `system_instruction` de sección en la sesión Gemini Live
+     activa mediante `session.send_client_content(turns=..., turn_complete=True)`.
+   → El agente continúa la conversación con el contexto específico de la sección.
+
+   FASE 3 — Fallback:
+   → Si ninguna sección puede atender (todas inactivas, horario cerrado o sin flujo):
+   → El agente carga el `CallFlow` de `CallFlow.fallback_section` del flujo general.
+   → Transfiere la llamada al responsable humano de la sección fallback.
 
 5. Twilio envía eventos `media` sucesivos
    → Se reenvían a `service.receive_twilio_audio()`.
@@ -443,7 +473,7 @@ en `self.caller_number`, lo pasa a `build_live_config()` en `run_voice_session()
 - `SectionSchedule` y `Contact` añadidos a imports.
 Seed ejecutado: 5 franjas SectionSchedule creadas, capabilities actualizados a VOICE.
 
-### Paso 36 — Validación E2E del flujo completo ⏳ PENDIENTE (próxima sesión)
+### Paso 36 — Validación E2E del flujo completo ⏳ PENDIENTE
 Realizar llamada real al `+34951796832` y verificar:
 - Alia identifica correctamente el tipo de servicio solicitado.
 - Alia informa correctamente de la disponibilidad de la sección (horario).
@@ -454,6 +484,96 @@ Realizar llamada real al `+34951796832` y verificar:
 - Número bloqueado recibe respuesta estándar y cierre inmediato.
 Criterio de éxito: todos los tipos de llamada se comportan según la tabla
 de la Sección 4.1 sin intervención manual en BD ni código.
+
+---
+
+### Paso 37 — Implementación Estrategia B: Carga Dinámica de CallFlow por Intención ⏳ PENDIENTE
+
+**Contexto:** Los modelos `Section.call_flow` y `CallFlow.fallback_section` ya están
+implementados y migrados (migración 0007, sesión 2026-04-16). Este paso implementa
+la lógica de motor que los consume en tiempo de llamada.
+
+**Alcance de cambios — OBLIGATORIO ejecutar en este orden:**
+
+#### 37.A — `ivr_config/services.py` — Extensión de `build_live_config()`
+Modificar la firma y el cuerpo de `build_live_config()` para:
+1. En el Step e (carga de secciones activas), filtrar EXCLUSIVAMENTE las secciones
+   con `call_flow` asignado y activo: `Section.objects.filter(company=company,
+   is_active=True, call_flow__isnull=False, call_flow__is_active=True)`.
+2. Construir el `section_callflow_map`: dict `{section.pk: section.call_flow}`
+   para consumo en `VoiceOrchestrationService`.
+3. Ampliar la tupla de retorno de 3 a 4 elementos:
+   `return (system_instruction, initial_greeting, voice_name, section_callflow_map)`
+   donde `section_callflow_map: dict[int, CallFlow]`.
+4. Actualizar el docstring bilingüe con la nueva firma y semántica.
+
+#### 37.B — `vox_bridge/services.py` — Extensión de `VoiceOrchestrationService`
+1. En `run_voice_session()`, actualizar el desempaquetado de `build_live_config()`:
+   `self.system_instruction, self.initial_greeting_text, self.voice_name,
+   self.section_callflow_map = await sync_to_async(build_live_config)(...)`
+   Añadir `self.section_callflow_map: dict = {}` como atributo de instancia en
+   `__init__()` (valor inicial vacío, poblado en `run_voice_session()`).
+2. Implementar el método `async def _reload_session_for_section(self, session,
+   section_pk: int) -> bool`:
+   - Busca `section_pk` en `self.section_callflow_map`.
+   - Si no existe o la sección no tiene CallFlow → retorna False.
+   - Construye nuevo `system_instruction` concatenando el `CallFlow.system_instruction`
+     de la sección + bloque de presencia y horario relevante para esa sección.
+   - Reinyecta en la sesión Gemini Live activa mediante:
+     `await session.send_client_content(turns=[types.Content(parts=[
+     types.Part(text=nuevo_system_instruction)], role='user')], turn_complete=True)`
+   - Actualiza `self.system_instruction` con el nuevo valor.
+   - Retorna True si la reinyección fue exitosa.
+3. Implementar el método `async def _activate_fallback_section(self, session) -> bool`:
+   - Obtiene `CallFlow.fallback_section` del flujo general cargado al inicio.
+   - Si no hay fallback_section configurada → loguea warning y retorna False.
+   - Construye el system_instruction del fallback con las instrucciones de
+     transferencia al responsable humano.
+   - Reinyecta en sesión activa con el mismo mecanismo de `send_client_content`.
+   - Retorna True si fue exitoso.
+4. El mecanismo de detección de intención de sección queda como STUB en esta
+   fase — se implementará en el Paso 38. En el Paso 37 basta con que los métodos
+   `_reload_session_for_section()` y `_activate_fallback_section()` existan,
+   estén correctamente documentados y sean invocables desde `run_voice_session()`.
+
+#### 37.C — Panel (`panel/` app) — Vistas de asignación de CallFlow a Section
+Añadir al panel personalizado la capacidad de asignar `call_flow` a cada `Section`
+y designar `fallback_section` en el `CallFlow` general:
+1. `panel/forms.py`: añadir campo `call_flow` al `SectionForm` existente.
+   Queryset filtrado por `company` del usuario autenticado y `is_active=True`.
+2. `panel/forms.py`: añadir campo `fallback_section` al `CallFlowForm` existente.
+   Queryset filtrado por `company` del usuario autenticado y `is_active=True`.
+3. `panel/templates/panel/sections/form.html`: añadir selector de `call_flow`
+   con etiqueta 'Flujo IVR de sección' y help text explicativo de la Estrategia B.
+4. `panel/templates/panel/callflows/form.html`: añadir selector de `fallback_section`
+   con etiqueta 'Sección de fallback' y help text explicativo.
+Ambos campos son opcionales en el formulario (no obligatorios en el modelo).
+
+**Criterio de éxito del Paso 37:**
+- `build_live_config()` retorna tupla de 4 elementos sin romper el fallback existente.
+- `VoiceOrchestrationService` almacena el `section_callflow_map` en `self`.
+- `_reload_session_for_section()` y `_activate_fallback_section()` existen y están
+  documentados aunque el trigger de detección de intención sea un stub.
+- El panel permite asignar `call_flow` a secciones y `fallback_section` a CallFlows.
+- Las migraciones de formularios no requieren migración de BD (campos ya existen).
+
+### Paso 38 — Detección de Intención de Sección en el Audio ⏳ PENDIENTE
+Este paso implementa el mecanismo de detección de la intención del llamante para
+determinar qué sección desea y activar la Fase 2 de la Estrategia B:
+- Investigar el mecanismo de function calling disponible en `gemini-live-2.5-flash-
+  native-audio` con SDK `google-genai 1.69.0` en Vertex AI. Específicamente:
+  si el modelo puede invocar funciones Python desde el audio en tiempo real
+  (tool_use en sesión Live) sin interrumpir el flujo de audio.
+- Si function calling está disponible: definir tool `route_to_section(section_id: int)`
+  en `LiveConnectConfig.tools`. Cuando Alia detecte la sección destino, invocará
+  la función y el handler llamará a `_reload_session_for_section(session, section_id)`.
+- Si function calling NO está disponible en Live: implementar detección por análisis
+  de transcripción parcial — Alia anuncia verbalmente la sección destino con un
+  patrón reconocible, el bridge lo detecta y activa la reinyección.
+- La investigación debe hacerse en línea (PAH 4.4 — actualización obligatoria)
+  antes de implementar ninguna línea de código.
+Criterio de éxito: llamada real en la que Alia detecta el tipo de servicio y
+carga el CallFlow de la sección correspondiente de forma transparente al llamante.
 
 ---
 
@@ -552,7 +672,21 @@ Añadido JavaScript dinámico para añadir franjas horarias sin recargar la pág
 Validación E2E completa en producción: badges, formset de horarios, bloqueados,
 contactos con email/gender, flujos IVR con notification_contact y dashboard. ✅
 
-### Sesión 2026-04-16
+### Sesión 2026-04-16 (reactivación)
+**Título:** Reactivación Hito 3 — Diseño Estrategia B: Carga Dinámica de CallFlow por Intención
+**Descripción:** Sesión de reactivación del Hito 3 desde el Hito 4. Se diseña y aprueba
+la arquitectura completa de la Estrategia B (carga dinámica de CallFlow por intención de
+sección): cada Section tiene su propio CallFlow específico que el motor carga cuando el
+agente detecta la intención del llamante, en lugar de un system_instruction monolítico.
+Cada CallFlow general tiene una fallback_section designada por número para transferencia
+humana. Los modelos Section.call_flow y CallFlow.fallback_section son implementados y
+migrados (migración 0007 aplicada). Se documenta el Paso 37 (implementación del motor
+de carga dinámica en ivr_config/services.py, vox_bridge/services.py y panel) y el Paso 38
+(detección de intención de sección en audio, pendiente de investigación sobre function
+calling en gemini-live-2.5-flash-native-audio con SDK 1.69.0). El hito queda EN PROGRESO
+con los Pasos 37 y 38 como hoja de ruta de la siguiente sesión.
+
+### Sesión 2026-04-16 (cierre anterior)
 **Título:** Cierre Hito 3 — Pasos 33-D, 33-E, 33, 34, 35 y apertura Hito 4
 **Descripción:** Sesión de cierre del Hito 3 e inicio del Hito 4. Se completan los
 pasos pendientes de la hoja de ruta: selector de voz Gemini Live por empresa (33-D,
