@@ -20,14 +20,12 @@
             <div class="card-body d-flex flex-column align-items-center justify-content-center py-4">
                 {% if own_presence %}
                     {% if own_presence.status == 'AVAILABLE' %}
-                        <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#d1e7dd;">
+                        <div class="rounded-circle presence-circle presence-circle-available d-flex align-items-center justify-content-center mb-3">
                             <i class="bi bi-circle-fill text-success presence-icon"></i>
                         </div>
                         <div class="fw-bold fs-5">Disponible</div>
                     {% elif own_presence.status == 'IN_MEETING' %}
-                        <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#fff3cd;">
+                        <div class="rounded-circle presence-circle presence-circle-in-meeting d-flex align-items-center justify-content-center mb-3">
                             <i class="bi bi-people-fill text-warning presence-icon"></i>
                         </div>
                         <div class="fw-bold fs-5">Reunido/a</div>
@@ -38,8 +36,7 @@
                             {% endif %}
                         </div>
                     {% elif own_presence.status == 'BUSY_UNTIL' %}
-                        <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#f8d7da;">
+                        <div class="rounded-circle presence-circle presence-circle-busy d-flex align-items-center justify-content-center mb-3">
                             <i class="bi bi-clock-fill text-danger presence-icon"></i>
                         </div>
                         <div class="fw-bold fs-5">Ocupado/a</div>
@@ -49,8 +46,7 @@
                         </div>
                         {% endif %}
                     {% elif own_presence.status == 'ABSENT_SCHEDULED' %}
-                        <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#cfe2ff;">
+                        <div class="rounded-circle presence-circle presence-circle-absent d-flex align-items-center justify-content-center mb-3">
                             <i class="bi bi-calendar-x-fill text-primary presence-icon"></i>
                         </div>
                         <div class="fw-bold fs-5">Ausente programado</div>
@@ -60,9 +56,8 @@
                         </div>
                         {% endif %}
                     {% elif own_presence.status == 'ABSENT_VACATION' %}
-                        <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                             class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#e2d9f3;">
-                            <i class="bi bi-umbrella-fill presence-icon" style="color:#7c3aed;"></i>
+                        <div class="rounded-circle presence-circle presence-circle-vacation d-flex align-items-center justify-content-center mb-3">
+                            <i class="bi bi-umbrella-fill presence-icon presence-icon-vacation"></i>
                         </div>
                         <div class="fw-bold fs-5">Vacaciones</div>
                         {% if own_presence.ends_at %}
@@ -72,8 +67,7 @@
                         {% endif %}
                     {% endif %}
                 {% else %}
-                    <div class="rounded-circle d-flex align-items-center justify-content-center mb-3"
-                         class="rounded-circle presence-circle d-flex align-items-center justify-content-center mb-3" style="background-color:#e9ecef;">
+                    <div class="rounded-circle presence-circle presence-circle-unknown d-flex align-items-center justify-content-center mb-3">
                         <i class="bi bi-circle text-secondary presence-icon"></i>
                     </div>
                     <div class="fw-bold fs-5 text-muted">Sin estado activo</div>

@@ -3,7 +3,9 @@
 # ENTERPRISEBOT — ANEXO HITO V04 — CANAL WHATSAPP: CHATBOT CONVERSACIONAL Y SISTEMA DE PRESENCIA
 **Estado:** EN PROGRESO
 **Fecha de inicio:** 2026-04-09
-**Prerequisito:** Hito 3 completado (Pasos 23–26 finalizados y validados E2E).
+**Fecha de reanudación:** 2026-04-16
+**Última actualización:** 2026-04-16
+**Prerequisito:** Hito 3 COMPLETADO ✅ (2026-04-16).
 
 ---
 
@@ -73,23 +75,29 @@ GOOGLE_CLOUD_LOCATION.
 
 ### 2.3. Gestión de números de Grupo Álvarez en Twilio
 
-**Estado sesión 2026-04-13:**
+**Estado sesión 2026-04-16:**
 
 - **+34951799117** — Designado como WhatsApp sender principal.
-  Estado: verificación Meta bloqueada por exceso de intentos (~72h desde 2026-04-12 17:21).
-  Bloqueo estimado hasta: 2026-04-15 17:21 CEST.
+  Estado: pendiente de verificación Meta (bloqueo anterior expirado).
+
+  **Método de registro actualizado (2026-04-16):**
+  Los Twimlets (`twimlets.com/voicemail`) están marcados como obsoletos en 2026.
+  El método correcto es configurar temporalmente el número con una **Twilio Function**
+  mínima durante el proceso de verificación (10-15 min), y restaurar el IVR después.
+  Ver documento satélite: `DOCS_ATTACHED_2_ANNEX_V04/V04DOC_WHATSAPP_NUMBER_REGISTRATION.md`
+
   Procedimiento correcto para el siguiente intento:
-    1. Console → Messaging → Senders → WhatsApp Senders → Create new sender.
-    2. Seleccionar +34951799117.
-    3. Continue with Facebook → ventana Meta.
-    4. Seleccionar verificación por VOICE CALL (no Text message — número sin SMS capability).
-    5. Meta enviará el OTP al email de la cuenta Twilio: nummenor@gmail.com.
-    6. Introducir el OTP en la ventana Meta antes de que expire.
+    1. Crear Twilio Function mínima con `<Say>` + `<Pause>` (sin IVR activo).
+    2. Asignarla temporalmente al número +34951799117 en Voice Configuration IE1.
+    3. Console → Messaging → Senders → WhatsApp Senders → Create new sender.
+    4. Seleccionar +34951799117 → Continue with Facebook → ventana Meta.
+    5. Seleccionar verificación por VOICE CALL.
+    6. Anotar el OTP dictado por el bot de Meta.
+    7. Introducir el OTP en la ventana Meta antes de que expire.
+    8. Restaurar el webhook IVR del orchestrator en el número.
     No hacer más de 1-2 intentos seguidos. No usar VPN durante el proceso.
-  Voice Configuration IE1: apunta a ngrok (gestionado por orchestrator).
-  NOTA CRÍTICA: Los webhooks de voz de ambos números ES son gestionados
-  exclusivamente por voice_orchestrator.py al arrancar. NUNCA modificarlos
-  manualmente salvo causa justificada y documentada.
+  Voice Configuration IE1: gestionada por voice_orchestrator.py al arrancar.
+  NOTA CRÍTICA: restaurar siempre el webhook IVR tras completar el registro.
 
 - **+34951796832** — Designado para pruebas IVR de voz.
   Voice Configuration IE1: apunta a ngrok (gestionado por orchestrator).
@@ -333,8 +341,9 @@ El IVR requiere voice_orchestrator.py activo (always-on task).
 
 ## SECCIÓN 8 — HOJA DE RUTA
 
-### Paso 1 — Verificación Meta de +34951799117 ⏳ PENDIENTE (bloqueado ~hasta 2026-04-15 17:21)
-Ver procedimiento detallado en Sección 2.3.
+### Paso 1 — Verificación Meta de +34951799117 ⏳ PENDIENTE
+Bloqueo por exceso de intentos expirado. Usar método Twilio Function (2026-04-16).
+Ver procedimiento actualizado en Sección 2.3 y documento satélite V04DOC_WHATSAPP_NUMBER_REGISTRATION.md.
 
 ### Paso 2 — Sandbox ✅ COMPLETADO
 Teléfono +34688360595 conectado con código join kept-title.
@@ -389,11 +398,13 @@ _use_freeform de check_in_meeting_reminders y restaurar el envío puro por templ
 Aplicar PMP sobre whatsapp/tasks.py tras actualizar seed_whatsapp_templates.
 
 ### Paso 23 — Habilitación del número de producción para WhatsApp ⏳ PENDIENTE
+Prerequisito: completar Paso 1 (verificación Meta con método Twilio Function).
 Una vez verificado +34951799117 con Meta:
-1. Actualizar TWILIO_WHATSAPP_SENDER en .env a +34951799117.
-2. Configurar webhook del sender en Twilio Console.
-3. Realizar prueba E2E con número de producción.
-4. Actualizar seed_whatsapp_templates.py con ContentSid reales y re-ejecutar.
+1. Restaurar webhook IVR en el número (si no se hizo ya).
+2. Actualizar TWILIO_WHATSAPP_SENDER en .env a +34951799117.
+3. Configurar webhook de WhatsApp del sender en Twilio Console.
+4. Realizar prueba E2E con número de producción.
+5. Actualizar seed_whatsapp_templates.py con ContentSid reales y re-ejecutar.
 
 ### Paso 24 — Panel: gestión de templates WhatsApp ⏳ PENDIENTE
 Añadir al panel personalizado (/panel/) vistas responsive para que el ADMIN
@@ -437,6 +448,17 @@ pantalla táctil, navegación colapsable en móvil.
 ---
 
 ## SECCIÓN 10 — PAH — REGISTRO DE SESIONES
+
+### Sesión 2026-04-16
+**Título:** Reanudación Hito 4 — Investigación Registro WhatsApp y Apertura de Hito
+**Descripción:** Sesión de reanudación del Hito 4 tras cierre del Hito 3. Se investiga
+el estado actual del registro de números Twilio para WhatsApp en 2026, detectando
+que los Twimlets están obsoletos y el método correcto es una Twilio Function mínima
+con desactivación temporal del IVR durante la verificación Meta. Se genera el
+documento satélite V04DOC_WHATSAPP_NUMBER_REGISTRATION.md con el análisis completo,
+viabilidad confirmada y procedimiento paso a paso. Se actualiza el procedimiento en
+la Sección 2.3 del presente anexo. Se preparan ambos anexos y el Master Document
+para el inicio formal del Hito 4.
 
 ### Sesión 2026-04-13
 **Título:** Hito 4 — Verificación Meta, Sandbox WhatsApp y Validación E2E del Chatbot

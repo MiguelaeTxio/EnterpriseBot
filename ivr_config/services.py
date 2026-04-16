@@ -37,9 +37,12 @@ from django.db.models import Q
 from django.utils.timezone import now
 
 from ivr_config.models import (
+    BlockedCaller,
     Contact,
     PhoneNumber,
     PresenceStatus,
+    Section,
+    SectionSchedule,
 )
 
 # ---------------------------------------------------------------------------
@@ -221,11 +224,122 @@ def _build_presence_context(company) -> str:
     return "\n".join(presence_lines)
 
 
+def _is_caller_blocked(company, caller_number: str) -> bool:
+    """
+    Returns True if the caller's phone number has an active BlockedCaller
+    record for the given company (i.e. blocked_until > now()).
+    If caller_number is empty, returns False — the check is skipped entirely.
+    ---
+    Retorna True si el numero del llamante tiene un registro BlockedCaller activo
+    para la empresa dada (es decir, blocked_until > now()).
+    Si caller_number esta vacio, retorna False — la comprobacion se omite.
+    """
+    if not caller_number:
+        return False
+    return BlockedCaller.objects.filter(
+        company=company,
+        phone_number=caller_number,
+        blocked_until__gt=now(),
+    ).exists()
+
+
+def _build_section_schedule_context(company) -> str:
+    """
+    Queries all active sections of the given company and assembles a
+    human-readable Spanish paragraph describing the current availability
+    of each section based on SectionSchedule records and the is_24h flag.
+    Sections with is_24h=True are always available.
+    Sections with is_24h=False are checked against the current weekday and time.
+    If no schedule exists for today the section is considered unavailable.
+    Returns an empty string if no active sections exist.
+    ---
+    Consulta todas las secciones activas de la empresa y ensambla un parrafo
+    legible en castellano con la disponibilidad actual de cada seccion segun
+    sus registros SectionSchedule y el flag is_24h.
+    Las secciones con is_24h=True estan siempre disponibles.
+    Las secciones con is_24h=False se comprueban contra el dia y hora actuales.
+    Si no hay horario para hoy la seccion se considera no disponible.
+    Retorna cadena vacia si no existen secciones activas.
+    """
+    from django.utils.timezone import localtime
+
+    active_sections = (
+        Section.objects
+        .filter(company=company, is_active=True)
+        .prefetch_related('schedules')
+        .order_by('name')
+    )
+
+    if not active_sections.exists():
+        logger.info(
+            f"[CONFIG] La empresa '{company.name}' no tiene secciones activas. "
+            "No se generara bloque de horarios."
+        )
+        return ""
+
+    local_now  = localtime(now())
+    weekday    = local_now.weekday()
+    local_time = local_now.time()
+
+    schedule_lines = []
+
+    for section in active_sections:
+        if section.is_24h:
+            schedule_lines.append(
+                f"La seccion '{section.name}' esta disponible las 24 horas."
+            )
+            logger.debug(
+                f"[CONFIG] Seccion '{section.name}': 24h — siempre disponible."
+            )
+            continue
+
+        schedules_today = section.schedules.filter(weekday=weekday)
+        is_open = any(
+            s.time_open <= local_time <= s.time_close
+            for s in schedules_today
+        )
+
+        if schedules_today.exists():
+            slots = ', '.join(
+                f"{s.time_open:%H:%M}–{s.time_close:%H:%M}"
+                for s in schedules_today.order_by('time_open')
+            )
+            if is_open:
+                schedule_lines.append(
+                    f"La seccion '{section.name}' esta disponible ahora mismo "
+                    f"(horario de hoy: {slots})."
+                )
+                logger.debug(
+                    f"[CONFIG] Seccion '{section.name}': ABIERTA ({slots})."
+                )
+            else:
+                schedule_lines.append(
+                    f"La seccion '{section.name}' esta fuera de su horario "
+                    f"en este momento (horario de hoy: {slots})."
+                )
+                logger.debug(
+                    f"[CONFIG] Seccion '{section.name}': CERRADA ({slots})."
+                )
+        else:
+            schedule_lines.append(
+                f"La seccion '{section.name}' no tiene horario definido "
+                "para hoy y no esta disponible en este momento."
+            )
+            logger.debug(
+                f"[CONFIG] Seccion '{section.name}': sin horario para hoy."
+            )
+
+    return "\n".join(schedule_lines)
+
+
 # ---------------------------------------------------------------------------
-# PUBLIC API / API PÚBLICA
+# PUBLIC API / API PUBLICA
 # ---------------------------------------------------------------------------
 
-def build_live_config(twilio_number: str) -> tuple[str, str]:
+def build_live_config(
+    twilio_number: str,
+    caller_number: str = "",
+) -> tuple[str, str, str]:
     """
     Builds the dynamic SYSTEM_INSTRUCTION and INITIAL_GREETING for an inbound call.
 
@@ -305,8 +419,43 @@ def build_live_config(twilio_number: str) -> tuple[str, str]:
 
     logger.info(
         f"[CONFIG] Iniciando carga dinámica de configuración IVR "
-        f"para el número Twilio: {twilio_number}"
+        f"para el número Twilio: {twilio_number} "
+        f"(llamante: '{{caller_number or 'desconocido'}}')"
     )
+
+    # ------------------------------------------------------------------
+    # STEP 0 — Verify BlockedCaller / Verificar BlockedCaller
+    # ------------------------------------------------------------------
+    if caller_number:
+        try:
+            _pn = PhoneNumber.objects.select_related('company').get(
+                number=twilio_number, is_active=True
+            )
+            if _is_caller_blocked(_pn.company, caller_number):
+                logger.warning(
+                    f"[CONFIG] Llamante bloqueado: {caller_number} "
+                    f"para '{_pn.company.name}'. Retornando config de rechazo."
+                )
+                _rej_instr = (
+                    "El llamante esta en la lista de bloqueados de esta empresa. "
+                    "Salúdale brevemente y comunícale que en este momento no "
+                    "puedes atenderle. Despídete de forma educada y da por "
+                    "finalizada la llamada sin proporcionar ninguna otra informacion."
+                )
+                _rej_greeting = (
+                    "El llamante acaba de conectar. Dile exactamente: "
+                    "'Lo sentimos, en este momento no podemos atender su llamada. "
+                    "Gracias por contactarnos. Hasta luego.' y da por finalizada la sesion."
+                )
+                return _rej_instr, _rej_greeting, "Aoede"
+        except PhoneNumber.DoesNotExist:
+            pass
+        except Exception as block_exc:
+            logger.warning(
+                f"[CONFIG] Error al verificar BlockedCaller para '{caller_number}': "
+                f"{type(block_exc).__name__}: {block_exc}. "
+                "Continuando sin verificacion de bloqueo."
+            )
 
     # ------------------------------------------------------------------
     # STEP 1 — Resolve PhoneNumber / Resolver PhoneNumber
@@ -344,8 +493,11 @@ def build_live_config(twilio_number: str) -> tuple[str, str]:
     # ------------------------------------------------------------------
     # The voice profile is optional: if the company has none or it is
     # inactive, the tone block is simply omitted from the system_instruction.
+    # voice_name is always extracted — falls back to 'Aoede' if no profile.
     # El perfil de voz es opcional: si la empresa no tiene ninguno o está
     # inactivo, el bloque de tono se omite del system_instruction.
+    # voice_name siempre se extrae — cae a 'Aoede' si no hay perfil.
+    voice_name   = "Aoede"
     voice_profile = None
     try:
         candidate_profile = company.voice_profile
@@ -370,7 +522,21 @@ def build_live_config(twilio_number: str) -> tuple[str, str]:
         )
 
     # ------------------------------------------------------------------
-    # STEP 4 — Build Presence Context / Construir Contexto de Presencia
+    # STEP 4 — Build Section Schedule Context / Construir Contexto de Horarios
+    # ------------------------------------------------------------------
+    schedule_context = _build_section_schedule_context(company)
+    if schedule_context:
+        logger.info(
+            f"[CONFIG] Contexto de horarios generado para '{company.name}' "
+            f"({len(schedule_context.splitlines())} sección/es)."
+        )
+    else:
+        logger.info(
+            f"[CONFIG] Sin contexto de horarios para '{company.name}'."
+        )
+
+    # ------------------------------------------------------------------
+    # STEP 5 — Build Presence Context / Construir Contexto de Presencia
     # ------------------------------------------------------------------
     presence_context = _build_presence_context(company)
     if presence_context:
@@ -384,7 +550,7 @@ def build_live_config(twilio_number: str) -> tuple[str, str]:
         )
 
     # ------------------------------------------------------------------
-    # STEP 5 — Assemble system_instruction / Ensamblar system_instruction
+    # STEP 6 — Assemble system_instruction / Ensamblar system_instruction
     # ------------------------------------------------------------------
     # The assembly order mirrors the specification in V03DOC_DYNAMIC_IVR_INJECTION.md:
     #   1. Base IVR flow (CallFlow.system_instruction) — always present.
@@ -406,6 +572,13 @@ def build_live_config(twilio_number: str) -> tuple[str, str]:
         )
         logger.debug("[CONFIG] Bloque de perfil de voz corporativo añadido.")
 
+    if schedule_context.strip():
+        system_instruction_parts.append(
+            "\n\nDISPONIBILIDAD ACTUAL DE SECCIONES:\n"
+            + schedule_context.strip()
+        )
+        logger.debug("[CONFIG] Bloque de contexto de horarios de secciones añadido.")
+
     if presence_context.strip():
         system_instruction_parts.append(
             "\n\nESTADO DE PRESENCIA ACTUAL DEL PERSONAL:\n"
@@ -416,14 +589,33 @@ def build_live_config(twilio_number: str) -> tuple[str, str]:
     system_instruction = "".join(system_instruction_parts)
 
     # ------------------------------------------------------------------
-    # STEP 6 — Extract initial_greeting / Extraer initial_greeting
+    # STEP 7 — Extract initial_greeting / Extraer initial_greeting
     # ------------------------------------------------------------------
     initial_greeting = call_flow.initial_greeting.strip()
+
+    # ------------------------------------------------------------------
+    # STEP 8 — Extract voice_name / Extraer voice_name
+    # ------------------------------------------------------------------
+    # If a voice_profile was loaded, use its configured voice_name.
+    # Otherwise the default 'Aoede' set in step 3 is preserved.
+    # Si se cargó un voice_profile, usar su voice_name configurado.
+    # En caso contrario se preserva el 'Aoede' por defecto del paso 3.
+    if voice_profile:
+        voice_name = voice_profile.voice_name
+        logger.debug(
+            f"[CONFIG] Voz del agente: '{voice_name}' "
+            f"(CorporateVoiceProfile de '{company.name}')."
+        )
+    else:
+        logger.debug(
+            "[CONFIG] Sin CorporateVoiceProfile activo — voz por defecto 'Aoede'."
+        )
 
     logger.info(
         f"[CONFIG] Configuración dinámica ensamblada correctamente para "
         f"'{company.name}' — número {twilio_number}. "
-        f"Longitud system_instruction: {len(system_instruction)} caracteres."
+        f"Longitud system_instruction: {len(system_instruction)} caracteres. "
+        f"Voz: '{voice_name}'."
     )
 
-    return system_instruction, initial_greeting
+    return system_instruction, initial_greeting, voice_name

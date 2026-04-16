@@ -27,10 +27,8 @@
             <div class="card-body p-4">
 
                 <!-- User info summary — Resumen de información del usuario -->
-                <div class="d-flex align-items-center gap-3 p-3 rounded-3 mb-4"
-                     class="bg-light">
-                    <div class="rounded-circle d-flex align-items-center justify-content-center"
-                         class="rounded-circle user-avatar d-flex align-items-center justify-content-center">
+                <div class="d-flex align-items-center gap-3 p-3 rounded-3 mb-4 bg-light">
+                    <div class="rounded-circle user-avatar d-flex align-items-center justify-content-center">
                         <i class="bi bi-person-circle text-secondary stat-icon"></i>
                     </div>
                     <div>
@@ -42,6 +40,30 @@
                             {{ object.user.email|default:"Sin email registrado" }}
                         </div>
                     </div>
+                </div>
+
+                <!-- must_change_password status badge — Indicador de estado de contraseña -->
+                <div class="d-flex align-items-center justify-content-between
+                            flex-wrap gap-2 p-3 rounded-3 bg-light mb-4">
+                    <div class="text-sm text-muted">
+                        <i class="bi bi-key me-1"></i>
+                        {% if object.must_change_password %}
+                            <span class="badge badge-inactive">Debe cambiar contraseña</span>
+                            El usuario será redirigido al cambio de contraseña en su próximo acceso.
+                        {% else %}
+                            <span class="badge badge-active">Contraseña establecida</span>
+                            El usuario tiene contraseña activa.
+                        {% endif %}
+                    </div>
+                    {% if object != company_user %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <button type="submit" name="force_reset" value="1"
+                                class="btn btn-sm btn-outline-warning">
+                            <i class="bi bi-arrow-repeat me-1"></i>Forzar cambio de contraseña
+                        </button>
+                    </form>
+                    {% endif %}
                 </div>
 
                 <form method="post">

@@ -30,6 +30,25 @@
                 <form method="post" action="{% url 'panel:voiceprofile_detail' %}">
                     {% csrf_token %}
 
+                    <!-- voice_name field — Selector de voz del agente IVR -->
+                    <div class="mb-4">
+                        <label for="{{ form.voice_name.id_for_label }}"
+                               class="form-label fw-medium">
+                            Voz del agente IVR
+                        </label>
+                        {{ form.voice_name }}
+                        {% if form.voice_name.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.voice_name.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Voz Gemini Live que el agente usará en las llamadas entrantes.
+                            El cambio tiene efecto en la siguiente llamada sin necesidad
+                            de reiniciar ningún proceso.
+                        </div>
+                    </div>
+
                     <!-- tone_guidelines field — Campo de directrices de tono -->
                     <div class="mb-4">
                         <label for="{{ form.tone_guidelines.id_for_label }}"
@@ -105,8 +124,8 @@
                         </div>
                     </div>
 
-                    <!-- Submit button — Botón de envío -->
-                    <div class="d-flex gap-2">
+                    <!-- Submit and restore buttons — Botones de envío y restauración -->
+                    <div class="d-flex gap-2 flex-wrap">
                         <button type="submit" class="btn btn-dark px-4">
                             <i class="bi bi-check-lg me-2"></i>Guardar perfil de voz
                         </button>
@@ -117,6 +136,25 @@
                     </div>
 
                 </form>
+
+                <!-- Restore section — Sección de restauración a versión anterior -->
+                {% if profile.backup_tone_guidelines or profile.backup_voice_name %}
+                <hr class="mt-4">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div class="text-sm text-muted">
+                        <i class="bi bi-clock-history me-1"></i>
+                        Existe una versión anterior de este perfil disponible para restaurar.
+                    </div>
+                    <form method="post" action="{% url 'panel:voiceprofile_restore' %}">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="btn btn-outline-warning btn-sm px-3"
+                                onclick="return confirm('¿Restaurar la versión anterior del perfil de voz? Los valores actuales pasarán a ser la versión de backup.');">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar versión anterior
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
             </div>
         </div>
 

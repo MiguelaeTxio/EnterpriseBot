@@ -14,11 +14,17 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
           rel="stylesheet">
     <style>
-        /* Sidebar layout — Diseño de barra lateral */
+        /* ---------------------------------------------------------------
+           Base layout — Diseño base de la aplicación.
+           El sidebar es fijo en escritorio (>=lg) y offcanvas en móvil.
+           --------------------------------------------------------------- */
         body {
             min-height: 100vh;
             background-color: #f8f9fa;
         }
+
+        /* --- SIDEBAR (escritorio >=992px) --- */
+        /* --- SIDEBAR (desktop >=992px) --- */
         .sidebar {
             min-height: 100vh;
             width: 260px;
@@ -28,6 +34,8 @@
             left: 0;
             z-index: 100;
             padding-top: 0;
+            display: flex;
+            flex-direction: column;
         }
         .sidebar-brand {
             padding: 1.5rem 1.25rem;
@@ -69,40 +77,72 @@
             text-transform: uppercase;
             padding: 1.25rem 1.25rem 0.4rem;
         }
-        /* Main content offset — Desplazamiento del contenido principal */
+        .sidebar-nav-scroll {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        /* --- MAIN CONTENT OFFSET (solo escritorio) --- */
+        /* --- MAIN CONTENT OFFSET (desktop only) --- */
+        @media (min-width: 992px) {
+            .main-content {
+                margin-left: 260px;
+            }
+        }
         .main-content {
-            margin-left: 260px;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
-        /* Top navbar — Barra superior */
+
+        /* --- TOP NAVBAR — Barra superior --- */
         .top-navbar {
             background-color: #ffffff;
             border-bottom: 1px solid #e9ecef;
-            padding: 0.75rem 1.5rem;
+            padding: 0.75rem 1rem;
             position: sticky;
             top: 0;
             z-index: 99;
         }
-        /* Presence badge — Indicador de presencia */
+
+        /* --- PAGE CONTENT PADDING — Padding adaptativo --- */
+        .page-content {
+            padding: 1rem;
+            flex: 1;
+        }
+        @media (min-width: 768px) {
+            .page-content {
+                padding: 2rem 1.5rem;
+            }
+        }
+
+        /* --- LOGOUT LINK — Enlace de cierre de sesión al pie del sidebar --- */
+        .panel-logout {
+            border-top: 1px solid rgba(255,255,255,0.1);
+            margin-top: auto;
+        }
+        .panel-logout-link {
+            color: rgba(255,255,255,0.5);
+            padding: 1rem 1.25rem;
+        }
+
+        /* ---------------------------------------------------------------
+           Presence badge — Indicador de estado de presencia en top navbar.
+           --------------------------------------------------------------- */
         .presence-badge {
             font-size: 0.78rem;
             padding: 0.35em 0.75em;
             border-radius: 50rem;
             font-weight: 500;
+            white-space: nowrap;
         }
-        .presence-AVAILABLE      { background-color: #d1e7dd; color: #0a3622; }
-        .presence-IN_MEETING     { background-color: #fff3cd; color: #664d03; }
-        .presence-BUSY_UNTIL     { background-color: #f8d7da; color: #58151c; }
+        .presence-AVAILABLE        { background-color: #d1e7dd; color: #0a3622; }
+        .presence-IN_MEETING       { background-color: #fff3cd; color: #664d03; }
+        .presence-BUSY_UNTIL       { background-color: #f8d7da; color: #58151c; }
         .presence-ABSENT_SCHEDULED { background-color: #cfe2ff; color: #084298; }
         .presence-ABSENT_VACATION  { background-color: #e2d9f3; color: #432874; }
-        .presence-unknown        { background-color: #e9ecef; color: #495057; }
-        /* Page content padding — Padding del contenido de página */
-        .page-content {
-            padding: 2rem 1.5rem;
-            flex: 1;
-        }
+        .presence-unknown          { background-color: #e9ecef; color: #495057; }
+
         /* ---------------------------------------------------------------
            Utility classes — replacing inline styles across all templates.
            Clases utilitarias — sustituyen estilos inline en todos los templates.
@@ -112,17 +152,8 @@
         .text-nav  { font-size: 0.875rem; }
         .text-err  { font-size: 0.8rem; }
         .icon-xs   { font-size: 0.6rem; }
-        .panel-logout {
-            position: absolute;
-            bottom: 0;
-            width: 100%;
-            border-top: 1px solid rgba(255,255,255,0.1);
-        }
         .panel-page-title { font-size: 0.9rem; }
-        .panel-logout-link {
-            color: rgba(255,255,255,0.5);
-            padding: 1rem 1.25rem;
-        }
+
         /* ---------------------------------------------------------------
            Badge state colours — Colores de badges de estado en listados.
            --------------------------------------------------------------- */
@@ -132,6 +163,7 @@
         .badge-external { background-color:#e9ecef; color:#495057; font-weight:500; border:1px solid #ced4da; }
         .badge-admin    { background-color:#e2d9f3; color:#432874; font-weight:500; border:1px solid #c5b3e6; }
         .badge-flow     { background-color:#e8f4fd; color:#084298; font-weight:500; border:1px solid #9ec5fe; }
+
         /* ---------------------------------------------------------------
            Dashboard stat cards — Tarjetas de estadísticas del dashboard.
            --------------------------------------------------------------- */
@@ -143,114 +175,145 @@
         .stat-bg-green { background-color:#e8f8f0; }
         .stat-bg-yellow{ background-color:#fef9e7; }
         .stat-bg-purple{ background-color:#f3eefe; }
+
         /* ---------------------------------------------------------------
            Presence status circles — Círculos de estado de presencia.
            --------------------------------------------------------------- */
-        .presence-circle { width:72px; height:72px; }
-        .presence-icon   { font-size:2rem; }
-        .presence-note   { font-size:0.82rem; }
+        .presence-circle              { width:72px; height:72px; }
+        .presence-icon                { font-size:2rem; }
+        .presence-note                { font-size:0.82rem; }
+        /* Background colour per presence state — replaces inline styles in status.html
+           Color de fondo por estado de presencia — sustituye estilos inline en status.html */
+        .presence-circle-available   { background-color: #d1e7dd; }
+        .presence-circle-in-meeting  { background-color: #fff3cd; }
+        .presence-circle-busy        { background-color: #f8d7da; }
+        .presence-circle-absent      { background-color: #cfe2ff; }
+        .presence-circle-vacation    { background-color: #e2d9f3; }
+        .presence-circle-unknown     { background-color: #e9ecef; }
+        /* Icon colour override for vacation state — Vacaciones usa púrpura (#7c3aed) */
+        .presence-icon-vacation      { color: #7c3aed; }
+
         /* ---------------------------------------------------------------
            User summary card — Tarjeta de resumen de usuario en formulario.
            --------------------------------------------------------------- */
-        .user-avatar { width:48px; height:48px; background-color:#e9ecef; }
-        .user-detail { font-size:0.82rem; }
+        .user-avatar  { width:48px; height:48px; background-color:#e9ecef; }
+        .user-detail  { font-size:0.82rem; }
+
         /* ---------------------------------------------------------------
            Login icon — Icono principal de la pantalla de login.
            --------------------------------------------------------------- */
         .login-icon  { font-size:2rem; }
+
         /* ---------------------------------------------------------------
-           Panel page title — Título de página en top navbar.
+           Offcanvas sidebar override — Fondo oscuro en la variante móvil.
+           El offcanvas de Bootstrap hereda colores de fondo por defecto;
+           aquí se sobreescriben para mantener la paleta del sidebar fijo.
            --------------------------------------------------------------- */
-        .panel-page-title { font-size:0.9rem; }
+        #sidebarOffcanvas {
+            background-color: #1a1f2e;
+            width: 260px;
+        }
+        #sidebarOffcanvas .offcanvas-body {
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        #sidebarOffcanvas .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+            margin: 0.75rem 0.75rem 0 auto;
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body>
 
     <!-- ================================================================
-         SIDEBAR — Barra lateral de navegación
+         SIDEBAR FIJO — Visible solo en escritorio (>=lg)
+         FIXED SIDEBAR — Visible on desktop only (>=lg)
          ================================================================ -->
-    <nav class="sidebar">
+    <nav class="sidebar d-none d-lg-flex">
         <div class="sidebar-brand">
             <h5><i class="bi bi-telephone-fill me-2"></i>EnterpriseBot</h5>
             <small>{{ company.name }}</small>
         </div>
 
-        <ul class="nav flex-column mt-2">
+        <div class="sidebar-nav-scroll">
+            <ul class="nav flex-column mt-2">
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_dashboard %}{% endblock %}"
-                   href="{% url 'panel:dashboard' %}">
-                    <i class="bi bi-speedometer2"></i>Inicio
-                </a>
-            </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_dashboard %}{% endblock %}"
+                       href="{% url 'panel:dashboard' %}">
+                        <i class="bi bi-speedometer2"></i>Inicio
+                    </a>
+                </li>
 
-            <li><div class="sidebar-section-label">Presencia</div></li>
+                <li><div class="sidebar-section-label">Presencia</div></li>
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_presence %}{% endblock %}"
-                   href="{% url 'panel:presence_status' %}">
-                    <i class="bi bi-person-check"></i>Mi estado
-                </a>
-            </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_presence %}{% endblock %}"
+                       href="{% url 'panel:presence_status' %}">
+                        <i class="bi bi-person-check"></i>Mi estado
+                    </a>
+                </li>
 
-            {% if company_user.role == 'ADMIN' %}
-            <li><div class="sidebar-section-label">Configuración</div></li>
+                {% if company_user.role == 'ADMIN' %}
+                <li><div class="sidebar-section-label">Configuración</div></li>
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_users %}{% endblock %}"
-                   href="{% url 'panel:user_list' %}">
-                    <i class="bi bi-people"></i>Usuarios
-                </a>
-            </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_users %}{% endblock %}"
+                       href="{% url 'panel:user_list' %}">
+                        <i class="bi bi-people"></i>Usuarios
+                    </a>
+                </li>
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_sections %}{% endblock %}"
-                   href="{% url 'panel:section_list' %}">
-                    <i class="bi bi-diagram-3"></i>Secciones
-                </a>
-            </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_sections %}{% endblock %}"
+                       href="{% url 'panel:section_list' %}">
+                        <i class="bi bi-diagram-3"></i>Secciones
+                    </a>
+                </li>
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_contacts %}{% endblock %}"
-                   href="{% url 'panel:contact_list' %}">
-                    <i class="bi bi-person-lines-fill"></i>Contactos
-                </a>
-            </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_contacts %}{% endblock %}"
+                       href="{% url 'panel:contact_list' %}">
+                        <i class="bi bi-person-lines-fill"></i>Contactos
+                    </a>
+                </li>
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_callflows %}{% endblock %}"
-                   href="{% url 'panel:callflow_list' %}">
-                    <i class="bi bi-gear-wide-connected"></i>Flujos IVR
-                </a>
-            </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_callflows %}{% endblock %}"
+                       href="{% url 'panel:callflow_list' %}">
+                        <i class="bi bi-gear-wide-connected"></i>Flujos IVR
+                    </a>
+                </li>
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_phonenumbers %}{% endblock %}"
-                   href="{% url 'panel:phonenumber_list' %}">
-                    <i class="bi bi-telephone-inbound"></i>Números
-                </a>
-            </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_phonenumbers %}{% endblock %}"
+                       href="{% url 'panel:phonenumber_list' %}">
+                        <i class="bi bi-telephone-inbound"></i>Números
+                    </a>
+                </li>
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_voiceprofile %}{% endblock %}"
-                   href="{% url 'panel:voiceprofile_detail' %}">
-                    <i class="bi bi-mic"></i>Perfil de voz
-                </a>
-            </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_voiceprofile %}{% endblock %}"
+                       href="{% url 'panel:voiceprofile_detail' %}">
+                        <i class="bi bi-mic"></i>Perfil de voz
+                    </a>
+                </li>
 
-            <li class="nav-item">
-                <a class="nav-link {% block nav_blockedcallers %}{% endblock %}"
-                   href="{% url 'panel:blockedcaller_list' %}">
-                    <i class="bi bi-slash-circle"></i>Bloqueados
-                </a>
-            </li>
-            {% endif %}
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_blockedcallers %}{% endblock %}"
+                       href="{% url 'panel:blockedcaller_list' %}">
+                        <i class="bi bi-slash-circle"></i>Bloqueados
+                    </a>
+                </li>
+                {% endif %}
 
-        </ul>
+            </ul>
+        </div>
 
-        <!-- Logout link at the bottom of sidebar -->
-        <!-- Enlace de logout al pie de la barra lateral -->
+        <!-- Logout link at the bottom of the fixed sidebar -->
+        <!-- Enlace de logout al pie de la barra lateral fija -->
         <div class="panel-logout">
             <a class="nav-link text-nav panel-logout-link" href="{% url 'panel:logout' %}">
                 <i class="bi bi-box-arrow-left"></i>Cerrar sesión
@@ -259,19 +322,156 @@
     </nav>
 
     <!-- ================================================================
+         SIDEBAR OFFCANVAS — Visible solo en móvil/tablet (<lg)
+         OFFCANVAS SIDEBAR — Visible on mobile/tablet only (<lg)
+         ================================================================ -->
+    <div class="offcanvas offcanvas-start d-lg-none"
+         tabindex="-1"
+         id="sidebarOffcanvas"
+         aria-labelledby="sidebarOffcanvasLabel">
+
+        <div class="offcanvas-body">
+
+            <!-- Offcanvas header with brand and close button -->
+            <!-- Cabecera del offcanvas con marca y botón de cierre -->
+            <div class="sidebar-brand d-flex align-items-center justify-content-between">
+                <div>
+                    <h5 id="sidebarOffcanvasLabel" class="mb-0">
+                        <i class="bi bi-telephone-fill me-2"></i>EnterpriseBot
+                    </h5>
+                    <small>{{ company.name }}</small>
+                </div>
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="offcanvas"
+                        aria-label="Cerrar menú"></button>
+            </div>
+
+            <!-- Navigation links — same structure as fixed sidebar -->
+            <!-- Enlaces de navegación — misma estructura que el sidebar fijo -->
+            <div class="sidebar-nav-scroll">
+                <ul class="nav flex-column mt-2">
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_dashboard_off %}{% endblock %}"
+                           href="{% url 'panel:dashboard' %}"
+                          >
+                            <i class="bi bi-speedometer2"></i>Inicio
+                        </a>
+                    </li>
+
+                    <li><div class="sidebar-section-label">Presencia</div></li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_presence_off %}{% endblock %}"
+                           href="{% url 'panel:presence_status' %}"
+                          >
+                            <i class="bi bi-person-check"></i>Mi estado
+                        </a>
+                    </li>
+
+                    {% if company_user.role == 'ADMIN' %}
+                    <li><div class="sidebar-section-label">Configuración</div></li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_users_off %}{% endblock %}"
+                           href="{% url 'panel:user_list' %}"
+                          >
+                            <i class="bi bi-people"></i>Usuarios
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_sections_off %}{% endblock %}"
+                           href="{% url 'panel:section_list' %}"
+                          >
+                            <i class="bi bi-diagram-3"></i>Secciones
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_contacts_off %}{% endblock %}"
+                           href="{% url 'panel:contact_list' %}"
+                          >
+                            <i class="bi bi-person-lines-fill"></i>Contactos
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_callflows_off %}{% endblock %}"
+                           href="{% url 'panel:callflow_list' %}"
+                          >
+                            <i class="bi bi-gear-wide-connected"></i>Flujos IVR
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_phonenumbers_off %}{% endblock %}"
+                           href="{% url 'panel:phonenumber_list' %}"
+                          >
+                            <i class="bi bi-telephone-inbound"></i>Números
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_voiceprofile_off %}{% endblock %}"
+                           href="{% url 'panel:voiceprofile_detail' %}"
+                          >
+                            <i class="bi bi-mic"></i>Perfil de voz
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_blockedcallers_off %}{% endblock %}"
+                           href="{% url 'panel:blockedcaller_list' %}"
+                          >
+                            <i class="bi bi-slash-circle"></i>Bloqueados
+                        </a>
+                    </li>
+                    {% endif %}
+
+                </ul>
+            </div>
+
+            <!-- Logout link at the bottom of the offcanvas sidebar -->
+            <!-- Enlace de logout al pie del sidebar offcanvas -->
+            <div class="panel-logout">
+                <a class="nav-link text-nav panel-logout-link" href="{% url 'panel:logout' %}">
+                    <i class="bi bi-box-arrow-left"></i>Cerrar sesión
+                </a>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ================================================================
          MAIN CONTENT — Contenido principal
          ================================================================ -->
     <div class="main-content">
 
-        <!-- Top navbar with presence indicator -->
-        <!-- Barra superior con indicador de presencia -->
-        <div class="top-navbar d-flex align-items-center justify-content-between">
-            <div>
+        <!-- Top navbar with hamburger (mobile), page title and presence badge -->
+        <!-- Barra superior con hamburguesa (móvil), título de página e indicador de presencia -->
+        <div class="top-navbar d-flex align-items-center justify-content-between gap-2">
+
+            <div class="d-flex align-items-center gap-2">
+                <!-- Hamburger button — visible only on mobile/tablet (<lg) -->
+                <!-- Botón hamburguesa — visible solo en móvil/tablet (<lg) -->
+                <button class="btn btn-sm btn-outline-secondary d-lg-none border-0 px-2"
+                        type="button"
+                        data-bs-toggle="offcanvas"
+                        data-bs-target="#sidebarOffcanvas"
+                        aria-controls="sidebarOffcanvas"
+                        aria-label="Abrir menú de navegación">
+                    <i class="bi bi-list fs-5"></i>
+                </button>
+
+                <!-- Page title — Título de la página actual -->
                 <span class="fw-semibold text-dark panel-page-title">
                     {% block page_title %}Panel{% endblock %}
                 </span>
             </div>
-            <div class="d-flex align-items-center gap-3">
+
+            <div class="d-flex align-items-center gap-2">
                 <!-- Presence status badge — Indicador de estado de presencia -->
                 {% if own_presence %}
                     <span class="presence-badge presence-{{ own_presence.status }}">
@@ -292,8 +492,10 @@
                         <i class="bi bi-circle me-1 icon-xs"></i>Sin estado
                     </span>
                 {% endif %}
-                <!-- Authenticated user name — Nombre del usuario autenticado -->
-                <span class="text-muted text-sm">
+
+                <!-- Authenticated user name — hidden on very narrow screens -->
+                <!-- Nombre del usuario autenticado — oculto en pantallas muy estrechas -->
+                <span class="text-muted text-sm d-none d-sm-inline">
                     <i class="bi bi-person-circle me-1"></i>{{ request.user.get_full_name|default:request.user.username }}
                 </span>
             </div>
@@ -301,7 +503,7 @@
 
         <!-- Django messages — Mensajes de Django -->
         {% if messages %}
-        <div class="px-4 pt-3">
+        <div class="px-3 pt-3">
             {% for message in messages %}
             <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show"
                  role="alert">

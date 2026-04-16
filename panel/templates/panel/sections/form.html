@@ -238,25 +238,25 @@
                             <tbody>
                                 {% for sched_form in schedule_formset %}
                                 <tr class="schedule-row">
-                                    <td>
+                                    <td class="w-100">
                                         {{ sched_form.id }}
-                                        {{ sched_form.weekday }}
+                                        <div class="w-100">{{ sched_form.weekday }}</div>
                                         {% if sched_form.weekday.errors %}
                                         <div class="text-danger text-xs">
                                             {% for e in sched_form.weekday.errors %}{{ e }}{% endfor %}
                                         </div>
                                         {% endif %}
                                     </td>
-                                    <td>
-                                        {{ sched_form.time_open }}
+                                    <td class="w-100">
+                                        <div class="w-100">{{ sched_form.time_open }}</div>
                                         {% if sched_form.time_open.errors %}
                                         <div class="text-danger text-xs">
                                             {% for e in sched_form.time_open.errors %}{{ e }}{% endfor %}
                                         </div>
                                         {% endif %}
                                     </td>
-                                    <td>
-                                        {{ sched_form.time_close }}
+                                    <td class="w-100">
+                                        <div class="w-100">{{ sched_form.time_close }}</div>
                                         {% if sched_form.time_close.errors %}
                                         <div class="text-danger text-xs">
                                             {% for e in sched_form.time_close.errors %}{{ e }}{% endfor %}

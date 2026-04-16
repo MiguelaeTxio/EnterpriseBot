@@ -15,6 +15,7 @@ from panel.views import (
     PanelDashboardView,
     PresenceStatusUpdateView,
     CompanyUserListView,
+    CompanyUserCreateView,
     CompanyUserUpdateView,
     SectionListView,
     SectionCreateView,
@@ -30,6 +31,9 @@ from panel.views import (
     BlockedCallerListView,
     BlockedCallerCreateView,
     BlockedCallerDeleteView,
+    PanelPasswordChangeView,
+    CallFlowRestoreView,
+    VoiceProfileRestoreView,
 )
 
 app_name = "panel"
@@ -47,7 +51,11 @@ urlpatterns = [
 
     # User management — Gestión de usuarios de empresa.
     path("users/", CompanyUserListView.as_view(), name="user_list"),
+    path("users/create/", CompanyUserCreateView.as_view(), name="user_create"),
     path("users/<int:pk>/edit/", CompanyUserUpdateView.as_view(), name="user_edit"),
+
+    # Password management — Gestión de contraseña (todos los roles).
+    path("password/change/", PanelPasswordChangeView.as_view(), name="password_change"),
 
     # Section management — Gestión de secciones.
     path("sections/", SectionListView.as_view(), name="section_list"),
@@ -69,6 +77,10 @@ urlpatterns = [
 
     # CorporateVoiceProfile management — Gestión de perfil de voz corporativa.
     path("voiceprofile/", CorporateVoiceProfileUpdateView.as_view(), name="voiceprofile_detail"),
+    path("voiceprofile/restore/", VoiceProfileRestoreView.as_view(), name="voiceprofile_restore"),
+
+    # CallFlow restore — Restauración de flujo IVR a versión anterior.
+    path("callflows/<int:pk>/restore/", CallFlowRestoreView.as_view(), name="callflow_restore"),
 
     # BlockedCaller management — Gestión de números bloqueados.
     path("blockedcallers/", BlockedCallerListView.as_view(), name="blockedcaller_list"),

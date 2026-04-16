@@ -138,6 +138,15 @@ class CompanyUser(models.Model):
         verbose_name="Activo",
         help_text="Indica si el usuario tiene acceso activo al panel.",
     )
+    must_change_password = models.BooleanField(
+        default=True,
+        verbose_name="Debe cambiar contraseña",
+        help_text=(
+            "Si está activo, el usuario será redirigido obligatoriamente a la "
+            "pantalla de cambio de contraseña al iniciar sesión. Se activa "
+            "automáticamente al crear el usuario o cuando el ADMIN fuerza un reset."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -179,6 +188,39 @@ class CorporateVoiceProfile(models.Model):
         verbose_name="Empresa",
         help_text="Empresa a la que pertenece este perfil de voz corporativa.",
     )
+    # Available voices for gemini-live-2.5-flash-native-audio on Vertex AI (Live API).
+    # Voces disponibles para gemini-live-2.5-flash-native-audio en Vertex AI (Live API).
+    VOICE_AOEDE   = "Aoede"
+    VOICE_PUCK    = "Puck"
+    VOICE_CHARON  = "Charon"
+    VOICE_KORE    = "Kore"
+    VOICE_FENRIR  = "Fenrir"
+    VOICE_LEDA    = "Leda"
+    VOICE_ORUS    = "Orus"
+    VOICE_ZEPHYR  = "Zephyr"
+
+    VOICE_CHOICES = [
+        (VOICE_AOEDE,  "Aoede — Femenina, cálida (por defecto)"),
+        (VOICE_PUCK,   "Puck — Masculina, juvenil y conversacional"),
+        (VOICE_CHARON, "Charon — Masculina, profunda y autoritaria"),
+        (VOICE_KORE,   "Kore — Femenina, clara y profesional"),
+        (VOICE_FENRIR, "Fenrir — Masculina, cercana y accesible"),
+        (VOICE_LEDA,   "Leda — Femenina, suave"),
+        (VOICE_ORUS,   "Orus — Masculina, neutra"),
+        (VOICE_ZEPHYR, "Zephyr — Femenina, enérgica"),
+    ]
+
+    voice_name = models.CharField(
+        max_length=50,
+        choices=VOICE_CHOICES,
+        default=VOICE_AOEDE,
+        verbose_name="Voz del agente",
+        help_text=(
+            "Voz Gemini Live que el agente IVR usará en las llamadas entrantes. "
+            "Voces disponibles para gemini-live-2.5-flash-native-audio en Vertex AI. "
+            "El cambio tiene efecto en la siguiente llamada sin necesidad de reiniciar."
+        ),
+    )
     tone_guidelines = models.TextField(
         verbose_name="Directrices de tono",
         help_text="Descripción del tono y estilo de comunicación esperado del agente IVR.",
@@ -197,6 +239,37 @@ class CorporateVoiceProfile(models.Model):
         default=True,
         verbose_name="Activo",
         help_text="Indica si este perfil de voz está en uso.",
+    )
+    # ------------------------------------------------------------------
+    # BACKUP FIELDS — Single-level restore snapshot (Paso 33-E).
+    # Populated automatically on every successful save in CorporateVoiceProfileUpdateView.
+    # The ADMIN can restore from these fields via /panel/voiceprofile/restore/.
+    # ------------------------------------------------------------------
+    # CAMPOS DE BACKUP — Snapshot de un nivel de restauración (Paso 33-E).
+    # Se rellenan automáticamente en cada guardado exitoso de CorporateVoiceProfileUpdateView.
+    # El ADMIN puede restaurar desde estos campos en /panel/voiceprofile/restore/.
+    backup_voice_name = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Backup voz del agente",
+        help_text="Copia anterior de voice_name para restauración de un clic.",
+    )
+    backup_tone_guidelines = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Backup directrices de tono",
+        help_text="Copia anterior de tone_guidelines para restauración de un clic.",
+    )
+    backup_sample_responses = models.JSONField(
+        default=list,
+        verbose_name="Backup respuestas de ejemplo",
+        help_text="Copia anterior de sample_responses para restauración de un clic.",
+    )
+    backup_forbidden_phrases = models.JSONField(
+        default=list,
+        verbose_name="Backup frases prohibidas",
+        help_text="Copia anterior de forbidden_phrases para restauración de un clic.",
     )
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -517,6 +590,35 @@ class CallFlow(models.Model):
         default=True,
         verbose_name="Activo",
         help_text="Indica si este flujo IVR está disponible para su asignación a números.",
+    )
+    # ------------------------------------------------------------------
+    # BACKUP FIELDS — Single-level restore snapshot (Paso 33-E).
+    # Populated automatically on every successful save in CallFlowUpdateView.
+    # The ADMIN can restore from these fields via /panel/callflows/{pk}/restore/.
+    # ------------------------------------------------------------------
+    # CAMPOS DE BACKUP — Snapshot de un nivel de restauración (Paso 33-E).
+    # Se rellenan automáticamente en cada guardado exitoso de CallFlowUpdateView.
+    # El ADMIN puede restaurar desde estos campos en /panel/callflows/{pk}/restore/.
+    backup_system_instruction = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Backup instrucción de sistema",
+        help_text="Copia anterior de system_instruction para restauración de un clic.",
+    )
+    backup_initial_greeting = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Backup saludo inicial",
+        help_text="Copia anterior de initial_greeting para restauración de un clic.",
+    )
+    backup_notification_contact = models.ForeignKey(
+        "Contact",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="backup_notification_flows",
+        verbose_name="Backup contacto de notificación",
+        help_text="Copia anterior de notification_contact para restauración de un clic.",
     )
     created_at = models.DateTimeField(
         auto_now_add=True,

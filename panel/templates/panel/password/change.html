@@ -1,0 +1,204 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/password/change.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Cambiar contraseña{% endblock %}
+{% block page_title %}Cambiar contraseña{% endblock %}
+
+{% block content %}
+
+{% if is_forced %}
+<!-- Forced password change alert — Aviso de cambio de contraseña obligatorio -->
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-4" role="alert">
+    <i class="bi bi-shield-lock-fill fs-5"></i>
+    <div>
+        <strong>Cambio de contraseña obligatorio.</strong>
+        Debes establecer una nueva contraseña antes de continuar usando el panel.
+    </div>
+</div>
+{% endif %}
+
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-5">
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-key me-2 text-primary"></i>Nueva contraseña
+                </h6>
+            </div>
+            <div class="card-body p-4">
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <!-- old_password field — Campo de contraseña actual -->
+                    <div class="mb-4">
+                        <label for="{{ form.old_password.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.old_password.label }}
+                        </label>
+                        {% with field=form.old_password %}{% include "panel/password/_field_pw.html" %}{% endwith %}
+                        {% if form.old_password.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.old_password.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- new_password1 field — Campo de nueva contraseña -->
+                    <div class="mb-4">
+                        <label for="{{ form.new_password1.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.new_password1.label }}
+                        </label>
+                        {{ form.new_password1 }}
+                        {% if form.new_password1.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.new_password1.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        {% if form.new_password1.help_text %}
+                        <div class="form-text">{{ form.new_password1.help_text }}</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- new_password2 field — Campo de confirmación de contraseña -->
+                    <div class="mb-4">
+                        <label for="{{ form.new_password2.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.new_password2.label }}
+                        </label>
+                        {{ form.new_password2 }}
+                        {% if form.new_password2.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.new_password2.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Non-field errors — Errores generales del formulario -->
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger py-2 px-3 mb-3">
+                        {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Submit buttons — Botones de envío -->
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-dark px-4">
+                            <i class="bi bi-check-lg me-2"></i>Guardar contraseña
+                        </button>
+                        {% if not is_forced %}
+                        <a href="{% url 'panel:dashboard' %}"
+                           class="btn btn-outline-secondary px-4">
+                            Cancelar
+                        </a>
+                        {% endif %}
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% block extra_scripts %}
+{{ block.super }}
+<style>
+    .password-wrapper          { position: relative; }
+    .password-toggle           { position: absolute; right: 0.75rem; top: 50%;
+                                 transform: translateY(-50%); background: none;
+                                 border: none; color: #6c757d; cursor: pointer;
+                                 padding: 0; line-height: 1; }
+    .password-toggle:hover     { color: #343a40; }
+    .strength-bar-wrap         { height: 6px; border-radius: 3px;
+                                 background: #e9ecef; margin-top: 6px; overflow: hidden; }
+    .strength-bar              { height: 100%; width: 0; border-radius: 3px;
+                                 transition: width 0.25s, background-color 0.25s; }
+    .strength-label            { font-size: 0.75rem; margin-top: 4px; }
+</style>
+<script>
+/*
+ * Password UX: show/hide toggle + strength meter for change form.
+ * UX de contraseña: toggle mostrar/ocultar + medidor para el formulario de cambio.
+ */
+(function () {
+    'use strict';
+
+    /* Ids of password fields in this form — Ids de los campos de contraseña */
+    var TOGGLE_IDS   = ['id_old_password', 'id_new_password1', 'id_new_password2'];
+    var STRENGTH_IDS = ['id_new_password1'];
+
+    function addToggle(input) {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'password-wrapper';
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'password-toggle';
+        btn.setAttribute('aria-label', 'Mostrar u ocultar contraseña');
+        btn.innerHTML = '<i class="bi bi-eye"></i>';
+        wrapper.appendChild(btn);
+        btn.addEventListener('click', function () {
+            var show  = input.type === 'password';
+            input.type    = show ? 'text' : 'password';
+            btn.innerHTML = show
+                ? '<i class="bi bi-eye-slash"></i>'
+                : '<i class="bi bi-eye"></i>';
+        });
+        return wrapper;
+    }
+
+    function addStrength(input) {
+        var anchor  = input.closest('.password-wrapper') || input;
+        var barWrap = document.createElement('div');
+        barWrap.className = 'strength-bar-wrap';
+        var bar = document.createElement('div');
+        bar.className = 'strength-bar';
+        barWrap.appendChild(bar);
+        var lbl = document.createElement('div');
+        lbl.className = 'strength-label text-muted';
+        anchor.parentNode.insertBefore(barWrap, anchor.nextSibling);
+        anchor.parentNode.insertBefore(lbl, barWrap.nextSibling);
+        input.addEventListener('input', function () {
+            var v = input.value, score = 0;
+            if (v.length >= 8)  score++;
+            if (v.length >= 12) score++;
+            if (v.length >= 16) score++;
+            if (/[A-Z]/.test(v))        score++;
+            if (/[0-9]/.test(v))        score++;
+            if (/[^A-Za-z0-9]/.test(v)) score++;
+            if (v.length === 0) {
+                bar.style.width = '0'; bar.style.backgroundColor = '';
+                lbl.textContent = ''; return;
+            }
+            var levels = [
+                null,
+                {w:'20%', c:'#dc3545', t:'Muy débil'},
+                {w:'40%', c:'#fd7e14', t:'Débil'},
+                {w:'60%', c:'#ffc107', t:'Aceptable'},
+                {w:'80%', c:'#20c997', t:'Fuerte'},
+                {w:'100%',c:'#198754', t:'Muy fuerte'},
+            ];
+            var l = score <= 2 ? 1 : score === 3 ? 2 : score === 4 ? 3 : score === 5 ? 4 : 5;
+            bar.style.width = levels[l].w;
+            bar.style.backgroundColor = levels[l].c;
+            lbl.textContent = levels[l].t;
+            lbl.style.color = levels[l].c;
+        });
+    }
+
+    TOGGLE_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) addToggle(el);
+    });
+    STRENGTH_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) addStrength(el);
+    });
+}());
+</script>
+{% endblock %}
+{% endblock %}

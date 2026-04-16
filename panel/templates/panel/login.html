@@ -175,5 +175,41 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
             integrity="sha384-YvpcrYf0tY3lHB60NNkmXc4s9bIOgUxi8T/jzmgMEWcQLDhfJJT7v8VPGDNdOBN9"
             crossorigin="anonymous"></script>
+    <script>
+    /*
+     * Login password toggle — show/hide password field.
+     * Toggle de contraseña en login — mostrar/ocultar campo de contraseña.
+     */
+    (function () {
+        'use strict';
+        var input = document.getElementById('id_password');
+        if (!input) return;
+
+        /* Wrap input — Envolver input */
+        var wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+
+        /* Toggle button — Botón toggle */
+        var btn = document.createElement('button');
+        btn.type      = 'button';
+        btn.setAttribute('aria-label', 'Mostrar u ocultar contraseña');
+        btn.style.cssText = (
+            'position:absolute;right:0.75rem;top:50%;transform:translateY(-50%);'
+            + 'background:none;border:none;color:#6c757d;cursor:pointer;padding:0;line-height:1;'
+        );
+        btn.innerHTML = '<i class="bi bi-eye"></i>';
+        wrapper.appendChild(btn);
+
+        btn.addEventListener('click', function () {
+            var show  = input.type === 'password';
+            input.type    = show ? 'text' : 'password';
+            btn.innerHTML = show
+                ? '<i class="bi bi-eye-slash"></i>'
+                : '<i class="bi bi-eye"></i>';
+        });
+    }());
+    </script>
 </body>
 </html>

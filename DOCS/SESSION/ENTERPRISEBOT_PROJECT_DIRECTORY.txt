@@ -22,8 +22,10 @@
 ./panel/templates/panel/sections/form.html
 ./panel/templates/panel/dashboard.html
 ./panel/templates/panel/presence/status.html
+./panel/templates/panel/password/change.html
 ./panel/templates/panel/phonenumbers/list.html
 ./panel/templates/panel/users/list.html
+./panel/templates/panel/users/create.html
 ./panel/templates/panel/users/form.html
 ./panel/templates/panel/contacts/list.html
 ./panel/templates/panel/contacts/form.html
@@ -173,6 +175,7 @@
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/API_HANDSHAKE_PROTOCOL.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/ARCH_VOICE_INFRASTRUCTURE.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V01/TRANSCODING_ENGINE_SPECS.md
+./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V04/V04DOC_WHATSAPP_NUMBER_REGISTRATION.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
@@ -186,6 +189,9 @@
 ./ivr_config/models.py
 ./ivr_config/migrations/0003_callflow_notification_contact_contact_email_and_more.py
 ./ivr_config/migrations/__init__.py
+./ivr_config/migrations/0004_companyuser_add_must_change_password.py
+./ivr_config/migrations/0006_callflow_voiceprofile_add_backup_fields.py
+./ivr_config/migrations/0005_corporatevoiceprofile_add_voice_name.py
 ./ivr_config/migrations/0002_phonenumber_capabilities.py
 ./ivr_config/migrations/0001_initial.py
 ./ivr_config/tests.py

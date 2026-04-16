@@ -204,6 +204,7 @@ class UniversalVoiceBridge:
         try:
             post_data = await request.post()
             twilio_number = post_data.get("To", "")
+            caller_number = post_data.get("From", "")
             if twilio_number:
                 logger.info(
                     f"# [HTTP POST] Número destino capturado del POST: {twilio_number}"
@@ -213,18 +214,29 @@ class UniversalVoiceBridge:
                     "# [HTTP POST] Campo 'To' ausente en el body del POST de Twilio. "
                     "VoiceOrchestrationService usará configuración de fallback."
                 )
+            if caller_number:
+                logger.info(
+                    f"# [HTTP POST] Número llamante capturado del POST: {caller_number}"
+                )
+            else:
+                logger.warning(
+                    "# [HTTP POST] Campo 'From' ausente en el body del POST de Twilio. "
+                    "La verificación de BlockedCaller no estará disponible para esta llamada."
+                )
         except Exception as post_exc:
             logger.error(
                 f"# [HTTP POST] Error al leer body del POST: {post_exc}. "
-                "Usando cadena vacía como número destino."
+                "Usando cadenas vacías como números destino y origen."
             )
             twilio_number = ""
+            caller_number = ""
 
-        # Store the captured number so handle_websocket_stream() can access it
+        # Store both numbers so handle_websocket_stream() can access them
         # when the WebSocket 'start' event arrives for this call.
-        # Almacenar el número capturado para que handle_websocket_stream() pueda
-        # acceder a él cuando llegue el evento 'start' del WebSocket para esta llamada.
+        # Almacenar ambos números para que handle_websocket_stream() pueda
+        # acceder a ellos cuando llegue el evento 'start' del WebSocket para esta llamada.
         self._pending_twilio_number = twilio_number
+        self._pending_caller_number = caller_number
 
         # Derive the WSS URL from the request host header so that the TwiML
         # always points to the correct tunnel regardless of the ngrok session.
@@ -372,7 +384,9 @@ class UniversalVoiceBridge:
                         # se resetea a cadena vacía para evitar que valores obsoletos
                         # contaminen llamadas posteriores gestionadas por el mismo proceso.
                         twilio_number = getattr(self, "_pending_twilio_number", "")
+                        caller_number = getattr(self, "_pending_caller_number", "")
                         self._pending_twilio_number = ""
+                        self._pending_caller_number = ""
 
                         if twilio_number:
                             logger.info(
@@ -387,19 +401,36 @@ class UniversalVoiceBridge:
                                 "de fallback hardcodeada (SYSTEM_INSTRUCTION_FALLBACK)."
                             )
 
+                        if caller_number:
+                            logger.info(
+                                f"# [EVENT] Número llamante resuelto desde "
+                                f"POST HTTP: {caller_number}"
+                            )
+                        else:
+                            logger.warning(
+                                "# [EVENT] Número llamante no disponible "
+                                "(campo 'From' ausente en el POST inicial). "
+                                "La verificación de BlockedCaller no estará disponible."
+                            )
+
                         # Instantiate a fresh VoiceOrchestrationService per call,
-                        # passing the resolved Twilio number so that build_live_config()
-                        # can load the dynamic IVR configuration from the database.
+                        # passing the resolved Twilio number and caller number so that
+                        # build_live_config() can load the dynamic IVR configuration
+                        # and verify the caller against the BlockedCaller registry.
                         # Each call gets its own asyncio.Queue instances and a clean
                         # session_active flag, preventing state bleed between consecutive
                         # calls handled by the same bridge process.
                         # Instanciar un VoiceOrchestrationService fresco por llamada,
-                        # pasando el número Twilio resuelto para que build_live_config()
-                        # pueda cargar la configuración IVR dinámica desde la base de datos.
+                        # pasando el número Twilio resuelto y el número llamante para que
+                        # build_live_config() pueda cargar la configuración IVR dinámica
+                        # y verificar al llamante contra el registro de BlockedCaller.
                         # Cada llamada obtiene sus propias instancias de asyncio.Queue y
                         # un flag session_active limpio, evitando contaminación de estado
                         # entre llamadas consecutivas gestionadas por el mismo proceso bridge.
-                        service = VoiceOrchestrationService(twilio_number=twilio_number)
+                        service = VoiceOrchestrationService(
+                            twilio_number=twilio_number,
+                            caller_number=caller_number,
+                        )
 
                         # Launch run_voice_session as a concurrent asyncio Task.
                         # This task owns the Gemini Live session lifecycle via the SDK

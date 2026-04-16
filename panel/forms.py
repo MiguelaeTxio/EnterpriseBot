@@ -14,7 +14,9 @@ y BlockedCallerForm añadidos.
 """
 
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
+from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 
 from ivr_config.models import (
     CompanyUser,
@@ -224,14 +226,23 @@ class CallFlowForm(forms.ModelForm):
 class CorporateVoiceProfileForm(forms.ModelForm):
     """
     Form for creating and updating a CorporateVoiceProfile record.
+    Includes voice_name selector for choosing the Gemini Live agent voice.
     ---
     Formulario para crear y actualizar un registro de CorporateVoiceProfile.
+    Incluye selector voice_name para elegir la voz del agente Gemini Live.
     """
 
     class Meta:
         model = CorporateVoiceProfile
-        fields = ["tone_guidelines", "sample_responses", "forbidden_phrases", "is_active"]
+        fields = [
+            "voice_name",
+            "tone_guidelines",
+            "sample_responses",
+            "forbidden_phrases",
+            "is_active",
+        ]
         widgets = {
+            "voice_name": forms.Select(attrs={"class": "form-select"}),
             "tone_guidelines": forms.Textarea(attrs={"class": "form-control", "rows": 6}),
             "sample_responses": forms.Textarea(attrs={
                 "class": "form-control",
@@ -246,6 +257,7 @@ class CorporateVoiceProfileForm(forms.ModelForm):
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
         labels = {
+            "voice_name": "Voz del agente IVR",
             "tone_guidelines": "Directrices de tono",
             "sample_responses": "Respuestas de ejemplo (JSON)",
             "forbidden_phrases": "Frases prohibidas (JSON)",
@@ -292,3 +304,104 @@ class BlockedCallerForm(forms.ModelForm):
         # blocked_until is optional in the form — model.save() applies the 24h default.
         # blocked_until es opcional en el formulario — model.save() aplica el default de 24h.
         self.fields["blocked_until"].required = False
+
+
+class CompanyUserCreateForm(forms.Form):
+    """
+    Form for creating a new CompanyUser from the panel.
+    The ADMIN provides username, full name, role and an initial password.
+    must_change_password is set to True automatically by the view.
+    ---
+    Formulario para crear un nuevo CompanyUser desde el panel.
+    El ADMIN introduce nombre de usuario, nombre completo, rol y contraseña inicial.
+    must_change_password se activa automáticamente en la vista.
+    """
+
+    username = forms.CharField(
+        max_length=150,
+        label="Nombre de usuario",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "nombre.apellido",
+            "autofocus": True,
+        }),
+    )
+    first_name = forms.CharField(
+        max_length=150,
+        label="Nombre",
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    last_name = forms.CharField(
+        max_length=150,
+        label="Apellidos",
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    role = forms.ChoiceField(
+        choices=CompanyUser.ROLE_CHOICES,
+        label="Rol",
+        initial=CompanyUser.ROLE_OPERATOR,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    initial_password = forms.CharField(
+        max_length=128,
+        label="Contraseña inicial",
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Dejar vacío para usar '1234'",
+        }),
+        help_text=(
+            "El usuario deberá cambiarla en su primer acceso. "
+            "Si se deja vacío se asigna '1234' como contraseña inicial."
+        ),
+    )
+
+    def clean_username(self):
+        """
+        Validates that the username is not already taken by another auth.User.
+        ---
+        Valida que el nombre de usuario no esté ya en uso por otro auth.User.
+        """
+        username = self.cleaned_data.get("username")
+        if User.objects.filter(username=username).exists():
+            raise ValidationError(
+                "Este nombre de usuario ya está en uso. Elige otro."
+            )
+        return username
+
+    def get_initial_password(self):
+        """
+        Returns the initial password, defaulting to '1234' if blank.
+        ---
+        Retorna la contraseña inicial, usando '1234' por defecto si está vacía.
+        """
+        return self.cleaned_data.get("initial_password") or "1234"
+
+
+class PanelPasswordChangeForm(PasswordChangeForm):
+    """
+    Custom password change form for the panel with Bootstrap CSS classes.
+    Inherits full validation from Django's PasswordChangeForm.
+    ---
+    Formulario de cambio de contraseña para el panel con clases CSS Bootstrap.
+    Hereda la validación completa de PasswordChangeForm de Django.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """
+        Applies Bootstrap form-control CSS class to all three password fields.
+        ---
+        Aplica la clase CSS form-control de Bootstrap a los tres campos de contraseña.
+        """
+        super().__init__(*args, **kwargs)
+        for field_name in ("old_password", "new_password1", "new_password2"):
+            self.fields[field_name].widget.attrs.update({"class": "form-control"})
+        self.fields["old_password"].label  = "Contraseña actual"
+        self.fields["new_password1"].label = "Nueva contraseña"
+        self.fields["new_password2"].label = "Confirmar nueva contraseña"
+        self.fields["new_password1"].help_text = (
+            "Mínimo 8 caracteres. No puede ser completamente numérica "
+            "ni demasiado similar a tu nombre de usuario."
+        )

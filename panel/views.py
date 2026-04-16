@@ -7,9 +7,11 @@ Definiciones de vistas para la aplicación panel.
 Implementa vistas basadas en clases para autenticación y el panel principal.
 """
 
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.views import LoginView, LogoutView
+from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View, ListView, UpdateView, CreateView, DeleteView
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.db.models import Q
 from django.utils.timezone import now
 from django.forms import modelformset_factory
@@ -24,6 +26,8 @@ from panel.forms import (
     CallFlowForm,
     CorporateVoiceProfileForm,
     BlockedCallerForm,
+    CompanyUserCreateForm,
+    PanelPasswordChangeForm,
 )
 from ivr_config.models import (
     Section,
@@ -36,6 +40,88 @@ from ivr_config.models import (
     CorporateVoiceProfile,
     BlockedCaller,
 )
+
+
+class CompanyUserCreateView(AdminRoleRequiredMixin, View):
+    """
+    Allows an ADMIN to create a new CompanyUser for their company.
+    Creates the underlying auth.User with the provided initial password and sets
+    must_change_password=True so the new user must change it on first login.
+    ---
+    Permite a un ADMIN crear un nuevo CompanyUser para su empresa.
+    Crea el auth.User subyacente con la contraseña inicial y establece
+    must_change_password=True para forzar el cambio en el primer acceso.
+    """
+
+    template_name = "panel/users/create.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _get_context(self, request, form=None):
+        """
+        Builds base template context with company, company_user and own_presence.
+        ---
+        Construye el contexto base con company, company_user y own_presence.
+        """
+        cu = request.user.company_user
+        return {
+            "company":      cu.company,
+            "company_user": cu,
+            "own_presence": self._get_own_presence(cu),
+            "form":         form or CompanyUserCreateForm(),
+        }
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the user creation form.
+        ---
+        Renderiza el formulario de creación de usuario.
+        """
+        return render(request, self.template_name, self._get_context(request))
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates the form, creates auth.User and CompanyUser, redirects on success.
+        ---
+        Valida el formulario, crea auth.User y CompanyUser, redirige en caso de éxito.
+        """
+        from django.contrib.auth.models import User as AuthUser
+        form = CompanyUserCreateForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, self._get_context(request, form))
+        company = request.user.company_user.company
+        auth_user = AuthUser.objects.create_user(
+            username     = form.cleaned_data["username"],
+            first_name   = form.cleaned_data.get("first_name", ""),
+            last_name    = form.cleaned_data.get("last_name", ""),
+            password     = form.get_initial_password(),
+            is_staff     = False,
+            is_superuser = False,
+        )
+        CompanyUser.objects.create(
+            user                 = auth_user,
+            company              = company,
+            role                 = form.cleaned_data["role"],
+            is_active            = True,
+            must_change_password = True,
+        )
+        django_messages.success(
+            request,
+            f"Usuario '{auth_user.username}' creado. "
+            f"Deberá cambiar su contraseña en el primer acceso."
+        )
+        return redirect("/panel/users/")
 
 
 class CompanyUserListView(AdminRoleRequiredMixin, ListView):
@@ -113,16 +199,35 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
             company=self.request.user.company_user.company
         )
 
+    def post(self, request, *args, **kwargs):
+        """
+        Handles standard update and the force-reset action.
+        If POST contains 'force_reset', sets must_change_password=True and redirects.
+        ---
+        Gestiona la actualización estándar y la acción de forzar reset.
+        Si el POST contiene 'force_reset', establece must_change_password=True y redirige.
+        """
+        self.object = self.get_object()
+        if "force_reset" in request.POST:
+            self.object.must_change_password = True
+            self.object.save(update_fields=["must_change_password"])
+            django_messages.success(
+                request,
+                f"Se ha forzado el cambio de contraseña para "
+                f"'{self.object.user.username}'."
+            )
+            return redirect("/panel/users/")
+        return super().post(request, *args, **kwargs)
+
     def get_success_url(self):
         """
         Redirects to the user list after a successful update.
         ---
         Redirige a la lista de usuarios tras una actualización correcta.
         """
-        from django.contrib import messages as django_messages
         django_messages.success(
             self.request,
-            f"Usuario {self.object.user.username} actualizado correctamente."
+            f"Usuario '{self.object.user.username}' actualizado correctamente."
         )
         return "/panel/users/"
 
@@ -867,6 +972,23 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
         form.fields["notification_contact"].required = False
         return form
 
+    def form_valid(self, form):
+        """
+        Saves a backup snapshot of the current values before applying the new ones.
+        Backup fields store the state BEFORE this save so the ADMIN can restore.
+        ---
+        Guarda un snapshot de backup de los valores actuales antes de aplicar los nuevos.
+        Los campos backup almacenan el estado ANTERIOR a este guardado para que el ADMIN
+        pueda restaurar.
+        """
+        instance = self.get_object()
+        # Snapshot current (pre-save) values into backup fields.
+        # Capturar valores actuales (pre-guardado) en los campos de backup.
+        form.instance.backup_system_instruction  = instance.system_instruction
+        form.instance.backup_initial_greeting    = instance.initial_greeting
+        form.instance.backup_notification_contact = instance.notification_contact
+        return super().form_valid(form)
+
     def get_success_url(self):
         """
         Redirects to the callflow list after a successful update.
@@ -876,21 +998,28 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
         from django.contrib import messages as django_messages
         django_messages.success(
             self.request,
-            f"Flujo IVR '{self.object.name}' actualizado correctamente."
+            f"Flujo IVR '{self.object.name}' actualizado correctamente. "
+            "Puedes restaurar la versión anterior desde el formulario de edición."
         )
         return "/panel/callflows/"
 
     def get_context_data(self, **kwargs):
         """
-        Adds company, company_user, own_presence and action flag to template context.
+        Adds company, company_user, own_presence, action flag and has_backup to context.
         ---
-        Añade company, company_user, own_presence y flag de acción al contexto de la plantilla.
+        Añade company, company_user, own_presence, flag de acción y has_backup al contexto.
         """
         context = super().get_context_data(**kwargs)
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
         context["action"] = "Editar"
+        # has_backup is True if a restorable snapshot exists in backup fields.
+        # has_backup es True si existe un snapshot restaurable en los campos de backup.
+        obj = self.get_object()
+        context["has_backup"] = bool(
+            obj.backup_system_instruction or obj.backup_initial_greeting
+        )
         return context
 
     def _get_own_presence(self):
@@ -1039,15 +1168,162 @@ class CorporateVoiceProfileUpdateView(AdminRoleRequiredMixin, View):
         form = CorporateVoiceProfileForm(request.POST, instance=ctx["profile"])
 
         if form.is_valid():
-            form.save()
+            profile = ctx["profile"]
+            # Snapshot current (pre-save) values into backup fields before saving.
+            # Capturar valores actuales (pre-guardado) en los campos de backup antes de guardar.
+            instance = form.save(commit=False)
+            instance.backup_voice_name        = profile.voice_name
+            instance.backup_tone_guidelines   = profile.tone_guidelines
+            instance.backup_sample_responses  = profile.sample_responses
+            instance.backup_forbidden_phrases = profile.forbidden_phrases
+            instance.save()
             django_messages.success(
                 request,
-                "Perfil de voz corporativa actualizado correctamente."
+                "Perfil de voz corporativa actualizado correctamente. "
+                "Puedes restaurar la versión anterior desde este mismo formulario."
             )
             return redirect("panel:voiceprofile_detail")
 
         ctx["form"] = form
         return render(request, self.template_name, ctx)
+
+
+class CallFlowRestoreView(AdminRoleRequiredMixin, View):
+    """
+    Restores a CallFlow to its previous backup snapshot with a single POST.
+    Swaps active fields ↔ backup fields so the backup becomes the new backup
+    (enabling a second restore to redo the change if needed).
+    Restricted to CallFlow records belonging to the authenticated user's company.
+    ---
+    Restaura un CallFlow a su snapshot de backup anterior con un solo POST.
+    Intercambia los campos activos ↔ backup para que el backup sea el nuevo backup
+    (permitiendo una segunda restauración para rehacer el cambio si es necesario).
+    Restringido a registros CallFlow de la empresa del usuario autenticado.
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Performs the active ↔ backup field swap and redirects to the edit form.
+        ---
+        Realiza el intercambio activo ↔ backup y redirige al formulario de edición.
+        """
+        try:
+            flow = CallFlow.objects.get(
+                pk=pk,
+                company=request.user.company_user.company
+            )
+        except CallFlow.DoesNotExist:
+            django_messages.error(request, "Flujo IVR no encontrado.")
+            return redirect("/panel/callflows/")
+
+        if not flow.backup_system_instruction and not flow.backup_initial_greeting:
+            django_messages.warning(
+                request,
+                "No existe versión anterior para restaurar en este flujo IVR."
+            )
+            return redirect(f"/panel/callflows/{pk}/edit/")
+
+        # Swap active ↔ backup so both directions remain available.
+        # Intercambiar activo ↔ backup para que ambas direcciones permanezcan disponibles.
+        (
+            flow.system_instruction,      flow.backup_system_instruction,
+        ) = (
+            flow.backup_system_instruction, flow.system_instruction,
+        )
+        (
+            flow.initial_greeting,        flow.backup_initial_greeting,
+        ) = (
+            flow.backup_initial_greeting,  flow.initial_greeting,
+        )
+        (
+            flow.notification_contact,        flow.backup_notification_contact,
+        ) = (
+            flow.backup_notification_contact, flow.notification_contact,
+        )
+        flow.save(update_fields=[
+            "system_instruction",
+            "backup_system_instruction",
+            "initial_greeting",
+            "backup_initial_greeting",
+            "notification_contact",
+            "backup_notification_contact",
+        ])
+        django_messages.success(
+            request,
+            f"Flujo IVR '{flow.name}' restaurado a la versión anterior correctamente."
+        )
+        return redirect(f"/panel/callflows/{pk}/edit/")
+
+
+class VoiceProfileRestoreView(AdminRoleRequiredMixin, View):
+    """
+    Restores the CorporateVoiceProfile to its previous backup snapshot with a single POST.
+    Swaps active fields ↔ backup fields to allow bidirectional restore.
+    Restricted to the profile of the authenticated user's company.
+    ---
+    Restaura el CorporateVoiceProfile a su snapshot de backup anterior con un solo POST.
+    Intercambia los campos activos ↔ backup para permitir restauración bidireccional.
+    Restringido al perfil de la empresa del usuario autenticado.
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Performs the active ↔ backup field swap and redirects to the voice profile form.
+        ---
+        Realiza el intercambio activo ↔ backup y redirige al formulario del perfil de voz.
+        """
+        try:
+            profile = CorporateVoiceProfile.objects.get(
+                company=request.user.company_user.company
+            )
+        except CorporateVoiceProfile.DoesNotExist:
+            django_messages.error(request, "Perfil de voz no encontrado.")
+            return redirect("panel:voiceprofile_detail")
+
+        if not profile.backup_tone_guidelines and not profile.backup_voice_name:
+            django_messages.warning(
+                request,
+                "No existe versión anterior para restaurar en el perfil de voz."
+            )
+            return redirect("panel:voiceprofile_detail")
+
+        # Swap active ↔ backup — bidirectional restore support.
+        # Intercambiar activo ↔ backup — soporte de restauración bidireccional.
+        (
+            profile.voice_name,        profile.backup_voice_name,
+        ) = (
+            profile.backup_voice_name,  profile.voice_name,
+        )
+        (
+            profile.tone_guidelines,       profile.backup_tone_guidelines,
+        ) = (
+            profile.backup_tone_guidelines, profile.tone_guidelines,
+        )
+        (
+            profile.sample_responses,       profile.backup_sample_responses,
+        ) = (
+            profile.backup_sample_responses, profile.sample_responses,
+        )
+        (
+            profile.forbidden_phrases,       profile.backup_forbidden_phrases,
+        ) = (
+            profile.backup_forbidden_phrases, profile.forbidden_phrases,
+        )
+        profile.save(update_fields=[
+            "voice_name",
+            "backup_voice_name",
+            "tone_guidelines",
+            "backup_tone_guidelines",
+            "sample_responses",
+            "backup_sample_responses",
+            "forbidden_phrases",
+            "backup_forbidden_phrases",
+        ])
+        django_messages.success(
+            request,
+            "Perfil de voz restaurado a la versión anterior correctamente."
+        )
+        return redirect("panel:voiceprofile_detail")
 
 
 class BlockedCallerListView(AdminRoleRequiredMixin, ListView):
@@ -1431,3 +1707,77 @@ class PanelDashboardView(CompanyUserRequiredMixin, TemplateView):
         context["own_presence"] = own_presence
 
         return context
+
+
+class PanelPasswordChangeView(CompanyUserRequiredMixin, View):
+    """
+    Allows any authenticated CompanyUser to change their own password.
+    When must_change_password=True this view is mandatory — the mixin
+    blocks all other panel URLs until the password is updated.
+    On success, must_change_password is cleared and the session auth hash
+    is refreshed so the user stays logged in.
+    ---
+    Permite a cualquier CompanyUser autenticado cambiar su propia contraseña.
+    Cuando must_change_password=True esta vista es obligatoria — el mixin
+    bloquea todas las demás URLs del panel hasta que se actualice la contraseña.
+    Al guardar, must_change_password se limpia y el hash de sesión se refresca
+    para que el usuario permanezca autenticado.
+    """
+
+    template_name = "panel/password/change.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _get_context(self, request, form=None):
+        """
+        Builds template context including is_forced flag for UI messaging.
+        ---
+        Construye el contexto de plantilla incluyendo el flag is_forced para la UI.
+        """
+        cu = request.user.company_user
+        return {
+            "company":      cu.company,
+            "company_user": cu,
+            "own_presence": self._get_own_presence(cu),
+            "form":         form or PanelPasswordChangeForm(user=request.user),
+            "is_forced":    cu.must_change_password,
+        }
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the password change form.
+        ---
+        Renderiza el formulario de cambio de contraseña.
+        """
+        return render(request, self.template_name, self._get_context(request))
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates and saves the new password. On success clears must_change_password,
+        updates session auth hash and redirects to the dashboard.
+        ---
+        Valida y guarda la nueva contraseña. En caso de éxito limpia must_change_password,
+        actualiza el hash de sesión y redirige al dashboard.
+        """
+        form = PanelPasswordChangeForm(user=request.user, data=request.POST)
+        if form.is_valid():
+            form.save()
+            update_session_auth_hash(request, form.user)
+            cu = request.user.company_user
+            if cu.must_change_password:
+                cu.must_change_password = False
+                cu.save(update_fields=["must_change_password"])
+            django_messages.success(request, "Contraseña actualizada correctamente.")
+            return redirect("/panel/")
+        return render(request, self.template_name, self._get_context(request, form))

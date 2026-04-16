@@ -57,6 +57,12 @@ class CompanyUserRequiredMixin(PanelLoginRequiredMixin):
             )
             return redirect(self.login_url)
 
+        # Force password change on first login or after admin reset.
+        # Forzar cambio de contraseña en el primer acceso o tras reset del ADMIN.
+        password_change_url = "/panel/password/change/"
+        if company_user.must_change_password and request.path != password_change_url:
+            return redirect(password_change_url)
+
         return super().dispatch(request, *args, **kwargs)
 
 

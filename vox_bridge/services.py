@@ -199,6 +199,12 @@ SILENCE_FRAMES_TO_END_ACTIVITY = 50
 SPEECH_FRAMES_TO_START_ACTIVITY = 15
 
 
+# Fallback voice name used when build_live_config() fails to load the dynamic
+# configuration. 'Aoede' is the canonical IVR voice for EnterpriseBot.
+# Nombre de voz de fallback usado cuando build_live_config() no puede cargar
+# la configuración dinámica. 'Aoede' es la voz IVR canónica de EnterpriseBot.
+VOICE_NAME_FALLBACK = "Aoede"
+
 # Fallback initial greeting used when build_live_config() fails to load
 # the dynamic configuration from the database. Contains the original hardcoded
 # Alia / Grupo Álvarez greeting as a safety net.
@@ -247,7 +253,7 @@ class VoiceOrchestrationService:
         - Gestionar el apagado elegante y la recuperación de errores.
     """
 
-    def __init__(self, twilio_number: str = ""):
+    def __init__(self, twilio_number: str = "", caller_number: str = ""):
         """
         Initialises the service by loading credentials from environment variables,
         constructing the Gemini and Twilio client instances, and resolving the
@@ -264,6 +270,10 @@ class VoiceOrchestrationService:
                                  call (e.g. '+12603466780'). Passed by InboundCallView
                                  from request.POST.get('To', ''). Defaults to empty
                                  string, which will trigger the fallback path.
+            caller_number (str): The caller's E.164 number (From field). Used by
+                                 build_live_config() to verify the caller against the
+                                 BlockedCaller registry. Defaults to empty string,
+                                 which skips the blocked caller check.
 
         Gemini client: Vertex AI service account JSON — GCP_CREDENTIALS_PATH.
         Twilio client: TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
@@ -286,6 +296,10 @@ class VoiceOrchestrationService:
                                  entrante (p. ej. '+12603466780'). Pasado por
                                  InboundCallView desde request.POST.get('To', '').
                                  Por defecto cadena vacía, que activará el fallback.
+            caller_number (str): El número E.164 del llamante (campo From). Usado
+                                 por build_live_config() para verificar al llamante
+                                 contra el registro de BlockedCaller. Por defecto
+                                 cadena vacía, que omite la comprobación de bloqueo.
 
         Cliente Gemini: Service account JSON de Vertex AI — GCP_CREDENTIALS_PATH.
         Cliente Twilio: TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
@@ -432,12 +446,18 @@ class VoiceOrchestrationService:
         # Esto ejecuta las queries ORM en un hilo dedicado del pool de hilos,
         # satisfaciendo completamente los requisitos de seguridad async de Django.
         self.twilio_number: str = twilio_number
+        self.caller_number: str = caller_number
         self.system_instruction: str = SYSTEM_INSTRUCTION_FALLBACK
         self.initial_greeting_text: str = INITIAL_GREETING_FALLBACK
+        # voice_name is resolved dynamically in run_voice_session() via
+        # build_live_config(). Fallback to 'Aoede' until then.
+        # voice_name se resuelve dinámicamente en run_voice_session() vía
+        # build_live_config(). Fallback a 'Aoede' hasta entonces.
+        self.voice_name: str = VOICE_NAME_FALLBACK
 
         logger.info(
             f"[INIT] VoiceOrchestrationService inicializado. "
-            f"Número: '{twilio_number}'. "
+            f"Número destino: '{twilio_number}' | Número llamante: '{caller_number}'. "
             "Configuración IVR dinámica se cargará al inicio de run_voice_session()."
         )
 
@@ -520,10 +540,15 @@ class VoiceOrchestrationService:
             (
                 self.system_instruction,
                 self.initial_greeting_text,
-            ) = await sync_to_async(build_live_config)(self.twilio_number)
+                self.voice_name,
+            ) = await sync_to_async(build_live_config)(
+                self.twilio_number,
+                self.caller_number,
+            )
             logger.info(
                 f"[CONFIG] Configuración IVR dinámica cargada correctamente "
-                f"para el número '{self.twilio_number}'."
+                f"para el número '{self.twilio_number}' "
+                f"(llamante: '{self.caller_number}')."
             )
         except Exception as config_exc:
             logger.error(
@@ -566,7 +591,7 @@ class VoiceOrchestrationService:
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name="Aoede"
+                        voice_name=self.voice_name
                     )
                 )
             ),

@@ -29,9 +29,11 @@ from ivr_config.models import (
     CallFlow,
     Company,
     CompanyUser,
+    Contact,
     CorporateVoiceProfile,
     PhoneNumber,
     Section,
+    SectionSchedule,
 )
 
 
@@ -140,6 +142,7 @@ GRUPO_ALVAREZ_SECTIONS = [
             "Departamento de rescate de vehículos pesados. "
             "Servicio disponible 24 horas al día, 7 días a la semana."
         ),
+        "is_24h": True,
     },
 ]
 
@@ -260,7 +263,8 @@ class Command(BaseCommand):
                 self._seed_voice_profile(company)
                 call_flow = self._seed_call_flow(company)
                 self._seed_phone_numbers(company, call_flow, phone_numbers, capabilities)
-                self._seed_sections(company)
+                sections_by_name = self._seed_sections(company)
+                self._seed_section_schedules(sections_by_name)
 
             self.stdout.write(
                 self.style.SUCCESS(
@@ -355,6 +359,7 @@ class Command(BaseCommand):
         profile, created = CorporateVoiceProfile.objects.get_or_create(
             company=company,
             defaults={
+                "voice_name": CorporateVoiceProfile.VOICE_AOEDE,
                 "tone_guidelines": GRUPO_ALVAREZ_TONE_GUIDELINES,
                 "sample_responses": GRUPO_ALVAREZ_SAMPLE_RESPONSES,
                 "forbidden_phrases": GRUPO_ALVAREZ_FORBIDDEN_PHRASES,
@@ -457,10 +462,59 @@ class Command(BaseCommand):
                 name=section_data["name"],
                 defaults={
                     "description": section_data["description"],
+                    "is_24h": section_data.get("is_24h", False),
                     "is_active": True,
                 },
             )
+            if not created and section.is_24h != section_data.get("is_24h", False):
+                section.is_24h = section_data.get("is_24h", False)
+                section.save(update_fields=["is_24h"])
+                self.stdout.write(
+                    f"# [SEED] Section '{section_data['name']}' is_24h actualizado."
+                )
             status = "creada" if created else "ya existente"
             self.stdout.write(
                 f"# [SEED] Section '{section_data['name']}' {status}."
             )
+        return {
+            s.name: s for s in Section.objects.filter(company=company)
+        }
+
+    def _seed_section_schedules(self, sections_by_name: dict) -> None:
+        """
+        Creates or retrieves SectionSchedule records for Elevacion:
+        Monday to Friday 08:00-18:00. Asistencia is is_24h=True so no
+        schedule records are needed for it.
+        ---
+        Crea o recupera los registros SectionSchedule para Elevacion:
+        lunes a viernes de 08:00 a 18:00. Asistencia tiene is_24h=True
+        por lo que no necesita registros de horario.
+        """
+        import datetime
+        elevacion = sections_by_name.get("Elevación")
+        if not elevacion:
+            self.stdout.write(
+                "# [SEED] WARN: Sección 'Elevación' no encontrada. "
+                "No se crearan horarios."
+            )
+            return
+
+        # Monday=0 to Friday=4, 08:00-18:00
+        # Lunes=0 a Viernes=4, 08:00-18:00
+        time_open  = datetime.time(8, 0)
+        time_close = datetime.time(18, 0)
+        created_count = 0
+        for weekday in range(5):  # 0=Lunes ... 4=Viernes
+            _, created = SectionSchedule.objects.get_or_create(
+                section=elevacion,
+                weekday=weekday,
+                time_open=time_open,
+                time_close=time_close,
+            )
+            if created:
+                created_count += 1
+        self.stdout.write(
+            f"# [SEED] SectionSchedule Elevación: "
+            f"{created_count} franja(s) creada(s), "
+            f"{5 - created_count} ya existente(s)."
+        )

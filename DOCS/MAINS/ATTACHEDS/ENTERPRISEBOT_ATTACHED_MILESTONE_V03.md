@@ -1,10 +1,11 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
 
 # ENTERPRISEBOT — ANEXO HITO V03 — IVR CONVERSACIONAL CONFIGURABLE DESDE PRODUCCIÓN
-**Estado:** EN PROGRESO
+**Estado:** COMPLETADO
 **Fecha de inicio:** 2026-04-07
 **Fecha de reanudación:** 2026-04-13
-**Última actualización:** 2026-04-15
+**Fecha de cierre:** 2026-04-16
+**Última actualización:** 2026-04-16
 
 ---
 
@@ -56,9 +57,10 @@ Resumen de entidades:
 - `CompanyUser.must_change_password` — BooleanField (default=True). Fuerza cambio
   de contraseña en el primer acceso o tras reset del ADMIN. Migración 0004 aplicada.
 - `CorporateVoiceProfile.voice_name` — CharField selección de voz Gemini Live
-  por empresa. Pendiente migración (Paso 33-D).
+  por empresa. Migración 0005 aplicada ✅.
 - `CallFlow.backup_system_instruction` / `backup_initial_greeting` /
-  `backup_notification_contact` — campos de snapshot para restauración (Paso 33-E).
+  `backup_notification_contact` — campos de snapshot para restauración.
+  Migración 0006 aplicada ✅.
 - `CorporateVoiceProfile.backup_tone_guidelines` / `backup_sample_responses` /
   `backup_forbidden_phrases` — campos de snapshot para restauración (Paso 33-E).
 
@@ -86,10 +88,10 @@ Vistas Django class-based que permiten a cada empresa gestionar:
 - `Contact` — contactos internos y externos.
 - `PhoneNumber` — números Twilio asignados (solo lectura para CompanyUser).
 - `CallFlow` — flujos IVR con system_instruction e initial_greeting editables.
-  Botón de restauración al estado anterior (Paso 33-E pendiente).
+  Botón de restauración al estado anterior ✅ COMPLETADO (Paso 33-E).
 - `CorporateVoiceProfile` — perfil de voz corporativa inyectado en Gemini Live.
-  Selector de voz Gemini por empresa (Paso 33-D pendiente).
-  Botón de restauración al estado anterior (Paso 33-E pendiente).
+  Selector de voz Gemini por empresa ✅ COMPLETADO (Paso 33-D).
+  Botón de restauración al estado anterior ✅ COMPLETADO (Paso 33-E).
 - `PresenceStatus` — estado de presencia propio (todos los roles).
 - `BlockedCaller` — números bloqueados activos e historial.
 
@@ -371,13 +373,11 @@ Campos `email`, `gender` en `Contact`; `is_24h` en `Section`;
 Gestión de `SectionSchedule` (inline en Section) y `BlockedCaller` (listado,
 alta, desbloqueo, historial). Validación E2E en producción.
 
-### Paso 33-A — Configuración SendGrid ⏳ PENDIENTE
-Añadir a `.env`: `SENDGRID_API_KEY`, `DEFAULT_FROM_EMAIL`.
-Configurar `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`
-en `enterprise_core/settings.py`.
-Implementar utilidad `send_notification_email()` en `ivr_config/services.py`
-(esqueleto sin uso activo — se activará en Hito 4).
-Criterio de éxito: Django puede enviar email vía SendGrid desde consola de gestión.
+### Paso 33-A — Configuración MailerSend ⏸ DEUDA TÉCNICA
+Bloqueado hasta compra del dominio `enterprisebot.com` (o `.es`) y verificación
+en MailerSend. Cuenta MailerSend activa (plan Free, 500 emails/mes). Dominio
+`campustudionline.com` verificado pero no usable para EnterpriseBot.
+Se implementará en el Hito 4 o cuando el dominio esté disponible.
 
 ### Paso 33-B — Gestión de contraseñas CompanyUser ✅ COMPLETADO (2026-04-15)
 Campo `must_change_password` en `CompanyUser`. Migración 0004 aplicada.
@@ -386,7 +386,7 @@ Toggle mostrar/ocultar + barra de seguridad en todos los campos de contraseña.
 Templates: `password/change.html`, `users/create.html`, actualizaciones en
 `users/list.html`, `users/form.html`, `login.html`.
 
-### Paso 33-C — Function calling Gemini Live: notify_section_contact ⏳ PENDIENTE
+### Paso 33-C — Function calling Gemini Live: notify_section_contact ⏳ PENDIENTE (diferido al Hito 4)
 Definir tool `notify_section_contact(section_name, client_name, phone, service,
 location)` en `LiveConnectConfig` de `vox_bridge/services.py`.
 Implementar handler en `vox_bridge/services.py` que ejecute:
@@ -397,70 +397,53 @@ del handler e informa al cliente del resultado.
 Criterio de éxito: llamada real genera llamada saliente al responsable confirmada
 en logs de Twilio y en la conversación con el llamante.
 
-### Paso 33-D — Selector de voz Gemini por empresa ⏳ PENDIENTE
-Añadir campo `voice_name` (CharField, max_length=50, default='Aoede') a
-`CorporateVoiceProfile`. Generar y aplicar migración incremental.
-Actualizar `build_live_config()` para retornar `voice_name`.
-Actualizar `vox_bridge/services.py`: usar `voice_profile.voice_name` en
-`SpeechConfig` en lugar de la constante `'Aoede'`.
-Actualizar `CorporateVoiceProfileForm` con `Select` de voces disponibles
-verificadas en Vertex AI IE1 (`gemini-live-2.5-flash-native-audio`).
-Actualizar template `voiceprofile/detail.html` con el nuevo campo.
-Criterio de éxito: cambiar la voz desde el panel afecta a la siguiente llamada
-entrante sin reiniciar ningún proceso.
+### Paso 33-D — Selector de voz Gemini por empresa ✅ COMPLETADO (2026-04-16)
+Campo `voice_name` añadido a `CorporateVoiceProfile` con 8 voces confirmadas
+para `gemini-live-2.5-flash-native-audio` en Vertex AI: Aoede, Puck, Charon,
+Kore, Fenrir, Leda, Orus, Zephyr. Migración 0005 aplicada.
+`build_live_config()` retorna `voice_name` como tercer elemento de la tupla.
+`vox_bridge/services.py`: `self.voice_name` dinámico en `PrebuiltVoiceConfig`.
+`CorporateVoiceProfileForm`: selector `voice_name` como primer campo.
+Template `voiceprofile/detail.html` actualizado con selector.
+Validado: cambiar voz desde panel afecta a la siguiente llamada sin reinicio.
 
-### Paso 33-E — Restauración de CallFlow y CorporateVoiceProfile ⏳ PENDIENTE
-Añadir campos de backup a `CallFlow`:
-  · `backup_system_instruction` (TextField, blank=True)
-  · `backup_initial_greeting` (TextField, blank=True)
-  · `backup_notification_contact` (FK→Contact, null=True, blank=True)
-Añadir campos de backup a `CorporateVoiceProfile`:
-  · `backup_tone_guidelines` (TextField, blank=True)
-  · `backup_sample_responses` (JSONField, default=list)
-  · `backup_forbidden_phrases` (JSONField, default=list)
-Generar y aplicar migraciones incrementales.
-En `CallFlowUpdateView` y `CorporateVoiceProfileUpdateView`: antes de guardar
-los nuevos valores, copiar los actuales a los campos backup_.
-Añadir vistas de restauración: POST a `/panel/callflows/{pk}/restore/` y
-`/panel/voiceprofile/restore/` que intercambian activo ↔ backup.
-Añadir botón "Restaurar versión anterior" en templates `callflows/form.html`
-y `voiceprofile/detail.html`.
-Criterio de éxito: el ADMIN puede guardar cambios en un flujo IVR o perfil
-de voz y restaurar el estado anterior con un solo clic desde el panel.
+### Paso 33-E — Restauración de CallFlow y CorporateVoiceProfile ✅ COMPLETADO (2026-04-16)
+Campos `backup_*` añadidos a `CallFlow` (system_instruction, initial_greeting,
+notification_contact) y `CorporateVoiceProfile` (voice_name, tone_guidelines,
+sample_responses, forbidden_phrases). Migración 0006 aplicada.
+`CallFlowUpdateView.form_valid()` y `CorporateVoiceProfileUpdateView.post()`
+guardan snapshot previo antes de cada save. Swap activo ↔ backup bidireccional.
+Vistas `CallFlowRestoreView` y `VoiceProfileRestoreView` (POST).
+Botón condicional "Restaurar versión anterior" en ambos templates.
+Validado: restauración funciona desde el panel con un solo clic.
 
-### Paso 33 — Actualización de `build_live_config()` ⏳ PENDIENTE
-Actualizar `ivr_config/services.py`:
-- Añadir parámetro `caller_number: str` a `build_live_config()`.
-- Implementar comprobación de `BlockedCaller` activo al inicio de la función.
-- Cargar `SectionSchedule` de cada `Section` activa.
-- Implementar función `is_section_available(section, now)` que evalúa
-  `is_24h` y franjas `SectionSchedule` para el weekday y hora actuales.
-- Inyectar en `system_instruction` la disponibilidad real de cada sección,
-  el estado de presencia de cada `Contact` interno, el tratamiento Sr./Sra.
-  según `Contact.gender`, y el `notification_contact` del `CallFlow`.
-- Retornar `(system_instruction, initial_greeting, voice_name)`.
-Criterio de éxito: `build_live_config()` retorna un `system_instruction`
-que refleja disponibilidad real de secciones y presencia real de personas,
-junto con la voz configurada para la empresa.
+### Paso 33 — Actualización de `build_live_config()` ✅ COMPLETADO (2026-04-16)
+`ivr_config/services.py` completamente actualizado:
+- Firma: `build_live_config(twilio_number, caller_number='')` → `tuple[str,str,str]`.
+- Step 0: verificación `BlockedCaller` activo — retorna config de rechazo si bloqueado.
+- Helpers nuevos: `_is_caller_blocked()` y `_build_section_schedule_context()`.
+- `_build_section_schedule_context()`: evalúa `is_24h` y `SectionSchedule` por
+  weekday y hora local para cada sección activa.
+- Ensamblado: CallFlow base + VoiceProfile + horarios de secciones + presencia.
+- Retorna `(system_instruction, initial_greeting, voice_name)`.
 
-### Paso 34 — Captura del número llamante en `voice_sidecar_bridge.py` ⏳ PENDIENTE
-Capturar el campo `From` del POST HTTP inicial en `handle_twiml_post()` y
-almacenarlo en `self._pending_caller_number`, siguiendo el mismo patrón
-implementado para `To` en el Paso 28.
-Pasar `caller_number` al constructor de `VoiceOrchestrationService`.
-Criterio de éxito: `build_live_config()` recibe el número llamante real
-en todas las llamadas entrantes.
+### Paso 34 — Captura del número llamante en `voice_sidecar_bridge.py` ✅ COMPLETADO (2026-04-16)
+`handle_twiml_post()`: captura `From` → `self._pending_caller_number`.
+Evento `start`: consume `self._pending_caller_number` y lo pasa a
+`VoiceOrchestrationService(twilio_number=..., caller_number=...)`.
+`vox_bridge/services.py`: `__init__` acepta `caller_number`, lo almacena
+en `self.caller_number`, lo pasa a `build_live_config()` en `run_voice_session()`.
 
-### Paso 35 — Seed de datos piloto Grupo Álvarez actualizado ⏳ PENDIENTE
-Actualizar `ivr_config/management/commands/seed_grupo_alvarez.py` con:
-- Secciones: Grúas, Asistencia (is_24h=True), Elevación, Administración, Taller.
-- SectionSchedule para cada sección con horario representativo de demostración.
-- BlockedCaller vacío (sin bloqueados iniciales).
-- Contact con campos email y gender rellenos para los contactos existentes.
-Criterio de éxito: ejecución del seed recrea el estado piloto completo
-con la nueva estructura de datos sin errores.
+### Paso 35 — Seed de datos piloto Grupo Álvarez actualizado ✅ COMPLETADO (2026-04-16)
+`seed_grupo_alvarez.py` actualizado:
+- `CorporateVoiceProfile`: añadido `voice_name=VOICE_AOEDE` en defaults.
+- `Section Asistencia`: `is_24h=True` en datos de seed.
+- `_seed_sections()`: aplica `is_24h` del seed data y lo actualiza si ya existe.
+- `_seed_section_schedules()`: crea 5 franjas L-V 08:00-18:00 para Elevación.
+- `SectionSchedule` y `Contact` añadidos a imports.
+Seed ejecutado: 5 franjas SectionSchedule creadas, capabilities actualizados a VOICE.
 
-### Paso 36 — Validación E2E del flujo completo ⏳ PENDIENTE
+### Paso 36 — Validación E2E del flujo completo ⏳ PENDIENTE (próxima sesión)
 Realizar llamada real al `+34951796832` y verificar:
 - Alia identifica correctamente el tipo de servicio solicitado.
 - Alia informa correctamente de la disponibilidad de la sección (horario).
@@ -569,6 +552,25 @@ Añadido JavaScript dinámico para añadir franjas horarias sin recargar la pág
 Validación E2E completa en producción: badges, formset de horarios, bloqueados,
 contactos con email/gender, flujos IVR con notification_contact y dashboard. ✅
 
+### Sesión 2026-04-16
+**Título:** Cierre Hito 3 — Pasos 33-D, 33-E, 33, 34, 35 y apertura Hito 4
+**Descripción:** Sesión de cierre del Hito 3 e inicio del Hito 4. Se completan los
+pasos pendientes de la hoja de ruta: selector de voz Gemini Live por empresa (33-D,
+migración 0005), restauración de CallFlow y VoiceProfile con campos backup_* (33-E,
+migración 0006), build_live_config() completo con BlockedCaller, SectionSchedule,
+presencia y voice_name (Paso 33), captura de caller_number (From) en bridge (Paso 34)
+y seed actualizado con SectionSchedule L-V para Elevación (Paso 35). Se documenta
+la investigación de registro de número WhatsApp en documento satélite
+V04DOC_WHATSAPP_NUMBER_REGISTRATION.md. Se actualiza el MASTER_DOCUMENT permutando
+estados: Hito 3 → COMPLETADO, Hito 4 → EN PROGRESO.
+
 ### Sesión 2026-04-15
-**Título:** Responsive Panel + Gestión de Contraseñas + Hoja de Ruta Ampliada
-**Descripción:** {PAH_DESCRIPTION}
+**Título:** Panel EnterpriseBot: Auditoría y Corrección Responsive Completa
+**Descripción:** Sesión dedicada a identificar y corregir todos los defectos de diseño
+responsive del panel personalizado (/panel/). Se auditaron los 14 templates Bootstrap
+5.3 del panel en busca de columnas mal dimensionadas, tablas sin table-responsive,
+formularios con inputs inadecuados para pantalla táctil y navegación no colapsable
+en móvil. Se aplicaron las correcciones necesarias en cada template siguiendo las
+directrices de la Sección 3.5 del anexo. Criterio de éxito: el panel es completamente
+operable desde un dispositivo móvil sin desplazamiento horizontal ni elementos
+inaccesibles con el dedo.

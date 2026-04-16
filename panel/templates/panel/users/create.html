@@ -1,0 +1,237 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/users/create.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Nuevo usuario{% endblock %}
+{% block page_title %}Nuevo usuario{% endblock %}
+{% block nav_users %}active{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-6">
+
+        <div class="mb-3">
+            <a href="{% url 'panel:user_list' %}" class="text-muted text-decoration-none text-nav">
+                <i class="bi bi-arrow-left me-1"></i>Volver al listado
+            </a>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-person-plus me-2 text-primary"></i>Nuevo usuario
+                </h6>
+            </div>
+            <div class="card-body p-4">
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <!-- username field — Campo de nombre de usuario -->
+                    <div class="mb-4">
+                        <label for="{{ form.username.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.username.label }}
+                        </label>
+                        {{ form.username }}
+                        {% if form.username.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.username.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Identificador único de acceso al panel. Sin espacios ni caracteres especiales.
+                        </div>
+                    </div>
+
+                    <!-- first_name field — Campo de nombre -->
+                    <div class="mb-4">
+                        <label for="{{ form.first_name.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.first_name.label }}
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.first_name }}
+                        {% if form.first_name.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.first_name.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- last_name field — Campo de apellidos -->
+                    <div class="mb-4">
+                        <label for="{{ form.last_name.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.last_name.label }}
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.last_name }}
+                        {% if form.last_name.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.last_name.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- role field — Campo de rol -->
+                    <div class="mb-4">
+                        <label for="{{ form.role.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.role.label }}
+                        </label>
+                        {{ form.role }}
+                        {% if form.role.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.role.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            <strong>Administrador:</strong> acceso completo a la configuración
+                            de la empresa.<br>
+                            <strong>Operador:</strong> solo puede gestionar su propia presencia.
+                        </div>
+                    </div>
+
+                    <!-- initial_password field — Campo de contraseña inicial -->
+                    <div class="mb-4">
+                        <label for="{{ form.initial_password.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.initial_password.label }}
+                        </label>
+                        {{ form.initial_password }}
+                        {% if form.initial_password.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.initial_password.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            {{ form.initial_password.help_text }}
+                        </div>
+                    </div>
+
+                    <!-- Forced change notice — Aviso de cambio obligatorio -->
+                    <div class="alert alert-light border d-flex align-items-center gap-2 mb-4">
+                        <i class="bi bi-info-circle text-primary"></i>
+                        <span class="text-sm">
+                            El usuario deberá cambiar su contraseña obligatoriamente
+                            en el primer acceso al panel.
+                        </span>
+                    </div>
+
+                    <!-- Submit buttons — Botones de envío -->
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-dark px-4">
+                            <i class="bi bi-person-plus me-2"></i>Crear usuario
+                        </button>
+                        <a href="{% url 'panel:user_list' %}"
+                           class="btn btn-outline-secondary px-4">
+                            Cancelar
+                        </a>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% block extra_scripts %}
+{{ block.super }}
+<style>
+    .password-wrapper          { position: relative; }
+    .password-toggle           { position: absolute; right: 0.75rem; top: 50%;
+                                 transform: translateY(-50%); background: none;
+                                 border: none; color: #6c757d; cursor: pointer;
+                                 padding: 0; line-height: 1; }
+    .password-toggle:hover     { color: #343a40; }
+    .strength-bar-wrap         { height: 6px; border-radius: 3px;
+                                 background: #e9ecef; margin-top: 6px; overflow: hidden; }
+    .strength-bar              { height: 100%; width: 0; border-radius: 3px;
+                                 transition: width 0.25s, background-color 0.25s; }
+    .strength-label            { font-size: 0.75rem; margin-top: 4px; }
+</style>
+<script>
+/*
+ * Password UX: show/hide toggle + strength meter for user create form.
+ * UX de contraseña: toggle mostrar/ocultar + medidor para el formulario de creación.
+ */
+(function () {
+    'use strict';
+
+    var TOGGLE_IDS   = ['id_initial_password'];
+    var STRENGTH_IDS = ['id_initial_password'];
+
+    function addToggle(input) {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'password-wrapper';
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'password-toggle';
+        btn.setAttribute('aria-label', 'Mostrar u ocultar contraseña');
+        btn.innerHTML = '<i class="bi bi-eye"></i>';
+        wrapper.appendChild(btn);
+        btn.addEventListener('click', function () {
+            var show  = input.type === 'password';
+            input.type    = show ? 'text' : 'password';
+            btn.innerHTML = show
+                ? '<i class="bi bi-eye-slash"></i>'
+                : '<i class="bi bi-eye"></i>';
+        });
+        return wrapper;
+    }
+
+    function addStrength(input) {
+        var anchor  = input.closest('.password-wrapper') || input;
+        var barWrap = document.createElement('div');
+        barWrap.className = 'strength-bar-wrap';
+        var bar = document.createElement('div');
+        bar.className = 'strength-bar';
+        barWrap.appendChild(bar);
+        var lbl = document.createElement('div');
+        lbl.className = 'strength-label text-muted';
+        anchor.parentNode.insertBefore(barWrap, anchor.nextSibling);
+        anchor.parentNode.insertBefore(lbl, barWrap.nextSibling);
+        input.addEventListener('input', function () {
+            var v = input.value, score = 0;
+            if (v.length >= 8)  score++;
+            if (v.length >= 12) score++;
+            if (v.length >= 16) score++;
+            if (/[A-Z]/.test(v))        score++;
+            if (/[0-9]/.test(v))        score++;
+            if (/[^A-Za-z0-9]/.test(v)) score++;
+            if (v.length === 0) {
+                bar.style.width = '0'; bar.style.backgroundColor = '';
+                lbl.textContent = ''; return;
+            }
+            var levels = [
+                null,
+                {w:'20%', c:'#dc3545', t:'Muy débil'},
+                {w:'40%', c:'#fd7e14', t:'Débil'},
+                {w:'60%', c:'#ffc107', t:'Aceptable'},
+                {w:'80%', c:'#20c997', t:'Fuerte'},
+                {w:'100%',c:'#198754', t:'Muy fuerte'},
+            ];
+            var l = score <= 2 ? 1 : score === 3 ? 2 : score === 4 ? 3 : score === 5 ? 4 : 5;
+            bar.style.width = levels[l].w;
+            bar.style.backgroundColor = levels[l].c;
+            lbl.textContent = levels[l].t;
+            lbl.style.color = levels[l].c;
+        });
+    }
+
+    TOGGLE_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) addToggle(el);
+    });
+    STRENGTH_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) addStrength(el);
+    });
+}());
+</script>
+{% endblock %}
+{% endblock %}
