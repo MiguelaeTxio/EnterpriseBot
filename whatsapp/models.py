@@ -4,19 +4,33 @@ Data models for the whatsapp channel app.
 Defines WhatsAppSession, WhatsAppMessage and WhatsAppTemplate — the three
 entities that support the WhatsApp chatbot and presence webhook features.
 All models integrate with the multicompany data model built in Hito 3
-(ivr_config.Company, ivr_config.Contact, ivr_config.PresenceStatus).
+(ivr_config.Company, ivr_config.Contact, ivr_config.PresenceStatus,
+ivr_config.Section).
+
+Extensions added in Paso 18 (Hito 4, session 2026-04-16):
+  - WhatsAppSession: geographic location fields (latitude, longitude,
+    location_address, location_captured_at) and target section FK (target_section).
+  - WhatsAppMessage: message type field (message_type) and coordinate fields
+    (latitude, longitude) to store inbound location messages from WhatsApp.
 ---
 Modelos de datos para la app del canal WhatsApp.
 Define WhatsAppSession, WhatsAppMessage y WhatsAppTemplate — las tres
 entidades que soportan el chatbot de WhatsApp y las funcionalidades del
 webhook de presencia. Todos los modelos se integran con el modelo de datos
 multiempresa construido en el Hito 3 (ivr_config.Company, ivr_config.Contact,
-ivr_config.PresenceStatus).
+ivr_config.PresenceStatus, ivr_config.Section).
+
+Extensiones añadidas en el Paso 18 (Hito 4, sesión 2026-04-16):
+  - WhatsAppSession: campos de ubicación geográfica (latitude, longitude,
+    location_address, location_captured_at) y FK de sección destino (target_section).
+  - WhatsAppMessage: campo de tipo de mensaje (message_type) y campos de
+    coordenadas (latitude, longitude) para almacenar mensajes de ubicación
+    entrantes de WhatsApp.
 """
 
 from django.db import models
 
-from ivr_config.models import Company
+from ivr_config.models import Company, Section
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +89,87 @@ class WhatsAppSession(models.Model):
             "True mientras la ventana de sesión Meta de 24 horas esté abierta. "
             "La tarea Celery expire_whatsapp_sessions lo establece a False "
             "cuando last_message_at supera las 24 horas."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # GEOGRAPHIC LOCATION FIELDS — Paso 18 (Hito 4, 2026-04-16)
+    # Optional capture of the client's geographic position, received either
+    # via a native WhatsApp location message (Latitude/Longitude fields in
+    # the Twilio webhook POST) or via IVR DataCaptureSet. All fields are
+    # optional — location capture is never mandatory.
+    # ------------------------------------------------------------------
+    # CAMPOS DE UBICACIÓN GEOGRÁFICA — Paso 18 (Hito 4, 2026-04-16)
+    # Captura opcional de la posición geográfica del cliente, recibida bien
+    # mediante un mensaje de ubicación nativo de WhatsApp (campos Latitude/
+    # Longitude en el POST del webhook de Twilio) o mediante DataCaptureSet
+    # del IVR. Todos los campos son opcionales — la captura nunca es obligatoria.
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Latitud",
+        help_text=(
+            "Latitud geográfica del cliente en grados decimales. "
+            "Se rellena cuando el cliente comparte su ubicación por WhatsApp "
+            "o cuando el IVR captura la posición vía DataCaptureSet."
+        ),
+    )
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Longitud",
+        help_text=(
+            "Longitud geográfica del cliente en grados decimales. "
+            "Se rellena conjuntamente con latitude cuando la ubicación está disponible."
+        ),
+    )
+    location_address = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name="Dirección formateada",
+        help_text=(
+            "Dirección postal legible asociada a las coordenadas de ubicación. "
+            "Puede ser proporcionada por el propio mensaje de ubicación de WhatsApp "
+            "o resolverse mediante Grounding with Google Maps (Paso 20)."
+        ),
+    )
+    location_captured_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Ubicación capturada en",
+        help_text=(
+            "Fecha y hora en que se registró la ubicación geográfica del cliente. "
+            "Permite auditar el momento exacto de la captura dentro de la sesión."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # TARGET SECTION FIELD — Paso 18 (Hito 4, 2026-04-16)
+    # The section the client intends to reach, detected by the chatbot agent
+    # during the conversation and updated as the intent becomes clear.
+    # Used by Paso 21 to route the interaction to the correct department.
+    # ------------------------------------------------------------------
+    # CAMPO DE SECCIÓN DESTINO — Paso 18 (Hito 4, 2026-04-16)
+    # Sección a la que el cliente desea ser dirigido, detectada por el agente
+    # chatbot durante la conversación y actualizada a medida que la intención
+    # se clarifica. Usada por el Paso 21 para enrutar la interacción al
+    # departamento correcto.
+    target_section = models.ForeignKey(
+        Section,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="whatsapp_sessions",
+        verbose_name="Sección destino",
+        help_text=(
+            "Sección de la empresa a la que el cliente desea ser derivado. "
+            "El agente chatbot detecta esta intención durante la conversación "
+            "y actualiza este campo. Null si la intención aún no ha sido "
+            "identificada o si el cliente no ha especificado sección."
         ),
     )
 
@@ -165,6 +260,70 @@ class WhatsAppMessage(models.Model):
         auto_now_add=True,
         verbose_name="Marca de tiempo",
         help_text="Fecha y hora de registro del mensaje en la base de datos.",
+    )
+
+    # ------------------------------------------------------------------
+    # MESSAGE TYPE AND LOCATION FIELDS — Paso 18 (Hito 4, 2026-04-16)
+    # WhatsApp supports multiple message types beyond plain text. The
+    # message_type field classifies each message for correct processing.
+    # For messages of type 'location', Twilio provides Latitude and Longitude
+    # fields in the webhook POST; these are stored here and propagated to
+    # the parent WhatsAppSession (latitude, longitude, location_captured_at).
+    # ------------------------------------------------------------------
+    # TIPO DE MENSAJE Y CAMPOS DE UBICACIÓN — Paso 18 (Hito 4, 2026-04-16)
+    # WhatsApp soporta múltiples tipos de mensaje más allá del texto plano.
+    # El campo message_type clasifica cada mensaje para su procesamiento correcto.
+    # Para mensajes de tipo 'location', Twilio proporciona los campos Latitude
+    # y Longitude en el POST del webhook; se almacenan aquí y se propagan a la
+    # WhatsAppSession padre (latitude, longitude, location_captured_at).
+    MESSAGE_TYPE_TEXT     = "text"
+    MESSAGE_TYPE_LOCATION = "location"
+    MESSAGE_TYPE_MEDIA    = "media"
+    MESSAGE_TYPE_TEMPLATE = "template"
+
+    MESSAGE_TYPE_CHOICES = [
+        (MESSAGE_TYPE_TEXT,     "Texto"),
+        (MESSAGE_TYPE_LOCATION, "Ubicación"),
+        (MESSAGE_TYPE_MEDIA,    "Media"),
+        (MESSAGE_TYPE_TEMPLATE, "Template"),
+    ]
+
+    message_type = models.CharField(
+        max_length=20,
+        choices=MESSAGE_TYPE_CHOICES,
+        default=MESSAGE_TYPE_TEXT,
+        verbose_name="Tipo de mensaje",
+        help_text=(
+            "Tipo de contenido del mensaje: "
+            "text (texto libre o respuesta del agente), "
+            "location (mensaje de ubicación nativo de WhatsApp), "
+            "media (imagen, documento u otro adjunto), "
+            "template (mensaje enviado mediante Content Template de Twilio)."
+        ),
+    )
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Latitud",
+        help_text=(
+            "Latitud geográfica contenida en el mensaje. "
+            "Solo presente en mensajes de tipo 'location'. "
+            "Twilio proporciona este valor en el campo Latitude del webhook POST."
+        ),
+    )
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Longitud",
+        help_text=(
+            "Longitud geográfica contenida en el mensaje. "
+            "Solo presente en mensajes de tipo 'location'. "
+            "Twilio proporciona este valor en el campo Longitude del webhook POST."
+        ),
     )
 
     class Meta:

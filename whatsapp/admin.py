@@ -4,12 +4,18 @@ Django admin registration for the whatsapp channel app models.
 Registers WhatsAppSession, WhatsAppMessage and WhatsAppTemplate with
 display and filtering options optimised for development inspection and
 debugging during the Hito 4 implementation and E2E validation phases.
+Updated in Paso 18 (2026-04-16) to expose the new geographic location fields,
+target_section FK and message_type field added to WhatsAppSession and
+WhatsAppMessage respectively.
 ---
 Registro en el admin de Django de los modelos de la app del canal WhatsApp.
 Registra WhatsAppSession, WhatsAppMessage y WhatsAppTemplate con opciones
 de visualización y filtrado optimizadas para la inspección durante el
 desarrollo y la depuración en las fases de implementación y validación
 E2E del Hito 4.
+Actualizado en el Paso 18 (2026-04-16) para exponer los nuevos campos de
+ubicación geográfica, la FK target_section y el campo message_type añadidos
+a WhatsAppSession y WhatsAppMessage respectivamente.
 """
 
 from django.contrib import admin
@@ -39,6 +45,9 @@ class WhatsAppMessageInline(admin.TabularInline):
     readonly_fields = (
         "direction",
         "body",
+        "message_type",
+        "latitude",
+        "longitude",
         "message_sid",
         "content_sid",
         "timestamp",
@@ -82,14 +91,20 @@ class WhatsAppSessionAdmin(admin.ModelAdmin):
         "session_start",
         "last_message_at",
         "is_active",
+        "target_section",
     )
-    list_filter   = ("is_active", "company")
+    list_filter   = ("is_active", "company", "target_section__company")
     search_fields = ("phone_number", "company__name")
     readonly_fields = (
         "company",
         "phone_number",
         "session_start",
         "last_message_at",
+        "latitude",
+        "longitude",
+        "location_address",
+        "location_captured_at",
+        "target_section",
     )
     ordering      = ("-session_start",)
     inlines       = [WhatsAppMessageInline]
@@ -116,17 +131,21 @@ class WhatsAppMessageAdmin(admin.ModelAdmin):
         "id",
         "session",
         "direction",
+        "message_type",
         "short_body",
         "message_sid",
         "content_sid",
         "timestamp",
     )
-    list_filter   = ("direction", "session__company")
+    list_filter   = ("direction", "message_type", "session__company")
     search_fields = ("body", "message_sid", "session__phone_number")
     readonly_fields = (
         "session",
         "direction",
+        "message_type",
         "body",
+        "latitude",
+        "longitude",
         "message_sid",
         "content_sid",
         "timestamp",

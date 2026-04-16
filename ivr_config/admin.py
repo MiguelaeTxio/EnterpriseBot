@@ -118,15 +118,23 @@ class DataCaptureSetAdmin(admin.ModelAdmin):
 class SectionAdmin(admin.ModelAdmin):
     """
     Admin interface for the Section model.
-    Displays company, name, data capture set assignment and active status.
-    The M2M contacts field is shown via filter_horizontal for usability.
+    Displays company, name, data capture set assignment, section-level call flow
+    and active status. The M2M contacts field is shown via filter_horizontal
+    for usability.
+    The call_flow field (added in Paso 18, 2026-04-16) designates the specific
+    IVR CallFlow loaded by the engine when the caller's intent maps to this
+    section (Estrategia B — dynamic intent-based loading).
     ---
     Interfaz de administración para el modelo Section.
-    Muestra la empresa, el nombre, la asignación de conjunto de captura y el estado activo.
-    El campo M2M de contactos se muestra mediante filter_horizontal para mejor usabilidad.
+    Muestra la empresa, el nombre, la asignación de conjunto de captura, el flujo
+    IVR de sección y el estado activo. El campo M2M de contactos se muestra
+    mediante filter_horizontal para mejor usabilidad.
+    El campo call_flow (añadido en el Paso 18, 2026-04-16) designa el CallFlow
+    IVR específico que el motor carga cuando la intención del llamante se mapea
+    a esta sección (Estrategia B — carga dinámica por intención).
     """
 
-    list_display = ("name", "company", "data_capture_set", "is_active", "created_at")
+    list_display = ("name", "company", "data_capture_set", "call_flow", "is_active", "created_at")
     list_filter = ("is_active", "company")
     search_fields = ("name", "company__name", "description")
     readonly_fields = ("created_at", "updated_at")
@@ -164,15 +172,25 @@ class ContactAdmin(admin.ModelAdmin):
 class CallFlowAdmin(admin.ModelAdmin):
     """
     Admin interface for the CallFlow model.
-    Displays company, flow name and active status.
+    Displays company, flow name, fallback section and active status.
     System instruction and initial greeting are available in the detail view.
+    The fallback_section field (added in Paso 18, 2026-04-16) designates the
+    section of last resort for this flow: when no active section can attend the
+    caller, the agent transfers the call to the human responsible for this section.
+    Each PhoneNumber (and therefore each CallFlow) can have its own independent
+    fallback section, allowing per-number responsibility delegation.
     ---
     Interfaz de administración para el modelo CallFlow.
-    Muestra la empresa, el nombre del flujo y el estado activo.
+    Muestra la empresa, el nombre del flujo, la sección de fallback y el estado activo.
     La instrucción de sistema y el saludo inicial están disponibles en la vista de detalle.
+    El campo fallback_section (añadido en el Paso 18, 2026-04-16) designa la sección
+    de último recurso para este flujo: cuando ninguna sección activa puede atender al
+    llamante, el agente transfiere la llamada al responsable humano de esa sección.
+    Cada PhoneNumber (y por tanto cada CallFlow) puede tener su propia sección de
+    fallback independiente, permitiendo la delegación de responsabilidades por número.
     """
 
-    list_display = ("name", "company", "is_active", "created_at", "updated_at")
+    list_display = ("name", "company", "fallback_section", "is_active", "created_at", "updated_at")
     list_filter = ("is_active", "company")
     search_fields = ("name", "company__name", "system_instruction")
     readonly_fields = ("created_at", "updated_at")

@@ -1,10 +1,11 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V04.md
 
 # ENTERPRISEBOT — ANEXO HITO V04 — CANAL WHATSAPP: CHATBOT CONVERSACIONAL Y SISTEMA DE PRESENCIA
-**Estado:** EN PROGRESO
+**Estado:** PAUSADO
 **Fecha de inicio:** 2026-04-09
 **Fecha de reanudación:** 2026-04-16
 **Última actualización:** 2026-04-16
+**Fecha de pausa:** 2026-04-16
 **Prerequisito:** Hito 3 COMPLETADO ✅ (2026-04-16).
 
 ---
@@ -78,17 +79,21 @@ GOOGLE_CLOUD_LOCATION.
 **Estado sesión 2026-04-16:**
 
 - **+34951799117** — Designado como WhatsApp sender principal.
-  Estado: pendiente de verificación Meta (bloqueo anterior expirado).
+  Estado: BLOQUEADO — contador OTP Meta agotado en ambos números. Ticket de soporte
+  abierto con Twilio (#26344158, P2 High, 2026-04-16) para escalado a Meta y reset
+  del contador. Pendiente resolución por parte de Twilio/Meta.
 
   **Método de registro actualizado (2026-04-16):**
   Los Twimlets (`twimlets.com/voicemail`) están marcados como obsoletos en 2026.
   El método correcto es configurar temporalmente el número con una **Twilio Function**
   mínima durante el proceso de verificación (10-15 min), y restaurar el IVR después.
+  Twilio Function creada: `whatsapp-verify-4871.twil.io/whatsapp-verify` (desplegada).
   Ver documento satélite: `DOCS_ATTACHED_2_ANNEX_V04/V04DOC_WHATSAPP_NUMBER_REGISTRATION.md`
 
-  Procedimiento correcto para el siguiente intento:
-    1. Crear Twilio Function mínima con `<Say>` + `<Pause>` (sin IVR activo).
-    2. Asignarla temporalmente al número +34951799117 en Voice Configuration IE1.
+  Procedimiento correcto para el siguiente intento (tras reset del contador):
+    1. Twilio Function `whatsapp-verify` ya está creada y desplegada.
+    2. Asignarla temporalmente al número +34951799117 en Voice Configuration IE1
+       como Webhook apuntando a https://whatsapp-verify-4871.twil.io/whatsapp-verify.
     3. Console → Messaging → Senders → WhatsApp Senders → Create new sender.
     4. Seleccionar +34951799117 → Continue with Facebook → ventana Meta.
     5. Seleccionar verificación por VOICE CALL.
@@ -174,36 +179,44 @@ cuando el cliente comparte su ubicación o solicita información geolocalizada.
 
 ## SECCIÓN 3 — MODELO DE DATOS WHATSAPP
 
-### 3.1. Modelos actuales en whatsapp/models.py (implementados)
+### 3.1. Modelos actuales en whatsapp/models.py (implementados — estado 2026-04-16)
 
 #### WhatsAppSession — Sesión de conversación WhatsApp
-    id                  AutoField (PK)
-    company             ForeignKey(Company, on_delete=CASCADE)
-    phone_number        CharField(max_length=20)   # número del usuario E.164
-    session_start       DateTimeField(auto_now_add=True)
-    last_message_at     DateTimeField(auto_now=True)
-    is_active           BooleanField(default=True)
+    id                   AutoField (PK)
+    company              ForeignKey(Company, on_delete=CASCADE)
+    phone_number         CharField(max_length=20)   # número del usuario E.164
+    session_start        DateTimeField(auto_now_add=True)
+    last_message_at      DateTimeField(auto_now=True)
+    is_active            BooleanField(default=True)
+    latitude             DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude            DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    location_address     CharField(max_length=500, blank=True)
+    location_captured_at DateTimeField(null=True, blank=True)
+    target_section       ForeignKey(Section, null=True, blank=True, on_delete=SET_NULL)
 
 #### WhatsAppMessage — Mensaje individual
-    id                  AutoField (PK)
-    session             ForeignKey(WhatsAppSession, on_delete=CASCADE)
-    direction           CharField(choices=[('IN','Entrante'),('OUT','Saliente')])
-    body                TextField()
-    message_sid         CharField(max_length=50, blank=True)
-    content_sid         CharField(max_length=50, blank=True)
-    timestamp           DateTimeField(auto_now_add=True)
+    id           AutoField (PK)
+    session      ForeignKey(WhatsAppSession, on_delete=CASCADE)
+    direction    CharField(choices=[('IN','Entrante'),('OUT','Saliente')])
+    body         TextField()
+    message_type CharField(max_length=20, default='text', choices=[text/location/media/template])
+    latitude     DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude    DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    message_sid  CharField(max_length=50, blank=True)
+    content_sid  CharField(max_length=50, blank=True)
+    timestamp    DateTimeField(auto_now_add=True)
 
 #### WhatsAppTemplate — Template aprobado por Meta
-    id                  AutoField (PK)
-    company             ForeignKey(Company, on_delete=CASCADE)
-    name                CharField(max_length=200)
-    content_sid         CharField(max_length=50)
-    category            CharField(choices=[UTILITY, MARKETING, AUTHENTICATION])
-    language            CharField(max_length=10, default='es')
-    is_active           BooleanField(default=True)
-    created_at          DateTimeField(auto_now_add=True)
+    id          AutoField (PK)
+    company     ForeignKey(Company, on_delete=CASCADE)
+    name        CharField(max_length=200)
+    content_sid CharField(max_length=50)
+    category    CharField(choices=[UTILITY, MARKETING, AUTHENTICATION])
+    language    CharField(max_length=10, default='es')
+    is_active   BooleanField(default=True)
+    created_at  DateTimeField(auto_now_add=True)
 
-### 3.2. Extensiones de modelo pendientes de implementación
+### 3.2. Extensiones de modelo implementadas en sesión 2026-04-16 (Paso 18) ✅
 
 #### Extensión WhatsAppSession — campos de ubicación y sección destino
 Los siguientes campos deben añadirse mediante migración:
@@ -258,7 +271,8 @@ Los modelos WhatsApp* se integran con la base de datos multiempresa existente:
     │                        + expire_presence_statuses
     ├── migrations/
     │   ├── __init__.py
-    │   └── 0001_initial.py
+    │   ├── 0001_initial.py
+    │   └── 0002_whatsappsession_location_target_section_whatsappmessage_type_coords.py
     └── management/
         └── commands/
             ├── __init__.py
@@ -361,18 +375,21 @@ Ciclo completo validado: IN_MEETING → recordatorio enviado → respuesta 'disp
 → AVAILABLE creado en BD sin intervención manual.
 NOTA: validado con texto libre (content_sid PENDING). En producción usará template HX.
 
-### Paso 18 — Extensión del modelo de datos ⏳ PENDIENTE
-Añadir campos de ubicación y sección destino a WhatsAppSession y WhatsAppMessage.
-Ver Sección 3.2 para especificación completa de campos y tipos.
-Requiere migración Django y actualización de admin.py.
+### Paso 18 — Extensión del modelo de datos ✅ COMPLETADO (sesión 2026-04-16)
+Campos de ubicación y sección destino añadidos a WhatsAppSession y WhatsAppMessage.
+Migración 0002 aplicada sin errores. admin.py actualizado para exponer todos los
+nuevos campos. Ver Sección 3.1 para el modelo de datos actualizado.
 
-### Paso 19 — Integración de captura de ubicación en el chatbot ⏳ PENDIENTE
-Actualizar IncomingWhatsAppView para detectar mensajes de tipo location:
-- Twilio envía Latitude, Longitude en el POST cuando el usuario comparte ubicación.
-- Extraer y almacenar en WhatsAppMessage (message_type='location') y propagar
-  a WhatsAppSession (latitude, longitude, location_address, location_captured_at).
-- Actualizar WhatsAppChatService.build_system_prompt para incluir la ubicación
-  del cliente en el contexto del agente cuando esté disponible.
+### Paso 19 — Integración de captura de ubicación en el chatbot ✅ COMPLETADO (sesión 2026-04-16)
+IncomingWhatsAppView actualizado para detectar mensajes de tipo location:
+- Extracción de Latitude/Longitude del POST de Twilio en Step 1.
+- Guarda de validación actualizada para tolerar mensajes sin body cuando hay coordenadas.
+- Step 4: persistencia con message_type='location' y coordenadas en WhatsAppMessage.
+- Step 4b: propagación de coordenadas y location_captured_at a WhatsAppSession.
+- Step 5: session pasada a build_system_prompt para enriquecer contexto del agente.
+- Step 7: effective_user_message sintetizado para mensajes de ubicación puros.
+WhatsAppChatService.build_system_prompt acepta session opcional e inyecta bloque
+de ubicación geográfica cuando session.latitude no es None.
 
 ### Paso 20 — Grounding con Google Maps ⏳ PENDIENTE
 Cuando el cliente comparte su ubicación o solicita información geolocalizada,
@@ -449,7 +466,23 @@ pantalla táctil, navegación colapsable en móvil.
 
 ## SECCIÓN 10 — PAH — REGISTRO DE SESIONES
 
-### Sesión 2026-04-16
+### Sesión 2026-04-16 (segunda entrada)
+**Título:** Hito 4 — Extensión del Modelo de Datos, Captura de Ubicación y Gestión de Facturación GCP
+**Descripción:** Sesión dedicada a la implementación de los Pasos 18 y 19 del Hito 4 y a la gestión
+administrativa de la plataforma. Se diseña y aprueba la arquitectura de CallFlow por Section
+(Estrategia B — carga dinámica por intención) con fallback_section por número, extendiendo los
+modelos ivr_config con Section.call_flow y CallFlow.fallback_section (migración 0007 aplicada).
+Se implementan los Pasos 18 y 19: extensión de WhatsAppSession y WhatsAppMessage con campos de
+ubicación y tipo de mensaje (migración 0002 aplicada), actualización de admin.py de ambas apps,
+y lógica completa de detección y propagación de mensajes de ubicación en views.py y services.py.
+Se investiga Grounding with Google Maps (GA en Vertex AI desde sept. 2025) — queda documentado
+pero no iniciado. Se intenta el registro del número +34951799117 como WhatsApp sender — Meta
+bloquea el contador OTP en ambos números (+34951799117 y +34951796832). Se abre ticket de
+soporte con Twilio (#26344158, P2 High) para escalado a Meta. Se migra la facturación del
+proyecto GCP gen-lang-client-0961484137 de cuenta_pago_el_campus a la nueva cuenta Grúas
+Álvarez. El hito se pausa para reactivar el Hito 3 (Estrategia B IVR).
+
+### Sesión 2026-04-16 (primera entrada)
 **Título:** Reanudación Hito 4 — Investigación Registro WhatsApp y Apertura de Hito
 **Descripción:** Sesión de reanudación del Hito 4 tras cierre del Hito 3. Se investiga
 el estado actual del registro de números Twilio para WhatsApp en 2026, detectando

@@ -118,19 +118,42 @@ class WhatsAppChatService:
     GEMINI_MODEL = "gemini-2.5-flash"
 
     @classmethod
-    def build_system_prompt(cls, company, to_number: str) -> str:
+    def build_system_prompt(
+        cls,
+        company,
+        to_number: str,
+        session=None,
+    ) -> str:
         """
         Constructs the dynamic system prompt for the Gemini chat agent.
         Includes company identity, active sections with descriptions, internal
         contacts with their real-time PresenceStatus, and forbidden phrases
         from the CorporateVoiceProfile. Analogous to build_live_config() in
         ivr_config/services.py but oriented to text and WhatsApp.
+
+        If session is provided and contains geographic coordinates
+        (session.latitude is not None), a location context block is injected
+        into the prompt so the agent is aware of the client's position.
+        This enables location-aware responses and is a prerequisite for
+        Grounding with Google Maps (Paso 20).
         ---
         Construye el system prompt dinámico para el agente de chat de Gemini.
         Incluye identidad de la empresa, secciones activas con descripciones,
         contactos internos con su PresenceStatus en tiempo real, y frases
         prohibidas del CorporateVoiceProfile. Análogo a build_live_config() en
         ivr_config/services.py pero orientado a texto y WhatsApp.
+
+        Si session se proporciona y contiene coordenadas geográficas
+        (session.latitude no es None), se inyecta un bloque de contexto de
+        ubicación en el prompt para que el agente sea consciente de la posición
+        del cliente. Esto habilita respuestas con conciencia de ubicación y es
+        un prerequisito para Grounding con Google Maps (Paso 20).
+
+        Args:
+            company: Instancia de Company — empresa destino de la sesión.
+            to_number (str): Número Twilio destino en formato E.164.
+            session (WhatsAppSession | None): Sesión activa del cliente. Si se
+                proporciona y tiene coordenadas, se inyecta el bloque de ubicación.
         """
         lines = []
 
@@ -181,6 +204,44 @@ class WhatsAppChatService:
             for contact in internal_contacts:
                 presence_label = cls._get_presence_label(contact)
                 lines.append(f"\n— {contact.name}: {presence_label}")
+
+        # Geographic location context block — Paso 19 (2026-04-16).
+        # Injected only when the session contains valid coordinates. The agent
+        # uses this information to provide location-aware responses (e.g. nearest
+        # workshop, estimated travel distance). The location_address field is
+        # included when available — it may be populated by Grounding with Google
+        # Maps in Paso 20.
+        # Bloque de contexto de ubicación geográfica — Paso 19 (2026-04-16).
+        # Se inyecta únicamente cuando la sesión contiene coordenadas válidas.
+        # El agente usa esta información para proporcionar respuestas con
+        # conciencia de ubicación (p. ej. taller más cercano, distancia estimada).
+        # El campo location_address se incluye cuando está disponible — puede
+        # rellenarse mediante Grounding con Google Maps en el Paso 20.
+        if session is not None and session.latitude is not None:
+            location_lines = [
+                "\nUBICACIÓN DEL CLIENTE:",
+                f"— Coordenadas: {session.latitude}, {session.longitude}",
+            ]
+            if session.location_address:
+                location_lines.append(
+                    f"— Dirección aproximada: {session.location_address}"
+                )
+            if session.location_captured_at:
+                location_lines.append(
+                    f"— Capturada en: {session.location_captured_at.strftime('%H:%M')}"
+                )
+            location_lines.append(
+                "Usa esta información para dar respuestas orientadas a la "
+                "ubicación del cliente cuando sea relevante."
+            )
+            lines.extend(location_lines)
+            logger.debug(
+                "# [WHATSAPP] Bloque de ubicación inyectado en system prompt "
+                "para sesión %s: lat=%s lon=%s",
+                session.pk,
+                session.latitude,
+                session.longitude,
+            )
 
         # Behavioural rules.
         # Reglas de comportamiento.

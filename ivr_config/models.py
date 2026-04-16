@@ -407,6 +407,21 @@ class Section(models.Model):
         verbose_name="Conjunto de captura de datos",
         help_text="Conjunto de datos a recopilar para las llamadas de esta sección.",
     )
+    call_flow = models.ForeignKey(
+        "CallFlow",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sections",
+        verbose_name="Flujo IVR de sección",
+        help_text=(
+            "Flujo IVR específico de esta sección. Cuando el agente identifica que "
+            "el llamante desea ser atendido por esta sección, carga este CallFlow "
+            "para continuar la conversación con el contexto específico de la sección. "
+            "Las secciones sin CallFlow asignado son ignoradas por el motor en "
+            "tiempo de llamada (Estrategia B — carga dinámica por intención)."
+        ),
+    )
     is_24h = models.BooleanField(
         default=False,
         verbose_name="Disponible 24 horas",
@@ -590,6 +605,20 @@ class CallFlow(models.Model):
         default=True,
         verbose_name="Activo",
         help_text="Indica si este flujo IVR está disponible para su asignación a números.",
+    )
+    fallback_section = models.ForeignKey(
+        "Section",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fallback_for_call_flows",
+        verbose_name="Sección de fallback",
+        help_text=(
+            "Sección de último recurso para este flujo IVR. Cuando ninguna sección "
+            "activa puede atender al llamante, el agente transfiere la llamada al "
+            "responsable humano de esta sección. Cada número puede tener su propia "
+            "sección de fallback independiente según las necesidades de la empresa."
+        ),
     )
     # ------------------------------------------------------------------
     # BACKUP FIELDS — Single-level restore snapshot (Paso 33-E).

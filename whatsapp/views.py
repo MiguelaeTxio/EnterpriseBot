@@ -2,21 +2,34 @@
 """
 Views for the whatsapp channel app.
 Implements two CSRF-exempt webhook endpoints:
-  - IncomingWhatsAppView: handles inbound user messages and dispatches chatbot replies.
+  - IncomingWhatsAppView: handles inbound user messages (text and location) and
+    dispatches chatbot replies. Location messages (Latitude/Longitude in Twilio POST)
+    are detected, stored in WhatsAppMessage with message_type='location', and
+    propagated to WhatsAppSession for context enrichment in the Gemini system prompt.
   - PresenceWhatsAppView: handles presence reminder responses (1h / 2h / disponible).
 Both views are synchronous Django WSGI views — no aiohttp or WebSocket required.
+
+Updated in Paso 19 (2026-04-16): location message detection and propagation.
 ---
 Vistas para la app del canal WhatsApp.
 Implementa dos endpoints webhook exentos de CSRF:
-  - IncomingWhatsAppView: gestiona mensajes entrantes del usuario y despacha respuestas del chatbot.
+  - IncomingWhatsAppView: gestiona mensajes entrantes del usuario (texto y ubicación)
+    y despacha respuestas del chatbot. Los mensajes de ubicación (Latitude/Longitude
+    en el POST de Twilio) se detectan, se almacenan en WhatsAppMessage con
+    message_type='location' y se propagan a WhatsAppSession para enriquecer el
+    contexto en el system prompt de Gemini.
   - PresenceWhatsAppView: gestiona respuestas a recordatorios de presencia (1h / 2h / disponible).
 Ambas vistas son vistas síncronas Django WSGI — no se requiere aiohttp ni WebSocket.
+
+Actualizado en el Paso 19 (2026-04-16): detección y propagación de mensajes de ubicación.
 """
 
 import logging
+from decimal import Decimal, InvalidOperation
 
 from django.http import HttpResponse
 from django.utils.decorators import method_decorator
+from django.utils.timezone import now
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
@@ -64,25 +77,44 @@ class IncomingWhatsAppView(View):
         historial → gemini → persistir → despachar.
         """
         # --- Step 1: Extract Twilio webhook parameters. ---
+        # Twilio sends Latitude and Longitude as separate POST fields when the
+        # user shares a native WhatsApp location message. In that case Body may
+        # be empty or contain only the label text set by the user. We classify
+        # the message as 'location' when Latitude is present and non-empty.
         # --- Paso 1: Extraer parámetros del webhook de Twilio. ---
-        from_number = request.POST.get("From", "").replace("whatsapp:", "")
-        to_number   = request.POST.get("To", "").replace("whatsapp:", "")
-        body        = request.POST.get("Body", "").strip()
+        # Twilio envía Latitude y Longitude como campos POST separados cuando el
+        # usuario comparte un mensaje de ubicación nativo de WhatsApp. En ese caso
+        # Body puede estar vacío o contener solo el texto de etiqueta del usuario.
+        # Clasificamos el mensaje como 'location' cuando Latitude está presente y
+        # no está vacío.
+        from_number      = request.POST.get("From", "").replace("whatsapp:", "")
+        to_number        = request.POST.get("To", "").replace("whatsapp:", "")
+        body             = request.POST.get("Body", "").strip()
+        raw_latitude     = request.POST.get("Latitude", "").strip()
+        raw_longitude    = request.POST.get("Longitude", "").strip()
+        is_location_msg  = bool(raw_latitude)
 
         logger.info(
-            "# [WHATSAPP] Mensaje entrante de %s a %s: '%s'",
+            "# [WHATSAPP] Mensaje entrante de %s a %s: '%s' "
+            "[location=%s lat=%s lon=%s]",
             from_number,
             to_number,
             body[:80],
+            is_location_msg,
+            raw_latitude,
+            raw_longitude,
         )
 
-        if not from_number or not to_number or not body:
+        # A message must have either a body or location coordinates to be processed.
+        # Un mensaje debe tener cuerpo o coordenadas de ubicación para ser procesado.
+        if not from_number or not to_number or (not body and not is_location_msg):
             logger.warning(
                 "# [WHATSAPP] Parámetros incompletos en webhook entrante. "
-                "From=%s To=%s Body=%s",
+                "From=%s To=%s Body=%s Latitude=%s",
                 from_number,
                 to_number,
                 repr(body),
+                repr(raw_latitude),
             )
             return HttpResponse(status=200)
 
@@ -139,19 +171,79 @@ class IncomingWhatsAppView(View):
             # Tocar la sesión para refrescar last_message_at (auto_now=True).
             session.save(update_fields=["last_message_at"])
 
-        # --- Step 4: Persist inbound message. ---
-        # --- Paso 4: Persistir mensaje entrante. ---
+        # --- Step 4: Persist inbound message with type and coordinates. ---
+        # For location messages, latitude and longitude are stored on the message
+        # record in addition to the body label (which may be empty).
+        # --- Paso 4: Persistir mensaje entrante con tipo y coordenadas. ---
+        # Para mensajes de ubicación, latitude y longitude se almacenan en el
+        # registro de mensaje además de la etiqueta de cuerpo (que puede estar vacía).
+        msg_latitude  = None
+        msg_longitude = None
+
+        if is_location_msg:
+            try:
+                msg_latitude  = Decimal(raw_latitude)
+                msg_longitude = Decimal(raw_longitude)
+            except InvalidOperation:
+                logger.warning(
+                    "# [WHATSAPP] Coordenadas de ubicación con formato inválido: "
+                    "lat=%s lon=%s — se almacenan como None.",
+                    raw_latitude,
+                    raw_longitude,
+                )
+
         WhatsAppMessage.objects.create(
             session=session,
             direction=WhatsAppMessage.DIRECTION_IN,
             body=body,
+            message_type=(
+                WhatsAppMessage.MESSAGE_TYPE_LOCATION
+                if is_location_msg
+                else WhatsAppMessage.MESSAGE_TYPE_TEXT
+            ),
+            latitude=msg_latitude,
+            longitude=msg_longitude,
         )
 
-        # --- Step 5: Build dynamic system prompt. ---
-        # --- Paso 5: Construir system prompt dinámico. ---
+        # --- Step 4b: Propagate location to WhatsAppSession (Paso 19). ---
+        # When a location message is received, update the session with the
+        # caller's coordinates and timestamp. Existing coordinates are overwritten
+        # with the most recent location shared by the user during the session.
+        # The location_address field is left blank here — it may be resolved by
+        # Grounding with Google Maps in Paso 20.
+        # --- Paso 4b: Propagar ubicación a WhatsAppSession (Paso 19). ---
+        # Cuando se recibe un mensaje de ubicación, actualizar la sesión con las
+        # coordenadas del llamante y la marca de tiempo. Las coordenadas existentes
+        # se sobreescriben con la ubicación más reciente compartida por el usuario
+        # durante la sesión. El campo location_address se deja en blanco aquí —
+        # puede resolverse mediante Grounding con Google Maps en el Paso 20.
+        if is_location_msg and msg_latitude is not None:
+            session.latitude             = msg_latitude
+            session.longitude            = msg_longitude
+            session.location_captured_at = now()
+            session.save(update_fields=[
+                "latitude",
+                "longitude",
+                "location_captured_at",
+                "last_message_at",
+            ])
+            logger.info(
+                "# [WHATSAPP] Ubicación propagada a sesión %s: lat=%s lon=%s",
+                session.pk,
+                msg_latitude,
+                msg_longitude,
+            )
+
+        # --- Step 5: Build dynamic system prompt enriched with session context. ---
+        # The session object is now passed to build_system_prompt so the agent
+        # can include the client's location in the context when available.
+        # --- Paso 5: Construir system prompt dinámico enriquecido con el contexto de sesión. ---
+        # El objeto session se pasa ahora a build_system_prompt para que el agente
+        # pueda incluir la ubicación del cliente en el contexto cuando esté disponible.
         system_prompt = WhatsAppChatService.build_system_prompt(
             company=company,
             to_number=to_number,
+            session=session,
         )
 
         # --- Step 6: Reconstruct Gemini chat history from session messages. ---
@@ -159,12 +251,24 @@ class IncomingWhatsAppView(View):
         history = WhatsAppChatService.build_history(session)
 
         # --- Step 7: Obtain Gemini reply. ---
+        # For pure location messages (no body text), synthesise a user_message
+        # so Gemini has a meaningful turn to process. The agent's system prompt
+        # already contains the location context injected in Step 5.
         # --- Paso 7: Obtener respuesta de Gemini. ---
+        # Para mensajes de ubicación puros (sin texto de cuerpo), sintetizar un
+        # user_message para que Gemini tenga un turno significativo que procesar.
+        # El system prompt del agente ya contiene el contexto de ubicación
+        # inyectado en el Paso 5.
+        effective_user_message = body if body else (
+            "El cliente acaba de compartir su ubicación geográfica."
+            if is_location_msg
+            else ""
+        )
         try:
             reply_text = WhatsAppChatService.get_gemini_reply(
                 system_prompt=system_prompt,
                 history=history,
-                user_message=body,
+                user_message=effective_user_message,
             )
         except Exception as exc:
             logger.error(
