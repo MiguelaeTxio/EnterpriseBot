@@ -38,6 +38,7 @@ from django.utils.timezone import now
 
 from ivr_config.models import (
     BlockedCaller,
+    CallFlow,
     Contact,
     PhoneNumber,
     PresenceStatus,
@@ -243,53 +244,136 @@ def _is_caller_blocked(company, caller_number: str) -> bool:
     ).exists()
 
 
-def _build_section_schedule_context(company) -> str:
+def _build_section_schedule_context(company) -> tuple[str, dict]:
     """
-    Queries all active sections of the given company and assembles a
-    human-readable Spanish paragraph describing the current availability
-    of each section based on SectionSchedule records and the is_24h flag.
-    Sections with is_24h=True are always available.
-    Sections with is_24h=False are checked against the current weekday and time.
-    If no schedule exists for today the section is considered unavailable.
-    Returns an empty string if no active sections exist.
+    Queries all active sections of the given company that have an active
+    CallFlow assigned (Estrategia B — Step 37.A) and assembles:
+
+        1. A human-readable Spanish paragraph describing the current
+           availability of each qualifying section based on SectionSchedule
+           records and the is_24h flag, suitable for injection into the
+           Gemini system_instruction.
+
+        2. A section_callflow_map dict mapping each qualifying Section pk
+           to its associated CallFlow instance, for consumption by
+           VoiceOrchestrationService._reload_session_for_section().
+
+    Availability logic:
+        - Sections with is_24h=True are always available.
+        - Sections with is_24h=False are evaluated against the current
+          local weekday and time using SectionSchedule records.
+        - If no SectionSchedule exists for the current weekday, the section
+          is considered unavailable.
+
+    Sections without a call_flow assigned (call_flow IS NULL or inactive)
+    are EXCLUDED from both the context string and the map. They are
+    invisible to the IVR motor at call time.
+
+    Args:
+        company: A Company instance.
+
+    Returns:
+        tuple[str, dict]: A 2-tuple of:
+            - schedule_context (str): Multiline Spanish string with one
+              availability line per qualifying section, or empty string
+              if no qualifying sections exist.
+            - section_callflow_map (dict[int, CallFlow]): Dict mapping
+              section.pk → section.call_flow for all qualifying sections.
     ---
-    Consulta todas las secciones activas de la empresa y ensambla un parrafo
-    legible en castellano con la disponibilidad actual de cada seccion segun
-    sus registros SectionSchedule y el flag is_24h.
-    Las secciones con is_24h=True estan siempre disponibles.
-    Las secciones con is_24h=False se comprueban contra el dia y hora actuales.
-    Si no hay horario para hoy la seccion se considera no disponible.
-    Retorna cadena vacia si no existen secciones activas.
+    Consulta todas las secciones activas de la empresa que tengan un CallFlow
+    activo asignado (Estrategia B — Paso 37.A) y ensambla:
+
+        1. Un párrafo legible en castellano describiendo la disponibilidad
+           actual de cada sección cualificada según sus registros
+           SectionSchedule y el flag is_24h, apto para inyección en el
+           system_instruction de Gemini.
+
+        2. Un dict section_callflow_map que mapea el pk de cada Section
+           cualificada a su CallFlow asociado, para consumo en
+           VoiceOrchestrationService._reload_session_for_section().
+
+    Lógica de disponibilidad:
+        - Las secciones con is_24h=True están siempre disponibles.
+        - Las secciones con is_24h=False se evalúan contra el día de la
+          semana y hora local actuales mediante registros SectionSchedule.
+        - Si no existe SectionSchedule para el día actual, la sección
+          se considera no disponible.
+
+    Las secciones sin call_flow asignado (call_flow IS NULL o inactivo)
+    quedan EXCLUIDAS tanto del texto de contexto como del mapa. Son
+    invisibles para el motor IVR en tiempo de llamada.
+
+    Args:
+        company: Una instancia de Company.
+
+    Returns:
+        tuple[str, dict]: Una tupla de 2 elementos:
+            - schedule_context (str): Cadena multilínea en castellano con
+              una línea de disponibilidad por sección cualificada, o cadena
+              vacía si no existen secciones cualificadas.
+            - section_callflow_map (dict[int, CallFlow]): Dict que mapea
+              section.pk → section.call_flow para todas las secciones
+              cualificadas.
     """
     from django.utils.timezone import localtime
 
-    active_sections = (
+    # ESTRATEGIA B — FILTRO DE SECCIONES CUALIFICADAS:
+    # Solo se incluyen secciones activas con call_flow asignado Y activo.
+    # Esto garantiza que el motor IVR solo expone al llamante las secciones
+    # que tienen un flujo de conversación propio configurado.
+    # STRATEGY B — QUALIFYING SECTIONS FILTER:
+    # Only active sections with an assigned AND active call_flow are included.
+    # This ensures the IVR motor only exposes to the caller sections that
+    # have their own conversation flow configured.
+    qualifying_sections = (
         Section.objects
-        .filter(company=company, is_active=True)
+        .filter(
+            company=company,
+            is_active=True,
+            call_flow__isnull=False,
+            call_flow__is_active=True,
+        )
+        .select_related('call_flow')
         .prefetch_related('schedules')
         .order_by('name')
     )
 
-    if not active_sections.exists():
+    if not qualifying_sections.exists():
         logger.info(
-            f"[CONFIG] La empresa '{company.name}' no tiene secciones activas. "
-            "No se generara bloque de horarios."
+            f"[CONFIG] La empresa '{company.name}' no tiene secciones activas "
+            "con CallFlow asignado. No se generará bloque de horarios ni "
+            "section_callflow_map."
         )
-        return ""
+        return "", {}
 
     local_now  = localtime(now())
     weekday    = local_now.weekday()
     local_time = local_now.time()
 
-    schedule_lines = []
+    schedule_lines: list[str] = []
+    # section_callflow_map: maps section.pk → CallFlow instance.
+    # section_callflow_map: mapea section.pk → instancia de CallFlow.
+    section_callflow_map: dict[int, CallFlow] = {}
 
-    for section in active_sections:
+    for section in qualifying_sections:
+        # Register this section in the map regardless of current schedule.
+        # The map is used by _reload_session_for_section() to load the
+        # correct CallFlow when the caller's intent is detected. Availability
+        # information (open/closed/24h) is conveyed to the caller verbally
+        # but does NOT prevent the section from being in the map.
+        # Registrar esta sección en el mapa independientemente del horario.
+        # El mapa lo usa _reload_session_for_section() para cargar el
+        # CallFlow correcto cuando se detecta la intención del llamante.
+        # La información de disponibilidad (abierto/cerrado/24h) se comunica
+        # al llamante verbalmente pero NO impide que la sección esté en el mapa.
+        section_callflow_map[section.pk] = section.call_flow
+
         if section.is_24h:
             schedule_lines.append(
-                f"La seccion '{section.name}' esta disponible las 24 horas."
+                f"La sección '{section.name}' está disponible las 24 horas."
             )
             logger.debug(
-                f"[CONFIG] Seccion '{section.name}': 24h — siempre disponible."
+                f"[CONFIG] Sección '{section.name}': 24h — siempre disponible."
             )
             continue
 
@@ -306,30 +390,36 @@ def _build_section_schedule_context(company) -> str:
             )
             if is_open:
                 schedule_lines.append(
-                    f"La seccion '{section.name}' esta disponible ahora mismo "
+                    f"La sección '{section.name}' está disponible ahora mismo "
                     f"(horario de hoy: {slots})."
                 )
                 logger.debug(
-                    f"[CONFIG] Seccion '{section.name}': ABIERTA ({slots})."
+                    f"[CONFIG] Sección '{section.name}': ABIERTA ({slots})."
                 )
             else:
                 schedule_lines.append(
-                    f"La seccion '{section.name}' esta fuera de su horario "
+                    f"La sección '{section.name}' está fuera de su horario "
                     f"en este momento (horario de hoy: {slots})."
                 )
                 logger.debug(
-                    f"[CONFIG] Seccion '{section.name}': CERRADA ({slots})."
+                    f"[CONFIG] Sección '{section.name}': CERRADA ({slots})."
                 )
         else:
             schedule_lines.append(
-                f"La seccion '{section.name}' no tiene horario definido "
-                "para hoy y no esta disponible en este momento."
+                f"La sección '{section.name}' no tiene horario definido "
+                "para hoy y no está disponible en este momento."
             )
             logger.debug(
-                f"[CONFIG] Seccion '{section.name}': sin horario para hoy."
+                f"[CONFIG] Sección '{section.name}': sin horario para hoy."
             )
 
-    return "\n".join(schedule_lines)
+    logger.info(
+        f"[CONFIG] section_callflow_map construido para '{company.name}': "
+        f"{len(section_callflow_map)} sección/es cualificada/s: "
+        f"{[s.name for s in qualifying_sections]}."
+    )
+
+    return "\n".join(schedule_lines), section_callflow_map
 
 
 # ---------------------------------------------------------------------------
@@ -339,20 +429,26 @@ def _build_section_schedule_context(company) -> str:
 def build_live_config(
     twilio_number: str,
     caller_number: str = "",
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, dict]:
     """
-    Builds the dynamic SYSTEM_INSTRUCTION and INITIAL_GREETING for an inbound call.
+    Builds the dynamic SYSTEM_INSTRUCTION and INITIAL_GREETING for an inbound call,
+    and constructs the section_callflow_map for Estrategia B in-session routing.
 
     Given the Twilio E.164 number that received the call, this function:
         1. Resolves the active PhoneNumber record for that number.
-        2. Loads the associated active CallFlow.
+        2. Loads the associated active CallFlow (general / welcome flow).
         3. Loads the CorporateVoiceProfile of the Company (if active).
         4. Queries the active PresenceStatus of all internal Contacts.
         5. Assembles the full system_instruction by combining:
                - CallFlow.system_instruction (base IVR flow definition)
                - CorporateVoiceProfile.tone_guidelines (brand voice identity)
+               - Section schedule context block (availability per section —
+                 ONLY for sections with an active call_flow assigned)
                - Presence context block (current availability of internal staff)
-        6. Returns the tuple (system_instruction, initial_greeting).
+        6. Builds section_callflow_map: dict[section_pk, CallFlow] for all
+           qualifying sections (active + call_flow assigned + call_flow active).
+        7. Returns the 4-tuple (system_instruction, initial_greeting,
+           voice_name, section_callflow_map).
 
     The caller is responsible for catching all exceptions and falling back
     to the hardcoded SYSTEM_INSTRUCTION_FALLBACK / INITIAL_GREETING_FALLBACK
@@ -360,12 +456,30 @@ def build_live_config(
 
     Args:
         twilio_number (str): The Twilio phone number that received the call,
-                             in E.164 format (e.g. '+12603466780').
+                             in E.164 format (e.g. '+34951796832').
+        caller_number (str): The caller's E.164 number (From field). Used to
+                             verify the caller against the BlockedCaller registry.
+                             Defaults to empty string, which skips the check.
 
     Returns:
-        tuple[str, str]: A tuple of (system_instruction, initial_greeting),
-                         both as plain strings ready for injection into the
-                         Gemini Live LiveConnectConfig.
+        tuple[str, str, str, dict, CallFlow | None]: A 5-tuple of:
+            - system_instruction (str): Full assembled system instruction ready
+              for injection into the Gemini Live LiveConnectConfig. Includes
+              the IDENTIFICADORES DE SECCIÓN block with section_pk → name
+              mapping for function calling (Paso 38).
+            - initial_greeting (str): Initial greeting text to be sent via
+              session.send_client_content() upon session entry.
+            - voice_name (str): Gemini Live voice name for this company
+              (e.g. 'Aoede', 'Puck', 'Charon', etc.).
+            - section_callflow_map (dict[int, CallFlow]): Maps section.pk →
+              CallFlow for all qualifying sections. Used by
+              VoiceOrchestrationService._reload_session_for_section() to
+              dynamically reinject the correct system_instruction when the
+              caller's intended section is identified.
+            - general_call_flow (CallFlow | None): The general CallFlow instance
+              linked to the PhoneNumber. Required by
+              VoiceOrchestrationService._activate_fallback_section() to resolve
+              the fallback_section FK. None if no active CallFlow is assigned.
 
     Raises:
         PhoneNumber.DoesNotExist: If no active PhoneNumber matches twilio_number.
@@ -522,13 +636,22 @@ def build_live_config(
         )
 
     # ------------------------------------------------------------------
-    # STEP 4 — Build Section Schedule Context / Construir Contexto de Horarios
+    # STEP 4 — Build Section Schedule Context + section_callflow_map
+    #           Construir Contexto de Horarios + section_callflow_map
     # ------------------------------------------------------------------
-    schedule_context = _build_section_schedule_context(company)
+    # _build_section_schedule_context() now returns a 2-tuple (Estrategia B,
+    # Step 37.A). The second element is the section_callflow_map dict that
+    # maps each qualifying Section pk to its CallFlow instance for dynamic
+    # in-session reinjection by VoiceOrchestrationService.
+    # _build_section_schedule_context() devuelve ahora una tupla de 2 elementos
+    # (Estrategia B, Paso 37.A). El segundo elemento es el section_callflow_map
+    # que mapea el pk de cada Section cualificada a su CallFlow para la
+    # reinyección dinámica en sesión por VoiceOrchestrationService.
+    schedule_context, section_callflow_map = _build_section_schedule_context(company)
     if schedule_context:
         logger.info(
             f"[CONFIG] Contexto de horarios generado para '{company.name}' "
-            f"({len(schedule_context.splitlines())} sección/es)."
+            f"({len(schedule_context.splitlines())} sección/es cualificada/s)."
         )
     else:
         logger.info(
@@ -586,6 +709,49 @@ def build_live_config(
         )
         logger.debug("[CONFIG] Bloque de contexto de presencia añadido.")
 
+    # IDENTIFICADORES DE SECCIÓN — FUNCTION CALLING (PASO 38):
+    # Se inyecta una tabla pk → nombre de sección para que Gemini pueda
+    # invocar route_to_section(section_id) con el ID numérico correcto.
+    # Solo se añade cuando hay secciones cualificadas en el mapa.
+    #
+    # SECTION IDENTIFIERS — FUNCTION CALLING (STEP 38):
+    # A pk → section name table is injected so Gemini can invoke
+    # route_to_section(section_id) with the correct numeric ID.
+    # Only added when qualifying sections exist in the map.
+    if section_callflow_map:
+        section_id_lines = [
+            f"  {pk}: {section_callflow_map[pk].__class__.__name__}"
+            for pk in section_callflow_map
+        ]
+        # Resolve section names from the qualifying_sections queryset.
+        # We iterate the map and resolve names via the CallFlow's related
+        # sections to avoid an extra DB query.
+        # Resolver los nombres de sección desde el queryset de secciones
+        # cualificadas. Iteramos el mapa y resolvemos los nombres desde
+        # los CallFlow relacionados para evitar una query extra a BD.
+        from ivr_config.models import Section as _Section
+        section_name_map = {
+            s.pk: s.name
+            for s in _Section.objects.filter(
+                pk__in=list(section_callflow_map.keys())
+            ).only("pk", "name")
+        }
+        section_id_lines = [
+            f"  ID {pk}: {section_name_map.get(pk, f'Sección {pk}')}"
+            for pk in section_callflow_map
+        ]
+        system_instruction_parts.append(
+            "\n\nIDENTIFICADORES DE SECCIÓN:\n"
+            "Cuando identifiques la sección destino, invoca la función "
+            "route_to_section con el section_id correspondiente según "
+            "esta tabla (solo una vez por llamada):\n"
+            + "\n".join(section_id_lines)
+        )
+        logger.debug(
+            f"[CONFIG] Bloque IDENTIFICADORES DE SECCIÓN añadido "
+            f"({len(section_callflow_map)} sección/es)."
+        )
+
     system_instruction = "".join(system_instruction_parts)
 
     # ------------------------------------------------------------------
@@ -618,4 +784,4 @@ def build_live_config(
         f"Voz: '{voice_name}'."
     )
 
-    return system_instruction, initial_greeting, voice_name
+    return system_instruction, initial_greeting, voice_name, section_callflow_map, call_flow

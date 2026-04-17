@@ -171,6 +171,27 @@
                         </div>
                     </div>
 
+                    <!-- call_flow field — Flujo IVR de sección (Estrategia B, Paso 37.C) -->
+                    <div class="mb-4">
+                        <label for="{{ form.call_flow.id_for_label }}" class="form-label fw-medium">
+                            Flujo IVR de sección
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.call_flow }}
+                        {% if form.call_flow.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.call_flow.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Flujo IVR específico que Alia cargará en cuanto detecte que el
+                            llamante desea ser atendido por esta sección (Estrategia B).
+                            Las secciones sin flujo asignado no participan en el enrutamiento
+                            dinámico por intención y son invisibles para el motor IVR en tiempo
+                            de llamada.
+                        </div>
+                    </div>
+
                     <!-- is_24h field — Disponibilidad 24 horas -->
                     <div class="mb-4">
                         <div class="form-check form-switch">

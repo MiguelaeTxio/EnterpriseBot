@@ -3,8 +3,8 @@
 # ENTERPRISEBOT — ANEXO HITO V03 — IVR CONVERSACIONAL CONFIGURABLE DESDE PRODUCCIÓN
 **Estado:** EN PROGRESO
 **Fecha de inicio:** 2026-04-07
-**Fecha de reanudación:** 2026-04-16 (segunda reactivación)
-**Última actualización:** 2026-04-16
+**Fecha de reanudación:** 2026-04-17 (tercera reactivación)
+**Última actualización:** 2026-04-17 (PCS)
 
 ---
 
@@ -161,81 +161,71 @@ La interfaz del panel (`/panel/`) es completamente responsive desde la sesión
 
 ---
 
-## SECCIÓN 4 — INYECCIÓN DINÁMICA EN EL IVR
+## SECCIÓN 4 — PIPELINE DE VOZ Y ARQUITECTURA DE TRANSFERENCIA
 
-### 4.1. Flujo de llamada entrante con configuración dinámica
+Ver especificación técnica completa de la arquitectura de transferencia en:
+`DOCS_ATTACHED_2_ANNEX_V03/V03DOC_TRANSFER_ARCHITECTURE.md`
 
-1. Twilio realiza POST `/api/vox/inbound/`
-   → `UniversalVoiceBridge.handle_twiml_post()` en `voice_sidecar_bridge.py`
-   → Captura el campo `To` del body del POST y lo almacena en `self._pending_twilio_number`.
-   → Captura el campo `From` del body del POST y lo almacena en `self._pending_caller_number`.
-   → Responde con TwiML `<Connect><Stream url="wss://{host}/media" />`
+### 4.1. Flujo de llamada entrante — Visión General
 
-2. Twilio abre WebSocket GET `/media`
-   → `UniversalVoiceBridge.handle_websocket_stream()` en `voice_sidecar_bridge.py`
-   → Se inicia el bucle lector de eventos de Twilio.
-   → `VoiceOrchestrationService` NO se instancia todavía.
+**FASE 0 — Audio de bienvenida (Paso 41):**
+Twilio realiza POST `/api/vox/inbound/`. El bridge responde con TwiML `<Play>` del
+archivo `intro.mp3` (3-5s de música) seguido de `<Connect><Stream>`. El llamante
+escucha la música antes de que Alia comience a hablar.
 
-3. Twilio envía evento `start` por el WebSocket
-   → `handle_websocket_stream()` lee `twilio_number` de `self._pending_twilio_number`
-     y `caller_number` de `self._pending_caller_number`.
-   → Se instancia `VoiceOrchestrationService(twilio_number, caller_number)`.
-   → Se lanza `run_voice_session()` como asyncio.Task concurrente.
+**FASE 1 — Bienvenida e identificación de sección (Estrategia B):**
+1. Twilio abre el WebSocket `/media`. Se instancia `VoiceOrchestrationService`.
+2. `build_live_config()` carga CallFlow general, CorporateVoiceProfile, secciones
+   activas con `call_flow` asignado, horarios, presencia e IDENTIFICADORES DE SECCIÓN.
+   Retorna tupla de 5 elementos: `(system_instruction, initial_greeting, voice_name,
+   section_callflow_map, general_call_flow)`.
+3. Alia saluda al llamante e identifica su intención mediante conversación.
+4. Cuando la sección queda clara, Alia invoca `route_to_section(section_id)` via
+   function calling. El bridge llama a `_reload_session_for_section()` y reinyecta
+   el `system_instruction` del CallFlow de sección en la sesión Gemini Live activa.
+5. Alia continúa con el contexto específico de la sección.
 
-4. Al inicio de `run_voice_session()` — FASE 1 (Bienvenida):
-   → `await sync_to_async(build_live_config)(self.twilio_number, self.caller_number)`
-       a. Comprueba `BlockedCaller` activo para (company, caller_number).
-          Si bloqueado → retorna config de bloqueo → Alia responde y termina.
-       b. Resuelve `PhoneNumber` activo por `twilio_number`.
-       c. Carga `CallFlow` general asociado al PhoneNumber.
-       d. Carga `CorporateVoiceProfile` de la `Company` (incluye `voice_name`).
-       e. Carga todas las `Section` activas con `call_flow` asignado + `SectionSchedule`
-          + `Contact`. Las secciones sin `call_flow` asignado se IGNORAN.
-       f. Consulta `PresenceStatus` activo de todos los `Contact` internos.
-       g. Ensambla `system_instruction` del CallFlow general (bienvenida + organigrama
-          de secciones activas con sus horarios y presencia).
-       h. Retorna `(system_instruction, initial_greeting, voice_name,
-          section_callflow_map)` donde `section_callflow_map` es un dict
-          `{section_id: CallFlow}` con los flujos de las secciones activas.
-   → Fallback automático a `SYSTEM_INSTRUCTION_FALLBACK` / `INITIAL_GREETING_FALLBACK`
-     / `VOICE_NAME_FALLBACK = 'Aoede'` si `build_live_config()` lanza excepción.
+**FASE 2 — Transferencia real al responsable (Pasos 39-42):**
+1. El CallFlow de sección instruye a Alia para transferir la llamada.
+2. Alia invoca `transfer_to_section_contact(section_id)` via function calling.
+3. El bridge cierra el WebSocket del Media Stream (salida de Gemini Live).
+4. El bridge actualiza la llamada vía REST API con TwiML `<Dial><Conference>`.
+   El llamante entra en la Conference y escucha música de espera (`hold.mp3`).
+5. El bridge llama al responsable de la sección vía llamada saliente Twilio.
 
-   FASE 2 — Identificación de sección destino (Estrategia B — PENDIENTE PASO 37):
-   → El agente (Alia) identifica la intención del llamante mediante conversación.
-   → Cuando la sección destino queda clara, `VoiceOrchestrationService` carga el
-     `CallFlow` específico de esa sección desde `section_callflow_map`.
-   → Se reinyecta el nuevo `system_instruction` de sección en la sesión Gemini Live
-     activa mediante `session.send_client_content(turns=..., turn_complete=True)`.
-   → El agente continúa la conversación con el contexto específico de la sección.
+**FASE 3A — Transferencia exitosa:**
+El responsable acepta y se une a la Conference. Música cesa. Conversación directa.
+Alia queda desconectada. La llamada finaliza cuando cualquiera cuelga.
 
-   FASE 3 — Fallback:
-   → Si ninguna sección puede atender (todas inactivas, horario cerrado o sin flujo):
-   → El agente carga el `CallFlow` de `CallFlow.fallback_section` del flujo general.
-   → Transfiere la llamada al responsable humano de la sección fallback.
+**FASE 3B — Transferencia fallida (responsable no responde):**
+Timeout del `<Dial>` (30s) → Twilio dispara el action webhook.
+El bridge reconecta a Alia con nuevo Media Stream. Alia informa al llamante y
+ofrece dejar un mensaje de voz. Se registra `PendingNotification` en BD.
+Cuando WhatsApp esté operativo (Hito 4), Celery procesa los registros pendientes.
 
-5. Twilio envía eventos `media` sucesivos
-   → Se reenvían a `service.receive_twilio_audio()`.
+### 4.2. Decisión arquitectónica: Transferencia real vs notificación saliente
 
-6. Twilio envía evento `stop`
-   → `service.terminate_session()` señaliza el fin de sesión.
+La arquitectura original (sesiones 2026-04-13 a 2026-04-16) contemplaba una
+**notificación saliente**: Alia recogía datos del llamante y llamaba al responsable
+de forma independiente, sin transferir la llamada original.
 
-### 4.2. Notificación al responsable de sección ← NUEVO (sesión 2026-04-15)
-Una vez que Alia completa la toma de datos del llamante, notifica al responsable:
-1. **Llamada saliente Twilio** al teléfono del `Contact` responsable de la sección.
-   Alia lee el resumen: nombre cliente, teléfono, servicio, ubicación.
-2. **WhatsApp** al responsable (cuando Hito 4 esté operativo).
-3. **Email vía SendGrid** al `Contact.email` del responsable (diferido al Hito 4).
-
-El mecanismo de notificación se implementa mediante **function calling de Gemini Live**:
-Alia invoca `notify_section_contact(section_name, client_name, phone, service, location)`
-y el backend ejecuta las acciones reales sin interrumpir el audio en curso.
+En sesión 2026-04-17 se acordó el rediseño hacia **transferencia real**:
+- La llamada original se transfiere al responsable mediante `<Dial><Conference>`.
+- El llamante escucha música de espera en lugar de seguir hablando con Alia.
+- Si el responsable no responde, Alia retoma la llamada y ofrece mensaje de voz.
+- La notificación WhatsApp queda como mecanismo de fallback (stub hasta Hito 4).
 
 ### 4.3. Archivos del pipeline de voz
-- `ivr_config/services.py` — Contiene `build_live_config()`.
-- `vox_bridge/services.py` — Orquestación de sesión Gemini Live con carga async de config.
-- `voice_sidecar_bridge.py` — Bridge aiohttp: captura `To` y `From` en POST,
-  instancia servicio en `start`.
-- `voice_orchestrator.py` — Arranque de ngrok + actualización webhook regional IE1/US1.
+- `ivr_config/services.py` — `build_live_config()` → tupla de 5 elementos.
+- `vox_bridge/services.py` — `VoiceOrchestrationService`: Estrategia B completa,
+  function calling `route_to_section` y `transfer_to_section_contact` (Paso 39).
+- `voice_sidecar_bridge.py` — Bridge aiohttp: captura `To` y `From`, gestión
+  del ciclo de vida del Media Stream, reconexión tras transferencia fallida.
+- `voice_orchestrator.py` — Arranque de ngrok + actualización webhook regional.
+- `vox_bridge/views.py` — Nuevos endpoints: `TransferCallView`, `HoldMusicView`,
+  `TransferStatusView`, `TransferAcceptView` (Pasos 39-42).
+- `ivr_config/models.py` — Nuevo modelo `PendingNotification` (Paso 40).
+- `vox_bridge/static/vox_bridge/audio/` — Archivos `intro.mp3` y `hold.mp3`.
 
 ---
 
@@ -379,13 +369,19 @@ y el backend ejecuta las acciones reales sin interrumpir el audio en curso.
 2. Recepción de ubicación GPS: integración con localización nativa WhatsApp +
    Grounding Google Maps (diferido a reactivación del Hito 4).
 3. Sistema de recordatorios de presencia vía WhatsApp: diferido al Hito 4.
-4. Email vía SendGrid al responsable tras toma de datos: diferido al Hito 4.
+4. Email vía SendGrid al responsable: diferido al Hito 4.
 5. Calibración VAD adicional: ajuste fino pendiente tras más pruebas con
    distintos dispositivos y condiciones de llamada.
 6. Configuración real de producción de Grupo Álvarez: `CallFlow` y
    `CorporateVoiceProfile` definitivos pendientes de organigrama real.
 7. Sección Grúas: no existe aún en BD. Añadir cuando se disponga del contacto real.
 8. Registro de usuarios empresa: flujo de alta con invitación por email (diferido).
+9. Notificación WhatsApp vía `PendingNotification`: stub activo hasta Hito 4.
+   Celery procesará los registros pendientes cuando WhatsApp esté operativo.
+10. Archivos de audio `intro.mp3` y `hold.mp3`: música clásica instrumental
+    (estilo Beethoven, Ravel, Tchaikovsky). Miguel Ángel aportará el MP3.
+    Requisitos técnicos en `V03DOC_TRANSFER_ARCHITECTURE.md`.
+    `hold.mp3`: >30s, instrumental. `intro.mp3`: 3-5s, mismo estilo.
 
 ---
 
@@ -473,107 +469,169 @@ en `self.caller_number`, lo pasa a `build_live_config()` en `run_voice_session()
 - `SectionSchedule` y `Contact` añadidos a imports.
 Seed ejecutado: 5 franjas SectionSchedule creadas, capabilities actualizados a VOICE.
 
-### Paso 36 — Validación E2E del flujo completo ⏳ PENDIENTE
-Realizar llamada real al `+34951796832` y verificar:
-- Alia identifica correctamente el tipo de servicio solicitado.
-- Alia informa correctamente de la disponibilidad de la sección (horario).
-- Alia recoge datos conversacionalmente (nombre, teléfono, servicio, ubicación).
-- Alia notifica al responsable (llamada saliente Twilio).
-- Alia responde correctamente ante llamada fuera de actividad.
-- Modo demo funciona con frase clave + DTMF 7463.
-- Número bloqueado recibe respuesta estándar y cierre inmediato.
-Criterio de éxito: todos los tipos de llamada se comportan según la tabla
-de la Sección 4.1 sin intervención manual en BD ni código.
+### Paso 36 — Validación E2E del flujo completo ✅ COMPLETADO (2026-04-17)
+Llamada real al `+34951796832` confirmada: Alia identificó correctamente la sección,
+informó de disponibilidad, recogió datos conversacionalmente y se despidió.
+La rellamada al responsable (Paso 39) estaba pendiente de implementación.
+Número bloqueado, modo demo y fuera de horario validados en sesión posterior.
 
 ---
 
-### Paso 37 — Implementación Estrategia B: Carga Dinámica de CallFlow por Intención ⏳ PENDIENTE
+### Paso 37 — Implementación Estrategia B: Carga Dinámica de CallFlow por Intención ✅ COMPLETADO (2026-04-17)
+- `ivr_config/services.py`: `_build_section_schedule_context()` retorna tupla
+  `(schedule_context, section_callflow_map)`. `build_live_config()` retorna
+  tupla de 5 elementos: `(system_instruction, initial_greeting, voice_name,
+  section_callflow_map, general_call_flow)`.
+- `vox_bridge/services.py`: `self.section_callflow_map`, `self.general_call_flow`
+  en `__init__()`. Desempaquetado de 5 elementos en `run_voice_session()`.
+  Métodos `_reload_session_for_section()` y `_activate_fallback_section()` implementados.
+- `panel/forms.py`: campos `call_flow` en `SectionForm` y `fallback_section` en
+  `CallFlowForm`. Querysets restringidos por empresa en vistas.
+- Templates `sections/form.html` y `callflows/form.html` actualizados con selectores.
+- Fix logout Django 5.x: `http_method_names` extendido en `PanelLogoutView`.
+- Validado: selectores visibles en panel, flujo sin regresiones.
 
-**Contexto:** Los modelos `Section.call_flow` y `CallFlow.fallback_section` ya están
-implementados y migrados (migración 0007, sesión 2026-04-16). Este paso implementa
-la lógica de motor que los consume en tiempo de llamada.
+### Paso 38 — Detección de Intención de Sección: Function Calling route_to_section ✅ COMPLETADO (2026-04-17)
+- Investigación confirmada: `gemini-live-2.5-flash-native-audio` soporta function
+  calling en sesión Live con SDK `google-genai 1.69.0` en Vertex AI.
+- `vox_bridge/services.py`: `FunctionDeclaration` `route_to_section(section_id: int)`
+  registrada en `LiveConnectConfig.tools` (solo si `section_callflow_map` no vacío).
+- Bloque `IDENTIFICADORES DE SECCIÓN` (tabla pk → nombre) inyectado en
+  `system_instruction` por `build_live_config()` para que el modelo use IDs correctos.
+- Handler `tool_call` implementado en `_receive_gemini_audio()`: captura invocación,
+  llama a `_reload_session_for_section()`, responde con `tool_response`.
+- Validación E2E pendiente de llamada real con sección configurada.
 
-**Alcance de cambios — OBLIGATORIO ejecutar en este orden:**
+---
 
-#### 37.A — `ivr_config/services.py` — Extensión de `build_live_config()`
-Modificar la firma y el cuerpo de `build_live_config()` para:
-1. En el Step e (carga de secciones activas), filtrar EXCLUSIVAMENTE las secciones
-   con `call_flow` asignado y activo: `Section.objects.filter(company=company,
-   is_active=True, call_flow__isnull=False, call_flow__is_active=True)`.
-2. Construir el `section_callflow_map`: dict `{section.pk: section.call_flow}`
-   para consumo en `VoiceOrchestrationService`.
-3. Ampliar la tupla de retorno de 3 a 4 elementos:
-   `return (system_instruction, initial_greeting, voice_name, section_callflow_map)`
-   donde `section_callflow_map: dict[int, CallFlow]`.
-4. Actualizar el docstring bilingüe con la nueva firma y semántica.
+### Paso 39 — Sistema de Transferencia Resiliente Multi-Contacto ⏳ PENDIENTE
 
-#### 37.B — `vox_bridge/services.py` — Extensión de `VoiceOrchestrationService`
-1. En `run_voice_session()`, actualizar el desempaquetado de `build_live_config()`:
-   `self.system_instruction, self.initial_greeting_text, self.voice_name,
-   self.section_callflow_map = await sync_to_async(build_live_config)(...)`
-   Añadir `self.section_callflow_map: dict = {}` como atributo de instancia en
-   `__init__()` (valor inicial vacío, poblado en `run_voice_session()`).
-2. Implementar el método `async def _reload_session_for_section(self, session,
-   section_pk: int) -> bool`:
-   - Busca `section_pk` en `self.section_callflow_map`.
-   - Si no existe o la sección no tiene CallFlow → retorna False.
-   - Construye nuevo `system_instruction` concatenando el `CallFlow.system_instruction`
-     de la sección + bloque de presencia y horario relevante para esa sección.
-   - Reinyecta en la sesión Gemini Live activa mediante:
-     `await session.send_client_content(turns=[types.Content(parts=[
-     types.Part(text=nuevo_system_instruction)], role='user')], turn_complete=True)`
-   - Actualiza `self.system_instruction` con el nuevo valor.
-   - Retorna True si la reinyección fue exitosa.
-3. Implementar el método `async def _activate_fallback_section(self, session) -> bool`:
-   - Obtiene `CallFlow.fallback_section` del flujo general cargado al inicio.
-   - Si no hay fallback_section configurada → loguea warning y retorna False.
-   - Construye el system_instruction del fallback con las instrucciones de
-     transferencia al responsable humano.
-   - Reinyecta en sesión activa con el mismo mecanismo de `send_client_content`.
-   - Retorna True si fue exitoso.
-4. El mecanismo de detección de intención de sección queda como STUB en esta
-   fase — se implementará en el Paso 38. En el Paso 37 basta con que los métodos
-   `_reload_session_for_section()` y `_activate_fallback_section()` existan,
-   estén correctamente documentados y sean invocables desde `run_voice_session()`.
+**REDISEÑO ACORDADO EN SESIÓN 2026-04-17** respecto al diseño inicial.
+Ver especificación técnica completa en `V03DOC_TRANSFER_ARCHITECTURE.md`.
 
-#### 37.C — Panel (`panel/` app) — Vistas de asignación de CallFlow a Section
-Añadir al panel personalizado la capacidad de asignar `call_flow` a cada `Section`
-y designar `fallback_section` en el `CallFlow` general:
-1. `panel/forms.py`: añadir campo `call_flow` al `SectionForm` existente.
-   Queryset filtrado por `company` del usuario autenticado y `is_active=True`.
-2. `panel/forms.py`: añadir campo `fallback_section` al `CallFlowForm` existente.
-   Queryset filtrado por `company` del usuario autenticado y `is_active=True`.
-3. `panel/templates/panel/sections/form.html`: añadir selector de `call_flow`
-   con etiqueta 'Flujo IVR de sección' y help text explicativo de la Estrategia B.
-4. `panel/templates/panel/callflows/form.html`: añadir selector de `fallback_section`
-   con etiqueta 'Sección de fallback' y help text explicativo.
-Ambos campos son opcionales en el formulario (no obligatorios en el modelo).
+#### Errores de diseño identificados y corregidos:
+- El filtro `is_internal=True` en `_execute_transfer()` es incorrecto: los
+  contactos destino de una transferencia pueden ser externos (p. ej. el
+  responsable de administración que gestiona proveedores sin ser usuario del panel).
+  El criterio correcto es: primer contacto de la sección con `phone_number` válido,
+  independientemente de `is_internal`.
+- El `section_id` no debe hardcodearse en el `system_instruction` del CallFlow
+  de sección. Alia lo obtiene del bloque `IDENTIFICADORES DE SECCIÓN` que
+  `build_live_config()` inyecta dinámicamente.
 
-**Criterio de éxito del Paso 37:**
-- `build_live_config()` retorna tupla de 4 elementos sin romper el fallback existente.
-- `VoiceOrchestrationService` almacena el `section_callflow_map` en `self`.
-- `_reload_session_for_section()` y `_activate_fallback_section()` existen y están
-  documentados aunque el trigger de detección de intención sea un stub.
-- El panel permite asignar `call_flow` a secciones y `fallback_section` a CallFlows.
-- Las migraciones de formularios no requieren migración de BD (campos ya existen).
+#### Nuevos modelos requeridos (migración 0008):
 
-### Paso 38 — Detección de Intención de Sección en el Audio ⏳ PENDIENTE
-Este paso implementa el mecanismo de detección de la intención del llamante para
-determinar qué sección desea y activar la Fase 2 de la Estrategia B:
-- Investigar el mecanismo de function calling disponible en `gemini-live-2.5-flash-
-  native-audio` con SDK `google-genai 1.69.0` en Vertex AI. Específicamente:
-  si el modelo puede invocar funciones Python desde el audio en tiempo real
-  (tool_use en sesión Live) sin interrumpir el flujo de audio.
-- Si function calling está disponible: definir tool `route_to_section(section_id: int)`
-  en `LiveConnectConfig.tools`. Cuando Alia detecte la sección destino, invocará
-  la función y el handler llamará a `_reload_session_for_section(session, section_id)`.
-- Si function calling NO está disponible en Live: implementar detección por análisis
-  de transcripción parcial — Alia anuncia verbalmente la sección destino con un
-  patrón reconocible, el bridge lo detecta y activa la reinyección.
-- La investigación debe hacerse en línea (PAH 4.4 — actualización obligatoria)
-  antes de implementar ninguna línea de código.
-Criterio de éxito: llamada real en la que Alia detecta el tipo de servicio y
-carga el CallFlow de la sección correspondiente de forma transparente al llamante.
+**`SectionContact`** — tabla intermedia explícita que reemplaza la relación M2M
+implícita `Section.contacts`. Añade campo `priority` (IntegerField) para controlar
+el orden de intento de transferencia desde el panel:
+    - `section` (FK → Section, CASCADE)
+    - `contact` (FK → Contact, CASCADE)
+    - `priority` (IntegerField, default=0 — menor número = mayor prioridad)
+    - `created_at` (DateTimeField, auto_now_add)
+    Meta: unique_together = [('section', 'contact')], ordering = ['section', 'priority', 'contact__name']
+
+**`TransferAttempt`** — persiste el estado de la transferencia entre el bridge
+y el webhook `TransferStatusView`. Necesario porque Twilio no envía contexto
+de sesión en el action webhook — la persistencia en BD es el único mecanismo
+viable para mantener el estado entre ambos procesos:
+    - `call_sid` (CharField max_length=40, unique=True, db_index=True)
+    - `section` (FK → Section, SET_NULL, null=True)
+    - `twilio_number` (CharField max_length=20)
+    - `caller_number` (CharField max_length=20)
+    - `contact_index` (IntegerField, default=0 — índice del contacto intentado)
+    - `status` (CharField choices: PENDING / FAILED / COMPLETED, default=PENDING)
+    - `created_at` (DateTimeField, auto_now_add)
+    - `updated_at` (DateTimeField, auto_now)
+
+**`PendingNotification`** — registra llamadas donde todos los contactos fallaron
+y el llamante optó por dejar sus datos para ser contactado:
+    - `company` (FK → Company, CASCADE)
+    - `section` (FK → Section, SET_NULL, null=True)
+    - `caller_number` (CharField max_length=20)
+    - `call_sid` (CharField max_length=40)
+    - `voice_recording_url` (URLField, blank=True)
+    - `channel` (CharField choices: WHATSAPP / SMS / EMAIL / PENDING, default=PENDING)
+    - `created_at` (DateTimeField, auto_now_add)
+    - `notified_at` (DateTimeField, null=True, blank=True)
+    - `notes` (TextField, blank=True)
+
+#### Flujo resiliente multi-contacto:
+
+`_execute_transfer(section_id)` en `vox_bridge/services.py`:
+1. Obtiene lista de contactos de la sección ordenada por `SectionContact.priority`
+   ASC, filtrando por `phone_number` no vacío (sin filtro `is_internal`).
+2. Selecciona el contacto en `contact_index=0`.
+3. Crea registro `TransferAttempt(call_sid, section, twilio_number, caller_number,
+   contact_index=0, status=PENDING)`.
+4. Actualiza la llamada del llamante con TwiML `<Dial><Conference>` (música de espera).
+5. Establece `session_active=False` (cierra Gemini Live).
+6. Realiza llamada saliente al contacto seleccionado.
+
+`TransferStatusView` en `vox_bridge/views.py` (action webhook Twilio):
+1. Consulta `TransferAttempt` por `call_sid`.
+2. Lee `DialCallStatus`:
+   - `completed` → `TransferAttempt.status=COMPLETED` → TwiML vacío → fin.
+   - `no-answer / busy / failed` → incrementa `contact_index` en el registro.
+     - Si existe contacto en `contact_index+1` (siguiente por prioridad):
+       Reconecta Alia con nuevo Media Stream. Alia informa: "La Sra./Sr. X no
+       está disponible en este momento. ¿Desea que intente ponerle en contacto
+       con la Sra./Sr. Y, dejar un mensaje de voz, o que le llamen cuando esté
+       disponible?" Alia gestiona la respuesta del llamante e invoca
+       `transfer_to_section_contact` de nuevo si elige el siguiente contacto.
+     - Si no hay más contactos:
+       Reconecta Alia. Alia ofrece mensaje de voz o callback.
+       Registra `PendingNotification` en BD.
+
+#### Cambios en el panel:
+- `SectionContact` con campo `priority` editable mediante formset inline en
+  el formulario de sección (`/panel/sections/{pk}/edit/`).
+  Ordenable por prioridad (input numérico). Reemplaza el widget M2M actual.
+- `PendingNotification` listado de solo lectura en panel (módulo nuevo).
+
+#### Archivos afectados:
+- `ivr_config/models.py` — nuevos modelos `SectionContact`, `TransferAttempt`,
+  `PendingNotification`. Migración 0008.
+- `vox_bridge/services.py` — `_execute_transfer()` refactorizado.
+- `vox_bridge/views.py` — `TransferStatusView` refactorizado con flujo multi-contacto.
+- `panel/forms.py` — formset inline `SectionContactFormSet`.
+- `panel/views.py` — `SectionCreateView` / `SectionUpdateView` con formset de contactos.
+- `panel/templates/panel/sections/form.html` — tabla de contactos con prioridad.
+- `panel/urls.py` — nueva ruta `pending_notifications/`.
+- `panel/templates/panel/pending_notifications/list.html` — nuevo template.
+
+Criterio de éxito: llamada real en la que el primer contacto no responde,
+Alia ofrece el segundo contacto al llamante, el llamante elige, y la segunda
+transferencia conecta correctamente con el segundo contacto.
+
+### Paso 40 — Audio de bienvenida `intro.mp3` y espera `hold.mp3` ⏳ PENDIENTE
+Miguel Ángel aportará el archivo MP3 de música clásica (estilo Beethoven / Ravel /
+Tchaikovsky). El mismo archivo puede usarse para `hold.mp3` (espera durante la
+transferencia) y para `intro.mp3` (3-5s antes del saludo de Alia, recortado del mismo).
+
+`hold.mp3`:
+- Formato: MP3, >30 segundos, instrumental sin voz.
+- Ruta destino: `vox_bridge/static/vox_bridge/audio/hold.mp3`.
+- `HoldMusicView` ya implementada — sirve TwiML `<Play loop="0">`.
+- Ejecutar `collectstatic` tras despliegue.
+
+`intro.mp3`:
+- Formato: MP3, 3-5 segundos (recorte del mismo archivo clásico).
+- Ruta destino: `vox_bridge/static/vox_bridge/audio/intro.mp3`.
+- Añadir `<Play>` en `handle_twiml_post()` de `voice_sidecar_bridge.py`
+  antes del `<Connect><Stream>`.
+
+Criterio de éxito: el llamante escucha la música clásica tanto al inicio de la
+llamada (intro) como durante la espera de transferencia (hold).
+
+### Paso 41 — Validación E2E Sistema de Transferencia Completo ⏳ PENDIENTE
+Realizar llamada real con el sistema de transferencia resiliente activo:
+1. Alia identifica la sección → carga CallFlow de sección.
+2. Alia recoge datos → invoca `transfer_to_section_contact`.
+3. Llamante escucha música de espera (`hold.mp3`).
+4. Primer contacto no responde → Alia reconecta → ofrece segundo contacto.
+5. Segundo contacto acepta → conversación directa → llamada completada.
+6. Alternativamente: todos los contactos fallan → `PendingNotification` en BD.
+Criterio de éxito: flujo completo E2E sin intervención manual.
 
 ---
 
@@ -671,6 +729,44 @@ Limpieza global de 100 errores H021 (inline styles) en todos los templates del p
 Añadido JavaScript dinámico para añadir franjas horarias sin recargar la página.
 Validación E2E completa en producción: badges, formset de horarios, bloqueados,
 contactos con email/gender, flujos IVR con notification_contact y dashboard. ✅
+
+### Sesión 2026-04-17 — Segunda parte
+**Título:** Sistema de Transferencia Resiliente: Diseño Multi-Contacto con Prioridad
+**Descripción:** Sesión de diagnóstico y rediseño del sistema de transferencia de
+llamada. Se diagnostican dos errores de diseño en _execute_transfer(): filtro
+is_internal=True incorrecto (los contactos destino pueden ser externos) y
+dependencia de section_id hardcodeado en el system_instruction (debe obtenerse
+dinámicamente del bloque IDENTIFICADORES DE SECCIÓN). Se diseña y aprueba la
+arquitectura resiliente multi-contacto: nuevo modelo SectionContact con campo
+priority para ordenar los intentos de transferencia desde el panel, nuevo modelo
+TransferAttempt para persistir el estado entre el bridge y el webhook de Twilio,
+nuevo modelo PendingNotification para registrar los casos de fallo total. El flujo
+completo incluye: intento con contacto prioritario → fallo → Alia ofrece siguiente
+contacto al llamante con opciones (siguiente contacto / mensaje de voz / callback) →
+registro de PendingNotification si todos fallan. Se acuerda que los archivos de audio
+serán música clásica (Beethoven / Ravel / Tchaikovsky) en formato MP3 aportado por
+Miguel Ángel. Se actualiza la hoja de ruta con los Pasos 39-41 rediseñados.
+Fix documentado: el operador *(...) no es válido dentro de constructores Pydantic
+(LiveConnectConfig es BaseModel) — las tools deben construirse antes del constructor
+y pasarse como keyword argument tools=live_tools.
+
+### Sesión 2026-04-17
+**Título:** Estrategia B E2E: Pasos 37-38 + Rediseño Arquitectura de Transferencia Real
+**Descripción:** Sesión de implementación completa de los Pasos 37 y 38 y rediseño
+arquitectónico del mecanismo de transferencia de llamada. Paso 37: implementación del
+motor de Estrategia B en ivr_config/services.py (section_callflow_map, bloque
+IDENTIFICADORES DE SECCIÓN), vox_bridge/services.py (_reload_session_for_section,
+_activate_fallback_section, general_call_flow), panel/forms.py (call_flow en
+SectionForm, fallback_section en CallFlowForm) y templates/vistas correspondientes.
+Fix logout Django 5.x (http_method_names en PanelLogoutView). Paso 38: investigación
+confirmada de function calling en gemini-live-2.5-flash-native-audio con Vertex AI,
+implementación de FunctionDeclaration route_to_section en LiveConnectConfig y handler
+tool_call en _receive_gemini_audio(). Rediseño arquitectónico acordado: la notificación
+saliente original se sustituye por transferencia real via Dial Conference, con música
+de espera, gestión de fallback por no respuesta, ofrecimiento de mensaje de voz y
+registro de PendingNotification en BD (stub WhatsApp). Se crea documento satélite
+V03DOC_TRANSFER_ARCHITECTURE.md con la especificación técnica completa. Nuevos Pasos
+39-42 añadidos a la hoja de ruta.
 
 ### Sesión 2026-04-16 (reactivación)
 **Título:** Reactivación Hito 3 — Diseño Estrategia B: Carga Dinámica de CallFlow por Intención

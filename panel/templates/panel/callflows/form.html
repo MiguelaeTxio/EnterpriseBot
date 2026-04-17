@@ -99,6 +99,28 @@
                         </div>
                     </div>
 
+                    <!-- fallback_section field — Sección de fallback (Estrategia B, Paso 37.C) -->
+                    <div class="mb-4">
+                        <label for="{{ form.fallback_section.id_for_label }}" class="form-label fw-medium">
+                            Sección de fallback
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.fallback_section }}
+                        {% if form.fallback_section.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.fallback_section.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Sección de último recurso de la Estrategia B. Cuando ninguna
+                            sección activa puede atender al llamante (todas cerradas por horario
+                            o sin intención detectada), Alia carga el flujo IVR de esta sección
+                            y deriva la llamada a su responsable humano designado.
+                            Solo las secciones con flujo IVR propio asignado son válidas
+                            como destino de fallback.
+                        </div>
+                    </div>
+
                     <!-- is_active field — Campo de estado activo -->
                     <div class="mb-4">
                         <div class="form-check">

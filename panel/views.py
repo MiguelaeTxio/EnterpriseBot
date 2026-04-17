@@ -317,10 +317,14 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
     Allows an ADMIN to create a new Section for their company.
     Automatically assigns the company from the authenticated user's CompanyUser.
     Manages an inline SectionSchedule formset for time slot configuration.
+    Updated 2026-04-16 (Step 37.C — Estrategia B): call_flow queryset restricted
+    to the company's own active CallFlows.
     ---
     Permite a un ADMIN crear una nueva Section para su empresa.
     Asigna automáticamente la empresa desde el CompanyUser del usuario autenticado.
     Gestiona un formset inline de SectionSchedule para la configuración de horarios.
+    Actualización 2026-04-16 (Paso 37.C — Estrategia B): queryset de call_flow
+    restringido a los CallFlows activos de la empresa.
     """
 
     model = Section
@@ -342,14 +346,24 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
 
     def get_form(self, form_class=None):
         """
-        Restricts the contacts queryset in the form to the authenticated user's company.
+        Restricts the contacts queryset to the authenticated user's company.
+        Restricts the call_flow queryset to the company's own active CallFlows
+        (Estrategia B — Step 37.C). call_flow is optional.
         ---
-        Restringe el queryset de contactos del formulario a la empresa del usuario autenticado.
+        Restringe el queryset de contactos a la empresa del usuario autenticado.
+        Restringe el queryset de call_flow a los CallFlows activos de la empresa
+        (Estrategia B — Paso 37.C). call_flow es opcional.
         """
         form = super().get_form(form_class)
+        company = self.request.user.company_user.company
         form.fields["contacts"].queryset = Contact.objects.filter(
-            company=self.request.user.company_user.company
+            company=company
         )
+        form.fields["call_flow"].queryset = CallFlow.objects.filter(
+            company=company,
+            is_active=True,
+        ).order_by("name")
+        form.fields["call_flow"].required = False
         return form
 
     def get(self, request, *args, **kwargs):
@@ -486,14 +500,24 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
 
     def get_form(self, form_class=None):
         """
-        Restricts the contacts queryset in the form to the authenticated user's company.
+        Restricts the contacts queryset to the authenticated user's company.
+        Restricts the call_flow queryset to the company's own active CallFlows
+        (Estrategia B — Step 37.C). call_flow is optional.
         ---
-        Restringe el queryset de contactos del formulario a la empresa del usuario autenticado.
+        Restringe el queryset de contactos a la empresa del usuario autenticado.
+        Restringe el queryset de call_flow a los CallFlows activos de la empresa
+        (Estrategia B — Paso 37.C). call_flow es opcional.
         """
         form = super().get_form(form_class)
+        company = self.request.user.company_user.company
         form.fields["contacts"].queryset = Contact.objects.filter(
-            company=self.request.user.company_user.company
+            company=company
         )
+        form.fields["call_flow"].queryset = CallFlow.objects.filter(
+            company=company,
+            is_active=True,
+        ).order_by("name")
+        form.fields["call_flow"].required = False
         return form
 
     def get(self, request, *args, **kwargs):
@@ -861,10 +885,14 @@ class CallFlowCreateView(AdminRoleRequiredMixin, CreateView):
     Allows an ADMIN to create a new CallFlow for their company.
     Automatically assigns the company from the authenticated user's CompanyUser.
     Restricts the notification_contact queryset to the company's own contacts.
+    Updated 2026-04-16 (Step 37.C — Estrategia B): fallback_section queryset
+    restricted to the company's own active Sections.
     ---
     Permite a un ADMIN crear un nuevo CallFlow para su empresa.
     Asigna automáticamente la empresa desde el CompanyUser del usuario autenticado.
     Restringe el queryset de notification_contact a los contactos de la empresa.
+    Actualización 2026-04-16 (Paso 37.C — Estrategia B): queryset de fallback_section
+    restringido a las Sections activas de la empresa.
     """
 
     model = CallFlow
@@ -873,15 +901,25 @@ class CallFlowCreateView(AdminRoleRequiredMixin, CreateView):
 
     def get_form(self, form_class=None):
         """
-        Restricts the notification_contact queryset to the authenticated user's company.
+        Restricts notification_contact queryset to the authenticated user's company.
+        Restricts fallback_section queryset to the company's own active Sections
+        (Estrategia B — Step 37.C). Both fields are optional.
         ---
         Restringe el queryset de notification_contact a la empresa del usuario autenticado.
+        Restringe el queryset de fallback_section a las Sections activas de la empresa
+        (Estrategia B — Paso 37.C). Ambos campos son opcionales.
         """
         form = super().get_form(form_class)
+        company = self.request.user.company_user.company
         form.fields["notification_contact"].queryset = Contact.objects.filter(
-            company=self.request.user.company_user.company
+            company=company
         ).order_by("name")
         form.fields["notification_contact"].required = False
+        form.fields["fallback_section"].queryset = Section.objects.filter(
+            company=company,
+            is_active=True,
+        ).order_by("name")
+        form.fields["fallback_section"].required = False
         return form
 
     def form_valid(self, form):
@@ -940,9 +978,13 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
     """
     Allows an ADMIN to update an existing CallFlow belonging to their company.
     Prevents editing call flows from other companies.
+    Updated 2026-04-16 (Step 37.C — Estrategia B): fallback_section queryset
+    restricted to the company's own active Sections.
     ---
     Permite a un ADMIN actualizar un CallFlow existente de su empresa.
     Impide editar flujos IVR de otras empresas.
+    Actualización 2026-04-16 (Paso 37.C — Estrategia B): queryset de fallback_section
+    restringido a las Sections activas de la empresa.
     """
 
     model = CallFlow
@@ -961,15 +1003,25 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
 
     def get_form(self, form_class=None):
         """
-        Restricts the notification_contact queryset to the authenticated user's company.
+        Restricts notification_contact queryset to the authenticated user's company.
+        Restricts fallback_section queryset to the company's own active Sections
+        (Estrategia B — Step 37.C). Both fields are optional.
         ---
         Restringe el queryset de notification_contact a la empresa del usuario autenticado.
+        Restringe el queryset de fallback_section a las Sections activas de la empresa
+        (Estrategia B — Paso 37.C). Ambos campos son opcionales.
         """
         form = super().get_form(form_class)
+        company = self.request.user.company_user.company
         form.fields["notification_contact"].queryset = Contact.objects.filter(
-            company=self.request.user.company_user.company
+            company=company
         ).order_by("name")
         form.fields["notification_contact"].required = False
+        form.fields["fallback_section"].queryset = Section.objects.filter(
+            company=company,
+            is_active=True,
+        ).order_by("name")
+        form.fields["fallback_section"].required = False
         return form
 
     def form_valid(self, form):
@@ -1641,12 +1693,33 @@ class PanelLogoutView(LogoutView):
     """
     Logout view for the panel application.
     Redirects to the panel login page after session termination.
+
+    Django 5.x restricts LogoutView to POST-only by default (CSRF protection).
+    The panel sidebar uses a plain <a> link (GET request) to trigger logout.
+    The get() override handles this case by delegating to post(), which
+    executes Django's standard session termination and redirects cleanly.
     ---
     Vista de logout para la aplicación panel.
     Redirige a la página de login del panel tras la terminación de sesión.
+
+    Django 5.x restringe LogoutView a POST exclusivamente por defecto (protección CSRF).
+    El sidebar del panel usa un enlace <a> simple (petición GET) para disparar el logout.
+    El override de get() gestiona este caso delegando en post(), que ejecuta la
+    terminación de sesión estándar de Django y redirige correctamente.
     """
 
+    http_method_names = ['get', 'post', 'head', 'options']
     next_page = "/panel/login/"
+
+    def get(self, request, *args, **kwargs):
+        """
+        Handles GET logout requests from the panel sidebar link.
+        Delegates to post() to execute standard Django session termination.
+        ---
+        Gestiona las peticiones GET de logout desde el enlace del sidebar del panel.
+        Delega en post() para ejecutar la terminación de sesión estándar de Django.
+        """
+        return self.post(request, *args, **kwargs)
 
 
 class PanelDashboardView(CompanyUserRequiredMixin, TemplateView):

@@ -455,6 +455,30 @@ class VoiceOrchestrationService:
         # build_live_config(). Fallback a 'Aoede' hasta entonces.
         self.voice_name: str = VOICE_NAME_FALLBACK
 
+        # section_callflow_map maps Section.pk → CallFlow instance for all
+        # active sections that have an active CallFlow assigned (Estrategia B).
+        # Populated in run_voice_session() from the 4th element of the tuple
+        # returned by build_live_config(). Empty dict until then — the fallback
+        # path (build_live_config() failure) leaves it as {} and the session
+        # continues without section-level routing capability.
+        # section_callflow_map mapea Section.pk → instancia de CallFlow para
+        # todas las secciones activas con CallFlow activo asignado (Estrategia B).
+        # Se puebla en run_voice_session() desde el 4º elemento de la tupla
+        # retornada por build_live_config(). Dict vacío hasta entonces — la
+        # ruta de fallback (fallo de build_live_config()) lo deja como {} y
+        # la sesión continúa sin capacidad de enrutamiento por sección.
+        self.section_callflow_map: dict = {}
+
+        # general_call_flow stores the CallFlow instance linked to the PhoneNumber
+        # (the welcome/routing flow). Populated in run_voice_session() from
+        # build_live_config(). Required by _activate_fallback_section() to
+        # resolve the fallback_section FK of the general flow.
+        # general_call_flow almacena la instancia de CallFlow vinculada al PhoneNumber
+        # (el flujo de bienvenida/enrutamiento). Se puebla en run_voice_session()
+        # desde build_live_config(). Necesario por _activate_fallback_section() para
+        # resolver el FK fallback_section del flujo general.
+        self.general_call_flow = None
+
         logger.info(
             f"[INIT] VoiceOrchestrationService inicializado. "
             f"Número destino: '{twilio_number}' | Número llamante: '{caller_number}'. "
@@ -541,6 +565,8 @@ class VoiceOrchestrationService:
                 self.system_instruction,
                 self.initial_greeting_text,
                 self.voice_name,
+                self.section_callflow_map,
+                self.general_call_flow,
             ) = await sync_to_async(build_live_config)(
                 self.twilio_number,
                 self.caller_number,
@@ -548,7 +574,8 @@ class VoiceOrchestrationService:
             logger.info(
                 f"[CONFIG] Configuración IVR dinámica cargada correctamente "
                 f"para el número '{self.twilio_number}' "
-                f"(llamante: '{self.caller_number}')."
+                f"(llamante: '{self.caller_number}'). "
+                f"Secciones con flujo propio: {len(self.section_callflow_map)}."
             )
         except Exception as config_exc:
             logger.error(
@@ -559,6 +586,95 @@ class VoiceOrchestrationService:
             # Fallback values were already set in __init__() — no reassignment needed.
             # Los valores de fallback ya fueron establecidos en __init__() — no se
             # necesita reasignación.
+
+        # Build the tools list before the LiveConnectConfig constructor.
+        # LiveConnectConfig is a Pydantic BaseModel and only accepts explicit
+        # keyword arguments — the *(...) unpacking operator is NOT valid inside
+        # a Pydantic constructor. Tools are built conditionally here and passed
+        # as the tools= keyword argument.
+        #
+        # Construir la lista de tools ANTES del constructor de LiveConnectConfig.
+        # LiveConnectConfig es un BaseModel de Pydantic y solo acepta keyword
+        # arguments explícitos — el operador de desempaquetado *(...) NO es válido
+        # dentro de un constructor Pydantic. Las tools se construyen condicionalmente
+        # aquí y se pasan como keyword argument tools=.
+        if self.section_callflow_map:
+            live_tools = [
+                types.Tool(
+                    function_declarations=[
+                        # TOOL 1: route_to_section — Estrategia B, Paso 38
+                        # Alia invoca esta función cuando identifica la sección destino.
+                        # El handler recarga el system_instruction con el CallFlow de sección.
+                        # TOOL 1: route_to_section — Estrategia B, Step 38
+                        # Alia invokes this when it identifies the target section.
+                        # The handler reloads system_instruction with the section CallFlow.
+                        types.FunctionDeclaration(
+                            name="route_to_section",
+                            description=(
+                                "Invoca esta función en cuanto identifiques con certeza "
+                                "la sección a la que pertenece la llamada. "
+                                "Proporciona el section_id de la sección correspondiente "
+                                "según la tabla IDENTIFICADORES DE SECCIÓN del "
+                                "system_instruction. "
+                                "Solo invoca esta función una vez por llamada."
+                            ),
+                            parameters={
+                                "type": "object",
+                                "properties": {
+                                    "section_id": {
+                                        "type": "integer",
+                                        "description": (
+                                            "El identificador numérico de la sección "
+                                            "destino, según la tabla "
+                                            "IDENTIFICADORES DE SECCIÓN."
+                                        ),
+                                    }
+                                },
+                                "required": ["section_id"],
+                            },
+                        ),
+                        # TOOL 2: transfer_to_section_contact — Paso 39
+                        # Alia invoca esta función cuando está lista para transferir
+                        # la llamada al responsable de la sección identificada.
+                        # El handler cierra el Media Stream y ejecuta Dial Conference.
+                        # TOOL 2: transfer_to_section_contact — Step 39
+                        # Alia invokes this when ready to transfer the call to the
+                        # section responsible. Handler closes Media Stream + Dial Conference.
+                        types.FunctionDeclaration(
+                            name="transfer_to_section_contact",
+                            description=(
+                                "Invoca esta función cuando estés listo para transferir "
+                                "la llamada al responsable de la sección. "
+                                "Antes de invocarla, informa al llamante de que le vas "
+                                "a transferir y que espere un momento. "
+                                "Proporciona el section_id de la sección destino. "
+                                "Solo invoca esta función una vez por llamada."
+                            ),
+                            parameters={
+                                "type": "object",
+                                "properties": {
+                                    "section_id": {
+                                        "type": "integer",
+                                        "description": (
+                                            "El identificador numérico de la sección "
+                                            "cuyo responsable debe recibir la transferencia."
+                                        ),
+                                    }
+                                },
+                                "required": ["section_id"],
+                            },
+                        ),
+                    ]
+                )
+            ]
+            logger.info(
+                "[SESSION] Tools registradas: route_to_section, transfer_to_section_contact."
+            )
+        else:
+            live_tools = None
+            logger.info(
+                "[SESSION] Sin secciones cualificadas — no se registran tools."
+            )
 
         # Build the Gemini Live session configuration.
         # The response modality is AUDIO — we want raw PCM audio back, not text.
@@ -605,6 +721,13 @@ class VoiceOrchestrationService:
             # de thinkingLevel. Omitir thinking_config usa el valor por defecto del
             # modelo, optimizado para baja latencia en sesiones de audio nativo.
             # Fuente: guía de capacidades de Live API en Vertex AI, verificado 2026-04-05.
+            # TOOLS — passed as explicit keyword argument (Pydantic-safe pattern).
+            # live_tools is None when section_callflow_map is empty — Pydantic
+            # accepts None for optional list fields and omits them from the payload.
+            # TOOLS — pasadas como keyword argument explícito (patrón seguro para Pydantic).
+            # live_tools es None cuando section_callflow_map está vacío — Pydantic
+            # acepta None para campos de lista opcionales y los omite del payload.
+            tools=live_tools,
             # REALTIME INPUT CONFIG — VAD DISABLED FOR TELEPHONY:
             # Server-side automatic VAD must be disabled for telephony
             # bridges. In a phone call, the outbound audio played to the
@@ -1120,6 +1243,111 @@ class VoiceOrchestrationService:
                                 break
                         continue
 
+                    # --- Tool Call Handler — route_to_section (Estrategia B, Paso 38) ---
+                    # Gemini invokes route_to_section() when it identifies the caller's
+                    # intended section. We capture the tool_call, execute the section
+                    # reload, and respond with tool_response so the model can continue.
+                    # Gemini invoca route_to_section() cuando identifica la sección
+                    # destino del llamante. Capturamos el tool_call, ejecutamos la
+                    # recarga de sección y respondemos con tool_response para que
+                    # el modelo pueda continuar.
+                    if response.tool_call:
+                        for fn_call in response.tool_call.function_calls:
+                            if fn_call.name == "route_to_section":
+                                section_id = int(fn_call.args.get("section_id", -1))
+                                logger.info(
+                                    f"[ESTRATEGIA-B] tool_call route_to_section recibido. "
+                                    f"section_id={section_id}. "
+                                    "Ejecutando _reload_session_for_section()..."
+                                )
+                                success = await self._reload_session_for_section(
+                                    session, section_id
+                                )
+                                # Respond to Gemini with the tool result so it can
+                                # continue the conversation with the new context.
+                                # Responder a Gemini con el resultado de la tool para
+                                # que continúe la conversación con el nuevo contexto.
+                                try:
+                                    await session.send_client_content(
+                                        turns=types.Content(
+                                            role="tool",
+                                            parts=[
+                                                types.Part(
+                                                    function_response=types.FunctionResponse(
+                                                        name="route_to_section",
+                                                        response={
+                                                            "success": success,
+                                                            "section_id": section_id,
+                                                        },
+                                                    )
+                                                )
+                                            ],
+                                        ),
+                                        turn_complete=True,
+                                    )
+                                    logger.info(
+                                        f"[ESTRATEGIA-B] tool_response route_to_section "
+                                        f"enviado correctamente (success={success})."
+                                    )
+                                except Exception as tr_exc:
+                                    logger.error(
+                                        f"[ESTRATEGIA-B] Error al enviar tool_response: "
+                                        f"{type(tr_exc).__name__}: {tr_exc}",
+                                        exc_info=True,
+                                    )
+                            elif fn_call.name == "transfer_to_section_contact":
+                                section_id = int(fn_call.args.get("section_id", -1))
+                                logger.info(
+                                    f"[PASO-39] tool_call transfer_to_section_contact "
+                                    f"recibido. section_id={section_id}. "
+                                    "Ejecutando _execute_transfer()..."
+                                )
+                                transfer_success = await self._execute_transfer(
+                                    section_id
+                                )
+                                # Respond to Gemini with the transfer result.
+                                # If transfer succeeded, session_active is False
+                                # and the session will end gracefully.
+                                # If failed, Alia continues and informs the caller.
+                                # Responder a Gemini con el resultado de la transferencia.
+                                # Si tuvo éxito, session_active es False y la sesión
+                                # terminará. Si falló, Alia continúa e informa al llamante.
+                                try:
+                                    await session.send_client_content(
+                                        turns=types.Content(
+                                            role="tool",
+                                            parts=[
+                                                types.Part(
+                                                    function_response=types.FunctionResponse(
+                                                        name="transfer_to_section_contact",
+                                                        response={
+                                                            "success": transfer_success,
+                                                            "section_id": section_id,
+                                                        },
+                                                    )
+                                                )
+                                            ],
+                                        ),
+                                        turn_complete=True,
+                                    )
+                                    logger.info(
+                                        f"[PASO-39] tool_response transfer_to_section_contact "
+                                        f"enviado (success={transfer_success})."
+                                    )
+                                except Exception as tr_exc:
+                                    logger.error(
+                                        f"[PASO-39] Error al enviar tool_response de "
+                                        f"transfer_to_section_contact: "
+                                        f"{type(tr_exc).__name__}: {tr_exc}",
+                                        exc_info=True,
+                                    )
+                            else:
+                                logger.warning(
+                                    f"[GEMINI-RX] tool_call desconocido recibido: "
+                                    f"'{fn_call.name}'. Se ignora."
+                                )
+                        continue
+
                     # --- Audio Response Extraction / Extracción de Respuesta de Audio ---
                     if not response.server_content:
                         continue
@@ -1359,8 +1587,496 @@ class VoiceOrchestrationService:
         return mulaw_bytes
 
     # -----------------------------------------------------------------------
+    # ESTRATEGIA B — IN-SESSION SECTION ROUTING
+    # ESTRATEGIA B — ENRUTAMIENTO POR SECCIÓN EN SESIÓN
+    # -----------------------------------------------------------------------
+
+    async def _reload_session_for_section(
+        self,
+        session,
+        section_pk: int,
+    ) -> bool:
+        """
+        Reloads the Gemini Live session with the specific CallFlow assigned
+        to the section identified by section_pk (Estrategia B — Step 37.B).
+
+        This method is called once the IVR agent (Alia) has identified the
+        caller's intended section and a routing trigger has been detected.
+        It injects a new system_instruction into the active Gemini Live session
+        via send_client_content(), replacing the general welcome flow with the
+        section-specific conversational flow.
+
+        The injection uses the 'user' role so that Gemini treats the new
+        instruction as a high-priority context update and immediately applies
+        it to subsequent audio generation. The session WebSocket is NOT
+        reconnected — this is an in-session instruction swap.
+
+        Args:
+            session: The active Gemini Live session object obtained from
+                     `async with client.aio.live.connect(...)`.
+            section_pk (int): The primary key of the Section whose CallFlow
+                              should be loaded and injected.
+
+        Returns:
+            bool: True if the injection was completed successfully.
+                  False if section_pk is not in section_callflow_map, the
+                  CallFlow has no system_instruction, or any exception occurs
+                  during the send_client_content() call.
+        ---
+        Recarga la sesión de Gemini Live con el CallFlow específico asignado
+        a la sección identificada por section_pk (Estrategia B — Paso 37.B).
+
+        Este método se invoca una vez que el agente IVR (Alia) ha identificado
+        la sección destino del llamante y se ha detectado un disparador de
+        enrutamiento. Inyecta un nuevo system_instruction en la sesión Gemini
+        Live activa mediante send_client_content(), reemplazando el flujo
+        general de bienvenida por el flujo conversacional específico de la
+        sección.
+
+        La inyección usa el rol 'user' para que Gemini trate la nueva
+        instrucción como una actualización de contexto de alta prioridad y la
+        aplique de forma inmediata a la generación de audio subsiguiente.
+        El WebSocket de sesión NO se reconecta — es un swap de instrucción
+        en sesión activa.
+
+        Args:
+            session: El objeto de sesión Gemini Live activo obtenido de
+                     `async with client.aio.live.connect(...)`.
+            section_pk (int): La clave primaria de la Section cuyo CallFlow
+                              debe cargarse e inyectarse.
+
+        Returns:
+            bool: True si la inyección se completó correctamente.
+                  False si section_pk no está en section_callflow_map, el
+                  CallFlow no tiene system_instruction, o se produce cualquier
+                  excepción durante la llamada a send_client_content().
+        """
+        # Guard: verify the section has a registered CallFlow in the map.
+        # Guardia: verificar que la sección tiene un CallFlow registrado en el mapa.
+        call_flow = self.section_callflow_map.get(section_pk)
+        if call_flow is None:
+            logger.warning(
+                f"[ESTRATEGIA-B] section_pk={section_pk} no encontrado en "
+                f"section_callflow_map ({list(self.section_callflow_map.keys())}). "
+                "No se puede reinyectar instrucción de sección."
+            )
+            return False
+
+        # Guard: verify the CallFlow has a non-empty system_instruction.
+        # Guardia: verificar que el CallFlow tiene system_instruction no vacío.
+        new_system_instruction = (call_flow.system_instruction or "").strip()
+        if not new_system_instruction:
+            logger.warning(
+                f"[ESTRATEGIA-B] El CallFlow '{call_flow.name}' (id={call_flow.pk}) "
+                f"de la sección (pk={section_pk}) tiene system_instruction vacío. "
+                "No se puede reinyectar instrucción de sección."
+            )
+            return False
+
+        logger.info(
+            f"[ESTRATEGIA-B] Reinyectando system_instruction de sección "
+            f"(pk={section_pk}, CallFlow='{call_flow.name}') en sesión Gemini Live activa."
+        )
+
+        try:
+            # Inject the section-specific system_instruction into the live session.
+            # The 'user' role causes Gemini to treat this as a high-priority
+            # context update applied immediately to subsequent audio generation.
+            # Inyectar el system_instruction específico de la sección en la sesión
+            # live. El rol 'user' hace que Gemini lo trate como una actualización
+            # de contexto de alta prioridad aplicada de inmediato a la generación
+            # de audio subsiguiente.
+            await session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part(text=new_system_instruction)],
+                ),
+                turn_complete=True,
+            )
+
+            # Update the stored system_instruction to reflect the active context.
+            # Actualizar el system_instruction almacenado para reflejar el contexto activo.
+            self.system_instruction = new_system_instruction
+
+            logger.info(
+                f"[ESTRATEGIA-B] Reinyección completada correctamente para "
+                f"sección pk={section_pk} (CallFlow='{call_flow.name}'). "
+                f"Longitud nuevo system_instruction: {len(new_system_instruction)} caracteres."
+            )
+            return True
+
+        except Exception as exc:
+            logger.error(
+                f"[ESTRATEGIA-B] Error durante send_client_content() para sección "
+                f"pk={section_pk}: {type(exc).__name__}: {exc}. "
+                "La sesión continúa con el system_instruction anterior.",
+                exc_info=True,
+            )
+            return False
+
+    async def _activate_fallback_section(
+        self,
+        session,
+        general_call_flow,
+    ) -> bool:
+        """
+        Activates the fallback section routing when no qualifying section can
+        attend the caller (Estrategia B — Step 37.B).
+
+        This method is called when all active sections with a call_flow assigned
+        are unavailable (e.g. all closed by schedule), or when no section intent
+        was detected. It injects the system_instruction of the CallFlow associated
+        with the fallback_section of the general CallFlow into the active Gemini
+        Live session, instructing the agent to route the call to the designated
+        human responsible.
+
+        If the general CallFlow has no fallback_section configured, the method
+        logs a warning and returns False — the session continues with the current
+        general system_instruction.
+
+        Args:
+            session: The active Gemini Live session object.
+            general_call_flow: The general CallFlow instance loaded at session
+                               start (linked to the PhoneNumber via
+                               PhoneNumber.call_flow). Its fallback_section FK
+                               is the source of the fallback routing target.
+
+        Returns:
+            bool: True if the fallback injection was completed successfully.
+                  False if no fallback_section is configured, its CallFlow has
+                  no system_instruction, or any exception occurs.
+        ---
+        Activa el enrutamiento de sección fallback cuando ninguna sección
+        cualificada puede atender al llamante (Estrategia B — Paso 37.B).
+
+        Este método se invoca cuando todas las secciones activas con call_flow
+        asignado están no disponibles (p. ej. todas cerradas por horario), o
+        cuando no se detectó intención de sección. Inyecta el system_instruction
+        del CallFlow asociado a la fallback_section del CallFlow general en la
+        sesión Gemini Live activa, instruyendo al agente a derivar la llamada
+        al responsable humano designado.
+
+        Si el CallFlow general no tiene fallback_section configurada, el método
+        registra una advertencia y devuelve False — la sesión continúa con el
+        system_instruction general actual.
+
+        Args:
+            session: El objeto de sesión Gemini Live activo.
+            general_call_flow: La instancia de CallFlow general cargada al inicio
+                               de la sesión (vinculada al PhoneNumber mediante
+                               PhoneNumber.call_flow). Su FK fallback_section es
+                               la fuente del destino de enrutamiento fallback.
+
+        Returns:
+            bool: True si la inyección fallback se completó correctamente.
+                  False si no hay fallback_section configurada, su CallFlow no
+                  tiene system_instruction, o se produce cualquier excepción.
+        """
+        # Guard: verify that general_call_flow was supplied.
+        # Guardia: verificar que se ha suministrado general_call_flow.
+        if general_call_flow is None:
+            logger.warning(
+                "[ESTRATEGIA-B] _activate_fallback_section() invocado sin "
+                "general_call_flow. No se puede activar fallback."
+            )
+            return False
+
+        # Guard: verify that a fallback_section is assigned to the general CallFlow.
+        # Guardia: verificar que hay fallback_section asignada al CallFlow general.
+        fallback_section = getattr(general_call_flow, "fallback_section", None)
+        if fallback_section is None:
+            logger.warning(
+                f"[ESTRATEGIA-B] El CallFlow general '{general_call_flow.name}' "
+                f"(id={general_call_flow.pk}) no tiene fallback_section configurada. "
+                "La sesión continúa con el system_instruction general actual."
+            )
+            return False
+
+        # Obtain the CallFlow of the fallback section via the section_callflow_map.
+        # If the fallback section is not in the map (no call_flow assigned or
+        # inactive), log a warning and return False.
+        # Obtener el CallFlow de la sección fallback mediante section_callflow_map.
+        # Si la sección fallback no está en el mapa (sin call_flow asignado o
+        # inactiva), registrar advertencia y devolver False.
+        fallback_call_flow = self.section_callflow_map.get(fallback_section.pk)
+        if fallback_call_flow is None:
+            logger.warning(
+                f"[ESTRATEGIA-B] La fallback_section '{fallback_section.name}' "
+                f"(pk={fallback_section.pk}) no está en section_callflow_map. "
+                "Puede que no tenga CallFlow activo asignado. "
+                "La sesión continúa con el system_instruction general actual."
+            )
+            return False
+
+        # Guard: verify that the fallback CallFlow has a non-empty system_instruction.
+        # Guardia: verificar que el CallFlow fallback tiene system_instruction no vacío.
+        fallback_instruction = (fallback_call_flow.system_instruction or "").strip()
+        if not fallback_instruction:
+            logger.warning(
+                f"[ESTRATEGIA-B] El CallFlow fallback '{fallback_call_flow.name}' "
+                f"(id={fallback_call_flow.pk}) tiene system_instruction vacío. "
+                "La sesión continúa con el system_instruction general actual."
+            )
+            return False
+
+        logger.info(
+            f"[ESTRATEGIA-B] Activando fallback hacia sección "
+            f"'{fallback_section.name}' (pk={fallback_section.pk}), "
+            f"CallFlow='{fallback_call_flow.name}' (id={fallback_call_flow.pk})."
+        )
+
+        try:
+            # Inject the fallback system_instruction into the active live session.
+            # Inyectar el system_instruction fallback en la sesión live activa.
+            await session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part(text=fallback_instruction)],
+                ),
+                turn_complete=True,
+            )
+
+            # Update the stored system_instruction to the fallback context.
+            # Actualizar el system_instruction almacenado al contexto fallback.
+            self.system_instruction = fallback_instruction
+
+            logger.info(
+                f"[ESTRATEGIA-B] Fallback activado correctamente hacia "
+                f"'{fallback_section.name}'. "
+                f"Longitud system_instruction fallback: {len(fallback_instruction)} caracteres."
+            )
+            return True
+
+        except Exception as exc:
+            logger.error(
+                f"[ESTRATEGIA-B] Error durante send_client_content() en fallback "
+                f"hacia '{fallback_section.name}': {type(exc).__name__}: {exc}. "
+                "La sesión continúa con el system_instruction general actual.",
+                exc_info=True,
+            )
+            return False
+
+    # -----------------------------------------------------------------------
     # SESSION CONTROL / CONTROL DE SESIÓN
     # -----------------------------------------------------------------------
+
+    def set_call_sid(self, call_sid: str) -> None:
+        """
+        Stores the Twilio Call SID for this Media Stream session.
+
+        Called by voice_sidecar_bridge.py immediately after service instantiation
+        when the Twilio 'start' event is received. Required by _execute_transfer()
+        to update the live call via Twilio REST API when the
+        transfer_to_section_contact tool is invoked by Alia.
+        ---
+        Almacena el Call SID de Twilio para esta sesión de Media Stream.
+
+        Invocado desde voice_sidecar_bridge.py inmediatamente tras instanciar el
+        servicio al recibir el evento 'start' de Twilio. Necesario por
+        _execute_transfer() para actualizar la llamada en curso vía REST API de
+        Twilio cuando Alia invoca la tool transfer_to_section_contact.
+
+        Args:
+            call_sid (str): The Twilio Call SID from the 'start' event.
+                            / El Call SID de Twilio del evento 'start'.
+        """
+        self.call_sid = call_sid
+        logger.info(
+            f"[SESSION] Call SID de Twilio almacenado correctamente: {call_sid}"
+        )
+
+    async def _execute_transfer(self, section_id: int) -> bool:
+        """
+        Executes the real call transfer to the section responsible contact
+        via Twilio Dial Conference (Paso 39).
+
+        Flow:
+            1. Resolves the first internal Contact of the section from DB.
+            2. Updates the caller's live Twilio call via REST API with TwiML
+               <Dial><Conference> pointing to a named conference room with
+               hold music waitUrl.
+            3. Sets session_active=False to terminate the Gemini Live session.
+            4. Places an outbound call to the contact's phone number with TwiML
+               that joins the same conference room.
+
+        Conference room name: 'EnterpriseBot-{call_sid}' (unique per call).
+        Dial action URL: /api/vox/transfer_status/{call_sid}/ — Twilio POSTs
+        here when the Dial ends (contact answered, timeout, or no-answer).
+
+        Args:
+            section_id (int): Section pk whose contact receives the transfer.
+
+        Returns:
+            bool: True if transfer initiated. False on error or missing data.
+        ---
+        Ejecuta la transferencia real de la llamada al contacto responsable de
+        la sección mediante Twilio Dial Conference (Paso 39).
+
+        Flujo:
+            1. Resuelve el primer Contact interno de la sección desde BD.
+            2. Actualiza la llamada en curso del llamante vía REST API con TwiML
+               <Dial><Conference> apuntando a una sala con nombre único y waitUrl
+               de música de espera.
+            3. Establece session_active=False para terminar la sesión Gemini Live.
+            4. Realiza llamada saliente al teléfono del contacto con TwiML que
+               le une a la misma sala de conferencia.
+
+        Nombre de sala: 'EnterpriseBot-{call_sid}' (único por llamada).
+        Action URL del Dial: /api/vox/transfer_status/{call_sid}/ — Twilio hace
+        POST aquí cuando el Dial termina (contacto contestó, timeout o sin respuesta).
+
+        Args:
+            section_id (int): pk de la Section cuyo contacto recibe la transferencia.
+
+        Returns:
+            bool: True si la transferencia se inició. False en error o datos ausentes.
+        """
+        # Guard: call_sid must be set.
+        # Guardia: call_sid debe estar establecido.
+        if not self.call_sid:
+            logger.error(
+                "[PASO-39] _execute_transfer() invocado sin call_sid. "
+                "No se puede ejecutar la transferencia."
+            )
+            return False
+
+        # Guard: section_id must be in map.
+        # Guardia: section_id debe estar en el mapa.
+        if section_id not in self.section_callflow_map:
+            logger.error(
+                f"[PASO-39] section_id={section_id} no encontrado en "
+                "section_callflow_map. No se puede ejecutar la transferencia."
+            )
+            return False
+
+        # Resolve the first internal Contact for this section.
+        # Resolver el primer Contact interno de esta sección.
+        try:
+            from asgiref.sync import sync_to_async
+            from ivr_config.models import Section as _Section
+            section_obj = await sync_to_async(
+                lambda: _Section.objects.prefetch_related("contacts").get(pk=section_id)
+            )()
+            contacts = await sync_to_async(
+                lambda: list(
+                    section_obj.contacts.filter(is_internal=True).order_by("name")
+                )
+            )()
+            if not contacts:
+                logger.error(
+                    f"[PASO-39] Sección pk={section_id} sin contactos internos. "
+                    "No se puede ejecutar la transferencia."
+                )
+                return False
+            contact = contacts[0]
+            contact_phone = contact.phone_number
+            section_name  = section_obj.name
+        except Exception as db_exc:
+            logger.error(
+                f"[PASO-39] Error al resolver contacto de sección pk={section_id}: "
+                f"{type(db_exc).__name__}: {db_exc}",
+                exc_info=True,
+            )
+            return False
+
+        logger.info(
+            f"[PASO-39] Iniciando transferencia — sección: '{section_name}' "
+            f"| contacto: '{contact.name}' ({contact_phone}) "
+            f"| call_sid: {self.call_sid}"
+        )
+
+        # Conference room name — unique per call.
+        # Nombre de la sala de conferencia — único por llamada.
+        conference_name = f"EnterpriseBot-{self.call_sid}"
+
+        # Base URL — read from shared ngrok session file.
+        # URL base — leída del archivo de sesión ngrok compartido.
+        try:
+            ngrok_file = (
+                "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/SESSION/NGROK_URL.txt"
+            )
+            with open(ngrok_file, "r") as _f:
+                base_url = _f.read().strip().rstrip("/")
+        except Exception:
+            base_url = "https://enterprisebot.ngrok-free.app"
+            logger.warning(
+                f"[PASO-39] No se pudo leer NGROK_URL.txt. "
+                f"Usando base_url por defecto: {base_url}"
+            )
+
+        action_url = f"{base_url}/api/vox/transfer_status/{self.call_sid}/"
+        wait_url   = f"{base_url}/api/vox/hold_music/"
+
+        # TwiML for the caller: enter Conference and hear hold music.
+        # TwiML para el llamante: entrar en la Conference y escuchar música de espera.
+        caller_twiml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Response>'
+            f'<Dial action="{action_url}" method="POST" timeout="30">'
+            f'<Conference waitUrl="{wait_url}" waitMethod="GET" '
+            'startConferenceOnEnter="false" endConferenceOnExit="true" '
+            f'beep="false">{conference_name}</Conference>'
+            '</Dial>'
+            '</Response>'
+        )
+
+        # TwiML for the contact: join same Conference when they answer.
+        # TwiML para el contacto: unirse a la misma Conference al contestar.
+        contact_twiml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Response>'
+            '<Say voice="alice" language="es-ES">'
+            'Llamada entrante de EnterpriseBot. '
+            'Le estamos conectando con el llamante.'
+            '</Say>'
+            f'<Dial><Conference startConferenceOnEnter="true" '
+            f'endConferenceOnExit="false" beep="false">'
+            f'{conference_name}</Conference></Dial>'
+            '</Response>'
+        )
+
+        try:
+            # Step 1: Update the caller's live call with Conference TwiML.
+            # Paso 1: Actualizar la llamada en curso del llamante con TwiML de Conference.
+            self.twilio_client.calls(self.call_sid).update(twiml=caller_twiml)
+            logger.info(
+                f"[PASO-39] Llamada {self.call_sid} actualizada con Conference TwiML. "
+                f"Sala: '{conference_name}'."
+            )
+
+            # Step 2: Terminate Gemini Live session — Media Stream ends.
+            # Caller is now in Conference hearing hold music.
+            # Paso 2: Terminar la sesión Gemini Live — el Media Stream termina.
+            # El llamante está ahora en la Conference escuchando música de espera.
+            self.session_active = False
+            logger.info(
+                "[PASO-39] Sesión Gemini Live terminada. "
+                "El llamante está en la Conference escuchando música de espera."
+            )
+
+            # Step 3: Place outbound call to the section contact.
+            # Paso 3: Realizar llamada saliente al contacto de la sección.
+            outbound_call = self.twilio_client.calls.create(
+                to=contact_phone,
+                from_=self.twilio_number,
+                twiml=contact_twiml,
+            )
+            logger.info(
+                f"[PASO-39] Llamada saliente iniciada hacia '{contact.name}' "
+                f"({contact_phone}). OutboundCallSid: {outbound_call.sid}."
+            )
+            return True
+
+        except Exception as twilio_exc:
+            logger.error(
+                f"[PASO-39] Error de Twilio REST API durante la transferencia: "
+                f"{type(twilio_exc).__name__}: {twilio_exc}",
+                exc_info=True,
+            )
+            # Restore session if REST update failed before conference established.
+            # Restaurar sesión si el update REST falló antes de establecer la conference.
+            self.session_active = True
+            return False
 
     def set_stream_sid(self, stream_sid: str) -> None:
         """

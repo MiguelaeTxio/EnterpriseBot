@@ -116,18 +116,27 @@ class SectionForm(forms.ModelForm):
     """
     Form for creating and updating a Section record.
     Includes is_24h field added in session 2026-04-13.
+    Updated 2026-04-16 (Step 37.C — Estrategia B): call_flow field added
+    to allow assigning a section-specific IVR CallFlow from the panel.
+    The call_flow queryset is restricted to the company's active CallFlows
+    by the view layer (SectionCreateView / SectionUpdateView).
     ---
     Formulario para crear y actualizar un registro de Section.
     Incluye el campo is_24h añadido en la sesión 2026-04-13.
+    Actualización 2026-04-16 (Paso 37.C — Estrategia B): campo call_flow
+    añadido para asignar un CallFlow IVR específico de sección desde el panel.
+    El queryset de call_flow se restringe a los CallFlows activos de la empresa
+    desde la capa de vistas (SectionCreateView / SectionUpdateView).
     """
 
     class Meta:
         model = Section
-        fields = ["name", "description", "contacts", "is_24h", "is_active"]
+        fields = ["name", "description", "contacts", "call_flow", "is_24h", "is_active"]
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "contacts": forms.SelectMultiple(attrs={"class": "form-select", "size": "6"}),
+            "call_flow": forms.Select(attrs={"class": "form-select"}),
             "is_24h": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
@@ -135,6 +144,7 @@ class SectionForm(forms.ModelForm):
             "name": "Nombre",
             "description": "Descripción",
             "contacts": "Contactos",
+            "call_flow": "Flujo IVR de sección",
             "is_24h": "Disponible 24 horas",
             "is_active": "Activa",
         }
@@ -189,11 +199,21 @@ class CallFlowForm(forms.ModelForm):
     """
     Form for creating and updating a CallFlow record.
     Includes notification_contact field added in session 2026-04-13.
+    Updated 2026-04-16 (Step 37.C — Estrategia B): fallback_section field
+    added to designate a last-resort section when no qualifying section can
+    attend the caller. The fallback_section queryset is restricted to the
+    company's active Sections by the view layer (CallFlowCreateView /
+    CallFlowUpdateView).
     The notification_contact queryset is restricted to the company's contacts
     by the view layer (CallFlowCreateView / CallFlowUpdateView).
     ---
     Formulario para crear y actualizar un registro de CallFlow.
     Incluye el campo notification_contact añadido en la sesión 2026-04-13.
+    Actualización 2026-04-16 (Paso 37.C — Estrategia B): campo fallback_section
+    añadido para designar una sección de último recurso cuando ninguna sección
+    cualificada pueda atender al llamante. El queryset de fallback_section se
+    restringe a las Sections activas de la empresa desde la capa de vistas
+    (CallFlowCreateView / CallFlowUpdateView).
     El queryset de notification_contact se restringe a los contactos de la empresa
     desde la capa de vistas (CallFlowCreateView / CallFlowUpdateView).
     """
@@ -205,6 +225,7 @@ class CallFlowForm(forms.ModelForm):
             "system_instruction",
             "initial_greeting",
             "notification_contact",
+            "fallback_section",
             "is_active",
         ]
         widgets = {
@@ -212,6 +233,7 @@ class CallFlowForm(forms.ModelForm):
             "system_instruction": forms.Textarea(attrs={"class": "form-control", "rows": 8}),
             "initial_greeting": forms.Textarea(attrs={"class": "form-control", "rows": 4}),
             "notification_contact": forms.Select(attrs={"class": "form-select"}),
+            "fallback_section": forms.Select(attrs={"class": "form-select"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
         labels = {
@@ -219,6 +241,7 @@ class CallFlowForm(forms.ModelForm):
             "system_instruction": "Instrucción de sistema",
             "initial_greeting": "Saludo inicial",
             "notification_contact": "Contacto de notificación (actividad no recogida)",
+            "fallback_section": "Sección de fallback (último recurso)",
             "is_active": "Activo",
         }
 

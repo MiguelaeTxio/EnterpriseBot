@@ -432,6 +432,23 @@ class UniversalVoiceBridge:
                             caller_number=caller_number,
                         )
 
+                        # Store the Twilio Call SID on the service instance.
+                        # The call_sid is required by _execute_transfer() to update
+                        # the live call via Twilio REST API when a section transfer
+                        # is triggered by the transfer_to_section_contact tool call.
+                        # Almacenar el Call SID de Twilio en la instancia del servicio.
+                        # El call_sid es necesario por _execute_transfer() para actualizar
+                        # la llamada en curso vía REST API de Twilio cuando se dispara
+                        # una transferencia de sección por el tool call transfer_to_section_contact.
+                        if call_sid:
+                            service.set_call_sid(call_sid)
+                        else:
+                            logger.warning(
+                                "# [EVENT] callSid ausente en el evento 'start'. "
+                                "La transferencia de llamada no estará disponible "
+                                "para esta sesión."
+                            )
+
                         # Launch run_voice_session as a concurrent asyncio Task.
                         # This task owns the Gemini Live session lifecycle via the SDK
                         # context manager and runs concurrently with the Twilio event
