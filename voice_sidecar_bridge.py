@@ -247,9 +247,18 @@ class UniversalVoiceBridge:
         host = request.host
         wss_url = f"wss://{host}/media"
 
+        # Play the intro audio clip (3-5s) before the Media Stream starts.
+        # Twilio executes <Play> synchronously before opening the WebSocket.
+        # The intro.mp3 file is served from Django static files on PythonAnywhere.
+        # Reproducir el clip de audio de introducción (3-5s) antes de que arranque el Media Stream.
+        # Twilio ejecuta <Play> de forma síncrona antes de abrir el WebSocket.
+        # El archivo intro.mp3 se sirve desde los static files de Django en PythonAnywhere.
+        intro_url = "https://enterprisebot-miguelaetxio.pythonanywhere.com/static/vox_bridge/audio/intro.mp3"
+
         twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             "<Response>"
+            f'    <Play>{intro_url}</Play>'
             "    <Connect>"
             f'        <Stream url="{wss_url}" />'
             "    </Connect>"

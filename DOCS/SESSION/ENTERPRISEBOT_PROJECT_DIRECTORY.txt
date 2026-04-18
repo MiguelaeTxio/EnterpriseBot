@@ -189,6 +189,7 @@
 ./ivr_config/views.py
 ./ivr_config/apps.py
 ./ivr_config/models.py
+./ivr_config/migrations/0008_sectioncontact_transferattempt_pendingnotification.py
 ./ivr_config/migrations/0003_callflow_notification_contact_contact_email_and_more.py
 ./ivr_config/migrations/0007_section_call_flow_callflow_fallback_section.py
 ./ivr_config/migrations/__init__.py

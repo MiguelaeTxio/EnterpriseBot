@@ -393,10 +393,17 @@ class Section(models.Model):
     )
     contacts = models.ManyToManyField(
         "Contact",
+        through="SectionContact",
+        through_fields=("section", "contact"),
         blank=True,
         related_name="sections",
         verbose_name="Contactos",
-        help_text="Personas asociadas a esta sección a las que el IVR puede derivar llamadas.",
+        help_text=(
+            "Personas asociadas a esta sección ordenadas por prioridad de transferencia. "
+            "La relación se gestiona a través del modelo intermedio SectionContact, que "
+            "añade el campo 'priority' para controlar el orden de intento de transferencia "
+            "desde el panel. Menor número de prioridad = mayor preferencia."
+        ),
     )
     data_capture_set = models.ForeignKey(
         DataCaptureSet,
@@ -1028,3 +1035,273 @@ class BlockedCaller(models.Model):
         Retorna True si el bloqueo está actualmente en vigor.
         """
         return self.blocked_until > now()
+
+# ---------------------------------------------------------------------------
+# 12. SECTION CONTACT — Explicit through model for Section ↔ Contact M2M.
+#     Modelo intermedio explícito para la relación M2M Section ↔ Contact.
+# ---------------------------------------------------------------------------
+
+class SectionContact(models.Model):
+    """
+    Explicit through model that replaces the implicit Section.contacts M2M table.
+    Adds a 'priority' field to control the order in which contacts are attempted
+    during a resilient multi-contact call transfer (Paso 39). Lower priority
+    number means higher preference. Contacts without a phone_number are excluded
+    by the transfer engine at runtime regardless of their priority value.
+    The unique_together constraint prevents the same contact from being added
+    to the same section more than once.
+    ---
+    Modelo intermedio explícito que reemplaza la tabla M2M implícita Section.contacts.
+    Añade el campo 'priority' para controlar el orden en que se intenta contactar a
+    las personas durante una transferencia resiliente multi-contacto (Paso 39). Número
+    de prioridad menor = mayor preferencia. Los contactos sin phone_number son excluidos
+    por el motor de transferencia en tiempo de ejecución independientemente de su
+    valor de prioridad. La restricción unique_together evita que el mismo contacto
+    se añada a la misma sección más de una vez.
+    """
+
+    section = models.ForeignKey(
+        Section,
+        on_delete=models.CASCADE,
+        related_name="section_contacts",
+        verbose_name="Sección",
+        help_text="Sección a la que pertenece esta asignación de contacto.",
+    )
+    contact = models.ForeignKey(
+        Contact,
+        on_delete=models.CASCADE,
+        related_name="section_assignments",
+        verbose_name="Contacto",
+        help_text="Contacto asignado a esta sección para transferencias de llamada.",
+    )
+    priority = models.IntegerField(
+        default=0,
+        verbose_name="Prioridad",
+        help_text=(
+            "Orden de intento de transferencia. Menor número = mayor prioridad. "
+            "El motor intentará contactar primero al registro con priority=0, "
+            "luego al siguiente, hasta agotar todos los contactos de la sección."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+
+    class Meta:
+        verbose_name = "Contacto de sección"
+        verbose_name_plural = "Contactos de sección"
+        unique_together = [("section", "contact")]
+        ordering = ["section", "priority", "contact__name"]
+
+    def __str__(self):
+        return (
+            f"{self.section.name} — {self.contact.name} "
+            f"(prioridad: {self.priority})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 13. TRANSFER ATTEMPT — Persistent state bridge between bridge and webhook.
+#     Puente de estado persistente entre el bridge y el webhook de Twilio.
+# ---------------------------------------------------------------------------
+
+class TransferAttempt(models.Model):
+    """
+    Persists the state of an in-progress call transfer across the boundary
+    between the voice bridge process and the Twilio action webhook. Twilio
+    does not carry session context in its action webhook POST body, so the
+    database is the only viable mechanism to pass state between the two
+    asynchronous processes. Each record is keyed by call_sid (unique per
+    Twilio call leg) and tracks which contact index is being attempted and
+    whether the transfer is pending, completed, or failed.
+    ---
+    Persiste el estado de una transferencia de llamada en curso a través del
+    límite entre el proceso bridge de voz y el webhook action de Twilio. Twilio
+    no transporta contexto de sesión en el body del POST del webhook action, por
+    lo que la base de datos es el único mecanismo viable para pasar estado entre
+    los dos procesos asíncronos. Cada registro tiene como clave call_sid (único
+    por tramo de llamada Twilio) y rastrea qué índice de contacto se está
+    intentando y si la transferencia está pendiente, completada o fallida.
+    """
+
+    STATUS_PENDING   = "PENDING"
+    STATUS_FAILED    = "FAILED"
+    STATUS_COMPLETED = "COMPLETED"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING,   "Pendiente"),
+        (STATUS_FAILED,    "Fallida"),
+        (STATUS_COMPLETED, "Completada"),
+    ]
+
+    call_sid = models.CharField(
+        max_length=40,
+        unique=True,
+        db_index=True,
+        verbose_name="Call SID",
+        help_text="Identificador único de la llamada Twilio (CA...). Clave primaria de negocio.",
+    )
+    section = models.ForeignKey(
+        Section,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="transfer_attempts",
+        verbose_name="Sección",
+        help_text="Sección destino de la transferencia.",
+    )
+    twilio_number = models.CharField(
+        max_length=20,
+        verbose_name="Número Twilio",
+        help_text="Número Twilio receptor de la llamada original (formato E.164).",
+    )
+    caller_number = models.CharField(
+        max_length=20,
+        verbose_name="Número llamante",
+        help_text="Número del llamante original (formato E.164).",
+    )
+    contact_index = models.IntegerField(
+        default=0,
+        verbose_name="Índice de contacto",
+        help_text=(
+            "Índice (base 0) del contacto de sección que se está intentando en este momento, "
+            "ordenado por SectionContact.priority ASC. El webhook TransferStatusView "
+            "incrementa este valor en cada intento fallido para avanzar al siguiente contacto."
+        ),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        verbose_name="Estado",
+        help_text="Estado actual de la transferencia.",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Intento de transferencia"
+        verbose_name_plural = "Intentos de transferencia"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"Transferencia {self.call_sid} — "
+            f"{self.get_status_display()} — "
+            f"contacto idx {self.contact_index}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 14. PENDING NOTIFICATION — Unresolved call requiring follow-up contact.
+#     Llamada sin resolver que requiere contacto de seguimiento.
+# ---------------------------------------------------------------------------
+
+class PendingNotification(models.Model):
+    """
+    Records inbound calls where all transfer attempts to section contacts
+    failed and the caller chose to leave their data for a callback. When the
+    WhatsApp channel (Hito 4) becomes operational, a Celery worker will
+    process records with channel='PENDING' and convert them into real
+    WhatsApp or SMS notifications to the section's responsible contact.
+    Until then the record serves as a manual follow-up registry visible
+    from the administration panel.
+    ---
+    Registra las llamadas entrantes en las que todos los intentos de
+    transferencia a contactos de sección fallaron y el llamante eligió
+    dejar sus datos para que le devuelvan la llamada. Cuando el canal
+    WhatsApp (Hito 4) esté operativo, un worker de Celery procesará los
+    registros con channel='PENDING' y los convertirá en notificaciones
+    reales de WhatsApp o SMS al contacto responsable de la sección. Hasta
+    entonces el registro sirve como archivo de seguimiento manual visible
+    desde el panel de administración.
+    """
+
+    CHANNEL_WHATSAPP = "WHATSAPP"
+    CHANNEL_SMS      = "SMS"
+    CHANNEL_EMAIL    = "EMAIL"
+    CHANNEL_PENDING  = "PENDING"
+
+    CHANNEL_CHOICES = [
+        (CHANNEL_WHATSAPP, "WhatsApp"),
+        (CHANNEL_SMS,      "SMS"),
+        (CHANNEL_EMAIL,    "Correo electrónico"),
+        (CHANNEL_PENDING,  "Pendiente"),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="pending_notifications",
+        verbose_name="Empresa",
+        help_text="Empresa a la que pertenece esta notificación pendiente.",
+    )
+    section = models.ForeignKey(
+        Section,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="pending_notifications",
+        verbose_name="Sección",
+        help_text="Sección destino que no pudo gestionar la llamada.",
+    )
+    caller_number = models.CharField(
+        max_length=20,
+        verbose_name="Número llamante",
+        help_text="Número de teléfono del llamante en formato E.164.",
+    )
+    call_sid = models.CharField(
+        max_length=40,
+        verbose_name="Call SID",
+        help_text="Identificador único de la llamada Twilio para trazabilidad.",
+    )
+    voice_recording_url = models.URLField(
+        blank=True,
+        verbose_name="URL de grabación de voz",
+        help_text="URL de Twilio de la grabación de voz del mensaje dejado por el llamante.",
+    )
+    channel = models.CharField(
+        max_length=20,
+        choices=CHANNEL_CHOICES,
+        default=CHANNEL_PENDING,
+        verbose_name="Canal de notificación",
+        help_text=(
+            "Canal por el que se enviará la notificación al responsable. "
+            "PENDING: aún no procesado por Celery. El worker de Hito 4 "
+            "actualizará este campo al enviar la notificación real."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de notificación",
+        help_text="Fecha y hora en que se envió la notificación real al responsable.",
+    )
+    notes = models.TextField(
+        blank=True,
+        verbose_name="Notas",
+        help_text="Observaciones adicionales sobre la llamada o el seguimiento.",
+    )
+
+    class Meta:
+        verbose_name = "Notificación pendiente"
+        verbose_name_plural = "Notificaciones pendientes"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"Notificación {self.caller_number} — "
+            f"{self.created_at:%Y-%m-%d %H:%M} — "
+            f"{self.get_channel_display()}"
+        )

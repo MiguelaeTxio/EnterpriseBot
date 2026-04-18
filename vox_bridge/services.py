@@ -358,30 +358,48 @@ class VoiceOrchestrationService:
         )
 
         # --- Twilio Client Initialisation / Inicialización del Cliente Twilio ---
-        # This project uses Twilio API Key authentication (SID + Secret) rather
-        # than the legacy Auth Token approach. This is the recommended method for
-        # server-side applications as of Twilio CLI 6.2.4.
-        # Este proyecto usa autenticación por API Key de Twilio (SID + Secret) en
-        # lugar del enfoque heredado con Auth Token. Este es el método recomendado
-        # para aplicaciones de servidor a partir de Twilio CLI 6.2.4.
-        twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        twilio_api_key_sid = os.getenv("TWILIO_API_KEY_SID")
-        twilio_api_key_secret = os.getenv("TWILIO_API_KEY_SECRET")
+        # Uses IE1 regional API Key credentials (SID + Secret) with edge="dublin"
+        # and region="ie1" so that all REST API calls target the Ireland data center
+        # where Spanish numbers (+34) are processed. Using US1 credentials or
+        # omitting edge/region causes HTTP 404 when updating or querying calls that
+        # were created in IE1, because call records only exist in their origin region.
+        # Note: specifying only region= without edge= routes to US1 — both parameters
+        # must always be provided together per Twilio SDK documentation.
+        # Deadline: api.ie1.twilio.com stops working on 2026-04-28 — the SDK approach
+        # with edge+region is the correct migration path.
+        # ---
+        # Usa credenciales de API Key regional IE1 (SID + Secret) con edge="dublin"
+        # y region="ie1" para que todas las llamadas REST API apunten al centro de datos
+        # de Irlanda donde se procesan los números españoles (+34). Usar credenciales
+        # US1 u omitir edge/region provoca HTTP 404 al actualizar o consultar llamadas
+        # creadas en IE1, ya que los registros de llamada solo existen en su región de origen.
+        # Nota: especificar solo region= sin edge= enruta a US1 — ambos parámetros deben
+        # proporcionarse siempre juntos según la documentación del SDK de Twilio.
+        # Fecha límite: api.ie1.twilio.com deja de funcionar el 2026-04-28 — el enfoque
+        # SDK con edge+region es la ruta de migración correcta.
+        twilio_account_sid    = os.getenv("TWILIO_ACCOUNT_SID")
+        twilio_api_key_sid    = os.getenv("TWILIO_API_KEY_SID_IE1")
+        twilio_api_key_secret = os.getenv("TWILIO_API_KEY_SECRET_IE1")
 
         if not all([twilio_account_sid, twilio_api_key_sid, twilio_api_key_secret]):
             logger.error(
-                "[INIT] Credenciales de Twilio incompletas. Se requieren: "
-                "TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET."
+                "[INIT] Credenciales de Twilio IE1 incompletas. Se requieren: "
+                "TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID_IE1, TWILIO_API_KEY_SECRET_IE1."
             )
             raise EnvironmentError(
-                "Twilio credentials are incomplete. Cannot initialise VoiceOrchestrationService."
+                "Twilio IE1 credentials are incomplete. Cannot initialise VoiceOrchestrationService."
             )
         self.twilio_client = TwilioClient(
             twilio_api_key_sid,
             twilio_api_key_secret,
-            twilio_account_sid
+            twilio_account_sid,
+            edge="dublin",
+            region="ie1",
         )
-        logger.info("[INIT] Cliente Twilio REST inicializado correctamente.")
+        logger.info(
+            "[INIT] Cliente Twilio REST inicializado correctamente. "
+            "Región: IE1 | Edge: dublin."
+        )
 
         # --- Session State / Estado de Sesión ---
         # Queue for inbound audio chunks arriving from Twilio via the WebSocket view.
@@ -404,6 +422,7 @@ class VoiceOrchestrationService:
         # Flag to signal all coroutines to terminate gracefully.
         # Flag para señalizar a todas las corrutinas que terminen de forma elegante.
         self.session_active: bool = False
+        self._pending_transfer_section_id: int | None = None
 
         # Stream SID assigned by Twilio for this Media Stream session.
         # This value is populated via set_stream_sid() when the Twilio 'start'
@@ -1300,18 +1319,27 @@ class VoiceOrchestrationService:
                                 logger.info(
                                     f"[PASO-39] tool_call transfer_to_section_contact "
                                     f"recibido. section_id={section_id}. "
-                                    "Ejecutando _execute_transfer()..."
+                                    "Iniciando secuencia de transferencia con drenado de audio."
                                 )
-                                transfer_success = await self._execute_transfer(
-                                    section_id
-                                )
-                                # Respond to Gemini with the transfer result.
-                                # If transfer succeeded, session_active is False
-                                # and the session will end gracefully.
-                                # If failed, Alia continues and informs the caller.
-                                # Responder a Gemini con el resultado de la transferencia.
-                                # Si tuvo éxito, session_active es False y la sesión
-                                # terminará. Si falló, Alia continúa e informa al llamante.
+                                # Send the tool_response to Gemini FIRST so the session
+                                # protocol is satisfied before we block on the audio drain.
+                                # With function calling, Gemini Live does NOT send
+                                # turn_complete after a tool_call event — the tool_call
+                                # IS the end of the model turn. Therefore the deferred
+                                # turn_complete approach does not work here. Instead we
+                                # send the tool_response immediately and then drain the
+                                # audio_output_queue + apply a fixed safety pause before
+                                # calling _execute_transfer() which sets session_active=False.
+                                # Enviar el tool_response a Gemini PRIMERO para que el
+                                # protocolo de sesión quede satisfecho antes de bloquear
+                                # en el drenado de audio. Con function calling, Gemini Live
+                                # NO envía turn_complete tras un evento tool_call — el
+                                # tool_call ES el fin del turno del modelo. Por tanto el
+                                # enfoque de deferido hasta turn_complete no funciona aquí.
+                                # En su lugar enviamos el tool_response inmediatamente y
+                                # luego drenamos audio_output_queue + aplicamos una pausa
+                                # fija antes de llamar a _execute_transfer() que establece
+                                # session_active=False.
                                 try:
                                     await session.send_client_content(
                                         turns=types.Content(
@@ -1321,7 +1349,7 @@ class VoiceOrchestrationService:
                                                     function_response=types.FunctionResponse(
                                                         name="transfer_to_section_contact",
                                                         response={
-                                                            "success": transfer_success,
+                                                            "success": True,
                                                             "section_id": section_id,
                                                         },
                                                     )
@@ -1332,15 +1360,41 @@ class VoiceOrchestrationService:
                                     )
                                     logger.info(
                                         f"[PASO-39] tool_response transfer_to_section_contact "
-                                        f"enviado (success={transfer_success})."
+                                        f"enviado antes del drenado de audio."
                                     )
-                                except Exception as tr_exc:
+                                except Exception as tr_pre_exc:
                                     logger.error(
-                                        f"[PASO-39] Error al enviar tool_response de "
-                                        f"transfer_to_section_contact: "
-                                        f"{type(tr_exc).__name__}: {tr_exc}",
+                                        f"[PASO-39] Error al enviar tool_response previo: "
+                                        f"{type(tr_pre_exc).__name__}: {tr_pre_exc}",
                                         exc_info=True,
                                     )
+                                # Drain the audio output queue so Alia finishes speaking
+                                # before the Gemini Live session is terminated.
+                                # Drenar la cola de salida para que Alia termine de hablar
+                                # antes de que la sesión Gemini Live se termine.
+                                _drain_timeout  = 8.0
+                                _drain_elapsed  = 0.0
+                                _drain_interval = 0.05
+                                while (
+                                    not self.audio_output_queue.empty()
+                                    and _drain_elapsed < _drain_timeout
+                                ):
+                                    await asyncio.sleep(_drain_interval)
+                                    _drain_elapsed += _drain_interval
+                                # Fixed safety pause to allow last dequeued fragments
+                                # to finish transmitting to Twilio.
+                                # Pausa fija para que los últimos fragmentos desencollados
+                                # terminen de transmitirse a Twilio.
+                                await asyncio.sleep(3.5)
+                                logger.info(
+                                    f"[PASO-39] Audio drenado ({_drain_elapsed:.2f}s) + "
+                                    "pausa completada. Ejecutando _execute_transfer()."
+                                )
+                                transfer_success = await self._execute_transfer(section_id)
+                                logger.info(
+                                    f"[PASO-39] _execute_transfer() completado "
+                                    f"(success={transfer_success})."
+                                )
                             else:
                                 logger.warning(
                                     f"[GEMINI-RX] tool_call desconocido recibido: "
@@ -1403,6 +1457,20 @@ class VoiceOrchestrationService:
                             logger.warning(
                                 f"[GEMINI-RX] Error al enviar audioStreamEnd: {ase_exc}"
                             )
+
+                        # Execute a deferred transfer if one was registered by the
+                        # transfer_to_section_contact tool_call handler above.
+                        # At this point all audio fragments of the current turn have
+                        # been enqueued in audio_output_queue, so Alia has finished
+                        # speaking her farewell phrase. We add a short fixed pause to
+                        # allow _forward_gemini_audio_to_twilio to dequeue and transmit
+                        # the last fragments before session_active is set to False.
+                        # Ejecutar la transferencia diferida si fue registrada por el
+                        # handler de tool_call transfer_to_section_contact arriba.
+                        # En este punto todos los fragmentos de audio del turno actual
+                        # han sido encolados en audio_output_queue, por lo que Alia ha
+                        # terminado de pronunciar su frase de despedida. Añadimos una
+
 
         except Exception as exc:
             logger.error(
@@ -1691,7 +1759,7 @@ class VoiceOrchestrationService:
                     role="user",
                     parts=[types.Part(text=new_system_instruction)],
                 ),
-                turn_complete=True,
+                turn_complete=False,
             )
 
             # Update the stored system_instruction to reflect the active context.
@@ -1887,21 +1955,22 @@ class VoiceOrchestrationService:
 
     async def _execute_transfer(self, section_id: int) -> bool:
         """
-        Executes the real call transfer to the section responsible contact
-        via Twilio Dial Conference (Paso 39).
+        Initiates a resilient multi-contact call transfer to the highest-priority
+        Contact assigned to the given section via SectionContact.priority (Paso 39).
 
-        Flow:
-            1. Resolves the first internal Contact of the section from DB.
-            2. Updates the caller's live Twilio call via REST API with TwiML
-               <Dial><Conference> pointing to a named conference room with
-               hold music waitUrl.
-            3. Sets session_active=False to terminate the Gemini Live session.
-            4. Places an outbound call to the contact's phone number with TwiML
-               that joins the same conference room.
+        The caller is placed into a named Twilio Conference room and hears hold
+        music (HoldMusicView) while the bridge places an outbound call to the
+        first contact ordered by SectionContact.priority ASC. A TransferAttempt
+        record is persisted in the database before any Twilio API call so that
+        TransferStatusView can correlate the action webhook with the correct
+        session state and contact index.
 
-        Conference room name: 'EnterpriseBot-{call_sid}' (unique per call).
-        Dial action URL: /api/vox/transfer_status/{call_sid}/ — Twilio POSTs
-        here when the Dial ends (contact answered, timeout, or no-answer).
+        Contact selection criteria:
+            - Ordered by SectionContact.priority ASC (lower = higher preference).
+            - contact_index=0 is always the first attempt.
+            - Contacts without a phone_number are excluded at query time.
+            - is_internal is NOT a filter criterion — external contacts are valid
+              transfer targets (e.g. an external admin managing supplier relations).
 
         Args:
             section_id (int): Section pk whose contact receives the transfer.
@@ -1909,21 +1978,23 @@ class VoiceOrchestrationService:
         Returns:
             bool: True if transfer initiated. False on error or missing data.
         ---
-        Ejecuta la transferencia real de la llamada al contacto responsable de
-        la sección mediante Twilio Dial Conference (Paso 39).
+        Inicia una transferencia de llamada resiliente multi-contacto al Contact de mayor
+        prioridad asignado a la sección dada vía SectionContact.priority (Paso 39).
 
-        Flujo:
-            1. Resuelve el primer Contact interno de la sección desde BD.
-            2. Actualiza la llamada en curso del llamante vía REST API con TwiML
-               <Dial><Conference> apuntando a una sala con nombre único y waitUrl
-               de música de espera.
-            3. Establece session_active=False para terminar la sesión Gemini Live.
-            4. Realiza llamada saliente al teléfono del contacto con TwiML que
-               le une a la misma sala de conferencia.
+        El llamante se coloca en una sala Twilio Conference con nombre y escucha música
+        de espera (HoldMusicView) mientras el bridge realiza una llamada saliente al
+        primer contacto ordenado por SectionContact.priority ASC. Se persiste un registro
+        TransferAttempt en la base de datos antes de cualquier llamada a la API de Twilio
+        para que TransferStatusView pueda correlacionar el webhook action con el estado
+        de sesión correcto y el índice de contacto.
 
-        Nombre de sala: 'EnterpriseBot-{call_sid}' (único por llamada).
-        Action URL del Dial: /api/vox/transfer_status/{call_sid}/ — Twilio hace
-        POST aquí cuando el Dial termina (contacto contestó, timeout o sin respuesta).
+        Criterios de selección de contacto:
+            - Ordenados por SectionContact.priority ASC (menor = mayor preferencia).
+            - contact_index=0 es siempre el primer intento.
+            - Los contactos sin phone_number se excluyen en tiempo de consulta.
+            - is_internal NO es criterio de filtro — los contactos externos son destinos
+              de transferencia válidos (p. ej. un administrador externo que gestiona
+              relaciones con proveedores).
 
         Args:
             section_id (int): pk de la Section cuyo contacto recibe la transferencia.
@@ -1949,31 +2020,52 @@ class VoiceOrchestrationService:
             )
             return False
 
-        # Resolve the first internal Contact for this section.
-        # Resolver el primer Contact interno de esta sección.
+        # Resolve the prioritised contact list for this section via SectionContact.
+        # Contacts without phone_number are excluded — they cannot receive calls.
+        # is_internal is NOT a filter criterion per Paso 39 design decision.
+        # Resolver la lista de contactos priorizada para esta sección vía SectionContact.
+        # Los contactos sin phone_number se excluyen — no pueden recibir llamadas.
+        # is_internal NO es criterio de filtro según la decisión de diseño del Paso 39.
         try:
             from asgiref.sync import sync_to_async
-            from ivr_config.models import Section as _Section
+            from ivr_config.models import (
+                Section         as _Section,
+                SectionContact  as _SectionContact,
+                TransferAttempt as _TransferAttempt,
+            )
+
             section_obj = await sync_to_async(
-                lambda: _Section.objects.prefetch_related("contacts").get(pk=section_id)
+                lambda: _Section.objects.get(pk=section_id)
             )()
-            contacts = await sync_to_async(
+
+            # Fetch contacts ordered by priority ASC, excluding those without phone.
+            # Obtener contactos ordenados por priority ASC, excluyendo los sin teléfono.
+            section_contacts = await sync_to_async(
                 lambda: list(
-                    section_obj.contacts.filter(is_internal=True).order_by("name")
+                    _SectionContact.objects.select_related("contact")
+                    .filter(section_id=section_id)
+                    .exclude(contact__phone_number="")
+                    .order_by("priority", "contact__name")
                 )
             )()
-            if not contacts:
+
+            if not section_contacts:
                 logger.error(
-                    f"[PASO-39] Sección pk={section_id} sin contactos internos. "
+                    f"[PASO-39] Sección pk={section_id} sin contactos con teléfono. "
                     "No se puede ejecutar la transferencia."
                 )
                 return False
-            contact = contacts[0]
+
+            # Select the first contact (index 0 — highest priority).
+            # Seleccionar el primer contacto (índice 0 — mayor prioridad).
+            first_sc      = section_contacts[0]
+            contact       = first_sc.contact
             contact_phone = contact.phone_number
             section_name  = section_obj.name
+
         except Exception as db_exc:
             logger.error(
-                f"[PASO-39] Error al resolver contacto de sección pk={section_id}: "
+                f"[PASO-39] Error al resolver contactos de sección pk={section_id}: "
                 f"{type(db_exc).__name__}: {db_exc}",
                 exc_info=True,
             )
@@ -1982,11 +2074,11 @@ class VoiceOrchestrationService:
         logger.info(
             f"[PASO-39] Iniciando transferencia — sección: '{section_name}' "
             f"| contacto: '{contact.name}' ({contact_phone}) "
-            f"| call_sid: {self.call_sid}"
+            f"| call_sid: {self.call_sid} | contact_index: 0"
         )
 
-        # Conference room name — unique per call.
-        # Nombre de la sala de conferencia — único por llamada.
+        # Conference room name — unique per call SID.
+        # Nombre de la sala de conferencia — único por call SID.
         conference_name = f"EnterpriseBot-{self.call_sid}"
 
         # Base URL — read from shared ngrok session file.
@@ -2000,12 +2092,11 @@ class VoiceOrchestrationService:
         except Exception:
             base_url = "https://enterprisebot.ngrok-free.app"
             logger.warning(
-                f"[PASO-39] No se pudo leer NGROK_URL.txt. "
+                "[PASO-39] No se pudo leer NGROK_URL.txt. "
                 f"Usando base_url por defecto: {base_url}"
             )
 
-        action_url = f"{base_url}/api/vox/transfer_status/{self.call_sid}/"
-        wait_url   = f"{base_url}/api/vox/hold_music/"
+        action_url = f"https://enterprisebot-miguelaetxio.pythonanywhere.com/api/vox/transfer_status/{self.call_sid}/"
 
         # TwiML for the caller: enter Conference and hear hold music.
         # TwiML para el llamante: entrar en la Conference y escuchar música de espera.
@@ -2013,7 +2104,7 @@ class VoiceOrchestrationService:
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<Response>'
             f'<Dial action="{action_url}" method="POST" timeout="30">'
-            f'<Conference waitUrl="{wait_url}" waitMethod="GET" '
+            '<Conference '
             'startConferenceOnEnter="false" endConferenceOnExit="true" '
             f'beep="false">{conference_name}</Conference>'
             '</Dial>'
@@ -2026,7 +2117,7 @@ class VoiceOrchestrationService:
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<Response>'
             '<Say voice="alice" language="es-ES">'
-            'Llamada entrante de EnterpriseBot. '
+            'Llamada entrante de centralita. '
             'Le estamos conectando con el llamante.'
             '</Say>'
             f'<Dial><Conference startConferenceOnEnter="true" '
@@ -2036,17 +2127,40 @@ class VoiceOrchestrationService:
         )
 
         try:
-            # Step 1: Update the caller's live call with Conference TwiML.
-            # Paso 1: Actualizar la llamada en curso del llamante con TwiML de Conference.
+            # Step 1: Persist TransferAttempt in DB BEFORE any Twilio API call.
+            # This record is the state bridge between this process and the
+            # TransferStatusView webhook — Twilio provides no session context
+            # in the action webhook POST, so the DB is the only viable mechanism.
+            # Paso 1: Persistir TransferAttempt en BD ANTES de cualquier llamada a la API de Twilio.
+            # Este registro es el puente de estado entre este proceso y el webhook
+            # TransferStatusView — Twilio no proporciona contexto de sesión en el
+            # POST del webhook action, por lo que la BD es el único mecanismo viable.
+            await sync_to_async(
+                lambda: _TransferAttempt.objects.create(
+                    call_sid=self.call_sid,
+                    section=section_obj,
+                    twilio_number=self.twilio_number,
+                    caller_number=self.caller_number,
+                    contact_index=0,
+                    status=_TransferAttempt.STATUS_PENDING,
+                )
+            )()
+            logger.info(
+                f"[PASO-39] TransferAttempt creado en BD — "
+                f"call_sid={self.call_sid} | contact_index=0."
+            )
+
+            # Step 2: Update the caller's live call with Conference TwiML.
+            # Paso 2: Actualizar la llamada en curso del llamante con TwiML de Conference.
             self.twilio_client.calls(self.call_sid).update(twiml=caller_twiml)
             logger.info(
                 f"[PASO-39] Llamada {self.call_sid} actualizada con Conference TwiML. "
                 f"Sala: '{conference_name}'."
             )
 
-            # Step 2: Terminate Gemini Live session — Media Stream ends.
+            # Step 3: Terminate Gemini Live session — Media Stream ends.
             # Caller is now in Conference hearing hold music.
-            # Paso 2: Terminar la sesión Gemini Live — el Media Stream termina.
+            # Paso 3: Terminar la sesión Gemini Live — el Media Stream termina.
             # El llamante está ahora en la Conference escuchando música de espera.
             self.session_active = False
             logger.info(
@@ -2054,8 +2168,8 @@ class VoiceOrchestrationService:
                 "El llamante está en la Conference escuchando música de espera."
             )
 
-            # Step 3: Place outbound call to the section contact.
-            # Paso 3: Realizar llamada saliente al contacto de la sección.
+            # Step 4: Place outbound call to the first section contact.
+            # Paso 4: Realizar llamada saliente al primer contacto de la sección.
             outbound_call = self.twilio_client.calls.create(
                 to=contact_phone,
                 from_=self.twilio_number,
@@ -2069,12 +2183,14 @@ class VoiceOrchestrationService:
 
         except Exception as twilio_exc:
             logger.error(
-                f"[PASO-39] Error de Twilio REST API durante la transferencia: "
+                f"[PASO-39] Error durante la transferencia: "
                 f"{type(twilio_exc).__name__}: {twilio_exc}",
                 exc_info=True,
             )
-            # Restore session if REST update failed before conference established.
-            # Restaurar sesión si el update REST falló antes de establecer la conference.
+            # Restore Gemini session if the transfer failed before the conference
+            # was established so the caller is not left in silence.
+            # Restaurar la sesión Gemini si la transferencia falló antes de establecer
+            # la conference para que el llamante no quede en silencio.
             self.session_active = True
             return False
 

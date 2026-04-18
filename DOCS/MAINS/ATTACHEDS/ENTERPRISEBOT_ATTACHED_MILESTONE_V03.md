@@ -4,7 +4,7 @@
 **Estado:** EN PROGRESO
 **Fecha de inicio:** 2026-04-07
 **Fecha de reanudación:** 2026-04-17 (tercera reactivación)
-**Última actualización:** 2026-04-17 (PCS)
+**Última actualización:** 2026-04-18 (PCS)
 
 ---
 
@@ -504,7 +504,7 @@ Número bloqueado, modo demo y fuera de horario validados en sesión posterior.
 
 ---
 
-### Paso 39 — Sistema de Transferencia Resiliente Multi-Contacto ⏳ PENDIENTE
+### Paso 39 — Sistema de Transferencia Resiliente Multi-Contacto ✅ COMPLETADO (2026-04-18)
 
 **REDISEÑO ACORDADO EN SESIÓN 2026-04-17** respecto al diseño inicial.
 Ver especificación técnica completa en `V03DOC_TRANSFER_ARCHITECTURE.md`.
@@ -603,7 +603,7 @@ Criterio de éxito: llamada real en la que el primer contacto no responde,
 Alia ofrece el segundo contacto al llamante, el llamante elige, y la segunda
 transferencia conecta correctamente con el segundo contacto.
 
-### Paso 40 — Audio de bienvenida `intro.mp3` y espera `hold.mp3` ⏳ PENDIENTE
+### Paso 40 — Audio de bienvenida `intro.mp3` y espera `hold.mp3` ✅ COMPLETADO (2026-04-18)
 Miguel Ángel aportará el archivo MP3 de música clásica (estilo Beethoven / Ravel /
 Tchaikovsky). El mismo archivo puede usarse para `hold.mp3` (espera durante la
 transferencia) y para `intro.mp3` (3-5s antes del saludo de Alia, recortado del mismo).
@@ -624,14 +624,35 @@ Criterio de éxito: el llamante escucha la música clásica tanto al inicio de l
 llamada (intro) como durante la espera de transferencia (hold).
 
 ### Paso 41 — Validación E2E Sistema de Transferencia Completo ⏳ PENDIENTE
+
+Validación E2E parcial completada en sesión 2026-04-18. Pendiente de validación
+completa del flujo multi-contacto (segundo contacto y PendingNotification).
+
 Realizar llamada real con el sistema de transferencia resiliente activo:
 1. Alia identifica la sección → carga CallFlow de sección.
 2. Alia recoge datos → invoca `transfer_to_section_contact`.
-3. Llamante escucha música de espera (`hold.mp3`).
+3. Llamante escucha música de espera (por defecto Twilio).
 4. Primer contacto no responde → Alia reconecta → ofrece segundo contacto.
 5. Segundo contacto acepta → conversación directa → llamada completada.
 6. Alternativamente: todos los contactos fallan → `PendingNotification` en BD.
 Criterio de éxito: flujo completo E2E sin intervención manual.
+
+#### Deudas técnicas identificadas en sesión 2026-04-18
+
+**DT-1 — TransferAttempt.status no se actualiza a COMPLETED:**
+`TransferStatusView` actualiza el status a COMPLETED cuando `DialCallStatus=completed`
+pero los registros permanecen en PENDING. Investigar si el webhook `transfer_status`
+recibe correctamente el POST de Twilio tras la transferencia exitosa.
+
+**DT-2 — Fallback "no le he entendido" en CallFlow general:**
+Añadir en el `system_instruction` del CallFlow general de Grupo Álvarez la regla:
+"Si no entiendes al llamante, responde: 'Disculpe, no le he entendido. ¿Podría repetirlo?'"
+Esto se hace desde el panel en `/panel/callflows/` — no requiere cambio de código.
+
+**DT-3 — Pausa de transferencia (3.5s) puede ser insuficiente en algunos casos:**
+La pausa fija post-drenado de `audio_output_queue` antes de `_execute_transfer()`
+es de 3.5s. En condiciones de red lenta puede seguir cortándose la última frase
+de Alia. Pendiente de calibración con más pruebas reales.
 
 ---
 
@@ -729,6 +750,22 @@ Limpieza global de 100 errores H021 (inline styles) en todos los templates del p
 Añadido JavaScript dinámico para añadir franjas horarias sin recargar la página.
 Validación E2E completa en producción: badges, formset de horarios, bloqueados,
 contactos con email/gender, flujos IVR con notification_contact y dashboard. ✅
+
+### Sesión 2026-04-18
+**Título:** Paso 39: Sistema de Transferencia Resiliente — Modelos, Endpoints, Audio y Validación E2E
+**Descripción:** Sesión de implementación completa del Paso 39 del Hito 3 y avance en el Hito 4.
+Paso 39: creación de los modelos SectionContact (through M2M con priority), TransferAttempt y
+PendingNotification con migración 0008 usando SeparateDatabaseAndState para preservar relaciones
+M2M existentes. Refactorización de _execute_transfer() eliminando filtro is_internal, usando
+SectionContact.priority y creando TransferAttempt en BD antes de llamar a Twilio. Refactorización
+de TransferStatusView con flujo resiliente multi-contacto. Fix crítico del cliente Twilio:
+migración a credenciales IE1 con edge="dublin" y region="ie1" para resolver HTTP 404 en
+calls.update() en región IE1. Paso 40: despliegue de hold.mp3 (Sonata nº 14 Beethoven) e
+intro.mp3 (recorte 4s con ffmpeg). Validación E2E con múltiples iteraciones: fix turn_complete=False
+en _reload_session_for_section() para eliminar doble respuesta, implementación de drenado de
+audio_output_queue + pausa 3.5s antes de ejecutar transferencia para evitar corte de voz,
+texto "centralita" en TwiML saliente, eliminación de waitUrl (música por defecto de Twilio).
+Hito 4: registro exitoso del sender WhatsApp +34607961650 (Grupo Álvarez) en Twilio — estado Online.
 
 ### Sesión 2026-04-17 — Segunda parte
 **Título:** Sistema de Transferencia Resiliente: Diseño Multi-Contacto con Prioridad

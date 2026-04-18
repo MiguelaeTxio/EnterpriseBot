@@ -138,7 +138,7 @@ class SectionAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "company")
     search_fields = ("name", "company__name", "description")
     readonly_fields = ("created_at", "updated_at")
-    filter_horizontal = ("contacts",)
+    filter_horizontal = ()
     ordering = ("company__name", "name")
 
 
