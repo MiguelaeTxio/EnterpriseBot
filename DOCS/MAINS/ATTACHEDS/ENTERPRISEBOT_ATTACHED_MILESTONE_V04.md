@@ -424,7 +424,7 @@ Envío puro por content_sid consolidado. Templates sembrados con ContentSid real
 - Webhook entrante configurado en Twilio Console sender +34607961650.
 - Validación E2E superada: sesión BD creada, chatbot responde correctamente.
 
-### Paso 24 — Panel: gestión de templates WhatsApp ⏳ PENDIENTE (próxima sesión)
+### Paso 24 — Panel: gestión de templates WhatsApp ✅ COMPLETADO (sesión 2026-04-20)
 Añadir al panel personalizado (/panel/) vistas responsive para que el ADMIN
 gestione sus WhatsAppTemplate (listado + detalle solo lectura).
 La interfaz del panel debe ser completamente responsive (Bootstrap 5.3
@@ -436,48 +436,13 @@ y nota en Sección 9.
 ## SECCIÓN 8B — HOJA DE RUTA PARA LA SIGUIENTE SESIÓN
 
 ### Objetivo de la sesión
-Implementar el **Paso 24**: panel de gestión de templates WhatsApp integrado
-en el panel personalizado existente (/panel/) de EnterpriseBot.
+El **Hito 4 ha quedado COMPLETADO** en la sesión 2026-04-20 con el Paso 24.
+La siguiente sesión de trabajo sobre EnterpriseBot iniciará el **Hito 5:
+Arquitectura Omnicanal IVR ↔ WhatsApp**, aprobado en sesión 2026-04-20.
 
-### Contexto técnico obligatorio
-- El panel existente usa Bootstrap 5.3, herencia de `panel/templates/panel/base.html`
-  y vistas basadas en clases Django (CBV). Todas las vistas nuevas deben seguir
-  exactamente el mismo patrón estructural que las vistas existentes en `panel/views.py`.
-- La sidebar de navegación está en `panel/templates/panel/base.html`. Debe añadirse
-  una nueva entrada "WhatsApp" con icono apropiado, enlazando a la vista de listado
-  de templates.
-- Responsive obligatorio: col-12/col-md-*/col-lg-*, tablas con table-responsive,
-  inputs táctiles, navegación colapsable en móvil.
-
-### Archivos a solicitar al inicio de la sesión
-Solicitar en file01.txt (concatenados):
-- panel/templates/panel/base.html (estructura de sidebar y navegación)
-- panel/views.py (patrón de CBV existente)
-- panel/urls.py (patrón de rutas existente)
-- panel/mixins.py (mixins de autenticación/autorización)
-- whatsapp/models.py (modelo WhatsAppTemplate para referencia)
-
-### Implementación requerida — archivos nuevos (PEA)
-1. panel/templates/panel/whatsapp/template_list.html
-   - Tabla responsive con columnas: Nombre, ContentSid, Categoría, Idioma, Estado.
-   - Fila por cada WhatsAppTemplate activo de la empresa del usuario.
-   - Sin acciones de edición ni borrado — solo lectura.
-   - Breadcrumb: Panel > WhatsApp > Plantillas.
-
-### Implementación requerida — archivos sensibles (PMA)
-1. panel/views.py — añadir WhatsAppTemplateListView (LoginRequiredMixin,
-   CompanyFilterMixin o equivalente). QuerySet: WhatsAppTemplate.objects.filter(
-   company=request.user.companyuser.company, is_active=True).order_by('name').
-2. panel/urls.py — añadir path('whatsapp/templates/', WhatsAppTemplateListView,
-   name='whatsapp_template_list').
-3. panel/templates/panel/base.html — añadir entrada sidebar WhatsApp con enlace
-   a whatsapp_template_list. Icono sugerido: Bootstrap Icons bi-whatsapp o similar.
-
-### Criterio de éxito
-- Vista accesible desde /panel/whatsapp/templates/ sin errores.
-- Sidebar muestra la entrada WhatsApp activa con highlight correcto en la página.
-- Tabla renderiza los dos WhatsAppTemplate de Grupo Álvarez con sus ContentSid reales.
-- Layout completamente responsive en móvil, tablet y escritorio.
+Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md` para la hoja de ruta
+completa del Hito 5. El presente hito queda COMPLETADO y su anexo es solo
+referencia histórica.
 
 ---
 
@@ -529,6 +494,24 @@ pantalla táctil, navegación colapsable en móvil.
 ---
 
 ## SECCIÓN 10 — PAH — REGISTRO DE SESIONES
+
+### Sesión 2026-04-20 (segunda entrada)
+**Título:** Hito 4 — Paso 24: Panel de Gestión de Templates WhatsApp
+**Descripción:** Sesión dedicada a la implementación del Paso 24 del Hito 4:
+incorporación de la gestión de templates WhatsApp al panel personalizado de
+EnterpriseBot (/panel/). Se solicitan los archivos de referencia del panel
+existente (base.html, views.py, urls.py, mixins.py) y whatsapp/models.py.
+Se implementan: WhatsAppTemplateListView (AdminRoleRequiredMixin + ListView,
+queryset filtrado por empresa e is_active=True), ruta /panel/whatsapp/templates/
+(name=whatsapp_template_list), plantilla template_list.html con tabla responsive
+Bootstrap 5.3 (columnas: Nombre, SID de contenido, Categoría, Idioma, Estado),
+entrada WhatsApp en sidebar fijo y offcanvas con icono bi-whatsapp y sección
+label WHATSAPP. Validación E2E superada en escritorio, móvil y offcanvas:
+URL accesible, sidebar con highlight activo, tabla renderizando presence_reminder
+y welcome_message con ContentSid reales de Grupo Álvarez. Hito 4 COMPLETADO.
+Se aprueba la creación del Hito 5 (Arquitectura Omnicanal IVR ↔ WhatsApp)
+como hito híbrido de los Hitos 3 y 4, cubriendo Líneas A (panel), B (persistencia
+CallDataCapture) y C (notificación WhatsApp al agente antes del transfer IVR).
 
 ### Sesión 2026-04-20
 **Título:** Hito 4 — Grounding Google Maps, Detección de Sección Destino y Producción WhatsApp

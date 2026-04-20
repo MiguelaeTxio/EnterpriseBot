@@ -1,0 +1,182 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/whatsapp/template_list.html #}
+{# WhatsApp template list view for the panel application.                                       #}
+{# Extends base.html and renders a responsive read-only table of WhatsAppTemplate records       #}
+{# scoped to the authenticated user's company (ADMIN role required).                            #}
+{# ---                                                                                          #}
+{# Vista de listado de plantillas WhatsApp para la aplicación panel.                            #}
+{# Extiende base.html y renderiza una tabla responsive de solo lectura con los registros        #}
+{# WhatsAppTemplate acotados a la empresa del usuario autenticado (rol ADMIN requerido).        #}
+{% extends "panel/base.html" %}
+
+{% block title %}Plantillas WhatsApp{% endblock %}
+
+{# ------------------------------------------------------------------ #}
+{# Navigation highlight blocks — Bloques de highlight de navegación.  #}
+{# Both fixed sidebar and offcanvas sidebar must be activated.         #}
+{# Tanto el sidebar fijo como el offcanvas deben activarse.            #}
+{# ------------------------------------------------------------------ #}
+{% block nav_whatsapp_templates %}active{% endblock %}
+{% block nav_whatsapp_templates_off %}active{% endblock %}
+
+{% block page_title %}WhatsApp — Plantillas{% endblock %}
+
+{% block content %}
+
+{# ------------------------------------------------------------------ #}
+{# Breadcrumb — Miga de pan de navegación.                            #}
+{# ------------------------------------------------------------------ #}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item">
+            <a href="{% url 'panel:dashboard' %}" class="text-decoration-none">Panel</a>
+        </li>
+        <li class="breadcrumb-item">WhatsApp</li>
+        <li class="breadcrumb-item active" aria-current="page">Plantillas</li>
+    </ol>
+</nav>
+
+{# ------------------------------------------------------------------ #}
+{# Page header — Cabecera de la página con título e icono.            #}
+{# ------------------------------------------------------------------ #}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-2">
+        <span class="fs-5 text-success"><i class="bi bi-whatsapp"></i></span>
+        <h6 class="mb-0 fw-semibold">Plantillas de WhatsApp</h6>
+    </div>
+    <span class="badge rounded-pill bg-secondary text-white text-xs px-3 py-2">
+        {{ templates|length }} plantilla{{ templates|length|pluralize:"s" }}
+    </span>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Info callout — Nota informativa sobre el canal de gestión.         #}
+{# Informs the ADMIN that templates are managed via Twilio Console.   #}
+{# Informa al ADMIN que las plantillas se gestionan desde Twilio.     #}
+{# ------------------------------------------------------------------ #}
+<div class="alert alert-info d-flex gap-2 align-items-start mb-4" role="alert">
+    <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+    <div class="text-sm">
+        Las plantillas se aprueban a través del
+        <strong>Content Template Builder</strong> del Console de Twilio y se
+        registran en la plataforma mediante el comando de gestión
+        <code>seed_whatsapp_templates</code>.
+        El SID de contenido (<code>HX…</code>) identifica cada plantilla de forma única.
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Empty state — Estado vacío cuando no hay plantillas activas.       #}
+{# ------------------------------------------------------------------ #}
+{% if not templates %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-whatsapp fs-1 text-muted mb-3 d-block"></i>
+        <p class="text-muted mb-0 text-sm">
+            No hay plantillas de WhatsApp activas para {{ company.name }}.
+        </p>
+        <p class="text-muted text-xs mt-1">
+            Ejecuta <code>seed_whatsapp_templates</code> para registrarlas.
+        </p>
+    </div>
+</div>
+
+{% else %}
+
+{# ------------------------------------------------------------------ #}
+{# Templates table — Tabla responsive de plantillas.                  #}
+{# Columns: Nombre, SID de contenido, Categoría, Idioma, Estado.      #}
+{# Columnas: Nombre, SID de contenido, Categoría, Idioma, Estado.     #}
+{# table-responsive wraps the table for correct rendering on mobile.  #}
+{# table-responsive envuelve la tabla para renderizado correcto móvil. #}
+{# ------------------------------------------------------------------ #}
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3 text-sm fw-semibold text-muted" scope="col">
+                            Nombre
+                        </th>
+                        <th class="text-sm fw-semibold text-muted" scope="col">
+                            SID de contenido
+                        </th>
+                        <th class="text-sm fw-semibold text-muted" scope="col">
+                            Categoría
+                        </th>
+                        <th class="text-sm fw-semibold text-muted" scope="col">
+                            Idioma
+                        </th>
+                        <th class="text-sm fw-semibold text-muted pe-3" scope="col">
+                            Estado
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for template in templates %}
+                    <tr>
+
+                        {# ---- Nombre / Name ---- #}
+                        <td class="ps-3">
+                            <span class="fw-semibold text-sm">{{ template.name }}</span>
+                        </td>
+
+                        {# ---- SID de contenido / Content SID ---- #}
+                        <td>
+                            <code class="text-xs bg-light rounded px-2 py-1 d-inline-block">
+                                {{ template.content_sid }}
+                            </code>
+                        </td>
+
+                        {# ---- Categoría / Category — badge por tipo ---- #}
+                        <td>
+                            {% if template.category == 'UTILITY' %}
+                                <span class="badge badge-internal text-xs">
+                                    <i class="bi bi-gear me-1"></i>Utilidad
+                                </span>
+                            {% elif template.category == 'MARKETING' %}
+                                <span class="badge badge-flow text-xs">
+                                    <i class="bi bi-megaphone me-1"></i>Marketing
+                                </span>
+                            {% elif template.category == 'AUTHENTICATION' %}
+                                <span class="badge badge-admin text-xs">
+                                    <i class="bi bi-shield-lock me-1"></i>Autenticación
+                                </span>
+                            {% else %}
+                                <span class="badge badge-external text-xs">
+                                    {{ template.category }}
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        {# ---- Idioma / Language ---- #}
+                        <td>
+                            <span class="text-sm text-muted">
+                                <i class="bi bi-translate me-1"></i>{{ template.language }}
+                            </span>
+                        </td>
+
+                        {# ---- Estado / Status ---- #}
+                        <td class="pe-3">
+                            {% if template.is_active %}
+                                <span class="badge badge-active text-xs">
+                                    <i class="bi bi-check-circle me-1"></i>Activa
+                                </span>
+                            {% else %}
+                                <span class="badge badge-inactive text-xs">
+                                    <i class="bi bi-x-circle me-1"></i>Inactiva
+                                </span>
+                            {% endif %}
+                        </td>
+
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>{# /.table-responsive #}
+    </div>{# /.card-body #}
+</div>{# /.card #}
+
+{% endif %}{# /if not templates #}
+
+{% endblock %}

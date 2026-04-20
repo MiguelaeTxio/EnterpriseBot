@@ -17,6 +17,7 @@
 ./vox_bridge/services.py
 ./panel/urls.py
 ./panel/templates/panel/base.html
+./panel/templates/panel/whatsapp/template_list.html
 ./panel/templates/panel/voiceprofile/detail.html
 ./panel/templates/panel/sections/list.html
 ./panel/templates/panel/sections/form.html

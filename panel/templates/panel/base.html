@@ -307,6 +307,15 @@
                         <i class="bi bi-slash-circle"></i>Bloqueados
                     </a>
                 </li>
+
+                <li><div class="sidebar-section-label">WhatsApp</div></li>
+
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_whatsapp_templates %}{% endblock %}"
+                       href="{% url 'panel:whatsapp_template_list' %}">
+                        <i class="bi bi-whatsapp"></i>Plantillas
+                    </a>
+                </li>
                 {% endif %}
 
             </ul>
@@ -426,6 +435,16 @@
                            href="{% url 'panel:blockedcaller_list' %}"
                           >
                             <i class="bi bi-slash-circle"></i>Bloqueados
+                        </a>
+                    </li>
+
+                    <li><div class="sidebar-section-label">WhatsApp</div></li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_whatsapp_templates_off %}{% endblock %}"
+                           href="{% url 'panel:whatsapp_template_list' %}"
+                          >
+                            <i class="bi bi-whatsapp"></i>Plantillas
                         </a>
                     </li>
                     {% endif %}

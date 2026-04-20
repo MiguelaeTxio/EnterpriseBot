@@ -40,6 +40,7 @@ from ivr_config.models import (
     CorporateVoiceProfile,
     BlockedCaller,
 )
+from whatsapp.models import WhatsAppTemplate
 
 
 class CompanyUserCreateView(AdminRoleRequiredMixin, View):
@@ -1854,3 +1855,74 @@ class PanelPasswordChangeView(CompanyUserRequiredMixin, View):
             django_messages.success(request, "Contraseña actualizada correctamente.")
             return redirect("/panel/")
         return render(request, self.template_name, self._get_context(request, form))
+
+
+# ---------------------------------------------------------------------------
+# WHATSAPP TEMPLATE LIST VIEW — Read-only list of Meta-approved templates.
+# Vista de listado de plantillas WhatsApp — Solo lectura. Requiere rol ADMIN.
+# Paso 24 — Hito 4 (2026-04-20)
+# ---------------------------------------------------------------------------
+
+class WhatsAppTemplateListView(AdminRoleRequiredMixin, ListView):
+    """
+    Displays a read-only list of active WhatsAppTemplate records scoped to
+    the authenticated user's company. Accessible only to users with the
+    ADMIN role. No create, update or delete actions are exposed — templates
+    are managed exclusively via the Twilio Content Template Builder and
+    seeded through the seed_whatsapp_templates management command.
+    ---
+    Muestra un listado de solo lectura de los registros WhatsAppTemplate
+    activos acotados a la empresa del usuario autenticado. Solo accesible
+    para usuarios con rol ADMIN. No se exponen acciones de creación, edición
+    ni borrado — las plantillas se gestionan exclusivamente a través del
+    Content Template Builder de Twilio y se registran mediante el comando
+    de gestión seed_whatsapp_templates.
+    """
+
+    model = WhatsAppTemplate
+    template_name = "panel/whatsapp/template_list.html"
+    context_object_name = "templates"
+
+    def get_queryset(self):
+        """
+        Returns active WhatsAppTemplate records scoped to the authenticated
+        user's company, ordered alphabetically by name.
+        ---
+        Retorna los registros WhatsAppTemplate activos acotados a la empresa
+        del usuario autenticado, ordenados alfabéticamente por nombre.
+        """
+        return WhatsAppTemplate.objects.filter(
+            company=self.request.user.company_user.company,
+            is_active=True,
+        ).order_by("name")
+
+    def get_context_data(self, **kwargs):
+        """
+        Adds company, company_user and own_presence to the template context,
+        following the same pattern as all other panel ListViews.
+        ---
+        Añade company, company_user y own_presence al contexto de la plantilla,
+        siguiendo el mismo patrón que el resto de ListViews del panel.
+        """
+        context = super().get_context_data(**kwargs)
+        context["company"]      = self.request.user.company_user.company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = self._get_own_presence()
+        return context
+
+    def _get_own_presence(self):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        from django.utils.timezone import now
+        from django.db.models import Q
+        company_user = self.request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+

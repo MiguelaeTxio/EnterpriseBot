@@ -34,6 +34,7 @@ from panel.views import (
     PanelPasswordChangeView,
     CallFlowRestoreView,
     VoiceProfileRestoreView,
+    WhatsAppTemplateListView,
 )
 
 app_name = "panel"
@@ -86,4 +87,8 @@ urlpatterns = [
     path("blockedcallers/", BlockedCallerListView.as_view(), name="blockedcaller_list"),
     path("blockedcallers/create/", BlockedCallerCreateView.as_view(), name="blockedcaller_create"),
     path("blockedcallers/<int:pk>/delete/", BlockedCallerDeleteView.as_view(), name="blockedcaller_delete"),
+
+    # WhatsApp template management — Gestión de plantillas WhatsApp (solo lectura, rol ADMIN).
+    # Paso 24 — Hito 4 (2026-04-20)
+    path("whatsapp/templates/", WhatsAppTemplateListView.as_view(), name="whatsapp_template_list"),
 ]

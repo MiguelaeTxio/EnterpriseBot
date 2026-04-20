@@ -72,12 +72,25 @@ Antes de entregar o implementar cualquier código que involucre servicios
 externos o APIs, el modelo **DEBE** actualizarse en línea obligatoriamente
 para usar datos actuales de implementación en lugar de datos obsoletos.
 
-### Hito 4: Canal WhatsApp — Chatbot Conversacional y Sistema de Presencia (EN PROGRESO)
+### Hito 4: Canal WhatsApp — Chatbot Conversacional y Sistema de Presencia (COMPLETADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V04.md`)
 - Integración de WhatsApp como canal bidireccional sobre infraestructura Twilio existente.
 - Chatbot conversacional impulsado por Gemini 2.5 Flash (texto) con contexto multiempresa.
 - Cierre del bucle de presencia del Hito 3: webhook /api/whatsapp/presence/ y tareas Celery.
 - Nueva app Django `whatsapp` con modelos WhatsAppSession, WhatsAppMessage, WhatsAppTemplate.
 - Templates Meta gestionados via Content Template Builder (SID prefijo HX).
+- Sender +34607961650 registrado y operativo en producción. Validación E2E superada.
+- Panel de gestión de templates WhatsApp integrado en /panel/ (Paso 24). COMPLETADO 2026-04-20.
+
+### Hito 5: Arquitectura Omnicanal IVR ↔ WhatsApp (PAUSADO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md`)
+- Hito híbrido que cierra el ciclo omnicanal completo de EnterpriseBot.
+- Línea A — Panel: entrada WhatsApp en sidebar con historial de sesiones activas.
+- Línea B — Persistencia IVR: nuevo modelo CallDataCapture vinculado a Section,
+  Contact y CallFlow. Los datos capturados por DataCaptureSet persisten en BD.
+- Línea C — Puente IVR ↔ WhatsApp: datos capturados por el IVR (nombre, teléfono,
+  motivo) se envían vía WhatsApp al contacto referente de la sección antes del
+  transfer de llamada. Flujo: IVR captura → persiste en BD → WhatsApp notifica
+  al agente interno → transfer ejecutado. Cierre del ciclo omnicanal completo.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)
