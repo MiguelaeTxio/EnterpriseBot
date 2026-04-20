@@ -208,26 +208,66 @@ class TransferStatusView(View):
 
     def post(self, request, *args, **kwargs):
         """
-        Handles the Twilio action webhook after the <Dial> Conference ends.
-        Implements the resilient multi-contact transfer flow using the
-        TransferAttempt record as the cross-process state bridge.
+        Handles the Twilio action webhook fired when the caller leaves the
+        <Dial><Conference> room (i.e. when the caller hangs up or the
+        Conference ends on the caller side).
+
+        IMPORTANT — Twilio behaviour for <Dial><Conference>:
+            When the noun inside <Dial> is <Conference>, Twilio always sends
+            DialCallStatus='answered' to the action URL, regardless of whether
+            the contact answered or not. This is documented behaviour (Twilio
+            Dial reference, 2026). The actual outcome of the outbound call to
+            the section contact is reported by a separate statusCallback webhook
+            registered on that outbound call by _execute_transfer() in
+            vox_bridge/services.py → handled by ContactStatusView below.
+
+        Responsibility of THIS view (action URL of the caller <Dial>):
+            1. Receive the 'answered' POST from Twilio when the caller exits
+               the Conference room (caller hung up or Conference ended).
+            2. Look up the TransferAttempt record by call_sid to determine the
+               final transfer outcome already resolved by ContactStatusView.
+            3. If status=COMPLETED → the contact answered and the conversation
+               finished normally → return empty TwiML (call ends).
+            4. If status=PENDING or FAILED → the contact never answered or the
+               contact status webhook has not yet arrived → reconnect Alia as
+               a safe fallback so the caller is not abandoned.
+            5. If no TransferAttempt record exists → reconnect Alia as fallback.
         ---
-        Gestiona el webhook action de Twilio tras el fin de la Conference <Dial>.
-        Implementa el flujo de transferencia resiliente multi-contacto usando el
-        registro TransferAttempt como puente de estado entre procesos.
+        Gestiona el webhook action de Twilio disparado cuando el llamante
+        abandona la sala <Dial><Conference> (el llamante cuelga o la Conference
+        termina en su lado).
+
+        IMPORTANTE — comportamiento de Twilio para <Dial><Conference>:
+            Cuando el noun dentro de <Dial> es <Conference>, Twilio envía
+            siempre DialCallStatus='answered' al action URL, independientemente
+            de si el contacto contestó o no. Es comportamiento documentado (ref.
+            Twilio Dial, 2026). El resultado real de la llamada saliente al
+            contacto de sección lo notifica un webhook statusCallback separado
+            registrado en esa llamada saliente por _execute_transfer() en
+            vox_bridge/services.py → gestionado por ContactStatusView (abajo).
+
+        Responsabilidad de ESTA vista (action URL del <Dial> del llamante):
+            1. Recibir el POST 'answered' de Twilio cuando el llamante sale
+               de la sala Conference (colgó o la Conference terminó).
+            2. Consultar el registro TransferAttempt por call_sid para conocer
+               el resultado final de la transferencia ya resuelto por
+               ContactStatusView.
+            3. Si status=COMPLETED → el contacto contestó y la conversación
+               terminó normalmente → devolver TwiML vacío (llamada termina).
+            4. Si status=PENDING o FAILED → el contacto nunca contestó o el
+               webhook de estado del contacto no ha llegado aún → reconectar
+               a Alia como fallback para no abandonar al llamante.
+            5. Si no existe registro TransferAttempt → reconectar a Alia.
         """
-        from ivr_config.models import (
-            SectionContact      as _SectionContact,
-            TransferAttempt     as _TransferAttempt,
-            PendingNotification as _PendingNotification,
-        )
+        from ivr_config.models import TransferAttempt as _TransferAttempt
 
         dial_status = request.POST.get("DialCallStatus", "unknown")
         call_sid    = kwargs.get("call_sid", "")
 
         logger.info(
             f"[TRANSFER-STATUS] Webhook recibido — call_sid={call_sid} "
-            f"| DialCallStatus='{dial_status}'."
+            f"| DialCallStatus='{dial_status}' (siempre 'answered' "
+            f"para <Dial><Conference>, según documentación Twilio)."
         )
 
         # ------------------------------------------------------------------
@@ -235,14 +275,8 @@ class TransferStatusView(View):
         # Paso 1: Resolver el registro TransferAttempt para esta llamada.
         # ------------------------------------------------------------------
         try:
-            attempt = _TransferAttempt.objects.select_related("section").get(
-                call_sid=call_sid
-            )
+            attempt = _TransferAttempt.objects.get(call_sid=call_sid)
         except _TransferAttempt.DoesNotExist:
-            # No record found — this should not happen in normal flow.
-            # Reconnect Alia as a safe fallback so the caller is not abandoned.
-            # No se encontró registro — esto no debería ocurrir en el flujo normal.
-            # Reconectar a Alia como fallback seguro para no abandonar al llamante.
             logger.error(
                 f"[TRANSFER-STATUS] TransferAttempt no encontrado para "
                 f"call_sid={call_sid}. Reconectando a Alia como fallback."
@@ -253,110 +287,40 @@ class TransferStatusView(View):
             )
 
         # ------------------------------------------------------------------
-        # Step 2: Handle completed transfer — both parties spoke successfully.
-        # Paso 2: Gestionar transferencia completada — ambas partes hablaron.
+        # Step 2: Transfer completed — contact answered and conversation ended.
+        # The TransferAttempt.status was already set to COMPLETED by
+        # ContactStatusView when the outbound call to the contact finished.
+        # Return empty TwiML — the call ends naturally.
         # ------------------------------------------------------------------
-        if dial_status == "completed":
-            attempt.status = _TransferAttempt.STATUS_COMPLETED
-            attempt.save(update_fields=["status", "updated_at"])
+        # Paso 2: Transferencia completada — el contacto contestó y la
+        # conversación terminó. ContactStatusView ya actualizó el status a
+        # COMPLETED cuando finalizó la llamada saliente. TwiML vacío → fin.
+        # ------------------------------------------------------------------
+        if attempt.status == _TransferAttempt.STATUS_COMPLETED:
             logger.info(
-                f"[TRANSFER-STATUS] Transferencia completada con éxito — "
-                f"call_sid={call_sid}. Finalizando llamada."
+                f"[TRANSFER-STATUS] Transferencia confirmada como COMPLETADA "
+                f"por ContactStatusView — call_sid={call_sid}. "
+                f"Finalizando llamada con TwiML vacío."
             )
             return HttpResponse(self._twiml_end_call(), content_type="text/xml")
 
         # ------------------------------------------------------------------
-        # Step 3: Handle failed transfer — attempt next contact if available.
-        # Paso 3: Gestionar transferencia fallida — intentar siguiente contacto.
+        # Step 3: Transfer pending or failed — contact did not answer or the
+        # ContactStatusView webhook has not yet been processed. Reconnect Alia
+        # as a safe fallback so the caller is not left in silence.
         # ------------------------------------------------------------------
-        if dial_status in self.FAILED_STATUSES:
-
-            next_index = attempt.contact_index + 1
-
-            # Update the attempt record with the new index and FAILED status.
-            # Actualizar el registro de intento con el nuevo índice y estado FAILED.
-            attempt.contact_index = next_index
-            attempt.status        = _TransferAttempt.STATUS_FAILED
-            attempt.save(update_fields=["contact_index", "status", "updated_at"])
-
-            logger.info(
-                f"[TRANSFER-STATUS] Intento fallido (status='{dial_status}') — "
-                f"call_sid={call_sid} | próximo contact_index={next_index}."
-            )
-
-            # Check whether a next contact exists at the updated index.
-            # Comprobar si existe un contacto siguiente en el índice actualizado.
-            next_contacts = (
-                _SectionContact.objects.select_related("contact")
-                .filter(section=attempt.section)
-                .exclude(contact__phone_number="")
-                .order_by("priority", "contact__name")
-            )
-            next_contacts_list = list(next_contacts)
-
-            if next_index < len(next_contacts_list):
-                # A next contact exists — reconnect Alia so she can offer
-                # the caller the option to try the next contact.
-                # Existe un contacto siguiente — reconectar a Alia para que ofrezca
-                # al llamante la opción de intentar con el siguiente contacto.
-                next_contact = next_contacts_list[next_index].contact
-                logger.info(
-                    f"[TRANSFER-STATUS] Siguiente contacto disponible: "
-                    f"'{next_contact.name}' — reconectando a Alia."
-                )
-            else:
-                # No more contacts — reconnect Alia to inform the caller and
-                # create a PendingNotification for manual follow-up (Hito 4 stub).
-                # Sin más contactos — reconectar a Alia para informar al llamante
-                # y crear PendingNotification para seguimiento manual (stub Hito 4).
-                logger.info(
-                    f"[TRANSFER-STATUS] Sin más contactos disponibles para "
-                    f"call_sid={call_sid}. Creando PendingNotification y reconectando a Alia."
-                )
-                try:
-                    _PendingNotification.objects.create(
-                        company=attempt.section.company if attempt.section else None,
-                        section=attempt.section,
-                        caller_number=attempt.caller_number,
-                        call_sid=call_sid,
-                        channel=_PendingNotification.CHANNEL_PENDING,
-                    )
-                    logger.info(
-                        f"[TRANSFER-STATUS] PendingNotification creada — "
-                        f"caller={attempt.caller_number} | call_sid={call_sid}."
-                    )
-                except Exception as notify_exc:
-                    logger.error(
-                        f"[TRANSFER-STATUS] Error al crear PendingNotification: "
-                        f"{type(notify_exc).__name__}: {notify_exc}",
-                        exc_info=True,
-                    )
-
-            # In both cases (next contact or no contacts), reconnect Alia.
-            # She will handle the conversation based on the updated context
-            # injected by build_live_config() on the new Media Stream.
-            # En ambos casos (siguiente contacto o sin contactos), reconectar a Alia.
-            # Ella gestionará la conversación según el contexto actualizado
-            # inyectado por build_live_config() en el nuevo Media Stream.
-            wss_url = self._get_wss_url()
-            logger.info(
-                f"[TRANSFER-STATUS] Reconectando a Alia — wss_url: {wss_url}/media"
-            )
-            return HttpResponse(
-                self._twiml_reconnect_alia(wss_url),
-                content_type="text/xml",
-            )
-
+        # Paso 3: Transferencia pendiente o fallida — el contacto no contestó
+        # o el webhook de ContactStatusView aún no ha llegado. Reconectar a
+        # Alia como fallback seguro para no dejar al llamante en silencio.
         # ------------------------------------------------------------------
-        # Step 4: Unexpected DialCallStatus — log and reconnect Alia as fallback.
-        # Paso 4: DialCallStatus inesperado — registrar y reconectar a Alia.
-        # ------------------------------------------------------------------
-        logger.warning(
-            f"[TRANSFER-STATUS] DialCallStatus inesperado: '{dial_status}' "
-            f"para call_sid={call_sid}. Reconectando a Alia como fallback."
+        logger.info(
+            f"[TRANSFER-STATUS] Transferencia no completada "
+            f"(attempt.status='{attempt.status}') — call_sid={call_sid}. "
+            f"Reconectando a Alia como fallback."
         )
+        wss_url = self._get_wss_url()
         return HttpResponse(
-            self._twiml_reconnect_alia(self._get_wss_url()),
+            self._twiml_reconnect_alia(wss_url),
             content_type="text/xml",
         )
 
@@ -409,6 +373,242 @@ class TransferAcceptView(View):
             '</Response>'
         )
         return HttpResponse(twiml, content_type='text/xml')
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ContactStatusView(View):
+    """
+    Receives the Twilio statusCallback webhook for the outbound call placed
+    to the section contact during a transfer (Paso 39). This is the canonical
+    mechanism to determine whether the section contact actually answered the
+    call — the <Dial><Conference> action URL on the caller side always reports
+    DialCallStatus='answered', making it unsuitable for outcome detection.
+
+    Flow:
+        _execute_transfer() in vox_bridge/services.py creates an outbound call
+        to the section contact and registers THIS endpoint as status_callback.
+        Twilio calls this endpoint when the outbound call reaches a terminal
+        state (completed, no-answer, busy, failed, canceled).
+
+        - CallStatus='completed':
+            The contact answered and the conference ended normally.
+            Mark TransferAttempt.status=COMPLETED.
+            No further action needed — TransferStatusView (caller action URL)
+            will receive 'answered' and check the COMPLETED status to end
+            the call cleanly.
+
+        - CallStatus in FAILED_STATUSES (no-answer, busy, failed, canceled):
+            The contact did not answer.
+            Increment TransferAttempt.contact_index.
+            Check if a next contact exists (ordered by SectionContact.priority).
+            If yes → update the caller's live call with a new <Connect><Stream>
+                     so Alia reconects and offers the next contact option.
+            If no  → create PendingNotification + update caller call with
+                     <Connect><Stream> so Alia informs and offers voice message.
+
+        - Any other status → log and ignore (non-terminal intermediate states).
+    ---
+    Recibe el webhook statusCallback de Twilio para la llamada saliente al
+    contacto de sección durante una transferencia (Paso 39). Este es el
+    mecanismo canónico para determinar si el contacto contestó realmente —
+    el action URL de <Dial><Conference> en el lado del llamante siempre
+    reporta DialCallStatus='answered', lo que lo hace inadecuado para
+    detectar el resultado.
+
+    Flujo:
+        _execute_transfer() en vox_bridge/services.py crea una llamada saliente
+        al contacto de sección y registra ESTE endpoint como status_callback.
+        Twilio llama a este endpoint cuando la llamada saliente alcanza un
+        estado terminal (completed, no-answer, busy, failed, canceled).
+
+        - CallStatus='completed':
+            El contacto contestó y la conferencia terminó normalmente.
+            Marcar TransferAttempt.status=COMPLETED.
+            No se requiere acción adicional — TransferStatusView (action URL
+            del llamante) recibirá 'answered' y comprobará el status COMPLETED
+            para finalizar la llamada limpiamente.
+
+        - CallStatus en FAILED_STATUSES (no-answer, busy, failed, canceled):
+            El contacto no contestó.
+            Incrementar TransferAttempt.contact_index.
+            Comprobar si existe un contacto siguiente (ordenado por
+            SectionContact.priority).
+            Si sí → actualizar la llamada del llamante con nuevo
+                    <Connect><Stream> para que Alia reconecte y ofrezca
+                    la opción del siguiente contacto.
+            Si no → crear PendingNotification + actualizar llamada del
+                    llamante con <Connect><Stream> para que Alia informe
+                    y ofrezca dejar un mensaje de voz.
+
+        - Cualquier otro estado → registrar e ignorar (estados intermedios
+          no terminales).
+    """
+
+    FAILED_STATUSES = {"no-answer", "busy", "failed", "canceled"}
+
+    def _get_wss_url(self) -> str:
+        """
+        Reads the active ngrok HTTPS URL from the shared session file and
+        converts it to a WSS URL for the <Stream> TwiML verb.
+        ---
+        Lee la URL HTTPS activa de ngrok del archivo de sesión compartido y
+        la convierte en URL WSS para el verbo TwiML <Stream>.
+        """
+        ngrok_file = (
+            "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/SESSION/NGROK_URL.txt"
+        )
+        try:
+            with open(ngrok_file, "r") as _f:
+                raw_url = _f.read().strip().rstrip("/")
+            return raw_url.replace("https://", "wss://")
+        except Exception:
+            fallback = "wss://enterprisebot.ngrok-free.app"
+            logger.warning(
+                "[CONTACT-STATUS] No se pudo leer NGROK_URL.txt. "
+                f"Usando wss_url por defecto: {fallback}"
+            )
+            return fallback
+
+    def _twiml_reconnect_alia(self, wss_url: str) -> str:
+        """
+        Returns TwiML that opens a new bidirectional Media Stream to reconnect
+        Alia to the caller after a failed transfer attempt.
+        ---
+        Devuelve TwiML que abre un nuevo Media Stream bidireccional para
+        reconectar a Alia con el llamante tras un intento de transferencia fallido.
+        """
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Response>'
+            '<Connect>'
+            f'<Stream url="{wss_url}/media" />'
+            '</Connect>'
+            '</Response>'
+        )
+
+    def post(self, request, *args, **kwargs):
+        """
+        Processes the terminal status of the outbound call to the section
+        contact and drives the resilient multi-contact transfer flow.
+        ---
+        Procesa el estado terminal de la llamada saliente al contacto de
+        sección y dirige el flujo de transferencia resiliente multi-contacto.
+        """
+        import os
+        from twilio.rest import Client as _TwilioClient
+        from ivr_config.models import (
+            SectionContact      as _SectionContact,
+            TransferAttempt     as _TransferAttempt,
+            PendingNotification as _PendingNotification,
+        )
+
+        call_status     = request.POST.get("CallStatus", "unknown")
+        caller_call_sid = kwargs.get("caller_call_sid", "")
+
+        logger.info(
+            f"[CONTACT-STATUS] Webhook recibido — caller_call_sid={caller_call_sid} "
+            f"| CallStatus='{call_status}'."
+        )
+
+        terminal_states = {"completed"} | self.FAILED_STATUSES
+        if call_status not in terminal_states:
+            logger.info(
+                f"[CONTACT-STATUS] Estado no terminal '{call_status}' — ignorado."
+            )
+            return HttpResponse("", status=200)
+
+        try:
+            attempt = _TransferAttempt.objects.select_related("section").get(
+                call_sid=caller_call_sid
+            )
+        except _TransferAttempt.DoesNotExist:
+            logger.error(
+                f"[CONTACT-STATUS] TransferAttempt no encontrado para "
+                f"caller_call_sid={caller_call_sid}. No se puede procesar."
+            )
+            return HttpResponse("", status=200)
+
+        if call_status == "completed":
+            attempt.status = _TransferAttempt.STATUS_COMPLETED
+            attempt.save(update_fields=["status", "updated_at"])
+            logger.info(
+                f"[CONTACT-STATUS] Llamada saliente completada — "
+                f"TransferAttempt marcado COMPLETED para call_sid={caller_call_sid}."
+            )
+            return HttpResponse("", status=200)
+
+        next_index = attempt.contact_index + 1
+        attempt.contact_index = next_index
+        attempt.status        = _TransferAttempt.STATUS_FAILED
+        attempt.save(update_fields=["contact_index", "status", "updated_at"])
+
+        logger.info(
+            f"[CONTACT-STATUS] Contacto no contestó (status='{call_status}') — "
+            f"caller_call_sid={caller_call_sid} | próximo contact_index={next_index}."
+        )
+
+        next_contacts_list = list(
+            _SectionContact.objects.select_related("contact")
+            .filter(section=attempt.section)
+            .exclude(contact__phone_number="")
+            .order_by("priority", "contact__name")
+        )
+
+        if next_index < len(next_contacts_list):
+            next_contact = next_contacts_list[next_index].contact
+            logger.info(
+                f"[CONTACT-STATUS] Siguiente contacto disponible: "
+                f"'{next_contact.name}' — reconectando a Alia vía calls.update()."
+            )
+        else:
+            logger.info(
+                f"[CONTACT-STATUS] Sin más contactos para "
+                f"caller_call_sid={caller_call_sid}. "
+                f"Creando PendingNotification y reconectando a Alia."
+            )
+            try:
+                _PendingNotification.objects.create(
+                    company=attempt.section.company if attempt.section else None,
+                    section=attempt.section,
+                    caller_number=attempt.caller_number,
+                    call_sid=caller_call_sid,
+                    channel=_PendingNotification.CHANNEL_PENDING,
+                )
+                logger.info(
+                    f"[CONTACT-STATUS] PendingNotification creada — "
+                    f"caller={attempt.caller_number} | call_sid={caller_call_sid}."
+                )
+            except Exception as notify_exc:
+                logger.error(
+                    f"[CONTACT-STATUS] Error al crear PendingNotification: "
+                    f"{type(notify_exc).__name__}: {notify_exc}",
+                    exc_info=True,
+                )
+
+        try:
+            twilio_account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+            twilio_api_key     = os.environ.get("TWILIO_API_KEY_SID_IE1", "")
+            twilio_api_secret  = os.environ.get("TWILIO_API_KEY_SECRET_IE1", "")
+            twilio_client      = _TwilioClient(
+                twilio_api_key,
+                twilio_api_secret,
+                account_sid=twilio_account_sid,
+            )
+            twilio_client.calls(caller_call_sid).update(
+                twiml=self._twiml_reconnect_alia(self._get_wss_url()),
+            )
+            logger.info(
+                f"[CONTACT-STATUS] Llamada {caller_call_sid} actualizada con "
+                f"TwiML de reconexión de Alia vía REST API."
+            )
+        except Exception as twilio_exc:
+            logger.error(
+                f"[CONTACT-STATUS] Error al actualizar llamada via REST API: "
+                f"{type(twilio_exc).__name__}: {twilio_exc}",
+                exc_info=True,
+            )
+
+        return HttpResponse("", status=200)
 
 
 @method_decorator(csrf_exempt, name='dispatch')

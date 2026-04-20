@@ -2169,15 +2169,32 @@ class VoiceOrchestrationService:
             )
 
             # Step 4: Place outbound call to the first section contact.
+            # Register ContactStatusView as statusCallback to detect whether
+            # the contact actually answered (DialCallStatus on the caller
+            # <Dial><Conference> action URL is always 'answered' — unsuitable
+            # for outcome detection per Twilio documentation, 2026).
             # Paso 4: Realizar llamada saliente al primer contacto de la sección.
+            # Registrar ContactStatusView como statusCallback para detectar si
+            # el contacto realmente contestó (DialCallStatus en el action URL
+            # del <Dial><Conference> del llamante siempre es 'answered' —
+            # no apto para detección de resultado según documentación Twilio, 2026).
+            contact_status_url = (
+                "https://enterprisebot-miguelaetxio.pythonanywhere.com"
+                f"/api/vox/contact_status/{self.call_sid}/"
+            )
             outbound_call = self.twilio_client.calls.create(
                 to=contact_phone,
                 from_=self.twilio_number,
                 twiml=contact_twiml,
+                status_callback=contact_status_url,
+                status_callback_event=["completed", "no-answer", "busy",
+                                       "failed", "canceled"],
+                status_callback_method="POST",
             )
             logger.info(
                 f"[PASO-39] Llamada saliente iniciada hacia '{contact.name}' "
-                f"({contact_phone}). OutboundCallSid: {outbound_call.sid}."
+                f"({contact_phone}). OutboundCallSid: {outbound_call.sid}. "
+                f"StatusCallback registrado en: {contact_status_url}"
             )
             return True
 

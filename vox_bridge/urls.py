@@ -6,6 +6,7 @@ from .views import (
     HoldMusicView,
     TransferStatusView,
     TransferAcceptView,
+    ContactStatusView,
 )
 
 urlpatterns = [
@@ -34,5 +35,13 @@ urlpatterns = [
         'transfer_accept/<str:conference_name>/',
         TransferAcceptView.as_view(),
         name='vox_transfer_accept',
+    ),
+    # DT-1 FIX — StatusCallback de la llamada saliente al contacto.
+    # Twilio reporta el resultado real (contestada/no contestada) aquí.
+    # El action URL del <Dial><Conference> siempre devuelve 'answered'.
+    path(
+        'contact_status/<str:caller_call_sid>/',
+        ContactStatusView.as_view(),
+        name='vox_contact_status',
     ),
 ]

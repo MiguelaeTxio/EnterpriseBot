@@ -4,7 +4,7 @@
 **Estado:** EN PROGRESO
 **Fecha de inicio:** 2026-04-07
 **Fecha de reanudación:** 2026-04-17 (tercera reactivación)
-**Última actualización:** 2026-04-18 (PCS)
+**Última actualización:** 2026-04-20 (PCS)
 
 ---
 
@@ -222,8 +222,9 @@ En sesión 2026-04-17 se acordó el rediseño hacia **transferencia real**:
 - `voice_sidecar_bridge.py` — Bridge aiohttp: captura `To` y `From`, gestión
   del ciclo de vida del Media Stream, reconexión tras transferencia fallida.
 - `voice_orchestrator.py` — Arranque de ngrok + actualización webhook regional.
-- `vox_bridge/views.py` — Nuevos endpoints: `TransferCallView`, `HoldMusicView`,
-  `TransferStatusView`, `TransferAcceptView` (Pasos 39-42).
+- `vox_bridge/views.py` — Endpoints de transferencia: `HoldMusicView`,
+  `TransferStatusView` (reescrito — DT-1), `TransferAcceptView`, `ContactStatusView`
+  (nuevo — DT-1: recibe `status_callback` de llamada saliente al contacto).
 - `ivr_config/models.py` — Nuevo modelo `PendingNotification` (Paso 40).
 - `vox_bridge/static/vox_bridge/audio/` — Archivos `intro.mp3` y `hold.mp3`.
 
@@ -623,36 +624,46 @@ transferencia) y para `intro.mp3` (3-5s antes del saludo de Alia, recortado del 
 Criterio de éxito: el llamante escucha la música clásica tanto al inicio de la
 llamada (intro) como durante la espera de transferencia (hold).
 
-### Paso 41 — Validación E2E Sistema de Transferencia Completo ⏳ PENDIENTE
+### Paso 41 — Validación E2E Sistema de Transferencia Completo ✅ COMPLETADO (2026-04-20)
 
-Validación E2E parcial completada en sesión 2026-04-18. Pendiente de validación
-completa del flujo multi-contacto (segundo contacto y PendingNotification).
+Validación E2E completa del sistema de transferencia resiliente realizada en sesión
+2026-04-20. Tres llamadas reales consecutivas validadas en producción:
+1. Alia identifica la sección → carga CallFlow de sección. ✅
+2. Alia recoge datos → invoca `transfer_to_section_contact`. ✅
+3. Llamante escucha música de espera (Beethoven — hold.mp3). ✅
+4. Contacto responde → conversación directa → `TransferAttempt.status=COMPLETED`. ✅
+5. `ContactStatusView` recibe `CallStatus=completed` y actualiza BD correctamente. ✅
 
-Realizar llamada real con el sistema de transferencia resiliente activo:
-1. Alia identifica la sección → carga CallFlow de sección.
-2. Alia recoge datos → invoca `transfer_to_section_contact`.
-3. Llamante escucha música de espera (por defecto Twilio).
-4. Primer contacto no responde → Alia reconecta → ofrece segundo contacto.
-5. Segundo contacto acepta → conversación directa → llamada completada.
-6. Alternativamente: todos los contactos fallan → `PendingNotification` en BD.
-Criterio de éxito: flujo completo E2E sin intervención manual.
+#### Resolución de deudas técnicas (sesión 2026-04-20)
 
-#### Deudas técnicas identificadas en sesión 2026-04-18
+**DT-1 — RESUELTA: `TransferAttempt.status` no actualizaba a `COMPLETED`:**
+Causa raíz: `<Dial><Conference>` envía siempre `DialCallStatus=answered` al action URL
+del llamante — comportamiento documentado en Twilio Dial reference (2026). El status
+real de la llamada al contacto nunca podía derivarse del action URL.
+Solución: nueva `ContactStatusView` registrada como `status_callback` en la llamada
+saliente al contacto. Cuando Twilio notifica `CallStatus=completed`, la vista actualiza
+`TransferAttempt.status=COMPLETED`. `TransferStatusView` (action URL del llamante)
+consulta el status en BD y devuelve TwiML vacío si `COMPLETED`.
+Archivos modificados: `vox_bridge/views.py` (reescritura `TransferStatusView.post()` +
+nueva `ContactStatusView`), `vox_bridge/services.py` (añadido `status_callback` a
+`calls.create()`), `vox_bridge/urls.py` (nueva ruta `contact_status/<caller_call_sid>/`).
+Validado en BD: `TransferAttempt.status=COMPLETED` confirmado en llamada real (10:58 UTC).
 
-**DT-1 — TransferAttempt.status no se actualiza a COMPLETED:**
-`TransferStatusView` actualiza el status a COMPLETED cuando `DialCallStatus=completed`
-pero los registros permanecen en PENDING. Investigar si el webhook `transfer_status`
-recibe correctamente el POST de Twilio tras la transferencia exitosa.
+**DT-2 — RESUELTA: Fallback de comprensión en CallFlow general:**
+Causa raíz: `"¿cómo?"` estaba incluida en `forbidden_phrases` del `CorporateVoiceProfile`,
+bloqueando la expresión natural de no comprensión. Sin alternativa permitida, Gemini
+ejecutaba la acción más probable del organigrama con audio ininteligible.
+Solución (datos — sin código): eliminado `"¿cómo?"` de `forbidden_phrases` en BD
+desde el panel `/panel/voiceprofile/`. Añadida regla en `system_instruction` del
+CallFlow general: "Si no comprendes claramente lo que dice el llamante, pídele
+amablemente que lo repita." Validado: audio entrecortado tratado correctamente.
+Lección aprendida: instrucciones condicionales con negaciones en el `system_instruction`
+(p. ej. "Si no entiendes... No inferas...") pueden causar silencio de Gemini en
+telefonía — preferir instrucciones afirmativas cortas integradas en el tono del agente.
 
-**DT-2 — Fallback "no le he entendido" en CallFlow general:**
-Añadir en el `system_instruction` del CallFlow general de Grupo Álvarez la regla:
-"Si no entiendes al llamante, responde: 'Disculpe, no le he entendido. ¿Podría repetirlo?'"
-Esto se hace desde el panel en `/panel/callflows/` — no requiere cambio de código.
-
-**DT-3 — Pausa de transferencia (3.5s) puede ser insuficiente en algunos casos:**
-La pausa fija post-drenado de `audio_output_queue` antes de `_execute_transfer()`
-es de 3.5s. En condiciones de red lenta puede seguir cortándose la última frase
-de Alia. Pendiente de calibración con más pruebas reales.
+**DT-3 — DIFERIDA: Pausa de transferencia (3.5s):**
+Validada empíricamente como suficiente en múltiples llamadas reales (sesión 2026-04-20).
+Revisión diferida hasta que aparezca evidencia de corte de voz en producción.
 
 ---
 
@@ -750,6 +761,23 @@ Limpieza global de 100 errores H021 (inline styles) en todos los templates del p
 Añadido JavaScript dinámico para añadir franjas horarias sin recargar la página.
 Validación E2E completa en producción: badges, formset de horarios, bloqueados,
 contactos con email/gender, flujos IVR con notification_contact y dashboard. ✅
+
+### Sesión 2026-04-20
+**Título:** Paso 41: Validación E2E Transferencia Resiliente + DT-1/DT-2 Resueltas
+**Descripción:** Sesión de validación E2E completa del sistema de transferencia
+resiliente multi-contacto (Paso 41) y resolución de las deudas técnicas DT-1 y DT-2
+identificadas en la sesión anterior. DT-1: diagnóstico confirmado de que
+<Dial><Conference> siempre reporta DialCallStatus=answered al action URL — el status
+real del contacto nunca podía derivarse de ese webhook. Solución: nueva
+ContactStatusView registrada como status_callback en la llamada saliente al contacto;
+TransferStatusView reescrita para consultar TransferAttempt.status en BD. Tres archivos
+PMA (views.py, services.py, urls.py). Validado: TransferAttempt.status=COMPLETED
+confirmado en BD tras llamada real. DT-2: causa raíz identificada — "¿cómo?" incluida
+en forbidden_phrases bloqueaba la expresión de no comprensión y Gemini ejecutaba la
+acción más probable del organigrama. Solución de datos: eliminado "¿cómo?" del perfil
+de voz y añadida directriz afirmativa en system_instruction. Lección aprendida:
+instrucciones condicionales con negaciones causan silencio de Gemini en telefonía.
+DT-3: pausa 3.5s validada empíricamente — diferida. Hito 3 declarado COMPLETADO.
 
 ### Sesión 2026-04-18
 **Título:** Paso 39: Sistema de Transferencia Resiliente — Modelos, Endpoints, Audio y Validación E2E
