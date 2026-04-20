@@ -6,10 +6,14 @@ Implements two CSRF-exempt webhook endpoints:
     dispatches chatbot replies. Location messages (Latitude/Longitude in Twilio POST)
     are detected, stored in WhatsAppMessage with message_type='location', and
     propagated to WhatsAppSession for context enrichment in the Gemini system prompt.
+    Gemini replies are parsed for the [TARGET_SECTION:{...}] marker (Paso 21):
+    when detected, WhatsAppSession.target_section is updated and the marker is
+    stripped from the reply before dispatching to the user.
   - PresenceWhatsAppView: handles presence reminder responses (1h / 2h / disponible).
 Both views are synchronous Django WSGI views — no aiohttp or WebSocket required.
 
 Updated in Paso 19 (2026-04-16): location message detection and propagation.
+Updated in Paso 21 (2026-04-20): target section detection and registration.
 ---
 Vistas para la app del canal WhatsApp.
 Implementa dos endpoints webhook exentos de CSRF:
@@ -18,13 +22,20 @@ Implementa dos endpoints webhook exentos de CSRF:
     en el POST de Twilio) se detectan, se almacenan en WhatsAppMessage con
     message_type='location' y se propagan a WhatsAppSession para enriquecer el
     contexto en el system prompt de Gemini.
+    Las respuestas de Gemini se analizan en busca del marcador
+    [TARGET_SECTION:{...}] (Paso 21): cuando se detecta, se actualiza
+    WhatsAppSession.target_section y el marcador se elimina de la respuesta
+    antes de despacharla al usuario.
   - PresenceWhatsAppView: gestiona respuestas a recordatorios de presencia (1h / 2h / disponible).
 Ambas vistas son vistas síncronas Django WSGI — no se requiere aiohttp ni WebSocket.
 
 Actualizado en el Paso 19 (2026-04-16): detección y propagación de mensajes de ubicación.
+Actualizado en el Paso 21 (2026-04-20): detección y registro de sección destino.
 """
 
+import json
 import logging
+import re
 from decimal import Decimal, InvalidOperation
 
 from django.http import HttpResponse
@@ -33,7 +44,7 @@ from django.utils.timezone import now
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from ivr_config.models import PhoneNumber
+from ivr_config.models import PhoneNumber, Section
 from .models import WhatsAppMessage, WhatsAppSession
 from .services import PresenceResponseService, WhatsAppChatService
 
@@ -254,11 +265,15 @@ class IncomingWhatsAppView(View):
         # For pure location messages (no body text), synthesise a user_message
         # so Gemini has a meaningful turn to process. The agent's system prompt
         # already contains the location context injected in Step 5.
+        # The session object is passed so get_gemini_reply() can activate Maps
+        # Grounding when coordinates are available (Paso 20).
         # --- Paso 7: Obtener respuesta de Gemini. ---
         # Para mensajes de ubicación puros (sin texto de cuerpo), sintetizar un
         # user_message para que Gemini tenga un turno significativo que procesar.
         # El system prompt del agente ya contiene el contexto de ubicación
         # inyectado en el Paso 5.
+        # El objeto session se pasa para que get_gemini_reply() pueda activar
+        # Maps Grounding cuando haya coordenadas disponibles (Paso 20).
         effective_user_message = body if body else (
             "El cliente acaba de compartir su ubicación geográfica."
             if is_location_msg
@@ -269,6 +284,7 @@ class IncomingWhatsAppView(View):
                 system_prompt=system_prompt,
                 history=history,
                 user_message=effective_user_message,
+                session=session,
             )
         except Exception as exc:
             logger.error(
@@ -279,6 +295,71 @@ class IncomingWhatsAppView(View):
                 "Lo sentimos, en este momento no podemos procesar tu consulta. "
                 "Por favor, inténtalo de nuevo en unos instantes."
             )
+
+        # --- Step 7b: Parse and strip TARGET_SECTION marker from reply. ---
+        # The Gemini agent may append a [TARGET_SECTION:{"name": "..."}] marker
+        # at the end of its response when it detects that the client intends to
+        # be directed to a specific company section (Paso 21). This step:
+        #   1. Searches for the marker using a strict regex pattern.
+        #   2. If found, resolves the Section by name within the company.
+        #   3. Updates WhatsAppSession.target_section with the resolved Section.
+        #   4. Strips the marker from reply_text so the user never sees it.
+        # The marker is silently ignored when the section name is not found in
+        # the database — the reply is still dispatched without the marker.
+        # --- Paso 7b: Parsear y eliminar marcador TARGET_SECTION de la respuesta. ---
+        # El agente Gemini puede añadir un marcador [TARGET_SECTION:{"name": "..."}]
+        # al final de su respuesta cuando detecta que el cliente desea ser dirigido
+        # a una sección concreta de la empresa (Paso 21). Este paso:
+        #   1. Busca el marcador usando un patrón regex estricto.
+        #   2. Si se encuentra, resuelve la Section por nombre dentro de la empresa.
+        #   3. Actualiza WhatsAppSession.target_section con la Section resuelta.
+        #   4. Elimina el marcador de reply_text para que el usuario nunca lo vea.
+        # El marcador se ignora silenciosamente cuando el nombre de sección no se
+        # encuentra en la base de datos — la respuesta se despacha igualmente sin el marcador.
+        _TARGET_SECTION_PATTERN = re.compile(
+            r'\[TARGET_SECTION:\s*(\{[^}]+\})\s*\]',
+            re.IGNORECASE,
+        )
+        target_match = _TARGET_SECTION_PATTERN.search(reply_text)
+        if target_match:
+            raw_json = target_match.group(1)
+            # Strip the marker from the reply regardless of JSON parse success.
+            # Eliminar el marcador de la respuesta independientemente del éxito
+            # del parseo JSON.
+            reply_text = _TARGET_SECTION_PATTERN.sub("", reply_text).strip()
+            try:
+                marker_data    = json.loads(raw_json)
+                section_name   = marker_data.get("name", "").strip()
+                if section_name:
+                    target_section = Section.objects.filter(
+                        company=company,
+                        name=section_name,
+                        is_active=True,
+                    ).first()
+                    if target_section is not None:
+                        session.target_section = target_section
+                        session.save(update_fields=["target_section", "last_message_at"])
+                        logger.info(
+                            "# [WHATSAPP] Sección destino registrada para sesión %s: "
+                            "'%s' (pk=%s)",
+                            session.pk,
+                            target_section.name,
+                            target_section.pk,
+                        )
+                    else:
+                        logger.warning(
+                            "# [WHATSAPP] Sección destino '%s' no encontrada en "
+                            "empresa '%s' — marcador ignorado.",
+                            section_name,
+                            company.name,
+                        )
+            except (json.JSONDecodeError, AttributeError, TypeError) as exc:
+                logger.warning(
+                    "# [WHATSAPP] Error parseando marcador TARGET_SECTION: %s "
+                    "— raw_json=%s",
+                    exc,
+                    raw_json,
+                )
 
         # --- Step 8: Dispatch reply via Twilio and persist outbound message. ---
         # --- Paso 8: Despachar respuesta vía Twilio y persistir mensaje saliente. ---

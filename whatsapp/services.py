@@ -23,6 +23,13 @@ from google import genai
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from google.genai import types as genai_types
+from google.genai.types import (
+    GoogleMaps,
+    HttpOptions,
+    LatLng,
+    RetrievalConfig,
+    ToolConfig,
+)
 from twilio.rest import Client as TwilioClient
 
 from ivr_config.models import Contact, PresenceStatus, Section
@@ -62,6 +69,49 @@ def _build_genai_client() -> genai.Client:
         project=project,
         location=location,
         credentials=credentials,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GOOGLE GENAI CLIENT FACTORY — MAPS GROUNDING
+# Authenticated Vertex AI client with api_version="v1", required for
+# Grounding with Google Maps (Paso 20). Uses identical Service Account
+# credentials as _build_genai_client().
+# Cliente Vertex AI autenticado con api_version="v1", obligatorio para
+# Grounding con Google Maps (Paso 20). Usa las mismas credenciales de
+# Service Account que _build_genai_client().
+# ---------------------------------------------------------------------------
+
+def _build_genai_client_maps() -> genai.Client:
+    """
+    Builds and returns an authenticated google-genai Client instance with
+    api_version="v1", which is required by the Grounding with Google Maps
+    feature in Vertex AI. Credentials and project configuration are identical
+    to _build_genai_client(). Used exclusively by get_gemini_reply() when
+    Maps Grounding is activated.
+    ---
+    Construye y devuelve una instancia autenticada de google-genai Client con
+    api_version="v1", obligatorio para la funcionalidad Grounding with Google
+    Maps en Vertex AI. Las credenciales y la configuración de proyecto son
+    idénticas a _build_genai_client(). Usado exclusivamente por
+    get_gemini_reply() cuando se activa Maps Grounding.
+    """
+    credentials_path = os.environ["GCP_CREDENTIALS_PATH"]
+    project          = os.environ["GOOGLE_CLOUD_PROJECT"]
+    location         = os.environ["GOOGLE_CLOUD_LOCATION"]
+
+    credentials = service_account.Credentials.from_service_account_file(
+        credentials_path,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    credentials.refresh(Request())
+
+    return genai.Client(
+        vertexai=True,
+        project=project,
+        location=location,
+        credentials=credentials,
+        http_options=HttpOptions(api_version="v1"),
     )
 
 
@@ -255,6 +305,38 @@ class WhatsAppChatService:
             "responsable se ponga en contacto."
         )
 
+        # Target section detection instruction block — Paso 21 (2026-04-20).
+        # When the agent identifies that the client wants to be directed to a
+        # specific company section, it must append a strict JSON marker at the
+        # very end of its response. The marker is parsed and stripped by
+        # IncomingWhatsAppView before the reply is sent to the user.
+        # The list of valid section names is injected here so the agent does
+        # not hallucinate section names outside those defined in the company.
+        # Bloque de instrucción de detección de sección destino — Paso 21 (2026-04-20).
+        # Cuando el agente identifica que el cliente desea ser dirigido a una
+        # sección concreta de la empresa, debe añadir un marcador JSON estricto
+        # al final de su respuesta. El marcador es parseado y eliminado por
+        # IncomingWhatsAppView antes de enviar la respuesta al usuario.
+        # La lista de nombres de sección válidos se inyecta aquí para que el
+        # agente no invente nombres de sección fuera de los definidos en la empresa.
+        section_names = [s.name for s in sections] if sections.exists() else []
+        if section_names:
+            valid_names_str = ", ".join(f'"{n}"' for n in section_names)
+            lines.append(
+                "\nDETECCIÓN DE SECCIÓN DESTINO:"
+                "\nCuando el cliente exprese con claridad que desea ser atendido "
+                "por o dirigido a una sección concreta de la empresa, añade AL FINAL "
+                "de tu respuesta — y solo al final, sin texto posterior — el "
+                "siguiente marcador JSON en una línea propia:"
+                "\n[TARGET_SECTION:{\"name\": \"NOMBRE_SECCIÓN\"}]"
+                f"\nSecciones válidas (usa el nombre exacto): {valid_names_str}."
+                "\nSolo incluye el marcador cuando la intención del cliente sea "
+                "inequívoca. No lo incluyas en respuestas informativas generales."
+                "\nEjemplo correcto: si el cliente dice 'quiero hablar con Grúas' "
+                "y existe una sección llamada 'Grúas', añade al final:"
+                "\n[TARGET_SECTION:{\"name\": \"Grúas\"}]"
+            )
+
         return "\n".join(lines)
 
     @staticmethod
@@ -315,31 +397,162 @@ class WhatsAppChatService:
 
         return history
 
+    # Keywords that trigger Maps Grounding even without explicit coordinates.
+    # Palabras clave que activan Maps Grounding incluso sin coordenadas explícitas.
+    GEO_KEYWORDS = (
+        "dónde", "donde", "cómo llegar", "como llegar", "dirección",
+        "ubicación", "ubicacion", "cerca", "cercano", "mapa", "ruta",
+        "distancia", "kilómetros", "kilometros", "metros", "taller",
+        "instalaciones", "oficina", "sede", "local",
+    )
+
+    @classmethod
+    def _should_use_maps_grounding(
+        cls,
+        session,
+        user_message: str,
+    ) -> bool:
+        """
+        Determines whether Grounding with Google Maps should be activated for
+        the current invocation. Returns True when:
+          - The session contains valid geographic coordinates (latitude is not
+            None), OR
+          - The user message contains one or more geographic reference keywords
+            defined in GEO_KEYWORDS.
+        Both conditions are evaluated independently (OR logic).
+        ---
+        Determina si Grounding con Google Maps debe activarse para la invocación
+        actual. Devuelve True cuando:
+          - La sesión contiene coordenadas geográficas válidas (latitude no es
+            None), O
+          - El mensaje del usuario contiene una o más palabras clave de referencia
+            geográfica definidas en GEO_KEYWORDS.
+        Ambas condiciones se evalúan de forma independiente (lógica OR).
+
+        Args:
+            session: Instancia de WhatsAppSession o None.
+            user_message (str): Texto del mensaje entrante del usuario.
+
+        Returns:
+            bool: True si Maps Grounding debe activarse, False en caso contrario.
+        """
+        if session is not None and session.latitude is not None:
+            return True
+        message_lower = user_message.lower()
+        return any(keyword in message_lower for keyword in cls.GEO_KEYWORDS)
+
     @classmethod
     def get_gemini_reply(
         cls,
         system_prompt: str,
         history: list,
         user_message: str,
+        session=None,
     ) -> str:
         """
         Sends the user message to Gemini 2.5 Flash via Vertex AI, providing
         the dynamic system prompt and reconstructed session history as context.
         Returns the model's plain-text reply.
-        ---
-        Envía el mensaje del usuario a Gemini 2.5 Flash vía Vertex AI, proporcionando
-        el system prompt dinámico y el historial de sesión reconstruido como contexto.
-        Devuelve la respuesta en texto plano del modelo.
-        """
-        client = _build_genai_client()
 
-        chat = client.chats.create(
-            model=cls.GEMINI_MODEL,
-            config=genai_types.GenerateContentConfig(
-                system_instruction=system_prompt,
-            ),
-            history=history,
-        )
+        When Maps Grounding is applicable (session has coordinates or user
+        message contains geographic keywords), the call is made via a separate
+        client instantiated with api_version="v1" and the GoogleMaps tool is
+        injected into the GenerateContentConfig. If the session contains valid
+        coordinates, they are passed via RetrievalConfig.lat_lng so that Gemini
+        grounds its response against the client's actual position. The language
+        code is set to "es-ES" for Grupo Álvarez's operational context.
+        ---
+        Envía el mensaje del usuario a Gemini 2.5 Flash vía Vertex AI,
+        proporcionando el system prompt dinámico y el historial de sesión
+        reconstruido como contexto. Devuelve la respuesta en texto plano del
+        modelo.
+
+        Cuando Maps Grounding es aplicable (la sesión tiene coordenadas o el
+        mensaje contiene palabras clave geográficas), la llamada se realiza vía
+        un cliente instanciado con api_version="v1" y el tool GoogleMaps se
+        inyecta en GenerateContentConfig. Si la sesión contiene coordenadas
+        válidas, se pasan vía RetrievalConfig.lat_lng para que Gemini ancle su
+        respuesta a la posición real del cliente. El language_code se fija a
+        "es-ES" para el contexto operacional de Grupo Álvarez.
+
+        Args:
+            system_prompt (str): System prompt dinámico construido por
+                build_system_prompt().
+            history (list): Historial de chat reconstruido por build_history().
+            user_message (str): Texto del mensaje entrante del usuario.
+            session (WhatsAppSession | None): Sesión activa. Se usa para
+                determinar si activar Maps Grounding y para extraer coordenadas.
+
+        Returns:
+            str: Texto plano de la respuesta del modelo.
+        """
+        use_maps = cls._should_use_maps_grounding(session, user_message)
+
+        if use_maps:
+            # ------------------------------------------------------------------
+            # Maps Grounding branch: api_version="v1" client + GoogleMaps tool.
+            # Rama Maps Grounding: cliente con api_version="v1" + tool GoogleMaps.
+            # ------------------------------------------------------------------
+            logger.info(
+                "# [WHATSAPP] Activando Maps Grounding para sesión %s — "
+                "coordenadas: %s/%s — keywords: %s",
+                session.pk if session else "sin-sesión",
+                session.latitude if session else "N/A",
+                session.longitude if session else "N/A",
+                not (session is not None and session.latitude is not None),
+            )
+
+            client = _build_genai_client_maps()
+
+            # Build tool_config: include lat/lng only when coordinates are
+            # available in the session. Keyword-only activation uses the Maps
+            # tool without explicit coordinates — Gemini infers location from
+            # context.
+            # Construir tool_config: incluir lat/lng solo cuando hay coordenadas
+            # disponibles en la sesión. La activación solo por keywords usa el
+            # tool Maps sin coordenadas explícitas — Gemini infiere ubicación
+            # del contexto.
+            if session is not None and session.latitude is not None:
+                tool_config = ToolConfig(
+                    retrieval_config=RetrievalConfig(
+                        lat_lng=LatLng(
+                            latitude=float(session.latitude),
+                            longitude=float(session.longitude),
+                        ),
+                        language_code="es-ES",
+                    )
+                )
+            else:
+                tool_config = ToolConfig(
+                    retrieval_config=RetrievalConfig(
+                        language_code="es-ES",
+                    )
+                )
+
+            chat = client.chats.create(
+                model=cls.GEMINI_MODEL,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    tools=[genai_types.Tool(google_maps=GoogleMaps(enable_widget=False))],
+                    tool_config=tool_config,
+                ),
+                history=history,
+            )
+
+        else:
+            # ------------------------------------------------------------------
+            # Standard branch: no Maps Grounding.
+            # Rama estándar: sin Maps Grounding.
+            # ------------------------------------------------------------------
+            client = _build_genai_client()
+
+            chat = client.chats.create(
+                model=cls.GEMINI_MODEL,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                ),
+                history=history,
+            )
 
         response = chat.send_message(user_message)
         return response.text

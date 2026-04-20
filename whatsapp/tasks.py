@@ -205,29 +205,16 @@ def check_in_meeting_reminders() -> str:
             error_count += 1
             continue
 
-        # Send the reminder via Twilio ContentSid template.
-        # Enviar el recordatorio vía plantilla ContentSid de Twilio.
-        # SANDBOX VALIDATION MODE: using free-form text while ContentSid is PENDING.
-        # MODO VALIDACIÓN SANDBOX: usando texto libre mientras ContentSid está PENDING.
-        _use_freeform = template.content_sid.startswith("PENDING_")
+        # Send the reminder via Twilio ContentSid template (production).
+        # ContentSid values are now real HX SIDs approved by Meta (Paso 22).
+        # Enviar el recordatorio vía plantilla ContentSid de Twilio (producción).
+        # Los valores ContentSid son ahora HX SIDs reales aprobados por Meta (Paso 22).
         try:
-            if _use_freeform:
-                twilio_client.messages.create(
-                    from_=f"whatsapp:{sender_number}",
-                    to=f"whatsapp:{contact.phone_number}",
-                    body=(
-                        "¿Sigues reunido/a? Responde con una de estas opciones:\n"
-                        "1h — Seguiré ocupado/a 1 hora más\n"
-                        "2h — Seguiré ocupado/a 2 horas más\n"
-                        "disponible — Ya estoy disponible"
-                    ),
-                )
-            else:
-                twilio_client.messages.create(
-                    from_=f"whatsapp:{sender_number}",
-                    to=f"whatsapp:{contact.phone_number}",
-                    content_sid=template.content_sid,
-                )
+            twilio_client.messages.create(
+                from_=f"whatsapp:{sender_number}",
+                to=f"whatsapp:{contact.phone_number}",
+                content_sid=template.content_sid,
+            )
 
             # Mark reminder as sent to prevent duplicate dispatch.
             # Marcar el recordatorio como enviado para evitar despacho duplicado.

@@ -48,7 +48,7 @@ TEMPLATE_DEFINITIONS = [
         #        2h — Seguiré ocupado 2 horas más
         #        disponible — Ya estoy disponible"
         "name":        "presence_reminder",
-        "content_sid": "PENDING_HX_PRESENCE_REMINDER",
+        "content_sid": "HXe0ea154a5fa8756be305f6f0c24023c4",
         "category":    WhatsAppTemplate.CATEGORY_UTILITY,
         "language":    "es",
     },
@@ -57,7 +57,7 @@ TEMPLATE_DEFINITIONS = [
         # Mensaje de bienvenida opcional para conversaciones iniciadas por la empresa.
         # Body: "Hola {{1}}, soy el asistente virtual de {{2}}. ¿En qué puedo ayudarte hoy?"
         "name":        "welcome_message",
-        "content_sid": "PENDING_HX_WELCOME_MESSAGE",
+        "content_sid": "HX6619d4bded96b01c62fada40e6259dd8",
         "category":    WhatsAppTemplate.CATEGORY_UTILITY,
         "language":    "es",
     },
