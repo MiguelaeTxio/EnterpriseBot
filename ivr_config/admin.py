@@ -14,15 +14,20 @@ apropiados al rol de cada entidad en el sistema IVR multiempresa.
 from django.contrib import admin
 
 from .models import (
+    BlockedCaller,
+    CallDataCapture,
     CallFlow,
     Company,
     CompanyUser,
     Contact,
     CorporateVoiceProfile,
     DataCaptureSet,
+    PendingNotification,
     PhoneNumber,
     PresenceStatus,
     Section,
+    SectionContact,
+    TransferAttempt,
 )
 
 
@@ -240,3 +245,128 @@ class PresenceStatusAdmin(admin.ModelAdmin):
     search_fields = ("company_user__user__username", "company_user__company__name")
     readonly_fields = ("created_at",)
     ordering = ("-starts_at",)
+
+# ---------------------------------------------------------------------------
+# BLOCKED CALLER
+# ---------------------------------------------------------------------------
+
+@admin.register(BlockedCaller)
+class BlockedCallerAdmin(admin.ModelAdmin):
+    """
+    Admin interface for the BlockedCaller model.
+    Displays company, blocked number, reason and creation date.
+    ---
+    Interfaz de administracion para el modelo BlockedCaller.
+    Muestra la empresa, el numero bloqueado, el motivo y la fecha de creacion.
+    """
+
+    list_display  = ("phone_number", "company", "reason", "created_at")
+    list_filter   = ("company",)
+    search_fields = ("phone_number", "company__name", "reason")
+    readonly_fields = ("created_at",)
+    ordering = ("company__name", "phone_number")
+
+
+# ---------------------------------------------------------------------------
+# SECTION CONTACT
+# ---------------------------------------------------------------------------
+
+@admin.register(SectionContact)
+class SectionContactAdmin(admin.ModelAdmin):
+    """
+    Admin interface for the SectionContact through model.
+    Displays section, contact and transfer priority.
+    ---
+    Interfaz de administracion para el modelo intermedio SectionContact.
+    Muestra la seccion, el contacto y la prioridad de transferencia.
+    """
+
+    list_display  = ("section", "contact", "priority", "section__company")
+    list_filter   = ("section__company", "section")
+    search_fields = ("section__name", "contact__name", "section__company__name")
+    ordering = ("section__company__name", "section__name", "priority")
+
+
+# ---------------------------------------------------------------------------
+# TRANSFER ATTEMPT
+# ---------------------------------------------------------------------------
+
+@admin.register(TransferAttempt)
+class TransferAttemptAdmin(admin.ModelAdmin):
+    """
+    Admin interface for the TransferAttempt model.
+    Displays call SID, section, status, contact index and timestamps.
+    ---
+    Interfaz de administracion para el modelo TransferAttempt.
+    Muestra el call SID, la seccion, el estado, el indice de contacto y los timestamps.
+    """
+
+    list_display  = ("call_sid", "section", "status", "contact_index", "created_at", "updated_at")
+    list_filter   = ("status", "section__company")
+    search_fields = ("call_sid", "section__name", "twilio_number", "caller_number")
+    readonly_fields = ("created_at", "updated_at")
+    ordering = ("-created_at",)
+
+
+# ---------------------------------------------------------------------------
+# PENDING NOTIFICATION
+# ---------------------------------------------------------------------------
+
+@admin.register(PendingNotification)
+class PendingNotificationAdmin(admin.ModelAdmin):
+    """
+    Admin interface for the PendingNotification model.
+    Displays company, section, caller number, notification channel and timestamps.
+    ---
+    Interfaz de administracion para el modelo PendingNotification.
+    Muestra la empresa, la seccion, el numero llamante, el canal de notificacion y los timestamps.
+    """
+
+    list_display  = ("caller_number", "company", "section", "channel", "created_at", "notified_at")
+    list_filter   = ("channel", "company")
+    search_fields = ("caller_number", "call_sid", "company__name", "section__name")
+    readonly_fields = ("created_at",)
+    ordering = ("-created_at",)
+
+
+# ---------------------------------------------------------------------------
+# CALL DATA CAPTURE
+# ---------------------------------------------------------------------------
+
+@admin.register(CallDataCapture)
+class CallDataCaptureAdmin(admin.ModelAdmin):
+    """
+    Admin interface for the CallDataCapture model.
+    Displays call SID, section, referent contact, WhatsApp notification
+    delivery status and capture timestamp. Read-only for superusers:
+    records are created exclusively by the IVR engine at runtime.
+    ---
+    Interfaz de administracion para el modelo CallDataCapture.
+    Muestra el call SID, la seccion, el contacto referente, el estado de
+    entrega de la notificacion WhatsApp y el timestamp de captura.
+    Solo lectura para superusuarios: los registros son creados exclusivamente
+    por el motor IVR en tiempo de ejecucion.
+    """
+
+    list_display  = (
+        "call_sid",
+        "section",
+        "contact",
+        "call_flow",
+        "notified_via_whatsapp",
+        "whatsapp_sent_at",
+        "captured_at",
+    )
+    list_filter   = ("notified_via_whatsapp", "section__company", "section")
+    search_fields = ("call_sid", "section__name", "contact__name", "call_flow__name")
+    readonly_fields = (
+        "call_sid",
+        "call_flow",
+        "section",
+        "contact",
+        "captured_data",
+        "captured_at",
+        "notified_via_whatsapp",
+        "whatsapp_sent_at",
+    )
+    ordering = ("-captured_at",)

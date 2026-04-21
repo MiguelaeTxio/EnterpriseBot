@@ -731,3 +731,112 @@ class PresenceResponseService:
             f"⏳ Entendido, seguirás como ocupado/a durante {hours} hora(s) más. "
             f"Te avisaremos de nuevo si es necesario."
         )
+
+# ---------------------------------------------------------------------------
+# CAPTURE NOTIFICATION SERVICE
+# Sends a structured IVR capture summary to the section's referent contact
+# via WhatsApp using the ivr_capture_notification Meta-approved template.
+# Envia un resumen estructurado de captura IVR al contacto referente de la
+# seccion via WhatsApp usando el template aprobado por Meta ivr_capture_notification.
+# ---------------------------------------------------------------------------
+
+def send_capture_notification(
+    call_data_capture,
+    whatsapp_sender: str,
+) -> bool:
+    """
+    Sends a WhatsApp notification to the referent contact of the section
+    using the Meta-approved UTILITY template 'ivr_capture_notification'.
+    The template variables are populated from the CallDataCapture instance:
+      {{1}} section name, {{2}} captured name, {{3}} captured phone,
+      {{4}} captured reason/motive.
+    Updates CallDataCapture.notified_via_whatsapp and whatsapp_sent_at
+    on successful delivery. Returns True on success, False on failure.
+    This function is synchronous and designed to be called via
+    asyncio.create_task(asyncio.to_thread(send_capture_notification, ...))
+    from the async voice bridge context.
+    ---
+    Envia una notificacion WhatsApp al contacto referente de la seccion
+    usando el template UTILITY aprobado por Meta 'ivr_capture_notification'.
+    Las variables del template se rellenan desde la instancia CallDataCapture:
+      {{1}} nombre de seccion, {{2}} nombre capturado, {{3}} telefono capturado,
+      {{4}} motivo capturado.
+    Actualiza CallDataCapture.notified_via_whatsapp y whatsapp_sent_at
+    en caso de entrega exitosa. Devuelve True en exito, False en fallo.
+    Esta funcion es sincrona y esta disenada para ser invocada mediante
+    asyncio.create_task(asyncio.to_thread(send_capture_notification, ...))
+    desde el contexto async del voice bridge.
+    """
+    from ivr_config.models import CallDataCapture as _CDC
+
+    contact = call_data_capture.contact
+    section = call_data_capture.section
+
+    # Guard: contact must exist and have a phone number.
+    # Guardia: el contacto debe existir y tener numero de telefono.
+    if not contact or not contact.phone_number:
+        logger.warning(
+            "# [CAPTURE NOTIFY] CallDataCapture %s sin contacto o telefono. Abortando.",
+            call_data_capture.pk,
+        )
+        return False
+
+    # Resolve template from DB for the contact's company.
+    # Resolver el template desde BD para la empresa del contacto.
+    try:
+        template = WhatsAppTemplate.objects.get(
+            company=contact.company,
+            name="ivr_capture_notification",
+            is_active=True,
+        )
+    except WhatsAppTemplate.DoesNotExist:
+        logger.error(
+            "# [CAPTURE NOTIFY] Template ivr_capture_notification no encontrado "
+            "para empresa %s. Abortando.",
+            contact.company.name,
+        )
+        return False
+
+    # Extract captured data fields with safe fallbacks.
+    # Extraer campos de datos capturados con fallbacks seguros.
+    captured = call_data_capture.captured_data or {}
+    section_name    = section.name if section else "sin seccion"
+    captured_name   = captured.get("nombre",   captured.get("name",   "No informado"))
+    captured_phone  = captured.get("telefono", captured.get("phone",  "No informado"))
+    captured_motive = captured.get("motivo",   captured.get("motive", "No informado"))
+
+    # Build Twilio Content Template API payload.
+    # Construir el payload de la API Content Template de Twilio.
+    try:
+        twilio_client = _build_twilio_client()
+        message = twilio_client.messages.create(
+            from_=f"whatsapp:{whatsapp_sender}",
+            to=f"whatsapp:{contact.phone_number}",
+            content_sid=template.content_sid,
+            content_variables={
+                "1": section_name,
+                "2": captured_name,
+                "3": captured_phone,
+                "4": captured_motive,
+            },
+        )
+        logger.info(
+            "# [CAPTURE NOTIFY] Notificacion enviada a %s — SID: %s",
+            contact.phone_number,
+            message.sid,
+        )
+    except Exception as exc:
+        logger.error(
+            "# [CAPTURE NOTIFY] Error al enviar notificacion a %s: %s",
+            contact.phone_number,
+            exc,
+        )
+        return False
+
+    # Mark capture as notified.
+    # Marcar la captura como notificada.
+    call_data_capture.notified_via_whatsapp = True
+    call_data_capture.whatsapp_sent_at = now()
+    call_data_capture.save(update_fields=["notified_via_whatsapp", "whatsapp_sent_at"])
+
+    return True

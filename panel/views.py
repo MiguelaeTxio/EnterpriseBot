@@ -12,7 +12,8 @@ from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View, ListView, UpdateView, CreateView, DeleteView
 from django.shortcuts import redirect, render
-from django.db.models import Q
+from django.db import models as django_models
+from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 from django.forms import modelformset_factory
 
@@ -40,7 +41,7 @@ from ivr_config.models import (
     CorporateVoiceProfile,
     BlockedCaller,
 )
-from whatsapp.models import WhatsAppTemplate
+from whatsapp.models import WhatsAppTemplate, WhatsAppSession
 
 
 class CompanyUserCreateView(AdminRoleRequiredMixin, View):
@@ -1926,3 +1927,82 @@ class WhatsAppTemplateListView(AdminRoleRequiredMixin, ListView):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
+# ---------------------------------------------------------------------------
+# WHATSAPP ACTIVE SESSION LIST VIEW — Active WhatsApp sessions for the company.
+# Vista de sesiones WhatsApp activas de la empresa. Requiere rol ADMIN.
+# Paso 1 — Hito 5 (2026-04-20)
+# ---------------------------------------------------------------------------
+
+class WhatsAppActiveSessionListView(AdminRoleRequiredMixin, ListView):
+    """
+    Displays a list of active WhatsAppSession records scoped to the
+    authenticated user's company, ordered by most recently updated.
+    A session is considered active when its status field equals 'active'.
+    Accessible only to users with the ADMIN role.
+    Each row shows: origin number, session start, last inbound message
+    excerpt, and a link to the full session history.
+    ---
+    Muestra un listado de los registros WhatsAppSession activos acotados
+    a la empresa del usuario autenticado, ordenados por actualizacion
+    mas reciente. Una sesion se considera activa cuando su campo status
+    es igual a 'active'. Solo accesible para usuarios con rol ADMIN.
+    Cada fila muestra: numero de origen, inicio de sesion, extracto del
+    ultimo mensaje entrante y enlace al historial completo.
+    """
+
+    model = WhatsAppSession
+    template_name = "panel/whatsapp/active_session_list.html"
+    context_object_name = "active_sessions"
+
+    def get_queryset(self):
+        """
+        Returns active WhatsAppSession records scoped to the authenticated
+        user's company, with last inbound message prefetched for excerpt display.
+        ---
+        Retorna los registros WhatsAppSession activos acotados a la empresa
+        del usuario autenticado, con el ultimo mensaje entrante precargado
+        para mostrar el extracto.
+        """
+        from whatsapp.models import WhatsAppMessage
+        return (
+            WhatsAppSession.objects.filter(
+                company=self.request.user.company_user.company,
+                is_active=True,
+            )
+            .prefetch_related(
+                Prefetch(
+                    "messages",
+                    queryset=WhatsAppMessage.objects.filter(
+                        direction="IN"
+                    ).order_by("-timestamp")[:1],
+                    to_attr="last_inbound",
+                )
+            )
+            .order_by("-last_message_at")
+        )
+
+    def get_context_data(self, **kwargs):
+        """
+        Adds company, company_user and own_presence to the template context.
+        ---
+        Anade company, company_user y own_presence al contexto de la plantilla.
+        """
+        context = super().get_context_data(**kwargs)
+        context["company"]      = self.request.user.company_user.company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = self._get_own_presence()
+        return context
+
+    def _get_own_presence(self):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = self.request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()

@@ -1305,3 +1305,111 @@ class PendingNotification(models.Model):
             f"{self.created_at:%Y-%m-%d %H:%M} — "
             f"{self.get_channel_display()}"
         )
+
+# ---------------------------------------------------------------------------
+# 15. CALL DATA CAPTURE — IVR data capture record persisted per call.
+#     Registro de captura de datos IVR persistido por llamada.
+# ---------------------------------------------------------------------------
+
+class CallDataCapture(models.Model):
+    """
+    Persists the structured data collected by a DataCaptureSet during an
+    active IVR call session. Each record represents a single completed
+    capture cycle for a given call leg. Once all DataCaptureSet fields are
+    filled, the IVR engine instantiates this record, attempts a WhatsApp
+    notification to the section's referent contact, and proceeds with the
+    call transfer. The notified_via_whatsapp flag tracks delivery success.
+    ---
+    Persiste los datos estructurados recopilados por un DataCaptureSet durante
+    una sesion de llamada IVR activa. Cada registro representa un ciclo de
+    captura completado para un tramo de llamada concreto. Una vez completados
+    todos los campos del DataCaptureSet, el motor IVR instancia este registro,
+    intenta la notificacion WhatsApp al contacto referente de la seccion y
+    procede con la transferencia de la llamada. El flag notified_via_whatsapp
+    registra el exito de la entrega.
+    """
+
+    call_sid = models.CharField(
+        max_length=40,
+        db_index=True,
+        verbose_name="Call SID",
+        help_text=(
+            "Identificador unico del tramo de llamada Twilio (CA...). "
+            "No es unique: una misma llamada puede generar multiples capturas "
+            "si el flujo IVR atraviesa mas de una seccion con DataCaptureSet."
+        ),
+    )
+    call_flow = models.ForeignKey(
+        "CallFlow",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="call_data_captures",
+        verbose_name="Flujo IVR",
+        help_text="Flujo IVR activo en el momento de la captura.",
+    )
+    section = models.ForeignKey(
+        "Section",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="call_data_captures",
+        verbose_name="Seccion",
+        help_text="Seccion en la que se produjo la captura de datos.",
+    )
+    contact = models.ForeignKey(
+        "Contact",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="call_data_captures",
+        verbose_name="Contacto referente",
+        help_text=(
+            "Snapshot del contacto referente de la seccion en el momento de la captura. "
+            "Se almacena como FK para trazabilidad historica; el contacto puede cambiar "
+            "posteriormente sin afectar al registro."
+        ),
+    )
+    captured_data = models.JSONField(
+        default=dict,
+        verbose_name="Datos capturados",
+        help_text=(
+            "Diccionario clave->valor con los datos recopilados por el DataCaptureSet activo. "
+            "Estructura: {nombre_campo: valor_capturado}. "
+            "Ejemplo: {nombre: Juan Garcia, telefono: +34600000000, motivo: Averia grua}."
+        ),
+    )
+    captured_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de captura",
+        help_text="Timestamp UTC en que se completo el ciclo de captura.",
+    )
+    notified_via_whatsapp = models.BooleanField(
+        default=False,
+        verbose_name="Notificado via WhatsApp",
+        help_text=(
+            "True si la notificacion WhatsApp al contacto referente fue enviada "
+            "y confirmada por la API de Twilio. False hasta entonces."
+        ),
+    )
+    whatsapp_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de envio WhatsApp",
+        help_text="Timestamp UTC en que la notificacion WhatsApp fue confirmada como enviada.",
+    )
+
+    class Meta:
+        verbose_name = "Captura de datos de llamada"
+        verbose_name_plural = "Capturas de datos de llamada"
+        ordering = ["-captured_at"]
+
+    def __str__(self):
+        section_name = self.section.name if self.section else "sin seccion"
+        notified = "WA enviado" if self.notified_via_whatsapp else "pendiente"
+        return (
+            f"Captura {self.call_sid} "
+            f"{section_name} "
+            f"{self.captured_at:%Y-%m-%d %H:%M} "
+            f"{notified}"
+        )

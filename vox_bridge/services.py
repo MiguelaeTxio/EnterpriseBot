@@ -683,11 +683,59 @@ class VoiceOrchestrationService:
                                 "required": ["section_id"],
                             },
                         ),
+                        # TOOL 3: submit_captured_data — Paso 7 (Hito 5)
+                        # Alia invoca esta función cuando ha recogido todos los
+                        # datos requeridos por el DataCaptureSet activo de la sección,
+                        # ya sea por inferencia del contexto o por pregunta directa.
+                        # El handler persiste un CallDataCapture y dispara la
+                        # notificación WhatsApp al contacto referente de la sección.
+                        # TOOL 3: submit_captured_data — Step 7 (Milestone 5)
+                        # Alia invokes this when all required DataCaptureSet fields
+                        # have been collected, either inferred from context or asked.
+                        # Handler persists a CallDataCapture and fires WhatsApp notification.
+                        types.FunctionDeclaration(
+                            name="submit_captured_data",
+                            description=(
+                                "Invoca esta función cuando hayas recogido todos los "
+                                "datos indicados en las instrucciones de captura de la "
+                                "sección. Infiere los datos del contexto natural de la "
+                                "conversación — no vuelvas a preguntar datos que el "
+                                "llamante ya haya mencionado. "
+                                "Proporciona todos los campos capturados en el parámetro "
+                                "captured_fields como un objeto clave-valor. "
+                                "Solo invoca esta función una vez por sección."
+                            ),
+                            parameters={
+                                "type": "object",
+                                "properties": {
+                                    "section_id": {
+                                        "type": "integer",
+                                        "description": (
+                                            "El identificador numérico de la sección "
+                                            "para la que se han capturado los datos."
+                                        ),
+                                    },
+                                    "captured_fields": {
+                                        "type": "object",
+                                        "description": (
+                                            "Diccionario clave-valor con todos los datos "
+                                            "capturados durante la conversación. "
+                                            "Las claves deben coincidir con los nombres "
+                                            "de campo indicados en las instrucciones "
+                                            "de captura de la sección."
+                                        ),
+                                        "additionalProperties": True,
+                                    },
+                                },
+                                "required": ["section_id", "captured_fields"],
+                            },
+                        ),
                     ]
                 )
             ]
             logger.info(
-                "[SESSION] Tools registradas: route_to_section, transfer_to_section_contact."
+                "[SESSION] Tools registradas: route_to_section, "
+                "transfer_to_section_contact, submit_captured_data."
             )
         else:
             live_tools = None
@@ -1314,6 +1362,123 @@ class VoiceOrchestrationService:
                                         f"{type(tr_exc).__name__}: {tr_exc}",
                                         exc_info=True,
                                     )
+                            elif fn_call.name == "submit_captured_data":
+                                # --- Tool Call Handler: submit_captured_data (Paso 7, Hito 5) ---
+                                # Persist CallDataCapture and fire WhatsApp notification.
+                                # Persistir CallDataCapture y disparar notificación WhatsApp.
+                                _section_id_cap = int(fn_call.args.get("section_id", -1))
+                                _captured_fields = fn_call.args.get("captured_fields", {})
+                                logger.info(
+                                    f"[PASO-7] tool_call submit_captured_data recibido. "
+                                    f"section_id={_section_id_cap} | "
+                                    f"campos={list(_captured_fields.keys())}"
+                                )
+                                try:
+                                    from django.utils.timezone import now as _now
+                                    from ivr_config.models import (
+                                        CallDataCapture as _CDC,
+                                        Section as _Section,
+                                        Contact as _Contact,
+                                    )
+                                    from whatsapp.services import send_capture_notification
+                                    from asgiref.sync import sync_to_async
+
+                                    # Resolve section and referent contact from DB.
+                                    # Resolver sección y contacto referente desde BD.
+                                    def _persist_capture():
+                                        section_obj = _Section.objects.filter(
+                                            pk=_section_id_cap
+                                        ).first()
+                                        contact_obj = None
+                                        if section_obj:
+                                            sc = section_obj.sectioncontact_set.order_by(
+                                                "priority"
+                                            ).select_related("contact").first()
+                                            if sc:
+                                                contact_obj = sc.contact
+                                        cdc = _CDC.objects.create(
+                                            call_sid=self.call_sid,
+                                            call_flow=self.general_call_flow,
+                                            section=section_obj,
+                                            contact=contact_obj,
+                                            captured_data=_captured_fields,
+                                        )
+                                        logger.info(
+                                            f"[PASO-7] CallDataCapture persistido — "
+                                            f"pk={cdc.pk} | "
+                                            f"section={section_obj} | "
+                                            f"contact={contact_obj}"
+                                        )
+                                        return cdc
+
+                                    cdc_instance = await sync_to_async(_persist_capture)()
+
+                                    # Fire WhatsApp notification asynchronously.
+                                    # No se espera confirmación — el transfer no
+                                    # debe bloquearse por el envío WhatsApp.
+                                    # Disparar notificación WhatsApp de forma asíncrona.
+                                    # No se espera confirmación — la transferencia
+                                    # no debe bloquearse por el envío WhatsApp.
+                                    _wa_sender = os.getenv(
+                                        "TWILIO_WHATSAPP_SENDER", ""
+                                    )
+                                    if _wa_sender:
+                                        asyncio.create_task(
+                                            asyncio.to_thread(
+                                                send_capture_notification,
+                                                cdc_instance,
+                                                _wa_sender,
+                                            )
+                                        )
+                                        logger.info(
+                                            "[PASO-7] Tarea WhatsApp notification "
+                                            "disparada de forma asíncrona."
+                                        )
+                                    else:
+                                        logger.warning(
+                                            "[PASO-7] TWILIO_WHATSAPP_SENDER no "
+                                            "configurado — notificación WhatsApp omitida."
+                                        )
+                                except Exception as cap_exc:
+                                    logger.error(
+                                        f"[PASO-7] Error al persistir CallDataCapture "
+                                        f"o disparar notificación: "
+                                        f"{type(cap_exc).__name__}: {cap_exc}",
+                                        exc_info=True,
+                                    )
+
+                                # Respond to Gemini with tool_response.
+                                # Responder a Gemini con tool_response.
+                                try:
+                                    await session.send_client_content(
+                                        turns=types.Content(
+                                            role="tool",
+                                            parts=[
+                                                types.Part(
+                                                    function_response=types.FunctionResponse(
+                                                        name="submit_captured_data",
+                                                        response={
+                                                            "success": True,
+                                                            "section_id": _section_id_cap,
+                                                        },
+                                                    )
+                                                )
+                                            ],
+                                        ),
+                                        turn_complete=True,
+                                    )
+                                    logger.info(
+                                        "[PASO-7] tool_response submit_captured_data "
+                                        "enviado correctamente."
+                                    )
+                                except Exception as tr_cap_exc:
+                                    logger.error(
+                                        f"[PASO-7] Error al enviar tool_response "
+                                        f"submit_captured_data: "
+                                        f"{type(tr_cap_exc).__name__}: {tr_cap_exc}",
+                                        exc_info=True,
+                                    )
+
                             elif fn_call.name == "transfer_to_section_contact":
                                 section_id = int(fn_call.args.get("section_id", -1))
                                 logger.info(

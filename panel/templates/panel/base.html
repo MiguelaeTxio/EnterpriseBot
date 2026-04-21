@@ -316,6 +316,13 @@
                         <i class="bi bi-whatsapp"></i>Plantillas
                     </a>
                 </li>
+
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_whatsapp_sessions %}{% endblock %}"
+                       href="{% url 'panel:whatsapp_active_sessions' %}">
+                        <i class="bi bi-chat-dots"></i>Sesiones activas
+                    </a>
+                </li>
                 {% endif %}
 
             </ul>
@@ -445,6 +452,14 @@
                            href="{% url 'panel:whatsapp_template_list' %}"
                           >
                             <i class="bi bi-whatsapp"></i>Plantillas
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_whatsapp_sessions_off %}{% endblock %}"
+                           href="{% url 'panel:whatsapp_active_sessions' %}"
+                          >
+                            <i class="bi bi-chat-dots"></i>Sesiones activas
                         </a>
                     </li>
                     {% endif %}

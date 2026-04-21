@@ -35,6 +35,7 @@ from panel.views import (
     CallFlowRestoreView,
     VoiceProfileRestoreView,
     WhatsAppTemplateListView,
+    WhatsAppActiveSessionListView,
 )
 
 app_name = "panel"
@@ -91,4 +92,8 @@ urlpatterns = [
     # WhatsApp template management — Gestión de plantillas WhatsApp (solo lectura, rol ADMIN).
     # Paso 24 — Hito 4 (2026-04-20)
     path("whatsapp/templates/", WhatsAppTemplateListView.as_view(), name="whatsapp_template_list"),
+
+    # WhatsApp active sessions — Sesiones WhatsApp activas (rol ADMIN).
+    # Paso 1 — Hito 5 (2026-04-20)
+    path("whatsapp/sessions/", WhatsAppActiveSessionListView.as_view(), name="whatsapp_active_sessions"),
 ]

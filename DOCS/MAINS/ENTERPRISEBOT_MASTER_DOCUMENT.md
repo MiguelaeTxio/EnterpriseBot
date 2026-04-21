@@ -82,7 +82,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Sender +34607961650 registrado y operativo en producción. Validación E2E superada.
 - Panel de gestión de templates WhatsApp integrado en /panel/ (Paso 24). COMPLETADO 2026-04-20.
 
-### Hito 5: Arquitectura Omnicanal IVR ↔ WhatsApp (PAUSADO)
+### Hito 5: Arquitectura Omnicanal IVR ↔ WhatsApp (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md`)
 - Hito híbrido que cierra el ciclo omnicanal completo de EnterpriseBot.
 - Línea A — Panel: entrada WhatsApp en sidebar con historial de sesiones activas.
