@@ -6,6 +6,150 @@
 {% block extra_scripts %}
 <script>
 /*
+ * DataCaptureSet inline field row builder for the section form.
+ * Manages dynamic addition/removal of capture field rows, serialises
+ * the result to JSON in a hidden input before submit, and pre-populates
+ * rows from existing data in edit mode.
+ *
+ * Constructor de filas de campos de captura inline para el formulario de sección.
+ * Gestiona la adición/eliminación dinámica de filas de campos de captura, serializa
+ * el resultado a JSON en un campo oculto antes del submit y prerellena las filas
+ * desde datos existentes en modo edición.
+ */
+(function () {
+    "use strict";
+
+    const FIELD_TYPES = [
+        { value: "text",      label: "Texto libre" },
+        { value: "phone",     label: "Teléfono" },
+        { value: "location",  label: "Ubicación" },
+        { value: "reference", label: "Referencia" },
+        { value: "date",      label: "Fecha" },
+        { value: "free_text", label: "Comentario libre" },
+    ];
+
+    const container    = document.getElementById("capture-fields-container");
+    const emptyState   = document.getElementById("capture-fields-empty-state");
+    const jsonInput    = document.getElementById("capture-fields-json-input");
+    const nameInput    = document.getElementById("capture-set-name-input");
+    const nameField    = document.getElementById("capture-set-name-field");
+    const btnAdd       = document.getElementById("btn-add-capture-field");
+    const mainForm     = container ? container.closest("form") : null;
+
+    if (!container || !jsonInput || !btnAdd || !mainForm) return;
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
+    function buildTypeOptions(selected) {
+        return FIELD_TYPES.map(function (t) {
+            return `<option value="${t.value}"${t.value === selected ? " selected" : ""}>${t.label}</option>`;
+        }).join("");
+    }
+
+    function updateEmptyState() {
+        emptyState.classList.toggle("d-none", container.children.length > 0);
+    }
+
+    function serialise() {
+        const rows = Array.from(container.querySelectorAll(".capture-field-row"));
+        const data = rows.map(function (row) {
+            return {
+                key:      row.querySelector(".cf-key").value.trim(),
+                label:    row.querySelector(".cf-label").value.trim(),
+                type:     row.querySelector(".cf-type").value,
+                required: row.querySelector(".cf-required").checked,
+            };
+        });
+        jsonInput.value = JSON.stringify(data);
+        if (nameField) {
+            nameInput.value = nameField.value.trim();
+        }
+    }
+
+    function buildRow(field) {
+        const key      = field.key      || "";
+        const label    = field.label    || "";
+        const type     = field.type     || "text";
+        const required = field.required !== false;
+
+        const div = document.createElement("div");
+        div.className = "capture-field-row p-2 border rounded bg-light";
+        div.innerHTML = `
+            <div class="row g-2 align-items-center">
+                <div class="col-12 col-md-3">
+                    <input type="text" class="form-control form-control-sm cf-key"
+                           placeholder="identificador" value="${escapeHtml(key)}">
+                </div>
+                <div class="col-12 col-md-3">
+                    <input type="text" class="form-control form-control-sm cf-label"
+                           placeholder="Etiqueta IVR" value="${escapeHtml(label)}">
+                </div>
+                <div class="col-12 col-md-3">
+                    <select class="form-select form-select-sm cf-type">
+                        ${buildTypeOptions(type)}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input cf-required" type="checkbox"
+                               ${required ? "checked" : ""}>
+                        <label class="form-check-label text-sm">Obligatorio</label>
+                    </div>
+                </div>
+                <div class="col-6 col-md-1 text-end">
+                    <i class="bi bi-trash text-danger cf-remove" style="cursor:pointer;"></i>
+                </div>
+            </div>`;
+
+        div.querySelector(".cf-remove").addEventListener("click", function () {
+            div.remove();
+            updateEmptyState();
+            serialise();
+        });
+        div.querySelectorAll("input, select").forEach(function (el) {
+            el.addEventListener("input", serialise);
+            el.addEventListener("change", serialise);
+        });
+        return div;
+    }
+
+    btnAdd.addEventListener("click", function () {
+        container.appendChild(buildRow({}));
+        updateEmptyState();
+        serialise();
+    });
+
+    if (nameField) {
+        nameField.addEventListener("input", serialise);
+    }
+
+    mainForm.addEventListener("submit", function () {
+        serialise();
+    });
+
+    /* Pre-populate rows from existing JSON (edit mode).
+       Prerellenar filas desde JSON existente (modo edición). */
+    let existing = [];
+    try {
+        existing = JSON.parse(jsonInput.value || "[]");
+    } catch (e) {
+        existing = [];
+    }
+    existing.forEach(function (f) {
+        container.appendChild(buildRow(f));
+    });
+    updateEmptyState();
+
+}());
+</script>
+<script>
+/*
  * Dynamic SectionSchedule formset row addition.
  * Adds a new empty schedule row by cloning the last empty row in the formset,
  * updating all field name/id attributes to use the new form index, and
@@ -184,13 +328,90 @@
                         </div>
                         {% endif %}
                         <div class="form-text">
-                            Flujo IVR específico que Alia cargará en cuanto detecte que el
+                            Flujo IVR específico que María cargará en cuanto detecte que el
                             llamante desea ser atendido por esta sección (Estrategia B).
                             Las secciones sin flujo asignado no participan en el enrutamiento
                             dinámico por intención y son invisibles para el motor IVR en tiempo
                             de llamada.
                         </div>
                     </div>
+
+                    <!-- data_capture_set field — Conjunto de captura de datos (Paso 8-pre, Hito 5) -->
+                    <hr class="my-4">
+                    <h6 class="fw-semibold mb-1">
+                        <i class="bi bi-ui-checks me-2 text-primary"></i>Captura de datos
+                    </h6>
+                    <p class="text-muted mb-3 text-sm">
+                        Define qué información recogerá María al llamante antes de transferir
+                        la llamada. Puede seleccionar un conjunto existente o crear uno nuevo
+                        directamente aquí.
+                    </p>
+
+                    {# Campo oculto que recibe el JSON serializado de las filas antes del submit #}
+                    {# Hidden field that receives the serialised JSON of the rows before submit #}
+                    <input type="hidden"
+                           name="capture_fields_json"
+                           id="capture-fields-json-input"
+                           value="{{ existing_capture_fields_json|default:'[]' }}">
+                    <input type="hidden"
+                           name="capture_set_name"
+                           id="capture-set-name-input"
+                           value="">
+
+                    <div class="mb-3">
+                        <label for="{{ form.data_capture_set.id_for_label }}"
+                               class="form-label fw-medium">
+                            Conjunto existente
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.data_capture_set }}
+                        {% if form.data_capture_set.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.data_capture_set.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Seleccione un conjunto de captura ya definido para esta sección,
+                            o defina uno nuevo a continuación.
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label fw-medium">
+                            Nombre del nuevo conjunto
+                            <span class="text-muted fw-normal">(opcional si define campos abajo)</span>
+                        </label>
+                        <input type="text"
+                               class="form-control"
+                               id="capture-set-name-field"
+                               placeholder="Ej: Captura de datos de asistencia"
+                               value="">
+                        <div class="form-text">
+                            Si define campos a continuación sin seleccionar un conjunto existente,
+                            se creará un nuevo conjunto con este nombre.
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2 mt-3">
+                        <span class="fw-medium text-sm">Campos del conjunto</span>
+                        <button type="button"
+                                class="btn btn-outline-primary btn-sm"
+                                id="btn-add-capture-field">
+                            <i class="bi bi-plus-lg me-1"></i>Añadir campo
+                        </button>
+                    </div>
+
+                    <div id="capture-fields-empty-state"
+                         class="text-center py-3 mb-2 d-none">
+                        <p class="text-muted text-sm mb-0">
+                            Sin campos definidos. Pulse <strong>Añadir campo</strong> para comenzar.
+                        </p>
+                    </div>
+
+                    <div id="capture-fields-container" class="d-flex flex-column gap-2 mb-3">
+                    </div>
+
+                    <hr class="my-4">
 
                     <!-- is_24h field — Disponibilidad 24 horas -->
                     <div class="mb-4">

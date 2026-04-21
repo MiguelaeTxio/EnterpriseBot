@@ -23,7 +23,7 @@ urlpatterns = [
     path('hold_music/', HoldMusicView.as_view(), name='vox_hold_music'),
     # Webhook de Twilio cuando el <Dial> de la Conference termina (action URL).
     # Twilio webhook when the Conference <Dial> ends (action URL).
-    # DialCallStatus: completed → fin normal; no-answer/busy/failed → reconectar Alia.
+    # DialCallStatus: completed → fin normal; no-answer/busy/failed → reconectar María.
     path(
         'transfer_status/<str:call_sid>/',
         TransferStatusView.as_view(),

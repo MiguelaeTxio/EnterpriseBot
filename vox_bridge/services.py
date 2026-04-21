@@ -84,15 +84,15 @@ GEMINI_MODEL = "gemini-live-2.5-flash-native-audio"
 
 # Fallback system instruction used when build_live_config() fails to load
 # the dynamic configuration from the database (e.g. number not configured,
-# CallFlow missing). Contains the original hardcoded Grupo Álvarez / Alia
+# CallFlow missing). Contains the original hardcoded Grupo Álvarez / María
 # persona definition as a safety net to prevent silent call failures.
 # Instrucción de sistema de fallback usada cuando build_live_config() no puede
 # cargar la configuración dinámica desde la base de datos (p. ej. número no
 # configurado, CallFlow ausente). Contiene la definición original hardcodeada
-# de la persona Grupo Álvarez / Alia como red de seguridad para evitar fallos
+# de la persona Grupo Álvarez / María como red de seguridad para evitar fallos
 # silenciosos en llamadas.
 SYSTEM_INSTRUCTION_FALLBACK = (
-    "Eres Alia, la asistente virtual del Grupo Álvarez. "
+    "Eres María, la asistente virtual del Grupo Álvarez. "
     "Atiendes llamadas de voz en tiempo real. "
     "Tu tono es profesional, cálido y conciso. "
     "Habla siempre en castellano, salvo que el llamante se dirija a ti en otro idioma. "
@@ -187,12 +187,12 @@ SILENCE_FRAMES_TO_END_ACTIVITY = 50
 
 # Number of consecutive speech frames required to open an activity window.
 # Increased from 3 to 10 on 2026-04-06 (~200ms) to filter out acoustic echo
-# of Alia's own playback being captured by the handset microphone. At 3 frames
+# of María's own playback being captured by the handset microphone. At 3 frames
 # (~60ms) the detector was firing on the model's own audio output, causing
 # spurious activity_start signals that triggered Gemini self-interruptions.
 # Número de frames de voz consecutivos requeridos para abrir una ventana de
 # actividad. Aumentado de 3 a 10 el 2026-04-06 (~200ms) para filtrar el eco
-# acústico de la reproducción del propio audio de Alia capturado por el
+# acústico de la reproducción del propio audio de María capturado por el
 # micrófono del auricular. Con 3 frames (~60ms) el detector disparaba sobre
 # la propia salida de audio del modelo, causando señales activity_start
 # espurias que provocaban auto-interrupciones de Gemini.
@@ -207,15 +207,15 @@ VOICE_NAME_FALLBACK = "Aoede"
 
 # Fallback initial greeting used when build_live_config() fails to load
 # the dynamic configuration from the database. Contains the original hardcoded
-# Alia / Grupo Álvarez greeting as a safety net.
+# María / Grupo Álvarez greeting as a safety net.
 # Saludo inicial de fallback usado cuando build_live_config() no puede cargar
 # la configuración dinámica desde la base de datos. Contiene el saludo original
-# hardcodeado de Alia / Grupo Álvarez como red de seguridad.
+# hardcodeado de María / Grupo Álvarez como red de seguridad.
 INITIAL_GREETING_FALLBACK = (
     "El llamante acaba de contestar la llamada. "
-    "Salúdale presentándote como Alia, asistente virtual del Grupo Álvarez, "
+    "Salúdale presentándote como María, asistente virtual del Grupo Álvarez, "
     "con el siguiente mensaje exacto, sin añadir ni modificar nada: "
-    "'Hola, me llamo Alia, soy la asistente virtual del Grupo Álvarez. "
+    "'Hola, me llamo María, soy la asistente virtual del Grupo Álvarez. "
     "¿En qué puedo ayudarle?'"
 )
 
@@ -622,10 +622,10 @@ class VoiceOrchestrationService:
                 types.Tool(
                     function_declarations=[
                         # TOOL 1: route_to_section — Estrategia B, Paso 38
-                        # Alia invoca esta función cuando identifica la sección destino.
+                        # María invoca esta función cuando identifica la sección destino.
                         # El handler recarga el system_instruction con el CallFlow de sección.
                         # TOOL 1: route_to_section — Estrategia B, Step 38
-                        # Alia invokes this when it identifies the target section.
+                        # María invokes this when it identifies the target section.
                         # The handler reloads system_instruction with the section CallFlow.
                         types.FunctionDeclaration(
                             name="route_to_section",
@@ -653,11 +653,11 @@ class VoiceOrchestrationService:
                             },
                         ),
                         # TOOL 2: transfer_to_section_contact — Paso 39
-                        # Alia invoca esta función cuando está lista para transferir
+                        # María invoca esta función cuando está lista para transferir
                         # la llamada al responsable de la sección identificada.
                         # El handler cierra el Media Stream y ejecuta Dial Conference.
                         # TOOL 2: transfer_to_section_contact — Step 39
-                        # Alia invokes this when ready to transfer the call to the
+                        # María invokes this when ready to transfer the call to the
                         # section responsible. Handler closes Media Stream + Dial Conference.
                         types.FunctionDeclaration(
                             name="transfer_to_section_contact",
@@ -684,13 +684,13 @@ class VoiceOrchestrationService:
                             },
                         ),
                         # TOOL 3: submit_captured_data — Paso 7 (Hito 5)
-                        # Alia invoca esta función cuando ha recogido todos los
+                        # María invoca esta función cuando ha recogido todos los
                         # datos requeridos por el DataCaptureSet activo de la sección,
                         # ya sea por inferencia del contexto o por pregunta directa.
                         # El handler persiste un CallDataCapture y dispara la
                         # notificación WhatsApp al contacto referente de la sección.
                         # TOOL 3: submit_captured_data — Step 7 (Milestone 5)
-                        # Alia invokes this when all required DataCaptureSet fields
+                        # María invokes this when all required DataCaptureSet fields
                         # have been collected, either inferred from context or asked.
                         # Handler persists a CallDataCapture and fires WhatsApp notification.
                         types.FunctionDeclaration(
@@ -1533,9 +1533,9 @@ class VoiceOrchestrationService:
                                         f"{type(tr_pre_exc).__name__}: {tr_pre_exc}",
                                         exc_info=True,
                                     )
-                                # Drain the audio output queue so Alia finishes speaking
+                                # Drain the audio output queue so María finishes speaking
                                 # before the Gemini Live session is terminated.
-                                # Drenar la cola de salida para que Alia termine de hablar
+                                # Drenar la cola de salida para que María termine de hablar
                                 # antes de que la sesión Gemini Live se termine.
                                 _drain_timeout  = 8.0
                                 _drain_elapsed  = 0.0
@@ -1626,14 +1626,14 @@ class VoiceOrchestrationService:
                         # Execute a deferred transfer if one was registered by the
                         # transfer_to_section_contact tool_call handler above.
                         # At this point all audio fragments of the current turn have
-                        # been enqueued in audio_output_queue, so Alia has finished
+                        # been enqueued in audio_output_queue, so María has finished
                         # speaking her farewell phrase. We add a short fixed pause to
                         # allow _forward_gemini_audio_to_twilio to dequeue and transmit
                         # the last fragments before session_active is set to False.
                         # Ejecutar la transferencia diferida si fue registrada por el
                         # handler de tool_call transfer_to_section_contact arriba.
                         # En este punto todos los fragmentos de audio del turno actual
-                        # han sido encolados en audio_output_queue, por lo que Alia ha
+                        # han sido encolados en audio_output_queue, por lo que María ha
                         # terminado de pronunciar su frase de despedida. Añadimos una
 
 
@@ -1833,7 +1833,7 @@ class VoiceOrchestrationService:
         Reloads the Gemini Live session with the specific CallFlow assigned
         to the section identified by section_pk (Estrategia B — Step 37.B).
 
-        This method is called once the IVR agent (Alia) has identified the
+        This method is called once the IVR agent (María) has identified the
         caller's intended section and a routing trigger has been detected.
         It injects a new system_instruction into the active Gemini Live session
         via send_client_content(), replacing the general welcome flow with the
@@ -1859,7 +1859,7 @@ class VoiceOrchestrationService:
         Recarga la sesión de Gemini Live con el CallFlow específico asignado
         a la sección identificada por section_pk (Estrategia B — Paso 37.B).
 
-        Este método se invoca una vez que el agente IVR (Alia) ha identificado
+        Este método se invoca una vez que el agente IVR (María) ha identificado
         la sección destino del llamante y se ha detectado un disparador de
         enrutamiento. Inyecta un nuevo system_instruction en la sesión Gemini
         Live activa mediante send_client_content(), reemplazando el flujo
@@ -2100,14 +2100,14 @@ class VoiceOrchestrationService:
         Called by voice_sidecar_bridge.py immediately after service instantiation
         when the Twilio 'start' event is received. Required by _execute_transfer()
         to update the live call via Twilio REST API when the
-        transfer_to_section_contact tool is invoked by Alia.
+        transfer_to_section_contact tool is invoked by María.
         ---
         Almacena el Call SID de Twilio para esta sesión de Media Stream.
 
         Invocado desde voice_sidecar_bridge.py inmediatamente tras instanciar el
         servicio al recibir el evento 'start' de Twilio. Necesario por
         _execute_transfer() para actualizar la llamada en curso vía REST API de
-        Twilio cuando Alia invoca la tool transfer_to_section_contact.
+        Twilio cuando María invoca la tool transfer_to_section_contact.
 
         Args:
             call_sid (str): The Twilio Call SID from the 'start' event.

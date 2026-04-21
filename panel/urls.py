@@ -36,6 +36,9 @@ from panel.views import (
     VoiceProfileRestoreView,
     WhatsAppTemplateListView,
     WhatsAppActiveSessionListView,
+    DataCaptureSetListView,
+    DataCaptureSetCreateView,
+    DataCaptureSetUpdateView,
 )
 
 app_name = "panel"
@@ -96,4 +99,10 @@ urlpatterns = [
     # WhatsApp active sessions — Sesiones WhatsApp activas (rol ADMIN).
     # Paso 1 — Hito 5 (2026-04-20)
     path("whatsapp/sessions/", WhatsAppActiveSessionListView.as_view(), name="whatsapp_active_sessions"),
+
+    # DataCaptureSet management — Gestión de conjuntos de captura de datos IVR (rol ADMIN).
+    # Paso 8-pre — Hito 5 (2026-04-21)
+    path("datacapturesets/", DataCaptureSetListView.as_view(), name="datacaptureset_list"),
+    path("datacapturesets/create/", DataCaptureSetCreateView.as_view(), name="datacaptureset_create"),
+    path("datacapturesets/<int:pk>/edit/", DataCaptureSetUpdateView.as_view(), name="datacaptureset_edit"),
 ]

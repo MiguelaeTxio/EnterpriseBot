@@ -160,9 +160,12 @@ Alcance:
   `required` (booleano).
 - URL: `/panel/datacapturesets/`
 - Entrada en sidebar bajo la sección Configuración: "Captura de datos".
-- Vinculación a sección: el selector de `DataCaptureSet` ya existe en la
-  vista de edición de sección — solo requiere que los conjuntos existan en BD.
-- Estado: PENDIENTE
+- Constructor de filas JS inline integrado también en el formulario de sección
+  (`panel/templates/panel/sections/form.html`): permite crear o vincular un
+  `DataCaptureSet` directamente desde la edición de sección sin salir de ella.
+- Vinculación a sección: `SectionForm` incluye `data_capture_set` como campo
+  opcional con queryset restringido a la empresa.
+- Estado: COMPLETADO 2026-04-21
 
 #### Paso 8 — Validación E2E
 - Llamada real a número Grupo Álvarez.
@@ -315,7 +318,9 @@ Tipos soportados previstos: `text`, `phone`, `location`, `reference`,
 #### Paso 14 — Renombrado del botón Guardar en templates del panel
 - Sustituir el literal "Editar" por "Guardar" en todos los templates
   de formulario de la app `panel`.
-- Estado: PENDIENTE
+- Estado: COMPLETADO PARCIAL 2026-04-21 — Aplicado en `SectionUpdateView`
+  (`context["action"] = "Guardar"`). Pendiente revisar resto de formularios
+  en sesiones de Línea E.
 
 #### Paso 15 — Campos de guardia en modelo `Section`
 - Añadir `duty_mode` (CharField, choices NONE/ADHOC/ROSTER/RELAY).
@@ -364,65 +369,89 @@ Tipos soportados previstos: `text`, `phone`, `location`, `reference`,
 |--------|-------|-----------------|---------|
 | 001 | 2026-04-20 | — | Creación del anexo. Inicio formal del hito. |
 | 002 | 2026-04-21 | 1, 2, 3, 4, 5, 6-bis, 6, 7 | Líneas A y B completadas. Línea C en curso: template ivr_capture_notification aprobado, send_capture_notification() implementado, tool submit_captured_data integrada en vox_bridge/services.py. Líneas D y E documentadas. Paso 8-pre identificado como desbloqueador del E2E. Incidencia must_change_password resuelta para alejandro_sergio. |
+| 003 | 2026-04-21 | 8-pre, 14 (parcial) | Paso 8-pre completado: CRUD de DataCaptureSet en panel con constructor JS de filas dinámicas, entrada en sidebar, integración inline en formulario de sección. Renombrado botón Guardar en SectionUpdateView (Paso 14 parcial). Decisión de diseño: modo de flujo IVR por sección (sin flujo / automático / manual) a implementar en Línea E junto con Paso 19. Nombre del agente actualizado de Alia a María. Validación E2E (Paso 8) pendiente hasta implementar generador automático de flujos IVR. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
 ### Objetivo principal
-Implementar el **Paso 8-pre** — Gestión de `DataCaptureSet` en el panel,
-desbloqueador de la validación E2E de la Línea C.
+Implementar el **selector de modo de flujo IVR por sección** (Paso 19 ampliado)
+y ejecutar la **validación E2E del Paso 8** (llamada real con captura de datos,
+persistencia en BD y notificación WhatsApp al agente receptor).
 
 ### Secuencia de trabajo
 
 **1. Solicitar al inicio de sesión:**
-- `panel/views.py`, `panel/urls.py`, `panel/templates/panel/base.html`
-- `ivr_config/models.py` (para auditar `DataCaptureSet`)
-- `panel/forms.py` (para auditar formularios existentes)
+- `panel/views.py`, `panel/forms.py`, `panel/urls.py`
+- `panel/templates/panel/sections/form.html`
+- `ivr_config/models.py`
+- `ivr_config/services.py` (para auditar si existe o crear `generate_section_system_instruction()`)
 
-**2. Implementar `DataCaptureSetListView` en `panel/views.py`:**
-- Listado de `DataCaptureSet` de la empresa, rol ADMIN.
-- Patrón idéntico a `SectionListView`.
+**2. Selector de modo de flujo IVR en el formulario de sección (Paso 19 ampliado):**
 
-**3. Implementar `DataCaptureSetCreateView` / `DataCaptureSetUpdateView`:**
-- Formulario con interfaz de filas añadibles dinámicamente (JS) para
-  definir los campos del `DataCaptureSet`:
-  - `key`: identificador interno (snake_case, ej: `nombre`, `telefono`).
-  - `label`: texto descriptivo para el agente IVR.
-  - `type`: choices `text` / `phone` / `location` / `reference` /
-    `date` / `free_text`.
-  - `required`: booleano.
-- El campo `fields` del modelo es un `JSONField` — el formulario debe
-  serializar las filas a la estructura JSON estándar definida en el
-  Paso 17 de la Línea E.
+El campo `call_flow` actual (selector de flujo existente) se sustituye por
+un **selector de modo** con tres opciones mutuamente excluyentes:
 
-**4. Registrar URLs:**
-- `/panel/datacapturesets/` → listado.
-- `/panel/datacapturesets/create/` → creación.
-- `/panel/datacapturesets/<int:pk>/edit/` → edición.
+- `NONE` — sin flujo IVR asignado. La sección no participa en el enrutamiento.
+- `AUTO` — al pulsar Guardar, el generador construye el `system_instruction`
+  a partir de los datos declarativos de la sección (contactos, horario,
+  `DataCaptureSet`) y lo persiste en un `CallFlow` vinculado.
+  Si la sección ya tiene un `CallFlow` vinculado, lo actualiza en su lugar.
+  Si no tiene ninguno, crea uno nuevo con nombre `"Flujo — {section.name}"`.
+- `MANUAL` — desplegable con los `CallFlow` existentes de la empresa
+  para vincular directamente. El `system_instruction` no se toca.
 
-**5. Añadir entrada en sidebar `base.html`:**
-- Bajo la sección "Configuración": "Captura de datos".
-- Icono sugerido: `bi-ui-checks`.
+Implementación:
+- Añadir campo `flow_mode` como campo no persistido (`ChoiceField` en el
+  formulario, no en el modelo) con choices `NONE` / `AUTO` / `MANUAL`.
+  Se inicializa en `NONE` si `section.call_flow` es nulo, en `MANUAL` si
+  tiene un `CallFlow` vinculado, y en `AUTO` si el `CallFlow` vinculado
+  tiene `system_instruction` generado automáticamente (detectar por
+  presencia de marcador en el texto, ver nota técnica).
+- El selector `call_flow` existente se muestra/oculta con JS según el
+  modo seleccionado: visible solo en `MANUAL`.
+- En `SectionCreateView._form_valid()` y `SectionUpdateView._form_valid()`:
+  leer `flow_mode` del POST y actuar en consecuencia:
+  - `NONE`: `form.instance.call_flow = None`.
+  - `AUTO`: invocar `generate_section_system_instruction(section)` de
+    `ivr_config/services.py`, crear o actualizar el `CallFlow` vinculado
+    y persistir el `system_instruction` generado.
+  - `MANUAL`: vincular el `CallFlow` seleccionado sin modificar su contenido.
 
-**6. Una vez implementado el Paso 8-pre:**
-- Crear un `DataCaptureSet` de prueba para Grupo Álvarez con campos
-  `nombre` (text, required), `telefono` (phone, required),
+**3. Generador `generate_section_system_instruction()` en `ivr_config/services.py`:**
+- Inputs: instancia de `Section` ya guardada (con `DataCaptureSet`,
+  `SectionContact`, `SectionSchedule` e `is_24h` disponibles).
+- Output: string `system_instruction` listo para persistir en `CallFlow`.
+- El generador construye el prompt con:
+  - Identidad del agente (nombre María, empresa).
+  - Descripción de la sección.
+  - Disponibilidad: 24h o franjas horarias de `SectionSchedule`.
+  - Contactos de la sección ordenados por prioridad (`SectionContact`).
+  - Definición de la tool `submit_captured_data` con los campos del
+    `DataCaptureSet` activo (key, label, type, required).
+  - Tool `transfer_to_section_contact` para la transferencia posterior.
+- Marcador obligatorio al final del `system_instruction` generado:
+  `# [AUTO-GENERATED]` — permite detectar en futuras sesiones si el
+  flujo fue generado automáticamente o editado manualmente.
+
+**4. Validación E2E — Paso 8:**
+- Crear `DataCaptureSet` para la sección "Asistencia" de Grupo Álvarez
+  con campos: `nombre` (text, required), `telefono` (phone, required),
   `motivo` (free_text, required).
-- Asignarlo a la sección "Asistencia".
-- Ejecutar el Paso 8 (validación E2E): llamada real → captura →
-  `CallDataCapture` en BD → notificación WhatsApp al contacto referente.
+- Generar el flujo IVR automático para esa sección.
+- Ejecutar llamada real al número de Grupo Álvarez.
+- Verificar secuencia: captura de datos por María → `CallDataCapture`
+  persistido en BD → notificación WhatsApp recibida en teléfono del
+  contacto referente → transfer de llamada ejecutado.
 
-### Notas técnicas para la implementación
-- El campo `fields` del `DataCaptureSet` se persiste como JSONField.
-  La estructura normalizada es una lista de objetos:
-  `[{"key": str, "label": str, "type": str, "required": bool}]`.
-- El formulario JS debe permitir añadir/eliminar filas dinámicamente
-  y serializar el resultado a JSON antes del submit.
-- La variable de entorno `TWILIO_WHATSAPP_SENDER=+34607961650` ya
-  está configurada en `.env` — el Paso 7 la consume correctamente.
-- El template `ivr_capture_notification` (SID: `HX1a301d32db3acaedf6b13d83fd7579ac`)
-  está aprobado por Meta y registrado en BD para Grupo Álvarez.
+### Notas técnicas
+- `TWILIO_WHATSAPP_SENDER=+34607961650` configurado en `.env`. ✓
+- Template `ivr_capture_notification` (SID: `HX1a301d32db3acaedf6b13d83fd7579ac`)
+  aprobado por Meta y registrado en BD para Grupo Álvarez. ✓
+- La tool `submit_captured_data` ya está integrada en `vox_bridge/services.py`. ✓
+- El marcador `# [AUTO-GENERATED]` en `system_instruction` es la fuente
+  de verdad para determinar el modo de flujo al cargar el formulario de sección.
 
 ## 6. Decisiones de Diseño y Notas Técnicas
 

@@ -327,7 +327,7 @@ class DataCaptureSet(models.Model):
     fields = models.JSONField(
         default=list,
         verbose_name="Campos",
-        help_text="Estructura JSON de campos a recopilar. PENDIENTE: definir con empresa piloto.",
+        help_text="Lista de objetos JSON con estructura [{key, label, type, required}]. Tipos soportados: text, phone, location, reference, date, free_text.",
     )
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -474,9 +474,9 @@ class Contact(models.Model):
     with no platform access.
     Constraint: if is_internal=True, company_user must not be null.
     The 'email' field is used to send call summary notifications to the responsible
-    contact after a caller's data has been collected by Alia.
-    The 'gender' field (M/F) controls Alia's verbal treatment: "Sr. {name}" or
-    "Sra. {name}". If blank, Alia addresses the contact by name only.
+    contact after a caller's data has been collected by María.
+    The 'gender' field (M/F) controls María's verbal treatment: "Sr. {name}" or
+    "Sra. {name}". If blank, María addresses the contact by name only.
     ---
     Representa una persona a la que el sistema IVR puede llamar o derivar interacciones.
     Los contactos internos (is_internal=True) tienen un CompanyUser asociado y pueden
@@ -484,9 +484,9 @@ class Contact(models.Model):
     sin acceso a la plataforma.
     Restricción: si is_internal=True, company_user no puede ser null.
     El campo 'email' se usa para enviar notificaciones de resumen de llamada al
-    responsable tras la toma de datos del llamante por parte de Alia.
-    El campo 'gender' (M/F) controla el tratamiento verbal de Alia: "Sr. {nombre}"
-    o "Sra. {nombre}". Si está vacío, Alia se dirige al contacto solo por nombre.
+    responsable tras la toma de datos del llamante por parte de María.
+    El campo 'gender' (M/F) controla el tratamiento verbal de María: "Sr. {nombre}"
+    o "Sra. {nombre}". Si está vacío, María se dirige al contacto solo por nombre.
     """
 
     company = models.ForeignKey(
@@ -517,8 +517,8 @@ class Contact(models.Model):
         blank=True,
         verbose_name="Género",
         help_text=(
-            "Género del contacto para tratamiento verbal por Alia (Sr./Sra.). "
-            "Si está vacío, Alia usará el nombre sin tratamiento."
+            "Género del contacto para tratamiento verbal por María (Sr./Sra.). "
+            "Si está vacío, María usará el nombre sin tratamiento."
         ),
     )
     is_internal = models.BooleanField(
@@ -946,7 +946,7 @@ class BlockedCaller(models.Model):
     for a given company. The block is active while blocked_until > now().
     At the start of every inbound call, build_live_config() checks whether
     the caller's number (From) has an active BlockedCaller record for the
-    company. If blocked, Alia responds with a standard polite message and
+    company. If blocked, María responds with a standard polite message and
     terminates the call immediately without any data capture or notification.
     The block duration defaults to 24 hours but is configurable per record.
     Admins can manually unblock a number before expiry from the panel.
@@ -955,7 +955,7 @@ class BlockedCaller(models.Model):
     IVR de una empresa concreta. El bloqueo está activo mientras blocked_until > now().
     Al inicio de cada llamada entrante, build_live_config() comprueba si el número
     del llamante (From) tiene un registro BlockedCaller activo para la empresa.
-    Si está bloqueado, Alia responde con un mensaje estándar educado y termina la
+    Si está bloqueado, María responde con un mensaje estándar educado y termina la
     llamada inmediatamente sin toma de datos ni notificación.
     La duración del bloqueo es 24 horas por defecto, pero es configurable por registro.
     Los administradores pueden desbloquear manualmente un número antes del vencimiento

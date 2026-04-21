@@ -115,9 +115,9 @@ class TransferStatusView(View):
         3. If failed/no-answer/busy:
              a. Increment contact_index on the TransferAttempt record.
              b. Check whether a next contact exists in SectionContact ordered by priority.
-             c. If yes → reconnect Alia via new <Connect><Stream> so she can inform
+             c. If yes → reconnect María via new <Connect><Stream> so she can inform
                 the caller and offer to transfer to the next contact or leave a message.
-             d. If no more contacts → reconnect Alia → she informs the caller that no
+             d. If no more contacts → reconnect María → she informs the caller that no
                 one is available and offers to record a voice message. A
                 PendingNotification record is created in the database for manual
                 follow-up and future Celery processing (Hito 4).
@@ -139,9 +139,9 @@ class TransferStatusView(View):
         3. Si failed/no-answer/busy:
              a. Incrementar contact_index en el registro TransferAttempt.
              b. Comprobar si existe un contacto siguiente en SectionContact por priority.
-             c. Si sí → reconectar a Alia vía nuevo <Connect><Stream> para que informe
+             c. Si sí → reconectar a María vía nuevo <Connect><Stream> para que informe
                 al llamante y ofrezca transferir al siguiente contacto o dejar un mensaje.
-             d. Si no hay más contactos → reconectar a Alia → informa al llamante de que
+             d. Si no hay más contactos → reconectar a María → informa al llamante de que
                 nadie está disponible y ofrece grabar un mensaje de voz. Se crea un
                 registro PendingNotification en BD para seguimiento manual y procesamiento
                 futuro por Celery (Hito 4).
@@ -183,10 +183,10 @@ class TransferStatusView(View):
     def _twiml_reconnect_alia(self, wss_url: str) -> str:
         """
         Returns TwiML that opens a new bidirectional Media Stream to reconnect
-        Alia to the caller after a failed transfer attempt.
+        María to the caller after a failed transfer attempt.
         ---
         Devuelve TwiML que abre un nuevo Media Stream bidireccional para reconectar
-        a Alia con el llamante tras un intento de transferencia fallido.
+        a María con el llamante tras un intento de transferencia fallido.
         """
         return (
             '<?xml version="1.0" encoding="UTF-8"?>'
@@ -229,9 +229,9 @@ class TransferStatusView(View):
             3. If status=COMPLETED → the contact answered and the conversation
                finished normally → return empty TwiML (call ends).
             4. If status=PENDING or FAILED → the contact never answered or the
-               contact status webhook has not yet arrived → reconnect Alia as
+               contact status webhook has not yet arrived → reconnect María as
                a safe fallback so the caller is not abandoned.
-            5. If no TransferAttempt record exists → reconnect Alia as fallback.
+            5. If no TransferAttempt record exists → reconnect María as fallback.
         ---
         Gestiona el webhook action de Twilio disparado cuando el llamante
         abandona la sala <Dial><Conference> (el llamante cuelga o la Conference
@@ -256,8 +256,8 @@ class TransferStatusView(View):
                terminó normalmente → devolver TwiML vacío (llamada termina).
             4. Si status=PENDING o FAILED → el contacto nunca contestó o el
                webhook de estado del contacto no ha llegado aún → reconectar
-               a Alia como fallback para no abandonar al llamante.
-            5. Si no existe registro TransferAttempt → reconectar a Alia.
+               a María como fallback para no abandonar al llamante.
+            5. Si no existe registro TransferAttempt → reconectar a María.
         """
         from ivr_config.models import TransferAttempt as _TransferAttempt
 
@@ -279,7 +279,7 @@ class TransferStatusView(View):
         except _TransferAttempt.DoesNotExist:
             logger.error(
                 f"[TRANSFER-STATUS] TransferAttempt no encontrado para "
-                f"call_sid={call_sid}. Reconectando a Alia como fallback."
+                f"call_sid={call_sid}. Reconectando a María como fallback."
             )
             return HttpResponse(
                 self._twiml_reconnect_alia(self._get_wss_url()),
@@ -306,17 +306,17 @@ class TransferStatusView(View):
 
         # ------------------------------------------------------------------
         # Step 3: Transfer pending or failed — contact did not answer or the
-        # ContactStatusView webhook has not yet been processed. Reconnect Alia
+        # ContactStatusView webhook has not yet been processed. Reconnect María
         # as a safe fallback so the caller is not left in silence.
         # ------------------------------------------------------------------
         # Paso 3: Transferencia pendiente o fallida — el contacto no contestó
         # o el webhook de ContactStatusView aún no ha llegado. Reconectar a
-        # Alia como fallback seguro para no dejar al llamante en silencio.
+        # María como fallback seguro para no dejar al llamante en silencio.
         # ------------------------------------------------------------------
         logger.info(
             f"[TRANSFER-STATUS] Transferencia no completada "
             f"(attempt.status='{attempt.status}') — call_sid={call_sid}. "
-            f"Reconectando a Alia como fallback."
+            f"Reconectando a María como fallback."
         )
         wss_url = self._get_wss_url()
         return HttpResponse(
@@ -402,9 +402,9 @@ class ContactStatusView(View):
             Increment TransferAttempt.contact_index.
             Check if a next contact exists (ordered by SectionContact.priority).
             If yes → update the caller's live call with a new <Connect><Stream>
-                     so Alia reconects and offers the next contact option.
+                     so María reconects and offers the next contact option.
             If no  → create PendingNotification + update caller call with
-                     <Connect><Stream> so Alia informs and offers voice message.
+                     <Connect><Stream> so María informs and offers voice message.
 
         - Any other status → log and ignore (non-terminal intermediate states).
     ---
@@ -434,10 +434,10 @@ class ContactStatusView(View):
             Comprobar si existe un contacto siguiente (ordenado por
             SectionContact.priority).
             Si sí → actualizar la llamada del llamante con nuevo
-                    <Connect><Stream> para que Alia reconecte y ofrezca
+                    <Connect><Stream> para que María reconecte y ofrezca
                     la opción del siguiente contacto.
             Si no → crear PendingNotification + actualizar llamada del
-                    llamante con <Connect><Stream> para que Alia informe
+                    llamante con <Connect><Stream> para que María informe
                     y ofrezca dejar un mensaje de voz.
 
         - Cualquier otro estado → registrar e ignorar (estados intermedios
@@ -472,10 +472,10 @@ class ContactStatusView(View):
     def _twiml_reconnect_alia(self, wss_url: str) -> str:
         """
         Returns TwiML that opens a new bidirectional Media Stream to reconnect
-        Alia to the caller after a failed transfer attempt.
+        María to the caller after a failed transfer attempt.
         ---
         Devuelve TwiML que abre un nuevo Media Stream bidireccional para
-        reconectar a Alia con el llamante tras un intento de transferencia fallido.
+        reconectar a María con el llamante tras un intento de transferencia fallido.
         """
         return (
             '<?xml version="1.0" encoding="UTF-8"?>'
@@ -558,13 +558,13 @@ class ContactStatusView(View):
             next_contact = next_contacts_list[next_index].contact
             logger.info(
                 f"[CONTACT-STATUS] Siguiente contacto disponible: "
-                f"'{next_contact.name}' — reconectando a Alia vía calls.update()."
+                f"'{next_contact.name}' — reconectando a María vía calls.update()."
             )
         else:
             logger.info(
                 f"[CONTACT-STATUS] Sin más contactos para "
                 f"caller_call_sid={caller_call_sid}. "
-                f"Creando PendingNotification y reconectando a Alia."
+                f"Creando PendingNotification y reconectando a María."
             )
             try:
                 _PendingNotification.objects.create(
@@ -599,7 +599,7 @@ class ContactStatusView(View):
             )
             logger.info(
                 f"[CONTACT-STATUS] Llamada {caller_call_sid} actualizada con "
-                f"TwiML de reconexión de Alia vía REST API."
+                f"TwiML de reconexión de María vía REST API."
             )
         except Exception as twilio_exc:
             logger.error(

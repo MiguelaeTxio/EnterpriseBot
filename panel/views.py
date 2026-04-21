@@ -29,6 +29,7 @@ from panel.forms import (
     BlockedCallerForm,
     CompanyUserCreateForm,
     PanelPasswordChangeForm,
+    DataCaptureSetForm,
 )
 from ivr_config.models import (
     Section,
@@ -40,6 +41,7 @@ from ivr_config.models import (
     PhoneNumber,
     CorporateVoiceProfile,
     BlockedCaller,
+    DataCaptureSet,
 )
 from whatsapp.models import WhatsAppTemplate, WhatsAppSession
 
@@ -351,10 +353,14 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
         Restricts the contacts queryset to the authenticated user's company.
         Restricts the call_flow queryset to the company's own active CallFlows
         (Estrategia B — Step 37.C). call_flow is optional.
+        Restricts the data_capture_set queryset to the company's own DataCaptureSets.
+        data_capture_set is optional — can also be created inline from the section form.
         ---
         Restringe el queryset de contactos a la empresa del usuario autenticado.
         Restringe el queryset de call_flow a los CallFlows activos de la empresa
         (Estrategia B — Paso 37.C). call_flow es opcional.
+        Restringe el queryset de data_capture_set a los DataCaptureSets de la empresa.
+        data_capture_set es opcional — también puede crearse inline desde el formulario de sección.
         """
         form = super().get_form(form_class)
         company = self.request.user.company_user.company
@@ -366,6 +372,10 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
             is_active=True,
         ).order_by("name")
         form.fields["call_flow"].required = False
+        form.fields["data_capture_set"].queryset = DataCaptureSet.objects.filter(
+            company=company,
+        ).order_by("name")
+        form.fields["data_capture_set"].required = False
         return form
 
     def get(self, request, *args, **kwargs):
@@ -408,11 +418,41 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
     def _form_valid(self, form, schedule_formset):
         """
         Saves the Section and all valid SectionSchedule entries.
+        If 'capture_fields_json' is present in POST and non-empty, creates a new
+        DataCaptureSet with the submitted fields and links it to the section,
+        overriding any selector choice. If the selector has a value but no inline
+        fields were submitted, the selected DataCaptureSet is linked as-is.
         ---
         Guarda la Section y todas las entradas SectionSchedule válidas.
+        Si 'capture_fields_json' está presente en el POST y no está vacío, crea un
+        nuevo DataCaptureSet con los campos enviados y lo vincula a la sección,
+        sobreescribiendo cualquier selección del selector. Si el selector tiene valor
+        pero no se enviaron campos inline, el DataCaptureSet seleccionado se vincula tal cual.
         """
+        import json
         from django.contrib import messages as django_messages
-        form.instance.company = self.request.user.company_user.company
+        company = self.request.user.company_user.company
+        form.instance.company = company
+
+        # --- Gestión inline de DataCaptureSet ---
+        # --- Inline DataCaptureSet management ---
+        raw_json = self.request.POST.get("capture_fields_json", "").strip()
+        capture_name = self.request.POST.get("capture_set_name", "").strip()
+        if raw_json and raw_json != "[]":
+            # Campos inline enviados: crear nuevo DataCaptureSet y vincularlo.
+            # Inline fields submitted: create new DataCaptureSet and link it.
+            try:
+                parsed_fields = json.loads(raw_json)
+            except (ValueError, TypeError):
+                parsed_fields = []
+            dcs_name = capture_name or f"Captura — {form.cleaned_data.get('name', 'Sección')}"
+            new_dcs = DataCaptureSet.objects.create(
+                company=company,
+                name=dcs_name,
+                fields=parsed_fields,
+            )
+            form.instance.data_capture_set = new_dcs
+
         self.object = form.save()
         schedules = schedule_formset.save(commit=False)
         for schedule in schedules:
@@ -505,10 +545,14 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
         Restricts the contacts queryset to the authenticated user's company.
         Restricts the call_flow queryset to the company's own active CallFlows
         (Estrategia B — Step 37.C). call_flow is optional.
+        Restricts the data_capture_set queryset to the company's own DataCaptureSets.
+        data_capture_set is optional — can also be created inline from the section form.
         ---
         Restringe el queryset de contactos a la empresa del usuario autenticado.
         Restringe el queryset de call_flow a los CallFlows activos de la empresa
         (Estrategia B — Paso 37.C). call_flow es opcional.
+        Restringe el queryset de data_capture_set a los DataCaptureSets de la empresa.
+        data_capture_set es opcional — también puede crearse inline desde el formulario de sección.
         """
         form = super().get_form(form_class)
         company = self.request.user.company_user.company
@@ -520,6 +564,10 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
             is_active=True,
         ).order_by("name")
         form.fields["call_flow"].required = False
+        form.fields["data_capture_set"].queryset = DataCaptureSet.objects.filter(
+            company=company,
+        ).order_by("name")
+        form.fields["data_capture_set"].required = False
         return form
 
     def get(self, request, *args, **kwargs):
@@ -563,11 +611,52 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
         """
         Saves the Section and all valid SectionSchedule entries.
         Handles deletion of removed schedule entries.
+        If 'capture_fields_json' is present in POST and non-empty, updates the
+        existing linked DataCaptureSet fields in-place, or creates a new one if
+        none is linked. If the selector has a value but no inline fields were
+        submitted, the selected DataCaptureSet is linked as-is.
         ---
         Guarda la Section y todas las entradas SectionSchedule válidas.
         Gestiona la eliminación de las franjas horarias eliminadas.
+        Si 'capture_fields_json' está presente en el POST y no está vacío, actualiza
+        los campos del DataCaptureSet vinculado existente en su lugar, o crea uno nuevo
+        si no hay ninguno vinculado. Si el selector tiene valor pero no se enviaron
+        campos inline, el DataCaptureSet seleccionado se vincula tal cual.
         """
+        import json
         from django.contrib import messages as django_messages
+        company = self.request.user.company_user.company
+
+        # --- Gestión inline de DataCaptureSet ---
+        # --- Inline DataCaptureSet management ---
+        raw_json = self.request.POST.get("capture_fields_json", "").strip()
+        capture_name = self.request.POST.get("capture_set_name", "").strip()
+        if raw_json and raw_json != "[]":
+            # Campos inline enviados: actualizar el vinculado existente o crear uno nuevo.
+            # Inline fields submitted: update the existing linked one or create a new one.
+            try:
+                parsed_fields = json.loads(raw_json)
+            except (ValueError, TypeError):
+                parsed_fields = []
+            existing_dcs = self.object.data_capture_set if self.object.data_capture_set_id else None
+            if existing_dcs is not None:
+                # Actualizar en su lugar preservando el vínculo y el nombre si no se cambió.
+                # Update in-place preserving the link and name if not changed.
+                if capture_name:
+                    existing_dcs.name = capture_name
+                existing_dcs.fields = parsed_fields
+                existing_dcs.save(update_fields=["name", "fields", "updated_at"])
+            else:
+                # No hay DataCaptureSet vinculado: crear uno nuevo.
+                # No linked DataCaptureSet: create a new one.
+                dcs_name = capture_name or f"Captura — {form.cleaned_data.get('name', 'Sección')}"
+                new_dcs = DataCaptureSet.objects.create(
+                    company=company,
+                    name=dcs_name,
+                    fields=parsed_fields,
+                )
+                form.instance.data_capture_set = new_dcs
+
         self.object = form.save()
         schedules = schedule_formset.save(commit=False)
         for schedule in schedules:
@@ -591,7 +680,7 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
-        context["action"] = "Editar"
+        context["action"] = "Guardar"
         if "schedule_formset" not in context:
             ScheduleFormSet = self._get_schedule_formset_class()
             context["schedule_formset"] = ScheduleFormSet(
@@ -1991,6 +2080,224 @@ class WhatsAppActiveSessionListView(AdminRoleRequiredMixin, ListView):
         context["company"]      = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        return context
+
+    def _get_own_presence(self):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = self.request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+
+# ===========================================================================
+# DATA CAPTURE SET VIEWS — Gestión de conjuntos de captura de datos IVR.
+# Paso 8-pre — Hito 5 (2026-04-21)
+# ===========================================================================
+
+class DataCaptureSetListView(AdminRoleRequiredMixin, ListView):
+    """
+    Lists all DataCaptureSet records belonging to the authenticated user's company.
+    Accessible only to users with the ADMIN role.
+    ---
+    Lista todos los registros DataCaptureSet pertenecientes a la empresa del usuario autenticado.
+    Solo accesible para usuarios con rol ADMIN.
+    """
+
+    model = DataCaptureSet
+    template_name = "panel/datacapturesets/list.html"
+    context_object_name = "capture_sets"
+
+    def get_queryset(self):
+        """
+        Returns DataCaptureSet records scoped to the authenticated user's company,
+        ordered alphabetically by name.
+        ---
+        Retorna los registros DataCaptureSet acotados a la empresa del usuario autenticado,
+        ordenados alfabéticamente por nombre.
+        """
+        return DataCaptureSet.objects.filter(
+            company=self.request.user.company_user.company
+        ).order_by("name")
+
+    def get_context_data(self, **kwargs):
+        """
+        Adds company, company_user and own_presence to template context.
+        ---
+        Añade company, company_user y own_presence al contexto de la plantilla.
+        """
+        context = super().get_context_data(**kwargs)
+        context["company"] = self.request.user.company_user.company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = self._get_own_presence()
+        return context
+
+    def _get_own_presence(self):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = self.request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+
+class DataCaptureSetCreateView(AdminRoleRequiredMixin, CreateView):
+    """
+    Allows an ADMIN to create a new DataCaptureSet for their company.
+    Automatically assigns the company from the authenticated user's CompanyUser.
+    The 'fields' JSONField is populated by the JS dynamic row builder in the
+    template, which serialises the field definitions to JSON before submit.
+    ---
+    Permite a un ADMIN crear un nuevo DataCaptureSet para su empresa.
+    Asigna automáticamente la empresa desde el CompanyUser del usuario autenticado.
+    El JSONField 'fields' es rellenado por el constructor de filas JS dinámico del
+    template, que serializa las definiciones de campos a JSON antes del submit.
+    """
+
+    model = DataCaptureSet
+    form_class = DataCaptureSetForm
+    template_name = "panel/datacapturesets/form.html"
+
+    def form_valid(self, form):
+        """
+        Assigns the company before saving the new DataCaptureSet.
+        Deserialises the 'fields_json' hidden input into the model's JSONField.
+        ---
+        Asigna la empresa antes de guardar el nuevo DataCaptureSet.
+        Deserializa el campo oculto 'fields_json' en el JSONField del modelo.
+        """
+        import json
+        form.instance.company = self.request.user.company_user.company
+        raw_json = self.request.POST.get("fields_json", "[]")
+        try:
+            form.instance.fields = json.loads(raw_json)
+        except (ValueError, TypeError):
+            form.instance.fields = []
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        """
+        Redirects to the DataCaptureSet list after a successful creation.
+        ---
+        Redirige a la lista de conjuntos de captura tras una creación correcta.
+        """
+        django_messages.success(
+            self.request,
+            f"Conjunto de captura '{self.object.name}' creado correctamente."
+        )
+        return "/panel/datacapturesets/"
+
+    def get_context_data(self, **kwargs):
+        """
+        Adds company, company_user, own_presence and action flag to template context.
+        Adds existing_fields_json for pre-population on edit (empty list on create).
+        ---
+        Añade company, company_user, own_presence y flag de acción al contexto de la plantilla.
+        Añade existing_fields_json para prerellenar en edición (lista vacía en creación).
+        """
+        import json
+        context = super().get_context_data(**kwargs)
+        context["company"] = self.request.user.company_user.company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = self._get_own_presence()
+        context["action"] = "Crear"
+        context["existing_fields_json"] = json.dumps([])
+        return context
+
+    def _get_own_presence(self):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = self.request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+
+class DataCaptureSetUpdateView(AdminRoleRequiredMixin, UpdateView):
+    """
+    Allows an ADMIN to update an existing DataCaptureSet belonging to their company.
+    Prevents editing DataCaptureSets from other companies.
+    The 'fields' JSONField is updated by the JS dynamic row builder in the template.
+    ---
+    Permite a un ADMIN actualizar un DataCaptureSet existente de su empresa.
+    Impide editar conjuntos de captura de otras empresas.
+    El JSONField 'fields' se actualiza por el constructor de filas JS dinámico del template.
+    """
+
+    model = DataCaptureSet
+    form_class = DataCaptureSetForm
+    template_name = "panel/datacapturesets/form.html"
+
+    def get_queryset(self):
+        """
+        Restricts the queryset to DataCaptureSet records of the authenticated user's company.
+        ---
+        Restringe el queryset a los registros DataCaptureSet de la empresa del usuario autenticado.
+        """
+        return DataCaptureSet.objects.filter(
+            company=self.request.user.company_user.company
+        )
+
+    def form_valid(self, form):
+        """
+        Deserialises the 'fields_json' hidden input into the model's JSONField before saving.
+        ---
+        Deserializa el campo oculto 'fields_json' en el JSONField del modelo antes de guardar.
+        """
+        import json
+        raw_json = self.request.POST.get("fields_json", "[]")
+        try:
+            form.instance.fields = json.loads(raw_json)
+        except (ValueError, TypeError):
+            form.instance.fields = []
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        """
+        Redirects to the DataCaptureSet list after a successful update.
+        ---
+        Redirige a la lista de conjuntos de captura tras una actualización correcta.
+        """
+        django_messages.success(
+            self.request,
+            f"Conjunto de captura '{self.object.name}' actualizado correctamente."
+        )
+        return "/panel/datacapturesets/"
+
+    def get_context_data(self, **kwargs):
+        """
+        Adds company, company_user, own_presence and action flag to template context.
+        Serialises the existing fields JSONField for pre-population of the JS row builder.
+        ---
+        Añade company, company_user, own_presence y flag de acción al contexto de la plantilla.
+        Serializa el JSONField fields existente para prerellenar el constructor de filas JS.
+        """
+        import json
+        context = super().get_context_data(**kwargs)
+        context["company"] = self.request.user.company_user.company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = self._get_own_presence()
+        context["action"] = "Guardar"
+        context["existing_fields_json"] = json.dumps(self.object.fields or [])
         return context
 
     def _get_own_presence(self):

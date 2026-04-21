@@ -20,6 +20,8 @@
 ./panel/templates/panel/whatsapp/active_session_list.html
 ./panel/templates/panel/whatsapp/template_list.html
 ./panel/templates/panel/voiceprofile/detail.html
+./panel/templates/panel/datacapturesets/list.html
+./panel/templates/panel/datacapturesets/form.html
 ./panel/templates/panel/sections/list.html
 ./panel/templates/panel/sections/form.html
 ./panel/templates/panel/dashboard.html

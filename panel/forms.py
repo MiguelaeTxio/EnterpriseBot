@@ -28,6 +28,7 @@ from ivr_config.models import (
     PresenceStatus,
     CorporateVoiceProfile,
     BlockedCaller,
+    DataCaptureSet,
 )
 
 
@@ -131,12 +132,13 @@ class SectionForm(forms.ModelForm):
 
     class Meta:
         model = Section
-        fields = ["name", "description", "contacts", "call_flow", "is_24h", "is_active"]
+        fields = ["name", "description", "contacts", "call_flow", "data_capture_set", "is_24h", "is_active"]
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "contacts": forms.SelectMultiple(attrs={"class": "form-select", "size": "6"}),
             "call_flow": forms.Select(attrs={"class": "form-select"}),
+            "data_capture_set": forms.Select(attrs={"class": "form-select"}),
             "is_24h": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
@@ -145,6 +147,7 @@ class SectionForm(forms.ModelForm):
             "description": "Descripción",
             "contacts": "Contactos",
             "call_flow": "Flujo IVR de sección",
+            "data_capture_set": "Conjunto de captura de datos",
             "is_24h": "Disponible 24 horas",
             "is_active": "Activa",
         }
@@ -428,3 +431,34 @@ class PanelPasswordChangeForm(PasswordChangeForm):
             "Mínimo 8 caracteres. No puede ser completamente numérica "
             "ni demasiado similar a tu nombre de usuario."
         )
+
+
+class DataCaptureSetForm(forms.ModelForm):
+    """
+    Form for creating and updating a DataCaptureSet record.
+    The 'fields' JSONField is intentionally excluded from the Meta fields list:
+    it is populated via a hidden input ('fields_json') managed by the JS dynamic
+    row builder in the template, which serialises the field definitions to a JSON
+    string before the form is submitted. The view's form_valid() deserialises
+    this value and assigns it to form.instance.fields before saving.
+    ---
+    Formulario para crear y actualizar un registro de DataCaptureSet.
+    El JSONField 'fields' se excluye intencionalmente de la lista Meta.fields:
+    se rellena mediante un campo oculto ('fields_json') gestionado por el constructor
+    de filas JS dinámico del template, que serializa las definiciones de campos a una
+    cadena JSON antes del submit. El form_valid() de la vista deserializa este valor
+    y lo asigna a form.instance.fields antes de guardar.
+    """
+
+    class Meta:
+        model = DataCaptureSet
+        fields = ["name"]
+        widgets = {
+            "name": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "Ej: Captura de datos de asistencia",
+            }),
+        }
+        labels = {
+            "name": "Nombre del conjunto",
+        }

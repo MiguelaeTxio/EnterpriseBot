@@ -42,7 +42,7 @@ class Migration(migrations.Migration):
             field=models.CharField(
                 blank=True,
                 choices=[("M", "Sr."), ("F", "Sra.")],
-                help_text="Género del contacto para tratamiento verbal por Alia (Sr./Sra.). Si está vacío, Alia usará el nombre sin tratamiento.",
+                help_text="Género del contacto para tratamiento verbal por María (Sr./Sra.). Si está vacío, María usará el nombre sin tratamiento.",
                 max_length=1,
                 verbose_name="Género",
             ),

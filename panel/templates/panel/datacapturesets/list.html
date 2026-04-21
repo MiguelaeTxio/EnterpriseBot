@@ -1,0 +1,98 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/datacapturesets/list.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Captura de datos{% endblock %}
+{% block page_title %}Captura de datos{% endblock %}
+{% block nav_datacapturesets %}active{% endblock %}
+{% block nav_datacapturesets_off %}active{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="fw-semibold mb-0">Conjuntos de captura de datos</h4>
+        <p class="text-muted text-sm mb-0">
+            Conjuntos de campos de datos que el agente IVR recoge durante las llamadas.
+        </p>
+    </div>
+    <a href="{% url 'panel:datacaptureset_create' %}"
+       class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>Nuevo conjunto
+    </a>
+</div>
+
+{% if capture_sets %}
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-4 text-sm fw-semibold">Nombre</th>
+                    <th class="text-sm fw-semibold">Campos definidos</th>
+                    <th class="text-sm fw-semibold">Secciones vinculadas</th>
+                    <th class="text-sm fw-semibold">Última modificación</th>
+                    <th class="text-sm fw-semibold text-end pe-4">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dcs in capture_sets %}
+                <tr>
+                    <td class="ps-4">
+                        <span class="fw-semibold text-sm">{{ dcs.name }}</span>
+                    </td>
+                    <td>
+                        {% with field_count=dcs.fields|length %}
+                        {% if field_count > 0 %}
+                            <span class="badge badge-flow rounded-pill">
+                                {{ field_count }} campo{{ field_count|pluralize }}
+                            </span>
+                        {% else %}
+                            <span class="text-muted text-sm">Sin campos</span>
+                        {% endif %}
+                        {% endwith %}
+                    </td>
+                    <td>
+                        {% with section_count=dcs.sections.count %}
+                        {% if section_count > 0 %}
+                            <span class="badge badge-active rounded-pill">
+                                {{ section_count }} sección{{ section_count|pluralize:"es" }}
+                            </span>
+                        {% else %}
+                            <span class="text-muted text-sm">Sin secciones</span>
+                        {% endif %}
+                        {% endwith %}
+                    </td>
+                    <td>
+                        <span class="text-muted text-sm">
+                            {{ dcs.updated_at|date:"d/m/Y H:i" }}
+                        </span>
+                    </td>
+                    <td class="text-end pe-4">
+                        <a href="{% url 'panel:datacaptureset_edit' dcs.pk %}"
+                           class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-pencil me-1"></i>Editar
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm border-0">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-ui-checks text-muted stat-icon"></i>
+        <p class="text-muted mt-3 mb-1 fw-semibold">
+            No hay conjuntos de captura definidos.
+        </p>
+        <p class="text-muted text-sm mb-3">
+            Puede crear uno aquí o definirlo directamente al editar una sección.
+        </p>
+        <a href="{% url 'panel:datacaptureset_create' %}"
+           class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg me-1"></i>Nuevo conjunto
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

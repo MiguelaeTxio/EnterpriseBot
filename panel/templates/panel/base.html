@@ -308,6 +308,13 @@
                     </a>
                 </li>
 
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_datacapturesets %}{% endblock %}"
+                       href="{% url 'panel:datacaptureset_list' %}">
+                        <i class="bi bi-ui-checks"></i>Captura de datos
+                    </a>
+                </li>
+
                 <li><div class="sidebar-section-label">WhatsApp</div></li>
 
                 <li class="nav-item">
@@ -442,6 +449,14 @@
                            href="{% url 'panel:blockedcaller_list' %}"
                           >
                             <i class="bi bi-slash-circle"></i>Bloqueados
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_datacapturesets_off %}{% endblock %}"
+                           href="{% url 'panel:datacaptureset_list' %}"
+                          >
+                            <i class="bi bi-ui-checks"></i>Captura de datos
                         </a>
                     </li>
 

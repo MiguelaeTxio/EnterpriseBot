@@ -43,7 +43,7 @@ from ivr_config.models import (
 # ---------------------------------------------------------------------------
 
 GRUPO_ALVAREZ_SYSTEM_INSTRUCTION = (
-    "Eres Alia, la asistente virtual del Grupo Álvarez. "
+    "Eres María, la asistente virtual del Grupo Álvarez. "
     "Atiendes llamadas de voz en tiempo real. "
     "Tu tono es profesional, cálido y conciso. "
     "Habla siempre en castellano, salvo que el llamante se dirija a ti en otro idioma. "
@@ -91,9 +91,9 @@ GRUPO_ALVAREZ_SYSTEM_INSTRUCTION = (
 
 GRUPO_ALVAREZ_INITIAL_GREETING = (
     "El llamante acaba de contestar la llamada. "
-    "Salúdale presentándote como Alia, asistente virtual del Grupo Álvarez, "
+    "Salúdale presentándote como María, asistente virtual del Grupo Álvarez, "
     "con el siguiente mensaje exacto, sin añadir ni modificar nada: "
-    "'Hola, me llamo Alia, soy la asistente virtual del Grupo Álvarez. "
+    "'Hola, me llamo María, soy la asistente virtual del Grupo Álvarez. "
     "¿En qué puedo ayudarle?'"
 )
 
@@ -382,7 +382,7 @@ class Command(BaseCommand):
         """
         call_flow, created = CallFlow.objects.get_or_create(
             company=company,
-            name="Recepción principal — Alia",
+            name="Recepción principal — María",
             defaults={
                 "system_instruction": GRUPO_ALVAREZ_SYSTEM_INSTRUCTION,
                 "initial_greeting": GRUPO_ALVAREZ_INITIAL_GREETING,
@@ -390,7 +390,7 @@ class Command(BaseCommand):
             },
         )
         status = "creado" if created else "ya existente"
-        self.stdout.write(f"# [SEED] CallFlow 'Recepción principal — Alia' {status}.")
+        self.stdout.write(f"# [SEED] CallFlow 'Recepción principal — María' {status}.")
         return call_flow
 
     def _seed_phone_numbers(
