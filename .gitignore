@@ -8,3 +8,5 @@ db.sqlite3
 /staticfiles_production/
 *_venv/
 gcp_credentials.json
+work_orders/
+media/

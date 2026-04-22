@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     'panel',
     # WhatsApp channel app — app del canal WhatsApp.
     'whatsapp',
+    'work_order_processor',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
@@ -153,6 +154,9 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
+MEDIA_URL  = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # 7. CELERY CONFIGURATION
@@ -165,6 +169,7 @@ CELERY_RESULT_BACKEND    = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost
 CELERY_TIMEZONE          = TIME_ZONE
 CELERY_ENABLE_UTC        = True
 CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_DEFAULT_QUEUE  = 'work_orders'
 
 CELERY_BEAT_SCHEDULE = {
     # ---------------------------------------------------------------------------

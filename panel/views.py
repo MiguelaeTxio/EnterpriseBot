@@ -44,6 +44,8 @@ from ivr_config.models import (
     DataCaptureSet,
 )
 from whatsapp.models import WhatsAppTemplate, WhatsAppSession
+from work_order_processor.models import WorkOrder
+from work_order_processor.tasks import process_work_order_pdf
 
 
 class CompanyUserCreateView(AdminRoleRequiredMixin, View):
@@ -2313,3 +2315,145 @@ class DataCaptureSetUpdateView(AdminRoleRequiredMixin, UpdateView):
         ).filter(
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
+
+
+class WorkOrderListView(AdminRoleRequiredMixin, View):
+    """
+    Lists all WorkOrder records belonging to the authenticated user's company.
+    Shows upload date, status, page progress and Excel download link when done.
+    Restricted to ADMIN role.
+    ---
+    Lista todos los registros WorkOrder de la empresa del usuario autenticado.
+    Muestra fecha de carga, estado, progreso de páginas y enlace de descarga
+    del Excel cuando el estado es DONE. Restringido al rol ADMIN.
+    """
+
+    template_name = "panel/work_orders/list.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        from django.db.models import Q
+        from django.utils.timezone import now
+        from ivr_config.models import PresenceStatus
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def get(self, request):
+        """
+        Renders the work order list filtered by the authenticated user's company.
+        ---
+        Renderiza la lista de partes de trabajo filtrada por la empresa del
+        usuario autenticado.
+        """
+        company_user = request.user.company_user
+        work_orders  = WorkOrder.objects.filter(
+            company=company_user.company
+        ).order_by("-upload_date")
+
+        return render(request, self.template_name, {
+            "company_user": company_user,
+            "own_presence":  self._get_own_presence(company_user),
+            "work_orders":   work_orders,
+        })
+
+
+class WorkOrderUploadView(AdminRoleRequiredMixin, View):
+    """
+    Handles PDF upload for work order processing.
+    On POST: creates a WorkOrder record, enqueues the Celery processing task
+    immediately via process_work_order_pdf.delay() and redirects to the list.
+    Restricted to ADMIN role.
+    ---
+    Gestiona la carga de PDF para el procesamiento de partes de trabajo.
+    En POST: crea un registro WorkOrder, encola inmediatamente la tarea Celery
+    de procesamiento mediante process_work_order_pdf.delay() y redirige a la lista.
+    Restringido al rol ADMIN.
+    """
+
+    template_name = "panel/work_orders/upload.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        from django.db.models import Q
+        from django.utils.timezone import now
+        from ivr_config.models import PresenceStatus
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def get(self, request):
+        """
+        Renders the PDF upload form.
+        ---
+        Renderiza el formulario de carga de PDF.
+        """
+        company_user = request.user.company_user
+        return render(request, self.template_name, {
+            "company_user": company_user,
+            "own_presence":  self._get_own_presence(company_user),
+        })
+
+    def post(self, request):
+        """
+        Processes the uploaded PDF: validates presence of the file, creates
+        a WorkOrder and enqueues the Celery task for immediate processing.
+        On validation error, re-renders the form with an error message.
+        ---
+        Procesa el PDF cargado: valida la presencia del archivo, crea un
+        WorkOrder y encola la tarea Celery para procesamiento inmediato.
+        En caso de error de validación, vuelve a renderizar el formulario
+        con un mensaje de error.
+        """
+        from django.contrib import messages as django_messages
+        from django.db import transaction
+
+        company_user = request.user.company_user
+        pdf_file     = request.FILES.get("source_pdf")
+
+        if not pdf_file:
+            django_messages.error(request, "Debes seleccionar un archivo PDF.")
+            return render(request, self.template_name, {
+                "company_user": company_user,
+                "own_presence":  self._get_own_presence(company_user),
+            })
+
+        if not pdf_file.name.lower().endswith(".pdf"):
+            django_messages.error(request, "El archivo debe tener extensión .pdf.")
+            return render(request, self.template_name, {
+                "company_user": company_user,
+                "own_presence":  self._get_own_presence(company_user),
+            })
+
+        # Create WorkOrder and enqueue Celery task after DB commit.
+        # Crear WorkOrder y encolar la tarea Celery tras el commit de BD.
+        work_order = WorkOrder.objects.create(
+            company     = company_user.company,
+            uploaded_by = company_user,
+            source_pdf  = pdf_file,
+        )
+
+        transaction.on_commit(
+            lambda: process_work_order_pdf.delay(work_order.pk)
+        )
+
+        django_messages.success(
+            request,
+            f"PDF cargado correctamente (Parte #{work_order.pk}). "
+            f"El procesamiento ha sido encolado y comenzará en instantes."
+        )
+        return redirect("panel:work_order_list")

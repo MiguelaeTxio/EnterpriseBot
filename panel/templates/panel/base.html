@@ -315,6 +315,13 @@
                     </a>
                 </li>
 
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_work_orders %}{% endblock %}"
+                       href="{% url 'panel:work_order_list' %}">
+                        <i class="bi bi-file-earmark-pdf"></i>Partes de trabajo
+                    </a>
+                </li>
+
                 <li><div class="sidebar-section-label">WhatsApp</div></li>
 
                 <li class="nav-item">
@@ -457,6 +464,14 @@
                            href="{% url 'panel:datacaptureset_list' %}"
                           >
                             <i class="bi bi-ui-checks"></i>Captura de datos
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {% block nav_work_orders_off %}{% endblock %}"
+                           href="{% url 'panel:work_order_list' %}"
+                          >
+                            <i class="bi bi-file-earmark-pdf"></i>Partes de trabajo
                         </a>
                     </li>
 

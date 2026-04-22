@@ -39,6 +39,8 @@
 ./panel/templates/panel/blockedcallers/form.html
 ./panel/templates/panel/blockedcallers/confirm_delete.html
 ./panel/templates/panel/login.html
+./panel/templates/panel/work_orders/list.html
+./panel/templates/panel/work_orders/upload.html
 ./panel/__init__.py
 ./panel/views.py
 ./panel/middleware.py
@@ -62,6 +64,7 @@
 ./manage.py
 ./requirements.txt
 ./enterprise_core/urls.py
+./enterprise_core/celery.py
 ./enterprise_core/asgi.py
 ./enterprise_core/__init__.py
 ./enterprise_core/settings.py
@@ -199,6 +202,7 @@
 ./ivr_config/migrations/0003_callflow_notification_contact_contact_email_and_more.py
 ./ivr_config/migrations/0007_section_call_flow_callflow_fallback_section.py
 ./ivr_config/migrations/__init__.py
+./ivr_config/migrations/0010_alter_datacaptureset_fields.py
 ./ivr_config/migrations/0009_add_call_data_capture.py
 ./ivr_config/migrations/0004_companyuser_add_must_change_password.py
 ./ivr_config/migrations/0006_callflow_voiceprofile_add_backup_fields.py
@@ -211,3 +215,13 @@
 ./ivr_config/management/__init__.py
 ./ivr_config/services.py
 ./gcp_credentials.json
+./work_order_processor/admin.py
+./work_order_processor/__init__.py
+./work_order_processor/views.py
+./work_order_processor/apps.py
+./work_order_processor/models.py
+./work_order_processor/migrations/__init__.py
+./work_order_processor/migrations/0001_initial.py
+./work_order_processor/tasks.py
+./work_order_processor/tests.py
+./work_order_processor/services.py

@@ -26,6 +26,7 @@ mysqlclient
 # Required by Django's ImageField in ivr_config.Company (logo field).
 # Requerido por el ImageField de Django en ivr_config.Company (campo logo).
 Pillow
+PyMuPDF
 
 # Voice and Networking / Voz y Redes
 # ✅ SECURITY FIX APRIL 2026: Pinning aiohttp to 3.13.5 to mitigate CVE-2026-34517 (DoS vulnerability).
@@ -49,9 +50,11 @@ google-genai==1.69.0
 # Requerido para el procesamiento de tareas en segundo plano y trabajos programados
 # (recordatorios de presencia, expiración automática de estados, etc.).
 celery==5.6.3
+redis
 
 # Development and Linting / Desarrollo y Auditoría
 # Tools for code quality and protocol adherence (PEP8, DjLint).
 # Herramientas para calidad de código y adherencia a protocolos (PEP8, DjLint).
 esprima
 djlint
+openpyxl

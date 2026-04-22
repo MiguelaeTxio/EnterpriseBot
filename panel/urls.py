@@ -39,6 +39,8 @@ from panel.views import (
     DataCaptureSetListView,
     DataCaptureSetCreateView,
     DataCaptureSetUpdateView,
+    WorkOrderListView,
+    WorkOrderUploadView,
 )
 
 app_name = "panel"
@@ -105,4 +107,9 @@ urlpatterns = [
     path("datacapturesets/", DataCaptureSetListView.as_view(), name="datacaptureset_list"),
     path("datacapturesets/create/", DataCaptureSetCreateView.as_view(), name="datacaptureset_create"),
     path("datacapturesets/<int:pk>/edit/", DataCaptureSetUpdateView.as_view(), name="datacaptureset_edit"),
+
+    # WorkOrder management — Partes de trabajo PDF (rol ADMIN).
+    # Paso 7 — Hito 6 (2026-04-22)
+    path("work-orders/", WorkOrderListView.as_view(), name="work_order_list"),
+    path("work-orders/upload/", WorkOrderUploadView.as_view(), name="work_order_upload"),
 ]

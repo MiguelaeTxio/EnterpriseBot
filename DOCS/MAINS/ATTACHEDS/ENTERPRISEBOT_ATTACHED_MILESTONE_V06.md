@@ -112,30 +112,37 @@ Nuevo modelo WorkOrderEntry (un registro por página/parte extraído):
 ### Paso 1 — Auditoría de delivery_note_processor
 - Leer models.py, services.py y views.py de la app existente.
 - Decidir Opción A (extensión) u Opción B (app nueva).
-- Estado: PENDIENTE
+- Estado: COMPLETADO (2026-04-22) — Decisión: Opción B (nueva app work_order_processor).
+  La app delivery_note_processor pertenece a CampuStudiOnline y su arquitectura
+  es incompatible (sin multiempresa, SDK legacy, ImageField en lugar de FileField PDF).
 
 ### Paso 2 — Dependencias
 - Añadir PyMuPDF y openpyxl a requirements.in si no están presentes.
 - Ejecutar pip-compile y pip-sync en el entorno virtual del servidor.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (2026-04-22) — PyMuPDF 1.27.2.2, openpyxl 3.1.5, redis 7.4.0 instalados.
 
 ### Paso 3 — Modelo de Datos
 - Implementar WorkOrder y WorkOrderEntry en la app seleccionada.
 - Generar y aplicar migración Django.
 - Registrar ambos modelos en admin.py.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (2026-04-22) — App work_order_processor creada. Modelos
+  implementados, migración 0001_initial aplicada, admin registrado con inline.
 
 ### Paso 4 — Servicio de Extracción Gemini
 - Implementar extract_work_order_page(image_bytes) -> dict en services.py.
 - Construir prompt de extracción con los campos de la seccion 2.3.
 - Respuesta Gemini en JSON estructurado; parsear y mapear a WorkOrderEntry.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (2026-04-22) — services.py implementado con prompt exhaustivo
+  incorporando directrices D6 (alias Larios), D7 (contexto vehículos pesados) y
+  D8 (tolerancia caligráfica). Cliente Gemini Vision vía Vertex AI (gemini-2.5-flash).
 
 ### Paso 5 — Tarea Celery de Procesamiento
 - Implementar process_work_order_pdf(work_order_id) en tasks.py.
 - Flujo: abrir PDF -> iterar páginas -> rasterizar -> invocar servicio Gemini
   -> persistir WorkOrderEntry -> actualizar WorkOrder.status y contadores.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (2026-04-22) — tasks.py implementado con rasterización en
+  memoria a 200 DPI, persistencia por update_or_create, reintentos automáticos
+  Celery (max_retries=3). Worker always-on task configurado y operativo.
 
 ### Paso 6 — Generación de Excel
 - Implementar generate_work_order_excel(work_order_id) en services.py.
@@ -143,7 +150,9 @@ Nuevo modelo WorkOrderEntry (un registro por página/parte extraído):
 - Cabeceras en castellano. Columnas: todos los campos de seccion 2.3 más
   fecha de extracción y nivel de confianza.
 - Persistir el archivo en WorkOrder.excel_file y actualizar status a DONE.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (2026-04-22) — Implementado en services.py. Excel con
+  11 columnas, cabecera oscura, fila fija, wrap text en columnas largas.
+  Archivo persistido en MEDIA_ROOT/work_orders/excel/.
 
 ### Paso 7 — Vista de Carga y Descarga en Panel
 - Vista de carga: formulario de subida de PDF restringido a usuarios ADMIN.
@@ -151,14 +160,20 @@ Nuevo modelo WorkOrderEntry (un registro por página/parte extraído):
   y enlace de descarga del Excel cuando status=DONE.
 - Entrada en sidebar del panel: "Partes de Trabajo".
 - URL base: /panel/work-orders/
-- Estado: PENDIENTE
+- Estado: COMPLETADO (2026-04-22) — WorkOrderListView y WorkOrderUploadView
+  implementadas. Templates list.html y upload.html creados. Entrada en sidebar
+  fijo y offcanvas. MEDIA_URL/MEDIA_ROOT configurados. Static files en
+  PythonAnywhere configurados para /media/.
 
 ### Paso 8 — Validación E2E
 - Subir PDF de prueba con partes reales de Grupo Álvarez.
 - Verificar extracción correcta de todos los campos.
 - Verificar descarga del Excel generado con datos estructurados.
 - Verificar registros en BD en el admin Django.
-- Estado: PENDIENTE
+- Estado: PARCIALMENTE COMPLETADO (2026-04-22) — Pipeline E2E validado con
+  PDF de listado de maquinaria (resultado FAILED esperado por ser documento
+  tabular impreso, no parte manuscrito). Pendiente validación con partes
+  reales manuscritos de Grupo Álvarez.
 
 ---
 
@@ -167,47 +182,70 @@ Nuevo modelo WorkOrderEntry (un registro por página/parte extraído):
 | Sesión | Fecha      | Pasos trabajados | Resumen |
 |--------|------------|-----------------|---------|
 | 001    | 2026-04-21 | —               | Creación del anexo. Inicio formal del hito. Hito declarado EN PROGRESO como siguiente sesión activa. |
+| 002    | 2026-04-22 | 1, 2, 3, 4, 5, 6, 7, 8 | Implementación completa del pipeline PDF→Excel. Auditoría delivery_note_processor (Opción B). App work_order_processor creada desde cero. Modelos, migración, admin, services, tasks, vistas y templates implementados. Infraestructura Celery completa: celery.py, worker always-on task, broker Redis Cloud, cola work_orders aislada. MEDIA_URL/MEDIA_ROOT configurados. Validación E2E con PDF de prueba superada. Pendiente validación con partes reales de Grupo Álvarez. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
 ### Objetivo principal
-Ejecutar la auditoría de delivery_note_processor (Paso 1) y, según la decisión
-tomada, implementar el modelo de datos completo (Paso 3) y las dependencias
-necesarias (Paso 2).
+Dos objetivos en paralelo: (A) refactorización del sidebar dual de base.html
+para eliminar la deuda técnica estructural del panel, y (B) validación E2E
+definitiva del Hito 6 con partes de trabajo manuscritos reales de Grupo Álvarez.
 
 ### Secuencia de trabajo
 
-1. Solicitar al inicio de sesión:
-   - PAIRS/delivery_note_processor/models.py
-   - PAIRS/delivery_note_processor/services.py
-   - PAIRS/delivery_note_processor/views.py
-   - requirements.in
+#### Tarea 0 — Refactorización sidebar dual (deuda técnica)
+Unificar los dos bloques de navegación duplicados de base.html (sidebar fijo
+y offcanvas) en un único partial template `_nav_items.html` usando la variable
+de contexto `active_nav` en lugar de bloques Django `{% block nav_X %}`.
 
-2. Auditoría y decisión de arquitectura (Paso 1):
-   - Evaluar si delivery_note_processor es extensible para el nuevo flujo.
-   - Declarar explícitamente Opción A u Opción B antes de continuar.
+Archivos afectados:
+- `panel/templates/panel/base.html` — PMA: extraer nav a _nav_items.html,
+  sustituir ambos bloques por `{% include "panel/_nav_items.html" %}`.
+- `panel/templates/panel/_nav_items.html` — PEA: partial con lógica
+  `{% if active_nav == "X" %}active{% endif %}` para cada entrada.
+- `panel/views.py` — PMA: añadir `"active_nav": "X"` al contexto de
+  cada vista. Mapa completo de valores:
+    - dashboard → "dashboard"
+    - presence/status → "presence"
+    - users/list, form, create → "users"
+    - sections/list, form → "sections"
+    - contacts/list, form → "contacts"
+    - callflows/list, form → "callflows"
+    - phonenumbers/list → "phonenumbers"
+    - voiceprofile/detail → "voiceprofile"
+    - blockedcallers/list, form, confirm_delete → "blockedcallers"
+    - datacapturesets/list, form → "datacapturesets"
+    - work_orders/list, upload → "work_orders"
+    - whatsapp/template_list → "whatsapp_templates"
+    - whatsapp/active_session_list → "whatsapp_sessions"
+- Todos los templates hijo — eliminar líneas `{% block nav_X %}active{% endblock %}`.
 
-3. Dependencias (Paso 2):
-   - Verificar presencia de PyMuPDF y openpyxl en requirements.in.
-   - Si faltan, añadirlos vía PMP y ejecutar pip-compile + pip-sync.
+#### Tarea 1 — Validación E2E con partes reales (Paso 8 definitivo)
+Miguel Ángel sube un PDF real con partes de trabajo manuscritos de Grupo Álvarez.
 
-4. Modelo de datos (Paso 3):
-   - Implementar WorkOrder y WorkOrderEntry según seccion 2.5 del anexo.
-   - Los campos son la fuente de verdad — no inventar ni añadir campos no
-     documentados sin acuerdo explícito con el usuario.
-   - Migración y registro en admin.
+1. Subir el PDF desde /panel/work-orders/upload/.
+2. Observar logs del worker Celery para verificar que Gemini Vision devuelve
+   confianza HIGH o MEDIUM en los campos principales.
+3. Descargar el Excel generado y verificar:
+   - worker_name extraído correctamente.
+   - work_date en formato correcto (YYYY-MM-DD → mostrado DD/MM/YYYY).
+   - start_time y end_time redondeados a media hora según directriz D3.
+   - vehicle_ref normalizado según directriz D4.
+   - work_description e observations en contexto de vehículos pesados (D7).
+4. Si la extracción es deficiente, afinar el prompt en services.py._EXTRACTION_PROMPT.
 
-### Notas técnicas
-- El modelo es multiempresa desde el inicio: WorkOrder.company es obligatorio
-  y el queryset de todas las vistas se filtra siempre por
-  request.user.company_user.company.
-- PyMuPDF se importa como fitz en el código Python.
-- El prompt de extracción Gemini debe solicitar respuesta exclusivamente en
-  JSON con las claves exactas de la seccion 2.3 para facilitar el parseo.
-- La rasterización de páginas PDF se realiza en memoria (page.get_pixmap())
-  sin escritura en disco temporal.
+### Notas técnicas para la siguiente sesión
+- El worker Celery arranca con: /home/MiguelAeTxio/PROJECTS/EnterpriseBot/start_celery_worker.sh
+- Cola exclusiva: work_orders (CELERY_TASK_DEFAULT_QUEUE = 'work_orders').
+- Broker: Redis Cloud — URL en .env como CELERY_BROKER_URL.
+- Los archivos Excel se guardan en: MEDIA_ROOT/work_orders/excel/
+- La URL de descarga funciona porque /media/ está configurado en PythonAnywhere
+  Static files apuntando a /home/MiguelAeTxio/PROJECTS/EnterpriseBot/media.
+- El prompt de extracción está en: work_order_processor/services.py → _EXTRACTION_PROMPT.
+- Las directrices D6 (Larios), D7 (vehículos pesados) y D8 (tolerancia caligráfica)
+  están incorporadas en el prompt y en la skill partes-trabajo.
 
 ---
 
