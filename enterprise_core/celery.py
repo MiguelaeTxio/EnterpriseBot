@@ -41,7 +41,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "enterprise_core.settings")
 # ---------------------------------------------------------------------------
 # Celery application instance / Instancia de aplicación Celery
 # ---------------------------------------------------------------------------
-app = Celery("enterprise_core")
+app = Celery("enterprise_core", task_cls="celery.contrib.django.task:DjangoTask")
 
 # Load configuration from Django settings using the CELERY_ namespace.
 # All settings.py variables prefixed with CELERY_ are automatically picked up.

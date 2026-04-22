@@ -1,0 +1,144 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_nav_items.html #}
+{#                                                                                   #}
+{# Partial template: navigation items shared by the fixed sidebar and the           #}
+{# offcanvas sidebar. Included via {% include %} from base.html.                    #}
+{# Active state is driven by the context variable `active_nav` injected by          #}
+{# each view. No {% block %} tags are used here — this partial is included,         #}
+{# not extended.                                                                    #}
+{#                                                                                  #}
+{# Plantilla parcial: ítems de navegación compartidos por el sidebar fijo y el     #}
+{# sidebar offcanvas. Se incluye mediante {% include %} desde base.html.            #}
+{# El estado activo se controla mediante la variable de contexto `active_nav`       #}
+{# inyectada por cada vista. No se usan etiquetas {% block %} aquí — esta           #}
+{# plantilla se incluye, no se extiende.                                            #}
+{#                                                                                  #}
+{# Mapa de valores de active_nav:                                                   #}
+{#   "dashboard"          → Inicio                                                  #}
+{#   "presence"           → Mi estado                                               #}
+{#   "users"              → Usuarios                                                #}
+{#   "sections"           → Secciones                                               #}
+{#   "contacts"           → Contactos                                               #}
+{#   "callflows"          → Flujos IVR                                              #}
+{#   "phonenumbers"       → Números                                                 #}
+{#   "voiceprofile"       → Perfil de voz                                           #}
+{#   "blockedcallers"     → Bloqueados                                              #}
+{#   "datacapturesets"    → Captura de datos                                        #}
+{#   "work_orders"        → Partes de trabajo                                       #}
+{#   "whatsapp_templates" → Plantillas (WhatsApp)                                   #}
+{#   "whatsapp_sessions"  → Sesiones activas (WhatsApp)                             #}
+{# ================================================================================ #}
+
+<ul class="nav flex-column mt-2">
+
+    {# ------------------------------------------------------------------ #}
+    {# Inicio / Dashboard                                                  #}
+    {# ------------------------------------------------------------------ #}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}"
+           href="{% url 'panel:dashboard' %}">
+            <i class="bi bi-speedometer2"></i>Inicio
+        </a>
+    </li>
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Presencia — Section: Presence                             #}
+    {# ------------------------------------------------------------------ #}
+    <li><div class="sidebar-section-label">Presencia</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'presence' %}active{% endif %}"
+           href="{% url 'panel:presence_status' %}">
+            <i class="bi bi-person-check"></i>Mi estado
+        </a>
+    </li>
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Configuración (solo ADMIN) — Section: Settings (ADMIN)    #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' %}
+    <li><div class="sidebar-section-label">Configuración</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
+           href="{% url 'panel:user_list' %}">
+            <i class="bi bi-people"></i>Usuarios
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'sections' %}active{% endif %}"
+           href="{% url 'panel:section_list' %}">
+            <i class="bi bi-diagram-3"></i>Secciones
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'contacts' %}active{% endif %}"
+           href="{% url 'panel:contact_list' %}">
+            <i class="bi bi-person-lines-fill"></i>Contactos
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
+           href="{% url 'panel:callflow_list' %}">
+            <i class="bi bi-gear-wide-connected"></i>Flujos IVR
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'phonenumbers' %}active{% endif %}"
+           href="{% url 'panel:phonenumber_list' %}">
+            <i class="bi bi-telephone-inbound"></i>Números
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'voiceprofile' %}active{% endif %}"
+           href="{% url 'panel:voiceprofile_detail' %}">
+            <i class="bi bi-mic"></i>Perfil de voz
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'blockedcallers' %}active{% endif %}"
+           href="{% url 'panel:blockedcaller_list' %}">
+            <i class="bi bi-slash-circle"></i>Bloqueados
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
+           href="{% url 'panel:datacaptureset_list' %}">
+            <i class="bi bi-ui-checks"></i>Captura de datos
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
+           href="{% url 'panel:work_order_list' %}">
+            <i class="bi bi-file-earmark-pdf"></i>Partes de trabajo
+        </a>
+    </li>
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: WhatsApp — Section: WhatsApp                              #}
+    {# ------------------------------------------------------------------ #}
+    <li><div class="sidebar-section-label">WhatsApp</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'whatsapp_templates' %}active{% endif %}"
+           href="{% url 'panel:whatsapp_template_list' %}">
+            <i class="bi bi-whatsapp"></i>Plantillas
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'whatsapp_sessions' %}active{% endif %}"
+           href="{% url 'panel:whatsapp_active_sessions' %}">
+            <i class="bi bi-chat-dots"></i>Sesiones activas
+        </a>
+    </li>
+    {% endif %}
+
+</ul>

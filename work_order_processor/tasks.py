@@ -18,8 +18,9 @@ del informe Excel.
 import logging
 
 import fitz  # PyMuPDF
-from celery import shared_task
+from celery.contrib.django.task import DjangoTask
 from django.db import transaction
+from enterprise_core.celery import app
 
 from .models import WorkOrder, WorkOrderEntry
 from .services import (
@@ -43,7 +44,7 @@ _RASTER_DPI    = 200
 _RASTER_MATRIX = fitz.Matrix(_RASTER_DPI / 72, _RASTER_DPI / 72)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+@app.task(base=DjangoTask, bind=True, max_retries=3, default_retry_delay=30)
 def process_work_order_pdf(self, work_order_id: int) -> None:
     """
     Celery task: orchestrates the full PDF processing pipeline for a WorkOrder.

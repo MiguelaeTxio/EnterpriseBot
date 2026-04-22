@@ -85,6 +85,7 @@ class CompanyUserCreateView(AdminRoleRequiredMixin, View):
             "company":      cu.company,
             "company_user": cu,
             "own_presence": self._get_own_presence(cu),
+            "active_nav":   "users",
             "form":         form or CompanyUserCreateForm(),
         }
 
@@ -163,6 +164,7 @@ class CompanyUserListView(AdminRoleRequiredMixin, ListView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "users"
         return context
 
     def _get_own_presence(self):
@@ -247,6 +249,7 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "users"
         return context
 
     def _get_own_presence(self):
@@ -299,6 +302,7 @@ class SectionListView(AdminRoleRequiredMixin, ListView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "sections"
         return context
 
     def _get_own_presence(self):
@@ -478,6 +482,7 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "sections"
         context["action"] = "Crear"
         if "schedule_formset" not in context:
             ScheduleFormSet = self._get_schedule_formset_class()
@@ -682,6 +687,7 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "sections"
         context["action"] = "Guardar"
         if "schedule_formset" not in context:
             ScheduleFormSet = self._get_schedule_formset_class()
@@ -741,6 +747,7 @@ class ContactListView(AdminRoleRequiredMixin, ListView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "contacts"
         return context
 
     def _get_own_presence(self):
@@ -820,6 +827,7 @@ class ContactCreateView(AdminRoleRequiredMixin, CreateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "contacts"
         context["action"] = "Crear"
         return context
 
@@ -901,6 +909,7 @@ class ContactUpdateView(AdminRoleRequiredMixin, UpdateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "contacts"
         context["action"] = "Editar"
         return context
 
@@ -954,6 +963,7 @@ class CallFlowListView(AdminRoleRequiredMixin, ListView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "callflows"
         return context
 
     def _get_own_presence(self):
@@ -1047,6 +1057,7 @@ class CallFlowCreateView(AdminRoleRequiredMixin, CreateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "callflows"
         context["action"] = "Crear"
         return context
 
@@ -1158,6 +1169,7 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "callflows"
         context["action"] = "Editar"
         # has_backup is True if a restorable snapshot exists in backup fields.
         # has_backup es True si existe un snapshot restaurable en los campos de backup.
@@ -1219,6 +1231,7 @@ class PhoneNumberListView(AdminRoleRequiredMixin, ListView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "phonenumbers"
         return context
 
     def _get_own_presence(self):
@@ -1283,10 +1296,11 @@ class CorporateVoiceProfileUpdateView(AdminRoleRequiredMixin, View):
         ).order_by("-starts_at").first()
 
         return {
-            "company": company,
+            "company":      company,
             "company_user": company_user,
             "own_presence": own_presence,
-            "profile": profile,
+            "active_nav":   "voiceprofile",
+            "profile":      profile,
         }
 
     def get(self, request, *args, **kwargs):
@@ -1510,6 +1524,7 @@ class BlockedCallerListView(AdminRoleRequiredMixin, ListView):
         context["company"] = company_user.company
         context["company_user"] = company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "blockedcallers"
         return context
 
     def _get_own_presence(self):
@@ -1574,6 +1589,7 @@ class BlockedCallerCreateView(AdminRoleRequiredMixin, CreateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "blockedcallers"
         context["action"] = "Bloquear número"
         return context
 
@@ -1639,6 +1655,7 @@ class BlockedCallerDeleteView(AdminRoleRequiredMixin, DeleteView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "blockedcallers"
         return context
 
     def _get_own_presence(self):
@@ -1729,10 +1746,11 @@ class PresenceStatusUpdateView(CompanyUserRequiredMixin, View):
         form = PresenceStatusForm(instance=active_presence)
 
         return render(request, self.template_name, {
-            "company": company_user.company,
+            "company":    company_user.company,
             "company_user": company_user,
             "own_presence": active_presence,
-            "form": form,
+            "active_nav": "presence",
+            "form":       form,
         })
 
     def post(self, request, *args, **kwargs):
@@ -1775,10 +1793,11 @@ class PresenceStatusUpdateView(CompanyUserRequiredMixin, View):
         # Rerenderizar el formulario con errores de validación.
         active_presence = self._get_active_presence(company_user)
         return render(request, self.template_name, {
-            "company": company_user.company,
+            "company":    company_user.company,
             "company_user": company_user,
             "own_presence": active_presence,
-            "form": form,
+            "active_nav": "presence",
+            "form":       form,
         })
 
 
@@ -1871,6 +1890,7 @@ class PanelDashboardView(CompanyUserRequiredMixin, TemplateView):
         context["active_sections_count"] = active_sections.count()
         context["total_contacts"] = total_contacts
         context["own_presence"] = own_presence
+        context["active_nav"] = "dashboard"
 
         return context
 
@@ -1916,6 +1936,7 @@ class PanelPasswordChangeView(CompanyUserRequiredMixin, View):
             "company":      cu.company,
             "company_user": cu,
             "own_presence": self._get_own_presence(cu),
+            "active_nav":   "",
             "form":         form or PanelPasswordChangeForm(user=request.user),
             "is_forced":    cu.must_change_password,
         }
@@ -2000,6 +2021,7 @@ class WhatsAppTemplateListView(AdminRoleRequiredMixin, ListView):
         context["company"]      = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"]   = "whatsapp_templates"
         return context
 
     def _get_own_presence(self):
@@ -2082,6 +2104,7 @@ class WhatsAppActiveSessionListView(AdminRoleRequiredMixin, ListView):
         context["company"]      = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"]   = "whatsapp_sessions"
         return context
 
     def _get_own_presence(self):
@@ -2139,6 +2162,7 @@ class DataCaptureSetListView(AdminRoleRequiredMixin, ListView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "datacapturesets"
         return context
 
     def _get_own_presence(self):
@@ -2215,6 +2239,7 @@ class DataCaptureSetCreateView(AdminRoleRequiredMixin, CreateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "datacapturesets"
         context["action"] = "Crear"
         context["existing_fields_json"] = json.dumps([])
         return context
@@ -2298,6 +2323,7 @@ class DataCaptureSetUpdateView(AdminRoleRequiredMixin, UpdateView):
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
+        context["active_nav"] = "datacapturesets"
         context["action"] = "Guardar"
         context["existing_fields_json"] = json.dumps(self.object.fields or [])
         return context
@@ -2361,6 +2387,7 @@ class WorkOrderListView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, {
             "company_user": company_user,
             "own_presence":  self._get_own_presence(company_user),
+            "active_nav":    "work_orders",
             "work_orders":   work_orders,
         })
 
@@ -2406,6 +2433,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, {
             "company_user": company_user,
             "own_presence":  self._get_own_presence(company_user),
+            "active_nav":    "work_orders",
         })
 
     def post(self, request):
@@ -2430,6 +2458,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
             return render(request, self.template_name, {
                 "company_user": company_user,
                 "own_presence":  self._get_own_presence(company_user),
+                "active_nav":    "work_orders",
             })
 
         if not pdf_file.name.lower().endswith(".pdf"):
@@ -2437,6 +2466,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
             return render(request, self.template_name, {
                 "company_user": company_user,
                 "own_presence":  self._get_own_presence(company_user),
+                "active_nav":    "work_orders",
             })
 
         # Create WorkOrder and enqueue Celery task after DB commit.
@@ -2447,9 +2477,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
             source_pdf  = pdf_file,
         )
 
-        transaction.on_commit(
-            lambda: process_work_order_pdf.delay(work_order.pk)
-        )
+        process_work_order_pdf.delay_on_commit(work_order.pk)
 
         django_messages.success(
             request,

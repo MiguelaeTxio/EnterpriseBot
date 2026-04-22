@@ -170,10 +170,75 @@ Nuevo modelo WorkOrderEntry (un registro por página/parte extraído):
 - Verificar extracción correcta de todos los campos.
 - Verificar descarga del Excel generado con datos estructurados.
 - Verificar registros en BD en el admin Django.
-- Estado: PARCIALMENTE COMPLETADO (2026-04-22) — Pipeline E2E validado con
-  PDF de listado de maquinaria (resultado FAILED esperado por ser documento
-  tabular impreso, no parte manuscrito). Pendiente validación con partes
-  reales manuscritos de Grupo Álvarez.
+- Estado: PARCIALMENTE COMPLETADO (2026-04-22/23) — Pipeline E2E validado con
+  PDF real de 23 partes manuscritos de Alejandro García Luque (21-10 al 20-11).
+  Worker Celery operativo con DjangoTask. Confianzas HIGH y MEDIUM consistentes.
+  BLOQUEANTE DETECTADO: el Excel generado no cumple la especificación de la
+  skill partes-trabajo. Ver Paso 9 para el rediseño completo.
+
+### Paso 9 — Rediseño del modelo de extracción y del generador Excel
+- Estado: PENDIENTE.
+- Objetivo: hacer que el Excel generado cumpla al 100% la especificación de
+  la skill `partes-trabajo` (skill.md en /mnt/skills/user/partes-trabajo/).
+
+Diagnóstico técnico de la sesión 003:
+  A) El modelo de extracción Gemini (prompt en services.py._EXTRACTION_PROMPT)
+     extrae UN resumen por página (1 vehículo, 1 H.C., 1 H.F.). La skill exige
+     extraer TODOS LOS TRAMOS de la página (hasta 4 bloques por parte), uno por
+     fila en el Excel.
+  B) El modelo WorkOrderEntry almacena un registro por página, no por tramo.
+     Necesita nuevos campos: maquina_raw, descripcion_averia, reparacion, or_val,
+     o bien rediseñarse para soportar múltiples entradas por página (JSON).
+  C) generate_work_order_excel() genera 11 columnas planas. La skill define 16
+     columnas con cálculos: Δ HORAS (neta), HORAS NETAS DÍA, HORAS EXTRAS,
+     SALARIO EXTRAS, REVISIÓN HORARIO (código de colores), más hoja LEYENDA y
+     MANIFIESTO DE INCIDENCIAS al pie.
+  D) El nombre del operario debe tomarse del nombre del archivo PDF fuente
+     (ya disponible en WorkOrder.source_pdf.name), no del texto manuscrito
+     extraído por Gemini (que produce variantes ortográficas inconsistentes).
+
+Secuencia de trabajo del Paso 9:
+  1. Rediseñar el prompt _EXTRACTION_PROMPT en services.py para que Gemini
+     devuelva un JSON con lista de entradas (hasta 4 bloques) en lugar de
+     un resumen de página. Estructura JSON objetivo por página:
+     {
+       "fecha": "DD/MM/YYYY",
+       "fecha_incierta": false,
+       "operario": "NOMBRE DEL PDF",
+       "entradas": [
+         {
+           "maquina_raw": "A-54",
+           "descripcion_averia": "...",
+           "reparacion": "...",
+           "hc": "08:00",
+           "hf": "17:30",
+           "or_val": null,
+           "flags": []
+         }
+       ]
+     }
+  2. Adaptar WorkOrderEntry para soportar la nueva estructura. Evaluar si
+     conviene un campo JSONField `entradas` en lugar de campos planos, o
+     añadir campos individuales por tramo (maquina_raw, descripcion_averia,
+     reparacion, or_val) y crear un modelo WorkOrderEntryLine para los tramos.
+     Decidir en sesión tras auditar el modelo actual.
+  3. Actualizar process_work_order_pdf en tasks.py para persistir los tramos
+     con la nueva estructura.
+  4. Reescribir generate_work_order_excel en services.py implementando las
+     16 columnas, fórmulas de horas extras y salario, código de colores en
+     REVISIÓN HORARIO (usando openpyxl PatternFill), hoja LEYENDA y
+     MANIFIESTO DE INCIDENCIAS al pie, exactamente según la skill.
+  5. Aplicar directrices D1-D5 de la skill en el generador Excel:
+     D1 — una incidencia de fecha por día.
+     D2 — deducción de fecha por contexto calendario.
+     D3 — redondeo de horas a fracciones de media hora.
+     D4 — normalización de nomenclatura de maquinaria.
+     D5 — incidencia JORNADA si jornada diaria < 8h.
+  6. Validación E2E final con el mismo PDF de Alejandro García Luque
+     (ALEJANDRO_GARCIA_LUQUE_21-10_AL_20-11.pdf) comparando el Excel
+     generado contra el Excel de referencia del agente
+     (GARCIA_LUQUE_21-10_AL_20-11.xlsx). Criterio de éxito: estructura
+     de columnas idéntica, horas calculadas correctas, manifiesto coherente.
 
 ---
 
@@ -183,69 +248,68 @@ Nuevo modelo WorkOrderEntry (un registro por página/parte extraído):
 |--------|------------|-----------------|---------|
 | 001    | 2026-04-21 | —               | Creación del anexo. Inicio formal del hito. Hito declarado EN PROGRESO como siguiente sesión activa. |
 | 002    | 2026-04-22 | 1, 2, 3, 4, 5, 6, 7, 8 | Implementación completa del pipeline PDF→Excel. Auditoría delivery_note_processor (Opción B). App work_order_processor creada desde cero. Modelos, migración, admin, services, tasks, vistas y templates implementados. Infraestructura Celery completa: celery.py, worker always-on task, broker Redis Cloud, cola work_orders aislada. MEDIA_URL/MEDIA_ROOT configurados. Validación E2E con PDF de prueba superada. Pendiente validación con partes reales de Grupo Álvarez. |
+| 003    | 2026-04-22 | Tarea 0, Paso 8, Paso 9 (inicio) | Refactorización sidebar dual de panel: partial _nav_items.html, 29 actualizaciones de active_nav en views.py, eliminación de 26 bloques nav en 22 templates, corrección CSS offcanvas. Pipeline Celery corregido: diagnóstico transaction.on_commit bajo uWSGI, solución definitiva con DjangoTask (@app.task base=DjangoTask). Validación E2E Paso 8 con PDF real 23 páginas: worker operativo, confianzas HIGH/MEDIUM. Bloqueante detectado: Excel generado no cumple especificación skill partes-trabajo. Paso 9 registrado para siguiente sesión. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
 ### Objetivo principal
-Dos objetivos en paralelo: (A) refactorización del sidebar dual de base.html
-para eliminar la deuda técnica estructural del panel, y (B) validación E2E
-definitiva del Hito 6 con partes de trabajo manuscritos reales de Grupo Álvarez.
+Ejecutar el **Paso 9** completo: rediseño del modelo de extracción Gemini y del
+generador Excel para que el output cumpla al 100% la especificación de la skill
+`partes-trabajo`. El Excel de referencia es GARCIA_LUQUE_21-10_AL_20-11.xlsx
+(generado por el agente Claude con la skill). El PDF de validación es
+ALEJANDRO_GARCIA_LUQUE_21-10_AL_20-11.pdf (23 páginas, partes reales de Grupo Álvarez).
 
 ### Secuencia de trabajo
 
-#### Tarea 0 — Refactorización sidebar dual (deuda técnica)
-Unificar los dos bloques de navegación duplicados de base.html (sidebar fijo
-y offcanvas) en un único partial template `_nav_items.html` usando la variable
-de contexto `active_nav` en lugar de bloques Django `{% block nav_X %}`.
+#### Subtarea 9.1 — Auditoría de archivos afectados
+Solicitar al inicio de sesión:
+- `work_order_processor/services.py` — contiene _EXTRACTION_PROMPT y generate_work_order_excel()
+- `work_order_processor/models.py` — contiene WorkOrder y WorkOrderEntry
+- `work_order_processor/tasks.py` — contiene process_work_order_pdf
 
-Archivos afectados:
-- `panel/templates/panel/base.html` — PMA: extraer nav a _nav_items.html,
-  sustituir ambos bloques por `{% include "panel/_nav_items.html" %}`.
-- `panel/templates/panel/_nav_items.html` — PEA: partial con lógica
-  `{% if active_nav == "X" %}active{% endif %}` para cada entrada.
-- `panel/views.py` — PMA: añadir `"active_nav": "X"` al contexto de
-  cada vista. Mapa completo de valores:
-    - dashboard → "dashboard"
-    - presence/status → "presence"
-    - users/list, form, create → "users"
-    - sections/list, form → "sections"
-    - contacts/list, form → "contacts"
-    - callflows/list, form → "callflows"
-    - phonenumbers/list → "phonenumbers"
-    - voiceprofile/detail → "voiceprofile"
-    - blockedcallers/list, form, confirm_delete → "blockedcallers"
-    - datacapturesets/list, form → "datacapturesets"
-    - work_orders/list, upload → "work_orders"
-    - whatsapp/template_list → "whatsapp_templates"
-    - whatsapp/active_session_list → "whatsapp_sessions"
-- Todos los templates hijo — eliminar líneas `{% block nav_X %}active{% endblock %}`.
+#### Subtarea 9.2 — Rediseño del prompt de extracción
+Reescribir _EXTRACTION_PROMPT en services.py para que Gemini devuelva un JSON
+con lista de entradas (hasta 4 tramos por página) en lugar de un resumen de página.
+Ver estructura JSON objetivo en el Paso 9 de la sección 3.
 
-#### Tarea 1 — Validación E2E con partes reales (Paso 8 definitivo)
-Miguel Ángel sube un PDF real con partes de trabajo manuscritos de Grupo Álvarez.
+El nombre del operario NO debe extraerse del manuscrito. Debe tomarse del nombre
+del archivo PDF fuente, que ya está disponible en WorkOrder.source_pdf.name.
+Formato: el nombre del archivo tiene la forma NOMBRE_APELLIDO1_APELLIDO2_DD-MM_AL_DD-MM.pdf.
+Extraer la parte del nombre con str.split('_') y reconstruir en formato
+"NOMBRE APELLIDO1 APELLIDO2" en mayúsculas.
 
-1. Subir el PDF desde /panel/work-orders/upload/.
-2. Observar logs del worker Celery para verificar que Gemini Vision devuelve
-   confianza HIGH o MEDIUM en los campos principales.
-3. Descargar el Excel generado y verificar:
-   - worker_name extraído correctamente.
-   - work_date en formato correcto (YYYY-MM-DD → mostrado DD/MM/YYYY).
-   - start_time y end_time redondeados a media hora según directriz D3.
-   - vehicle_ref normalizado según directriz D4.
-   - work_description e observations en contexto de vehículos pesados (D7).
-4. Si la extracción es deficiente, afinar el prompt en services.py._EXTRACTION_PROMPT.
+#### Subtarea 9.3 — Decisión de modelo de datos
+Decidir si WorkOrderEntry soporta los nuevos campos de tramo. Opciones:
+  A) Añadir campos planos (maquina_raw, descripcion_averia, reparacion, or_val)
+     a WorkOrderEntry y crear un registro por tramo (no por página).
+  B) Añadir un JSONField `entradas` a WorkOrderEntry que almacene la lista de
+     tramos, manteniendo un registro por página.
+La decisión se toma en sesión tras auditar el modelo actual. La Opción A es
+más limpia y alineada con la skill; la Opción B es menos invasiva en migraciones.
+
+#### Subtarea 9.4 — Reescritura de generate_work_order_excel()
+Implementar las 16 columnas según la skill, con fórmulas, código de colores
+(openpyxl PatternFill), hoja LEYENDA y MANIFIESTO DE INCIDENCIAS.
+Ver especificación exacta en skill partes-trabajo v1.2.
+
+#### Subtarea 9.5 — Validación E2E final
+Subir ALEJANDRO_GARCIA_LUQUE_21-10_AL_20-11.pdf y comparar el Excel generado
+contra GARCIA_LUQUE_21-10_AL_20-11.xlsx. Criterio de éxito: estructura de
+columnas idéntica, horas calculadas correctas, manifiesto coherente.
 
 ### Notas técnicas para la siguiente sesión
-- El worker Celery arranca con: /home/MiguelAeTxio/PROJECTS/EnterpriseBot/start_celery_worker.sh
+- Worker Celery: /home/MiguelAeTxio/PROJECTS/EnterpriseBot/start_celery_worker.sh
 - Cola exclusiva: work_orders (CELERY_TASK_DEFAULT_QUEUE = 'work_orders').
-- Broker: Redis Cloud — URL en .env como CELERY_BROKER_URL.
+- Broker: Redis Cloud — CELERY_BROKER_URL en .env.
+- DjangoTask como base de process_work_order_pdf — NO revertir.
+- Excel de referencia del agente: GARCIA_LUQUE_21-10_AL_20-11.xlsx
+- PDF de validación: ALEJANDRO_GARCIA_LUQUE_21-10_AL_20-11.pdf (23 páginas)
+- Skill de referencia: /mnt/skills/user/partes-trabajo/SKILL.md (v1.2)
 - Los archivos Excel se guardan en: MEDIA_ROOT/work_orders/excel/
 - La URL de descarga funciona porque /media/ está configurado en PythonAnywhere
   Static files apuntando a /home/MiguelAeTxio/PROJECTS/EnterpriseBot/media.
-- El prompt de extracción está en: work_order_processor/services.py → _EXTRACTION_PROMPT.
-- Las directrices D6 (Larios), D7 (vehículos pesados) y D8 (tolerancia caligráfica)
-  están incorporadas en el prompt y en la skill partes-trabajo.
 
 ---
 
