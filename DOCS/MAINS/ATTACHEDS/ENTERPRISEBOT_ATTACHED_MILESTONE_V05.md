@@ -370,6 +370,7 @@ Tipos soportados previstos: `text`, `phone`, `location`, `reference`,
 | 001 | 2026-04-20 | — | Creación del anexo. Inicio formal del hito. |
 | 002 | 2026-04-21 | 1, 2, 3, 4, 5, 6-bis, 6, 7 | Líneas A y B completadas. Línea C en curso: template ivr_capture_notification aprobado, send_capture_notification() implementado, tool submit_captured_data integrada en vox_bridge/services.py. Líneas D y E documentadas. Paso 8-pre identificado como desbloqueador del E2E. Incidencia must_change_password resuelta para alejandro_sergio. |
 | 003 | 2026-04-21 | 8-pre, 14 (parcial) | Paso 8-pre completado: CRUD de DataCaptureSet en panel con constructor JS de filas dinámicas, entrada en sidebar, integración inline en formulario de sección. Renombrado botón Guardar en SectionUpdateView (Paso 14 parcial). Decisión de diseño: modo de flujo IVR por sección (sin flujo / automático / manual) a implementar en Línea E junto con Paso 19. Nombre del agente actualizado de Alia a María. Validación E2E (Paso 8) pendiente hasta implementar generador automático de flujos IVR. |
+| 004 | 2026-04-21 | — | Sesión interrumpida sin trabajo efectivo. Inciso: creación del Hito V06 (Procesador de Partes de Trabajo PDF → Excel + BBDD). Hito V05 pasa a PAUSADO. La hoja de ruta queda intacta para su reanudación en sesiones futuras. |
 
 ---
 

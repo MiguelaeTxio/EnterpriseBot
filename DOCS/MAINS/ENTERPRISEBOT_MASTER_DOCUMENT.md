@@ -82,7 +82,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Sender +34607961650 registrado y operativo en producción. Validación E2E superada.
 - Panel de gestión de templates WhatsApp integrado en /panel/ (Paso 24). COMPLETADO 2026-04-20.
 
-### Hito 5: Arquitectura Omnicanal IVR ↔ WhatsApp (EN PROGRESO)
+### Hito 5: Arquitectura Omnicanal IVR ↔ WhatsApp (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md`)
 - Hito híbrido que cierra el ciclo omnicanal completo de EnterpriseBot.
 - Línea A — Panel: entrada WhatsApp en sidebar con historial de sesiones activas.
@@ -92,5 +92,13 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   motivo) se envían vía WhatsApp al contacto referente de la sección antes del
   transfer de llamada. Flujo: IVR captura → persiste en BD → WhatsApp notifica
   al agente interno → transfer ejecutado. Cierre del ciclo omnicanal completo.
+
+### Hito 6: Procesador de Partes de Trabajo PDF → Excel + BBDD (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V06.md`)
+- Procesamiento documental de PDFs con fotografías de partes de trabajo diarios.
+- Extracción automática de campos mediante Gemini Vision por cada página/parte.
+- Persistencia en BD de los datos extraídos (modelos WorkOrder y WorkOrderEntry).
+- Generación de informe Excel descargable desde el panel de gestión.
+- Funcionalidad multiempresa integrada en el panel existente.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)
