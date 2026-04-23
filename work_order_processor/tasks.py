@@ -3,15 +3,17 @@
 """
 Celery tasks for the work_order_processor application.
 Defines the primary background task that orchestrates the full PDF processing
-pipeline: page rasterisation via PyMuPDF, Gemini Vision extraction per page,
-WorkOrderEntry persistence and final Excel report generation.
+pipeline: page rasterisation via PyMuPDF, Gemini Vision multi-block extraction
+per page, WorkOrderEntry + WorkOrderEntryLine persistence, machine catalogue
+resolution and final Excel report generation.
 
 ---
 
 Tareas Celery para la aplicación work_order_processor.
 Define la tarea de fondo principal que orquesta el pipeline completo de
 procesamiento de PDF: rasterización de páginas con PyMuPDF, extracción
-Gemini Vision por página, persistencia de WorkOrderEntry y generación final
+multi-bloque Gemini Vision por página, persistencia de WorkOrderEntry +
+WorkOrderEntryLine, resolución del catálogo de maquinaria y generación final
 del informe Excel.
 """
 
@@ -19,14 +21,18 @@ import logging
 
 import fitz  # PyMuPDF
 from celery.contrib.django.task import DjangoTask
-from django.db import transaction
+from django.db import connection, transaction
 from enterprise_core.celery import app
 
-from .models import WorkOrder, WorkOrderEntry
+from .models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 from .services import (
     _coerce_confidence,
+    _compute_delta_horas,
+    _normalise_machine_code,
     _parse_date,
     _parse_time,
+    _resolve_machine_asset,
+    _worker_name_from_pdf_path,
     extract_work_order_page,
     generate_work_order_excel,
 )
@@ -54,9 +60,15 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
       2. Open the source PDF with PyMuPDF and determine total_pages.
       3. For each page:
          a. Rasterise to PNG bytes in memory at _RASTER_DPI (no disk write).
-         b. Call extract_work_order_page() -> structured dict from Gemini Vision.
-         c. Persist a WorkOrderEntry with the extracted fields and raw response.
-         d. Increment processed_pages counter.
+         b. Derive worker_name from the PDF filename (not from handwritten text).
+         c. Call extract_work_order_page() -> multi-block dict from Gemini Vision.
+         d. Persist WorkOrderEntry (page header: date, worker, confidence).
+         e. For each work block in extracted["entradas"]:
+            - Normalise machine code (D4).
+            - Resolve MachineAsset from fleet catalogue.
+            - Compute delta_horas (net hours after lunch break deduction).
+            - Persist WorkOrderEntryLine.
+         f. Increment processed_pages counter.
       4. Call generate_work_order_excel() to build and persist the Excel report.
          This service also sets status to DONE.
 
@@ -73,9 +85,15 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
       2. Abrir el PDF original con PyMuPDF y determinar total_pages.
       3. Por cada página:
          a. Rasterizar a bytes PNG en memoria a _RASTER_DPI (sin escritura en disco).
-         b. Llamar a extract_work_order_page() -> dict estructurado de Gemini Vision.
-         c. Persistir un WorkOrderEntry con los campos extraídos y la respuesta cruda.
-         d. Incrementar el contador processed_pages.
+         b. Derivar worker_name del nombre del fichero PDF (no del texto manuscrito).
+         c. Llamar a extract_work_order_page() -> dict multi-bloque de Gemini Vision.
+         d. Persistir WorkOrderEntry (cabecera de página: fecha, operario, confianza).
+         e. Por cada bloque de trabajo en extracted["entradas"]:
+            - Normalizar código de máquina (D4).
+            - Resolver MachineAsset del catálogo de flota.
+            - Calcular delta_horas (horas netas tras descuento pausa comida).
+            - Persistir WorkOrderEntryLine.
+         f. Incrementar el contador processed_pages.
       4. Llamar a generate_work_order_excel() para construir y persistir el Excel.
          Este servicio también establece el estado a DONE.
 
@@ -128,6 +146,12 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
             "# [Tarea] PDF abierto correctamente. Total de páginas: %d.", total_pages
         )
 
+        # Derive worker name once from PDF filename for the entire WorkOrder.
+        # Derivar el nombre del operario una vez del nombre del fichero PDF
+        # para todo el WorkOrder.
+        worker_name = _worker_name_from_pdf_path(work_order.source_pdf.name)
+        logger.info("# [Tarea] Nombre de operario derivado del PDF: '%s'.", worker_name)
+
         # ------------------------------------------------------------------
         # Step 3 — Iterate pages: rasterise -> extract -> persist
         # Paso 3 — Iterar páginas: rasterizar -> extraer -> persistir
@@ -145,41 +169,95 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
             pixmap      = page.get_pixmap(matrix=_RASTER_MATRIX)
             image_bytes = pixmap.tobytes("png")
 
-            # b) Call Gemini Vision extraction service.
-            # b) Llamar al servicio de extracción Gemini Vision.
+            # b/c) Call Gemini Vision extraction service (multi-block).
+            # b/c) Llamar al servicio de extracción Gemini Vision (multi-bloque).
             extracted = extract_work_order_page(image_bytes)
 
-            # c) Persist WorkOrderEntry.
-            # c) Persistir WorkOrderEntry.
+            # Close stale DB connection before persisting — MySQL closes idle
+            # connections during long Gemini Vision calls (wait_timeout).
+            # Django reconnects automatically on the next DB operation.
+            # Cerrar la conexión BD obsoleta antes de persistir — MySQL cierra
+            # las conexiones inactivas durante las llamadas largas a Gemini
+            # Vision (wait_timeout). Django reconecta automáticamente.
+            connection.close()
+
+            work_date      = _parse_date(extracted.get("fecha"))
+            fecha_incierta = bool(extracted.get("fecha_incierta", False))
+            confidence     = _coerce_confidence(extracted.get("extraction_confidence"))
+            entradas       = extracted.get("entradas") or []
+
+            # d) Persist WorkOrderEntry (page header).
+            # d) Persistir WorkOrderEntry (cabecera de página).
             with transaction.atomic():
-                WorkOrderEntry.objects.update_or_create(
+                entry, _ = WorkOrderEntry.objects.update_or_create(
                     work_order  = work_order,
                     page_number = page_number_one,
                     defaults    = {
-                        "worker_name":           (extracted.get("worker_name") or ""),
-                        "work_date":             _parse_date(extracted.get("work_date")),
-                        "start_time":            _parse_time(extracted.get("start_time")),
-                        "end_time":              _parse_time(extracted.get("end_time")),
-                        "vehicle_ref":           (extracted.get("vehicle_ref") or ""),
-                        "work_description":      (extracted.get("work_description") or ""),
-                        "location":              (extracted.get("location") or ""),
-                        "observations":          (extracted.get("observations") or ""),
+                        "worker_name":           worker_name,
+                        "work_date":             work_date,
+                        "fecha_incierta":        fecha_incierta,
                         "raw_gemini_response":   extracted,
-                        "extraction_confidence": _coerce_confidence(
-                            extracted.get("extraction_confidence")
-                        ),
+                        "extraction_confidence": confidence,
                     },
                 )
 
-            # d) Increment processed_pages counter.
-            # d) Incrementar el contador processed_pages.
+                # e) Persist one WorkOrderEntryLine per work block.
+                # e) Persistir un WorkOrderEntryLine por bloque de trabajo.
+                for line_idx, bloque in enumerate(entradas, start=1):
+                    maquina_raw  = (bloque.get("maquina_raw") or "").strip()
+                    maquina_norm = _normalise_machine_code(maquina_raw)
+                    machine_asset = _resolve_machine_asset(maquina_norm)
+
+                    hc = _parse_time(bloque.get("hc"))
+                    hf = _parse_time(bloque.get("hf"))
+                    delta = _compute_delta_horas(hc, hf)
+
+                    flags = bloque.get("flags") or []
+                    if not isinstance(flags, list):
+                        flags = []
+
+                    WorkOrderEntryLine.objects.update_or_create(
+                        entry       = entry,
+                        line_number = line_idx,
+                        defaults    = {
+                            "machine_asset":     machine_asset,
+                            "maquina_raw":       maquina_raw,
+                            "maquina_norm":      maquina_norm,
+                            "descripcion_averia": (
+                                bloque.get("descripcion_averia") or ""
+                            ),
+                            "reparacion":        (bloque.get("reparacion") or ""),
+                            "hc":                hc,
+                            "hf":                hf,
+                            "or_val":            (bloque.get("or_val") or ""),
+                            "delta_horas":       delta,
+                            "flags":             flags,
+                        },
+                    )
+
+                    logger.info(
+                        "# [Tarea] Pág. %d · Bloque %d: máquina='%s' → '%s' "
+                        "(asset=%s) | %s–%s | Δ=%s h",
+                        page_number_one,
+                        line_idx,
+                        maquina_raw,
+                        maquina_norm,
+                        machine_asset.codigo if machine_asset else "NO RESUELTO",
+                        hc.strftime("%H:%M") if hc else "--",
+                        hf.strftime("%H:%M") if hf else "--",
+                        str(delta) if delta is not None else "?",
+                    )
+
+            # f) Increment processed_pages counter.
+            # f) Incrementar el contador processed_pages.
             work_order.processed_pages = page_number_one
             work_order.save(update_fields=["processed_pages"])
 
             logger.info(
-                "# [Tarea] Página %d persistida. Confianza: %s.",
+                "# [Tarea] Página %d persistida. Confianza: %s | Bloques: %d.",
                 page_number_one,
-                extracted.get("extraction_confidence", "DESCONOCIDA"),
+                confidence,
+                len(entradas),
             )
 
         pdf_document.close()

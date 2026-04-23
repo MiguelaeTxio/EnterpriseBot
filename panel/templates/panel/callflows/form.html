@@ -142,28 +142,31 @@
                     <!-- Submit buttons — Botones de envío -->
                     <div class="d-flex gap-2 flex-wrap">
                         <button type="submit" class="btn btn-dark px-4">
-                            <i class="bi bi-check-lg me-2"></i>{{ action }} flujo IVR
+                            <i class="bi bi-floppy me-2"></i>Guardar
                         </button>
                         <a href="{% url 'panel:callflow_list' %}"
                            class="btn btn-outline-secondary px-4">
                             Cancelar
                         </a>
-                        {% if object and has_backup %}
-                        <!-- Restore button — Botón de restauración a versión anterior -->
-                        <form method="post"
-                              action="{% url 'panel:callflow_restore' object.pk %}"
-                              class="d-inline">
-                            {% csrf_token %}
-                            <button type="submit"
-                                    class="btn btn-outline-warning px-4"
-                                    onclick="return confirm('¿Restaurar la versión anterior de este flujo IVR? Los cambios actuales pasarán a ser la versión de backup.');">
-                                <i class="bi bi-arrow-counterclockwise me-2"></i>Restaurar versión anterior
-                            </button>
-                        </form>
-                        {% endif %}
                     </div>
 
                 </form>
+
+                {% if object and has_backup %}
+                <!-- Restore form — OUTSIDE the edit form to avoid nested form submission. -->
+                <!-- Formulario de restauración — FUERA del form de edición para evitar -->
+                <!-- el problema de forms anidados en HTML. -->
+                <form method="post"
+                      action="{% url 'panel:callflow_restore' object.pk %}"
+                      class="mt-2">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="btn btn-outline-warning px-4"
+                            onclick="return confirm('¿Restaurar la versión anterior de este flujo IVR? Los cambios actuales pasarán a ser la versión de backup.');">
+                        <i class="bi bi-arrow-counterclockwise me-2"></i>Restaurar versión anterior
+                    </button>
+                </form>
+                {% endif %}
             </div>
         </div>
 

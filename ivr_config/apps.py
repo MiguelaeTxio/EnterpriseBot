@@ -24,5 +24,22 @@ class IvrConfigConfig(AppConfig):
     """
 
     default_auto_field = "django.db.models.BigAutoField"
-    name = "ivr_config"
-    verbose_name = "Configuración IVR"
+    name               = "ivr_config"
+    verbose_name       = "Configuración IVR"
+
+    def ready(self) -> None:
+        """
+        Imports ivr_config.signals to register all signal handlers when the
+        application is fully loaded. This is the canonical Django pattern for
+        signal registration — importing signals in apps.py ready() guarantees
+        they are connected exactly once regardless of import order.
+
+        ---
+
+        Importa ivr_config.signals para registrar todos los manejadores de señal
+        cuando la aplicación está completamente cargada. Este es el patrón Django
+        canónico para el registro de señales — importar señales en apps.py ready()
+        garantiza que se conectan exactamente una vez independientemente del orden
+        de importación.
+        """
+        import ivr_config.signals  # noqa: F401

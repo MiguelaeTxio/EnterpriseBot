@@ -1132,17 +1132,37 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
         """
         Saves a backup snapshot of the current values before applying the new ones.
         Backup fields store the state BEFORE this save so the ADMIN can restore.
+
+        Uses a direct DB values() query to retrieve the pre-save state, bypassing
+        Django's UpdateView object cache which already holds the POST values at this
+        point in the request cycle and would cause the backup to store the new value
+        instead of the old one.
+
         ---
+
         Guarda un snapshot de backup de los valores actuales antes de aplicar los nuevos.
         Los campos backup almacenan el estado ANTERIOR a este guardado para que el ADMIN
         pueda restaurar.
+
+        Usa una query values() directa a BD para obtener el estado pre-guardado, evitando
+        la caché de objeto de UpdateView que en este punto del ciclo de petición ya contiene
+        los valores del POST y causaría que el backup almacene el valor nuevo en lugar del antiguo.
         """
-        instance = self.get_object()
-        # Snapshot current (pre-save) values into backup fields.
-        # Capturar valores actuales (pre-guardado) en los campos de backup.
-        form.instance.backup_system_instruction  = instance.system_instruction
-        form.instance.backup_initial_greeting    = instance.initial_greeting
-        form.instance.backup_notification_contact = instance.notification_contact
+        # Fetch pre-save values directly from DB — bypasses UpdateView object cache.
+        # Obtener valores pre-guardado directamente de BD — evita la caché de UpdateView.
+        pre_save = CallFlow.objects.filter(pk=form.instance.pk).values(
+            "name",
+            "system_instruction",
+            "initial_greeting",
+            "notification_contact_id",
+        ).first()
+
+        if pre_save:
+            form.instance.backup_name                    = pre_save["name"]
+            form.instance.backup_system_instruction      = pre_save["system_instruction"]
+            form.instance.backup_initial_greeting        = pre_save["initial_greeting"]
+            form.instance.backup_notification_contact_id = pre_save["notification_contact_id"]
+
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -1175,7 +1195,9 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
         # has_backup es True si existe un snapshot restaurable en los campos de backup.
         obj = self.get_object()
         context["has_backup"] = bool(
-            obj.backup_system_instruction or obj.backup_initial_greeting
+            obj.backup_name
+            or obj.backup_system_instruction
+            or obj.backup_initial_greeting
         )
         return context
 
@@ -1375,38 +1397,42 @@ class CallFlowRestoreView(AdminRoleRequiredMixin, View):
             django_messages.error(request, "Flujo IVR no encontrado.")
             return redirect("/panel/callflows/")
 
-        if not flow.backup_system_instruction and not flow.backup_initial_greeting:
+        if (
+            not flow.backup_name
+            and not flow.backup_system_instruction
+            and not flow.backup_initial_greeting
+        ):
             django_messages.warning(
                 request,
                 "No existe versión anterior para restaurar en este flujo IVR."
             )
             return redirect(f"/panel/callflows/{pk}/edit/")
 
-        # Swap active ↔ backup so both directions remain available.
-        # Intercambiar activo ↔ backup para que ambas direcciones permanezcan disponibles.
-        (
-            flow.system_instruction,      flow.backup_system_instruction,
-        ) = (
-            flow.backup_system_instruction, flow.system_instruction,
+        # Capture pre-swap values into local variables BEFORE the update call.
+        # Python evaluates keyword arguments left-to-right — capturing into
+        # locals guarantees the correct pre-swap state is written to DB.
+        #
+        # Capturar valores pre-swap en variables locales ANTES de la llamada
+        # al update para garantizar que el estado pre-swap correcto se escribe en BD.
+        active_name            = flow.name
+        active_system          = flow.system_instruction
+        active_greeting        = flow.initial_greeting
+        active_notification    = flow.notification_contact_id
+        backup_name            = flow.backup_name
+        backup_system          = flow.backup_system_instruction
+        backup_greeting        = flow.backup_initial_greeting
+        backup_notification    = flow.backup_notification_contact_id
+
+        CallFlow.objects.filter(pk=flow.pk).update(
+            name                           = backup_name or active_name,
+            backup_name                    = active_name,
+            system_instruction             = backup_system,
+            backup_system_instruction      = active_system,
+            initial_greeting               = backup_greeting,
+            backup_initial_greeting        = active_greeting,
+            notification_contact_id        = backup_notification,
+            backup_notification_contact_id = active_notification,
         )
-        (
-            flow.initial_greeting,        flow.backup_initial_greeting,
-        ) = (
-            flow.backup_initial_greeting,  flow.initial_greeting,
-        )
-        (
-            flow.notification_contact,        flow.backup_notification_contact,
-        ) = (
-            flow.backup_notification_contact, flow.notification_contact,
-        )
-        flow.save(update_fields=[
-            "system_instruction",
-            "backup_system_instruction",
-            "initial_greeting",
-            "backup_initial_greeting",
-            "notification_contact",
-            "backup_notification_contact",
-        ])
         django_messages.success(
             request,
             f"Flujo IVR '{flow.name}' restaurado a la versión anterior correctamente."

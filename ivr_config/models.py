@@ -429,6 +429,18 @@ class Section(models.Model):
             "tiempo de llamada (Estrategia B — carga dinámica por intención)."
         ),
     )
+    fleet_families = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Familias de flota",
+        help_text=(
+            "Lista de familias del catálogo MachineAsset a incluir en el contexto IVR "
+            "de esta sección. Ejemplo: [\"PLATAFOR\"] para Elevación, "
+            "[\"MOVILES\", \"AUTOCARG\"] para Grúas. "
+            "Los activos de estas familias se inyectan automáticamente en el "
+            "system_instruction del CallFlow de sección al generarse o regenerarse."
+        ),
+    )
     is_24h = models.BooleanField(
         default=False,
         verbose_name="Disponible 24 horas",
@@ -635,6 +647,13 @@ class CallFlow(models.Model):
     # CAMPOS DE BACKUP — Snapshot de un nivel de restauración (Paso 33-E).
     # Se rellenan automáticamente en cada guardado exitoso de CallFlowUpdateView.
     # El ADMIN puede restaurar desde estos campos en /panel/callflows/{pk}/restore/.
+    backup_name = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Backup nombre",
+        help_text="Copia anterior del nombre del flujo IVR para restauración de un clic.",
+    )
     backup_system_instruction = models.TextField(
         blank=True,
         default="",

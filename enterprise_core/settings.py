@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     # WhatsApp channel app — app del canal WhatsApp.
     'whatsapp',
     'work_order_processor',
+    'fleet',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
