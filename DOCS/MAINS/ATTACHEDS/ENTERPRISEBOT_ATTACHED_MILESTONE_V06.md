@@ -63,8 +63,10 @@ gasto y el libro de mantenimiento de cada activo.
 
 - Extracción de páginas PDF: PyMuPDF (fitz) — 200 DPI en memoria.
 - Visión artificial: google-genai (Vertex AI) — modelo gemini-2.5-flash.
-  Timeout: HttpOptions(timeout=360000) — 360 segundos en milisegundos. CRITICO.
-- Generación Excel: openpyxl — 17 columnas, skill partes-trabajo v1.2.
+  Timeout: HttpOptions(timeout=60000) — 60 segundos en milisegundos. CRITICO.
+  Endpoint global: location="global" (aiplatform.googleapis.com) para evitar
+  contención regional. Retry automático 3 intentos con 60s de espera en 429.
+- Generación Excel: openpyxl — 16 columnas (sin OPERARIO), skill partes-trabajo v1.2.
 - Procesamiento asíncrono: Celery + DjangoTask, cola work_orders, broker Redis Cloud.
 - connection.close() antes de cada persistencia para evitar MySQL wait_timeout.
 
@@ -81,15 +83,23 @@ MaintenanceLog — intervención de mantenimiento por MachineAsset.
 MaintenanceItem — línea de repuesto/mano de obra por intervención.
   tipos: REPUESTO_ALMACEN / REPUESTO_TERCERO / MANO_OBRA_TERCERO.
 
-### 2.6. Excel generado (skill partes-trabajo v1.2 + col Q)
+### 2.6. Excel generado (skill partes-trabajo v1.2 + col P)
 
-Filas 1-3: area de configuracion (titulo, precio hora extra C2, coste hora
-ordinaria C3). Fila 4: cabeceras. Fila 5+: datos (una fila por WorkOrderEntryLine).
+Filas 1-3: area de configuracion (titulo, precio hora extra C3 — merge A+B,
+coste hora ordinaria C3 — merge A+B). Fila 4: cabeceras. Fila 5+: datos
+(una fila por WorkOrderEntryLine, con sombreado alterno por dia).
 
-17 columnas: FECHA, OPERARIO, CODIGO/VEH., MARCA/MODELO, KM, HORAS VEH.,
-DESCRIPCION AVERIA, REPARACION, H.C., H.F., O.R., Delta HORAS (neta),
-HORAS NETAS DIA, HORAS EXTRAS, SALARIO EXTRAS, REVISION HORARIO, COSTE M.O.
+16 columnas (OPERARIO eliminado — nombre en titulo):
+A=FECHA, B=CODIGO/VEH., C=MARCA/MODELO, D=KM, E=HORAS VEH.,
+F=DESCRIPCION AVERIA, G=REPARACION, H=H.C., I=H.F., J=O.R.,
+K=Delta HORAS (neta), L=HORAS NETAS DIA, M=HORAS EXTRAS,
+N=SALARIO EXTRAS, O=REVISION HORARIO, P=COSTE M.O.
 
+Formato canónico nombre PDF: NOMBRE DD-MM-YY AL DD-MM-YY.pdf
+El sufijo aleatorio de Django (_bVofaFF) es manejado por el parser de periodo.
+
+Fila de totales: SUMPRODUCT(ISNUMBER) para cols K-N y P.
+Leyenda dinamica en col O: aviso si C3=0, precio aplicado si no.
 Hoja LEYENDA + MANIFIESTO DE INCIDENCIAS al pie (D1-D5 de la skill).
 
 ---
@@ -122,7 +132,7 @@ Hoja LEYENDA + MANIFIESTO DE INCIDENCIAS al pie (D1-D5 de la skill).
   Excel no cumple especificacion skill partes-trabajo. Paso 9 registrado.
 
 ### Paso 9 — Rediseno del modelo de extraccion y del generador Excel
-- Estado: EN PROGRESO (2026-04-23).
+- Estado: EN PROGRESO (2026-04-23 / 2026-04-24).
 
 Trabajo completado en sesion 004:
 
@@ -171,12 +181,52 @@ Trabajo completado en sesion 004:
      - Template form.html: boton Restaurar fuera del form de edicion.
        Boton guardar renombrado a "Guardar".
 
+Trabajo completado en sesion 005 (2026-04-24):
+
+  H) Diagnostico y resolucion del problema de worker Celery atascado:
+     - Causa raiz: worker reiniciado por PythonAnywhere con WorkOrder en
+       estado PROCESSING. Fix: reset a PENDING + reencole manual.
+     - 429 RESOURCE_EXHAUSTED: endpoint cambiado a location="global".
+     - Timeout reducido de 360s a 60s. Retry automatico 3 intentos x 60s.
+     - time.sleep(15) entre paginas como guardia de rate limit.
+     - Logging DEBUG activado para httpx y google.genai en settings.py.
+
+  I) Mejoras del prompt de extraccion Gemini Vision:
+     - Seccion CALIGRAFIA RAPIDA con reglas A-E: confusion letra/numero,
+       alias Larios, tachones, estructura verbo+objeto, curvas degeneradas.
+     - Post-procesado Python en extract_work_order_page(): separacion
+       automatica de alias Larios concatenado sin espacio.
+
+  J) Resolucion de MachineAsset mejorada:
+     - _normalise_machine_code: preserva espacios en aliases de empresa.
+     - _resolve_machine_asset: lookup previo Larios → FURGLAR.
+     - Variantes sin guion: A-54 → busca A54 en catalogo.
+     - _LARIOS_TWO_WORD_RE: cualquier variante [TIPO] [LARIOS] → FURGLAR.
+
+  K) Inferencia de fechas por contexto calendario:
+     - _extract_period_from_pdf_name: extrae periodo DD-MM-YY AL DD-MM-YY.
+       Acepta espacios o guiones bajos. Maneja sufijo aleatorio Django.
+     - _infer_dates_from_context: pase post-extraccion que infiere fechas
+       ausentes o fuera de rango usando secuencia L-V y contexto de vecinos.
+     - _is_valid: rechaza fechas con año fuera del periodo del PDF.
+     - _worker_name_from_pdf_path: para en primer token que empiece por digit.
+
+  L) Generador Excel mejorado:
+     - Eliminada columna OPERARIO (nombre en titulo). 16 columnas.
+     - Sombreado alterno por dia: dias impares con _CLR_DAY_SHADE (EBF3FB).
+     - Fila de totales: SUMPRODUCT(ISNUMBER) evita #VALOR en col N.
+     - Fórmulas corregidas: HORAS EXTRAS OR(M<=0), SALARIO EXTRAS OR(N<=0).
+     - COSTE M.O.: IFERROR para celdas L vacias.
+     - Titulo desde nombre PDF (no min/max fechas datos).
+     - Hoja LEYENDA: escritura antes de merge para evitar sheet2.xml invalido.
+     - Leyenda dinamica C2: aviso si precio no introducido.
+     - Manifiesto: titulo con recuento, descripcion fusionada A→P, altura fija.
+
 Pendiente del Paso 9:
-  - Validacion E2E con ALEJANDRO_GARCIA_LUQUE_21-10_AL_20-11.pdf (WorkOrder #10).
-    Worker procesando en el momento del cierre de sesion.
-  - Comparacion del Excel generado contra GARCIA_LUQUE_21-10_AL_20-11.xlsx.
-  - Vista de edicion de WorkOrderEntryLine (correccion manual de incidencias).
-  - Mejoras de UX en sidebar y panel de partes de trabajo (ver seccion 5).
+  - Validacion final Excel con PDF de nombre canonico tras todas las mejoras.
+    Pendiente de reprocesado el lunes para verificar fechas correctas.
+  - Vista de edicion de WorkOrderEntryLine (Subtarea 9.7).
+  - Mejoras de UX en sidebar y panel de partes de trabajo (Subtarea 9.6).
 
 ---
 
@@ -188,44 +238,45 @@ Pendiente del Paso 9:
 | 002    | 2026-04-22 | 1-8             | Pipeline PDF->Excel inicial. App work_order_processor. E2E validado. Bloqueante Excel detectado. |
 | 003    | 2026-04-22 | Tarea 0, 8, 9 inicio | Sidebar dual. DjangoTask. E2E PDF real 23 pags. Diagnostico Paso 9. |
 | 004    | 2026-04-23 | Paso 9 parcial  | App fleet completa. Reestructuracion work_order_processor. Prompt multi-tramo. Excel 17 cols. Senal IVR secciones. Fix backup/restore CallFlow. Fix timeout Gemini Vision ms. E2E en curso al cierre. |
+| 005    | 2026-04-24 | Paso 9 parcial  | Diagnostico worker atascado. Fix 429 endpoint global + timeout 60s + retry 3x60s. Prompt CALIGRAFIA RAPIDA. Post-procesado Larios. Resolucion MachineAsset sin guion. Inferencia fechas calendario. Excel 16 cols sin OPERARIO. Sombreado alterno dia. Fix formulas #VALOR. Titulo desde nombre PDF. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
 ### Objetivo principal
-Completar el Paso 9: validar E2E y arrancar mejoras de UX del panel.
+Completar el Paso 9: validacion final del Excel, UX del panel y vista de edicion.
 
-### Subtarea 9.5 — Validacion E2E (PRIMERA ACCION DE LA SESION)
+### PRIMERA ACCION — Validacion Excel con PDF procesado el fin de semana
 
-Al inicio de sesion verificar el estado del WorkOrder #10:
+El PDF ALEJANDRO_GARCIA_LUQUE_21-10-25_AL_20-11-25.pdf quedo procesando
+al cierre. Descargar el Excel generado y verificar:
+  1. Titulo correcto: ALEJANDRO GARCIA LUQUE — 21/10/2025 — 20/11/2025.
+  2. Fechas correctas en todas las filas (sin 2020, sin 26/11).
+  3. Assets resueltos: A-54 → A54, B-27 → B27, G-8 → G08, Furgon Larios → FURGLAR.
+  4. Sin error al abrir en Excel.
+  5. Sombreado alterno por dia visible.
+  6. Totales correctos sin #VALOR.
 
-    python -m dotenv run python manage.py shell -c "
-    from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
-    wo = WorkOrder.objects.get(pk=10)
-    print(f'Estado: {wo.status} | Pags: {wo.processed_pages}/{wo.total_pages}')
-    entries = wo.entries.prefetch_related('lines').order_by('page_number')
-    for e in entries[:3]:
-        lines = e.lines.all()
-        print(f'  Pag {e.page_number}: fecha={e.work_date} | lines={lines.count()} | conf={e.extraction_confidence}')
-        for l in lines:
-            print(f'    Bloque {l.line_number}: maq={l.maquina_raw}->{l.maquina_norm} | {l.hc}-{l.hf} | Delta={l.delta_horas}h')
-    "
+Si hay incidencias de fecha residuales, usar la vista de edicion de
+WorkOrderEntryLine (Subtarea 9.7) para correccion manual.
 
-Si estado=DONE y hay WorkOrderEntryLine con datos -> descargar Excel y comparar con
-GARCIA_LUQUE_21-10_AL_20-11.xlsx (Excel de referencia del agente).
+### Nota tecnica critica — Timeout y rate limit Gemini Vision
 
-Si estado=ERROR o lineas vacias -> diagnosticar segun error_log y log del worker.
+HttpOptions(timeout=60000) — 60 segundos en MILISEGUNDOS.
+Endpoint global: location="global". Retry automatico 3 intentos x 60s en 429.
+time.sleep(15) entre paginas como guardia de rate limit.
+La cuota de Vertex AI para gemini-2.5-flash es de tokens/dia (10B), no RPM.
+Los 429 son contención temporal del servidor compartido, no agotamiento de cuota.
 
-### Nota tecnica critica — Timeout Gemini Vision
+### Nota tecnica critica — Nombre canonico de PDF
 
-HttpOptions(timeout=360000) — el valor es en MILISEGUNDOS. 360000 = 6 minutos.
-El SDK google-genai pasa este valor directamente a httpx por peticion, sobrescribiendo
-cualquier timeout a nivel de cliente. Es el unico mecanismo fiable.
-El cliente httpx personalizado es IGNORADO por el SDK.
-Referencia: https://github.com/pydantic/pydantic-ai/issues/4031
+Formato obligatorio: NOMBRE DD-MM-YY AL DD-MM-YY.pdf
+Ejemplo: ALEJANDRO GARCIA LUQUE 21-10-25 AL 20-11-25.pdf
+Django añade sufijo aleatorio al guardar (_bVofaFF). El parser lo maneja.
+El año de 2 digitos se convierte a 4 digitos (2000+YY).
 
-### Subtarea 9.6 — Mejoras de UX del panel (tras validacion E2E exitosa)
+### Subtarea 9.6 — Mejoras de UX del panel
 
 A) Reestructuracion sidebar en secciones:
    - Voz: Flujos IVR, Secciones, Contactos, Numeros de telefono, Perfil de voz.
@@ -241,18 +292,16 @@ C) Botones del panel — leyenda clara:
    - Botones de guardado: "Guardar" en todos los formularios.
    - Botones de editar en listados: "Editar" sin nombre de entidad.
 
-### Subtarea 9.7 — Vista de Edicion y Vista de WorkOrderEntryLine
+### Subtarea 9.7 — Vista de Edicion de WorkOrderEntryLine
 
-Vista tabla editable que permita:
-   - Ver todas las WorkOrderEntryLine de un WorkOrder agrupadas por pagina.
+Vista tabla editable en /panel/work-orders/{pk}/edit/ que permita:
+   - Ver todas las WorkOrderEntryLine agrupadas por pagina/fecha.
    - Editar inline: maquina_norm, descripcion_averia, reparacion, hc, hf, or_val.
    - Ver y corregir flags de incidencia.
    - Recalcular delta_horas al modificar hc/hf.
    - Boton "Regenerar Excel" para regenerar tras correcciones.
 
-URL sugerida: /panel/work-orders/{pk}/edit/
-
-### Estado de migraciones al cierre de sesion 004
+### Estado de migraciones al cierre de sesion 005
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
@@ -260,14 +309,13 @@ URL sugerida: /panel/work-orders/{pk}/edit/
 | work_order_processor   | 0002_remove_workorderentry_end_time_and_more           |
 | ivr_config             | 0012_callflow_backup_name                              |
 
-### Archivos modificados en sesion 004 (resumen)
+### Archivos modificados en sesion 005 (resumen)
 
-fleet/models.py, fleet/admin.py, fleet/apps.py, fleet/migrations/0001+0002
-work_order_processor/models.py, work_order_processor/services.py,
-work_order_processor/tasks.py, work_order_processor/admin.py,
-work_order_processor/migrations/0002
-ivr_config/models.py, ivr_config/signals.py, ivr_config/apps.py,
-ivr_config/migrations/0011+0012
-panel/views.py
-panel/templates/panel/callflows/form.html
-enterprise_core/settings.py
+work_order_processor/services.py — prompt CALIGRAFIA RAPIDA, post-procesado
+  Larios, resolucion MachineAsset (sin guion, alias empresa), _sumif ISNUMBER,
+  formulas corregidas, Excel 16 cols sin OPERARIO, sombreado alterno, titulo
+  desde nombre PDF, LEYENDA fix, config area merge A+B, parser periodo [_\s]+.
+work_order_processor/tasks.py — timeout 60s, retry 429, time.sleep(15),
+  _extract_period_from_pdf_name DD-MM-YY, _is_valid año, _infer_dates_from_context.
+enterprise_core/settings.py — LOGGING DEBUG httpx/google.genai/google.auth.
+mnt/skills/user/pea-pma/SKILL.md — regla entrega: preguntar si proceder, no como.

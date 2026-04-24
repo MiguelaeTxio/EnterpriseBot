@@ -18,6 +18,10 @@ del informe Excel.
 """
 
 import logging
+import os
+import re
+import time
+from datetime import date, timedelta
 
 import fitz  # PyMuPDF
 from celery.contrib.django.task import DjangoTask
@@ -48,6 +52,263 @@ logger = logging.getLogger(__name__)
 # manuscritos y velocidad de procesamiento, según la skill partes-trabajo.
 _RASTER_DPI    = 200
 _RASTER_MATRIX = fitz.Matrix(_RASTER_DPI / 72, _RASTER_DPI / 72)
+
+
+def _extract_period_from_pdf_name(pdf_name: str) -> tuple[date | None, date | None]:
+    """
+    Extracts the work period (start_date, end_date) from the PDF filename.
+    Canonical format: NAME DD-MM-YY AL DD-MM-YY.pdf
+    The year is given explicitly as a 2-digit suffix (e.g. 25 -> 2025).
+    Separators between tokens may be spaces or underscores interchangeably.
+
+    Returns (None, None) if the filename does not match the expected format.
+
+    ---
+
+    Extrae el periodo de trabajo (fecha_inicio, fecha_fin) del nombre del PDF.
+    Formato canónico: NOMBRE DD-MM-AA AL DD-MM-AA.pdf
+    El año viene explícito como sufijo de 2 dígitos (ej. 25 -> 2025).
+    Los separadores entre tokens pueden ser espacios o guiones bajos indistintamente.
+
+    Devuelve (None, None) si el nombre no coincide con el formato esperado.
+    """
+    stem = os.path.splitext(os.path.basename(pdf_name))[0]
+
+    # Accept spaces or underscores as token separators.
+    # Aceptar espacios o guiones bajos como separadores de tokens.
+    # Format: DD-MM-YY AL DD-MM-YY (case-insensitive AL)
+    pattern = r'(\d{2})-(\d{2})-(\d{2})[_\s]+[Aa][Ll][_\s]+(\d{2})-(\d{2})-(\d{2})'
+    m       = re.search(pattern, stem)
+    if not m:
+        return None, None
+
+    start_day, start_month, start_yy = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    end_day,   end_month,   end_yy   = int(m.group(4)), int(m.group(5)), int(m.group(6))
+
+    # Convert 2-digit year to 4-digit: assume 2000s.
+    # Convertir año de 2 dígitos a 4 dígitos: asumir siglo XXI.
+    start_year = 2000 + start_yy
+    end_year   = 2000 + end_yy
+
+    try:
+        start_date = date(start_year, start_month, start_day)
+        end_date   = date(end_year,   end_month,   end_day)
+        return start_date, end_date
+    except ValueError:
+        return None, None
+
+
+def _infer_dates_from_context(
+    work_order_id: int,
+    period_start: date | None,
+    period_end:   date | None,
+) -> None:
+    """
+    Post-extraction date correction pass.
+
+    For each WorkOrderEntry belonging to this WorkOrder, attempts to infer
+    missing or out-of-range dates using:
+      - The work period extracted from the PDF filename.
+      - The chronological sequence of entries (pages are ordered).
+      - The constraint that work days are Monday–Friday.
+      - Context from neighbouring entries with known dates.
+
+    Inference rules (applied in order):
+      R1. If work_date is not None and within the period, accept it as-is.
+      R2. If work_date is None or outside the period:
+          a. Determine the previous known date (prev) and next known date (nxt).
+          b. Enumerate all weekdays between prev+1 and nxt-1.
+          c. If exactly one weekday candidate exists, assign it unambiguously
+             (fecha_incierta=False).
+          d. If multiple candidates exist, assign the first one and set
+             fecha_incierta=True (human review required).
+          e. If no candidates exist (holiday gap, absence), leave as-is
+             and set fecha_incierta=True.
+
+    Updates are persisted directly via QuerySet.update() to avoid
+    triggering signals.
+
+    ---
+
+    Pase de corrección de fechas post-extracción.
+
+    Para cada WorkOrderEntry de este WorkOrder, intenta inferir fechas
+    ausentes o fuera de rango usando:
+      - El periodo de trabajo extraído del nombre del PDF.
+      - La secuencia cronológica de entradas (las páginas van ordenadas).
+      - La restricción de que los días laborables son de lunes a viernes.
+      - El contexto de entradas vecinas con fechas conocidas.
+
+    Reglas de inferencia (aplicadas en orden):
+      R1. Si work_date no es None y está dentro del periodo, se acepta.
+      R2. Si work_date es None o está fuera del periodo:
+          a. Determinar la fecha conocida anterior (prev) y la siguiente (nxt).
+          b. Enumerar todos los días laborables entre prev+1 y nxt-1.
+          c. Si existe exactamente un candidato, asignarlo sin ambigüedad
+             (fecha_incierta=False).
+          d. Si hay varios candidatos, asignar el primero y marcar
+             fecha_incierta=True (revisión humana necesaria).
+          e. Si no hay candidatos (festivo, ausencia), dejar como está
+             y marcar fecha_incierta=True.
+
+    Las actualizaciones se persisten via QuerySet.update() para no
+    disparar señales.
+    """
+    entries = list(
+        WorkOrderEntry.objects
+        .filter(work_order_id=work_order_id)
+        .order_by("page_number")
+        .values("id", "work_date", "fecha_incierta", "page_number")
+    )
+
+    if not entries:
+        return
+
+    n = len(entries)
+
+    def _is_valid(d: date | None) -> bool:
+        """True if d is a known weekday strictly within the work period.
+        Rejects dates whose year does not match the period year to prevent
+        OCR year misreads (e.g. 2020 instead of 2025) from polluting the
+        date sequence.
+        --- True si d es un día laborable estrictamente dentro del periodo.
+        Rechaza fechas cuyo año no coincida con el del periodo para evitar
+        que errores de OCR en el año (ej. 2020 en lugar de 2025) contaminen
+        la secuencia de fechas.
+        """
+        if d is None:
+            return False
+        if d.weekday() >= 5:   # Saturday=5, Sunday=6
+            return False
+        if period_start and d < period_start:
+            return False
+        if period_end and d > period_end:
+            return False
+        # Reject if year does not match the period year(s).
+        # Rechazar si el año no coincide con el año del periodo.
+        if period_start and period_end:
+            valid_years = {period_start.year, period_end.year}
+            if d.year not in valid_years:
+                return False
+        return True
+
+    def _weekdays_between(d_start: date, d_end: date) -> list[date]:
+        """Returns weekdays strictly between d_start and d_end.
+        --- Devuelve días laborables estrictamente entre d_start y d_end.
+        """
+        result = []
+        cursor = d_start + timedelta(days=1)
+        while cursor < d_end:
+            if cursor.weekday() < 5:
+                result.append(cursor)
+            cursor += timedelta(days=1)
+        return result
+
+    # Build list of known dates indexed by position.
+    # Construir lista de fechas conocidas indexadas por posición.
+    known: list[date | None] = [
+        e["work_date"] if _is_valid(e["work_date"]) else None
+        for e in entries
+    ]
+
+    # Add period boundaries as synthetic anchors if available.
+    # Añadir límites del periodo como anclas sintéticas si están disponibles.
+    anchor_start = period_start if period_start else None
+    anchor_end   = period_end   if period_end   else None
+
+    updates: list[tuple[int, date, bool]] = []  # (entry_id, new_date, fecha_incierta)
+
+    for i, entry in enumerate(entries):
+        if _is_valid(known[i]):
+            # R1: already valid, nothing to do.
+            # R1: ya es válida, nada que hacer.
+            continue
+
+        # Find previous known date.
+        # Encontrar fecha conocida anterior.
+        prev: date | None = None
+        for j in range(i - 1, -1, -1):
+            if known[j] is not None:
+                prev = known[j]
+                break
+        if prev is None:
+            prev = anchor_start
+
+        # Find next known date.
+        # Encontrar fecha conocida siguiente.
+        nxt: date | None = None
+        for j in range(i + 1, n):
+            if known[j] is not None:
+                nxt = known[j]
+                break
+        if nxt is None:
+            nxt = anchor_end
+
+        # Enumerate candidates.
+        # Enumerar candidatos.
+        if prev is not None and nxt is not None:
+            candidates = _weekdays_between(prev, nxt)
+        elif prev is not None:
+            # No next anchor: take the next weekday after prev.
+            # Sin ancla siguiente: tomar el siguiente día laborable tras prev.
+            candidates = []
+            cursor = prev + timedelta(days=1)
+            while cursor.weekday() >= 5:
+                cursor += timedelta(days=1)
+            candidates = [cursor]
+        elif nxt is not None:
+            # No prev anchor: take the weekday before nxt.
+            # Sin ancla anterior: tomar el día laborable antes de nxt.
+            candidates = []
+            cursor = nxt - timedelta(days=1)
+            while cursor.weekday() >= 5:
+                cursor -= timedelta(days=1)
+            candidates = [cursor]
+        else:
+            candidates = []
+
+        if len(candidates) == 1:
+            # Unambiguous inference.
+            # Inferencia unívoca.
+            inferred        = candidates[0]
+            fecha_incierta  = False
+            known[i]        = inferred
+            updates.append((entry["id"], inferred, fecha_incierta))
+            logger.info(
+                "# [Fechas] Pág. %d: fecha inferida inequívocamente → %s.",
+                entry["page_number"], inferred.isoformat(),
+            )
+        elif len(candidates) > 1:
+            # Ambiguous: assign first candidate, flag for review.
+            # Ambiguo: asignar el primer candidato, marcar para revisión.
+            inferred        = candidates[0]
+            fecha_incierta  = True
+            known[i]        = inferred
+            updates.append((entry["id"], inferred, fecha_incierta))
+            logger.warning(
+                "# [Fechas] Pág. %d: %d candidatos — asignado %s (incierto).",
+                entry["page_number"], len(candidates), inferred.isoformat(),
+            )
+        else:
+            # No candidates: cannot infer. Log and leave unchanged.
+            # Sin candidatos: no se puede inferir. Registrar y dejar sin cambios.
+            logger.warning(
+                "# [Fechas] Pág. %d: sin candidatos laborables — fecha no inferida.",
+                entry["page_number"],
+            )
+
+    # Persist inferred dates / Persistir fechas inferidas.
+    connection.close()
+    for entry_id, new_date, incierta in updates:
+        WorkOrderEntry.objects.filter(pk=entry_id).update(
+            work_date      = new_date,
+            fecha_incierta = incierta,
+        )
+
+    logger.info(
+        "# [Fechas] Pase de corrección completado. %d entradas actualizadas.",
+        len(updates),
+    )
 
 
 @app.task(base=DjangoTask, bind=True, max_retries=3, default_retry_delay=30)
@@ -260,7 +521,43 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                 len(entradas),
             )
 
+            # Rate-limit guard: Vertex AI gemini-2.5-flash enforces a per-minute
+            # request quota. A fixed pause between pages prevents RESOURCE_EXHAUSTED
+            # (HTTP 429) errors when processing multi-page PDFs.
+            # Guardia de rate limit: Vertex AI gemini-2.5-flash aplica una cuota
+            # de peticiones por minuto. Una pausa fija entre páginas evita errores
+            # RESOURCE_EXHAUSTED (HTTP 429) al procesar PDFs de múltiples páginas.
+            time.sleep(15)
+
         pdf_document.close()
+
+        # ------------------------------------------------------------------
+        # Step 3.5 — Date correction pass
+        # Paso 3.5 — Pase de corrección de fechas
+        # ------------------------------------------------------------------
+        # Infer missing or out-of-range dates using the work period from the
+        # PDF filename and the chronological sequence of pages (Mon-Fri rule).
+        # Inferir fechas ausentes o fuera de rango usando el periodo del nombre
+        # del PDF y la secuencia cronológica de páginas (regla lunes-viernes).
+        logger.info(
+            "# [Tarea] Iniciando pase de corrección de fechas para WorkOrder #%d.",
+            work_order_id,
+        )
+        _period_start, _period_end = _extract_period_from_pdf_name(
+            work_order.source_pdf.name
+        )
+        if _period_start:
+            logger.info(
+                "# [Fechas] Periodo detectado: %s → %s.",
+                _period_start.isoformat(),
+                _period_end.isoformat() if _period_end else "desconocido",
+            )
+        else:
+            logger.warning(
+                "# [Fechas] No se pudo extraer el periodo del nombre del PDF. "
+                "Corrección de fechas omitida.",
+            )
+        _infer_dates_from_context(work_order_id, _period_start, _period_end)
 
         # ------------------------------------------------------------------
         # Step 4 — Generate Excel report

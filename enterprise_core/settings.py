@@ -199,3 +199,51 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute='*/5'),
     },
 }
+
+# 8. LOGGING CONFIGURATION
+# Activates DEBUG-level tracing for Gemini Vision HTTP calls (httpx + google.genai)
+# to diagnose hangs and silent failures in the Celery worker pipeline.
+# Activa trazas a nivel DEBUG para las llamadas HTTP de Gemini Vision (httpx + google.genai)
+# para diagnosticar cuelgues y fallos silenciosos en el pipeline del worker Celery.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        # EnterpriseBot application loggers — aplicaciones EnterpriseBot.
+        'work_order_processor': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        # HTTP client — trazas de peticiones HTTP de httpx.
+        'httpx': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        # Google GenAI SDK — trazas del SDK google-genai.
+        'google.genai': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        # Google Auth — trazas de autenticación de credenciales.
+        'google.auth': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}

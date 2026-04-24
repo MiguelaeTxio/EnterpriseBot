@@ -28,9 +28,37 @@ import json
 import logging
 import os
 import re
+import time as _time
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
+
+
+def _parse_period_from_pdf_name(pdf_name: str) -> tuple[date | None, date | None]:
+    """
+    Minimal period parser for Excel title generation.
+    Canonical format: NAME DD-MM-YY AL DD-MM-YY[.pdf]
+    Accepts spaces or underscores as token separators.
+    Returns (None, None) if the filename does not match.
+
+    ---
+
+    Parser de periodo mínimo para la generación del título Excel.
+    Formato canónico: NOMBRE DD-MM-AA AL DD-MM-AA[.pdf]
+    Acepta espacios o guiones bajos como separadores de tokens.
+    Devuelve (None, None) si el nombre no coincide.
+    """
+    stem    = os.path.splitext(os.path.basename(pdf_name))[0]
+    pattern = r'(\d{2})-(\d{2})-(\d{2})[_\s]+[Aa][Ll][_\s]+(\d{2})-(\d{2})-(\d{2})'
+    m       = re.search(pattern, stem)
+    if not m:
+        return None, None
+    try:
+        start = date(2000 + int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        end   = date(2000 + int(m.group(6)), int(m.group(5)), int(m.group(4)))
+        return start, end
+    except ValueError:
+        return None, None
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
@@ -38,7 +66,7 @@ from openpyxl.utils import get_column_letter
 from django.core.files.base import ContentFile
 from django.utils import timezone
 from google import genai
-from google.genai.types import HttpOptions, Part
+from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from fleet.models import MachineAsset
 from .models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
@@ -49,45 +77,64 @@ logger = logging.getLogger(__name__)
 # Gemini client initialisation (Vertex AI — Directriz 4.1)
 # Inicialización del cliente Gemini (Vertex AI — Directriz 4.1)
 # ---------------------------------------------------------------------------
-_GEMINI_MODEL  = "gemini-2.5-flash"
-_GEMINI_CLIENT = None   # Lazy singleton — inicializado en primera llamada.
+_GEMINI_MODEL = "gemini-2.5-flash"
+
+# Per-request timeout in milliseconds passed via GenerateContentConfig.http_options.
+# With vertexai=True the client-level HttpOptions.timeout is not reliably forwarded
+# to httpx on a per-request basis; the only guaranteed mechanism is to pass
+# HttpOptions directly inside GenerateContentConfig on every generate_content call.
+# 360 000 ms = 6 minutes — sufficient margin for complex handwritten pages.
+#
+# Timeout por petición en milisegundos, pasado mediante GenerateContentConfig.http_options.
+# Con vertexai=True el HttpOptions.timeout a nivel de cliente no se propaga de forma
+# fiable a httpx por petición; el único mecanismo garantizado es pasar HttpOptions
+# directamente dentro de GenerateContentConfig en cada llamada a generate_content.
+# 360 000 ms = 6 minutos — margen suficiente para páginas manuscritas complejas.
+_GEMINI_TIMEOUT_MS = 60_000
+
+# GenerateContentConfig reutilizable con timeout por petición garantizado.
+# Reusable GenerateContentConfig with guaranteed per-request timeout.
+_GEMINI_REQUEST_CONFIG = GenerateContentConfig(
+    http_options=HttpOptions(timeout=_GEMINI_TIMEOUT_MS),
+)
 
 
 def _get_gemini_client() -> genai.Client:
     """
-    Returns a lazily-initialised Gemini client configured for Vertex AI.
-    Uses the service account credentials defined by GCP_CREDENTIALS_PATH,
-    GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION environment variables,
-    consistent with the rest of the EnterpriseBot platform (Directriz 4.1).
+    Instantiates and returns a fresh Gemini client configured for Vertex AI.
+    A new client is created on every call to avoid stale connection state after
+    worker restarts (Celery prefork model). Credentials are sourced from the
+    GCP_CREDENTIALS_PATH, GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION
+    environment variables, consistent with the EnterpriseBot platform (Directriz 4.1).
 
     ---
 
-    Devuelve un cliente Gemini inicializado de forma lazy para Vertex AI.
-    Utiliza las credenciales de cuenta de servicio definidas por las variables
-    de entorno GCP_CREDENTIALS_PATH, GOOGLE_CLOUD_PROJECT y
-    GOOGLE_CLOUD_LOCATION, en coherencia con el resto de la plataforma
-    EnterpriseBot (Directriz 4.1).
+    Instancia y devuelve un cliente Gemini nuevo configurado para Vertex AI.
+    Se crea un cliente nuevo en cada llamada para evitar estado de conexión obsoleto
+    tras reinicios del worker (modelo prefork de Celery). Las credenciales provienen
+    de las variables de entorno GCP_CREDENTIALS_PATH, GOOGLE_CLOUD_PROJECT y
+    GOOGLE_CLOUD_LOCATION, en coherencia con la plataforma EnterpriseBot (Directriz 4.1).
     """
-    global _GEMINI_CLIENT
-    if _GEMINI_CLIENT is None:
-        os.environ.setdefault(
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            os.environ.get("GCP_CREDENTIALS_PATH", ""),
-        )
-        # HttpOptions.timeout is specified in MILLISECONDS per the google-genai SDK.
-        # 360000 ms = 6 minutes — sufficient margin for complex handwritten pages.
-        # The SDK passes this value directly to httpx per-request, overriding any
-        # client-level timeout. This is the only reliable way to extend the timeout.
-        # HttpOptions.timeout se especifica en MILISEGUNDOS según el SDK google-genai.
-        # 360000 ms = 6 minutos — margen suficiente para páginas manuscritas complejas.
-        _GEMINI_CLIENT = genai.Client(
-            http_options=HttpOptions(api_version="v1", timeout=360000),
-            vertexai=True,
-            project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-            location=os.environ.get("GOOGLE_CLOUD_LOCATION"),
-        )
-        logger.info("# Cliente Gemini Vision inicializado correctamente (Vertex AI).")
-    return _GEMINI_CLIENT
+    os.environ.setdefault(
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        os.environ.get("GCP_CREDENTIALS_PATH", ""),
+    )
+    # Use the global endpoint to dynamically route requests to the region with
+    # the most available capacity. This significantly reduces 429 errors caused
+    # by temporary resource contention on regional endpoints (us-central1).
+    # Official recommendation: https://cloud.google.com/vertex-ai/generative-ai/docs/standard-paygo
+    #
+    # Se usa el endpoint global para enrutar dinámicamente las peticiones a la
+    # región con más capacidad disponible, reduciendo los errores 429 causados
+    # por contención temporal en endpoints regionales (us-central1).
+    client = genai.Client(
+        http_options=HttpOptions(api_version="v1"),
+        vertexai=True,
+        project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+        location="global",
+    )
+    logger.info("# Cliente Gemini Vision inicializado correctamente (Vertex AI).")
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -120,8 +167,11 @@ REGLAS OBLIGATORIAS:
    Ejemplos: 09:20 → "09:30", 07:10 → "07:00", 17:45 → "18:00".
 5. El campo "fecha_incierta" es true solo si la fecha es genuinamente ilegible
    tras intentar deducirla por contexto. No lo uses si puedes leerla.
-6. En "maquina_raw" copia exactamente lo que lees. Si aparece "Larios" en
-   cualquier contexto de máquina, inclúyelo — es un alias reconocido de empresa.
+6. En "maquina_raw" copia exactamente lo que lees tras aplicar las reglas de
+   caligrafía (ver sección CALIGRAFÍA). Si aparece cualquier variante del
+   alias Larios en contexto de máquina, normalízalo a "Larios". El tipo de
+   vehículo que precede al alias va separado por un espacio (ej. "Furgon
+   Larios", "Mercedes Larios"). NUNCA concatenar tipo y alias sin espacio.
    "Salida polígonos" NO es una máquina: deja maquina_raw null en ese caso.
 7. Interpreta abreviaturas técnicas en contexto de vehículos pesados:
    "hid." → hidráulico, "trans." → transmisión, "dir." → dirección,
@@ -138,6 +188,52 @@ REGLAS OBLIGATORIAS:
     "LOW" = campos importantes ilegibles,
     "FAILED" = imagen ilegible o no es un parte de trabajo.
 
+CALIGRAFÍA RÁPIDA — REGLAS DE INFERENCIA:
+Estos operarios escriben con prisa. Aplicar SIEMPRE estas reglas antes de
+marcar un campo como dudoso o ilegible.
+
+A) CONFUSIÓN LETRA/NÚMERO EN CÓDIGOS DE MAQUINARIA:
+   El formato de código es LETRA(S)-NÚMERO(S) o LETRA(S)NÚMERO(S).
+   Si un carácter no encaja en su posición esperada, sustituir por el
+   candidato morfológicamente más cercano:
+   - "6" en posición de letra inicial → leer como "G" (formas similares).
+   - "0" en posición de letra → leer como "O" y viceversa.
+   - "1" en posición de letra → leer como "I" o "L".
+   - "S" en posición numérica → leer como "5". El 5 escrito rápido
+     degenera la curva inferior a un trazo vertical con visera horizontal
+     arriba, resultando casi una "S" o una "L invertida".
+   - "B" en posición numérica → leer como "8".
+   - Punto "." como separador en código → tratar como guion "-".
+   Ejemplos: "6-8" → "G-8", "A-S4" → "A-54", "B.42" → "B-42".
+
+B) ALIAS DE EMPRESA "LARIOS":
+   Cualquier variante del alias Larios escrita con prisa debe normalizarse
+   a "Larios": Loriol, Lorios, Laros, Larios, Larjos, Laris → "Larios".
+   El tipo de vehículo que precede al alias va separado por un espacio:
+   "Furgon Larios", "Mercedes Larios", "Camion Larios".
+   NUNCA concatenar tipo y alias sin espacio.
+
+C) TACHONES Y CORRECCIONES:
+   Si un valor está tachado y hay otro valor escrito cerca (encima, debajo,
+   al lado), usar el valor escrito fuera del tachón. Ignorar completamente
+   el valor tachado.
+
+D) DESCRIPCIONES DE AVERÍA Y REPARACIÓN:
+   Siempre tienen estructura VERBO + OBJETO. Los verbos típicos son:
+   montar, desmontar, revisar, cambiar, reparar, sustituir, ajustar,
+   soldar, comprobar, limpiar, engrasar, rellenar, purgar, apretar,
+   soltar, instalar, retirar, aproximar, meter, sacar.
+   Si lees un sustantivo aislado sin verbo claro, busca el trazo anterior
+   o posterior que pueda ser el inicio de uno de estos verbos y completa
+   la frase. Si aún hay ambigüedad, incluye el fragmento más probable y
+   añade "DESCRIPCION" a flags.
+
+E) CURVAS DEGENERADAS A TRAZOS RECTOS:
+   Con la prisa, las curvas de letras y números se simplifican. Leer por
+   la estructura global de la palabra o código, no trazo a trazo.
+   Un "5" puede parecer una "S", un "2" puede parecer un "Z", un "3"
+   puede parecer un "E" o un "F" truncado.
+
 Formato de respuesta (claves exactas):
 {
   "fecha": "<DD/MM/YYYY o null>",
@@ -145,7 +241,7 @@ Formato de respuesta (claves exactas):
   "extraction_confidence": "<HIGH | MEDIUM | LOW | FAILED>",
   "entradas": [
     {
-      "maquina_raw": "<código o alias tal como aparece, o null>",
+      "maquina_raw": "<código o alias normalizado tal como se lee, o null>",
       "descripcion_averia": "<descripción de la avería o tarea, o null>",
       "reparacion": "<descripción de la reparación realizada, o null>",
       "hc": "<HH:MM o null>",
@@ -188,13 +284,41 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
 
     try:
         logger.info("# Gemini Vision: iniciando extracción de página.")
-        response = client.models.generate_content(
-            model=_GEMINI_MODEL,
-            contents=[
-                Part.from_bytes(data=image_bytes, mime_type="image/png"),
-                _EXTRACTION_PROMPT,
-            ],
-        )
+
+        # Retry loop for 429 RESOURCE_EXHAUSTED errors.
+        # On quota exhaustion, wait 60 seconds and retry up to 3 times
+        # before propagating the error as a FAILED page.
+        # Bucle de reintento para errores 429 RESOURCE_EXHAUSTED.
+        # En caso de cuota agotada, esperar 60 segundos y reintentar
+        # hasta 3 veces antes de propagar el error como página FAILED.
+        _MAX_RETRIES_429 = 3
+        _response = None
+        for _attempt in range(_MAX_RETRIES_429 + 1):
+            try:
+                _response = client.models.generate_content(
+                    model=_GEMINI_MODEL,
+                    contents=[
+                        Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                        _EXTRACTION_PROMPT,
+                    ],
+                    config=_GEMINI_REQUEST_CONFIG,
+                )
+                break  # Success — exit retry loop.
+            except Exception as _e429:
+                _is_429 = (
+                    hasattr(_e429, "status_code") and _e429.status_code == 429
+                ) or "429" in str(_e429) or "RESOURCE_EXHAUSTED" in str(_e429)
+                if _is_429 and _attempt < _MAX_RETRIES_429:
+                    logger.warning(
+                        "# Gemini Vision: 429 RESOURCE_EXHAUSTED — "
+                        "reintento %d/%d en 60 segundos.",
+                        _attempt + 1, _MAX_RETRIES_429,
+                    )
+                    _time.sleep(60)
+                else:
+                    raise
+
+        response = _response
         raw_text = response.text.strip()
         logger.info("# Gemini Vision: respuesta recibida. Parseando JSON.")
 
@@ -220,6 +344,34 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
             extracted.get("extraction_confidence", "DESCONOCIDA"),
             len(extracted.get("entradas", [])),
         )
+
+        # Post-processing: fix Larios alias concatenated without space.
+        # The prompt instructs Gemini to separate them, but caligraphic OCR
+        # sometimes produces "MERCEDESLARIOS", "FURGONLARIOS", etc.
+        # We apply a deterministic Python fix: if maquina_raw matches the
+        # pattern VEHICLETYPE+LARIOS_VARIANT (no space), insert the space
+        # and normalise the alias to "Larios".
+        #
+        # Post-procesado: corregir alias Larios concatenado sin espacio.
+        # El prompt instruye a Gemini a separarlos, pero el OCR caligráfico
+        # a veces produce "MERCEDESLARIOS", "FURGONLARIOS", etc.
+        # Aplicamos un fix Python determinista: si maquina_raw coincide con
+        # el patrón TIPOVEHICULO+VARIANTE_LARIOS (sin espacio), se inserta
+        # el espacio y se normaliza el alias a "Larios".
+        _LARIOS_RE = re.compile(
+            r'(?i)^([A-Za-z]+)(L[ao]r[aio][a-z]*)$'
+        )
+        for _entrada in (extracted.get("entradas") or []):
+            _raw = (_entrada.get("maquina_raw") or "").strip()
+            if not _raw:
+                continue
+            _m = _LARIOS_RE.match(_raw)
+            if _m:
+                # Separate prefix and normalise alias to "Larios".
+                # Separar prefijo y normalizar alias a "Larios".
+                _prefix = _m.group(1).capitalize()
+                _entrada["maquina_raw"] = f"{_prefix} Larios"
+
         return extracted
 
     except Exception as exc:
@@ -317,11 +469,32 @@ def _normalise_machine_code(raw: str | None) -> str:
     """
     if not raw:
         return ""
+    # If the value contains a space it is a multi-word alias (e.g. "Mercedes
+    # Larios"), not a machine code. Return it uppercase preserving the space
+    # so the resolver can apply the company alias map.
+    # Si el valor contiene un espacio es un alias de múltiples palabras (ej.
+    # "Mercedes Larios"), no un código de máquina. Devolverlo en mayúsculas
+    # conservando el espacio para que el resolver aplique el mapa de aliases.
+    if " " in raw.strip():
+        return raw.strip().upper()
     code = raw.strip().upper().replace(" ", "")
     # Insert hyphen between leading letters and digits if absent.
     # Insertar guion entre letras iniciales y dígitos si no está presente.
     code = re.sub(r"^([A-Z]+)(\d)", r"\1-\2", code)
     return code
+
+
+# Regex to detect any Larios alias variant as the second word of maquina_norm.
+# All such combinations map to the catalogue code FURGLAR regardless of the
+# vehicle type prefix (Mercedes, Furgon, Camion, etc.).
+# Covers: "MERCEDES LARIOS", "FURGON LARIOS", "MERCEDES LORIOL", etc.
+#
+# Regex para detectar cualquier variante del alias Larios como segunda palabra
+# de maquina_norm. Todas estas combinaciones se mapean a FURGLAR independientemente
+# del tipo de vehículo. Cubre: "MERCEDES LARIOS", "FURGON LARIOS", etc.
+_LARIOS_TWO_WORD_RE = re.compile(
+    r'(?i)^\S+\s+L[ao]r[aio][a-z]*$'
+)
 
 
 def _resolve_machine_asset(maquina_norm: str) -> MachineAsset | None:
@@ -339,6 +512,16 @@ def _resolve_machine_asset(maquina_norm: str) -> MachineAsset | None:
     if not maquina_norm:
         return None
 
+    # Larios alias resolution: any two-word value where the second word is a
+    # Larios variant maps to FURGLAR regardless of the vehicle type prefix.
+    # Resolución alias Larios: cualquier valor de dos palabras donde la segunda
+    # es una variante de Larios se mapea a FURGLAR independientemente del tipo.
+    if _LARIOS_TWO_WORD_RE.match(maquina_norm):
+        try:
+            return MachineAsset.objects.get(codigo="FURGLAR")
+        except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+            pass
+
     # Exact match / Coincidencia exacta.
     try:
         return MachineAsset.objects.get(codigo=maquina_norm)
@@ -350,23 +533,40 @@ def _resolve_machine_asset(maquina_norm: str) -> MachineAsset | None:
         )
         return None
 
-    # Zero-padding variants / Variantes con relleno de ceros.
-    # Try adding/removing a leading zero in the numeric part.
-    # Probar añadiendo/eliminando un cero inicial en la parte numérica.
-    m = re.match(r"^([A-Z]+-?)(\d+)$", maquina_norm)
+    # Build candidate set: hyphen variants + no-hyphen variants.
+    # The catalogue uses codes WITHOUT hyphens (e.g. "A54"), while the
+    # normaliser inserts a hyphen (e.g. "A-54"). We must try both forms
+    # plus zero-padding variants of each to ensure maximum resolution.
+    #
+    # Construir conjunto de candidatos: variantes con guion + sin guion.
+    # El catálogo usa códigos SIN guion (ej. "A54"), mientras que el
+    # normalizador inserta guion (ej. "A-54"). Hay que probar ambas formas
+    # más variantes con relleno de ceros para maximizar la resolución.
+    m = re.match(r"^([A-Z]+)-?(\d+)$", maquina_norm)
     if m:
-        prefix, digits = m.group(1), m.group(2)
-        candidates = set()
-        if len(digits) == 1:
-            candidates.add(f"{prefix}0{digits}")
-            candidates.add(f"{prefix}00{digits}")
-        elif len(digits) == 2 and digits.startswith("0"):
-            candidates.add(f"{prefix}{digits[1:]}")
-        elif len(digits) == 3 and digits.startswith("0"):
-            candidates.add(f"{prefix}{digits[1:]}")
-            candidates.add(f"{prefix}{digits[2:]}")
+        letters, digits = m.group(1), m.group(2)
+        candidates: set[str] = set()
 
-        for candidate in candidates:
+        # Base forms: with and without hyphen.
+        # Formas base: con y sin guion.
+        for sep in ("-", ""):
+            base = f"{letters}{sep}{digits}"
+            candidates.add(base)
+            # Zero-padding variants / Variantes con relleno de ceros.
+            if len(digits) == 1:
+                candidates.add(f"{letters}{sep}0{digits}")
+                candidates.add(f"{letters}{sep}00{digits}")
+            elif len(digits) == 2 and digits.startswith("0"):
+                candidates.add(f"{letters}{sep}{digits[1:]}")
+            elif len(digits) == 3 and digits.startswith("0"):
+                candidates.add(f"{letters}{sep}{digits[1:]}")
+                candidates.add(f"{letters}{sep}{digits[2:]}")
+
+        # Remove the already-tried exact match to avoid redundant queries.
+        # Eliminar la coincidencia exacta ya intentada para evitar consultas redundantes.
+        candidates.discard(maquina_norm)
+
+        for candidate in sorted(candidates):
             try:
                 return MachineAsset.objects.get(codigo=candidate)
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
@@ -440,18 +640,24 @@ def _worker_name_from_pdf_path(pdf_name: str) -> str:
     Devuelve el stem del nombre de fichero bruto si el formato no se reconoce.
     """
     import os
-    stem   = os.path.splitext(os.path.basename(pdf_name))[0]
-    tokens = stem.split("_")
+    stem = os.path.splitext(os.path.basename(pdf_name))[0]
+    # Normalise separators: replace underscores with spaces for uniform splitting.
+    # Normalizar separadores: reemplazar guiones bajos por espacios para split uniforme.
+    tokens = stem.replace("_", " ").split(" ")
 
+    # Collect tokens until the first one that starts with a digit.
+    # That digit marks the start of the date range — everything before it
+    # is part of the worker name.
+    # Recoger tokens hasta el primero que empiece por dígito.
+    # Ese dígito marca el inicio del rango de fechas — todo lo anterior
+    # forma parte del nombre del operario.
     name_tokens: list[str] = []
     for tok in tokens:
-        # Stop at a date token (DD-MM or DD-MM-YYYY) or the literal "AL".
-        # Parar en un token de fecha (DD-MM o DD-MM-YYYY) o el literal "AL".
-        if re.match(r"^\d{2}-\d{2}(-\d{4})?$", tok) or tok.upper() == "AL":
+        if tok and tok[0].isdigit():
             break
         name_tokens.append(tok.upper())
 
-    return " ".join(name_tokens) if name_tokens else stem.upper()
+    return " ".join(name_tokens).strip() if name_tokens else stem.upper()
 
 
 # ---------------------------------------------------------------------------
@@ -474,27 +680,27 @@ _CLR_REV_ORANGE   = "F4B942"   # Naranja — jornada excesiva (12–16h)
 _CLR_REV_RED      = "FF0000"   # Rojo — fuera de rango (< 7h ó > 16h)
 _CLR_MANIFEST_BG  = "1F4E79"   # Azul oscuro — cabecera manifiesto
 _CLR_MANIFEST_FG  = "FFFFFF"   # Blanco — texto cabecera manifiesto
+_CLR_DAY_SHADE    = "EBF3FB"   # Azul muy claro — sombreado alterno de día
 
 # Column definitions: (header, width)
 # Definición de columnas: (cabecera, ancho)
 _COLS = [
     ("FECHA",             14),   # A  1
-    ("OPERARIO",          28),   # B  2
-    ("CÓDIGO / VEH.",     14),   # C  3
-    ("MARCA / MODELO",    28),   # D  4
-    ("KM",                10),   # E  5
-    ("HORAS VEH.",        10),   # F  6
-    ("DESCRIPCIÓN AVERÍA",40),   # G  7
-    ("REPARACIÓN",        40),   # H  8
-    ("H.C.",               8),   # I  9
-    ("H.F.",               8),   # J 10
-    ("O.R.",              12),   # K 11
-    ("Δ HORAS (neta)",    12),   # L 12
-    ("HORAS NETAS DÍA",  14),   # M 13
-    ("HORAS EXTRAS",     12),   # N 14
-    ("SALARIO EXTRAS",   14),   # O 15
-    ("REVISIÓN HORARIO", 16),   # P 16
-    ("COSTE M.O.",        14),   # Q 17  — delta_horas × C3 (coste hora ordinaria)
+    ("CÓDIGO / VEH.",     14),   # B  2
+    ("MARCA / MODELO",    28),   # C  3
+    ("KM",                10),   # D  4
+    ("HORAS VEH.",        10),   # E  5
+    ("DESCRIPCIÓN AVERÍA",44),   # F  6  — ganamos ancho al eliminar OPERARIO
+    ("REPARACIÓN",        44),   # G  7  — ganamos ancho al eliminar OPERARIO
+    ("H.C.",               8),   # H  8
+    ("H.F.",               8),   # I  9
+    ("O.R.",              12),   # J 10
+    ("Δ HORAS (neta)",    12),   # K 11
+    ("HORAS NETAS DÍA",  14),   # L 12
+    ("HORAS EXTRAS",     12),   # M 13
+    ("SALARIO EXTRAS",   14),   # N 14
+    ("REVISIÓN HORARIO", 16),   # O 15
+    ("COSTE M.O.",        14),   # P 16  — delta_horas × C3 (coste hora ordinaria)
 ]
 
 _DATA_ROW_START = 5   # Datos comienzan en fila 5 (filas 1-3 config, 4 cabecera)
@@ -644,6 +850,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     "is_first_day":   False,
                     "is_last_day":    False,
                     "day_net_hours":  None,
+                    "day_shade":      False,
                 })
 
         # Post-pass: compute day groups, is_first_day, is_last_day,
@@ -658,9 +865,13 @@ def generate_work_order_excel(work_order_id: int) -> None:
             for idx, row in enumerate(flat_rows):
                 day_indices[row["date_key"]].append(idx)
 
-            for day_key, indices in day_indices.items():
+            for day_ordinal, (day_key, indices) in enumerate(day_indices.items()):
                 flat_rows[indices[0]]["is_first_day"] = True
                 flat_rows[indices[-1]]["is_last_day"]  = True
+
+                # Alternating day shade: even ordinal days get shaded.
+                # Sombreado alterno: los días con índice ordinal par se sombrean.
+                shade = (day_ordinal % 2 == 1)
 
                 # Sum delta_horas for the day.
                 # Sumar delta_horas del día.
@@ -676,6 +887,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 day_net = day_total if all_valid or day_total > 0 else None
                 for idx in indices:
                     flat_rows[idx]["day_net_hours"] = day_net
+                    flat_rows[idx]["day_shade"]     = shade
 
         # ------------------------------------------------------------------
         # Build workbook / Construir libro
@@ -687,13 +899,25 @@ def generate_work_order_excel(work_order_id: int) -> None:
         num_data_cols = len(_COLS)
 
         # --- Row 1: Title / Fila 1: Título ---
+        # Period is read from the PDF filename (canonical format DD-MM-YY AL DD-MM-YY)
+        # to avoid OCR year misreads polluting the title.
+        # El periodo se lee del nombre del PDF (formato DD-MM-AA AL DD-MM-AA)
+        # para evitar que errores de OCR en el año contaminen el título.
         period = ""
-        if flat_rows:
+        if work_order.source_pdf:
+            _p_start, _p_end = _parse_period_from_pdf_name(work_order.source_pdf.name)
+            if _p_start and _p_end:
+                period = (
+                    f"{_p_start.strftime('%d/%m/%Y')} — {_p_end.strftime('%d/%m/%Y')}"
+                )
+        if not period and flat_rows:
+            # Fallback: derive from data if filename parse fails.
+            # Fallback: derivar de los datos si el parseo del nombre falla.
             dates = [r["date_key"] for r in flat_rows if r["date_key"]]
             if dates:
-                d_min = min(dates).strftime("%d/%m/%Y")
-                d_max = max(dates).strftime("%d/%m/%Y")
-                period = f"{d_min} — {d_max}"
+                period = (
+                    f"{min(dates).strftime('%d/%m/%Y')} — {max(dates).strftime('%d/%m/%Y')}"
+                )
 
         title_val = f"PARTES DE TRABAJO — {worker_name} — {period}".strip(" —")
         ws.merge_cells(start_row=1, start_column=1,
@@ -749,6 +973,18 @@ def generate_work_order_excel(work_order_id: int) -> None:
             is_last    = row_data["is_last_day"]
             day_net    = row_data["day_net_hours"]
             fecha_inc  = row_data["fecha_incierta"]
+            day_shade  = row_data.get("day_shade", False)
+
+            # Pre-fill shaded rows: apply alternating day background to all
+            # columns before individual cell values are written. Cells with
+            # their own fill (date, machine status, revision) will override.
+            # Pre-rellenar filas sombreadas: aplicar fondo alterno de día en
+            # todas las columnas antes de escribir los valores individuales.
+            # Las celdas con relleno propio (fecha, estado máquina, revisión)
+            # sobreescriben este fondo.
+            if day_shade:
+                for _sc in range(1, num_data_cols + 1):
+                    ws.cell(row=r, column=_sc).fill = _make_fill(_CLR_DAY_SHADE)
 
             # Col A — FECHA (first entry of day only)
             # Col A — FECHA (solo primera entrada del día)
@@ -776,13 +1012,9 @@ def generate_work_order_excel(work_order_id: int) -> None:
             else:
                 ws.cell(row=r, column=1).border = _make_border_thin()
 
-            # Col B — OPERARIO
-            ws.cell(row=r, column=2,
-                    value=row_data["worker_name"]).border = _make_border_thin()
-
-            # Col C — CÓDIGO / VEH.
+            # Col B — CÓDIGO / VEH.
             codigo_val  = line.maquina_norm or line.maquina_raw or ""
-            c_cell      = ws.cell(row=r, column=3, value=codigo_val)
+            c_cell      = ws.cell(row=r, column=2, value=codigo_val)
             c_cell.border = _make_border_thin()
             if not codigo_val:
                 c_cell.fill = _make_fill(_CLR_MACHINE_EMPT)
@@ -799,26 +1031,26 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     ),
                 })
 
-            # Col D — MARCA / MODELO
+            # Col C — MARCA / MODELO
             marca_val = (
                 line.machine_asset.marca_modelo if line.machine_asset else ""
             )
-            ws.cell(row=r, column=4,
+            ws.cell(row=r, column=3,
                     value=marca_val).border = _make_border_thin()
 
-            # Col E — KM (from MachineAsset catalogue snapshot)
-            # Col E — KM (del snapshot del catálogo MachineAsset)
+            # Col D — KM (from MachineAsset catalogue snapshot)
+            # Col D — KM (del snapshot del catálogo MachineAsset)
             kms_val = line.machine_asset.kms if line.machine_asset else ""
-            ws.cell(row=r, column=5,
+            ws.cell(row=r, column=4,
                     value=kms_val).border = _make_border_thin()
 
-            # Col F — HORAS VEH.
+            # Col E — HORAS VEH.
             horas_val = line.machine_asset.horas if line.machine_asset else ""
-            ws.cell(row=r, column=6,
+            ws.cell(row=r, column=5,
                     value=horas_val).border = _make_border_thin()
 
-            # Col G — DESCRIPCIÓN AVERÍA
-            g_cell = ws.cell(row=r, column=7,
+            # Col F — DESCRIPCIÓN AVERÍA
+            g_cell = ws.cell(row=r, column=6,
                              value=line.descripcion_averia or "")
             g_cell.alignment = Alignment(wrap_text=True, vertical="top")
             g_cell.border    = _make_border_thin()
@@ -831,14 +1063,14 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     "descripcion": "Descripción de difícil lectura — verificar manuscrito.",
                 })
 
-            # Col H — REPARACIÓN
-            h_cell = ws.cell(row=r, column=8, value=line.reparacion or "")
+            # Col G — REPARACIÓN
+            h_cell = ws.cell(row=r, column=7, value=line.reparacion or "")
             h_cell.alignment = Alignment(wrap_text=True, vertical="top")
             h_cell.border    = _make_border_thin()
 
-            # Col I — H.C.
+            # Col H — H.C.
             hc_str  = line.hc.strftime("%H:%M") if line.hc else ""
-            i_cell  = ws.cell(row=r, column=9, value=hc_str)
+            i_cell  = ws.cell(row=r, column=8, value=hc_str)
             i_cell.alignment = Alignment(horizontal="center")
             i_cell.border    = _make_border_thin()
             if "H.C." in (line.flags or []):
@@ -849,9 +1081,9 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     "descripcion": "H.C. de difícil lectura — verificar manuscrito.",
                 })
 
-            # Col J — H.F.
+            # Col I — H.F.
             hf_str  = line.hf.strftime("%H:%M") if line.hf else ""
-            j_cell  = ws.cell(row=r, column=10, value=hf_str)
+            j_cell  = ws.cell(row=r, column=9, value=hf_str)
             j_cell.alignment = Alignment(horizontal="center")
             j_cell.border    = _make_border_thin()
             if "H.F." in (line.flags or []):
@@ -871,23 +1103,23 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     "descripcion": "H.F. igual o anterior a H.C. — horario inválido.",
                 })
 
-            # Col K — O.R.
-            ws.cell(row=r, column=11,
+            # Col J — O.R.
+            ws.cell(row=r, column=10,
                     value=line.or_val or "").border = _make_border_thin()
 
-            # Col L — Δ HORAS (neta)
+            # Col K — Δ HORAS (neta)
             l_cell = ws.cell(
-                row=r, column=12,
+                row=r, column=11,
                 value=float(line.delta_horas) if line.delta_horas is not None else "",
             )
             l_cell.number_format = '0.00" h"'
             l_cell.alignment     = Alignment(horizontal="center")
             l_cell.border        = _make_border_thin()
 
-            # Col M — HORAS NETAS DÍA (last entry of day only)
-            # Col M — HORAS NETAS DÍA (solo última entrada del día)
+            # Col L — HORAS NETAS DÍA (last entry of day only)
+            # Col L — HORAS NETAS DÍA (solo última entrada del día)
             if is_last and day_net is not None:
-                m_cell = ws.cell(row=r, column=13, value=float(day_net))
+                m_cell = ws.cell(row=r, column=12, value=float(day_net))
                 m_cell.number_format = '0.00" h"'
                 m_cell.alignment     = Alignment(horizontal="center")
                 m_cell.border        = _make_border_thin()
@@ -905,41 +1137,42 @@ def generate_work_order_excel(work_order_id: int) -> None:
                         ),
                     })
             else:
-                ws.cell(row=r, column=13).border = _make_border_thin()
+                ws.cell(row=r, column=12).border = _make_border_thin()
 
-            # Col N — HORAS EXTRAS (formula, last entry only)
-            # Col N — HORAS EXTRAS (fórmula, solo última entrada)
+            # Col M — HORAS EXTRAS (formula, last entry only)
+            # Col M — HORAS EXTRAS (fórmula, solo última entrada)
             if is_last and day_net is not None:
                 n_cell = ws.cell(
-                    row=r, column=14,
-                    value=f"=IF(M{r}=\"\",\"\",M{r}-8)",
+                    row=r, column=13,
+                    value=f'=IF(OR(L{r}="",L{r}<=0),"",L{r}-8)',
                 )
                 n_cell.number_format = '0.00" h"'
                 n_cell.alignment     = Alignment(horizontal="center")
                 n_cell.border        = _make_border_thin()
-                # Red font if negative / Fuente roja si negativo (lo gestiona
-                # el usuario vía formato condicional manual — aquí dejamos base).
+                # Red font if negative / Fuente roja si negativo.
             else:
-                ws.cell(row=r, column=14).border = _make_border_thin()
+                ws.cell(row=r, column=13).border = _make_border_thin()
 
-            # Col O — SALARIO EXTRAS (formula, last entry only)
-            # Col O — SALARIO EXTRAS (fórmula, solo última entrada)
+            # Col N — SALARIO EXTRAS (formula, last entry only)
+            # Only populated when HORAS EXTRAS > 0 to avoid negative salary values.
+            # Col N — SALARIO EXTRAS (fórmula, solo última entrada)
             if is_last and day_net is not None:
+                _or_formula = f'=IF(OR(M{r}="",M{r}<=0),"",M{r}*$C$2)'
                 o_cell = ws.cell(
-                    row=r, column=15,
-                    value=f"=IF(N{r}=\"\",\"\",N{r}*$C$2)",
+                    row=r, column=14,
+                    value=_or_formula,
                 )
                 o_cell.number_format = '#,##0.00 "€"'
                 o_cell.alignment     = Alignment(horizontal="center")
                 o_cell.border        = _make_border_thin()
             else:
-                ws.cell(row=r, column=15).border = _make_border_thin()
+                ws.cell(row=r, column=14).border = _make_border_thin()
 
-            # Col P — REVISIÓN HORARIO (last entry only)
-            # Col P — REVISIÓN HORARIO (solo última entrada)
+            # Col O — REVISIÓN HORARIO (last entry only)
+            # Col O — REVISIÓN HORARIO (solo última entrada)
             if is_last:
                 p_cell = ws.cell(
-                    row=r, column=16,
+                    row=r, column=15,
                     value=_revision_text(day_net),
                 )
                 p_cell.fill      = _make_fill(_revision_color(day_net))
@@ -947,85 +1180,216 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 p_cell.border    = _make_border_thin()
                 p_cell.font      = Font(bold=True)
             else:
-                ws.cell(row=r, column=16).border = _make_border_thin()
+                ws.cell(row=r, column=15).border = _make_border_thin()
 
-            # Col Q — COSTE M.O. (formula: delta_horas * $C$3)
-            # Col Q — COSTE M.O. (fórmula: delta_horas * $C$3)
+            # Col P — COSTE M.O. (formula: delta_horas * $C$3)
+            # Col P — COSTE M.O. (fórmula: delta_horas * $C$3)
             if line.delta_horas is not None:
                 q_cell = ws.cell(
-                    row=r, column=17,
-                    value=f"=IF($C$3=\"\",\"\",L{r}*$C$3)",
+                    row=r, column=16,
+                    value=f'=IFERROR(IF($B$3="","",K{r}*$C$3),"")',
                 )
                 q_cell.number_format = '#,##0.00 "€"'
                 q_cell.alignment     = Alignment(horizontal="center")
                 q_cell.border        = _make_border_thin()
             else:
-                ws.cell(row=r, column=17).border = _make_border_thin()
+                ws.cell(row=r, column=16).border = _make_border_thin()
 
         # --- Freeze panes / Fijar paneles ---
         ws.freeze_panes = f"A{_DATA_ROW_START}"
 
         # ------------------------------------------------------------------
-        # MANIFIESTO DE INCIDENCIAS / INCIDENCE MANIFEST
+        # TOTALS ROW / FILA DE TOTALES
+        # One row below the last data row, spanning all 16 columns.
+        # Una fila por debajo de la última fila de datos, 16 columnas.
         # ------------------------------------------------------------------
-        last_data_row  = _DATA_ROW_START + len(flat_rows) - 1
-        manifest_start = last_data_row + 3   # 2 blank rows gap + header
+        last_data_row = _DATA_ROW_START + len(flat_rows) - 1
+        totals_row    = last_data_row + 1
 
-        # Manifest header / Cabecera del manifiesto
+        tot_font = Font(bold=True, color=_CLR_HEADER_FG)
+        tot_fill = _make_fill(_CLR_MANIFEST_BG)
+
+        # Label spanning cols A–J / Etiqueta abarcando cols A–J
+        ws.merge_cells(
+            start_row=totals_row, start_column=1,
+            end_row=totals_row,   end_column=10,
+        )
+        tot_label           = ws.cell(row=totals_row, column=1, value="TOTALES")
+        tot_label.font      = tot_font
+        tot_label.fill      = tot_fill
+        tot_label.alignment = Alignment(horizontal="center", vertical="center")
+        tot_label.border    = _make_border_thin()
+
+        # Build SUMPRODUCT range strings / Construir cadenas de rango SUMPRODUCT
+        _dr_start = _DATA_ROW_START
+        _dr_end   = last_data_row
+
+        def _sumif(col_letter):
+            """Returns a SUMPRODUCT formula summing only numeric cells.
+            Uses ISNUMBER to safely ignore empty-string cells returned by
+            IF formulas, avoiding #VALUE! errors in the totals row.
+            --- Devuelve una fórmula SUMPRODUCT que suma solo celdas numéricas.
+            Usa ISNUMBER para ignorar celdas con cadena vacía devueltas por
+            fórmulas IF, evitando errores #¡VALOR! en la fila de totales.
+            """
+            rng = f"{col_letter}{_dr_start}:{col_letter}{_dr_end}"
+            return '=SUMPRODUCT(ISNUMBER(' + rng + ')*(' + rng + '+0))'
+
+        # Col K — Total Δ HORAS (neta) / Total Δ HORAS (neta)
+        tot_l               = ws.cell(row=totals_row, column=11, value=_sumif("K"))
+        tot_l.number_format = '0.00" h"'
+        tot_l.alignment     = Alignment(horizontal="center")
+        tot_l.font          = tot_font
+        tot_l.fill          = tot_fill
+        tot_l.border        = _make_border_thin()
+
+        # Col L — Total HORAS NETAS DÍA / Total HORAS NETAS DÍA
+        tot_m               = ws.cell(row=totals_row, column=12, value=_sumif("L"))
+        tot_m.number_format = '0.00" h"'
+        tot_m.alignment     = Alignment(horizontal="center")
+        tot_m.font          = tot_font
+        tot_m.fill          = tot_fill
+        tot_m.border        = _make_border_thin()
+
+        # Col M — Total HORAS EXTRAS / Total HORAS EXTRAS
+        tot_n               = ws.cell(row=totals_row, column=13, value=_sumif("M"))
+        tot_n.number_format = '0.00" h"'
+        tot_n.alignment     = Alignment(horizontal="center")
+        tot_n.font          = tot_font
+        tot_n.fill          = tot_fill
+        tot_n.border        = _make_border_thin()
+
+        # Col N — Total SALARIO EXTRAS / Total SALARIO EXTRAS
+        tot_o               = ws.cell(row=totals_row, column=14, value=_sumif("N"))
+        tot_o.number_format = '#,##0.00 "€"'
+        tot_o.alignment     = Alignment(horizontal="center")
+        tot_o.font          = tot_font
+        tot_o.fill          = tot_fill
+        tot_o.border        = _make_border_thin()
+
+        # Col O — Leyenda dinámica precio hora extra.
+        # Warns if B2=0 (price not entered), else shows applied price.
+        # Avisa si B2=0 (precio no introducido), si no muestra el precio aplicado.
+        _leg_warn   = ("ATENCIÓN: introduzca el precio de la hora extra "
+                       "en C2 para calcular el salario total.")
+        _leg_ok_str = '=IF($C$2=0,"' + _leg_warn + '","Precio hora extra aplicado: "&TEXT($C$2,"#,##0.00")&" EUR/h")'
+        tot_p               = ws.cell(row=totals_row, column=15, value=_leg_ok_str)
+        tot_p.alignment     = Alignment(horizontal="left", vertical="center",
+                                        wrap_text=True)
+        tot_p.font          = Font(italic=True, bold=True, color=_CLR_HEADER_FG)
+        tot_p.fill          = tot_fill
+        tot_p.border        = _make_border_thin()
+
+        # Col P — Total COSTE M.O. / Total COSTE M.O.
+        tot_q               = ws.cell(row=totals_row, column=16, value=_sumif("P"))
+        tot_q.number_format = '#,##0.00 "€"'
+        tot_q.alignment     = Alignment(horizontal="center")
+        tot_q.font          = tot_font
+        tot_q.fill          = tot_fill
+        tot_q.border        = _make_border_thin()
+
+        ws.row_dimensions[totals_row].height = 30
+
+        # ------------------------------------------------------------------
+        # MANIFIESTO DE INCIDENCIAS / INCIDENCE MANIFEST
+        # Extended to all 16 columns (A→P), matching report width.
+        # Description column merged from E to P, wrap_text=False, fixed height.
+        # Extendido a las 16 columnas (A→P), igual ancho que el reporte.
+        # Columna descripción fusionada de E a P, wrap_text=False, altura fija.
+        # ------------------------------------------------------------------
+        manifest_start = totals_row + 3   # 2 blank rows gap + header
+
+        num_inc = len(incidences)
+
+        # Manifest title spanning all 17 cols / Título manifiesto en 17 cols
         ws.merge_cells(
             start_row=manifest_start, start_column=1,
-            end_row=manifest_start,   end_column=5,
+            end_row=manifest_start,   end_column=num_data_cols,
         )
-        mhdr = ws.cell(row=manifest_start, column=1,
-                       value="MANIFIESTO DE INCIDENCIAS")
+        mhdr = ws.cell(
+            row=manifest_start, column=1,
+            value=f"MANIFIESTO DE INCIDENCIAS  —  {num_inc} incidencia(s) detectada(s)",
+        )
         mhdr.font      = Font(bold=True, color=_CLR_MANIFEST_FG, size=11)
         mhdr.fill      = _make_fill(_CLR_MANIFEST_BG)
         mhdr.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[manifest_start].height = 20
+        ws.row_dimensions[manifest_start].height = 22
 
-        manifest_col_headers = ["#", "FECHA", "TRAMO", "CAMPO",
-                                 "DESCRIPCIÓN DE LA INCIDENCIA"]
-        manifest_col_widths  = [5, 14, 16, 16, 60]
-        for ci, (ch, cw) in enumerate(
-            zip(manifest_col_headers, manifest_col_widths), start=1
-        ):
-            cell           = ws.cell(row=manifest_start + 1, column=ci, value=ch)
+        # Column headers row / Fila de cabeceras del manifiesto
+        manifest_col_row = manifest_start + 1
+        for ci, ch in enumerate(["#", "FECHA", "TRAMO", "CAMPO"], start=1):
+            cell           = ws.cell(row=manifest_col_row, column=ci, value=ch)
             cell.font      = Font(bold=True, color=_CLR_MANIFEST_FG)
             cell.fill      = _make_fill(_CLR_MANIFEST_BG)
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border    = _make_border_thin()
+        # Description header merged from col 5 to 17
+        # Cabecera descripción fusionada de col 5 a 17
+        ws.merge_cells(
+            start_row=manifest_col_row, start_column=5,
+            end_row=manifest_col_row,   end_column=num_data_cols,
+        )
+        desc_hdr           = ws.cell(row=manifest_col_row, column=5,
+                                     value="DESCRIPCIÓN DE LA INCIDENCIA")
+        desc_hdr.font      = Font(bold=True, color=_CLR_MANIFEST_FG)
+        desc_hdr.fill      = _make_fill(_CLR_MANIFEST_BG)
+        desc_hdr.alignment = Alignment(horizontal="center", vertical="center")
+        desc_hdr.border    = _make_border_thin()
+        ws.row_dimensions[manifest_col_row].height = 20
 
-        for inc_idx, inc in enumerate(incidences, start=1):
-            inc_row = manifest_start + 1 + inc_idx
-            ws.cell(row=inc_row, column=1, value=inc_idx).border = _make_border_thin()
-            ws.cell(row=inc_row, column=2,
-                    value=inc["fecha"]).border   = _make_border_thin()
-            ws.cell(row=inc_row, column=3,
-                    value=inc["tramo"]).border   = _make_border_thin()
-            ws.cell(row=inc_row, column=4,
-                    value=inc["campo"]).border   = _make_border_thin()
-            desc_cell = ws.cell(row=inc_row, column=5, value=inc["descripcion"])
-            desc_cell.alignment = Alignment(wrap_text=True, vertical="top")
-            desc_cell.border    = _make_border_thin()
-
-        if not incidences:
-            no_inc = ws.cell(
-                row=manifest_start + 2, column=1,
-                value="Sin incidencias registradas.",
+        if incidences:
+            for inc_idx, inc in enumerate(incidences, start=1):
+                inc_row = manifest_col_row + inc_idx
+                ws.cell(row=inc_row, column=1,
+                        value=inc_idx).border = _make_border_thin()
+                ws.cell(row=inc_row, column=2,
+                        value=inc["fecha"]).border = _make_border_thin()
+                ws.cell(row=inc_row, column=3,
+                        value=inc["tramo"]).border = _make_border_thin()
+                ws.cell(row=inc_row, column=4,
+                        value=inc["campo"]).border = _make_border_thin()
+                # Description merged from col 5 to 17, single line, no wrap.
+                # Descripción fusionada de col 5 a 17, línea única, sin wrap.
+                ws.merge_cells(
+                    start_row=inc_row, start_column=5,
+                    end_row=inc_row,   end_column=num_data_cols,
+                )
+                desc_cell           = ws.cell(row=inc_row, column=5,
+                                              value=inc["descripcion"])
+                desc_cell.alignment = Alignment(horizontal="left",
+                                                vertical="center",
+                                                wrap_text=False)
+                desc_cell.border    = _make_border_thin()
+                ws.row_dimensions[inc_row].height = 16
+        else:
+            no_inc_row = manifest_col_row + 1
+            ws.merge_cells(
+                start_row=no_inc_row, start_column=1,
+                end_row=no_inc_row,   end_column=num_data_cols,
             )
-            no_inc.font = Font(italic=True)
+            no_inc           = ws.cell(row=no_inc_row, column=1,
+                                       value="Sin incidencias registradas.")
+            no_inc.font      = Font(italic=True)
+            no_inc.alignment = Alignment(horizontal="center")
+            ws.row_dimensions[no_inc_row].height = 16
 
         # ------------------------------------------------------------------
         # LEYENDA sheet / Hoja LEYENDA
         # ------------------------------------------------------------------
-        ws_ley        = wb.create_sheet(title="LEYENDA")
-        ley_title     = ws_ley.cell(row=1, column=1, value="LEYENDA — REVISIÓN HORARIO")
-        ley_title.font = Font(bold=True, size=12, color=_CLR_HEADER_BG)
+        ws_ley = wb.create_sheet(title="LEYENDA")
+        # Write value BEFORE merging — openpyxl generates invalid sheet2.xml
+        # if merge_cells is called before the cell value is set.
+        # Escribir el valor ANTES de fusionar — openpyxl genera sheet2.xml
+        # inválido si merge_cells se llama antes de establecer el valor.
+        ley_title           = ws_ley.cell(row=1, column=1,
+                                          value="LEYENDA — REVISIÓN HORARIO")
+        ley_title.font      = Font(bold=True, size=12, color=_CLR_HEADER_BG)
+        ley_title.alignment = Alignment(horizontal="center", vertical="center")
         ws_ley.merge_cells("A1:C1")
         ws_ley.row_dimensions[1].height = 20
 
         leyenda_rows = [
-            (_CLR_REV_GREEN,  "= 8 h",      "Jornada estándar"),
+            (_CLR_REV_GREEN,  "8 h",      "Jornada estándar"),
             (_CLR_REV_BLUE,   "8 h – 12 h", "Horas extraordinarias"),
             (_CLR_REV_YELLOW, "7 h – 8 h",  "Por debajo del mínimo"),
             (_CLR_REV_ORANGE, "12 h – 16 h","Jornada excesiva — revisar"),
