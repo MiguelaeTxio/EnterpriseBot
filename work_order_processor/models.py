@@ -148,6 +148,33 @@ class WorkOrder(models.Model):
             f"({self.processed_pages}/{self.total_pages} págs.)"
         )
 
+    @property
+    def pdf_display_name(self) -> str:
+        """
+        Returns the PDF filename with the Django random suffix stripped.
+        The suffix pattern is an underscore followed by exactly seven
+        alphanumeric characters immediately before the file extension
+        (e.g. ``OPERARIO 01-01-25 AL 31-01-25_bVofaFF.pdf`` ->
+        ``OPERARIO 01-01-25 AL 31-01-25``).
+        Falls back to the raw basename if the field has no value.
+
+        ---
+
+        Devuelve el nombre del fichero PDF sin el sufijo aleatorio de Django.
+        El patrón del sufijo es un guión bajo seguido de exactamente siete
+        caracteres alfanuméricos inmediatamente antes de la extensión
+        (p. ej. ``OPERARIO 01-01-25 AL 31-01-25_bVofaFF.pdf`` ->
+        ``OPERARIO 01-01-25 AL 31-01-25``).
+        Cae de vuelta al nombre base sin procesar si el campo no tiene valor.
+        """
+        import re
+        if not self.source_pdf:
+            return f"Parte #{self.pk}"
+        basename = self.source_pdf.name.split("/")[-1]
+        # Strip Django random suffix: _XXXXXXX before the extension.
+        # Eliminar sufijo aleatorio de Django: _XXXXXXX antes de la extensión.
+        return re.sub(r'_[A-Za-z0-9]{7}(\.[^.]+)$', r'', basename)
+
 
 class WorkOrderEntry(models.Model):
     """

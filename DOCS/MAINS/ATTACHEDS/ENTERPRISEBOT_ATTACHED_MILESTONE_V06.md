@@ -2,7 +2,7 @@
 
 # Anexo de Hito V06 — Procesador de Partes de Trabajo PDF -> Excel + BBDD
 # Proyecto: EnterpriseBot
-# Estado: EN PROGRESO
+# Estado: COMPLETADO
 # Fecha de inicio: 2026-04-21
 
 ---
@@ -269,14 +269,17 @@ Trabajo completado en sesion 006 (2026-04-27):
 | 004    | 2026-04-23 | Paso 9 parcial  | App fleet completa. Reestructuracion work_order_processor. Prompt multi-tramo. Excel 17 cols. Senal IVR secciones. Fix backup/restore CallFlow. Fix timeout Gemini Vision ms. E2E en curso al cierre. |
 | 005    | 2026-04-24 | Paso 9 parcial  | Diagnostico worker atascado. Fix 429 endpoint global + timeout 60s + retry 3x60s. Prompt CALIGRAFIA RAPIDA. Post-procesado Larios. Resolucion MachineAsset sin guion. Inferencia fechas calendario. Excel 16 cols sin OPERARIO. Sombreado alterno dia. Fix formulas #VALOR. Titulo desde nombre PDF. |
 | 006    | 2026-04-27 | Paso 9 completo, 9.6, 9.7 | Validacion Excel: fix A=36 (PMP services.py) + fix fecha pag 1 (PMA tasks.py). Subtarea 9.6: sidebar reestructurado (Voz/WhatsApp/Administracion), PDFs, Analitica con Plotly. Subtarea 9.7: WorkOrderEditView tabla editable inline + regenerar Excel. BD limpiada. |
-| 007    | 2026-04-27 | Paso 9 validacion + 9.6 constructor graficos | Validacion E2E PDF superada: 5 puntos criticos confirmados. Investigacion G-8: Gemini devuelve maquina_raw=null cuando operario anota codigo en campo KM en lugar de MAQUINA. PMA services.py: regla F anadida al prompt (_EXTRACTION_PROMPT). Constructor de graficos client-side: AnalyticsView refactorizada + AnalyticsDataView (endpoint JSON) + analytics.html reescrito con Plotly.js, filtros de fecha/activo/PDF/metrica/tipo/paleta. Subtarea 9.6.1 (perfiles de grafico) registrada para proxima sesion. |
+| 007    | 2026-04-27 | Paso 9 validacion + 9.6 constructor graficos |
+| 008    | 2026-04-27 | 9.6.1, 9.6.2, 9.7, refactor CSS, fix NameError | Subtarea 9.6.1: modelo AnalyticsProfile + migracion panel.0001 + endpoints JSON list/create/delete + integracion selector perfiles en analytics.html. Subtarea 9.6.2: tipo grafico pie en constructor client-side (buildTrace + buildLayout). Subtarea 9.7: list.html reescrito — nombre PDF parseado, desplegable acciones, modal incidencias, modal borrado, badges estado. Refactor CSS: panel.css extraido de base.html, collectstatic. Fix NameError WorkOrderEntry en panel/views.py. Fix overflow desplegable (table-overflow-visible). PMP edit.html: Parte -> PDF. Hito 6 cerrado. | Validacion E2E PDF superada: 5 puntos criticos confirmados. Investigacion G-8: Gemini devuelve maquina_raw=null cuando operario anota codigo en campo KM en lugar de MAQUINA. PMA services.py: regla F anadida al prompt (_EXTRACTION_PROMPT). Constructor de graficos client-side: AnalyticsView refactorizada + AnalyticsDataView (endpoint JSON) + analytics.html reescrito con Plotly.js, filtros de fecha/activo/PDF/metrica/tipo/paleta. Subtarea 9.6.1 (perfiles de grafico) registrada para proxima sesion. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion
+## 5. Cierre del Hito
 
-### Objetivo principal
-Subtarea 9.6.1 (perfiles de grafico guardados) + Subtarea 9.7 (mejoras listado PDFs).
+Hito 6 cerrado formalmente en sesion 008 (2026-04-27).
+Todos los pasos y subtareas completados y validados E2E.
+El desarrollo continua en el Hito 7 — Partes Diarios de Reparacion:
+ver anexo ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md.
 
 ### PRIMERA ACCION — Subtarea 9.6.1: Perfiles de grafico
 
@@ -336,6 +339,18 @@ En el panel de filtros, anadir por encima del separador hr:
 
 Al seleccionar un perfil del desplegable, el JS restaura todos los controles
 con los valores del campo config y llama a renderChart() automaticamente.
+
+### Subtarea 9.6.2 — Gráfico de tarta en el constructor de analítica
+
+Añadir el tipo de gráfico `pie` al constructor client-side de analítica.
+Cambios acotados a `analytics.html`:
+  - Nueva opción `<option value="pie">Tarta</option>` en el selector de tipo.
+  - Rama `pie` en `buildTrace()`: traza Plotly de tipo `pie` con `labels`/`values`
+    y paleta aplicada como array de colores (`marker.colors`).
+  - `buildLayout()`: para tipo `pie`, suprimir ejes (`xaxis`/`yaxis` ocultos)
+    y activar `showlegend: true` con posición lateral derecha.
+  - El JSONField `config.chart_type` ya admite el valor `"pie"` sin cambios
+    en el modelo ni en los endpoints.
 
 ### SEGUNDA ACCION — Subtarea 9.7: Mejoras listado PDFs (list.html)
 

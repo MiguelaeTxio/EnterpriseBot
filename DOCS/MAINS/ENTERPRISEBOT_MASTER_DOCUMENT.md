@@ -93,12 +93,27 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   transfer de llamada. Flujo: IVR captura → persiste en BD → WhatsApp notifica
   al agente interno → transfer ejecutado. Cierre del ciclo omnicanal completo.
 
-### Hito 6: Procesador de Partes de Trabajo PDF → Excel + BBDD (EN PROGRESO)
+### Hito 6: Procesador de Partes de Trabajo PDF → Excel + BBDD (COMPLETADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V06.md`)
 - Procesamiento documental de PDFs con fotografías de partes de trabajo diarios.
 - Extracción automática de campos mediante Gemini Vision por cada página/parte.
 - Persistencia en BD de los datos extraídos (modelos WorkOrder y WorkOrderEntry).
 - Generación de informe Excel descargable desde el panel de gestión.
 - Funcionalidad multiempresa integrada en el panel existente.
+- Constructor de gráficos client-side (Plotly.js) con perfiles guardados por usuario.
+- Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
+- Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
+
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
+- Nuevo rol `OPERATOR` en CompanyUser: acceso restringido a la sección de partes diarios.
+- Gestión de operarios desde el panel de administración (apartado Usuarios).
+- Tres vías de entrada convergentes en un formulario único de confirmación:
+    - Form: formulario web estructurado. Persistencia directa en BD. Sin IA. Coste cero.
+    - STT: dictado por voz via Web Speech API (nativa, sin coste, sin IA). Pre-rellena el formulario.
+    - Upload: foto/PDF manuscrito procesado por Gemini Vision. Pre-rellena el formulario
+      con validación campo a campo de datos faltantes/ilegibles por el operario.
+- El formulario de confirmación es el punto de convergencia de las tres vías.
+- La fricción deliberada del flujo Upload incentiva la adopción orgánica de Form y STT.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

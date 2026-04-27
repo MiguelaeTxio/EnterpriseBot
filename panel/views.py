@@ -18,6 +18,7 @@ from django.utils.timezone import now
 from django.forms import modelformset_factory
 
 from panel.mixins import CompanyUserRequiredMixin, AdminRoleRequiredMixin
+from panel.models import AnalyticsProfile
 from panel.forms import (
     PanelAuthenticationForm,
     PresenceStatusForm,
@@ -44,7 +45,7 @@ from ivr_config.models import (
     DataCaptureSet,
 )
 from whatsapp.models import WhatsAppTemplate, WhatsAppSession
-from work_order_processor.models import WorkOrder, WorkOrderEntryLine
+from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 from work_order_processor.tasks import process_work_order_pdf
 from fleet.models import MachineAsset
 import plotly.graph_objects as go
@@ -2965,3 +2966,143 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
             "work_orders": work_orders,
             "assets":      assets,
         })
+
+
+class AnalyticsProfileListCreateView(AdminRoleRequiredMixin, View):
+    """
+    JSON endpoint for listing and creating/updating AnalyticsProfile records
+    belonging to the authenticated CompanyUser.
+
+    GET  /panel/analytics/profiles/
+         Returns a JSON array of all profiles for the current user, ordered
+         by name. Each item exposes: id, nombre, config.
+
+    POST /panel/analytics/profiles/
+         Body (JSON): {"nombre": str, "config": {...}}
+         Creates a new profile or updates an existing one with the same name
+         (upsert semantics — unique_together enforced at model level).
+         Returns the saved profile as JSON with HTTP 200.
+         Returns HTTP 400 on missing or invalid payload.
+    ---
+    Endpoint JSON para listar y crear/actualizar registros AnalyticsProfile
+    del CompanyUser autenticado.
+
+    GET  /panel/analytics/profiles/
+         Devuelve un array JSON con todos los perfiles del usuario actual,
+         ordenados por nombre. Cada elemento expone: id, nombre, config.
+
+    POST /panel/analytics/profiles/
+         Cuerpo (JSON): {"nombre": str, "config": {...}}
+         Crea un perfil nuevo o actualiza uno existente con el mismo nombre
+         (semántica upsert — unicidad aplicada a nivel de modelo).
+         Devuelve el perfil guardado como JSON con HTTP 200.
+         Devuelve HTTP 400 si el payload está ausente o es inválido.
+    """
+
+    def get(self, request):
+        """
+        Returns the list of AnalyticsProfile records for the current CompanyUser.
+        ---
+        Devuelve la lista de registros AnalyticsProfile del CompanyUser actual.
+        """
+        import json as _json
+        from django.http import JsonResponse
+
+        try:
+            company_user = request.user.company_user
+        except AttributeError:
+            return JsonResponse({"error": "Sin perfil de empresa asociado."}, status=403)
+
+        profiles = (
+            AnalyticsProfile.objects
+            .filter(company_user=company_user)
+            .order_by("nombre")
+            .values("id", "nombre", "config")
+        )
+        return JsonResponse({"profiles": list(profiles)})
+
+    def post(self, request):
+        """
+        Creates or updates an AnalyticsProfile for the current CompanyUser.
+        Uses update_or_create so that saving an existing name overwrites its
+        config rather than raising a uniqueness error.
+        ---
+        Crea o actualiza un AnalyticsProfile para el CompanyUser actual.
+        Usa update_or_create para que guardar un nombre existente sobreescriba
+        su config en lugar de lanzar un error de unicidad.
+        """
+        import json as _json
+        from django.http import JsonResponse
+
+        try:
+            company_user = request.user.company_user
+        except AttributeError:
+            return JsonResponse({"error": "Sin perfil de empresa asociado."}, status=403)
+
+        # Parse JSON body / Parsear cuerpo JSON.
+        try:
+            payload = _json.loads(request.body)
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "Cuerpo JSON inválido."}, status=400)
+
+        nombre = payload.get("nombre", "").strip()
+        config = payload.get("config")
+
+        if not nombre:
+            return JsonResponse({"error": "El campo 'nombre' es obligatorio."}, status=400)
+        if not isinstance(config, dict):
+            return JsonResponse({"error": "El campo 'config' debe ser un objeto JSON."}, status=400)
+
+        # Upsert: create or overwrite existing profile with the same name.
+        # Upsert: crear o sobreescribir el perfil existente con el mismo nombre.
+        profile, _ = AnalyticsProfile.objects.update_or_create(
+            company_user=company_user,
+            nombre=nombre,
+            defaults={"config": config},
+        )
+
+        return JsonResponse({
+            "id":     profile.pk,
+            "nombre": profile.nombre,
+            "config": profile.config,
+        })
+
+
+class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):
+    """
+    JSON endpoint for deleting a single AnalyticsProfile by primary key.
+
+    DELETE /panel/analytics/profiles/<pk>/
+           Deletes the profile only if it belongs to the authenticated
+           CompanyUser. Returns HTTP 200 on success, HTTP 404 if not found
+           or owned by a different user.
+    ---
+    Endpoint JSON para eliminar un AnalyticsProfile concreto por clave primaria.
+
+    DELETE /panel/analytics/profiles/<pk>/
+           Elimina el perfil solo si pertenece al CompanyUser autenticado.
+           Devuelve HTTP 200 en caso de éxito, HTTP 404 si no se encuentra
+           o pertenece a otro usuario.
+    """
+
+    def delete(self, request, pk):
+        """
+        Deletes the AnalyticsProfile identified by pk, scoped to the current user.
+        ---
+        Elimina el AnalyticsProfile identificado por pk, acotado al usuario actual.
+        """
+        from django.http import JsonResponse
+
+        try:
+            company_user = request.user.company_user
+        except AttributeError:
+            return JsonResponse({"error": "Sin perfil de empresa asociado."}, status=403)
+
+        try:
+            profile = AnalyticsProfile.objects.get(pk=pk, company_user=company_user)
+        except AnalyticsProfile.DoesNotExist:
+            return JsonResponse({"error": "Perfil no encontrado."}, status=404)
+
+        nombre = profile.nombre
+        profile.delete()
+        return JsonResponse({"deleted": True, "nombre": nombre})

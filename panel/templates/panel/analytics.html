@@ -83,6 +83,48 @@
             </div>
         </div>
 
+        {# ------------------------------------------------------------------ #}
+        {# Profiles row / Fila de perfiles de gráfico                          #}
+        {# ------------------------------------------------------------------ #}
+        <div class="row g-2 align-items-end mb-2">
+
+            {# Profile selector / Selector de perfil #}
+            <div class="col-12 col-md-4">
+                <label class="form-label text-sm fw-semibold mb-1">Mis perfiles</label>
+                <select id="profile-select" class="form-select form-select-sm">
+                    <option value="">— Seleccionar perfil —</option>
+                </select>
+            </div>
+
+            {# Save profile button / Botón guardar perfil #}
+            <div class="col-12 col-md-4">
+                <label class="form-label text-sm fw-semibold mb-1 d-block">&nbsp;</label>
+                <div class="input-group input-group-sm">
+                    <input type="text"
+                           id="profile-name-input"
+                           class="form-control form-control-sm"
+                           placeholder="Nombre del perfil…"
+                           maxlength="100">
+                    <button id="btn-save-profile"
+                            class="btn btn-outline-primary btn-sm"
+                            title="Guardar configuración actual como perfil">
+                        <i class="bi bi-floppy me-1"></i>Guardar
+                    </button>
+                </div>
+            </div>
+
+            {# Delete profile button / Botón eliminar perfil #}
+            <div class="col-12 col-md-2 d-flex align-items-end">
+                <button id="btn-delete-profile"
+                        class="btn btn-outline-danger btn-sm w-100"
+                        disabled
+                        title="Eliminar perfil seleccionado">
+                    <i class="bi bi-trash me-1"></i>Eliminar
+                </button>
+            </div>
+
+        </div>
+
         <hr class="my-2">
 
         <div class="row g-2 align-items-end">
@@ -106,6 +148,7 @@
                     <option value="bar_h">Barras horizontales</option>
                     <option value="line">Líneas</option>
                     <option value="area">Área</option>
+                    <option value="pie">Tarta</option>
                 </select>
             </div>
 
@@ -141,8 +184,9 @@
             <span class="fw-semibold text-sm" id="chart-title-text"></span>
             <span class="text-muted text-sm ms-2" id="chart-subtitle-text"></span>
         </div>
-        <div id="analytics-chart" style="min-height:420px;">
+        <div id="analytics-chart" class="analytics-chart-container">
             {# Plotly renders here / Plotly renderiza aquí #}
+        <style>.analytics-chart-container { min-height: 420px; }</style>
         </div>
         <div id="analytics-empty" class="text-center text-muted py-5 d-none">
             <i class="bi bi-bar-chart-line fs-1 d-block mb-3"></i>
@@ -221,6 +265,8 @@
     let _workOrders    = [];   // WorkOrder list / Lista de WorkOrders.
     let _assets        = [];   // Asset list / Lista de activos.
     let _dataLoaded    = false;
+    let _profiles      = [];   // Saved profiles / Perfiles guardados.
+    let _selectedProfileId = null; // Currently selected profile pk / pk del perfil seleccionado.
 
     // ------------------------------------------------------------------
     // DOM helpers / Ayudantes DOM
@@ -457,6 +503,16 @@
                 fillcolor: (colors[0] || PALETTES.corporate[0]) + "33",
             });
         }
+        if (chartType === "pie") {
+            return {
+                type:   "pie",
+                labels: labels,
+                values: values,
+                marker: { colors: colors },
+                textinfo:     "label+percent",
+                hovertemplate: "<b>%{label}</b><br>" + yLabel + ": %{value}<br>%{percent}<extra></extra>",
+            };
+        }
         return {};
     }
 
@@ -465,6 +521,30 @@
     // ------------------------------------------------------------------
     function buildLayout(chartType, yLabel, titleText, subtitleText) {
         const isHoriz = chartType === "bar_h";
+        const isPie   = chartType === "pie";
+
+        // Pie charts have no axes and show a legend instead.
+        // Los gráficos de tarta no tienen ejes y muestran una leyenda.
+        if (isPie) {
+            return {
+                template:     "plotly_white",
+                font:         { family: FONT_FAMILY, size: 12 },
+                plot_bgcolor: "#ffffff",
+                paper_bgcolor:"#ffffff",
+                margin:       { l: 20, r: 20, t: 20, b: 20 },
+                height:       440,
+                showlegend:   true,
+                legend: {
+                    orientation: "v",
+                    x:           1.02,
+                    y:           0.5,
+                    font:        { size: 11 },
+                },
+                xaxis: { visible: false },
+                yaxis: { visible: false },
+            };
+        }
+
         return {
             template:     "plotly_white",
             font:         { family: FONT_FAMILY, size: 12 },
@@ -576,10 +656,233 @@
     }
 
     // ------------------------------------------------------------------
+    // Profiles — load / Perfiles — carga
+    // ------------------------------------------------------------------
+    function loadProfiles() {
+        /*
+         * Fetches all saved profiles for the current user from the server
+         * and rebuilds the profile selector options.
+         * ---
+         * Obtiene todos los perfiles guardados del usuario actual desde el
+         * servidor y reconstruye las opciones del selector de perfiles.
+         */
+        fetch("{% url 'panel:analytics_profile_list_create' %}", {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            _profiles = data.profiles || [];
+            const sel = el("profile-select");
+            // Preserve current value across reload / Preservar valor actual tras recarga.
+            const current = sel.value;
+            // Rebuild options / Reconstruir opciones.
+            sel.innerHTML = '<option value="">— Seleccionar perfil —</option>';
+            _profiles.forEach(function (p) {
+                const opt = document.createElement("option");
+                opt.value       = p.id;
+                opt.textContent = p.nombre;
+                sel.appendChild(opt);
+            });
+            // Restore selection if still present / Restaurar selección si aún existe.
+            if (current && _profiles.some(function (p) { return String(p.id) === current; })) {
+                sel.value = current;
+            } else {
+                _selectedProfileId = null;
+                el("btn-delete-profile").disabled = true;
+            }
+        })
+        .catch(function (err) {
+            console.error("# [perfiles] Error al cargar perfiles:", err);
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Profiles — apply / Perfiles — aplicar
+    // ------------------------------------------------------------------
+    function applyProfile(profileId) {
+        /*
+         * Restores all chart-builder controls to the state stored in the
+         * selected profile and triggers a chart render.
+         * ---
+         * Restaura todos los controles del constructor al estado almacenado
+         * en el perfil seleccionado y dispara un renderizado del gráfico.
+         */
+        const profile = _profiles.find(function (p) { return p.id === parseInt(profileId, 10); });
+        if (!profile) return;
+
+        const cfg = profile.config;
+
+        // Restore simple selects / Restaurar selectores simples.
+        if (cfg.metric)     el("filter-metric").value     = cfg.metric;
+        if (cfg.chart_type) el("filter-chart-type").value = cfg.chart_type;
+        if (cfg.palette)    el("filter-palette").value    = cfg.palette;
+
+        // Restore date range / Restaurar rango de fechas.
+        el("filter-date-from").value = cfg.date_from || "";
+        el("filter-date-to").value   = cfg.date_to   || "";
+
+        // Restore asset multi-select / Restaurar multi-selección de activos.
+        const assetSel = el("filter-assets");
+        Array.from(assetSel.options).forEach(function (opt) {
+            if (!cfg.assets) {
+                // null means "all" / null significa "todos".
+                opt.selected = (opt.value === "__all__");
+            } else {
+                opt.selected = cfg.assets.includes(opt.value);
+            }
+        });
+
+        // Restore work-order multi-select / Restaurar multi-selección de PDFs.
+        const woSel = el("filter-workorders");
+        Array.from(woSel.options).forEach(function (opt) {
+            if (!cfg.work_orders) {
+                opt.selected = (opt.value === "__all__");
+            } else {
+                opt.selected = cfg.work_orders.includes(parseInt(opt.value, 10));
+            }
+        });
+
+        renderChart();
+    }
+
+    // ------------------------------------------------------------------
+    // Profiles — save / Perfiles — guardar
+    // ------------------------------------------------------------------
+    function saveProfile() {
+        /*
+         * Reads the current state of all chart-builder controls and posts
+         * it to the server under the name entered by the user.
+         * Uses upsert semantics: saving an existing name overwrites it.
+         * ---
+         * Lee el estado actual de todos los controles del constructor y lo
+         * envía al servidor con el nombre introducido por el usuario.
+         * Semántica upsert: guardar un nombre existente lo sobreescribe.
+         */
+        const nombre = el("profile-name-input").value.trim();
+        if (!nombre) {
+            alert("Introduce un nombre para el perfil.");
+            return;
+        }
+
+        // Collect current filter state / Recopilar estado actual de filtros.
+        const assetSel = el("filter-assets");
+        const selectedAssets = Array.from(assetSel.selectedOptions).map(function (o) { return o.value; });
+        const assets = (selectedAssets.length === 0 || selectedAssets.includes("__all__"))
+            ? null
+            : selectedAssets;
+
+        const woSel = el("filter-workorders");
+        const selectedWos = Array.from(woSel.selectedOptions).map(function (o) { return parseInt(o.value, 10); });
+        const workOrders = (selectedWos.length === 0 || woSel.selectedOptions[0].value === "__all__")
+            ? null
+            : selectedWos;
+
+        const config = {
+            metric:      el("filter-metric").value,
+            chart_type:  el("filter-chart-type").value,
+            palette:     el("filter-palette").value,
+            date_from:   el("filter-date-from").value || null,
+            date_to:     el("filter-date-to").value   || null,
+            assets:      assets,
+            work_orders: workOrders,
+        };
+
+        fetch("{% url 'panel:analytics_profile_list_create' %}", {
+            method:  "POST",
+            headers: {
+                "Content-Type":     "application/json",
+                "X-CSRFToken":      "{{ csrf_token }}",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            body: JSON.stringify({ nombre: nombre, config: config }),
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (saved) {
+            if (saved.error) {
+                alert("Error al guardar el perfil: " + saved.error);
+                return;
+            }
+            // Clear input and reload selector / Limpiar input y recargar selector.
+            el("profile-name-input").value = "";
+            loadProfiles();
+            // Auto-select the saved profile / Seleccionar automáticamente el perfil guardado.
+            setTimeout(function () {
+                el("profile-select").value = saved.id;
+                _selectedProfileId = saved.id;
+                el("btn-delete-profile").disabled = false;
+            }, 150);
+        })
+        .catch(function (err) {
+            console.error("# [perfiles] Error al guardar perfil:", err);
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Profiles — delete / Perfiles — eliminar
+    // ------------------------------------------------------------------
+    function deleteProfile() {
+        /*
+         * Sends a DELETE request for the currently selected profile.
+         * Asks for confirmation before proceeding.
+         * ---
+         * Envía una petición DELETE para el perfil actualmente seleccionado.
+         * Solicita confirmación antes de proceder.
+         */
+        const sel     = el("profile-select");
+        const pk      = parseInt(sel.value, 10);
+        const nombre  = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : "";
+
+        if (!pk) return;
+        if (!confirm("¿Eliminar el perfil «" + nombre + "»? Esta acción no se puede deshacer.")) return;
+
+        const url = "{% url 'panel:analytics_profile_delete' pk=0 %}".replace("/0/", "/" + pk + "/");
+
+        fetch(url, {
+            method:  "DELETE",
+            headers: {
+                "X-CSRFToken":      "{{ csrf_token }}",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.error) {
+                alert("Error al eliminar el perfil: " + data.error);
+                return;
+            }
+            _selectedProfileId = null;
+            el("btn-delete-profile").disabled = true;
+            loadProfiles();
+        })
+        .catch(function (err) {
+            console.error("# [perfiles] Error al eliminar perfil:", err);
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Event wiring / Conexión de eventos
     // ------------------------------------------------------------------
     function wireEvents() {
         el("btn-apply").addEventListener("click", renderChart);
+
+        // Profile selector change / Cambio en selector de perfiles.
+        el("profile-select").addEventListener("change", function () {
+            const pk = this.value;
+            if (pk) {
+                _selectedProfileId = parseInt(pk, 10);
+                el("btn-delete-profile").disabled = false;
+                applyProfile(pk);
+            } else {
+                _selectedProfileId = null;
+                el("btn-delete-profile").disabled = true;
+            }
+        });
+
+        // Save profile / Guardar perfil.
+        el("btn-save-profile").addEventListener("click", saveProfile);
+
+        // Delete profile / Eliminar perfil.
+        el("btn-delete-profile").addEventListener("click", deleteProfile);
 
         el("btn-reset-filters").addEventListener("click", function () {
             // Reset all filters to defaults / Reiniciar todos los filtros.
@@ -607,6 +910,7 @@
     document.addEventListener("DOMContentLoaded", function () {
         wireEvents();
         loadData();
+        loadProfiles();
     });
 
 }());

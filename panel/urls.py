@@ -44,6 +44,8 @@ from panel.views import (
     WorkOrderEditView,
     AnalyticsView,
     AnalyticsDataView,
+    AnalyticsProfileListCreateView,
+    AnalyticsProfileDeleteView,
 )
 
 app_name = "panel"
@@ -124,4 +126,9 @@ urlpatterns = [
     # Analytics data endpoint — JSON payload para el constructor de gráficos client-side.
     # Subtarea 9.6 — Hito 6 (2026-04-27)
     path("analytics/data/", AnalyticsDataView.as_view(), name="analytics_data"),
+
+    # Analytics profiles — Gestión de perfiles de gráfico guardados (rol ADMIN).
+    # Subtarea 9.6.1 — Hito 6 (2026-04-27)
+    path("analytics/profiles/", AnalyticsProfileListCreateView.as_view(), name="analytics_profile_list_create"),
+    path("analytics/profiles/<int:pk>/", AnalyticsProfileDeleteView.as_view(), name="analytics_profile_delete"),
 ]

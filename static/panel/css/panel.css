@@ -1,0 +1,245 @@
+/* /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/css/panel.css */
+/*
+ * Main stylesheet for the panel application.
+ * Contains the full design system: layout, sidebar, navbar, utility classes,
+ * badges, presence indicators, dashboard stat cards, login and offcanvas
+ * sidebar override. Extracted from base.html inline <style> block — Hito 6,
+ * Subtarea 9.7 (2026-04-27).
+ *
+ * Hoja de estilos principal de la aplicación panel.
+ * Contiene el sistema de diseño completo: layout, sidebar, navbar, clases
+ * utilitarias, badges, indicadores de presencia, tarjetas de estadísticas
+ * del dashboard, login y override del offcanvas del sidebar. Extraída del
+ * bloque <style> inline de base.html — Hito 6, Subtarea 9.7 (2026-04-27).
+ */
+
+/* -----------------------------------------------------------------------
+   Base layout — Diseño base de la aplicación.
+   El sidebar es fijo en escritorio (>=lg) y offcanvas en móvil.
+   ----------------------------------------------------------------------- */
+body {
+    min-height: 100vh;
+    background-color: #f8f9fa;
+}
+
+/* --- SIDEBAR (desktop >=992px) --- */
+/* --- SIDEBAR (escritorio >=992px) --- */
+.sidebar {
+    min-height: 100vh;
+    width: 260px;
+    background-color: #1a1f2e;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+    padding-top: 0;
+    display: flex;
+    flex-direction: column;
+}
+.sidebar-brand {
+    padding: 1.5rem 1.25rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.sidebar-brand h5 {
+    color: #ffffff;
+    font-weight: 700;
+    margin: 0;
+    font-size: 1rem;
+    letter-spacing: 0.03em;
+}
+.sidebar-brand small {
+    color: rgba(255,255,255,0.45);
+    font-size: 0.75rem;
+}
+.sidebar .nav-link {
+    color: rgba(255,255,255,0.65);
+    padding: 0.6rem 1.25rem;
+    font-size: 0.875rem;
+    border-radius: 0;
+    transition: background-color 0.15s, color 0.15s;
+}
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active,
+#sidebarOffcanvas .nav-link:hover,
+#sidebarOffcanvas .nav-link.active {
+    color: #ffffff;
+    background-color: rgba(255,255,255,0.08);
+}
+.sidebar .nav-link i {
+    margin-right: 0.6rem;
+    font-size: 1rem;
+    vertical-align: -0.1em;
+}
+.sidebar-section-label {
+    color: rgba(255,255,255,0.3);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 1.25rem 1.25rem 0.4rem;
+}
+.sidebar-nav-scroll {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* --- MAIN CONTENT OFFSET (desktop only) --- */
+/* --- MAIN CONTENT OFFSET (solo escritorio) --- */
+@media (min-width: 992px) {
+    .main-content {
+        margin-left: 260px;
+    }
+}
+.main-content {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- TOP NAVBAR — Barra superior --- */
+.top-navbar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #e9ecef;
+    padding: 0.75rem 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 99;
+}
+
+/* --- PAGE CONTENT PADDING — Padding adaptativo --- */
+.page-content {
+    padding: 1rem;
+    flex: 1;
+}
+@media (min-width: 768px) {
+    .page-content {
+        padding: 2rem 1.5rem;
+    }
+}
+
+/* --- LOGOUT LINK — Enlace de cierre de sesión al pie del sidebar --- */
+.panel-logout {
+    border-top: 1px solid rgba(255,255,255,0.1);
+    margin-top: auto;
+}
+.panel-logout-link {
+    color: rgba(255,255,255,0.5);
+    padding: 1rem 1.25rem;
+}
+
+/* -----------------------------------------------------------------------
+   Presence badge — Indicador de estado de presencia en top navbar.
+   ----------------------------------------------------------------------- */
+.presence-badge {
+    font-size: 0.78rem;
+    padding: 0.35em 0.75em;
+    border-radius: 50rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.presence-AVAILABLE        { background-color: #d1e7dd; color: #0a3622; }
+.presence-IN_MEETING       { background-color: #fff3cd; color: #664d03; }
+.presence-BUSY_UNTIL       { background-color: #f8d7da; color: #58151c; }
+.presence-ABSENT_SCHEDULED { background-color: #cfe2ff; color: #084298; }
+.presence-ABSENT_VACATION  { background-color: #e2d9f3; color: #432874; }
+.presence-unknown          { background-color: #e9ecef; color: #495057; }
+
+/* -----------------------------------------------------------------------
+   Utility classes — replacing inline styles across all templates.
+   Clases utilitarias — sustituyen estilos inline en todos los templates.
+   ----------------------------------------------------------------------- */
+.text-xs   { font-size: 0.75rem; }
+.text-sm   { font-size: 0.85rem; }
+.text-nav  { font-size: 0.875rem; }
+.text-err  { font-size: 0.8rem; }
+.icon-xs   { font-size: 0.6rem; }
+.panel-page-title { font-size: 0.9rem; }
+
+/* -----------------------------------------------------------------------
+   Badge state colours — Colores de badges de estado en listados.
+   ----------------------------------------------------------------------- */
+.badge-active   { background-color:#d1e7dd; color:#0a3622; font-weight:500; border:1px solid #a3cfbb; }
+.badge-inactive { background-color:#f8d7da; color:#58151c; font-weight:500; border:1px solid #f1aeb5; }
+.badge-internal { background-color:#cfe2ff; color:#084298; font-weight:500; border:1px solid #9ec5fe; }
+.badge-external { background-color:#e9ecef; color:#495057; font-weight:500; border:1px solid #ced4da; }
+.badge-admin    { background-color:#e2d9f3; color:#432874; font-weight:500; border:1px solid #c5b3e6; }
+.badge-flow     { background-color:#e8f4fd; color:#084298; font-weight:500; border:1px solid #9ec5fe; }
+
+/* -----------------------------------------------------------------------
+   Dashboard stat cards — Tarjetas de estadísticas del dashboard.
+   ----------------------------------------------------------------------- */
+.stat-icon     { font-size:1.5rem; }
+.stat-value    { font-size:1.6rem; line-height:1.2; }
+.stat-label    { font-size:0.78rem; font-weight:500; }
+.stat-presence { font-size:0.95rem; line-height:1.3; }
+.stat-bg-blue  { background-color:#e8f4fd; }
+.stat-bg-green { background-color:#e8f8f0; }
+.stat-bg-yellow{ background-color:#fef9e7; }
+.stat-bg-purple{ background-color:#f3eefe; }
+
+/* -----------------------------------------------------------------------
+   Presence status circles — Círculos de estado de presencia.
+   ----------------------------------------------------------------------- */
+.presence-circle              { width:72px; height:72px; }
+.presence-icon                { font-size:2rem; }
+.presence-note                { font-size:0.82rem; }
+/* Background colour per presence state — replaces inline styles in status.html
+   Color de fondo por estado de presencia — sustituye estilos inline en status.html */
+.presence-circle-available   { background-color: #d1e7dd; }
+.presence-circle-in-meeting  { background-color: #fff3cd; }
+.presence-circle-busy        { background-color: #f8d7da; }
+.presence-circle-absent      { background-color: #cfe2ff; }
+.presence-circle-vacation    { background-color: #e2d9f3; }
+.presence-circle-unknown     { background-color: #e9ecef; }
+/* Icon colour override for vacation state — Vacaciones usa púrpura (#7c3aed) */
+.presence-icon-vacation      { color: #7c3aed; }
+
+/* -----------------------------------------------------------------------
+   User summary card — Tarjeta de resumen de usuario en formulario.
+   ----------------------------------------------------------------------- */
+.user-avatar  { width:48px; height:48px; background-color:#e9ecef; }
+.user-detail  { font-size:0.82rem; }
+
+/* -----------------------------------------------------------------------
+   Login icon — Icono principal de la pantalla de login.
+   ----------------------------------------------------------------------- */
+.login-icon  { font-size:2rem; }
+
+/* -----------------------------------------------------------------------
+   Offcanvas sidebar override — Fondo oscuro en la variante móvil.
+   El offcanvas de Bootstrap hereda colores de fondo por defecto;
+   aquí se sobreescriben para mantener la paleta del sidebar fijo.
+   ----------------------------------------------------------------------- */
+#sidebarOffcanvas {
+    background-color: #1a1f2e;
+    width: 260px;
+}
+#sidebarOffcanvas .offcanvas-body {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+#sidebarOffcanvas .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+    margin: 0.75rem 0.75rem 0 auto;
+}
+
+/* -----------------------------------------------------------------------
+   Analytics — Clases de utilidad para el panel de analítica.
+   Sustituyen los estilos inline eliminados en Subtarea 9.7 (2026-04-27).
+   ----------------------------------------------------------------------- */
+
+/* Chart container minimum height — Altura mínima del contenedor de gráfico */
+.analytics-chart-container {
+    min-height: 420px;
+}
+
+/* Progress bar in work-order list — Barra de progreso en listado de PDFs */
+.analytics-progress-bar {
+    min-width: 80px;
+    max-width: 120px;
+    height: 8px;
+}
+
+/* Work-order table overflow fix — permite que los dropdowns se expandan fuera de la tabla */
+.table-overflow-visible { overflow: visible; }
