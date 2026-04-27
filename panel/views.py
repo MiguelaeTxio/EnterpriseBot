@@ -2755,18 +2755,15 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
 class AnalyticsView(AdminRoleRequiredMixin, View):
     """
     Renders the analytics dashboard for the authenticated user's company.
-    Displays an interactive Plotly bar chart showing the total number of
-    work interventions per machine asset, aggregated across all WorkOrders
-    belonging to the company. Chart is rendered server-side and injected
-    into the template as safe HTML.
+    Serves the template shell only — all data is fetched client-side via
+    the AnalyticsDataView JSON endpoint (/panel/analytics/data/).
 
     ---
 
     Renderiza el panel de analítica para la empresa del usuario autenticado.
-    Muestra un gráfico de barras Plotly interactivo con el número total de
-    intervenciones de trabajo por activo de máquina, agregado sobre todos los
-    WorkOrders de la empresa. El gráfico se renderiza en el servidor y se inyecta
-    en el template como HTML seguro.
+    Sirve únicamente el shell del template — todos los datos se obtienen
+    en el cliente mediante el endpoint JSON AnalyticsDataView
+    (/panel/analytics/data/).
     """
 
     template_name = "panel/analytics.html"
@@ -2784,123 +2781,187 @@ class AnalyticsView(AdminRoleRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
-    def _build_interventions_chart(self, company) -> str:
-        """
-        Queries WorkOrderEntryLine records scoped to the given company, groups
-        them by MachineAsset and returns a Plotly bar chart as an HTML div string.
-
-        The chart uses the plotly_white template for a clean, professional look
-        consistent with PowerBI-style dashboards. Returns an empty string if no
-        data is available.
-
-        ---
-
-        Consulta los registros WorkOrderEntryLine acotados a la empresa dada,
-        los agrupa por MachineAsset y devuelve un gráfico de barras Plotly como
-        cadena HTML div.
-
-        El gráfico usa el template plotly_white para una apariencia limpia y
-        profesional coherente con los dashboards estilo PowerBI. Devuelve una
-        cadena vacía si no hay datos disponibles.
-        """
-        from django.db.models import Count
-
-        # Aggregate intervention count per machine asset scoped to company.
-        # Agregar recuento de intervenciones por activo de máquina acotado a empresa.
-        qs = (
-            WorkOrderEntryLine.objects
-            .filter(
-                entry__work_order__company=company,
-                machine_asset__isnull=False,
-            )
-            .values(
-                "machine_asset__codigo",
-                "machine_asset__marca_modelo",
-            )
-            .annotate(total=Count("id"))
-            .order_by("-total")
-        )
-
-        if not qs.exists():
-            return ""
-
-        codigos      = [r["machine_asset__codigo"]      for r in qs]
-        marcas       = [r["machine_asset__marca_modelo"] for r in qs]
-        totales      = [r["total"]                       for r in qs]
-
-        # Build hover text: CODIGO — Marca/Modelo — N intervenciones.
-        # Construir texto hover: CODIGO — Marca/Modelo — N intervenciones.
-        hover_texts = [
-            f"<b>{c}</b><br>{m}<br>{t} intervención{'es' if t != 1 else ''}"
-            for c, m, t in zip(codigos, marcas, totales)
-        ]
-
-        fig = go.Figure(
-            data=[
-                go.Bar(
-                    x            = codigos,
-                    y            = totales,
-                    text         = totales,
-                    textposition = "outside",
-                    hovertext    = hover_texts,
-                    hoverinfo    = "text",
-                    marker=dict(
-                        color      = totales,
-                        colorscale = "Blues",
-                        showscale  = False,
-                    ),
-                )
-            ]
-        )
-
-        fig.update_layout(
-            template     = "plotly_white",
-            title        = dict(
-                text     = "Intervenciones por activo",
-                font     = dict(size=16, color="#1a1f2e"),
-                x        = 0,
-                xanchor  = "left",
-            ),
-            xaxis        = dict(
-                title         = "Código de activo",
-                tickangle     = -45,
-                tickfont      = dict(size=11),
-                showgrid      = False,
-            ),
-            yaxis        = dict(
-                title    = "Nº de intervenciones",
-                showgrid = True,
-                gridcolor= "#f0f0f0",
-            ),
-            plot_bgcolor  = "#ffffff",
-            paper_bgcolor = "#ffffff",
-            margin        = dict(l=40, r=20, t=60, b=120),
-            height        = 480,
-            font          = dict(family="system-ui, sans-serif", size=12),
-        )
-
-        return pio.to_html(
-            fig,
-            full_html        = False,
-            include_plotlyjs = "cdn",
-            config           = {"displayModeBar": False, "responsive": True},
-        )
-
     def get(self, request):
         """
-        Renders the analytics page with the interventions chart.
+        Renders the analytics page. No chart data is computed here —
+        the JS layer fetches it from /panel/analytics/data/.
         ---
-        Renderiza la página de analítica con el gráfico de intervenciones.
+        Renderiza la página de analítica. No se calculan datos de gráfico
+        aquí — la capa JS los obtiene de /panel/analytics/data/.
         """
         company_user = request.user.company_user
         company      = company_user.company
-
-        chart_html = self._build_interventions_chart(company)
 
         return render(request, self.template_name, {
             "company":      company,
             "company_user": company_user,
             "own_presence": self._get_own_presence(company_user),
             "active_nav":   "analytics",
-            "chart_html":   chart_html,
+        })
+
+
+class AnalyticsDataView(AdminRoleRequiredMixin, View):
+    """
+    JSON endpoint that returns all WorkOrderEntryLine records for the
+    authenticated user's company, enriched with machine asset metadata,
+    work date and WorkOrder reference. The client-side chart builder
+    consumes this payload to filter, aggregate and render Plotly charts
+    without further server round-trips.
+
+    Response schema:
+    {
+        "lines": [
+            {
+                "id":          int,
+                "work_date":   "YYYY-MM-DD" | null,
+                "work_order":  int,
+                "pdf_name":    str,
+                "codigo":      str,
+                "marca_modelo": str,
+                "delta_horas": float | null,
+                "weekday":     int | null   // 0=Mon … 4=Fri
+            },
+            ...
+        ],
+        "work_orders": [
+            {"id": int, "label": str},
+            ...
+        ],
+        "assets": [
+            {"codigo": str, "marca_modelo": str},
+            ...
+        ]
+    }
+
+    ---
+
+    Endpoint JSON que devuelve todos los registros WorkOrderEntryLine de la
+    empresa del usuario autenticado, enriquecidos con metadatos del activo,
+    fecha de trabajo y referencia al WorkOrder. El constructor de gráficos
+    client-side consume este payload para filtrar, agregar y renderizar
+    gráficos Plotly sin más round-trips al servidor.
+
+    Esquema de respuesta:
+    {
+        "lines": [
+            {
+                "id":           int,
+                "work_date":    "YYYY-MM-DD" | null,
+                "work_order":   int,
+                "pdf_name":     str,
+                "codigo":       str,
+                "marca_modelo": str,
+                "delta_horas":  float | null,
+                "weekday":      int | null   // 0=Lun … 4=Vie
+            },
+            ...
+        ],
+        "work_orders": [
+            {"id": int, "label": str},
+            ...
+        ],
+        "assets": [
+            {"codigo": str, "marca_modelo": str},
+            ...
+        ]
+    }
+    """
+
+    # Weekday names in Spanish for chart labels.
+    # Nombres de día de semana en castellano para etiquetas de gráfico.
+    _WEEKDAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
+
+    def get(self, request):
+        """
+        Queries and serialises all WorkOrderEntryLine records for the company.
+        Returns HTTP 200 with a JSON payload or HTTP 403 if the user has no
+        associated CompanyUser profile.
+
+        ---
+
+        Consulta y serializa todos los registros WorkOrderEntryLine de la empresa.
+        Devuelve HTTP 200 con payload JSON o HTTP 403 si el usuario no tiene
+        perfil CompanyUser asociado.
+        """
+        import json as _json
+        from django.http import JsonResponse
+
+        try:
+            company = request.user.company_user.company
+        except AttributeError:
+            return JsonResponse({"error": "Sin perfil de empresa asociado."}, status=403)
+
+        # ------------------------------------------------------------------
+        # Query all entry lines with resolved asset and work date.
+        # Consultar todas las líneas de entrada con activo y fecha resueltos.
+        # ------------------------------------------------------------------
+        qs = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                machine_asset__isnull=False,
+                entry__work_date__isnull=False,
+            )
+            .select_related(
+                "machine_asset",
+                "entry",
+                "entry__work_order",
+            )
+            .order_by("entry__work_date", "machine_asset__codigo")
+        )
+
+        lines = []
+        for line in qs:
+            work_date  = line.entry.work_date
+            delta      = float(line.delta_horas) if line.delta_horas is not None else None
+            pdf_name   = line.entry.work_order.source_pdf.name.split("/")[-1]
+            # Strip Django random suffix from filename for readability.
+            # Eliminar sufijo aleatorio de Django del nombre de fichero para legibilidad.
+            import re as _re
+            pdf_label  = _re.sub(r'_[A-Za-z0-9]{7}(\.[^.]+)$', r'', pdf_name)
+
+            lines.append({
+                "id":          line.pk,
+                "work_date":   work_date.isoformat() if work_date else None,
+                "work_order":  line.entry.work_order_id,
+                "pdf_name":    pdf_label,
+                "codigo":      line.machine_asset.codigo,
+                "marca_modelo": line.machine_asset.marca_modelo,
+                "delta_horas": delta,
+                "weekday":     work_date.weekday() if work_date else None,
+            })
+
+        # ------------------------------------------------------------------
+        # Build auxiliary lists for filter controls.
+        # Construir listas auxiliares para los controles de filtro.
+        # ------------------------------------------------------------------
+        # Distinct WorkOrders with a human-readable label.
+        # WorkOrders distintos con etiqueta legible.
+        wo_qs = (
+            WorkOrder.objects
+            .filter(company=company, status=WorkOrder.Status.DONE)
+            .order_by("id")
+        )
+        work_orders = []
+        for wo in wo_qs:
+            raw      = wo.source_pdf.name.split("/")[-1]
+            label    = _re.sub(r'_[A-Za-z0-9]{7}(\.[^.]+)$', r'', raw)
+            work_orders.append({"id": wo.pk, "label": label})
+
+        # Distinct assets present in the data, sorted by codigo.
+        # Activos distintos presentes en los datos, ordenados por codigo.
+        seen_assets: dict[str, str] = {}
+        for line in lines:
+            c = line["codigo"]
+            if c not in seen_assets:
+                seen_assets[c] = line["marca_modelo"]
+        assets = [
+            {"codigo": c, "marca_modelo": m}
+            for c, m in sorted(seen_assets.items())
+        ]
+
+        return JsonResponse({
+            "lines":       lines,
+            "work_orders": work_orders,
+            "assets":      assets,
         })

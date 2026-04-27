@@ -1,51 +1,615 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/analytics.html #}
 {#                                                                                  #}
-{# Analytics dashboard template. Displays interactive Plotly charts for the        #}
-{# authenticated company's work order data. Chart HTML is rendered server-side     #}
-{# by AnalyticsView and injected via the `chart_html` context variable.            #}
+{# Analytics dashboard template — client-side chart builder.                       #}
+{# All data is fetched from /panel/analytics/data/ (AnalyticsDataView JSON).       #}
+{# Plotly.js renders charts dynamically based on user-configured filters:          #}
+{#   - Date range selector (work_date from/to).                                    #}
+{#   - Multi-select machine asset filter.                                          #}
+{#   - Multi-select WorkOrder (PDF) filter.                                        #}
+{#   - Metric selector (interventions / net hours / hours by weekday / top 10).   #}
+{#   - Chart type selector (vertical bar / horizontal bar / line / area).          #}
+{#   - Colour palette selector.                                                    #}
+{# No server round-trip is required after initial data load.                       #}
 {#                                                                                  #}
-{# Template de panel de analítica. Muestra gráficos Plotly interactivos con los    #}
-{# datos de partes de trabajo de la empresa autenticada. El HTML del gráfico se    #}
-{# renderiza en el servidor por AnalyticsView y se inyecta mediante la variable    #}
-{# de contexto `chart_html`.                                                       #}
+{# Template de panel de analítica — constructor de gráficos client-side.           #}
+{# Todos los datos se obtienen de /panel/analytics/data/ (JSON AnalyticsDataView). #}
+{# Plotly.js renderiza gráficos dinámicamente según los filtros del usuario:       #}
+{#   - Selector de rango de fechas (work_date desde/hasta).                        #}
+{#   - Filtro multi-selección de activos de máquina.                               #}
+{#   - Filtro multi-selección de WorkOrder (PDF).                                  #}
+{#   - Selector de métrica (intervenciones / horas netas / horas por día / top 10).#}
+{#   - Selector de tipo de gráfico (barras vert. / horiz. / línea / área).        #}
+{#   - Selector de paleta de color.                                                #}
+{# No se requiere round-trip al servidor tras la carga inicial de datos.           #}
 {# =============================================================================== #}
 {% extends "panel/base.html" %}
 
 {% block page_title %}Analítica{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h5 class="mb-0 fw-semibold">Analítica</h5>
-    <span class="text-muted text-sm">{{ company.name }}</span>
+
+{# ------------------------------------------------------------------ #}
+{# Page header / Cabecera de página                                    #}
+{# ------------------------------------------------------------------ #}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="mb-0 fw-semibold">Analítica</h5>
+        <span class="text-muted text-sm">{{ company.name }}</span>
+    </div>
+    <span id="analytics-status" class="text-muted text-sm">
+        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+        Cargando datos…
+    </span>
 </div>
 
 {# ------------------------------------------------------------------ #}
-{# Gráfico de intervenciones por activo / Chart: interventions by asset #}
+{# Filter panel / Panel de filtros                                     #}
 {# ------------------------------------------------------------------ #}
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-3">
     <div class="card-body p-3">
-        {% if chart_html %}
-            <div class="w-100">
-                {{ chart_html|safe }}
+        <div class="row g-2 align-items-end">
+
+            {# Date range / Rango de fechas #}
+            <div class="col-12 col-md-2">
+                <label class="form-label text-sm fw-semibold mb-1">Fecha desde</label>
+                <input type="date" id="filter-date-from" class="form-control form-control-sm">
             </div>
-        {% else %}
-            <div class="text-center text-muted py-5">
-                <i class="bi bi-bar-chart-line fs-1 d-block mb-3"></i>
-                <p class="mb-1">No hay datos de intervenciones disponibles todavía.</p>
-                <p class="text-sm">Procesa al menos un PDF de partes de trabajo para ver estadísticas.</p>
-                <a href="{% url 'panel:work_order_list' %}" class="btn btn-primary btn-sm mt-2">
-                    <i class="bi bi-file-earmark-pdf me-1"></i>Ir a PDFs
-                </a>
+            <div class="col-12 col-md-2">
+                <label class="form-label text-sm fw-semibold mb-1">Fecha hasta</label>
+                <input type="date" id="filter-date-to" class="form-control form-control-sm">
             </div>
-        {% endif %}
+
+            {# Asset multi-select / Activos multi-selección #}
+            <div class="col-12 col-md-3">
+                <label class="form-label text-sm fw-semibold mb-1">Centro de gasto</label>
+                <select id="filter-assets" class="form-select form-select-sm" multiple size="1">
+                    <option value="__all__" selected>Todos los activos</option>
+                </select>
+            </div>
+
+            {# WorkOrder multi-select / PDF multi-selección #}
+            <div class="col-12 col-md-3">
+                <label class="form-label text-sm fw-semibold mb-1">PDF / Parte</label>
+                <select id="filter-workorders" class="form-select form-select-sm" multiple size="1">
+                    <option value="__all__" selected>Todos los PDFs</option>
+                </select>
+            </div>
+
+            {# Reset button / Botón de reinicio #}
+            <div class="col-12 col-md-2 d-flex align-items-end">
+                <button id="btn-reset-filters" class="btn btn-outline-secondary btn-sm w-100">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reiniciar filtros
+                </button>
+            </div>
+        </div>
+
+        <hr class="my-2">
+
+        <div class="row g-2 align-items-end">
+
+            {# Metric selector / Selector de métrica #}
+            <div class="col-12 col-md-3">
+                <label class="form-label text-sm fw-semibold mb-1">Métrica</label>
+                <select id="filter-metric" class="form-select form-select-sm">
+                    <option value="interventions" selected>Intervenciones por activo</option>
+                    <option value="hours">Horas netas por activo</option>
+                    <option value="weekday">Horas netas por día de semana</option>
+                    <option value="top10">Top 10 activos por horas acumuladas</option>
+                </select>
+            </div>
+
+            {# Chart type / Tipo de gráfico #}
+            <div class="col-12 col-md-3">
+                <label class="form-label text-sm fw-semibold mb-1">Tipo de gráfico</label>
+                <select id="filter-chart-type" class="form-select form-select-sm">
+                    <option value="bar_v" selected>Barras verticales</option>
+                    <option value="bar_h">Barras horizontales</option>
+                    <option value="line">Líneas</option>
+                    <option value="area">Área</option>
+                </select>
+            </div>
+
+            {# Colour palette / Paleta de color #}
+            <div class="col-12 col-md-3">
+                <label class="form-label text-sm fw-semibold mb-1">Paleta de color</label>
+                <select id="filter-palette" class="form-select form-select-sm">
+                    <option value="corporate" selected>Corporativo</option>
+                    <option value="blues">Blues</option>
+                    <option value="viridis">Viridis</option>
+                    <option value="reds">Reds</option>
+                    <option value="greens">Greens</option>
+                    <option value="plasma">Plasma</option>
+                </select>
+            </div>
+
+            {# Apply button / Botón aplicar #}
+            <div class="col-12 col-md-3 d-flex align-items-end">
+                <button id="btn-apply" class="btn btn-primary btn-sm w-100">
+                    <i class="bi bi-bar-chart-line me-1"></i>Generar gráfico
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
 {# ------------------------------------------------------------------ #}
-{# Nota de pie — futuras métricas / Footer note — future metrics       #}
+{# Chart container / Contenedor del gráfico                            #}
 {# ------------------------------------------------------------------ #}
-<p class="text-muted text-sm text-end">
-    <i class="bi bi-info-circle me-1"></i>
-    Próximamente: evolución temporal de horas, coste de mano de obra y comparativa entre operarios.
-</p>
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body p-3">
+        <div id="analytics-chart-title" class="mb-1">
+            <span class="fw-semibold text-sm" id="chart-title-text"></span>
+            <span class="text-muted text-sm ms-2" id="chart-subtitle-text"></span>
+        </div>
+        <div id="analytics-chart" style="min-height:420px;">
+            {# Plotly renders here / Plotly renderiza aquí #}
+        </div>
+        <div id="analytics-empty" class="text-center text-muted py-5 d-none">
+            <i class="bi bi-bar-chart-line fs-1 d-block mb-3"></i>
+            <p class="mb-1">No hay datos para los filtros seleccionados.</p>
+            <p class="text-sm">Amplía el rango de fechas o selecciona más activos.</p>
+        </div>
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Summary row / Fila de resumen                                       #}
+{# ------------------------------------------------------------------ #}
+<div class="row g-2 mb-3" id="analytics-summary-row">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center p-2">
+            <div class="text-muted text-sm">Registros</div>
+            <div class="fw-bold fs-5" id="summary-lines">—</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center p-2">
+            <div class="text-muted text-sm">Activos distintos</div>
+            <div class="fw-bold fs-5" id="summary-assets">—</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center p-2">
+            <div class="text-muted text-sm">Horas netas totales</div>
+            <div class="fw-bold fs-5" id="summary-hours">—</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center p-2">
+            <div class="text-muted text-sm">PDFs incluidos</div>
+            <div class="fw-bold fs-5" id="summary-pdfs">—</div>
+        </div>
+    </div>
+</div>
+
+{# ================================================================== #}
+{# JavaScript — Client-side chart builder                              #}
+{# ================================================================== #}
+<script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+<script>
+(function () {
+    "use strict";
+
+    // ------------------------------------------------------------------
+    // Constants / Constantes
+    // ------------------------------------------------------------------
+    const DATA_URL   = "{% url 'panel:analytics_data' %}";
+    const WEEKDAYS   = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
+    const FONT_FAMILY = "system-ui, -apple-system, sans-serif";
+
+    // Corporate colour sequence (PowerBI-inspired).
+    // Secuencia de colores corporativa (inspirada en PowerBI).
+    const PALETTES = {
+        corporate: ["#2563EB","#1D4ED8","#3B82F6","#60A5FA","#93C5FD",
+                    "#BFDBFE","#DBEAFE","#1E40AF","#1E3A8A","#172554"],
+        blues:     ["#08306b","#08519c","#2171b5","#4292c6","#6baed6",
+                    "#9ecae1","#c6dbef","#deebf7","#f7fbff","#084594"],
+        viridis:   ["#440154","#482878","#3e4989","#31688e","#26828e",
+                    "#1f9e89","#35b779","#6ece58","#b5de2b","#fde725"],
+        reds:      ["#67000d","#a50f15","#cb181d","#ef3b2c","#fb6a4a",
+                    "#fc9272","#fcbba1","#fee0d2","#fff5f0","#99000d"],
+        greens:    ["#00441b","#006d2c","#238b45","#41ab5d","#74c476",
+                    "#a1d99b","#c7e9c0","#e5f5e0","#f7fcf5","#005a32"],
+        plasma:    ["#0d0887","#46039f","#7201a8","#9c179e","#bd3786",
+                    "#d8576b","#ed7953","#fb9f3a","#fdcf18","#f0f921"],
+    };
+
+    // ------------------------------------------------------------------
+    // State / Estado
+    // ------------------------------------------------------------------
+    let _allLines      = [];   // Raw lines from endpoint / Líneas brutas del endpoint.
+    let _workOrders    = [];   // WorkOrder list / Lista de WorkOrders.
+    let _assets        = [];   // Asset list / Lista de activos.
+    let _dataLoaded    = false;
+
+    // ------------------------------------------------------------------
+    // DOM helpers / Ayudantes DOM
+    // ------------------------------------------------------------------
+    const $  = id => document.getElementById(id);
+    const el = id => $(id);
+
+    // ------------------------------------------------------------------
+    // Data fetch / Carga de datos
+    // ------------------------------------------------------------------
+    async function loadData() {
+        try {
+            const resp = await fetch(DATA_URL, {
+                headers: { "X-Requested-With": "XMLHttpRequest" }
+            });
+            if (!resp.ok) throw new Error("HTTP " + resp.status);
+            const data = await resp.json();
+
+            _allLines   = data.lines   || [];
+            _workOrders = data.work_orders || [];
+            _assets     = data.assets  || [];
+            _dataLoaded = true;
+
+            populateFilters();
+            setDefaultDateRange();
+            updateStatusLabel("Datos cargados — " + _allLines.length + " registros.");
+            renderChart();
+
+        } catch (err) {
+            updateStatusLabel("Error al cargar datos: " + err.message);
+            console.error("[Analytics] Error cargando datos:", err);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Populate filter controls / Poblar controles de filtro
+    // ------------------------------------------------------------------
+    function populateFilters() {
+        // Assets select / Select de activos.
+        const assetSel = el("filter-assets");
+        assetSel.innerHTML = '<option value="__all__" selected>Todos los activos</option>';
+        _assets.forEach(a => {
+            const opt = document.createElement("option");
+            opt.value       = a.codigo;
+            opt.textContent = a.codigo + " — " + a.marca_modelo;
+            assetSel.appendChild(opt);
+        });
+        // Resize to show up to 6 options / Redimensionar para mostrar hasta 6 opciones.
+        assetSel.size = Math.min(_assets.length + 1, 6);
+
+        // WorkOrders select / Select de WorkOrders.
+        const woSel = el("filter-workorders");
+        woSel.innerHTML = '<option value="__all__" selected>Todos los PDFs</option>';
+        _workOrders.forEach(wo => {
+            const opt = document.createElement("option");
+            opt.value       = String(wo.id);
+            opt.textContent = wo.label;
+            woSel.appendChild(opt);
+        });
+        woSel.size = Math.min(_workOrders.length + 1, 4);
+    }
+
+    // ------------------------------------------------------------------
+    // Default date range from data / Rango de fechas por defecto desde datos
+    // ------------------------------------------------------------------
+    function setDefaultDateRange() {
+        const dates = _allLines
+            .map(l => l.work_date)
+            .filter(d => d !== null);
+        if (!dates.length) return;
+        dates.sort();
+        el("filter-date-from").value = dates[0];
+        el("filter-date-to").value   = dates[dates.length - 1];
+    }
+
+    // ------------------------------------------------------------------
+    // Get selected values from a multi-select / Obtener valores seleccionados
+    // ------------------------------------------------------------------
+    function getSelected(selectId) {
+        const opts = Array.from(el(selectId).selectedOptions).map(o => o.value);
+        if (opts.includes("__all__") || opts.length === 0) return null; // null = all
+        return opts;
+    }
+
+    // ------------------------------------------------------------------
+    // Filter lines / Filtrar líneas
+    // ------------------------------------------------------------------
+    function filterLines() {
+        const dateFrom     = el("filter-date-from").value  || null;
+        const dateTo       = el("filter-date-to").value    || null;
+        const selAssets    = getSelected("filter-assets");
+        const selWOs       = getSelected("filter-workorders");
+
+        return _allLines.filter(line => {
+            if (dateFrom && line.work_date < dateFrom) return false;
+            if (dateTo   && line.work_date > dateTo)   return false;
+            if (selAssets && !selAssets.includes(line.codigo))               return false;
+            if (selWOs    && !selWOs.includes(String(line.work_order)))      return false;
+            return true;
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Aggregate / Agregar
+    // ------------------------------------------------------------------
+    function aggregateInterventions(lines) {
+        // Count interventions per asset code.
+        // Contar intervenciones por código de activo.
+        const counts = {};
+        lines.forEach(l => {
+            counts[l.codigo] = (counts[l.codigo] || 0) + 1;
+        });
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        return {
+            labels: sorted.map(e => e[0]),
+            values: sorted.map(e => e[1]),
+            yLabel: "Nº de intervenciones",
+        };
+    }
+
+    function aggregateHours(lines) {
+        // Sum net hours per asset code.
+        // Sumar horas netas por código de activo.
+        const hours = {};
+        lines.forEach(l => {
+            if (l.delta_horas !== null) {
+                hours[l.codigo] = (hours[l.codigo] || 0) + l.delta_horas;
+            }
+        });
+        const sorted = Object.entries(hours).sort((a, b) => b[1] - a[1]);
+        return {
+            labels: sorted.map(e => e[0]),
+            values: sorted.map(e => parseFloat(e[1].toFixed(2))),
+            yLabel: "Horas netas",
+        };
+    }
+
+    function aggregateWeekday(lines) {
+        // Sum net hours per weekday (0=Mon … 4=Fri).
+        // Sumar horas netas por día de semana (0=Lun … 4=Vie).
+        const hours = {0:0, 1:0, 2:0, 3:0, 4:0};
+        lines.forEach(l => {
+            if (l.weekday !== null && l.delta_horas !== null && l.weekday < 5) {
+                hours[l.weekday] += l.delta_horas;
+            }
+        });
+        return {
+            labels: WEEKDAYS,
+            values: WEEKDAYS.map((_, i) => parseFloat(hours[i].toFixed(2))),
+            yLabel: "Horas netas",
+        };
+    }
+
+    function aggregateTop10(lines) {
+        // Sum net hours per asset, return top 10 descending.
+        // Sumar horas netas por activo, devolver top 10 descendente.
+        const hours = {};
+        lines.forEach(l => {
+            if (l.delta_horas !== null) {
+                hours[l.codigo] = (hours[l.codigo] || 0) + l.delta_horas;
+            }
+        });
+        const sorted = Object.entries(hours)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+        return {
+            labels: sorted.map(e => e[0]),
+            values: sorted.map(e => parseFloat(e[1].toFixed(2))),
+            yLabel: "Horas netas acumuladas",
+        };
+    }
+
+    // ------------------------------------------------------------------
+    // Palette resolver / Resolvedor de paleta
+    // ------------------------------------------------------------------
+    function resolveColors(values, palette) {
+        const pal = PALETTES[palette] || PALETTES.corporate;
+        if (values.length === 1) return [pal[0]];
+        // Map values to palette indices proportionally.
+        // Mapear valores a índices de paleta proporcionalmente.
+        const max = Math.max(...values) || 1;
+        return values.map(v => pal[Math.min(Math.floor((v / max) * (pal.length - 1)), pal.length - 1)]);
+    }
+
+    // ------------------------------------------------------------------
+    // Build Plotly trace / Construir traza Plotly
+    // ------------------------------------------------------------------
+    function buildTrace(labels, values, colors, chartType, yLabel) {
+        const base = {
+            hovertemplate: "<b>%{x}</b><br>" + yLabel + ": %{y}<extra></extra>",
+        };
+
+        if (chartType === "bar_v") {
+            return Object.assign(base, {
+                type:         "bar",
+                x:            labels,
+                y:            values,
+                text:         values,
+                textposition: "outside",
+                marker:       { color: colors },
+                hovertemplate: "<b>%{x}</b><br>" + yLabel + ": %{y}<extra></extra>",
+            });
+        }
+        if (chartType === "bar_h") {
+            return Object.assign(base, {
+                type:         "bar",
+                orientation:  "h",
+                x:            values,
+                y:            labels,
+                text:         values,
+                textposition: "outside",
+                marker:       { color: colors },
+                hovertemplate: "<b>%{y}</b><br>" + yLabel + ": %{x}<extra></extra>",
+            });
+        }
+        if (chartType === "line") {
+            return Object.assign(base, {
+                type:  "scatter",
+                mode:  "lines+markers",
+                x:     labels,
+                y:     values,
+                line:  { color: colors[0] || PALETTES.corporate[0], width: 2 },
+                marker:{ color: colors, size: 7 },
+            });
+        }
+        if (chartType === "area") {
+            return Object.assign(base, {
+                type: "scatter",
+                mode: "lines",
+                fill: "tozeroy",
+                x:    labels,
+                y:    values,
+                line: { color: colors[0] || PALETTES.corporate[0], width: 2 },
+                fillcolor: (colors[0] || PALETTES.corporate[0]) + "33",
+            });
+        }
+        return {};
+    }
+
+    // ------------------------------------------------------------------
+    // Build layout / Construir layout
+    // ------------------------------------------------------------------
+    function buildLayout(chartType, yLabel, titleText, subtitleText) {
+        const isHoriz = chartType === "bar_h";
+        return {
+            template:     "plotly_white",
+            font:         { family: FONT_FAMILY, size: 12 },
+            plot_bgcolor: "#ffffff",
+            paper_bgcolor:"#ffffff",
+            margin:       isHoriz
+                ? { l: 80, r: 40, t: 20, b: 40 }
+                : { l: 50, r: 20, t: 20, b: 100 },
+            height:       440,
+            showlegend:   false,
+            xaxis: isHoriz ? {
+                title:    yLabel,
+                showgrid: true,
+                gridcolor:"#f0f0f0",
+            } : {
+                tickangle: -40,
+                tickfont:  { size: 11 },
+                showgrid:  false,
+            },
+            yaxis: isHoriz ? {
+                automargin: true,
+                tickfont:   { size: 11 },
+            } : {
+                title:    yLabel,
+                showgrid: true,
+                gridcolor:"#f0f0f0",
+            },
+        };
+    }
+
+    // ------------------------------------------------------------------
+    // Update summary row / Actualizar fila de resumen
+    // ------------------------------------------------------------------
+    function updateSummary(lines) {
+        const assets  = new Set(lines.map(l => l.codigo));
+        const pdfs    = new Set(lines.map(l => l.work_order));
+        const hours   = lines.reduce((acc, l) => acc + (l.delta_horas || 0), 0);
+
+        el("summary-lines").textContent  = lines.length.toLocaleString("es-ES");
+        el("summary-assets").textContent = assets.size.toLocaleString("es-ES");
+        el("summary-hours").textContent  = hours.toFixed(1) + " h";
+        el("summary-pdfs").textContent   = pdfs.size.toLocaleString("es-ES");
+    }
+
+    // ------------------------------------------------------------------
+    // Update chart title / Actualizar título del gráfico
+    // ------------------------------------------------------------------
+    function updateChartTitle(metric, dateFrom, dateTo, company) {
+        const metricLabels = {
+            interventions: "Intervenciones por activo",
+            hours:         "Horas netas por activo",
+            weekday:       "Horas netas por día de semana",
+            top10:         "Top 10 activos por horas acumuladas",
+        };
+        el("chart-title-text").textContent    = metricLabels[metric] || metric;
+        const period = (dateFrom && dateTo) ? dateFrom + " → " + dateTo : "";
+        el("chart-subtitle-text").textContent = period;
+    }
+
+    // ------------------------------------------------------------------
+    // Status label / Etiqueta de estado
+    // ------------------------------------------------------------------
+    function updateStatusLabel(msg) {
+        el("analytics-status").innerHTML = '<span class="text-muted text-sm">' + msg + '</span>';
+    }
+
+    // ------------------------------------------------------------------
+    // Main render / Renderizado principal
+    // ------------------------------------------------------------------
+    function renderChart() {
+        if (!_dataLoaded) return;
+
+        const metric    = el("filter-metric").value;
+        const chartType = el("filter-chart-type").value;
+        const palette   = el("filter-palette").value;
+        const dateFrom  = el("filter-date-from").value || null;
+        const dateTo    = el("filter-date-to").value   || null;
+
+        const filtered = filterLines();
+        updateSummary(filtered);
+        updateChartTitle(metric, dateFrom, dateTo);
+
+        let agg;
+        if      (metric === "interventions") agg = aggregateInterventions(filtered);
+        else if (metric === "hours")         agg = aggregateHours(filtered);
+        else if (metric === "weekday")       agg = aggregateWeekday(filtered);
+        else if (metric === "top10")         agg = aggregateTop10(filtered);
+        else                                 agg = aggregateInterventions(filtered);
+
+        const { labels, values, yLabel } = agg;
+
+        // Show empty state if no data / Mostrar estado vacío si no hay datos.
+        if (!labels.length || values.every(v => v === 0)) {
+            el("analytics-chart").classList.add("d-none");
+            el("analytics-empty").classList.remove("d-none");
+            return;
+        }
+        el("analytics-chart").classList.remove("d-none");
+        el("analytics-empty").classList.add("d-none");
+
+        const colors  = resolveColors(values, palette);
+        const trace   = buildTrace(labels, values, colors, chartType, yLabel);
+        const layout  = buildLayout(chartType, yLabel);
+        const config  = { displayModeBar: false, responsive: true };
+
+        Plotly.react("analytics-chart", [trace], layout, config);
+
+        updateStatusLabel(filtered.length + " registros · " + labels.length + " categorías");
+    }
+
+    // ------------------------------------------------------------------
+    // Event wiring / Conexión de eventos
+    // ------------------------------------------------------------------
+    function wireEvents() {
+        el("btn-apply").addEventListener("click", renderChart);
+
+        el("btn-reset-filters").addEventListener("click", function () {
+            // Reset all filters to defaults / Reiniciar todos los filtros.
+            el("filter-metric").value     = "interventions";
+            el("filter-chart-type").value = "bar_v";
+            el("filter-palette").value    = "corporate";
+
+            // Reset multi-selects to "all" / Reiniciar multi-selects a "todos".
+            Array.from(el("filter-assets").options).forEach(o => {
+                o.selected = (o.value === "__all__");
+            });
+            Array.from(el("filter-workorders").options).forEach(o => {
+                o.selected = (o.value === "__all__");
+            });
+
+            // Reset date range / Reiniciar rango de fechas.
+            setDefaultDateRange();
+            renderChart();
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Bootstrap / Arranque
+    // ------------------------------------------------------------------
+    document.addEventListener("DOMContentLoaded", function () {
+        wireEvents();
+        loadData();
+    });
+
+}());
+</script>
+
 {% endblock %}

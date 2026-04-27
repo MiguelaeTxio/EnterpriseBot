@@ -234,6 +234,13 @@ E) CURVAS DEGENERADAS A TRAZOS RECTOS:
    Un "5" puede parecer una "S", un "2" puede parecer un "Z", un "3"
    puede parecer un "E" o un "F" truncado.
 
+F) CÓDIGO DE MÁQUINA EN CAMPO KM:
+   Los operarios a veces anotan el código de máquina en el campo KM:
+   dejando el campo MAQUINA: en blanco. Si MAQUINA: está vacío pero
+   KM: contiene un valor con formato de código de máquina (letras
+   seguidas de guion y número, ej. G-8, A-54, B-42), usar ese valor
+   como maquina_raw. El valor numérico de KM queda en ese caso sin dato.
+
 Formato de respuesta (claves exactas):
 {
   "fecha": "<DD/MM/YYYY o null>",

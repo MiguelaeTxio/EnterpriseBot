@@ -43,6 +43,7 @@ from panel.views import (
     WorkOrderUploadView,
     WorkOrderEditView,
     AnalyticsView,
+    AnalyticsDataView,
 )
 
 app_name = "panel"
@@ -119,4 +120,8 @@ urlpatterns = [
     # Analytics — Panel de analítica con gráficos Plotly (rol ADMIN).
     # Subtarea 9.6 — Hito 6 (2026-04-27)
     path("analytics/", AnalyticsView.as_view(), name="analytics"),
+
+    # Analytics data endpoint — JSON payload para el constructor de gráficos client-side.
+    # Subtarea 9.6 — Hito 6 (2026-04-27)
+    path("analytics/data/", AnalyticsDataView.as_view(), name="analytics_data"),
 ]

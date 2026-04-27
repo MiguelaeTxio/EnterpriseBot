@@ -269,77 +269,113 @@ Trabajo completado en sesion 006 (2026-04-27):
 | 004    | 2026-04-23 | Paso 9 parcial  | App fleet completa. Reestructuracion work_order_processor. Prompt multi-tramo. Excel 17 cols. Senal IVR secciones. Fix backup/restore CallFlow. Fix timeout Gemini Vision ms. E2E en curso al cierre. |
 | 005    | 2026-04-24 | Paso 9 parcial  | Diagnostico worker atascado. Fix 429 endpoint global + timeout 60s + retry 3x60s. Prompt CALIGRAFIA RAPIDA. Post-procesado Larios. Resolucion MachineAsset sin guion. Inferencia fechas calendario. Excel 16 cols sin OPERARIO. Sombreado alterno dia. Fix formulas #VALOR. Titulo desde nombre PDF. |
 | 006    | 2026-04-27 | Paso 9 completo, 9.6, 9.7 | Validacion Excel: fix A=36 (PMP services.py) + fix fecha pag 1 (PMA tasks.py). Subtarea 9.6: sidebar reestructurado (Voz/WhatsApp/Administracion), PDFs, Analitica con Plotly. Subtarea 9.7: WorkOrderEditView tabla editable inline + regenerar Excel. BD limpiada. |
+| 007    | 2026-04-27 | Paso 9 validacion + 9.6 constructor graficos | Validacion E2E PDF superada: 5 puntos criticos confirmados. Investigacion G-8: Gemini devuelve maquina_raw=null cuando operario anota codigo en campo KM en lugar de MAQUINA. PMA services.py: regla F anadida al prompt (_EXTRACTION_PROMPT). Constructor de graficos client-side: AnalyticsView refactorizada + AnalyticsDataView (endpoint JSON) + analytics.html reescrito con Plotly.js, filtros de fecha/activo/PDF/metrica/tipo/paleta. Subtarea 9.6.1 (perfiles de grafico) registrada para proxima sesion. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
 ### Objetivo principal
-Validacion E2E final del PDF limpio tras fixes de sesion 006 y perfeccionamiento
-de la vista de Analitica (Plotly PowerBI-style) y del listado de PDFs.
+Subtarea 9.6.1 (perfiles de grafico guardados) + Subtarea 9.7 (mejoras listado PDFs).
 
-### PRIMERA ACCION — Validacion E2E del reprocesado final
+### PRIMERA ACCION — Subtarea 9.6.1: Perfiles de grafico
 
-El PDF ALEJANDRO GARCIA LUQUE 21-10-25 AL 20-11-25.pdf se reprocesara al inicio
-de la sesion siguiente (BD limpiada al cierre de sesion 006). Verificar:
-  1. Titulo correcto: ALEJANDRO GARCIA LUQUE — 21/10/2025 — 20/11/2025.
-  2. Fecha pag 1 correcta: 21/10/2025 (fix has_real_prev en tasks.py).
-  3. A=36 resuelto como A36 → TEREX DEMAG AC 35L (fix .replace("=","") en services.py).
-  4. Resto de assets y fechas sin regresion respecto a sesion 005.
-  5. Sin error al abrir en Excel. Totales sin #VALOR.
-  Si hay incidencias residuales, usar WorkOrderEditView (/panel/work-orders/{pk}/edit/)
-  para correccion manual y boton Regenerar Excel.
+El constructor de graficos client-side implementado en sesion 007 es completamente
+funcional. La siguiente sesion anade la capacidad de guardar y recuperar
+configuraciones de grafico nombradas por el usuario.
 
-### Nota tecnica critica — Stack tecnico vigente
+#### Modelo AnalyticsProfile
 
-- work_order_processor/services.py: _normalise_machine_code con .replace("=", "").
-- work_order_processor/tasks.py: _infer_dates_from_context con has_real_prev /
-  has_real_nxt — anchor_start se usa directamente como candidato cuando no hay
-  vecino anterior real y es dia laborable anterior a nxt.
+Nuevo modelo en panel/models.py (crear si no existe como neonato puro):
+
+    class AnalyticsProfile(models.Model):
+        company_user = models.ForeignKey(
+            CompanyUser,
+            on_delete=models.CASCADE,
+            related_name="analytics_profiles",
+        )
+        nombre = models.CharField(max_length=100)
+        config = models.JSONField()
+        creado_en = models.DateTimeField(auto_now_add=True)
+        actualizado_en = models.DateTimeField(auto_now=True)
+
+        class Meta:
+            unique_together = [("company_user", "nombre")]
+            ordering = ["nombre"]
+
+El JSONField config almacena el estado completo de los controles del constructor:
+    {
+      "metric":      "interventions" | "hours" | "weekday" | "top10",
+      "chart_type":  "bar_v" | "bar_h" | "line" | "area",
+      "palette":     "corporate" | "blues" | "viridis" | "reds" | "greens" | "plasma",
+      "date_from":   "YYYY-MM-DD" | null,
+      "date_to":     "YYYY-MM-DD" | null,
+      "assets":      ["A-54", "B-42"] | null,  (null = todos)
+      "work_orders": [18] | null               (null = todos)
+    }
+
+#### Migracion necesaria
+- Crear panel/migrations/ si no existe (app panel actualmente sin modelos propios).
+- Migrar: python -m dotenv run python manage.py makemigrations panel
+- Aplicar: python -m dotenv run python manage.py migrate
+
+#### Endpoints necesarios
+- GET  /panel/analytics/profiles/       → lista perfiles del CompanyUser (JSON)
+- POST /panel/analytics/profiles/       → crear o actualizar perfil (JSON body: {nombre, config})
+- DELETE /panel/analytics/profiles/<pk>/ → eliminar perfil
+
+Nuevas vistas: AnalyticsProfileListCreateView, AnalyticsProfileDeleteView.
+Registrar en panel/urls.py.
+
+#### Modificaciones en analytics.html
+En el panel de filtros, anadir por encima del separador hr:
+  - Selector "Mis perfiles" (select desplegable) — se puebla con GET /profiles/.
+  - Boton "Guardar perfil" — abre un input inline para introducir el nombre
+    y hace POST /profiles/ con el estado actual de los controles.
+  - Boton "Eliminar perfil" (icono papelera) — activo solo si hay perfil seleccionado.
+
+Al seleccionar un perfil del desplegable, el JS restaura todos los controles
+con los valores del campo config y llama a renderChart() automaticamente.
+
+### SEGUNDA ACCION — Subtarea 9.7: Mejoras listado PDFs (list.html)
+
+El list.html actual muestra tabla simple. Mejoras a implementar en una sola sesion:
+  A) Mostrar nombre del PDF parseado (sin sufijo aleatorio Django) en lugar de pk.
+  B) Anadir enlace directo "Editar" por WorkOrder → /panel/work-orders/{pk}/edit/.
+  C) Desplegable de acciones por fila: Editar, Descargar Excel, Borrar.
+  D) Boton "Ver incidencias" que muestre el manifiesto del Excel en modal o panel.
+  E) Indicador visual de estado (PENDING / PROCESSING / DONE / ERROR) con badges.
+
+### Stack tecnico vigente al cierre de sesion 007
+
+- work_order_processor/services.py:
+    _normalise_machine_code: .replace("=", "") activo.
+    _EXTRACTION_PROMPT: regla F anadida — codigo de maquina en campo KM.
+- work_order_processor/tasks.py:
+    _infer_dates_from_context con has_real_prev / has_real_nxt.
+    anchor_start usado directamente como candidato cuando no hay vecino anterior
+    real y es dia laborable anterior a nxt.
 - HttpOptions(timeout=60000) — 60 segundos en MILISEGUNDOS. CRITICO.
 - Endpoint global: location="global". Retry automatico 3 intentos x 60s en 429.
 - time.sleep(15) entre paginas como guardia de rate limit.
 - Nombre canonico PDF: NOMBRE DD-MM-YY AL DD-MM-YY.pdf (año 2 digitos).
 
-### Subtarea pendiente — Perfeccionamiento de Analitica
-
-La vista AnalyticsView (/panel/analytics/) muestra un grafico Plotly de
-intervenciones por activo (agregado global por empresa). En sesion dedicada:
-  A) Mejorar estetica Plotly al nivel PowerBI: colores corporativos, fuentes,
-     margenes, titulos, subtitulos con empresa y periodo.
-  B) Añadir selector de WorkOrder para filtrar por PDF concreto (GET param).
-  C) Añadir segundo grafico: horas netas por dia de la semana (bar chart).
-  D) Añadir tercer grafico: top 10 maquinas por horas acumuladas (horizontal bar).
-  E) Evaluar si Plotly es suficiente o hay que complementar con Seaborn/matplotlib
-     para exportacion de alta calidad (PDF de informe).
-
-### Subtarea pendiente — Mejoras listado PDFs (list.html)
-
-El list.html actual muestra tabla simple con descarga Excel.
-Pendiente para sesion dedicada:
-  A) Añadir enlace "Editar" por WorkOrder → /panel/work-orders/{pk}/edit/.
-  B) Desplegable de acciones: Subir, Editar, Exportar, Borrar.
-  C) Mostrar nombre del PDF (source_pdf.name parseado) en lugar de solo el pk.
-  D) Botón "Ver incidencias" que muestre el manifiesto de incidencias del Excel.
-
-### Estado de migraciones al cierre de sesion 006
+### Estado de migraciones al cierre de sesion 007
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
 | fleet                  | 0002_maintenancelog_work_entry_line                    |
 | work_order_processor   | 0002_remove_workorderentry_end_time_and_more           |
 | ivr_config             | 0012_callflow_backup_name                              |
+| panel                  | (sin migraciones propias — pendiente crear en 9.6.1)  |
 
-### Archivos modificados en sesion 006 (resumen)
+### Archivos modificados en sesion 007 (resumen)
 
-work_order_processor/services.py — PMP: .replace("=", "") en _normalise_machine_code.
-work_order_processor/tasks.py — PMA: _infer_dates_from_context con has_real_prev /
-  has_real_nxt para correccion correcta de fechas en primera pagina sin vecino.
-requirements.in — PMP: añadido plotly. pip-compile + pip-sync ejecutados.
-panel/_nav_items.html — PMA: sidebar reestructurado (Presencia / Voz / WhatsApp /
-  Administracion con PDFs y Analitica).
-panel/views.py — PMA: AnalyticsView (Plotly), WorkOrderEditView (edicion inline),
-  fix company en WorkOrderListView y WorkOrderUploadView.
-panel/urls.py — PMA: rutas analytics/ y work-orders/<pk>/edit/ registradas.
-panel/templates/panel/analytics.html — PEA: template Analitica con Plotly.
-panel/templates/panel/work_orders/edit.html — PEA: tabla edicion inline.
+work_order_processor/services.py — PMA: regla F en _EXTRACTION_PROMPT
+  (codigo de maquina en campo KM cuando MAQUINA esta vacio).
+panel/views.py — PMA: AnalyticsView refactorizada (template shell sin server-side
+  Plotly) + nueva AnalyticsDataView (endpoint JSON con lineas, work_orders, assets).
+panel/urls.py — PMA: ruta analytics/data/ registrada (AnalyticsDataView).
+panel/templates/panel/analytics.html — PEA: reescritura completa con constructor
+  de graficos client-side (Plotly.js): filtros fecha/activo/PDF/metrica/tipo/paleta,
+  resumen dinamico, titulo/subtitulo automaticos, paletas configurables.
