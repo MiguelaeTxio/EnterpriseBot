@@ -44,8 +44,11 @@ from ivr_config.models import (
     DataCaptureSet,
 )
 from whatsapp.models import WhatsAppTemplate, WhatsAppSession
-from work_order_processor.models import WorkOrder
+from work_order_processor.models import WorkOrder, WorkOrderEntryLine
 from work_order_processor.tasks import process_work_order_pdf
+from fleet.models import MachineAsset
+import plotly.graph_objects as go
+import plotly.io as pio
 
 
 class CompanyUserCreateView(AdminRoleRequiredMixin, View):
@@ -2411,6 +2414,7 @@ class WorkOrderListView(AdminRoleRequiredMixin, View):
         ).order_by("-upload_date")
 
         return render(request, self.template_name, {
+            "company":      company_user.company,
             "company_user": company_user,
             "own_presence":  self._get_own_presence(company_user),
             "active_nav":    "work_orders",
@@ -2457,6 +2461,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
         """
         company_user = request.user.company_user
         return render(request, self.template_name, {
+            "company":      company_user.company,
             "company_user": company_user,
             "own_presence":  self._get_own_presence(company_user),
             "active_nav":    "work_orders",
@@ -2482,6 +2487,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
         if not pdf_file:
             django_messages.error(request, "Debes seleccionar un archivo PDF.")
             return render(request, self.template_name, {
+                "company":      company_user.company,
                 "company_user": company_user,
                 "own_presence":  self._get_own_presence(company_user),
                 "active_nav":    "work_orders",
@@ -2490,6 +2496,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
         if not pdf_file.name.lower().endswith(".pdf"):
             django_messages.error(request, "El archivo debe tener extensión .pdf.")
             return render(request, self.template_name, {
+                "company":      company_user.company,
                 "company_user": company_user,
                 "own_presence":  self._get_own_presence(company_user),
                 "active_nav":    "work_orders",
@@ -2511,3 +2518,389 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
             f"El procesamiento ha sido encolado y comenzará en instantes."
         )
         return redirect("panel:work_order_list")
+
+
+class WorkOrderEditView(AdminRoleRequiredMixin, View):
+    """
+    Displays and processes inline edits for all WorkOrderEntryLine records
+    belonging to a given WorkOrder. Lines are grouped by their parent
+    WorkOrderEntry (page / date) for readability.
+
+    GET  — Renders the editable table grouped by page.
+    POST — Two actions dispatched via hidden input `action`:
+      "save_line"      : Saves a single WorkOrderEntryLine identified by `line_pk`.
+                         Recomputes delta_horas from hc/hf and re-resolves
+                         machine_asset from the updated maquina_norm.
+      "regenerate"     : Re-enqueues the Excel generation task for this WorkOrder
+                         (status reset to PENDING) and redirects to the list view.
+
+    Access is restricted to the authenticated company (multicompany guard).
+    Restricted to ADMIN role.
+
+    ---
+
+    Muestra y procesa ediciones inline para todos los registros WorkOrderEntryLine
+    de un WorkOrder dado. Las líneas se agrupan por su WorkOrderEntry padre
+    (página / fecha) para facilitar la lectura.
+
+    GET  — Renderiza la tabla editable agrupada por página.
+    POST — Dos acciones despachadas mediante el input oculto `action`:
+      "save_line"      : Guarda un único WorkOrderEntryLine identificado por `line_pk`.
+                         Recalcula delta_horas desde hc/hf y re-resuelve machine_asset
+                         desde el maquina_norm actualizado.
+      "regenerate"     : Re-encola la tarea de generación de Excel para este WorkOrder
+                         (estado reseteado a PENDING) y redirige a la vista de lista.
+
+    El acceso está restringido a la empresa autenticada (guardia multiempresa).
+    Restringido al rol ADMIN.
+    """
+
+    template_name = "panel/work_orders/edit.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _get_work_order(self, pk, company):
+        """
+        Retrieves a WorkOrder scoped to the given company.
+        Raises WorkOrder.DoesNotExist if not found or belongs to another company.
+        ---
+        Recupera un WorkOrder acotado a la empresa dada.
+        Lanza WorkOrder.DoesNotExist si no se encuentra o pertenece a otra empresa.
+        """
+        return WorkOrder.objects.get(pk=pk, company=company)
+
+    def _build_groups(self, work_order):
+        """
+        Returns a list of dicts grouping WorkOrderEntryLine records by their
+        parent WorkOrderEntry, ordered by page number.
+        Each dict contains:
+          - entry  : WorkOrderEntry instance.
+          - lines  : list of WorkOrderEntryLine instances for that entry.
+
+        ---
+
+        Devuelve una lista de dicts que agrupan los registros WorkOrderEntryLine
+        por su WorkOrderEntry padre, ordenados por número de página.
+        Cada dict contiene:
+          - entry  : instancia de WorkOrderEntry.
+          - lines  : lista de instancias WorkOrderEntryLine de esa entrada.
+        """
+        entries = (
+            WorkOrderEntry.objects
+            .filter(work_order=work_order)
+            .prefetch_related("lines__machine_asset")
+            .order_by("page_number")
+        )
+        groups = []
+        for entry in entries:
+            groups.append({
+                "entry": entry,
+                "lines": list(entry.lines.order_by("line_number")),
+            })
+        return groups
+
+    def get(self, request, pk):
+        """
+        Renders the inline edit table for the given WorkOrder.
+        ---
+        Renderiza la tabla de edición inline para el WorkOrder dado.
+        """
+        from work_order_processor.models import WorkOrderEntry
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        try:
+            work_order = self._get_work_order(pk, company)
+        except WorkOrder.DoesNotExist:
+            django_messages.error(request, "Parte de trabajo no encontrado.")
+            return redirect("panel:work_order_list")
+
+        groups = self._build_groups(work_order)
+
+        return render(request, self.template_name, {
+            "company":      company,
+            "company_user": company_user,
+            "own_presence": self._get_own_presence(company_user),
+            "active_nav":   "work_orders",
+            "work_order":   work_order,
+            "groups":       groups,
+        })
+
+    def post(self, request, pk):
+        """
+        Dispatches POST actions: save_line or regenerate.
+        ---
+        Despacha las acciones POST: save_line o regenerate.
+        """
+        from work_order_processor.models import WorkOrderEntry, WorkOrderEntryLine
+        from work_order_processor.services import (
+            _compute_delta_horas,
+            _normalise_machine_code,
+            _resolve_machine_asset,
+        )
+        from datetime import time as dt_time
+        import json
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        try:
+            work_order = self._get_work_order(pk, company)
+        except WorkOrder.DoesNotExist:
+            django_messages.error(request, "Parte de trabajo no encontrado.")
+            return redirect("panel:work_order_list")
+
+        action = request.POST.get("action", "")
+
+        # ------------------------------------------------------------------
+        # Action: regenerate Excel
+        # Acción: regenerar Excel
+        # ------------------------------------------------------------------
+        if action == "regenerate":
+            work_order.status    = WorkOrder.Status.PENDING
+            work_order.excel_file = None
+            work_order.error_log  = ""
+            work_order.save(update_fields=["status", "excel_file", "error_log"])
+            from work_order_processor.services import generate_work_order_excel
+            from work_order_processor.tasks import process_work_order_pdf
+            generate_work_order_excel(work_order.pk)
+            django_messages.success(
+                request,
+                f"Excel regenerado correctamente para el Parte #{work_order.pk}."
+            )
+            return redirect("panel:work_order_list")
+
+        # ------------------------------------------------------------------
+        # Action: save_line — save a single WorkOrderEntryLine
+        # Acción: save_line — guardar un único WorkOrderEntryLine
+        # ------------------------------------------------------------------
+        if action == "save_line":
+            line_pk = request.POST.get("line_pk")
+            try:
+                line = WorkOrderEntryLine.objects.select_related(
+                    "entry__work_order"
+                ).get(pk=line_pk, entry__work_order=work_order)
+            except WorkOrderEntryLine.DoesNotExist:
+                django_messages.error(request, "Línea no encontrada.")
+                return redirect("panel:work_order_edit", pk=pk)
+
+            # Parse and update maquina_norm + machine_asset.
+            # Parsear y actualizar maquina_norm + machine_asset.
+            raw_norm = request.POST.get("maquina_norm", "").strip()
+            norm     = _normalise_machine_code(raw_norm) if raw_norm else raw_norm
+            asset    = _resolve_machine_asset(norm) if norm else None
+
+            # Parse hc / hf.
+            # Parsear hc / hf.
+            def _parse_time_str(val):
+                """Parses HH:MM string into time, returns None on failure.
+                --- Parsea cadena HH:MM a time, devuelve None si falla."""
+                if not val:
+                    return None
+                try:
+                    parts = val.strip().split(":")
+                    return dt_time(int(parts[0]), int(parts[1]))
+                except (ValueError, IndexError):
+                    return None
+
+            hc    = _parse_time_str(request.POST.get("hc", ""))
+            hf    = _parse_time_str(request.POST.get("hf", ""))
+            delta = _compute_delta_horas(hc, hf)
+
+            # Parse flags from comma-separated string.
+            # Parsear flags desde cadena separada por comas.
+            flags_raw = request.POST.get("flags", "").strip()
+            flags     = [f.strip() for f in flags_raw.split(",") if f.strip()]                         if flags_raw else []
+
+            # Persist changes.
+            # Persistir cambios.
+            line.maquina_norm       = norm
+            line.machine_asset      = asset
+            line.descripcion_averia = request.POST.get("descripcion_averia", "").strip()
+            line.reparacion         = request.POST.get("reparacion", "").strip()
+            line.hc                 = hc
+            line.hf                 = hf
+            line.or_val             = request.POST.get("or_val", "").strip()
+            line.delta_horas        = delta
+            line.flags              = flags
+            line.save(update_fields=[
+                "maquina_norm", "machine_asset", "descripcion_averia",
+                "reparacion", "hc", "hf", "or_val", "delta_horas", "flags",
+            ])
+
+            django_messages.success(
+                request,
+                f"Bloque {line.line_number} de la página "
+                f"{line.entry.page_number} guardado correctamente."
+            )
+            return redirect("panel:work_order_edit", pk=pk)
+
+        # Unknown action fallback.
+        # Fallback para acción desconocida.
+        django_messages.warning(request, "Acción no reconocida.")
+        return redirect("panel:work_order_edit", pk=pk)
+
+
+class AnalyticsView(AdminRoleRequiredMixin, View):
+    """
+    Renders the analytics dashboard for the authenticated user's company.
+    Displays an interactive Plotly bar chart showing the total number of
+    work interventions per machine asset, aggregated across all WorkOrders
+    belonging to the company. Chart is rendered server-side and injected
+    into the template as safe HTML.
+
+    ---
+
+    Renderiza el panel de analítica para la empresa del usuario autenticado.
+    Muestra un gráfico de barras Plotly interactivo con el número total de
+    intervenciones de trabajo por activo de máquina, agregado sobre todos los
+    WorkOrders de la empresa. El gráfico se renderiza en el servidor y se inyecta
+    en el template como HTML seguro.
+    """
+
+    template_name = "panel/analytics.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _build_interventions_chart(self, company) -> str:
+        """
+        Queries WorkOrderEntryLine records scoped to the given company, groups
+        them by MachineAsset and returns a Plotly bar chart as an HTML div string.
+
+        The chart uses the plotly_white template for a clean, professional look
+        consistent with PowerBI-style dashboards. Returns an empty string if no
+        data is available.
+
+        ---
+
+        Consulta los registros WorkOrderEntryLine acotados a la empresa dada,
+        los agrupa por MachineAsset y devuelve un gráfico de barras Plotly como
+        cadena HTML div.
+
+        El gráfico usa el template plotly_white para una apariencia limpia y
+        profesional coherente con los dashboards estilo PowerBI. Devuelve una
+        cadena vacía si no hay datos disponibles.
+        """
+        from django.db.models import Count
+
+        # Aggregate intervention count per machine asset scoped to company.
+        # Agregar recuento de intervenciones por activo de máquina acotado a empresa.
+        qs = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                machine_asset__isnull=False,
+            )
+            .values(
+                "machine_asset__codigo",
+                "machine_asset__marca_modelo",
+            )
+            .annotate(total=Count("id"))
+            .order_by("-total")
+        )
+
+        if not qs.exists():
+            return ""
+
+        codigos      = [r["machine_asset__codigo"]      for r in qs]
+        marcas       = [r["machine_asset__marca_modelo"] for r in qs]
+        totales      = [r["total"]                       for r in qs]
+
+        # Build hover text: CODIGO — Marca/Modelo — N intervenciones.
+        # Construir texto hover: CODIGO — Marca/Modelo — N intervenciones.
+        hover_texts = [
+            f"<b>{c}</b><br>{m}<br>{t} intervención{'es' if t != 1 else ''}"
+            for c, m, t in zip(codigos, marcas, totales)
+        ]
+
+        fig = go.Figure(
+            data=[
+                go.Bar(
+                    x            = codigos,
+                    y            = totales,
+                    text         = totales,
+                    textposition = "outside",
+                    hovertext    = hover_texts,
+                    hoverinfo    = "text",
+                    marker=dict(
+                        color      = totales,
+                        colorscale = "Blues",
+                        showscale  = False,
+                    ),
+                )
+            ]
+        )
+
+        fig.update_layout(
+            template     = "plotly_white",
+            title        = dict(
+                text     = "Intervenciones por activo",
+                font     = dict(size=16, color="#1a1f2e"),
+                x        = 0,
+                xanchor  = "left",
+            ),
+            xaxis        = dict(
+                title         = "Código de activo",
+                tickangle     = -45,
+                tickfont      = dict(size=11),
+                showgrid      = False,
+            ),
+            yaxis        = dict(
+                title    = "Nº de intervenciones",
+                showgrid = True,
+                gridcolor= "#f0f0f0",
+            ),
+            plot_bgcolor  = "#ffffff",
+            paper_bgcolor = "#ffffff",
+            margin        = dict(l=40, r=20, t=60, b=120),
+            height        = 480,
+            font          = dict(family="system-ui, sans-serif", size=12),
+        )
+
+        return pio.to_html(
+            fig,
+            full_html        = False,
+            include_plotlyjs = "cdn",
+            config           = {"displayModeBar": False, "responsive": True},
+        )
+
+    def get(self, request):
+        """
+        Renders the analytics page with the interventions chart.
+        ---
+        Renderiza la página de analítica con el gráfico de intervenciones.
+        """
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        chart_html = self._build_interventions_chart(company)
+
+        return render(request, self.template_name, {
+            "company":      company,
+            "company_user": company_user,
+            "own_presence": self._get_own_presence(company_user),
+            "active_nav":   "analytics",
+            "chart_html":   chart_html,
+        })

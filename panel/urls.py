@@ -41,6 +41,8 @@ from panel.views import (
     DataCaptureSetUpdateView,
     WorkOrderListView,
     WorkOrderUploadView,
+    WorkOrderEditView,
+    AnalyticsView,
 )
 
 app_name = "panel"
@@ -108,8 +110,13 @@ urlpatterns = [
     path("datacapturesets/create/", DataCaptureSetCreateView.as_view(), name="datacaptureset_create"),
     path("datacapturesets/<int:pk>/edit/", DataCaptureSetUpdateView.as_view(), name="datacaptureset_edit"),
 
-    # WorkOrder management — Partes de trabajo PDF (rol ADMIN).
+    # WorkOrder management — PDFs de partes de trabajo (rol ADMIN).
     # Paso 7 — Hito 6 (2026-04-22)
     path("work-orders/", WorkOrderListView.as_view(), name="work_order_list"),
     path("work-orders/upload/", WorkOrderUploadView.as_view(), name="work_order_upload"),
+    path("work-orders/<int:pk>/edit/", WorkOrderEditView.as_view(), name="work_order_edit"),
+
+    # Analytics — Panel de analítica con gráficos Plotly (rol ADMIN).
+    # Subtarea 9.6 — Hito 6 (2026-04-27)
+    path("analytics/", AnalyticsView.as_view(), name="analytics"),
 ]

@@ -477,7 +477,7 @@ def _normalise_machine_code(raw: str | None) -> str:
     # conservando el espacio para que el resolver aplique el mapa de aliases.
     if " " in raw.strip():
         return raw.strip().upper()
-    code = raw.strip().upper().replace(" ", "")
+    code = raw.strip().upper().replace(" ", "").replace("=", "")
     # Insert hyphen between leading letters and digits if absent.
     # Insertar guion entre letras iniciales y dígitos si no está presente.
     code = re.sub(r"^([A-Z]+)(\d)", r"\1-\2", code)

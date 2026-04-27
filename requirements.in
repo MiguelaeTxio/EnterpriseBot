@@ -58,3 +58,4 @@ redis
 esprima
 djlint
 openpyxl
+plotly

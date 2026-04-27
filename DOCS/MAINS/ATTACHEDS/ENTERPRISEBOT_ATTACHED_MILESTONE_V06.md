@@ -132,7 +132,7 @@ Hoja LEYENDA + MANIFIESTO DE INCIDENCIAS al pie (D1-D5 de la skill).
   Excel no cumple especificacion skill partes-trabajo. Paso 9 registrado.
 
 ### Paso 9 — Rediseno del modelo de extraccion y del generador Excel
-- Estado: EN PROGRESO (2026-04-23 / 2026-04-24).
+- Estado: COMPLETADO (2026-04-23 / 2026-04-27).
 
 Trabajo completado en sesion 004:
 
@@ -222,11 +222,40 @@ Trabajo completado en sesion 005 (2026-04-24):
      - Leyenda dinamica C2: aviso si precio no introducido.
      - Manifiesto: titulo con recuento, descripcion fusionada A→P, altura fija.
 
-Pendiente del Paso 9:
-  - Validacion final Excel con PDF de nombre canonico tras todas las mejoras.
-    Pendiente de reprocesado el lunes para verificar fechas correctas.
-  - Vista de edicion de WorkOrderEntryLine (Subtarea 9.7).
-  - Mejoras de UX en sidebar y panel de partes de trabajo (Subtarea 9.6).
+Trabajo completado en sesion 006 (2026-04-27):
+
+  M) Validacion final Excel con PDF ALEJANDRO GARCIA LUQUE 21-10-25 AL 20-11-25:
+     - Incidencia detectada: A=36 (Gemini lee guion manuscrito como signo igual).
+     - Fix PMP en services.py: _normalise_machine_code añade .replace("=", "").
+     - Incidencia detectada: fecha pag 1 -> 21/10/2020 en lugar de 21/10/2025.
+     - Bug en _infer_dates_from_context: sin vecino anterior real, _weekdays_between
+       excluia anchor_start, dejando la primera pagina sin correccion de fecha.
+     - Fix PMA en tasks.py: distincion has_real_prev / has_real_nxt. Cuando no hay
+       vecino real anterior y anchor_start es dia laborable anterior a nxt, se usa
+       directamente como candidato unico.
+     - Resto de assets y fechas correctos en todo el PDF. Validacion superada.
+
+  N) Subtarea 9.6 — UX del panel:
+     - Sidebar reestructurado en secciones: Presencia, Voz, WhatsApp, Administracion.
+     - Seccion Voz: Flujos IVR, Secciones, Contactos, Numeros de telefono,
+       Perfil de voz, Bloqueados.
+     - Seccion WhatsApp: Plantillas, Sesiones activas.
+     - Seccion Administracion: Usuarios, Conjuntos de captura, PDFs, Analitica.
+     - Item "Partes de Trabajo" renombrado a "PDFs".
+     - Analitica: nueva vista AnalyticsView con grafico Plotly interactivo
+       (intervenciones por activo, agregado global por empresa). Template
+       panel/analytics.html. Ruta /panel/analytics/. Plotly instalado via
+       pip-tools (requirements.in + pip-compile + pip-sync).
+     - Fix company en contexto de WorkOrderListView y WorkOrderUploadView.
+
+  O) Subtarea 9.7 — Vista de edicion de WorkOrderEntryLine:
+     - WorkOrderEditView en panel/views.py: GET (tabla agrupada por pagina/fecha)
+       + POST acciones save_line (guarda linea individual, recalcula delta_horas,
+       re-resuelve machine_asset) y regenerate (regenera Excel desde BD actual).
+     - Ruta /panel/work-orders/<pk>/edit/ registrada como work_order_edit.
+     - Template panel/templates/panel/work_orders/edit.html: tabla editable inline
+       con badges de confianza, aviso fecha incierta, flags editables, boton
+       Regenerar Excel. Agrupacion por pagina con cabecera coloreada.
 
 ---
 
@@ -239,69 +268,61 @@ Pendiente del Paso 9:
 | 003    | 2026-04-22 | Tarea 0, 8, 9 inicio | Sidebar dual. DjangoTask. E2E PDF real 23 pags. Diagnostico Paso 9. |
 | 004    | 2026-04-23 | Paso 9 parcial  | App fleet completa. Reestructuracion work_order_processor. Prompt multi-tramo. Excel 17 cols. Senal IVR secciones. Fix backup/restore CallFlow. Fix timeout Gemini Vision ms. E2E en curso al cierre. |
 | 005    | 2026-04-24 | Paso 9 parcial  | Diagnostico worker atascado. Fix 429 endpoint global + timeout 60s + retry 3x60s. Prompt CALIGRAFIA RAPIDA. Post-procesado Larios. Resolucion MachineAsset sin guion. Inferencia fechas calendario. Excel 16 cols sin OPERARIO. Sombreado alterno dia. Fix formulas #VALOR. Titulo desde nombre PDF. |
+| 006    | 2026-04-27 | Paso 9 completo, 9.6, 9.7 | Validacion Excel: fix A=36 (PMP services.py) + fix fecha pag 1 (PMA tasks.py). Subtarea 9.6: sidebar reestructurado (Voz/WhatsApp/Administracion), PDFs, Analitica con Plotly. Subtarea 9.7: WorkOrderEditView tabla editable inline + regenerar Excel. BD limpiada. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
 ### Objetivo principal
-Completar el Paso 9: validacion final del Excel, UX del panel y vista de edicion.
+Validacion E2E final del PDF limpio tras fixes de sesion 006 y perfeccionamiento
+de la vista de Analitica (Plotly PowerBI-style) y del listado de PDFs.
 
-### PRIMERA ACCION — Validacion Excel con PDF procesado el fin de semana
+### PRIMERA ACCION — Validacion E2E del reprocesado final
 
-El PDF ALEJANDRO_GARCIA_LUQUE_21-10-25_AL_20-11-25.pdf quedo procesando
-al cierre. Descargar el Excel generado y verificar:
+El PDF ALEJANDRO GARCIA LUQUE 21-10-25 AL 20-11-25.pdf se reprocesara al inicio
+de la sesion siguiente (BD limpiada al cierre de sesion 006). Verificar:
   1. Titulo correcto: ALEJANDRO GARCIA LUQUE — 21/10/2025 — 20/11/2025.
-  2. Fechas correctas en todas las filas (sin 2020, sin 26/11).
-  3. Assets resueltos: A-54 → A54, B-27 → B27, G-8 → G08, Furgon Larios → FURGLAR.
-  4. Sin error al abrir en Excel.
-  5. Sombreado alterno por dia visible.
-  6. Totales correctos sin #VALOR.
+  2. Fecha pag 1 correcta: 21/10/2025 (fix has_real_prev en tasks.py).
+  3. A=36 resuelto como A36 → TEREX DEMAG AC 35L (fix .replace("=","") en services.py).
+  4. Resto de assets y fechas sin regresion respecto a sesion 005.
+  5. Sin error al abrir en Excel. Totales sin #VALOR.
+  Si hay incidencias residuales, usar WorkOrderEditView (/panel/work-orders/{pk}/edit/)
+  para correccion manual y boton Regenerar Excel.
 
-Si hay incidencias de fecha residuales, usar la vista de edicion de
-WorkOrderEntryLine (Subtarea 9.7) para correccion manual.
+### Nota tecnica critica — Stack tecnico vigente
 
-### Nota tecnica critica — Timeout y rate limit Gemini Vision
+- work_order_processor/services.py: _normalise_machine_code con .replace("=", "").
+- work_order_processor/tasks.py: _infer_dates_from_context con has_real_prev /
+  has_real_nxt — anchor_start se usa directamente como candidato cuando no hay
+  vecino anterior real y es dia laborable anterior a nxt.
+- HttpOptions(timeout=60000) — 60 segundos en MILISEGUNDOS. CRITICO.
+- Endpoint global: location="global". Retry automatico 3 intentos x 60s en 429.
+- time.sleep(15) entre paginas como guardia de rate limit.
+- Nombre canonico PDF: NOMBRE DD-MM-YY AL DD-MM-YY.pdf (año 2 digitos).
 
-HttpOptions(timeout=60000) — 60 segundos en MILISEGUNDOS.
-Endpoint global: location="global". Retry automatico 3 intentos x 60s en 429.
-time.sleep(15) entre paginas como guardia de rate limit.
-La cuota de Vertex AI para gemini-2.5-flash es de tokens/dia (10B), no RPM.
-Los 429 son contención temporal del servidor compartido, no agotamiento de cuota.
+### Subtarea pendiente — Perfeccionamiento de Analitica
 
-### Nota tecnica critica — Nombre canonico de PDF
+La vista AnalyticsView (/panel/analytics/) muestra un grafico Plotly de
+intervenciones por activo (agregado global por empresa). En sesion dedicada:
+  A) Mejorar estetica Plotly al nivel PowerBI: colores corporativos, fuentes,
+     margenes, titulos, subtitulos con empresa y periodo.
+  B) Añadir selector de WorkOrder para filtrar por PDF concreto (GET param).
+  C) Añadir segundo grafico: horas netas por dia de la semana (bar chart).
+  D) Añadir tercer grafico: top 10 maquinas por horas acumuladas (horizontal bar).
+  E) Evaluar si Plotly es suficiente o hay que complementar con Seaborn/matplotlib
+     para exportacion de alta calidad (PDF de informe).
 
-Formato obligatorio: NOMBRE DD-MM-YY AL DD-MM-YY.pdf
-Ejemplo: ALEJANDRO GARCIA LUQUE 21-10-25 AL 20-11-25.pdf
-Django añade sufijo aleatorio al guardar (_bVofaFF). El parser lo maneja.
-El año de 2 digitos se convierte a 4 digitos (2000+YY).
+### Subtarea pendiente — Mejoras listado PDFs (list.html)
 
-### Subtarea 9.6 — Mejoras de UX del panel
+El list.html actual muestra tabla simple con descarga Excel.
+Pendiente para sesion dedicada:
+  A) Añadir enlace "Editar" por WorkOrder → /panel/work-orders/{pk}/edit/.
+  B) Desplegable de acciones: Subir, Editar, Exportar, Borrar.
+  C) Mostrar nombre del PDF (source_pdf.name parseado) en lugar de solo el pk.
+  D) Botón "Ver incidencias" que muestre el manifiesto de incidencias del Excel.
 
-A) Reestructuracion sidebar en secciones:
-   - Voz: Flujos IVR, Secciones, Contactos, Numeros de telefono, Perfil de voz.
-   - WhatsApp: Plantillas, Sesiones activas.
-   - Administracion: Usuarios, Conjuntos de captura, PDFs.
-   - Presencia: seccion propia.
-
-B) Seccion PDFs — renombrar "Partes de Trabajo" -> "PDFs":
-   Acciones por WorkOrder: Carga, Edicion y Vista, Exportar, Cancelar/Borrar/Renombrar.
-   Desplegable de acciones en la vista de listado.
-
-C) Botones del panel — leyenda clara:
-   - Botones de guardado: "Guardar" en todos los formularios.
-   - Botones de editar en listados: "Editar" sin nombre de entidad.
-
-### Subtarea 9.7 — Vista de Edicion de WorkOrderEntryLine
-
-Vista tabla editable en /panel/work-orders/{pk}/edit/ que permita:
-   - Ver todas las WorkOrderEntryLine agrupadas por pagina/fecha.
-   - Editar inline: maquina_norm, descripcion_averia, reparacion, hc, hf, or_val.
-   - Ver y corregir flags de incidencia.
-   - Recalcular delta_horas al modificar hc/hf.
-   - Boton "Regenerar Excel" para regenerar tras correcciones.
-
-### Estado de migraciones al cierre de sesion 005
+### Estado de migraciones al cierre de sesion 006
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
@@ -309,13 +330,16 @@ Vista tabla editable en /panel/work-orders/{pk}/edit/ que permita:
 | work_order_processor   | 0002_remove_workorderentry_end_time_and_more           |
 | ivr_config             | 0012_callflow_backup_name                              |
 
-### Archivos modificados en sesion 005 (resumen)
+### Archivos modificados en sesion 006 (resumen)
 
-work_order_processor/services.py — prompt CALIGRAFIA RAPIDA, post-procesado
-  Larios, resolucion MachineAsset (sin guion, alias empresa), _sumif ISNUMBER,
-  formulas corregidas, Excel 16 cols sin OPERARIO, sombreado alterno, titulo
-  desde nombre PDF, LEYENDA fix, config area merge A+B, parser periodo [_\s]+.
-work_order_processor/tasks.py — timeout 60s, retry 429, time.sleep(15),
-  _extract_period_from_pdf_name DD-MM-YY, _is_valid año, _infer_dates_from_context.
-enterprise_core/settings.py — LOGGING DEBUG httpx/google.genai/google.auth.
-mnt/skills/user/pea-pma/SKILL.md — regla entrega: preguntar si proceder, no como.
+work_order_processor/services.py — PMP: .replace("=", "") en _normalise_machine_code.
+work_order_processor/tasks.py — PMA: _infer_dates_from_context con has_real_prev /
+  has_real_nxt para correccion correcta de fechas en primera pagina sin vecino.
+requirements.in — PMP: añadido plotly. pip-compile + pip-sync ejecutados.
+panel/_nav_items.html — PMA: sidebar reestructurado (Presencia / Voz / WhatsApp /
+  Administracion con PDFs y Analitica).
+panel/views.py — PMA: AnalyticsView (Plotly), WorkOrderEditView (edicion inline),
+  fix company en WorkOrderListView y WorkOrderUploadView.
+panel/urls.py — PMA: rutas analytics/ y work-orders/<pk>/edit/ registradas.
+panel/templates/panel/analytics.html — PEA: template Analitica con Plotly.
+panel/templates/panel/work_orders/edit.html — PEA: tabla edicion inline.

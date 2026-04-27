@@ -22,6 +22,7 @@
 ./panel/templates/panel/voiceprofile/detail.html
 ./panel/templates/panel/datacapturesets/list.html
 ./panel/templates/panel/datacapturesets/form.html
+./panel/templates/panel/analytics.html
 ./panel/templates/panel/sections/list.html
 ./panel/templates/panel/sections/form.html
 ./panel/templates/panel/_nav_items.html
@@ -41,6 +42,7 @@
 ./panel/templates/panel/blockedcallers/confirm_delete.html
 ./panel/templates/panel/login.html
 ./panel/templates/panel/work_orders/list.html
+./panel/templates/panel/work_orders/edit.html
 ./panel/templates/panel/work_orders/upload.html
 ./panel/__init__.py
 ./panel/views.py

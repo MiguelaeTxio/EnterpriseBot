@@ -15,17 +15,18 @@
 {# Mapa de valores de active_nav:                                                   #}
 {#   "dashboard"          → Inicio                                                  #}
 {#   "presence"           → Mi estado                                               #}
-{#   "users"              → Usuarios                                                #}
+{#   "callflows"          → Flujos IVR                                              #}
 {#   "sections"           → Secciones                                               #}
 {#   "contacts"           → Contactos                                               #}
-{#   "callflows"          → Flujos IVR                                              #}
-{#   "phonenumbers"       → Números                                                 #}
+{#   "phonenumbers"       → Números de teléfono                                     #}
 {#   "voiceprofile"       → Perfil de voz                                           #}
 {#   "blockedcallers"     → Bloqueados                                              #}
-{#   "datacapturesets"    → Captura de datos                                        #}
-{#   "work_orders"        → Partes de trabajo                                       #}
 {#   "whatsapp_templates" → Plantillas (WhatsApp)                                   #}
 {#   "whatsapp_sessions"  → Sesiones activas (WhatsApp)                             #}
+{#   "users"              → Usuarios                                                #}
+{#   "datacapturesets"    → Conjuntos de captura                                    #}
+{#   "work_orders"        → PDFs                                                    #}
+{#   "analytics"          → Analítica                                               #}
 {# ================================================================================ #}
 
 <ul class="nav flex-column mt-2">
@@ -53,15 +54,15 @@
     </li>
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Configuración (solo ADMIN) — Section: Settings (ADMIN)    #}
+    {# Sección: Voz (solo ADMIN) — Section: Voice (ADMIN only)            #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' %}
-    <li><div class="sidebar-section-label">Configuración</div></li>
+    <li><div class="sidebar-section-label">Voz</div></li>
 
     <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
-           href="{% url 'panel:user_list' %}">
-            <i class="bi bi-people"></i>Usuarios
+        <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
+           href="{% url 'panel:callflow_list' %}">
+            <i class="bi bi-gear-wide-connected"></i>Flujos IVR
         </a>
     </li>
 
@@ -80,16 +81,9 @@
     </li>
 
     <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
-           href="{% url 'panel:callflow_list' %}">
-            <i class="bi bi-gear-wide-connected"></i>Flujos IVR
-        </a>
-    </li>
-
-    <li class="nav-item">
         <a class="nav-link {% if active_nav == 'phonenumbers' %}active{% endif %}"
            href="{% url 'panel:phonenumber_list' %}">
-            <i class="bi bi-telephone-inbound"></i>Números
+            <i class="bi bi-telephone-inbound"></i>Números de teléfono
         </a>
     </li>
 
@@ -107,22 +101,8 @@
         </a>
     </li>
 
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
-           href="{% url 'panel:datacaptureset_list' %}">
-            <i class="bi bi-ui-checks"></i>Captura de datos
-        </a>
-    </li>
-
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
-           href="{% url 'panel:work_order_list' %}">
-            <i class="bi bi-file-earmark-pdf"></i>Partes de trabajo
-        </a>
-    </li>
-
     {# ------------------------------------------------------------------ #}
-    {# Sección: WhatsApp — Section: WhatsApp                              #}
+    {# Sección: WhatsApp (solo ADMIN) — Section: WhatsApp (ADMIN only)    #}
     {# ------------------------------------------------------------------ #}
     <li><div class="sidebar-section-label">WhatsApp</div></li>
 
@@ -139,6 +119,40 @@
             <i class="bi bi-chat-dots"></i>Sesiones activas
         </a>
     </li>
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Administración (solo ADMIN) — Section: Admin (ADMIN only) #}
+    {# ------------------------------------------------------------------ #}
+    <li><div class="sidebar-section-label">Administración</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
+           href="{% url 'panel:user_list' %}">
+            <i class="bi bi-people"></i>Usuarios
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
+           href="{% url 'panel:datacaptureset_list' %}">
+            <i class="bi bi-ui-checks"></i>Conjuntos de captura
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
+           href="{% url 'panel:work_order_list' %}">
+            <i class="bi bi-file-earmark-pdf"></i>PDFs
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'analytics' %}active{% endif %}"
+           href="{% url 'panel:analytics' %}">
+            <i class="bi bi-bar-chart-line"></i>Analítica
+        </a>
+    </li>
+
     {% endif %}
 
 </ul>

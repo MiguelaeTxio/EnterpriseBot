@@ -224,46 +224,73 @@ def _infer_dates_from_context(
             # R1: ya es válida, nada que hacer.
             continue
 
-        # Find previous known date.
-        # Encontrar fecha conocida anterior.
+        # Find previous known date (real neighbour only, not synthetic anchor).
+        # Encontrar fecha conocida anterior (sólo vecino real, no ancla sintética).
         prev: date | None = None
+        has_real_prev = False
         for j in range(i - 1, -1, -1):
             if known[j] is not None:
                 prev = known[j]
+                has_real_prev = True
                 break
-        if prev is None:
-            prev = anchor_start
 
-        # Find next known date.
-        # Encontrar fecha conocida siguiente.
+        # Find next known date (real neighbour only, not synthetic anchor).
+        # Encontrar fecha conocida siguiente (sólo vecino real, no ancla sintética).
         nxt: date | None = None
+        has_real_nxt = False
         for j in range(i + 1, n):
             if known[j] is not None:
                 nxt = known[j]
+                has_real_nxt = True
                 break
-        if nxt is None:
-            nxt = anchor_end
 
         # Enumerate candidates.
         # Enumerar candidatos.
-        if prev is not None and nxt is not None:
+        if has_real_prev and has_real_nxt:
+            # Both real neighbours known: infer strictly between them.
+            # Ambos vecinos reales conocidos: inferir estrictamente entre ellos.
             candidates = _weekdays_between(prev, nxt)
-        elif prev is not None:
-            # No next anchor: take the next weekday after prev.
-            # Sin ancla siguiente: tomar el siguiente día laborable tras prev.
-            candidates = []
-            cursor = prev + timedelta(days=1)
-            while cursor.weekday() >= 5:
-                cursor += timedelta(days=1)
-            candidates = [cursor]
-        elif nxt is not None:
-            # No prev anchor: take the weekday before nxt.
-            # Sin ancla anterior: tomar el día laborable antes de nxt.
-            candidates = []
-            cursor = nxt - timedelta(days=1)
-            while cursor.weekday() >= 5:
-                cursor -= timedelta(days=1)
-            candidates = [cursor]
+        elif has_real_prev and not has_real_nxt:
+            # No real next neighbour: try period_end as upper bound if available,
+            # otherwise take the next weekday after prev.
+            # Sin vecino siguiente real: usar period_end como cota superior si
+            # está disponible, si no, tomar el siguiente día laborable tras prev.
+            if anchor_end is not None:
+                candidates = _weekdays_between(prev, anchor_end)
+                if not candidates:
+                    # prev IS anchor_end or adjacent: take next weekday after prev.
+                    # prev ES anchor_end o adyacente: tomar el siguiente laborable.
+                    cursor = prev + timedelta(days=1)
+                    while cursor.weekday() >= 5:
+                        cursor += timedelta(days=1)
+                    candidates = [cursor]
+            else:
+                cursor = prev + timedelta(days=1)
+                while cursor.weekday() >= 5:
+                    cursor += timedelta(days=1)
+                candidates = [cursor]
+        elif not has_real_prev and has_real_nxt:
+            # No real previous neighbour: use period_start as the candidate if it
+            # is a valid weekday strictly before nxt, otherwise take the weekday
+            # immediately before nxt.
+            # Sin vecino anterior real: usar period_start como candidato si es un
+            # día laborable estrictamente anterior a nxt; si no, el laborable
+            # inmediatamente anterior a nxt.
+            if anchor_start is not None and anchor_start < nxt and anchor_start.weekday() < 5:
+                candidates = [anchor_start]
+            else:
+                cursor = nxt - timedelta(days=1)
+                while cursor.weekday() >= 5:
+                    cursor -= timedelta(days=1)
+                candidates = [cursor]
+        elif not has_real_prev and not has_real_nxt:
+            # No real neighbours at all: use period_start if available and valid.
+            # Sin vecinos reales en absoluto: usar period_start si está disponible
+            # y es válido.
+            if anchor_start is not None and anchor_start.weekday() < 5:
+                candidates = [anchor_start]
+            else:
+                candidates = []
         else:
             candidates = []
 
