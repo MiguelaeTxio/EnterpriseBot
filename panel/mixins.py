@@ -12,6 +12,8 @@ from django.contrib import messages
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect
 
+from ivr_config.models import CompanyUser
+
 
 class PanelLoginRequiredMixin(LoginRequiredMixin):
     """
@@ -64,6 +66,49 @@ class CompanyUserRequiredMixin(PanelLoginRequiredMixin):
             return redirect(password_change_url)
 
         return super().dispatch(request, *args, **kwargs)
+
+
+class WorkshopRequiredMixin(CompanyUserRequiredMixin):
+    """
+    Mixin that grants access to CompanyUsers with the WORKSHOP or ADMIN role.
+    Any other role receives HTTP 403 Forbidden.
+    Intended for workshop work-order entry views introduced in Hito 7.
+    ---
+    Mixin que concede acceso a CompanyUsers con rol WORKSHOP o ADMIN.
+    Cualquier otro rol recibe HTTP 403 Forbidden.
+    Destinado a las vistas de entrada de partes de taller introducidas en el Hito 7.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Verify that the authenticated CompanyUser holds the WORKSHOP or ADMIN role.
+        Delegates to parent for authentication and CompanyUser checks first.
+        ---
+        Verifica que el CompanyUser autenticado posee el rol WORKSHOP o ADMIN.
+        Delega al padre para las comprobaciones de autenticación y CompanyUser primero.
+        """
+        # Delegate authentication and CompanyUser checks to parent first.
+        # Delegar las comprobaciones de autenticación y CompanyUser al padre primero.
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+
+        company_user = getattr(request.user, "company_user", None)
+        if company_user is None:
+            return response
+
+        # Grant access only to WORKSHOP and ADMIN roles.
+        # Conceder acceso únicamente a los roles WORKSHOP y ADMIN.
+        allowed_roles = {
+            CompanyUser.ROLE_WORKSHOP,
+            CompanyUser.ROLE_ADMIN,
+        }
+        if company_user.role not in allowed_roles:
+            return HttpResponseForbidden(
+                "Acceso denegado. Esta sección requiere el rol de Operario de taller."
+            )
+
+        return response
 
 
 class AdminRoleRequiredMixin(CompanyUserRequiredMixin):

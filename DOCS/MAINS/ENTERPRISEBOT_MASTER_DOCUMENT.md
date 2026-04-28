@@ -104,16 +104,27 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
-- Nuevo rol `OPERATOR` en CompanyUser: acceso restringido a la sección de partes diarios.
-- Gestión de operarios desde el panel de administración (apartado Usuarios).
+- Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
+- WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
+- Navegación restringida para rol WORKSHOP: sidebar simplificado con único ítem Nuevo parte.
 - Tres vías de entrada convergentes en un formulario único de confirmación:
     - Form: formulario web estructurado. Persistencia directa en BD. Sin IA. Coste cero.
     - STT: dictado por voz via Web Speech API (nativa, sin coste, sin IA). Pre-rellena el formulario.
     - Upload: foto/PDF manuscrito procesado por Gemini Vision. Pre-rellena el formulario
       con validación campo a campo de datos faltantes/ilegibles por el operario.
 - El formulario de confirmación es el punto de convergencia de las tres vías.
-- La fricción deliberada del flujo Upload incentiva la adopción orgánica de Form y STT.
+- Pasos 1 y 2 completados. Pausado en sesión 002 (2026-04-28) para abrir H8.
+
+### Hito 8: Mejoras Procesador PDF→Excel + HTMX (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md`)
+- Implantación quirúrgica de HTMX en lista de PDFs (polling de estado automático)
+  y editor de entradas inline (guardado automático por campo sin scroll al top).
+- Mejoras del editor: insertar entrada entre líneas, drag & drop, restaurar entrada
+  individual, avisos visuales de incidencias con normalización automática de color.
+- Correcciones pipeline: columna mano de obra vacía en Excel + parser OCR (O/0, L/1, t/7).
+- Detección de PDF duplicado en upload con modal de advertencia y confirmación.
+- Concatenación de múltiples Excels con membrete individual por operario.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

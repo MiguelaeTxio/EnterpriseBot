@@ -25,7 +25,7 @@ body {
 /* --- SIDEBAR (desktop >=992px) --- */
 /* --- SIDEBAR (escritorio >=992px) --- */
 .sidebar {
-    min-height: 100vh;
+    height: 100vh;
     width: 260px;
     background-color: #1a1f2e;
     position: fixed;
@@ -33,6 +33,7 @@ body {
     left: 0;
     z-index: 100;
     padding-top: 0;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
 }

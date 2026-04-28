@@ -17,7 +17,7 @@ from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 from django.forms import modelformset_factory
 
-from panel.mixins import CompanyUserRequiredMixin, AdminRoleRequiredMixin
+from panel.mixins import CompanyUserRequiredMixin, AdminRoleRequiredMixin, WorkshopRequiredMixin
 from panel.models import AnalyticsProfile
 from panel.forms import (
     PanelAuthenticationForm,
@@ -50,6 +50,54 @@ from work_order_processor.tasks import process_work_order_pdf
 from fleet.models import MachineAsset
 import plotly.graph_objects as go
 import plotly.io as pio
+
+
+class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
+    """
+    Landing view for CompanyUsers with the WORKSHOP role.
+    Displays a selector with the three work-order entry paths:
+    Form (structured web form), STT (speech-to-text dictation) and
+    Upload (photo or PDF with Gemini Vision extraction).
+    Accessible to WORKSHOP and ADMIN roles (WorkshopRequiredMixin).
+    ---
+    Vista de aterrizaje para CompanyUsers con rol WORKSHOP.
+    Muestra un selector con las tres vías de entrada de partes:
+    Form (formulario web estructurado), STT (dictado por voz) y
+    Upload (foto o PDF con extracción Gemini Vision).
+    Accesible para los roles WORKSHOP y ADMIN (WorkshopRequiredMixin).
+    """
+
+    template_name = "panel/operator/dashboard.html"
+
+    def get_context_data(self, **kwargs):
+        """
+        Build context with company, company_user and own_presence for the operator dashboard.
+        ---
+        Construye el contexto con company, company_user y own_presence para el dashboard
+        del operario de taller.
+        """
+        context = super().get_context_data(**kwargs)
+
+        # CompanyUserRequiredMixin guarantees company_user exists at this point.
+        # CompanyUserRequiredMixin garantiza que company_user existe en este punto.
+        company_user = self.request.user.company_user
+        company      = company_user.company
+
+        # Retrieve current active presence status for the authenticated user.
+        # Obtener el estado de presencia activo actual del usuario autenticado.
+        own_presence = PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+        context["company"]      = company
+        context["company_user"] = company_user
+        context["own_presence"] = own_presence
+        context["active_nav"]   = "operator_dashboard"
+
+        return context
 
 
 class CompanyUserCreateView(AdminRoleRequiredMixin, View):
@@ -1876,6 +1924,26 @@ class PanelDashboardView(CompanyUserRequiredMixin, TemplateView):
     """
 
     template_name = "panel/dashboard.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Redirect WORKSHOP users to the operator dashboard immediately.
+        ADMIN and OPERATOR users proceed to the standard dashboard.
+        ---
+        Redirige a los usuarios WORKSHOP al dashboard de operario inmediatamente.
+        Los usuarios ADMIN y OPERATOR continúan al dashboard estándar.
+        """
+        # Delegate authentication and CompanyUser checks to parent first.
+        # Delegar las comprobaciones de autenticación y CompanyUser al padre primero.
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+
+        company_user = getattr(request.user, "company_user", None)
+        if company_user and company_user.role == CompanyUser.ROLE_WORKSHOP:
+            return redirect("/panel/operator/")
+
+        return response
 
     def get_context_data(self, **kwargs):
         """

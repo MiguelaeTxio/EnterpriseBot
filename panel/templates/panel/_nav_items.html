@@ -27,13 +27,29 @@
 {#   "datacapturesets"    → Conjuntos de captura                                    #}
 {#   "work_orders"        → PDFs                                                    #}
 {#   "analytics"          → Analítica                                               #}
+{#   "operator_dashboard" → Dashboard de operario de taller                        #}
 {# ================================================================================ #}
 
 <ul class="nav flex-column mt-2">
 
     {# ------------------------------------------------------------------ #}
-    {# Inicio / Dashboard                                                  #}
+    {# Sección: Taller — Section: Workshop (WORKSHOP y ADMIN)              #}
     {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
+    <li><div class="sidebar-section-label">Taller</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
+           href="{% url 'panel:operator_dashboard' %}">
+            <i class="bi bi-tools"></i>Nuevo parte
+        </a>
+    </li>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Inicio / Dashboard (solo ADMIN y OPERATOR)                          #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role != 'WORKSHOP' %}
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}"
            href="{% url 'panel:dashboard' %}">
@@ -42,7 +58,7 @@
     </li>
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Presencia — Section: Presence                             #}
+    {# Sección: Presencia — Section: Presence (solo ADMIN y OPERATOR)      #}
     {# ------------------------------------------------------------------ #}
     <li><div class="sidebar-section-label">Presencia</div></li>
 
@@ -52,6 +68,7 @@
             <i class="bi bi-person-check"></i>Mi estado
         </a>
     </li>
+    {% endif %}
 
     {# ------------------------------------------------------------------ #}
     {# Sección: Voz (solo ADMIN) — Section: Voice (ADMIN only)            #}

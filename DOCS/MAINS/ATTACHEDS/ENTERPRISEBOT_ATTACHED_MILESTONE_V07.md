@@ -148,7 +148,7 @@ El operario con rol OPERATOR ve en el panel únicamente:
 - Migración ivr_config correspondiente.
 - Extender `CompanyUserCreateForm` en `panel/forms.py` para incluir el rol OPERATOR.
 - Extender `CompanyUserListView` para mostrar operarios en el listado de usuarios.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (2026-04-28).
 
 ### Paso 2 — Mixin y navegación restringida del operario
 - Nuevo `OperatorRequiredMixin` en `panel/mixins.py`.
@@ -156,7 +156,7 @@ El operario con rol OPERATOR ve en el panel únicamente:
 - Template `panel/operator/dashboard.html`: sidebar simplificado + selector de vía.
 - Modificación de `_nav_items.html` y `base.html` para renderizar sidebar
   reducido cuando el rol es OPERATOR.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (2026-04-28).
 
 ### Paso 3 — Vía A: formulario web estructurado (Form)
 - `WorkOrderEntryFormView` en `panel/views.py`.
@@ -200,26 +200,59 @@ El operario con rol OPERATOR ve en el panel únicamente:
 | Sesion | Fecha      | Pasos trabajados | Resumen |
 |--------|------------|-----------------|---------|
 | 001    | 2026-04-27 | —               | Creacion del anexo. Inicio formal del hito. |
+| 002    | 2026-04-28 | Pasos 1 y 2     | Arquitectura de roles ampliada: WORKSHOP y DRIVER anadidos a CompanyUser.role. WorkshopRequiredMixin creado en panel/mixins.py. OperatorDashboardView implementada con redirección condicional desde PanelDashboardView. Navegacion restringida en _nav_items.html. Template operator/dashboard.html creado con selector de tres vias. Usuario de prueba taller_test_01 creado y validado E2E. Fix sidebar height:100vh en panel.css. Hito pausado para abrir H8. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
 ### Objetivo principal
-Paso 1 — Nuevo rol OPERATOR en CompanyUser.
+Paso 3 — Via A: formulario web estructurado.
 
-### PRIMERA ACCION — Paso 1: rol OPERATOR
+### NOTA DE REACTIVACION
+Este hito fue pausado en sesion 002 (2026-04-28) para abrir el H8
+(Mejoras PDF->Excel + HTMX). Al reactivar, continuar desde el Paso 3.
+Los Pasos 1 y 2 estan completados y validados E2E.
 
-Añadir `OPERATOR = "OPERATOR", _("Operario")` a `CompanyUser.role` en
-`ivr_config/models.py`. Generar y aplicar migración. Extender
-`CompanyUserCreateForm` para incluir el rol. Extender `CompanyUserListView`
-para mostrar el rol de forma legible en el listado.
+### PRIMERA ACCION — Leer archivos clave antes de implementar
 
-### SEGUNDA ACCION — Paso 2: mixin y navegación restringida
+Solicitar via SFTP antes de escribir ninguna linea de codigo:
+- work_order_processor/models.py — WorkOrder, WorkOrderEntry, WorkOrderEntryLine.
+- work_order_processor/services.py — generate_work_order_excel(), pipeline Vision.
+- fleet/models.py — MachineAsset (campos codigo, marca_modelo).
+- panel/templates/panel/work_orders/upload.html — formulario de subida actual.
 
-Crear `OperatorRequiredMixin` en `panel/mixins.py`. Implementar
-`OperatorDashboardView` con template de selector de vía. Adaptar sidebar
-y navegación para el rol OPERATOR.
+### SEGUNDA ACCION — Paso 3: Via A formulario web estructurado
+
+WorkOrderEntryFormView en panel/views.py:
+- Hereda de WorkshopRequiredMixin, View.
+- GET: renderiza formulario multi-bloque con un bloque inicial.
+- POST: valida y persiste WorkOrder sintetico (status=DONE, source_pdf=null,
+  total_pages=1, processed_pages=1) + WorkOrderEntry + N WorkOrderEntryLine.
+- Tras persistir llama directamente a generate_work_order_excel() sin Celery.
+
+WorkOrderEntryConfirmView en panel/views.py:
+- Punto de confirmacion y persistencia sincrona.
+- Renderiza formulario de confirmacion con todos los campos pre-rellenados.
+
+Templates nuevos (Neonatos Puros):
+- panel/operator/form_entry.html: formulario multi-bloque con autocompletado
+  MachineAsset, time pickers redondeados a media hora, boton + Anadir bloque.
+- panel/operator/confirm_entry.html: formulario de confirmacion con campos
+  de alerta (fondo amarillo si vacios).
+
+Autocompletado MachineAsset: endpoint JSON GET /panel/operator/assets/
+que devuelve lista de {codigo, marca_modelo} de la empresa del usuario.
+Vista WorkshopAssetAutocompleteView en panel/views.py.
+
+### Estado de migraciones al inicio del hito (sin cambios desde sesion 002)
+
+| App                    | Ultima migracion aplicada                              |
+|------------------------|--------------------------------------------------------|
+| fleet                  | 0002_maintenancelog_work_entry_line                    |
+| work_order_processor   | 0002_remove_workorderentry_end_time_and_more           |
+| ivr_config             | 0012_callflow_backup_name                              |
+| panel                  | 0001_initial (AnalyticsProfile)                        |
 
 ### Estado de migraciones al inicio del hito
 

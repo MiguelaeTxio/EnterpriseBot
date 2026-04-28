@@ -46,6 +46,7 @@ from panel.views import (
     AnalyticsDataView,
     AnalyticsProfileListCreateView,
     AnalyticsProfileDeleteView,
+    OperatorDashboardView,
 )
 
 app_name = "panel"
@@ -57,6 +58,10 @@ urlpatterns = [
 
     # Dashboard — Panel principal.
     path("", PanelDashboardView.as_view(), name="dashboard"),
+
+    # Operator dashboard — Selector de vía de entrada de partes (rol WORKSHOP y ADMIN).
+    # Paso 2 — Hito 7 (2026-04-27)
+    path("operator/", OperatorDashboardView.as_view(), name="operator_dashboard"),
 
     # Presence management — Gestión de presencia propia.
     path("presence/", PresenceStatusUpdateView.as_view(), name="presence_status"),
