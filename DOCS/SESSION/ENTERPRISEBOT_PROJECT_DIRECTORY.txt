@@ -44,9 +44,11 @@
 ./panel/templates/panel/work_orders/list.html
 ./panel/templates/panel/work_orders/_line_row.html
 ./panel/templates/panel/work_orders/edit.html
+./panel/templates/panel/work_orders/_queue_actions.html
 ./panel/templates/panel/work_orders/_status_fragment.html
 ./panel/templates/panel/work_orders/upload.html
 ./panel/templates/panel/work_orders/_entry_group_fragment.html
+./panel/templates/panel/work_orders/_review_badge_fragment.html
 ./panel/templates/panel/operator/dashboard.html
 ./panel/static/panel/css/panel.css
 ./panel/__init__.py
@@ -225,6 +227,7 @@
 ./ivr_config/views.py
 ./ivr_config/apps.py
 ./ivr_config/models.py
+./ivr_config/migrations/0013_alter_companyuser_role.py
 ./ivr_config/migrations/0011_section_fleet_families.py
 ./ivr_config/migrations/0008_sectioncontact_transferattempt_pendingnotification.py
 ./ivr_config/migrations/0003_callflow_notification_contact_contact_email_and_more.py
@@ -251,6 +254,7 @@
 ./work_order_processor/models.py
 ./work_order_processor/migrations/0002_remove_workorderentry_end_time_and_more.py
 ./work_order_processor/migrations/__init__.py
+./work_order_processor/migrations/0003_workorder_reviewed_workorder_reviewed_at_and_more.py
 ./work_order_processor/migrations/0001_initial.py
 ./work_order_processor/tasks.py
 ./work_order_processor/tests.py

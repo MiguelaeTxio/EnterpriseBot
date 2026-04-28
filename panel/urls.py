@@ -50,6 +50,7 @@ from panel.views import (
     WorkOrderLineDeleteView,
     WorkOrderDeleteView,
     WorkOrderExportView,
+    WorkOrderMarkReviewedView,
     AnalyticsView,
     AnalyticsDataView,
     AnalyticsProfileListCreateView,
@@ -126,8 +127,8 @@ urlpatterns = [
     path("datacapturesets/create/", DataCaptureSetCreateView.as_view(), name="datacaptureset_create"),
     path("datacapturesets/<int:pk>/edit/", DataCaptureSetUpdateView.as_view(), name="datacaptureset_edit"),
 
-    # WorkOrder management — PDFs de partes de trabajo (rol ADMIN).
-    # Paso 7 — Hito 6 (2026-04-22)
+    # WorkOrder management — PDFs de partes de trabajo (rol SUPERVISOR y ADMIN).
+    # Paso 7 — Hito 6 (2026-04-22) | Bloque G — Hito 8 (2026-04-28)
     path("work-orders/", WorkOrderListView.as_view(), name="work_order_list"),
     path("work-orders/upload/", WorkOrderUploadView.as_view(), name="work_order_upload"),
     path("work-orders/<int:pk>/edit/", WorkOrderEditView.as_view(), name="work_order_edit"),
@@ -160,8 +161,12 @@ urlpatterns = [
     # Bugfix E2E — Hito 8 (2026-04-28)
     path("work-orders/<int:wo_pk>/lines/<int:line_pk>/delete/", WorkOrderLineDeleteView.as_view(), name="work_order_line_delete"),
 
-    # WorkOrder Excel export — Concatenación de Excels de partes seleccionados (rol ADMIN).
-    # Paso 6 — Hito 8 (2026-04-28)
+    # WorkOrder review toggle — Marcar/desmarcar revisión HTMX (rol SUPERVISOR y ADMIN).
+    # Paso 7 — Hito 8 (2026-04-28)
+    path("work-orders/<int:pk>/review/", WorkOrderMarkReviewedView.as_view(), name="work_order_review"),
+
+    # WorkOrder Excel export — Concatenación de Excels de partes seleccionados (rol SUPERVISOR y ADMIN).
+    # Paso 6/8 — Hito 8 (2026-04-28)
     path("work-orders/export/", WorkOrderExportView.as_view(), name="work_order_export"),
 
     # Analytics — Panel de analítica con gráficos Plotly (rol ADMIN).

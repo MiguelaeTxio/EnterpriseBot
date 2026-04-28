@@ -2,9 +2,27 @@
 """
 Authentication and authorisation mixins for the panel application.
 Provides layered access control for CompanyUser accounts.
+
+Mixin hierarchy:
+  PanelLoginRequiredMixin      — authentication gate (redirects to /panel/login/).
+  CompanyUserRequiredMixin     — active CompanyUser + password-change enforcement.
+  AdminRoleRequiredMixin       — restricts to ADMIN role only.
+  WorkshopRequiredMixin        — restricts to WORKSHOP and ADMIN roles.
+  SupervisorAccessMixin        — restricts to SUPERVISOR and ADMIN roles.
+                                 Introduced in Hito 8 / Bloque G for PDF work-order
+                                 review and export workflow.
 ---
 Mixins de autenticación y autorización para la aplicación panel.
 Proporciona control de acceso por capas para las cuentas CompanyUser.
+
+Jerarquía de mixins:
+  PanelLoginRequiredMixin      — barrera de autenticación (redirige a /panel/login/).
+  CompanyUserRequiredMixin     — CompanyUser activo + forzado de cambio de contraseña.
+  AdminRoleRequiredMixin       — restringe al rol ADMIN exclusivamente.
+  WorkshopRequiredMixin        — restringe a los roles WORKSHOP y ADMIN.
+  SupervisorAccessMixin        — restringe a los roles SUPERVISOR y ADMIN.
+                                 Introducido en Hito 8 / Bloque G para el flujo de
+                                 revisión y exportación de partes de trabajo PDF.
 """
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -144,5 +162,70 @@ class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
             return HttpResponseForbidden(
                 "Acceso denegado. Esta sección requiere el rol de Administrador."
             )
+
+        return response
+
+
+class SupervisorAccessMixin(CompanyUserRequiredMixin):
+    """
+    Mixin that grants access to CompanyUsers with the SUPERVISOR or ADMIN role.
+    Introduced in Hito 8 / Bloque G for the PDF work-order review and export
+    workflow. Covers: WorkOrderUploadView, WorkOrderListView, WorkOrderExportView
+    and WorkOrderMarkReviewedView.
+
+    Access matrix:
+      ADMIN      — full access (upload, list, review, export).
+      SUPERVISOR — same as ADMIN for work-order views only; no access to IVR
+                   configuration views (sections, contacts, users, call flows…).
+      Any other role — HTTP 403 Forbidden, redirected to dashboard with error message.
+    ---
+    Mixin que concede acceso a CompanyUsers con rol SUPERVISOR o ADMIN.
+    Introducido en el Hito 8 / Bloque G para el flujo de revisión y exportación
+    de partes de trabajo PDF. Cubre: WorkOrderUploadView, WorkOrderListView,
+    WorkOrderExportView y WorkOrderMarkReviewedView.
+
+    Matriz de acceso:
+      ADMIN      — acceso completo (subida, lista, revisión, exportación).
+      SUPERVISOR — igual que ADMIN únicamente en vistas de partes; sin acceso a
+                   vistas de configuración IVR (secciones, contactos, usuarios,
+                   flujos de llamada…).
+      Cualquier otro rol — HTTP 403 Forbidden, redirigido al dashboard con mensaje
+                           de error.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Verify that the authenticated CompanyUser holds the SUPERVISOR or ADMIN role.
+        Delegates to parent for authentication and CompanyUser checks first.
+        On insufficient role, redirects to the dashboard with an error message
+        instead of returning a bare 403, to provide a better UX within the panel.
+        ---
+        Verifica que el CompanyUser autenticado posee el rol SUPERVISOR o ADMIN.
+        Delega al padre para las comprobaciones de autenticación y CompanyUser primero.
+        En caso de rol insuficiente, redirige al dashboard con un mensaje de error
+        en lugar de devolver un 403 desnudo, para mejorar la experiencia en el panel.
+        """
+        # Delegate authentication and CompanyUser checks to parent first.
+        # Delegar las comprobaciones de autenticación y CompanyUser al padre primero.
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+
+        company_user = getattr(request.user, "company_user", None)
+        if company_user is None:
+            return response
+
+        # Grant access only to SUPERVISOR and ADMIN roles.
+        # Conceder acceso únicamente a los roles SUPERVISOR y ADMIN.
+        allowed_roles = {
+            CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_ADMIN,
+        }
+        if company_user.role not in allowed_roles:
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección requiere el rol de Supervisor o Administrador.",
+            )
+            return redirect("/panel/")
 
         return response

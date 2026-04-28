@@ -1,10 +1,26 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views.py
 """
 View definitions for the panel application.
-Implements class-based views for authentication and the main dashboard.
+Implements class-based views for authentication, the main dashboard and all
+work-order processing workflow views.
+
+Hito 8 / Bloque G additions:
+  WorkOrderMarkReviewedView — HTMX toggle for the reviewed flag (SUPERVISOR+ADMIN).
+  WorkOrderListView         — refactored with four querysets for tabbed UI (H1).
+  WorkOrderUploadView       — mixin changed to SupervisorAccessMixin.
+  WorkOrderExportView       — mixin changed to SupervisorAccessMixin; export_mode
+                              parameter support for single_sheet / multi_sheet (H4).
 ---
 Definiciones de vistas para la aplicación panel.
-Implementa vistas basadas en clases para autenticación y el panel principal.
+Implementa vistas basadas en clases para autenticación, el panel principal y
+todas las vistas del flujo de procesamiento de partes de trabajo.
+
+Incorporaciones Hito 8 / Bloque G:
+  WorkOrderMarkReviewedView — toggle HTMX para el flag reviewed (SUPERVISOR+ADMIN).
+  WorkOrderListView         — refactorizada con cuatro querysets para UI de pestañas (H1).
+  WorkOrderUploadView       — mixin cambiado a SupervisorAccessMixin.
+  WorkOrderExportView       — mixin cambiado a SupervisorAccessMixin; soporte del
+                              parámetro export_mode para single_sheet / multi_sheet (H4).
 """
 
 from django.contrib.auth import update_session_auth_hash
@@ -17,7 +33,7 @@ from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 from django.forms import modelformset_factory
 
-from panel.mixins import CompanyUserRequiredMixin, AdminRoleRequiredMixin, WorkshopRequiredMixin
+from panel.mixins import CompanyUserRequiredMixin, AdminRoleRequiredMixin, WorkshopRequiredMixin, SupervisorAccessMixin
 from panel.models import AnalyticsProfile
 from panel.forms import (
     PanelAuthenticationForm,
@@ -2441,15 +2457,26 @@ class DataCaptureSetUpdateView(AdminRoleRequiredMixin, UpdateView):
         ).order_by("-starts_at").first()
 
 
-class WorkOrderListView(AdminRoleRequiredMixin, View):
+class WorkOrderListView(SupervisorAccessMixin, View):
     """
-    Lists all WorkOrder records belonging to the authenticated user's company.
-    Shows upload date, status, page progress and Excel download link when done.
-    Restricted to ADMIN role.
+    Lists WorkOrder records belonging to the authenticated user's company,
+    split into four querysets for the tabbed UI introduced in Hito 8 / Bloque H:
+      wo_queue    — PENDING or PROCESSING (polling tab).
+      wo_error    — ERROR.
+      wo_pending  — DONE, not yet reviewed (pending supervisor sign-off).
+      wo_reviewed — DONE and reviewed.
+
+    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
     ---
-    Lista todos los registros WorkOrder de la empresa del usuario autenticado.
-    Muestra fecha de carga, estado, progreso de páginas y enlace de descarga
-    del Excel cuando el estado es DONE. Restringido al rol ADMIN.
+    Lista los registros WorkOrder de la empresa del usuario autenticado,
+    divididos en cuatro querysets para la UI de pestañas introducida en
+    el Hito 8 / Bloque H:
+      wo_queue    — PENDING o PROCESSING (pestaña con polling).
+      wo_error    — ERROR.
+      wo_pending  — DONE sin revisión (pendiente de validación del Supervisor).
+      wo_reviewed — DONE y revisados.
+
+    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
     template_name = "panel/work_orders/list.html"
@@ -2472,26 +2499,64 @@ class WorkOrderListView(AdminRoleRequiredMixin, View):
 
     def get(self, request):
         """
-        Renders the work order list filtered by the authenticated user's company.
+        Renders the tabbed work order list with four filtered querysets.
+        The active tab defaults to "Pendiente revisión" when there are pending
+        work orders; otherwise defaults to "En cola".
         ---
-        Renderiza la lista de partes de trabajo filtrada por la empresa del
-        usuario autenticado.
+        Renderiza la lista de partes con pestañas y cuatro querysets filtrados.
+        La pestaña activa por defecto es "Pendiente revisión" si hay partes
+        pendientes; en caso contrario, "En cola".
         """
         company_user = request.user.company_user
-        work_orders  = WorkOrder.objects.filter(
-            company=company_user.company
-        ).order_by("-upload_date")
+        company      = company_user.company
+
+        # Four querysets for the tabbed UI — Hito 8 / Bloque H.
+        # Cuatro querysets para la UI de pestañas — Hito 8 / Bloque H.
+        wo_queue = (
+            WorkOrder.objects
+            .filter(company=company, status__in=[
+                WorkOrder.Status.PENDING,
+                WorkOrder.Status.PROCESSING,
+            ])
+            .order_by("-upload_date")
+        )
+        wo_error = (
+            WorkOrder.objects
+            .filter(company=company, status=WorkOrder.Status.ERROR)
+            .order_by("-upload_date")
+        )
+        wo_pending = (
+            WorkOrder.objects
+            .filter(company=company, status=WorkOrder.Status.DONE, reviewed=False)
+            .order_by("-upload_date")
+        )
+        wo_reviewed = (
+            WorkOrder.objects
+            .filter(company=company, status=WorkOrder.Status.DONE, reviewed=True)
+            .select_related("reviewed_by__user")
+            .order_by("-upload_date")
+        )
+
+        # Default active tab: "pending" if there are unreviewed DONE orders,
+        # otherwise "queue".
+        # Pestaña activa por defecto: "pending" si hay DONE sin revisar,
+        # en caso contrario "queue".
+        default_tab = "pending" if wo_pending.exists() else "queue"
 
         return render(request, self.template_name, {
-            "company":      company_user.company,
+            "company":      company,
             "company_user": company_user,
-            "own_presence":  self._get_own_presence(company_user),
-            "active_nav":    "work_orders",
-            "work_orders":   work_orders,
+            "own_presence": self._get_own_presence(company_user),
+            "active_nav":   "work_orders",
+            "wo_queue":     wo_queue,
+            "wo_error":     wo_error,
+            "wo_pending":   wo_pending,
+            "wo_reviewed":  wo_reviewed,
+            "default_tab":  default_tab,
         })
 
 
-class WorkOrderUploadView(AdminRoleRequiredMixin, View):
+class WorkOrderUploadView(SupervisorAccessMixin, View):
     """
     Handles PDF upload for work order processing.
     On POST: validates the file, runs a duplicate detection check before
@@ -2508,7 +2573,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
       If the user confirms overwrite, the duplicate WorkOrder (and all its
       cascade-deleted children) is deleted before the new one is created.
 
-    Restricted to ADMIN role.
+    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
     ---
     Gestiona la carga de PDF para el procesamiento de partes de trabajo.
     En POST: valida el archivo, ejecuta una comprobación de duplicado antes
@@ -2525,7 +2590,7 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
       Si el usuario confirma la sobrescritura, el WorkOrder duplicado (y todos
       sus hijos eliminados en cascada) se elimina antes de crear el nuevo.
 
-    Restringido al rol ADMIN.
+    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
     template_name = "panel/work_orders/upload.html"
@@ -2562,18 +2627,49 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
 
     def post(self, request):
         """
-        Processes the uploaded PDF: validates the file, runs duplicate detection,
-        optionally deletes the existing duplicate on confirmed overwrite, creates
-        a new WorkOrder and enqueues the Celery processing task.
+        Processes the uploaded PDF: validates the file, runs duplicate detection
+        against existing WorkOrderEntry records in the DB (worker_name + work_date
+        overlap), optionally deletes the existing duplicate WorkOrder on confirmed
+        overwrite, creates a new WorkOrder and enqueues the Celery processing task.
+
+        Duplicate detection strategy (redesigned — Hito 8 / Bloque E fix):
+          The incoming PDF filename is used ONLY to derive the worker name via
+          _worker_name_from_pdf_path(). Period overlap is checked by querying
+          WorkOrderEntry.work_date values for that worker_name within the same
+          company. This approach is robust regardless of PDF filename format
+          (4-digit vs 2-digit year, spaces vs underscores) and works even when
+          source_pdf has been deleted from the existing WorkOrder.
+
+          If matching WorkOrderEntry records exist and the user has not confirmed
+          overwrite, the form is re-rendered with duplicate_wo set so the template
+          shows the warning modal. On confirmation the duplicate WorkOrder (cascade-
+          deletes all its entries and lines) is removed before the new one is created.
         ---
         Procesa el PDF cargado: valida el archivo, ejecuta la detección de
-        duplicado, elimina opcionalmente el duplicado existente si el usuario
-        confirma la sobrescritura, crea un nuevo WorkOrder y encola la tarea
-        Celery de procesamiento.
+        duplicado contra los registros WorkOrderEntry existentes en BD
+        (worker_name + solapamiento de work_date), elimina opcionalmente el
+        WorkOrder duplicado existente si el usuario confirma la sobrescritura,
+        crea un nuevo WorkOrder y encola la tarea Celery de procesamiento.
+
+        Estrategia de detección de duplicado (rediseñada — Hito 8 / Bloque E fix):
+          El nombre del fichero PDF entrante se usa ÚNICAMENTE para derivar el
+          nombre del operario mediante _worker_name_from_pdf_path(). El solapamiento
+          de periodo se comprueba consultando los valores WorkOrderEntry.work_date
+          de ese worker_name en la misma empresa. Este enfoque es robusto
+          independientemente del formato del nombre del PDF (año 4 vs 2 dígitos,
+          espacios vs guiones bajos) y funciona aunque source_pdf haya sido eliminado
+          del WorkOrder existente.
+
+          Si existen WorkOrderEntry coincidentes y el usuario no ha confirmado
+          la sobrescritura, el formulario se vuelve a renderizar con duplicate_wo
+          para que la plantilla muestre el modal de advertencia. Al confirmar, el
+          WorkOrder duplicado (que elimina en cascada todas sus entries y lines)
+          se elimina antes de crear el nuevo.
         """
         from django.contrib import messages as django_messages
-        from work_order_processor.services import _parse_period_from_pdf_name
+        from work_order_processor.services import _worker_name_from_pdf_path
         from work_order_processor.tasks import _extract_period_from_pdf_name
+        from work_order_processor.models import WorkOrderEntry
 
         company_user = request.user.company_user
         company      = company_user.company
@@ -2602,66 +2698,62 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
             })
 
         # ------------------------------------------------------------------
-        # Step 2 — Duplicate detection pre-creation check (Bloque E).
-        # Paso 2 — Comprobación de duplicado pre-creación (Bloque E).
+        # Step 2 — Duplicate detection via WorkOrderEntry records (Bloque E).
+        # Paso 2 — Detección de duplicado via registros WorkOrderEntry.
         #
-        # Parse worker name and work period from the incoming PDF filename.
-        # Check for an existing WorkOrder for the same company that covers
-        # the same worker and an overlapping period. If found and the user
-        # has not confirmed overwrite, re-render the form with the modal.
+        # Strategy:
+        #   a) Derive worker_name from the incoming PDF filename.
+        #   b) Optionally extract the period from the filename for a tighter
+        #      date-range check. If the filename format is not recognised,
+        #      fall back to matching ANY existing entry for the same worker.
+        #   c) Query WorkOrderEntry for this company + worker_name + date overlap.
+        #   d) If a match is found, identify the parent WorkOrder as the duplicate.
+        #
+        # Estrategia:
+        #   a) Derivar worker_name del nombre del fichero PDF entrante.
+        #   b) Extraer opcionalmente el periodo del nombre para una comprobación
+        #      de rango de fechas más ajustada. Si el formato no se reconoce,
+        #      se recurre a buscar CUALQUIER entrada existente del mismo operario.
+        #   c) Consultar WorkOrderEntry por empresa + worker_name + solapamiento
+        #      de fechas.
+        #   d) Si se encuentra coincidencia, identificar el WorkOrder padre como
+        #      el duplicado.
         # ------------------------------------------------------------------
-        incoming_name  = pdf_file.name
-        date_from, date_to = _extract_period_from_pdf_name(incoming_name)
+        incoming_name   = pdf_file.name
+        incoming_worker = _worker_name_from_pdf_path(incoming_name)
 
-        # Derive worker name from the PDF filename using the same logic as tasks.py.
-        # Derivar nombre del operario del nombre del PDF usando la misma lógica
-        # que tasks.py.
-        import os as _os
-        stem   = _os.path.splitext(_os.path.basename(incoming_name))[0]
-        tokens = stem.replace("_", " ").split(" ")
-        name_tokens = []
-        for tok in tokens:
-            if tok and tok[0].isdigit():
-                break
-            name_tokens.append(tok.upper())
-        incoming_worker = " ".join(name_tokens).strip()
+        # Attempt period extraction from filename for a date-bounded check.
+        # Intentar extracción de periodo del nombre para comprobación acotada.
+        date_from, date_to = _extract_period_from_pdf_name(incoming_name)
 
         duplicate_wo = None
 
-        if date_from and date_to and incoming_worker:
-            # Query existing WorkOrders for this company with the same worker.
-            # Consultar WorkOrders existentes de esta empresa con el mismo operario.
-            candidates = WorkOrder.objects.filter(company=company)
-            for candidate in candidates:
-                if not candidate.source_pdf:
-                    continue
-                cand_date_from, cand_date_to = _extract_period_from_pdf_name(
-                    candidate.source_pdf.name
+        if incoming_worker:
+            # Build base queryset: entries for this company + worker.
+            # Construir queryset base: entries de esta empresa + operario.
+            entry_qs = WorkOrderEntry.objects.filter(
+                work_order__company=company,
+                worker_name=incoming_worker,
+            ).select_related("work_order")
+
+            if date_from and date_to:
+                # Period known: check for overlapping work_date values.
+                # Periodo conocido: comprobar solapamiento de work_date.
+                # An existing entry overlaps if its work_date falls within
+                # [date_from, date_to] (inclusive).
+                # Una entrada existente solapa si su work_date cae dentro
+                # de [date_from, date_to] (inclusive).
+                entry_qs = entry_qs.filter(
+                    work_date__gte=date_from,
+                    work_date__lte=date_to,
                 )
-                if not cand_date_from or not cand_date_to:
-                    continue
+            # else: period unknown — any existing entry for this worker is a match.
+            # else: periodo desconocido — cualquier entrada existente del operario
+            # es considerada coincidencia.
 
-                # Derive worker name from candidate PDF filename.
-                # Derivar nombre del operario del nombre del PDF del candidato.
-                cand_stem   = _os.path.splitext(
-                    _os.path.basename(candidate.source_pdf.name)
-                )[0]
-                cand_tokens = cand_stem.replace("_", " ").split(" ")
-                cand_name_tokens = []
-                for tok in cand_tokens:
-                    if tok and tok[0].isdigit():
-                        break
-                    cand_name_tokens.append(tok.upper())
-                cand_worker = " ".join(cand_name_tokens).strip()
-
-                # Check worker name match and period overlap.
-                # Comprobar coincidencia de operario y solapamiento de periodo.
-                worker_match  = (cand_worker == incoming_worker)
-                periods_overlap = (date_from <= cand_date_to and date_to >= cand_date_from)
-
-                if worker_match and periods_overlap:
-                    duplicate_wo = candidate
-                    break
+            existing_entry = entry_qs.first()
+            if existing_entry:
+                duplicate_wo = existing_entry.work_order
 
         # If a duplicate was found and the user has not confirmed overwrite,
         # re-render the upload form with the duplicate modal context.
@@ -2669,11 +2761,11 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
         # volver a renderizar el formulario con el contexto del modal de duplicado.
         if duplicate_wo and not request.POST.get("confirm_overwrite"):
             return render(request, self.template_name, {
-                "company":      company,
-                "company_user": company_user,
-                "own_presence": self._get_own_presence(company_user),
-                "active_nav":   "work_orders",
-                "duplicate_wo": duplicate_wo,
+                "company":       company,
+                "company_user":  company_user,
+                "own_presence":  self._get_own_presence(company_user),
+                "active_nav":    "work_orders",
+                "duplicate_wo":  duplicate_wo,
                 "pdf_file_name": incoming_name,
             })
 
@@ -2684,8 +2776,8 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
             duplicate_wo.delete()
             django_messages.warning(
                 request,
-                f"El parte duplicado #{dup_pk} ha sido eliminado. "
-                f"Procesando el nuevo PDF."
+                f"El parte duplicado #{dup_pk} y todos sus datos han sido "
+                f"eliminados. Procesando el nuevo PDF."
             )
 
         # ------------------------------------------------------------------
@@ -3554,27 +3646,99 @@ class WorkOrderDeleteView(AdminRoleRequiredMixin, View):
         return redirect("panel:work_order_list")
 
 
-class WorkOrderExportView(AdminRoleRequiredMixin, View):
+class WorkOrderMarkReviewedView(SupervisorAccessMixin, View):
+    """
+    Toggles the reviewed flag on a WorkOrder identified by pk, scoped to the
+    authenticated company. Returns an HTML fragment (_review_badge_fragment.html)
+    for HTMX to swap inline in list.html.
+
+    POST /panel/work-orders/<pk>/review/
+         If reviewed is currently False:
+           Sets reviewed=True, reviewed_by=request.user.company_user,
+           reviewed_at=now().
+         If reviewed is currently True:
+           Sets reviewed=False, reviewed_by=None, reviewed_at=None.
+         Returns the rendered _review_badge_fragment.html partial with HTTP 200.
+         Returns HTTP 404 if the WorkOrder does not exist or belongs to another
+         company.
+
+    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
+
+    ---
+
+    Alterna el flag reviewed de un WorkOrder identificado por pk, acotado a la
+    empresa autenticada. Devuelve un fragmento HTML (_review_badge_fragment.html)
+    para que HTMX lo intercambie inline en list.html.
+
+    POST /panel/work-orders/<pk>/review/
+         Si reviewed es actualmente False:
+           Establece reviewed=True, reviewed_by=request.user.company_user,
+           reviewed_at=now().
+         Si reviewed es actualmente True:
+           Establece reviewed=False, reviewed_by=None, reviewed_at=None.
+         Devuelve el parcial _review_badge_fragment.html renderizado con HTTP 200.
+         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra empresa.
+
+    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
+    """
+
+    def post(self, request, pk):
+        """
+        Toggles reviewed on the WorkOrder identified by pk and returns the
+        rendered review badge fragment for HTMX inline swap.
+        ---
+        Alterna reviewed en el WorkOrder identificado por pk y devuelve el
+        fragmento del badge de revisión para el intercambio inline de HTMX.
+        """
+        from django.shortcuts import get_object_or_404
+        from django.utils.timezone import now as tz_now
+
+        company      = request.user.company_user.company
+        company_user = request.user.company_user
+
+        wo = get_object_or_404(WorkOrder, pk=pk, company=company)
+
+        if wo.reviewed:
+            # Unmark: clear all review fields.
+            # Desmarcar: limpiar todos los campos de revisión.
+            wo.reviewed     = False
+            wo.reviewed_by  = None
+            wo.reviewed_at  = None
+            wo.save(update_fields=["reviewed", "reviewed_by", "reviewed_at"])
+        else:
+            # Mark: set reviewer and timestamp.
+            # Marcar: establecer revisor y timestamp.
+            wo.reviewed    = True
+            wo.reviewed_by = company_user
+            wo.reviewed_at = tz_now()
+            wo.save(update_fields=["reviewed", "reviewed_by", "reviewed_at"])
+
+        return render(
+            request,
+            "panel/work_orders/_review_badge_fragment.html",
+            {"wo": wo},
+        )
+
+
+class WorkOrderExportView(SupervisorAccessMixin, View):
     """
     Generates and returns a multi-sheet Excel file concatenating the individual
     Excel reports of a selection of WorkOrder records identified by their pks.
 
     POST /panel/work-orders/export/
          Expected POST fields:
-           pks : list[int] (repeating field "pks") — primary keys of the
-                 WorkOrder records to include. Only DONE records belonging to
-                 the authenticated company are exported. Records in any other
-                 status or belonging to other companies are silently skipped.
-         Builds one sheet per WorkOrder using generate_work_order_excel() in
-         buffer mode (without writing to disk), concatenates all sheets into a
-         single openpyxl Workbook preserving the individual worker header per
-         sheet, and returns an HttpResponse with Content-Type
-         application/vnd.openxmlformats-officedocument.spreadsheetml.sheet and
-         filename EXPORTACION_DD-MM-YY.xlsx.
+           pks         : list[int] (repeating field "pks") — primary keys of the
+                         WorkOrder records to include. Only DONE records belonging
+                         to the authenticated company are exported.
+           export_mode : str — "single_sheet" or "multi_sheet" (Hito 8 / Bloque H).
+                         single_sheet: one sheet with all entries ordered by
+                           worker_name then date_key; an opaque header row marks
+                           each new worker block.
+                         multi_sheet: one sheet per worker with individual header.
          Returns HTTP 400 if no valid pks are provided.
          Returns HTTP 404 if the authenticated user has no CompanyUser profile.
 
-    Restricted to the ADMIN role (AdminRoleRequiredMixin).
+    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
 
     ---
 
@@ -3583,40 +3747,81 @@ class WorkOrderExportView(AdminRoleRequiredMixin, View):
 
     POST /panel/work-orders/export/
          Campos POST esperados:
-           pks : list[int] (campo repetido "pks") — claves primarias de los
-                 registros WorkOrder a incluir. Solo se exportan los registros
-                 DONE de la empresa autenticada. Los registros en cualquier otro
-                 estado o de otras empresas se omiten silenciosamente.
-         Construye una hoja por WorkOrder usando generate_work_order_excel() en
-         modo buffer (sin escritura en disco), concatena todas las hojas en un
-         único Workbook openpyxl conservando la cabecera individual del operario
-         por hoja, y devuelve un HttpResponse con Content-Type
-         application/vnd.openxmlformats-officedocument.spreadsheetml.sheet y
-         nombre de fichero EXPORTACION_DD-MM-YY.xlsx.
+           pks         : list[int] (campo repetido "pks") — claves primarias de
+                         los WorkOrder a incluir. Solo se exportan DONE de la empresa.
+           export_mode : str — "single_sheet" o "multi_sheet" (Hito 8 / Bloque H).
+                         single_sheet: una sola hoja con todas las entradas ordenadas
+                           por operario y fecha; una fila cabecera separadora por
+                           cada nuevo operario.
+                         multi_sheet: una hoja por operario con su membrete.
          Devuelve HTTP 400 si no se proporcionan pks válidos.
-         Devuelve HTTP 404 si el usuario autenticado no tiene perfil CompanyUser.
+         Devuelve HTTP 404 si el usuario no tiene perfil CompanyUser.
 
-    Restringido al rol ADMIN (AdminRoleRequiredMixin).
+    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
     def post(self, request):
         """
-        Builds the concatenated Excel file from the selected WorkOrder pks and
-        returns it as a file download response.
+        Builds the export Excel file from the selected WorkOrder pks.
+        Supports two export modes controlled by the POST field export_mode:
+
+          single_sheet — One flat sheet with all WorkOrderEntryLine records
+            from all selected WorkOrders, grouped first by worker_name then
+            by work_date. A dark-blue separator row bearing the worker name
+            is inserted before the first block of each new worker. All data
+            is read directly from the DB — no Excel regeneration is triggered.
+
+          multi_sheet  — One sheet per distinct worker_name. Each sheet is
+            built by copying the first sheet of the individual Excel stored
+            in WorkOrder.excel_file (regenerated on-the-fly if missing).
+            Sheet title is truncated to 31 characters (Excel limit).
+
+        Both modes return an HttpResponse with Content-Disposition attachment.
+        Returns HTTP 400 on invalid or missing pks or on unknown export_mode.
+
         ---
-        Construye el Excel concatenado a partir de los pks de WorkOrder seleccionados
-        y lo devuelve como respuesta de descarga de archivo.
+
+        Construye el Excel de exportación a partir de los pks de WorkOrder
+        seleccionados. Soporta dos modos controlados por el campo POST
+        export_mode:
+
+          single_sheet — Una hoja plana con todos los WorkOrderEntryLine de
+            todos los WorkOrders seleccionados, agrupados por worker_name y
+            después por work_date. Una fila separadora azul oscuro con el
+            nombre del operario se inserta antes del primer bloque de cada
+            nuevo operario. Los datos se leen directamente de la BD — no se
+            regenera ningún Excel individual.
+
+          multi_sheet  — Una hoja por worker_name distinto. Cada hoja se
+            construye copiando la primera hoja del Excel individual almacenado
+            en WorkOrder.excel_file (regenerado al vuelo si falta).
+            El título de hoja se trunca a 31 caracteres (límite de Excel).
+
+        Ambos modos devuelven HttpResponse con Content-Disposition attachment.
+        Devuelve HTTP 400 ante pks inválidos/ausentes o export_mode desconocido.
         """
         import io
         import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
         from django.http import HttpResponse, HttpResponseBadRequest
         from django.utils.timezone import now as tz_now
+        from work_order_processor.models import WorkOrderEntry, WorkOrderEntryLine
         from work_order_processor.services import (
             generate_work_order_excel as _gen_excel,
             _worker_name_from_pdf_path,
         )
 
-        company = request.user.company_user.company
+        company     = request.user.company_user.company
+        export_mode = request.POST.get("export_mode", "single_sheet").strip()
+
+        # ------------------------------------------------------------------
+        # Validate export_mode.
+        # Validar export_mode.
+        # ------------------------------------------------------------------
+        if export_mode not in ("single_sheet", "multi_sheet"):
+            return HttpResponseBadRequest(
+                f"# [EXPORT] Modo de exportación desconocido: {export_mode!r}."
+            )
 
         # ------------------------------------------------------------------
         # Collect and validate requested pks.
@@ -3626,120 +3831,315 @@ class WorkOrderExportView(AdminRoleRequiredMixin, View):
         try:
             pk_list = [int(pk) for pk in raw_pks if pk]
         except (ValueError, TypeError):
-            return HttpResponseBadRequest(
-                "# [EXPORT] Parámetros pks inválidos."
-            )
+            return HttpResponseBadRequest("# [EXPORT] Parámetros pks inválidos.")
 
         if not pk_list:
             return HttpResponseBadRequest(
                 "# [EXPORT] No se han seleccionado partes para exportar."
             )
 
-        # Retrieve DONE WorkOrders scoped to the company, ordered by pk.
-        # Recuperar WorkOrders DONE acotados a la empresa, ordenados por pk.
-        work_orders = (
+        # Retrieve DONE WorkOrders scoped to the company.
+        # Recuperar WorkOrders DONE acotados a la empresa.
+        work_orders = list(
             WorkOrder.objects
-            .filter(
-                pk__in=pk_list,
-                company=company,
-                status=WorkOrder.Status.DONE,
-            )
+            .filter(pk__in=pk_list, company=company, status=WorkOrder.Status.DONE)
             .order_by("pk")
         )
 
-        if not work_orders.exists():
+        if not work_orders:
             return HttpResponseBadRequest(
                 "# [EXPORT] Ninguno de los partes seleccionados está en estado DONE."
             )
 
         # ------------------------------------------------------------------
-        # Build the concatenated workbook.
-        # Each WorkOrder is written to a temporary in-memory buffer using
-        # the existing generate_work_order_excel() service, then its sheet
-        # is copied into the master workbook.
+        # Helper — copy one openpyxl sheet into a destination workbook.
+        # Auxiliar — copiar una hoja openpyxl en un libro destino.
         # ------------------------------------------------------------------
-        # Construir el libro concatenado.
-        # Cada WorkOrder se escribe en un buffer en memoria temporal usando
-        # el servicio generate_work_order_excel() existente, y después su
-        # hoja se copia al libro maestro.
+        def _copy_sheet(src_sheet, dest_wb, title):
+            """
+            Copies src_sheet (cells, styles, column widths, row heights) into
+            a new sheet named title in dest_wb.
+            ---
+            Copia src_sheet (celdas, estilos, anchos de columna, alturas de
+            fila) en una nueva hoja llamada title en dest_wb.
+            """
+            dest_sheet = dest_wb.create_sheet(title=title[:31])
+            for row in src_sheet.iter_rows():
+                for cell in row:
+                    dest_cell = dest_sheet.cell(
+                        row=cell.row, column=cell.column, value=cell.value
+                    )
+                    if cell.has_style:
+                        dest_cell.font          = cell.font.copy()
+                        dest_cell.fill          = cell.fill.copy()
+                        dest_cell.alignment     = cell.alignment.copy()
+                        dest_cell.border        = cell.border.copy()
+                        dest_cell.number_format = cell.number_format
+            for col_letter, col_dim in src_sheet.column_dimensions.items():
+                dest_sheet.column_dimensions[col_letter].width = col_dim.width
+            for row_num, row_dim in src_sheet.row_dimensions.items():
+                dest_sheet.row_dimensions[row_num].height = row_dim.height
+            return dest_sheet
+
         # ------------------------------------------------------------------
-        master_wb = openpyxl.Workbook()
-        # Remove the default empty sheet created by openpyxl.
-        # Eliminar la hoja vacía por defecto creada por openpyxl.
-        master_wb.remove(master_wb.active)
-
-        for wo in work_orders:
-            # Generate individual Excel into a buffer without touching disk.
-            # The service writes the file to WorkOrder.excel_file — we read
-            # it back immediately from the model's FileField content.
-            # Generar Excel individual en un buffer sin tocar el disco.
-            # El servicio escribe el archivo en WorkOrder.excel_file — lo
-            # leemos inmediatamente desde el contenido del FileField del modelo.
-            try:
-                _gen_excel(wo.pk)
-                wo.refresh_from_db(fields=["excel_file"])
-                if not wo.excel_file:
-                    continue
-                with wo.excel_file.open("rb") as f:
-                    buf = io.BytesIO(f.read())
-                src_wb = openpyxl.load_workbook(buf)
-            except Exception:
-                # Skip WorkOrders whose Excel generation fails during export.
-                # Omitir WorkOrders cuya generación de Excel falle durante la exportación.
-                continue
-
-            # Derive a safe sheet title from the worker name (max 31 chars,
-            # openpyxl enforces the Excel sheet name length limit).
-            # Derivar un título de hoja seguro del nombre del operario
-            # (máx. 31 caracteres, límite de Excel impuesto por openpyxl).
-            worker_name = ""
+        # Helper — derive worker name from WorkOrder.
+        # Auxiliar — derivar nombre del operario desde WorkOrder.
+        # ------------------------------------------------------------------
+        def _get_worker_name(wo):
+            """
+            Returns the worker name from the PDF filename, or a fallback label.
+            ---
+            Devuelve el nombre del operario del nombre del PDF, o etiqueta de
+            reserva.
+            """
             if wo.source_pdf:
-                worker_name = _worker_name_from_pdf_path(wo.source_pdf.name)
-            sheet_title = (worker_name[:28] + f"#{wo.pk}") if worker_name else f"Parte#{wo.pk}"
-            sheet_title = sheet_title[:31]
+                return _worker_name_from_pdf_path(wo.source_pdf.name)
+            return f"Operario #{wo.pk}"
 
-            for src_sheet in src_wb.worksheets:
-                dest_sheet = master_wb.create_sheet(title=sheet_title)
-                for row in src_sheet.iter_rows():
-                    for cell in row:
-                        dest_cell = dest_sheet.cell(
-                            row=cell.row,
-                            column=cell.column,
-                            value=cell.value,
-                        )
-                        # Copy cell formatting: font, fill, alignment, border,
-                        # number format.
-                        # Copiar formato de celda: fuente, relleno, alineación,
-                        # borde, formato numérico.
-                        if cell.has_style:
-                            dest_cell.font         = cell.font.copy()
-                            dest_cell.fill         = cell.fill.copy()
-                            dest_cell.alignment    = cell.alignment.copy()
-                            dest_cell.border       = cell.border.copy()
-                            dest_cell.number_format = cell.number_format
+        # ==================================================================
+        # MODE: single_sheet
+        # Reads WorkOrderEntryLine records directly from the DB.
+        # Groups by worker_name (asc) then work_date (asc).
+        # Inserts a dark-blue separator row before each new worker block.
+        # ==================================================================
+        # MODO: single_sheet
+        # Lee WorkOrderEntryLine directamente de la BD.
+        # Agrupa por worker_name (asc) y work_date (asc).
+        # Inserta fila separadora azul oscuro antes de cada nuevo operario.
+        # ==================================================================
+        if export_mode == "single_sheet":
 
-                # Copy column widths and row heights.
-                # Copiar anchos de columna y alturas de fila.
-                for col_letter, col_dim in src_sheet.column_dimensions.items():
-                    dest_sheet.column_dimensions[col_letter].width = col_dim.width
-                for row_num, row_dim in src_sheet.row_dimensions.items():
-                    dest_sheet.row_dimensions[row_num].height = row_dim.height
+            # Collect all EntryLine records for the selected WorkOrders,
+            # enriched with worker_name derived from the parent WorkOrder.
+            # Recopilar todos los EntryLine de los WorkOrders seleccionados,
+            # enriquecidos con worker_name derivado del WorkOrder padre.
+            wo_map = {wo.pk: wo for wo in work_orders}
 
-                # Only process the first sheet of each individual workbook.
-                # Solo procesar la primera hoja de cada libro individual.
-                break
-
-        if not master_wb.worksheets:
-            return HttpResponseBadRequest(
-                "# [EXPORT] No se pudo generar ninguna hoja de Excel para los partes seleccionados."
+            lines_qs = (
+                WorkOrderEntryLine.objects
+                .filter(entry__work_order__in=work_orders)
+                .select_related(
+                    "entry",
+                    "entry__work_order",
+                    "machine_asset",
+                )
+                .order_by(
+                    "entry__work_order__pk",
+                    "entry__work_date",
+                    "entry__page_number",
+                    "line_number",
+                )
             )
+
+            # Build a list of dicts enriched with worker_name and date_key
+            # for grouping. Sort by (worker_name, date_key, page, line).
+            # Construir lista de dicts con worker_name y date_key para
+            # agrupación. Ordenar por (worker_name, date_key, página, línea).
+            enriched = []
+            for line in lines_qs:
+                entry       = line.entry
+                wo          = entry.work_order
+                worker_name = _get_worker_name(wo)
+                date_key    = entry.work_date or ""
+                enriched.append({
+                    "worker_name": worker_name,
+                    "date_key":    date_key,
+                    "line":        line,
+                    "entry":       entry,
+                })
+
+            # Sort: primary = worker_name, secondary = date_key.
+            # Ordenar: primario = worker_name, secundario = date_key.
+            enriched.sort(key=lambda r: (
+                r["worker_name"],
+                r["date_key"] if r["date_key"] else "",
+            ))
+
+            # ------------------------------------------------------------------
+            # Build the single flat sheet.
+            # Construir la hoja plana única.
+            # ------------------------------------------------------------------
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "EXPORTACION"
+
+            # Colour constants for the separator row.
+            # Constantes de color para la fila separadora.
+            _SEP_BG = "1F4E79"   # Azul oscuro (igual que cabecera Excel individual)
+            _SEP_FG = "FFFFFF"   # Blanco
+
+            def _make_sep_fill():
+                return PatternFill(
+                    fill_type="solid",
+                    start_color=_SEP_BG,
+                    end_color=_SEP_BG,
+                )
+
+            # Column headers / Cabeceras de columna
+            headers = [
+                "OPERARIO", "FECHA", "BLOQUE", "MÁQUINA (NORM)",
+                "MÁQUINA (RAW)", "ACTIVO RESUELTO", "DESCRIPCIÓN AVERÍA",
+                "REPARACIÓN", "H.C.", "H.F.", "Δ HORAS", "O.R.", "FLAGS",
+            ]
+            NUM_COLS = len(headers)
+
+            for col_idx, hdr in enumerate(headers, start=1):
+                cell            = ws.cell(row=1, column=col_idx, value=hdr)
+                cell.font       = Font(bold=True, color=_SEP_FG)
+                cell.fill       = _make_sep_fill()
+                cell.alignment  = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[1].height = 20
+
+            current_worker = None
+            data_row       = 2   # Next available data row / Próxima fila disponible.
+
+            for rec in enriched:
+                worker_name = rec["worker_name"]
+                line        = rec["line"]
+                entry       = rec["entry"]
+
+                # Insert separator row when worker changes.
+                # Insertar fila separadora cuando cambia el operario.
+                if worker_name != current_worker:
+                    ws.merge_cells(
+                        start_row=data_row, start_column=1,
+                        end_row=data_row,   end_column=NUM_COLS,
+                    )
+                    sep_cell            = ws.cell(row=data_row, column=1,
+                                                  value=worker_name)
+                    sep_cell.font       = Font(bold=True, color=_SEP_FG, size=11)
+                    sep_cell.fill       = _make_sep_fill()
+                    sep_cell.alignment  = Alignment(horizontal="left",
+                                                    vertical="center")
+                    ws.row_dimensions[data_row].height = 22
+                    data_row      += 1
+                    current_worker = worker_name
+
+                # Write data row / Escribir fila de datos.
+                date_display  = (
+                    entry.work_date.strftime("%d/%m/%Y")
+                    if entry.work_date else ""
+                )
+                asset_code    = (
+                    line.machine_asset.codigo if line.machine_asset else ""
+                )
+                hc_display    = (
+                    line.hc.strftime("%H:%M") if line.hc else ""
+                )
+                hf_display    = (
+                    line.hf.strftime("%H:%M") if line.hf else ""
+                )
+                delta_display = (
+                    str(line.delta_horas) if line.delta_horas is not None else ""
+                )
+                flags_display = ", ".join(line.flags) if line.flags else ""
+
+                row_values = [
+                    worker_name,
+                    date_display,
+                    line.line_number,
+                    line.maquina_norm,
+                    line.maquina_raw,
+                    asset_code,
+                    line.descripcion_averia,
+                    line.reparacion,
+                    hc_display,
+                    hf_display,
+                    delta_display,
+                    line.or_val,
+                    flags_display,
+                ]
+                for col_idx, val in enumerate(row_values, start=1):
+                    cell           = ws.cell(row=data_row, column=col_idx, value=val)
+                    cell.alignment = Alignment(vertical="center", wrap_text=False)
+                ws.row_dimensions[data_row].height = 16
+                data_row += 1
+
+            # Auto-width for all columns (capped at 60).
+            # Ancho automático para todas las columnas (máximo 60).
+            for col_idx, hdr in enumerate(headers, start=1):
+                col_letter = openpyxl.utils.get_column_letter(col_idx)
+                ws.column_dimensions[col_letter].width = min(
+                    max(len(hdr) + 2, 12), 60
+                )
+
+            if ws.max_row < 2:
+                return HttpResponseBadRequest(
+                    "# [EXPORT] No hay líneas de datos en los partes seleccionados."
+                )
+
+        # ==================================================================
+        # MODE: multi_sheet
+        # Groups WorkOrders by worker_name. One sheet per worker.
+        # Each sheet is copied from the individual Excel (regenerated if needed).
+        # ==================================================================
+        # MODO: multi_sheet
+        # Agrupa WorkOrders por worker_name. Una hoja por operario.
+        # Cada hoja se copia del Excel individual (regenerado si es necesario).
+        # ==================================================================
+        else:
+            # Group WorkOrders by worker_name preserving insertion order.
+            # Agrupar WorkOrders por worker_name preservando el orden de inserción.
+            from collections import OrderedDict
+            groups: dict[str, list] = OrderedDict()
+            for wo in work_orders:
+                worker_name = _get_worker_name(wo)
+                groups.setdefault(worker_name, []).append(wo)
+
+            wb = openpyxl.Workbook()
+            wb.remove(wb.active)   # Remove default empty sheet / Eliminar hoja vacía.
+
+            for worker_name, wo_list in groups.items():
+                # Use the first WorkOrder of this worker as the sheet source.
+                # Use additional ones if the first fails.
+                # Usar el primer WorkOrder del operario como fuente de hoja.
+                # Usar los siguientes si el primero falla.
+                sheet_built = False
+                for wo in wo_list:
+                    try:
+                        # Ensure excel_file exists; regenerate if missing.
+                        # Garantizar que excel_file existe; regenerar si falta.
+                        if not wo.excel_file:
+                            _gen_excel(wo.pk)
+                            wo.refresh_from_db(fields=["excel_file"])
+                        if not wo.excel_file:
+                            continue
+                        with wo.excel_file.open("rb") as f:
+                            buf = io.BytesIO(f.read())
+                        src_wb    = openpyxl.load_workbook(buf)
+                        src_sheet = src_wb.worksheets[0]
+                        # Sheet title: worker name truncated to 28 chars + pk suffix.
+                        # Título de hoja: nombre truncado a 28 chars + sufijo pk.
+                        sheet_title = (
+                            (worker_name[:28] + f"#{wo.pk}")
+                            if worker_name else f"Parte#{wo.pk}"
+                        )
+                        _copy_sheet(src_sheet, wb, sheet_title)
+                        sheet_built = True
+                        break
+                    except Exception:
+                        continue
+
+                if not sheet_built:
+                    # If all attempts failed, insert a placeholder sheet.
+                    # Si todos los intentos fallaron, insertar hoja de marcador.
+                    placeholder = wb.create_sheet(
+                        title=(worker_name[:28] if worker_name else "Sin datos")[:31]
+                    )
+                    placeholder.cell(row=1, column=1,
+                                     value="No se pudo generar el Excel para este operario.")
+
+            if not wb.worksheets:
+                return HttpResponseBadRequest(
+                    "# [EXPORT] No se pudo generar ninguna hoja para los partes seleccionados."
+                )
 
         # ------------------------------------------------------------------
         # Serialise and return as a file download response.
         # Serializar y devolver como respuesta de descarga de archivo.
         # ------------------------------------------------------------------
-        output = io.BytesIO()
-        master_wb.save(output)
+        output   = io.BytesIO()
+        wb.save(output)
         output.seek(0)
 
         filename = f"EXPORTACION_{tz_now().strftime('%d-%m-%y')}.xlsx"

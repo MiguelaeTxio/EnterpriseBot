@@ -4,7 +4,9 @@
 Models for the work_order_processor application.
 Defines three models that form the complete work-order processing pipeline:
 
-  WorkOrder       — PDF upload and its full processing lifecycle.
+  WorkOrder       — PDF upload and its full processing lifecycle. Includes
+                    review workflow fields (reviewed, reviewed_by, reviewed_at)
+                    for the SUPERVISOR role introduced in Hito 8 / Bloque G.
   WorkOrderEntry  — One record per PDF page (header: date, worker, confidence).
   WorkOrderEntryLine — One record per work block within a page (up to 4 per page).
                        Carries the actual work data: machine, description,
@@ -16,6 +18,9 @@ Modelos de la aplicación work_order_processor.
 Define tres modelos que forman el pipeline completo de procesamiento de partes:
 
   WorkOrder          — Carga del PDF y ciclo de vida completo del procesamiento.
+                       Incluye los campos del flujo de revisión (reviewed,
+                       reviewed_by, reviewed_at) para el rol SUPERVISOR
+                       introducido en el Hito 8 / Bloque G.
   WorkOrderEntry     — Un registro por página del PDF (cabecera: fecha, operario,
                        confianza).
   WorkOrderEntryLine — Un registro por bloque de trabajo dentro de una página
@@ -38,12 +43,23 @@ class WorkOrder(models.Model):
     Stores the original PDF and, once processing is complete, the generated
     Excel report.
 
+    Review workflow (Hito 8 / Bloque G):
+      reviewed    — boolean flag set by a SUPERVISOR after inspecting the part.
+      reviewed_by — FK to the CompanyUser who performed the review.
+      reviewed_at — UTC timestamp of the review action.
+
     ---
 
     Representa una carga de PDF enviada por un usuario de empresa para su
     procesamiento. Registra el ciclo de vida completo: pendiente → procesando
     → hecho / error. Almacena el PDF original y, una vez completado el
     procesamiento, el informe Excel generado.
+
+    Flujo de revisión (Hito 8 / Bloque G):
+      reviewed    — flag booleano establecido por un SUPERVISOR tras inspeccionar
+                    el parte.
+      reviewed_by — FK al CompanyUser que realizó la revisión.
+      reviewed_at — timestamp UTC del momento de la revisión.
     """
 
     # ------------------------------------------------------------------
@@ -133,6 +149,41 @@ class WorkOrder(models.Model):
         help_text=_(
             "Detalle de errores producidos durante el procesamiento. "
             "Se cumplimenta únicamente cuando el estado es ERROR."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Review workflow — Hito 8 / Bloque G
+    # Flujo de revisión — Hito 8 / Bloque G
+    # ------------------------------------------------------------------
+    reviewed = models.BooleanField(
+        _("Revisado"),
+        default=False,
+        db_index=True,
+        help_text=_(
+            "Indica si un Supervisor ha revisado y validado este parte de trabajo. "
+            "Se activa mediante WorkOrderMarkReviewedView."
+        ),
+    )
+    reviewed_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_work_orders",
+        verbose_name=_("Revisado por"),
+        help_text=_(
+            "Usuario de empresa (rol SUPERVISOR o ADMIN) que marcó el parte "
+            "como revisado. Se limpia automáticamente al desmarcar la revisión."
+        ),
+    )
+    reviewed_at = models.DateTimeField(
+        _("Fecha de revisión"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Timestamp UTC en que el Supervisor marcó el parte como revisado. "
+            "Se limpia automáticamente al desmarcar la revisión."
         ),
     )
 

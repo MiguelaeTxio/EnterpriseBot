@@ -98,26 +98,32 @@ class CompanyUser(models.Model):
     """
     Links a Django auth.User to a Company with a defined role.
     Roles: ADMIN (full access), OPERATOR (presence management), WORKSHOP (workshop
-    work orders), DRIVER (reserved for future use).
+    work orders), SUPERVISOR (PDF work-order review and export), DRIVER (reserved).
     CompanyUser instances must never have is_staff=True on their linked User.
     Access to /admin/ is blocked via CompanyUserAdminBlockMiddleware.
     ---
     Vincula un auth.User de Django a una Company con un rol definido.
     Roles: ADMIN (acceso completo), OPERATOR (gestión de presencia), WORKSHOP (partes
-    de taller), DRIVER (reservado para uso futuro).
+    de taller), SUPERVISOR (revisión y exportación de partes PDF), DRIVER (reservado).
     Las instancias de CompanyUser jamás deben tener is_staff=True en su User vinculado.
     El acceso a /admin/ se bloquea mediante CompanyUserAdminBlockMiddleware.
     """
 
-    ROLE_ADMIN    = "ADMIN"
-    ROLE_OPERATOR = "OPERATOR"
-    ROLE_WORKSHOP = "WORKSHOP"
-    ROLE_DRIVER   = "DRIVER"
-    ROLE_CHOICES  = [
-        (ROLE_ADMIN,    "Administrador"),
-        (ROLE_OPERATOR, "Operador"),
-        (ROLE_WORKSHOP, "Operario de taller"),
-        (ROLE_DRIVER,   "Chófer"),
+    ROLE_ADMIN       = "ADMIN"
+    ROLE_OPERATOR    = "OPERATOR"
+    ROLE_WORKSHOP    = "WORKSHOP"
+    # SUPERVISOR: acceso a carga, lista, revisión y exportación de partes PDF.
+    # Sin acceso al editor inline ni al resto del panel de configuración IVR.
+    # SUPERVISOR: access to PDF work-order upload, list, review and export.
+    # No access to the inline editor or the rest of the IVR configuration panel.
+    ROLE_SUPERVISOR  = "SUPERVISOR"
+    ROLE_DRIVER      = "DRIVER"
+    ROLE_CHOICES     = [
+        (ROLE_ADMIN,      "Administrador"),
+        (ROLE_OPERATOR,   "Operador"),
+        (ROLE_WORKSHOP,   "Operario de taller"),
+        (ROLE_SUPERVISOR, "Supervisor"),
+        (ROLE_DRIVER,     "Chófer"),
     ]
 
     company = models.ForeignKey(
@@ -139,7 +145,7 @@ class CompanyUser(models.Model):
         choices=ROLE_CHOICES,
         default=ROLE_OPERATOR,
         verbose_name="Rol",
-        help_text="ADMIN: acceso completo a la configuración de la empresa. OPERATOR: gestión de presencia propia. WORKSHOP: acceso exclusivo a partes de taller. DRIVER: reservado.",
+        help_text="ADMIN: acceso completo a la configuración. OPERATOR: gestión de presencia. WORKSHOP: partes de taller. SUPERVISOR: revisión y exportación de partes PDF. DRIVER: reservado.",
     )
     is_active = models.BooleanField(
         default=True,
