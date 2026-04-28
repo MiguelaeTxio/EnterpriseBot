@@ -454,40 +454,77 @@ def _coerce_confidence(value: str | None) -> str:
     return WorkOrderEntry.Confidence.LOW
 
 
+# OCR digit-block character substitution map — applied only to the numeric
+# portion of machine codes to correct common handwriting misreads.
+# Each key is misread as its value when written quickly by hand.
+# Verified against the fleet MachineAsset catalogue to avoid false collisions:
+#   O→0, L→1, t→7  (new — Hito 8, Paso 4, D2)
+#   S→5, Z→2, G→6  (confirmed active)
+# Map de sustitución de caracteres en el bloque numérico del código de máquina.
+# Se aplica únicamente a la parte numérica para corregir errores OCR caligráficos.
+_OCR_DIGIT_MAP: dict[str, str] = {
+    "O": "0",
+    "L": "1",
+    "T": "7",
+    "S": "5",
+    "Z": "2",
+    "G": "6",
+}
+
+
 def _normalise_machine_code(raw: str | None) -> str:
     """
     Normalises a raw machine code string according to partes-trabajo skill
-    directive D4:
+    directive D4, extended in Hito 8 (Paso 4, D2) with OCR character
+    substitutions applied only to the numeric block:
       1. Strip and uppercase.
-      2. Remove internal spaces.
+      2. Remove internal spaces and equals signs.
       3. Insert a hyphen between the leading letter(s) and the numeric block
          if not already present.
-      4. Return empty string if raw is None or blank.
+      4. Apply _OCR_DIGIT_MAP substitutions to each character of the numeric
+         block (right of the hyphen) to correct common handwriting misreads.
+      5. Return empty string if raw is None or blank.
+
+    Multi-word aliases (e.g. "Mercedes Larios") are returned uppercased with
+    the space preserved so the resolver can apply the company alias map.
 
     ---
 
     Normaliza un código de máquina bruto según la directriz D4 de la skill
-    partes-trabajo:
+    partes-trabajo, ampliada en el Hito 8 (Paso 4, D2) con sustituciones
+    de caracteres OCR aplicadas únicamente al bloque numérico:
       1. Strip y mayúsculas.
-      2. Eliminar espacios internos.
+      2. Eliminar espacios internos y signos igual.
       3. Insertar guion entre la(s) letra(s) inicial(es) y el bloque numérico
          si no está ya presente.
-      4. Devolver cadena vacía si raw es None o en blanco.
+      4. Aplicar sustituciones de _OCR_DIGIT_MAP a cada carácter del bloque
+         numérico (derecha del guion) para corregir errores OCR caligráficos.
+      5. Devolver cadena vacía si raw es None o en blanco.
+
+    Los alias de múltiples palabras (ej. "Mercedes Larios") se devuelven en
+    mayúsculas conservando el espacio para que el resolver aplique el mapa
+    de aliases de empresa.
     """
     if not raw:
         return ""
-    # If the value contains a space it is a multi-word alias (e.g. "Mercedes
-    # Larios"), not a machine code. Return it uppercase preserving the space
-    # so the resolver can apply the company alias map.
-    # Si el valor contiene un espacio es un alias de múltiples palabras (ej.
-    # "Mercedes Larios"), no un código de máquina. Devolverlo en mayúsculas
-    # conservando el espacio para que el resolver aplique el mapa de aliases.
+    # Multi-word alias: preserve space, return uppercase.
+    # Alias de múltiples palabras: conservar espacio, devolver en mayúsculas.
     if " " in raw.strip():
         return raw.strip().upper()
+
     code = raw.strip().upper().replace(" ", "").replace("=", "")
+
     # Insert hyphen between leading letters and digits if absent.
     # Insertar guion entre letras iniciales y dígitos si no está presente.
     code = re.sub(r"^([A-Z]+)(\d)", r"\1-\2", code)
+
+    # Apply OCR substitutions to the numeric block only (right of hyphen).
+    # Aplicar sustituciones OCR solo al bloque numérico (derecha del guion).
+    if "-" in code:
+        prefix, _, numeric = code.partition("-")
+        numeric = "".join(_OCR_DIGIT_MAP.get(ch, ch) for ch in numeric)
+        code = f"{prefix}-{numeric}"
+
     return code
 
 
@@ -1194,7 +1231,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
             if line.delta_horas is not None:
                 q_cell = ws.cell(
                     row=r, column=16,
-                    value=f'=IFERROR(IF($B$3="","",K{r}*$C$3),"")',
+                    value=f'=IFERROR(IF($C$3=0,"",K{r}*$C$3),"")',
                 )
                 q_cell.number_format = '#,##0.00 "€"'
                 q_cell.alignment     = Alignment(horizontal="center")

@@ -42,6 +42,14 @@ from panel.views import (
     WorkOrderListView,
     WorkOrderUploadView,
     WorkOrderEditView,
+    WorkOrderStatusFragmentView,
+    WorkOrderLineSaveView,
+    WorkOrderLineInsertView,
+    WorkOrderLineReorderView,
+    WorkOrderLineRestoreView,
+    WorkOrderLineDeleteView,
+    WorkOrderDeleteView,
+    WorkOrderExportView,
     AnalyticsView,
     AnalyticsDataView,
     AnalyticsProfileListCreateView,
@@ -123,6 +131,38 @@ urlpatterns = [
     path("work-orders/", WorkOrderListView.as_view(), name="work_order_list"),
     path("work-orders/upload/", WorkOrderUploadView.as_view(), name="work_order_upload"),
     path("work-orders/<int:pk>/edit/", WorkOrderEditView.as_view(), name="work_order_edit"),
+
+    # WorkOrder delete — Eliminación de parte de trabajo (rol ADMIN).
+    # Bugfix E2E — Hito 8 (2026-04-28)
+    path("work-orders/<int:pk>/delete/", WorkOrderDeleteView.as_view(), name="work_order_delete"),
+
+    # WorkOrder HTMX status fragment — Fragmento HTMX de estado de parte de trabajo.
+    # Paso 1 — Hito 8 (2026-04-28)
+    path("work-orders/<int:pk>/status/", WorkOrderStatusFragmentView.as_view(), name="work_order_status_fragment"),
+
+    # WorkOrder HTMX line save — Guardado automático de línea por campo via HTMX.
+    # Paso 2 — Hito 8 (2026-04-28)
+    path("work-orders/<int:wo_pk>/lines/<int:line_pk>/save/", WorkOrderLineSaveView.as_view(), name="work_order_line_save"),
+
+    # WorkOrder HTMX line insert — Inserción de línea vacía entre dos líneas existentes.
+    # Paso 3 — Hito 8 (2026-04-28)
+    path("work-orders/<int:wo_pk>/lines/insert/", WorkOrderLineInsertView.as_view(), name="work_order_line_insert"),
+
+    # WorkOrder HTMX line reorder — Reordenado de líneas via drag & drop (SortableJS).
+    # Paso 3 — Hito 8 (2026-04-28)
+    path("work-orders/<int:wo_pk>/lines/reorder/", WorkOrderLineReorderView.as_view(), name="work_order_line_reorder"),
+
+    # WorkOrder HTMX line restore — Restauración de grupo desde raw_gemini_response.
+    # Paso 3 — Hito 8 (2026-04-28)
+    path("work-orders/<int:wo_pk>/lines/<int:line_pk>/restore/", WorkOrderLineRestoreView.as_view(), name="work_order_line_restore"),
+
+    # WorkOrder HTMX line delete — Eliminación de línea individual (rol ADMIN).
+    # Bugfix E2E — Hito 8 (2026-04-28)
+    path("work-orders/<int:wo_pk>/lines/<int:line_pk>/delete/", WorkOrderLineDeleteView.as_view(), name="work_order_line_delete"),
+
+    # WorkOrder Excel export — Concatenación de Excels de partes seleccionados (rol ADMIN).
+    # Paso 6 — Hito 8 (2026-04-28)
+    path("work-orders/export/", WorkOrderExportView.as_view(), name="work_order_export"),
 
     # Analytics — Panel de analítica con gráficos Plotly (rol ADMIN).
     # Subtarea 9.6 — Hito 6 (2026-04-27)

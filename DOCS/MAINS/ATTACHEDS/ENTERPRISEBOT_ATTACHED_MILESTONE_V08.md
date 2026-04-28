@@ -14,200 +14,175 @@ partes de trabajo PDF->Excel, mas la implantacion quirurgica de HTMX en los
 dos puntos de mayor friccion del panel: la lista de PDFs y el editor de
 entradas inline.
 
-El hito se estructura en seis bloques de trabajo independientes aunque el
-Bloque A (HTMX base) debe completarse antes que el Bloque B (editor HTMX)
-porque el guardado automatico por campo depende de los endpoints del Bloque A.
+El hito se estructura en ocho bloques de trabajo (A-H). Los bloques A-F
+quedaron implementados en la sesion 002. Los bloques G y H son el objetivo
+de la sesion 003.
 
 ---
 
 ## 2. Arquitectura Tecnica
 
-### 2.1. Bloque A — HTMX: polling de estado en lista de PDFs
+### 2.1. Bloque A — HTMX: polling de estado en lista de PDFs (COMPLETADO)
 
-La lista de PDFs (panel/work_orders/list.html) muestra el estado de cada
-WorkOrder (PENDING / PROCESSING / DONE / ERROR) y su barra de progreso.
-Actualmente el usuario debe recargar la pagina manualmente para ver el avance
-de la extraccion Gemini.
+La lista de PDFs muestra el estado de cada WorkOrder mediante polling HTMX
+automatico cada 4 segundos en filas PENDING o PROCESSING. El polling se
+detiene automaticamente al alcanzar DONE o ERROR.
 
-Con HTMX se anade polling automatico sobre cada fila cuyo estado sea
-PENDING o PROCESSING:
+- WorkOrderStatusFragmentView en panel/views.py.
+- Template parcial panel/work_orders/_status_fragment.html.
+- Ruta work-orders/<int:pk>/status/ en panel/urls.py.
+- CDN HTMX 1.9.12 con SHA384 verificado en base.html.
+- Meta tag CSRF + handler htmx:configRequest en base.html.
 
-- Atributo hx-get="/panel/work-orders/{pk}/status/" sobre las celdas de
-  estado y progreso agrupadas en un contenedor.
-- hx-trigger="every 4s" — polling cada 4 segundos.
-- hx-target apunta al propio contenedor (hx-swap="outerHTML").
-- El endpoint /panel/work-orders/{pk}/status/ devuelve unicamente el
-  fragmento HTML del contenedor (badge + barra de progreso).
-- Cuando el estado alcanza DONE o ERROR el fragmento devuelto no incluye
-  atributos HTMX y el polling se detiene automaticamente.
+### 2.2. Bloque B — HTMX: guardado automatico por campo en editor (COMPLETADO)
 
-Nueva vista: WorkOrderStatusFragmentView en panel/views.py.
-Nuevo template parcial: panel/work_orders/_status_fragment.html.
-Nueva ruta: path("work-orders/<int:pk>/status/", ...) en panel/urls.py.
+El editor de entradas inline guarda cada campo automaticamente al cambiar
+(hx-trigger="change") sin recarga de pagina. La fila <tr> se reemplaza con
+el fragmento devuelto por el servidor (outerHTML swap).
 
-HTMX se carga desde CDN en base.html. VERIFICAR integridad SHA384 en
-https://unpkg.com/htmx.org@1.9.12 antes de escribir el tag (Directriz 4.4).
+- WorkOrderLineSaveView en panel/views.py.
+- Template parcial panel/work_orders/_line_row.html.
+- Ruta work-orders/<wo_pk>/lines/<line_pk>/save/ en panel/urls.py.
 
-### 2.2. Bloque B — HTMX: guardado automatico por campo en editor
+### 2.3. Bloque C — Editor: mejoras de interaccion (COMPLETADO)
 
-El editor (panel/work_orders/edit.html) tiene actualmente un boton Guardar
-por cada linea que hace POST completo y provoca scroll al top de la pagina.
+C1 — Insertar linea vacia entre dos existentes (boton + por fila).
+C2 — Drag & drop para reordenar entradas (SortableJS 1.15.2).
+C3 — Restaurar linea individual desde raw_gemini_response (por linea,
+     no por grupo).
+C4 — Avisos visuales de incidencias: row-has-flags (fondo amarillo),
+     field-flagged (borde naranja).
 
-Con HTMX se elimina el boton de guardado por linea y se sustituye por
-guardado automatico al cambiar de campo (hx-trigger="change"):
+Vistas anadidas: WorkOrderLineInsertView, WorkOrderLineReorderView,
+WorkOrderLineRestoreView (restauracion individual de linea).
+Rutas: insert/, reorder/, <line_pk>/restore/.
+Neonatos: _entry_group_fragment.html (parcial de grupo completo).
+Bugfix E2E: INSERT envuelto en transaction.atomic() para evitar
+IntegrityError en (entry_id, line_number).
+Bugfix E2E: RESTORE rediseniado para restaurar unicamente la linea
+identificada por line_pk usando entradas[line_number-1] del
+raw_gemini_response — no el grupo completo.
+Nueva funcionalidad E2E: WorkOrderLineDeleteView + boton eliminar
+linea individual en _line_row.html + handler JS en edit.html.
 
-- Cada input y textarea de la fila recibe:
-  - hx-post="/panel/work-orders/{wo_pk}/lines/{line_pk}/save/"
-  - hx-trigger="change"
-  - hx-target apunta a la fila <tr> completa con hx-swap="outerHTML"
-  - hx-include referencia todos los campos de la misma fila via selector CSS
-- El endpoint devuelve la fila <tr> completa actualizada (delta_horas
-  recalculado, asset resuelto, badges de flags actualizados).
-- Sin scroll al top. La posicion del viewport se mantiene intacta.
-- Indicador visual: la fila parpadea brevemente en verde al completarse
-  el guardado (hx-on::after-request).
+### 2.4. Bloque D — Pipeline: correcciones (COMPLETADO)
 
-Nueva vista: WorkOrderLineSaveView en panel/views.py.
-Nuevo template parcial: panel/work_orders/_line_row.html.
-Nueva ruta: path("work-orders/<int:wo_pk>/lines/<int:line_pk>/save/", ...).
+D1 — Formula COSTE M.O. corregida: $B$3 -> $C$3=0 en generate_work_order_excel().
+D2 — _normalise_machine_code() ampliada con _OCR_DIGIT_MAP aplicado
+     solo al bloque numerico: O->0, L->1, T->7, S->5, Z->2, G->6.
 
-### 2.3. Bloque C — Editor: mejoras de interaccion
+### 2.5. Bloque E — Upload: deteccion de duplicado (COMPLETADO)
 
-Sobre el editor mejorado con HTMX del Bloque B se anaden:
+WorkOrderUploadView.post() detecta duplicados (mismo operario + periodo
+solapado) antes de crear el WorkOrder. Si se detecta duplicado y el usuario
+no ha confirmado sobrescritura, se re-renderiza upload.html con modal
+Bootstrap de advertencia. Campo oculto confirm_overwrite=1 autoriza la
+eliminacion del duplicado y creacion del nuevo.
 
-C1 — Insertar entrada entre otras dos existentes:
-- Boton "+" entre filas consecutivas de un mismo grupo (pagina).
-- POST a /panel/work-orders/{wo_pk}/lines/insert/ con parametros
-  after_line_pk y entry_pk.
-- Crea nueva WorkOrderEntryLine vacia con line_number reordenado.
-- Devuelve la fila nueva como fragmento HTMX para insercion inline.
+### 2.6. Bloque F — Lista PDFs: exportacion de Excels (COMPLETADO PARCIAL)
 
-C2 — Drag & drop para reordenar entradas:
-- Libreria SortableJS (CDN) sobre el <tbody> de cada grupo.
-- Al soltar, POST a /panel/work-orders/{wo_pk}/lines/reorder/ con
-  el array de line_pk en el nuevo orden.
-- El servidor actualiza los line_number de todas las lineas del grupo.
-- Sin recarga de pagina.
+Checkboxes por fila DONE + boton Descargar seleccion en list.html.
+WorkOrderExportView concatena los Excels seleccionados en un unico Workbook
+multi-hoja y lo devuelve como descarga.
 
-C3 — Restaurar entrada individual:
-- Boton Restaurar por fila (icono bi-arrow-counterclockwise).
-- POST a /panel/work-orders/{wo_pk}/lines/{line_pk}/restore/ que
-  re-ejecuta la extraccion Gemini solo para esa pagina y repuebla
-  las lineas del grupo desde raw_gemini_response almacenado.
-- Devuelve el grupo completo como fragmento HTMX.
+PENDIENTE rediseno segun especificacion acordada en sesion 002:
+- Un solo operario (o varios PDFs del mismo): una sola hoja con todas
+  las entradas ordenadas por fecha y membrete del operario al inicio.
+- Varios operarios: modal de seleccion de modo antes del POST:
+  - "Una hoja por operario": hoja separada por operario con su membrete.
+  - "Una sola hoja": todos concatenados con membrete separador por operario,
+    ordenados por operario y fecha.
+- Campo oculto export_mode (single_sheet / multi_sheet) transporta la
+  decision al servidor.
+- Deteccion de operarios unicos en JS: si hay un unico operario, saltar
+  el modal y enviar directamente con single_sheet.
 
-C4 — Avisos visuales de incidencias:
-- Filas con flags no vacios reciben clase CSS row-has-flags →
-  fondo amarillo claro (#fffbe6).
-- Campos con su nombre en flags reciben clase field-flagged →
-  borde naranja (#fd7e14).
-- Al editar un campo flaggeado y guardar via HTMX, si el flag
-  desaparece del servidor la clase field-flagged se elimina del
-  fragmento devuelto y el color se normaliza automaticamente.
+### 2.7. Bloque G — Campo reviewed + rol SUPERVISOR (PENDIENTE)
 
-### 2.4. Bloque D — Pipeline: correcciones
+Nuevo campo reviewed en WorkOrder:
+- reviewed = BooleanField(default=False)
+- reviewed_by = ForeignKey(CompanyUser, null=True, blank=True,
+  on_delete=SET_NULL, related_name="reviewed_work_orders")
+- reviewed_at = DateTimeField(null=True, blank=True)
 
-D1 — Columna mano de obra vacia:
-Diagnostico pendiente de confirmar en sesion. La columna P (COSTE M.O.)
-del Excel aparece vacia. Causa probable: cambio de nombre de campo o
-eliminacion de columna en la reestructuracion del Paso 9 del H6.
-Archivos a auditar: work_order_processor/tasks.py (generate_work_order_excel).
+Nueva migracion requerida en work_order_processor.
 
-D2 — Parser: confusiones de caracteres OCR:
-Ampliar _normalise_machine_code() en work_order_processor/services.py:
-- O -> 0
-- L -> 1
-- t -> 7
-Sustituciones ya activas a confirmar: S->5, Z->2, G->6.
-Verificar que no hay colisiones con codigos reales del catalogo fleet
-antes de aplicar cada regla (consultar MachineAsset con codigo__regex).
+Nuevo rol SUPERVISOR en CompanyUser.Role:
+- SUPERVISOR = "SUPERVISOR"
+- Nueva migracion requerida en ivr_config.
 
-### 2.5. Bloque E — Upload: deteccion de duplicado
+Nuevo mixin SupervisorAccessMixin (acceso para ADMIN y SUPERVISOR):
+- Verificar que company_user.role in (ADMIN, SUPERVISOR).
+- Redirigir a login si no autenticado, a dashboard si rol insuficiente.
 
-Al subir un PDF en WorkOrderUploadView, antes de crear el WorkOrder,
-comparar el nombre del operario y el periodo extraidos del nombre del PDF
-con los WorkOrders existentes de la misma empresa.
+Permisos del rol SUPERVISOR:
+- Puede subir PDFs (WorkOrderUploadView).
+- Puede ver lista de partes con pestanas (WorkOrderListView rediseniada).
+- Puede marcar/desmarcar revisado.
+- Puede descargar Excel.
+- NO puede editar lineas del editor inline.
+- NO puede acceder al resto del panel (secciones, contactos, usuarios, etc.).
 
-Logica de deteccion:
-- Parsear el nombre del PDF entrante con el parser de periodo existente
-  en services.py para extraer worker_name y (date_from, date_to).
-- Consultar WorkOrder.objects.filter(company=company) buscando
-  coincidencia de operario + solapamiento de periodo.
-- Si se detecta duplicado: no crear el WorkOrder todavia. Devolver al
-  template de upload la info del duplicado detectado.
-- El template muestra modal Bootstrap de advertencia con:
-  - Nombre del PDF existente y fecha de carga original.
-  - Aviso de que los datos actuales seran sobrescritos.
-  - Aviso de que la accion no se puede deshacer.
-  - Aviso de que para recuperar los datos hay que volver a subir el PDF
-    o editar manualmente las entradas.
-  - Botones: Continuar y sobrescribir / Cancelar.
-- Si el usuario confirma: se elimina el WorkOrder duplicado (cascade
-  elimina WorkOrderEntry y WorkOrderEntryLine) y se crea el nuevo.
+WorkOrderMarkReviewedView:
+POST /panel/work-orders/<pk>/review/
+  - Alterna reviewed True/False en el WorkOrder.
+  - Si True: establece reviewed_by y reviewed_at.
+  - Si False: limpia reviewed_by y reviewed_at.
+  - Devuelve fragmento HTML del badge de revision para HTMX swap.
+  - Restringido a SupervisorAccessMixin.
 
-### 2.6. Bloque F — Lista PDFs: concatenacion de Excels
+### 2.8. Bloque H — Pestanas en list.html + rediseno Bloque F (PENDIENTE)
 
-Checkboxes por fila (solo DONE) en list.html. Boton Descargar seleccion
-activo cuando hay al menos un checkbox marcado.
+Cuatro pestanas Bootstrap en list.html:
+  1. "En cola" — WorkOrders en PENDING o PROCESSING.
+     Polling HTMX activo unicamente en esta pestana.
+  2. "Error" — WorkOrders en estado ERROR.
+  3. "Pendiente revision" — WorkOrders DONE con reviewed=False.
+  4. "Revisados" — WorkOrders DONE con reviewed=True.
 
-POST a /panel/work-orders/export/ con lista de pk seleccionados.
-Vista WorkOrderExportView en panel/views.py:
-- Carga cada WorkOrder en orden de pk.
-- Por cada uno llama a generate_work_order_excel() en modo buffer
-  (sin escribir a disco) y concatena las hojas en un unico Workbook
-  openpyxl manteniendo el membrete individual de cada operario.
-- Devuelve HttpResponse con Content-Type xlsx y nombre de fichero
-  EXPORTACION_DD-MM-YY.xlsx.
+Boton "Marcar revisado" / "Desmarcar" en pestanas 3 y 4 (DONE).
+Exportacion multi-Excel (Bloque F rediseniado) solo en pestanas 3 y 4.
+Acceso a WorkOrderListView restringido a SupervisorAccessMixin.
+WorkOrderUploadView restringido a SupervisorAccessMixin.
 
 ---
 
 ## 3. Hoja de Ruta
 
 ### Paso 1 — HTMX en base.html + WorkOrderStatusFragmentView (Bloque A)
-- Anadir CDN HTMX a panel/templates/panel/base.html.
-- Crear WorkOrderStatusFragmentView en panel/views.py.
-- Crear template parcial panel/work_orders/_status_fragment.html.
-- Registrar ruta work-orders/<int:pk>/status/ en panel/urls.py.
-- PMA list.html: sustituir celdas estado+progreso por include del parcial.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (sesion 002).
 
 ### Paso 2 — HTMX guardado automatico por campo en editor (Bloque B)
-- Crear WorkOrderLineSaveView en panel/views.py.
-- Crear template parcial panel/work_orders/_line_row.html.
-- Registrar ruta work-orders/<int:wo_pk>/lines/<int:line_pk>/save/.
-- PMA edit.html: eliminar boton Guardar por fila, anadir atributos HTMX.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (sesion 002).
 
 ### Paso 3 — Editor: insertar + drag & drop + restaurar + avisos (Bloque C)
-- C1: WorkOrderLineInsertView + ruta insert/ + fragmento HTMX.
-- C2: SortableJS CDN + WorkOrderLineReorderView + ruta reorder/.
-- C3: WorkOrderLineRestoreView + ruta restore/ + fragmento grupo HTMX.
-- C4: clases CSS row-has-flags / field-flagged en _line_row.html y panel.css.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO con correcciones E2E (sesion 002).
+- Bugfixes aplicados: atomic INSERT, restore individual, delete linea.
 
 ### Paso 4 — Columna mano de obra + parser OCR (Bloque D)
-- D1: auditar generate_work_order_excel() en tasks.py.
-- D2: ampliar _normalise_machine_code() en services.py.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (sesion 002).
 
 ### Paso 5 — Deteccion de duplicado en upload (Bloque E)
-- Extender WorkOrderUploadView con logica de deteccion pre-creacion.
-- PMA upload.html: modal de advertencia de duplicado.
+- Estado: COMPLETADO (sesion 002).
+
+### Paso 6 — Exportacion de Excels (Bloque F)
+- Estado: COMPLETADO PARCIAL (sesion 002) — rediseno pendiente sesion 003.
+
+### Paso 7 — Campo reviewed + rol SUPERVISOR (Bloque G)
 - Estado: PENDIENTE.
 
-### Paso 6 — Concatenacion de Excels (Bloque F)
-- Crear WorkOrderExportView en panel/views.py.
-- Registrar ruta work-orders/export/ en panel/urls.py.
-- PMA list.html: checkboxes por fila DONE + boton Descargar seleccion.
+### Paso 8 — Pestanas en list.html + rediseno Bloque F (Bloque H)
 - Estado: PENDIENTE.
 
-### Paso 7 — Validacion E2E
+### Paso 9 — Validacion E2E completa
 - Validar polling HTMX con PDF real en extraccion.
 - Validar guardado automatico en editor sin scroll.
-- Validar insercion, reordenado y restauracion de lineas.
+- Validar insercion, reordenado, restauracion individual y eliminacion de lineas.
 - Validar correccion columna mano de obra en Excel descargado.
 - Validar deteccion duplicado + modal + sobrescritura.
-- Validar concatenacion de Excels multi-operario.
+- Validar exportacion multi-Excel en todos los modos.
+- Validar pestanas y filtrado por estado/revision.
+- Validar permisos del rol SUPERVISOR.
 - Estado: PENDIENTE.
 
 ---
@@ -216,89 +191,119 @@ Vista WorkOrderExportView en panel/views.py:
 
 | Sesion | Fecha      | Pasos trabajados | Resumen |
 |--------|------------|-----------------|---------|
-| 001    | 2026-04-28 | —               | Creacion del anexo. Inicio formal del hito. H7 pausado (Pasos 1 y 2 completados). |
+| 001    | 2026-04-28 | —               | Creacion del anexo. Inicio formal del hito. H7 pausado. |
+| 002    | 2026-04-28 | 1-6 + E2E       | Implementacion completa bloques A-F. Correcciones E2E: atomic INSERT, restore individual de linea, WorkOrderLineDeleteView, WorkOrderDeleteView. Bugfix formula COSTE M.O. Especificacion acordada para bloques G y H (rol SUPERVISOR, pestanas list.html, rediseno exportacion). |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
 ### Objetivo principal
-Paso 1 — HTMX en base.html + WorkOrderStatusFragmentView (Bloque A).
+Paso 7 (Bloque G) y Paso 8 (Bloque H).
 
-### PRIMERA ACCION — Verificar integridad HTMX y anadir CDN a base.html
+### PRIMERA ACCION — Bloque G: migraciones y modelos
 
-Antes de tocar base.html, verificar la integridad SHA384 del CDN de HTMX
-1.9.12 en https://unpkg.com/htmx.org@1.9.12 (Directriz 4.4 obligatoria).
+#### G1 — Campo reviewed en WorkOrder
+Archivo: work_order_processor/models.py
+Anadir tres campos al modelo WorkOrder tras el campo error_log:
 
-Anadir el script CDN justo antes del cierre </body> en base.html,
-despues del script de Bootstrap 5.3:
+    reviewed    = models.BooleanField(default=False)
+    reviewed_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_work_orders",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
-    <script src="https://unpkg.com/htmx.org@1.9.12"
-            integrity="sha384-VERIFICAR_ANTES_DE_ESCRIBIR"
-            crossorigin="anonymous"></script>
+Generar migracion:
+    python -m dotenv run python manage.py makemigrations work_order_processor
 
-El valor de integrity debe obtenerse de la documentacion oficial o del
-CDN en el momento de la sesion. NUNCA copiar un hash de memoria.
+#### G2 — Rol SUPERVISOR en CompanyUser
+Archivo: ivr_config/models.py
+En la clase CompanyUser.Role anadir:
+    SUPERVISOR = "SUPERVISOR"
 
-### SEGUNDA ACCION — WorkOrderStatusFragmentView en panel/views.py
+Generar migracion:
+    python -m dotenv run python manage.py makemigrations ivr_config
 
-Nueva vista sincrona que devuelve unicamente el fragmento HTML de estado
-y progreso de un WorkOrder. Especificacion exacta:
+Aplicar ambas migraciones:
+    python -m dotenv run python manage.py migrate
 
-    class WorkOrderStatusFragmentView(AdminRoleRequiredMixin, View):
-        def get(self, request, pk):
-            wo = get_object_or_404(
-                WorkOrder,
-                pk=pk,
-                company=request.user.company_user.company,
-            )
-            return render(
-                request,
-                "panel/work_orders/_status_fragment.html",
-                {"wo": wo},
-            )
+#### G3 — SupervisorAccessMixin en panel/mixins.py
+Nuevo mixin que permite acceso a ADMIN y SUPERVISOR.
+Redirige a login si no autenticado.
+Redirige a dashboard con mensaje de error si rol insuficiente.
+Verificacion: company_user.role in ("ADMIN", "SUPERVISOR").
 
-### TERCERA ACCION — Template parcial _status_fragment.html (Neonato Puro)
+#### G4 — WorkOrderMarkReviewedView en panel/views.py
+Vista POST que alterna reviewed True/False en el WorkOrder identificado
+por pk, acotado a la empresa autenticada.
+Si True: reviewed_by = request.user.company_user, reviewed_at = now().
+Si False: reviewed_by = None, reviewed_at = None.
+Devuelve fragmento HTML del badge de revision (Neonato Puro
+_review_badge_fragment.html) para HTMX swap inline en list.html.
+Restringido a SupervisorAccessMixin.
+Ruta: work-orders/<int:pk>/review/
 
-El template renderiza el badge de estado y la barra de progreso.
-Si el estado es PENDING o PROCESSING incluye atributos HTMX para
-polling cada 4 segundos. Si el estado es DONE o ERROR no incluye
-atributos HTMX y el polling se detiene automaticamente.
+#### G5 — Restriccion de acceso en vistas existentes
+WorkOrderUploadView: cambiar AdminRoleRequiredMixin por SupervisorAccessMixin.
+WorkOrderListView: cambiar AdminRoleRequiredMixin por SupervisorAccessMixin.
+WorkOrderExportView: cambiar AdminRoleRequiredMixin por SupervisorAccessMixin.
+WorkOrderStatusFragmentView: mantener AdminRoleRequiredMixin (HTMX interno).
+WorkOrderEditView: mantener AdminRoleRequiredMixin (edicion solo ADMIN).
+WorkOrderDeleteView: mantener AdminRoleRequiredMixin.
 
-Estructura del fragmento (contenedor unico que se reemplaza):
+### SEGUNDA ACCION — Bloque H: pestanas y rediseno list.html
 
-    <div id="wo-status-{{ wo.pk }}"
-         {% if wo.status == 'PENDING' or wo.status == 'PROCESSING' %}
-         hx-get="{% url 'panel:work_order_status_fragment' pk=wo.pk %}"
-         hx-trigger="every 4s"
-         hx-target="this"
-         hx-swap="outerHTML"
-         {% endif %}>
-        [badge de estado]
-        [barra de progreso]
-    </div>
+#### H1 — Rediseno WorkOrderListView
+Pasar cuatro querysets al contexto:
+    wo_queue    = WorkOrder.objects.filter(company=company,
+                      status__in=["PENDING","PROCESSING"]).order_by("-upload_date")
+    wo_error    = WorkOrder.objects.filter(company=company,
+                      status="ERROR").order_by("-upload_date")
+    wo_pending  = WorkOrder.objects.filter(company=company,
+                      status="DONE", reviewed=False).order_by("-upload_date")
+    wo_reviewed = WorkOrder.objects.filter(company=company,
+                      status="DONE", reviewed=True).order_by("-upload_date")
 
-### CUARTA ACCION — PMA list.html
+#### H2 — Rediseno list.html con pestanas Bootstrap
+Cuatro pestanas nav-tabs:
+  - "En cola" (badge con count de wo_queue) — tabla con _status_fragment HTMX.
+  - "Error" (badge con count de wo_error) — tabla con log de error y boton reintentar.
+  - "Pendiente revision" (badge con count de wo_pending) — tabla con boton
+    Marcar revisado + checkboxes exportacion.
+  - "Revisados" (badge con count de wo_reviewed) — tabla con boton Desmarcar
+    + checkboxes exportacion.
+La pestana activa por defecto es "Pendiente revision" si wo_pending > 0,
+si no "En cola".
 
-Sustituir el bloque de celdas de estado y progreso dentro del
-{% for wo in work_orders %} por:
+#### H3 — Neonato _review_badge_fragment.html
+Fragmento HTML del badge de revision devuelto por WorkOrderMarkReviewedView.
+Incluye boton Marcar/Desmarcar con atributos HTMX:
+  hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
+  hx-trigger="click"
+  hx-target="#review-badge-{{ wo.pk }}"
+  hx-swap="outerHTML"
 
-    {% include "panel/work_orders/_status_fragment.html" with wo=wo %}
+#### H4 — Rediseno Bloque F en WorkOrderExportView y list.html
+Modal de seleccion de modo (single_sheet / multi_sheet) en list.html.
+JS: detectar operarios unicos en seleccion; si uno solo, saltar modal.
+Campo oculto export_mode en el formulario de exportacion.
+WorkOrderExportView.post():
+  Si export_mode == "single_sheet":
+    - Agrupar todas las lineas de todos los WorkOrders seleccionados
+      por (worker_name, date_key), ordenar por worker_name y date_key.
+    - Construir una unica hoja con membrete por operario como separador
+      visual (fila con fondo azul oscuro y nombre del operario en negrita)
+      antes del primer bloque de cada nuevo operario.
+  Si export_mode == "multi_sheet":
+    - Agrupar WorkOrders por worker_name.
+    - Una hoja por operario con su membrete individual.
+    - Dentro de cada hoja, filas ordenadas por date_key.
 
-Esto unifica el renderizado inicial y el fragmento HTMX en un unico template.
-Las dos celdas <td> de estado y progreso se colapsan en una sola <td> que
-contiene el include del parcial.
-
-### QUINTA ACCION — Registrar ruta en panel/urls.py
-
-    path("work-orders/<int:pk>/status/",
-         WorkOrderStatusFragmentView.as_view(),
-         name="work_order_status_fragment"),
-
-Registrar en el bloque de WorkOrder management, despues de la ruta
-work_order_edit existente.
-
-### Estado de migraciones al inicio del hito
+### Estado de migraciones al inicio de la sesion
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
@@ -307,14 +312,16 @@ work_order_edit existente.
 | ivr_config             | 0012_callflow_backup_name                              |
 | panel                  | 0001_initial (AnalyticsProfile)                        |
 
-### Archivos clave al inicio del hito
+NOTA: las migraciones de los Bloques G (reviewed + SUPERVISOR) son la
+PRIMERA accion de la sesion 003 — aplicarlas antes de cualquier otra cosa.
 
-- panel/templates/panel/base.html — anadir CDN HTMX (Paso 1).
-- panel/views.py — WorkOrderStatusFragmentView (Paso 1), WorkOrderLineSaveView (Paso 2).
-- panel/urls.py — nuevas rutas HTMX (Pasos 1-3).
-- panel/templates/panel/work_orders/list.html — polling HTMX (Paso 1).
-- panel/templates/panel/work_orders/edit.html — guardado automatico (Paso 2).
-- panel/templates/panel/work_orders/_status_fragment.html — Neonato Puro (Paso 1).
-- panel/templates/panel/work_orders/_line_row.html — Neonato Puro (Paso 2).
-- work_order_processor/services.py — parser OCR (Paso 4).
-- work_order_processor/tasks.py — columna mano de obra (Paso 4).
+### Archivos clave al inicio de la sesion
+
+- work_order_processor/models.py — anadir campos reviewed (G1).
+- ivr_config/models.py — anadir rol SUPERVISOR (G2).
+- panel/mixins.py — anadir SupervisorAccessMixin (G3).
+- panel/views.py — WorkOrderMarkReviewedView (G4) + restricciones (G5)
+  + WorkOrderExportView rediseniada (H4).
+- panel/urls.py — ruta work-orders/<pk>/review/ (G4) + ajustes.
+- panel/templates/panel/work_orders/list.html — pestanas + Bloque F (H2+H4).
+- panel/templates/panel/work_orders/_review_badge_fragment.html — Neonato (H3).

@@ -42,8 +42,11 @@
 ./panel/templates/panel/blockedcallers/confirm_delete.html
 ./panel/templates/panel/login.html
 ./panel/templates/panel/work_orders/list.html
+./panel/templates/panel/work_orders/_line_row.html
 ./panel/templates/panel/work_orders/edit.html
+./panel/templates/panel/work_orders/_status_fragment.html
 ./panel/templates/panel/work_orders/upload.html
+./panel/templates/panel/work_orders/_entry_group_fragment.html
 ./panel/templates/panel/operator/dashboard.html
 ./panel/static/panel/css/panel.css
 ./panel/__init__.py

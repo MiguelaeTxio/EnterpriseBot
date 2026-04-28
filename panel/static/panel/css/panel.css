@@ -244,3 +244,55 @@ body {
 
 /* Work-order table overflow fix — permite que los dropdowns se expandan fuera de la tabla */
 .table-overflow-visible { overflow: visible; }
+
+/* -----------------------------------------------------------------------
+   Hito 8 — Estilos del editor inline HTMX (Pasos 2 y 3).
+   Hito 8 — HTMX inline editor styles (Steps 2 and 3).
+   ----------------------------------------------------------------------- */
+
+/* HTMX save flash — destello verde al guardar correctamente via HTMX.
+   Applied by hx-on::after-request in _line_row.html.
+   Aplicado por hx-on::after-request en _line_row.html. */
+@keyframes rowSaveFlash {
+    0%   { background-color: #d1e7dd; }
+    100% { background-color: transparent; }
+}
+.row-save-flash {
+    animation: rowSaveFlash 0.8s ease-out forwards;
+}
+
+/* Flag row highlight — fila con incidencias pendientes / row with pending flags */
+.row-has-flags {
+    background-color: #fffbe6;
+}
+
+/* Flagged field highlight — campo con incidencia pendiente / field with pending flag */
+.field-flagged {
+    border-color: #fd7e14 !important;
+    box-shadow: 0 0 0 0.15rem rgba(253,126,20,.2) !important;
+}
+
+/* Drag handle — icono de agarre para reordenar filas via SortableJS.
+   Grip icon for row reordering via SortableJS. */
+.drag-handle {
+    cursor: grab;
+    color: #adb5bd;
+    font-size: 1rem;
+}
+.drag-handle:active { cursor: grabbing; }
+
+/* SortableJS ghost row — fila fantasma durante el drag & drop.
+   Ghost row shown during SortableJS drag & drop. */
+.sortable-ghost {
+    opacity: 0.4;
+    background-color: #e8f4fd;
+}
+
+/* Export checkbox column — columna de checkbox de exportación en lista de PDFs */
+.col-chk { width: 2rem; }
+
+/* Inline editor cell utilities — Utilidades de celda del editor inline.
+   Replace inline style= attributes in _line_row.html. */
+.cell-nowrap        { white-space: nowrap; }
+.text-raw           { font-size: 0.68rem; }
+.text-asset-code    { font-size: 0.8rem; }

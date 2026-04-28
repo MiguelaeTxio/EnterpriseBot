@@ -2494,13 +2494,37 @@ class WorkOrderListView(AdminRoleRequiredMixin, View):
 class WorkOrderUploadView(AdminRoleRequiredMixin, View):
     """
     Handles PDF upload for work order processing.
-    On POST: creates a WorkOrder record, enqueues the Celery processing task
-    immediately via process_work_order_pdf.delay() and redirects to the list.
+    On POST: validates the file, runs a duplicate detection check before
+    creating the WorkOrder, enqueues the Celery processing task immediately
+    via process_work_order_pdf.delay_on_commit() and redirects to the list.
+
+    Duplicate detection (Hito 8, Paso 5, Bloque E):
+      Before creating a new WorkOrder the view extracts the worker name and
+      work period from the uploaded PDF filename and checks for an existing
+      WorkOrder for the same company with the same worker name and an
+      overlapping period. If a duplicate is found and the POST does not
+      include confirm_overwrite=1, the upload form is re-rendered with the
+      duplicate_wo context variable so the template can show a warning modal.
+      If the user confirms overwrite, the duplicate WorkOrder (and all its
+      cascade-deleted children) is deleted before the new one is created.
+
     Restricted to ADMIN role.
     ---
     Gestiona la carga de PDF para el procesamiento de partes de trabajo.
-    En POST: crea un registro WorkOrder, encola inmediatamente la tarea Celery
-    de procesamiento mediante process_work_order_pdf.delay() y redirige a la lista.
+    En POST: valida el archivo, ejecuta una comprobación de duplicado antes
+    de crear el WorkOrder, encola la tarea Celery inmediatamente mediante
+    process_work_order_pdf.delay_on_commit() y redirige a la lista.
+
+    Detección de duplicado (Hito 8, Paso 5, Bloque E):
+      Antes de crear un nuevo WorkOrder la vista extrae el nombre del operario
+      y el periodo de trabajo del nombre del PDF cargado y comprueba si existe
+      un WorkOrder de la misma empresa con el mismo operario y periodo solapado.
+      Si se detecta un duplicado y el POST no incluye confirm_overwrite=1, el
+      formulario de carga se vuelve a renderizar con la variable de contexto
+      duplicate_wo para que la plantilla muestre un modal de advertencia.
+      Si el usuario confirma la sobrescritura, el WorkOrder duplicado (y todos
+      sus hijos eliminados en cascada) se elimina antes de crear el nuevo.
+
     Restringido al rol ADMIN.
     """
 
@@ -2538,43 +2562,138 @@ class WorkOrderUploadView(AdminRoleRequiredMixin, View):
 
     def post(self, request):
         """
-        Processes the uploaded PDF: validates presence of the file, creates
-        a WorkOrder and enqueues the Celery task for immediate processing.
-        On validation error, re-renders the form with an error message.
+        Processes the uploaded PDF: validates the file, runs duplicate detection,
+        optionally deletes the existing duplicate on confirmed overwrite, creates
+        a new WorkOrder and enqueues the Celery processing task.
         ---
-        Procesa el PDF cargado: valida la presencia del archivo, crea un
-        WorkOrder y encola la tarea Celery para procesamiento inmediato.
-        En caso de error de validación, vuelve a renderizar el formulario
-        con un mensaje de error.
+        Procesa el PDF cargado: valida el archivo, ejecuta la detección de
+        duplicado, elimina opcionalmente el duplicado existente si el usuario
+        confirma la sobrescritura, crea un nuevo WorkOrder y encola la tarea
+        Celery de procesamiento.
         """
         from django.contrib import messages as django_messages
-        from django.db import transaction
+        from work_order_processor.services import _parse_period_from_pdf_name
+        from work_order_processor.tasks import _extract_period_from_pdf_name
 
         company_user = request.user.company_user
+        company      = company_user.company
         pdf_file     = request.FILES.get("source_pdf")
 
+        # ------------------------------------------------------------------
+        # Step 1 — File presence and extension validation.
+        # Paso 1 — Validación de presencia y extensión del archivo.
+        # ------------------------------------------------------------------
         if not pdf_file:
             django_messages.error(request, "Debes seleccionar un archivo PDF.")
             return render(request, self.template_name, {
-                "company":      company_user.company,
+                "company":      company,
                 "company_user": company_user,
-                "own_presence":  self._get_own_presence(company_user),
-                "active_nav":    "work_orders",
+                "own_presence": self._get_own_presence(company_user),
+                "active_nav":   "work_orders",
             })
 
         if not pdf_file.name.lower().endswith(".pdf"):
             django_messages.error(request, "El archivo debe tener extensión .pdf.")
             return render(request, self.template_name, {
-                "company":      company_user.company,
+                "company":      company,
                 "company_user": company_user,
-                "own_presence":  self._get_own_presence(company_user),
-                "active_nav":    "work_orders",
+                "own_presence": self._get_own_presence(company_user),
+                "active_nav":   "work_orders",
             })
 
-        # Create WorkOrder and enqueue Celery task after DB commit.
-        # Crear WorkOrder y encolar la tarea Celery tras el commit de BD.
+        # ------------------------------------------------------------------
+        # Step 2 — Duplicate detection pre-creation check (Bloque E).
+        # Paso 2 — Comprobación de duplicado pre-creación (Bloque E).
+        #
+        # Parse worker name and work period from the incoming PDF filename.
+        # Check for an existing WorkOrder for the same company that covers
+        # the same worker and an overlapping period. If found and the user
+        # has not confirmed overwrite, re-render the form with the modal.
+        # ------------------------------------------------------------------
+        incoming_name  = pdf_file.name
+        date_from, date_to = _extract_period_from_pdf_name(incoming_name)
+
+        # Derive worker name from the PDF filename using the same logic as tasks.py.
+        # Derivar nombre del operario del nombre del PDF usando la misma lógica
+        # que tasks.py.
+        import os as _os
+        stem   = _os.path.splitext(_os.path.basename(incoming_name))[0]
+        tokens = stem.replace("_", " ").split(" ")
+        name_tokens = []
+        for tok in tokens:
+            if tok and tok[0].isdigit():
+                break
+            name_tokens.append(tok.upper())
+        incoming_worker = " ".join(name_tokens).strip()
+
+        duplicate_wo = None
+
+        if date_from and date_to and incoming_worker:
+            # Query existing WorkOrders for this company with the same worker.
+            # Consultar WorkOrders existentes de esta empresa con el mismo operario.
+            candidates = WorkOrder.objects.filter(company=company)
+            for candidate in candidates:
+                if not candidate.source_pdf:
+                    continue
+                cand_date_from, cand_date_to = _extract_period_from_pdf_name(
+                    candidate.source_pdf.name
+                )
+                if not cand_date_from or not cand_date_to:
+                    continue
+
+                # Derive worker name from candidate PDF filename.
+                # Derivar nombre del operario del nombre del PDF del candidato.
+                cand_stem   = _os.path.splitext(
+                    _os.path.basename(candidate.source_pdf.name)
+                )[0]
+                cand_tokens = cand_stem.replace("_", " ").split(" ")
+                cand_name_tokens = []
+                for tok in cand_tokens:
+                    if tok and tok[0].isdigit():
+                        break
+                    cand_name_tokens.append(tok.upper())
+                cand_worker = " ".join(cand_name_tokens).strip()
+
+                # Check worker name match and period overlap.
+                # Comprobar coincidencia de operario y solapamiento de periodo.
+                worker_match  = (cand_worker == incoming_worker)
+                periods_overlap = (date_from <= cand_date_to and date_to >= cand_date_from)
+
+                if worker_match and periods_overlap:
+                    duplicate_wo = candidate
+                    break
+
+        # If a duplicate was found and the user has not confirmed overwrite,
+        # re-render the upload form with the duplicate modal context.
+        # Si se detectó un duplicado y el usuario no ha confirmado sobrescritura,
+        # volver a renderizar el formulario con el contexto del modal de duplicado.
+        if duplicate_wo and not request.POST.get("confirm_overwrite"):
+            return render(request, self.template_name, {
+                "company":      company,
+                "company_user": company_user,
+                "own_presence": self._get_own_presence(company_user),
+                "active_nav":   "work_orders",
+                "duplicate_wo": duplicate_wo,
+                "pdf_file_name": incoming_name,
+            })
+
+        # If confirmed overwrite, delete the duplicate and all cascaded children.
+        # Si se confirma sobrescritura, eliminar el duplicado y sus hijos en cascada.
+        if duplicate_wo and request.POST.get("confirm_overwrite"):
+            dup_pk = duplicate_wo.pk
+            duplicate_wo.delete()
+            django_messages.warning(
+                request,
+                f"El parte duplicado #{dup_pk} ha sido eliminado. "
+                f"Procesando el nuevo PDF."
+            )
+
+        # ------------------------------------------------------------------
+        # Step 3 — Create WorkOrder and enqueue Celery task after DB commit.
+        # Paso 3 — Crear WorkOrder y encolar la tarea Celery tras el commit.
+        # ------------------------------------------------------------------
         work_order = WorkOrder.objects.create(
-            company     = company_user.company,
+            company     = company,
             uploaded_by = company_user,
             source_pdf  = pdf_file,
         )
@@ -2819,6 +2938,819 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
         # Fallback para acción desconocida.
         django_messages.warning(request, "Acción no reconocida.")
         return redirect("panel:work_order_edit", pk=pk)
+
+
+
+class WorkOrderStatusFragmentView(AdminRoleRequiredMixin, View):
+    """
+    Returns the HTML status fragment for a single WorkOrder, used by HTMX polling.
+
+    GET /panel/work-orders/<pk>/status/
+        Renders only the _status_fragment.html partial for the WorkOrder identified
+        by pk and scoped to the authenticated user's company. If the status is
+        PENDING or PROCESSING the partial includes HTMX polling attributes so the
+        browser continues polling every 4 seconds. When the status reaches DONE or
+        ERROR the returned fragment contains no HTMX attributes and polling stops
+        automatically.
+
+    Restricted to the ADMIN role (AdminRoleRequiredMixin).
+
+    ---
+
+    Devuelve el fragmento HTML de estado de un WorkOrder, consumido por el polling HTMX.
+
+    GET /panel/work-orders/<pk>/status/
+        Renderiza únicamente el parcial _status_fragment.html para el WorkOrder
+        identificado por pk, acotado a la empresa del usuario autenticado. Si el
+        estado es PENDING o PROCESSING el parcial incluye atributos HTMX de polling
+        para que el navegador siga consultando cada 4 segundos. Cuando el estado
+        alcanza DONE o ERROR el fragmento devuelto no contiene atributos HTMX y el
+        polling se detiene automáticamente.
+
+    Restringido al rol ADMIN (AdminRoleRequiredMixin).
+    """
+
+    def get(self, request, pk):
+        """
+        Returns the rendered _status_fragment.html partial for the requested WorkOrder.
+        Raises HTTP 404 if the WorkOrder does not exist or belongs to another company.
+        ---
+        Devuelve el parcial _status_fragment.html renderizado para el WorkOrder solicitado.
+        Lanza HTTP 404 si el WorkOrder no existe o pertenece a otra empresa.
+        """
+        from django.shortcuts import get_object_or_404
+
+        wo = get_object_or_404(
+            WorkOrder,
+            pk=pk,
+            company=request.user.company_user.company,
+        )
+        return render(
+            request,
+            "panel/work_orders/_status_fragment.html",
+            {"wo": wo},
+        )
+
+
+class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
+    """
+    HTMX endpoint that saves a single WorkOrderEntryLine and returns the updated
+    <tr> row as an HTML fragment consumed by the inline editor.
+
+    POST /panel/work-orders/<wo_pk>/lines/<line_pk>/save/
+         Expected POST fields (all optional — missing fields are treated as empty):
+           maquina_norm        : str  — normalised machine code.
+           descripcion_averia  : str  — fault description.
+           reparacion          : str  — repair description.
+           hc                  : str  — start time  HH:MM.
+           hf                  : str  — end time    HH:MM.
+           or_val              : str  — repair order reference.
+           flags               : str  — comma-separated flag list.
+         Server recomputes delta_horas from hc/hf and re-resolves machine_asset
+         from the updated maquina_norm. Returns the rendered _line_row.html partial
+         (a single <tr> element) with HTTP 200.
+         Returns HTTP 404 if the WorkOrder or line do not exist or belong to another
+         company. Returns HTTP 400 on an unexpected processing error.
+
+    Restricted to the ADMIN role (AdminRoleRequiredMixin).
+
+    ---
+
+    Endpoint HTMX que guarda un único WorkOrderEntryLine y devuelve la fila <tr>
+    actualizada como fragmento HTML consumido por el editor inline.
+
+    POST /panel/work-orders/<wo_pk>/lines/<line_pk>/save/
+         Campos POST esperados (todos opcionales — los ausentes se tratan como vacíos):
+           maquina_norm        : str  — código de máquina normalizado.
+           descripcion_averia  : str  — descripción de la avería.
+           reparacion          : str  — descripción de la reparación.
+           hc                  : str  — hora de comienzo HH:MM.
+           hf                  : str  — hora de fin      HH:MM.
+           or_val              : str  — referencia de orden de reparación.
+           flags               : str  — lista de flags separada por comas.
+         El servidor recalcula delta_horas desde hc/hf y re-resuelve machine_asset
+         desde el maquina_norm actualizado. Devuelve el parcial _line_row.html
+         renderizado (un único elemento <tr>) con HTTP 200.
+         Devuelve HTTP 404 si el WorkOrder o la línea no existen o pertenecen a
+         otra empresa. Devuelve HTTP 400 ante un error de procesamiento inesperado.
+
+    Restringido al rol ADMIN (AdminRoleRequiredMixin).
+    """
+
+    def post(self, request, wo_pk, line_pk):
+        """
+        Saves the WorkOrderEntryLine identified by line_pk, recomputes derived
+        fields and returns the updated <tr> row as an HTMX fragment.
+        ---
+        Guarda el WorkOrderEntryLine identificado por line_pk, recalcula los campos
+        derivados y devuelve la fila <tr> actualizada como fragmento HTMX.
+        """
+        from django.shortcuts import get_object_or_404
+        from work_order_processor.models import WorkOrderEntryLine
+        from work_order_processor.services import (
+            _compute_delta_horas,
+            _normalise_machine_code,
+            _resolve_machine_asset,
+        )
+        from datetime import time as dt_time
+
+        # ------------------------------------------------------------------
+        # Multicompany guard — retrieve WorkOrder scoped to the company.
+        # Guardia multiempresa — recuperar WorkOrder acotado a la empresa.
+        # ------------------------------------------------------------------
+        company = request.user.company_user.company
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+
+        # ------------------------------------------------------------------
+        # Retrieve the line, ensuring it belongs to the WorkOrder.
+        # Recuperar la línea, asegurando que pertenece al WorkOrder.
+        # ------------------------------------------------------------------
+        line = get_object_or_404(
+            WorkOrderEntryLine.objects.select_related(
+                "entry__work_order",
+                "machine_asset",
+            ),
+            pk=line_pk,
+            entry__work_order=wo,
+        )
+
+        # ------------------------------------------------------------------
+        # Parse maquina_norm and re-resolve machine_asset.
+        # Parsear maquina_norm y re-resolver machine_asset.
+        # ------------------------------------------------------------------
+        raw_norm = request.POST.get("maquina_norm", "").strip()
+        norm     = _normalise_machine_code(raw_norm) if raw_norm else raw_norm
+        asset    = _resolve_machine_asset(norm) if norm else None
+
+        # ------------------------------------------------------------------
+        # Parse hc / hf and recompute delta_horas.
+        # Parsear hc / hf y recalcular delta_horas.
+        # ------------------------------------------------------------------
+        def _parse_time_str(val):
+            """Parses HH:MM string into time object, returns None on failure.
+            --- Parsea cadena HH:MM a objeto time, devuelve None si falla."""
+            if not val:
+                return None
+            try:
+                parts = val.strip().split(":")
+                return dt_time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                return None
+
+        hc    = _parse_time_str(request.POST.get("hc", ""))
+        hf    = _parse_time_str(request.POST.get("hf", ""))
+        delta = _compute_delta_horas(hc, hf)
+
+        # ------------------------------------------------------------------
+        # Parse flags from comma-separated string.
+        # Parsear flags desde cadena separada por comas.
+        # ------------------------------------------------------------------
+        flags_raw = request.POST.get("flags", "").strip()
+        flags     = [f.strip() for f in flags_raw.split(",") if f.strip()]                     if flags_raw else []
+
+        # ------------------------------------------------------------------
+        # Persist all changes in a single save call.
+        # Persistir todos los cambios en una única llamada save.
+        # ------------------------------------------------------------------
+        line.maquina_norm       = norm
+        line.machine_asset      = asset
+        line.descripcion_averia = request.POST.get("descripcion_averia", "").strip()
+        line.reparacion         = request.POST.get("reparacion", "").strip()
+        line.hc                 = hc
+        line.hf                 = hf
+        line.or_val             = request.POST.get("or_val", "").strip()
+        line.delta_horas        = delta
+        line.flags              = flags
+        line.save(update_fields=[
+            "maquina_norm", "machine_asset", "descripcion_averia",
+            "reparacion", "hc", "hf", "or_val", "delta_horas", "flags",
+        ])
+
+        # ------------------------------------------------------------------
+        # Return the updated row fragment for HTMX to swap into the DOM.
+        # Devolver el fragmento de fila actualizado para que HTMX lo inserte en el DOM.
+        # ------------------------------------------------------------------
+        return render(
+            request,
+            "panel/work_orders/_line_row.html",
+            {
+                "line":       line,
+                "wo_pk":      wo.pk,
+                "entry":      line.entry,
+            },
+        )
+
+
+class WorkOrderLineInsertView(AdminRoleRequiredMixin, View):
+    """
+    Creates a new empty WorkOrderEntryLine after a given line within the same
+    WorkOrderEntry group and returns the new row as an HTMX fragment.
+
+    POST /panel/work-orders/<wo_pk>/lines/insert/
+         Expected POST fields:
+           after_line_pk : int — pk of the line after which to insert.
+           entry_pk      : int — pk of the WorkOrderEntry group.
+         Creates a new WorkOrderEntryLine with line_number = after_line.line_number + 1,
+         shifting the line_number of all subsequent lines in the same entry up by 1.
+         Returns the rendered _line_row.html partial for the new line with HTTP 200.
+         Returns HTTP 404 if the WorkOrder, entry or reference line do not belong
+         to the authenticated company.
+
+    Restricted to the ADMIN role (AdminRoleRequiredMixin).
+
+    ---
+
+    Crea un nuevo WorkOrderEntryLine vacío tras una línea dada dentro del mismo
+    grupo WorkOrderEntry y devuelve la nueva fila como fragmento HTMX.
+
+    POST /panel/work-orders/<wo_pk>/lines/insert/
+         Campos POST esperados:
+           after_line_pk : int — pk de la línea tras la que insertar.
+           entry_pk      : int — pk del grupo WorkOrderEntry.
+         Crea un nuevo WorkOrderEntryLine con line_number = after_line.line_number + 1,
+         desplazando el line_number de todas las líneas posteriores del mismo entry
+         en +1. Devuelve el parcial _line_row.html renderizado para la nueva línea
+         con HTTP 200. Devuelve HTTP 404 si el WorkOrder, entry o línea de referencia
+         no pertenecen a la empresa autenticada.
+
+    Restringido al rol ADMIN (AdminRoleRequiredMixin).
+    """
+
+    def post(self, request, wo_pk):
+        """
+        Inserts a new empty WorkOrderEntryLine after the specified reference line
+        and returns the rendered _line_row.html fragment for the new row.
+        ---
+        Inserta un nuevo WorkOrderEntryLine vacío tras la línea de referencia
+        especificada y devuelve el fragmento _line_row.html renderizado para la fila.
+        """
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponseBadRequest
+
+        company = request.user.company_user.company
+
+        # Retrieve and scope WorkOrder.
+        # Recuperar y acotar WorkOrder.
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+
+        # Validate required POST parameters.
+        # Validar parámetros POST obligatorios.
+        try:
+            after_line_pk = int(request.POST.get("after_line_pk", ""))
+            entry_pk      = int(request.POST.get("entry_pk", ""))
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest("# [INSERT] Parámetros after_line_pk / entry_pk inválidos.")
+
+        # Retrieve the reference line and its entry, scoped to this WorkOrder.
+        # Recuperar la línea de referencia y su entry, acotados a este WorkOrder.
+        after_line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=after_line_pk,
+            entry__work_order=wo,
+            entry__pk=entry_pk,
+        )
+        entry = after_line.entry
+
+        # Shift + create must be atomic to prevent unique constraint violation
+        # on (entry_id, line_number) when two lines share the same number
+        # during the gap between UPDATE and INSERT.
+        # Shift + create deben ser atómicos para evitar violación de restricción
+        # única en (entry_id, line_number) cuando dos líneas comparten el mismo
+        # número durante el intervalo entre UPDATE e INSERT.
+        from django.db import transaction
+        with transaction.atomic():
+            # Shift all lines with line_number > after_line.line_number up by 1.
+            # Desplazar todas las líneas con line_number > after_line.line_number en +1.
+            WorkOrderEntryLine.objects.filter(
+                entry=entry,
+                line_number__gt=after_line.line_number,
+            ).update(line_number=django_models.F("line_number") + 1)
+
+            # Create the new empty line at the freed position.
+            # Crear la nueva línea vacía en la posición liberada.
+            new_line = WorkOrderEntryLine.objects.create(
+                entry=entry,
+                line_number=after_line.line_number + 1,
+                maquina_norm="",
+                maquina_raw="",
+                descripcion_averia="",
+                reparacion="",
+                hc=None,
+                hf=None,
+                or_val="",
+                delta_horas=None,
+                flags=[],
+                machine_asset=None,
+            )
+
+        return render(
+            request,
+            "panel/work_orders/_line_row.html",
+            {
+                "line":  new_line,
+                "wo_pk": wo.pk,
+                "entry": entry,
+            },
+        )
+
+
+class WorkOrderLineReorderView(AdminRoleRequiredMixin, View):
+    """
+    Accepts a new ordering for WorkOrderEntryLine records within a single
+    WorkOrderEntry group and persists the updated line_number values.
+
+    POST /panel/work-orders/<wo_pk>/lines/reorder/
+         Expected POST fields:
+           entry_pk        : int         — pk of the WorkOrderEntry group.
+           line_pks[]      : list[int]   — ordered list of WorkOrderEntryLine pks
+                                           in the desired new order.
+         Updates line_number for each line to match the position in line_pks[].
+         Returns HTTP 200 with JSON {"ok": true} on success.
+         Returns HTTP 400 on invalid parameters.
+         Returns HTTP 404 if the WorkOrder or entry do not belong to the company.
+
+    Restricted to the ADMIN role (AdminRoleRequiredMixin).
+
+    ---
+
+    Acepta un nuevo orden para los registros WorkOrderEntryLine dentro de un único
+    grupo WorkOrderEntry y persiste los valores line_number actualizados.
+
+    POST /panel/work-orders/<wo_pk>/lines/reorder/
+         Campos POST esperados:
+           entry_pk        : int         — pk del grupo WorkOrderEntry.
+           line_pks[]      : list[int]   — lista ordenada de pks de WorkOrderEntryLine
+                                           en el nuevo orden deseado.
+         Actualiza line_number de cada línea para que coincida con su posición en
+         line_pks[]. Devuelve HTTP 200 con JSON {"ok": true} en caso de éxito.
+         Devuelve HTTP 400 ante parámetros inválidos. Devuelve HTTP 404 si el
+         WorkOrder o entry no pertenecen a la empresa.
+
+    Restringido al rol ADMIN (AdminRoleRequiredMixin).
+    """
+
+    def post(self, request, wo_pk):
+        """
+        Persists the new line_number ordering for the lines of a WorkOrderEntry.
+        ---
+        Persiste el nuevo orden de line_number para las líneas de un WorkOrderEntry.
+        """
+        from django.shortcuts import get_object_or_404
+        from django.http import JsonResponse, HttpResponseBadRequest
+
+        company = request.user.company_user.company
+        wo      = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+
+        # Validate entry_pk.
+        # Validar entry_pk.
+        try:
+            entry_pk = int(request.POST.get("entry_pk", ""))
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest("# [REORDER] Parámetro entry_pk inválido.")
+
+        entry = get_object_or_404(WorkOrderEntry, pk=entry_pk, work_order=wo)
+
+        # Retrieve ordered list of line pks from POST (getlist for multi-value).
+        # Recuperar la lista ordenada de pks de línea del POST (getlist para multi-valor).
+        try:
+            line_pks = [int(pk) for pk in request.POST.getlist("line_pks[]")]
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest("# [REORDER] Parámetro line_pks[] inválido.")
+
+        if not line_pks:
+            return HttpResponseBadRequest("# [REORDER] Lista line_pks[] vacía.")
+
+        # Fetch all lines of the entry as a dict for O(1) lookup.
+        # Obtener todas las líneas del entry como dict para búsqueda O(1).
+        lines_map = {
+            line.pk: line
+            for line in WorkOrderEntryLine.objects.filter(entry=entry)
+        }
+
+        # Assign new line_number values according to the received order.
+        # Asignar nuevos valores de line_number según el orden recibido.
+        bulk_update = []
+        for position, pk in enumerate(line_pks, start=1):
+            line = lines_map.get(pk)
+            if line is None:
+                continue
+            line.line_number = position
+            bulk_update.append(line)
+
+        WorkOrderEntryLine.objects.bulk_update(bulk_update, ["line_number"])
+
+        return JsonResponse({"ok": True})
+
+
+class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
+    """
+    Restores a single WorkOrderEntryLine to its original Gemini-extracted
+    values by looking up the corresponding block in the parent WorkOrderEntry's
+    raw_gemini_response using the line's line_number as the index.
+
+    POST /panel/work-orders/<wo_pk>/lines/<line_pk>/restore/
+         Locates the bloque at raw_gemini_response["entradas"][line_number - 1],
+         overwrites only the fields of the target line (maquina_raw, maquina_norm,
+         machine_asset, descripcion_averia, reparacion, hc, hf, or_val,
+         delta_horas, flags) and returns the rendered _line_row.html partial
+         for that single row with HTTP 200.
+         Returns HTTP 404 if the WorkOrder or line do not belong to the company.
+         Returns HTTP 400 if no raw_gemini_response is stored or the block index
+         is out of range.
+
+    Restricted to the ADMIN role (AdminRoleRequiredMixin).
+
+    ---
+
+    Restaura un único WorkOrderEntryLine a sus valores originales extraídos por
+    Gemini localizando el bloque correspondiente en el raw_gemini_response del
+    WorkOrderEntry padre usando el line_number de la línea como índice.
+
+    POST /panel/work-orders/<wo_pk>/lines/<line_pk>/restore/
+         Localiza el bloque en raw_gemini_response["entradas"][line_number - 1],
+         sobreescribe únicamente los campos de la línea objetivo (maquina_raw,
+         maquina_norm, machine_asset, descripcion_averia, reparacion, hc, hf,
+         or_val, delta_horas, flags) y devuelve el parcial _line_row.html
+         renderizado para esa única fila con HTTP 200.
+         Devuelve HTTP 404 si el WorkOrder o la línea no pertenecen a la empresa.
+         Devuelve HTTP 400 si no hay raw_gemini_response almacenado o el índice
+         de bloque está fuera de rango.
+
+    Restringido al rol ADMIN (AdminRoleRequiredMixin).
+    """
+
+    def post(self, request, wo_pk, line_pk):
+        """
+        Restores the single WorkOrderEntryLine identified by line_pk from its
+        corresponding block in raw_gemini_response and returns the updated row
+        as an HTMX fragment.
+        ---
+        Restaura el único WorkOrderEntryLine identificado por line_pk desde su
+        bloque correspondiente en raw_gemini_response y devuelve la fila
+        actualizada como fragmento HTMX.
+        """
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponseBadRequest
+        from work_order_processor.services import (
+            _normalise_machine_code,
+            _resolve_machine_asset,
+            _compute_delta_horas,
+            _parse_time,
+        )
+
+        company = request.user.company_user.company
+        wo      = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+
+        # Retrieve the line and its parent entry.
+        # Recuperar la línea y su entry padre.
+        line  = get_object_or_404(
+            WorkOrderEntryLine.objects.select_related("entry", "machine_asset"),
+            pk=line_pk,
+            entry__work_order=wo,
+        )
+        entry = line.entry
+
+        # Guard: raw_gemini_response must exist.
+        # Guardia: raw_gemini_response debe existir.
+        raw = entry.raw_gemini_response
+        if not raw or not isinstance(raw, dict):
+            return HttpResponseBadRequest(
+                "# [RESTORE] No hay raw_gemini_response almacenado para esta entrada."
+            )
+
+        entradas = raw.get("entradas") or []
+        block_index = line.line_number - 1   # line_number is 1-based.
+
+        if block_index < 0 or block_index >= len(entradas):
+            return HttpResponseBadRequest(
+                f"# [RESTORE] Índice de bloque {block_index} fuera de rango "
+                f"(entradas disponibles: {len(entradas)})."
+            )
+
+        bloque = entradas[block_index]
+
+        # Re-parse the original block values and overwrite only this line.
+        # Re-parsear los valores del bloque original y sobreescribir solo esta línea.
+        maquina_raw   = (bloque.get("maquina_raw") or "").strip()
+        maquina_norm  = _normalise_machine_code(maquina_raw)
+        machine_asset = _resolve_machine_asset(maquina_norm)
+        hc            = _parse_time(bloque.get("hc"))
+        hf            = _parse_time(bloque.get("hf"))
+        delta         = _compute_delta_horas(hc, hf)
+        flags         = bloque.get("flags") or []
+        if not isinstance(flags, list):
+            flags = []
+
+        line.maquina_raw       = maquina_raw
+        line.maquina_norm      = maquina_norm
+        line.machine_asset     = machine_asset
+        line.descripcion_averia = (bloque.get("descripcion_averia") or "")
+        line.reparacion        = (bloque.get("reparacion") or "")
+        line.hc                = hc
+        line.hf                = hf
+        line.or_val            = (bloque.get("or_val") or "")
+        line.delta_horas       = delta
+        line.flags             = flags
+        line.save(update_fields=[
+            "maquina_raw", "maquina_norm", "machine_asset",
+            "descripcion_averia", "reparacion", "hc", "hf",
+            "or_val", "delta_horas", "flags",
+        ])
+
+        return render(
+            request,
+            "panel/work_orders/_line_row.html",
+            {
+                "line":  line,
+                "wo_pk": wo.pk,
+                "entry": entry,
+            },
+        )
+
+
+class WorkOrderLineDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes a single WorkOrderEntryLine identified by line_pk, scoped to the
+    authenticated company. Returns an empty HTTP 200 response so that HTMX
+    removes the <tr> row from the DOM via hx-swap="outerHTML" with an empty
+    response body.
+
+    POST /panel/work-orders/<wo_pk>/lines/<line_pk>/delete/
+         Returns HTTP 404 if the WorkOrder or line do not exist or belong to
+         another company. Restricted to ADMIN role.
+
+    ---
+
+    Elimina un único WorkOrderEntryLine identificado por line_pk, acotado a la
+    empresa autenticada. Devuelve una respuesta HTTP 200 vacía para que HTMX
+    elimine la fila <tr> del DOM via hx-swap="outerHTML" con cuerpo vacío.
+
+    POST /panel/work-orders/<wo_pk>/lines/<line_pk>/delete/
+         Devuelve HTTP 404 si el WorkOrder o la línea no existen o pertenecen a
+         otra empresa. Restringido al rol ADMIN.
+    """
+
+    def post(self, request, wo_pk, line_pk):
+        """
+        Deletes the WorkOrderEntryLine identified by line_pk and returns an
+        empty response for HTMX to remove the row from the DOM.
+        ---
+        Elimina el WorkOrderEntryLine identificado por line_pk y devuelve una
+        respuesta vacía para que HTMX elimine la fila del DOM.
+        """
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponse
+
+        company = request.user.company_user.company
+        wo      = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        line    = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=line_pk,
+            entry__work_order=wo,
+        )
+        line.delete()
+        # Return empty body — HTMX replaces the <tr> with nothing (outerHTML swap).
+        # Devolver cuerpo vacío — HTMX reemplaza el <tr> con nada (swap outerHTML).
+        return HttpResponse("")
+
+
+class WorkOrderDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes a WorkOrder and all its cascade-deleted children (WorkOrderEntry,
+    WorkOrderEntryLine, source PDF file, Excel file) scoped to the authenticated
+    company. Redirects to the work order list on success.
+
+    POST /panel/work-orders/<pk>/delete/
+         Returns HTTP 404 if the WorkOrder does not exist or belongs to another
+         company. Restricted to ADMIN role.
+
+    ---
+
+    Elimina un WorkOrder y todos sus hijos eliminados en cascada (WorkOrderEntry,
+    WorkOrderEntryLine, PDF original, archivo Excel) acotado a la empresa
+    autenticada. Redirige a la lista de partes tras el éxito.
+
+    POST /panel/work-orders/<pk>/delete/
+         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra empresa.
+         Restringido al rol ADMIN.
+    """
+
+    def post(self, request, pk):
+        """
+        Deletes the WorkOrder identified by pk, scoped to the authenticated company.
+        ---
+        Elimina el WorkOrder identificado por pk, acotado a la empresa autenticada.
+        """
+        from django.shortcuts import get_object_or_404
+
+        company = request.user.company_user.company
+        wo      = get_object_or_404(WorkOrder, pk=pk, company=company)
+        wo_pk   = wo.pk
+        wo.delete()
+        django_messages.success(
+            request,
+            f"Parte #{wo_pk} eliminado correctamente."
+        )
+        return redirect("panel:work_order_list")
+
+
+class WorkOrderExportView(AdminRoleRequiredMixin, View):
+    """
+    Generates and returns a multi-sheet Excel file concatenating the individual
+    Excel reports of a selection of WorkOrder records identified by their pks.
+
+    POST /panel/work-orders/export/
+         Expected POST fields:
+           pks : list[int] (repeating field "pks") — primary keys of the
+                 WorkOrder records to include. Only DONE records belonging to
+                 the authenticated company are exported. Records in any other
+                 status or belonging to other companies are silently skipped.
+         Builds one sheet per WorkOrder using generate_work_order_excel() in
+         buffer mode (without writing to disk), concatenates all sheets into a
+         single openpyxl Workbook preserving the individual worker header per
+         sheet, and returns an HttpResponse with Content-Type
+         application/vnd.openxmlformats-officedocument.spreadsheetml.sheet and
+         filename EXPORTACION_DD-MM-YY.xlsx.
+         Returns HTTP 400 if no valid pks are provided.
+         Returns HTTP 404 if the authenticated user has no CompanyUser profile.
+
+    Restricted to the ADMIN role (AdminRoleRequiredMixin).
+
+    ---
+
+    Genera y devuelve un archivo Excel multi-hoja que concatena los informes
+    individuales de una selección de registros WorkOrder identificados por sus pks.
+
+    POST /panel/work-orders/export/
+         Campos POST esperados:
+           pks : list[int] (campo repetido "pks") — claves primarias de los
+                 registros WorkOrder a incluir. Solo se exportan los registros
+                 DONE de la empresa autenticada. Los registros en cualquier otro
+                 estado o de otras empresas se omiten silenciosamente.
+         Construye una hoja por WorkOrder usando generate_work_order_excel() en
+         modo buffer (sin escritura en disco), concatena todas las hojas en un
+         único Workbook openpyxl conservando la cabecera individual del operario
+         por hoja, y devuelve un HttpResponse con Content-Type
+         application/vnd.openxmlformats-officedocument.spreadsheetml.sheet y
+         nombre de fichero EXPORTACION_DD-MM-YY.xlsx.
+         Devuelve HTTP 400 si no se proporcionan pks válidos.
+         Devuelve HTTP 404 si el usuario autenticado no tiene perfil CompanyUser.
+
+    Restringido al rol ADMIN (AdminRoleRequiredMixin).
+    """
+
+    def post(self, request):
+        """
+        Builds the concatenated Excel file from the selected WorkOrder pks and
+        returns it as a file download response.
+        ---
+        Construye el Excel concatenado a partir de los pks de WorkOrder seleccionados
+        y lo devuelve como respuesta de descarga de archivo.
+        """
+        import io
+        import openpyxl
+        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.services import (
+            generate_work_order_excel as _gen_excel,
+            _worker_name_from_pdf_path,
+        )
+
+        company = request.user.company_user.company
+
+        # ------------------------------------------------------------------
+        # Collect and validate requested pks.
+        # Recopilar y validar los pks solicitados.
+        # ------------------------------------------------------------------
+        raw_pks = request.POST.getlist("pks")
+        try:
+            pk_list = [int(pk) for pk in raw_pks if pk]
+        except (ValueError, TypeError):
+            return HttpResponseBadRequest(
+                "# [EXPORT] Parámetros pks inválidos."
+            )
+
+        if not pk_list:
+            return HttpResponseBadRequest(
+                "# [EXPORT] No se han seleccionado partes para exportar."
+            )
+
+        # Retrieve DONE WorkOrders scoped to the company, ordered by pk.
+        # Recuperar WorkOrders DONE acotados a la empresa, ordenados por pk.
+        work_orders = (
+            WorkOrder.objects
+            .filter(
+                pk__in=pk_list,
+                company=company,
+                status=WorkOrder.Status.DONE,
+            )
+            .order_by("pk")
+        )
+
+        if not work_orders.exists():
+            return HttpResponseBadRequest(
+                "# [EXPORT] Ninguno de los partes seleccionados está en estado DONE."
+            )
+
+        # ------------------------------------------------------------------
+        # Build the concatenated workbook.
+        # Each WorkOrder is written to a temporary in-memory buffer using
+        # the existing generate_work_order_excel() service, then its sheet
+        # is copied into the master workbook.
+        # ------------------------------------------------------------------
+        # Construir el libro concatenado.
+        # Cada WorkOrder se escribe en un buffer en memoria temporal usando
+        # el servicio generate_work_order_excel() existente, y después su
+        # hoja se copia al libro maestro.
+        # ------------------------------------------------------------------
+        master_wb = openpyxl.Workbook()
+        # Remove the default empty sheet created by openpyxl.
+        # Eliminar la hoja vacía por defecto creada por openpyxl.
+        master_wb.remove(master_wb.active)
+
+        for wo in work_orders:
+            # Generate individual Excel into a buffer without touching disk.
+            # The service writes the file to WorkOrder.excel_file — we read
+            # it back immediately from the model's FileField content.
+            # Generar Excel individual en un buffer sin tocar el disco.
+            # El servicio escribe el archivo en WorkOrder.excel_file — lo
+            # leemos inmediatamente desde el contenido del FileField del modelo.
+            try:
+                _gen_excel(wo.pk)
+                wo.refresh_from_db(fields=["excel_file"])
+                if not wo.excel_file:
+                    continue
+                with wo.excel_file.open("rb") as f:
+                    buf = io.BytesIO(f.read())
+                src_wb = openpyxl.load_workbook(buf)
+            except Exception:
+                # Skip WorkOrders whose Excel generation fails during export.
+                # Omitir WorkOrders cuya generación de Excel falle durante la exportación.
+                continue
+
+            # Derive a safe sheet title from the worker name (max 31 chars,
+            # openpyxl enforces the Excel sheet name length limit).
+            # Derivar un título de hoja seguro del nombre del operario
+            # (máx. 31 caracteres, límite de Excel impuesto por openpyxl).
+            worker_name = ""
+            if wo.source_pdf:
+                worker_name = _worker_name_from_pdf_path(wo.source_pdf.name)
+            sheet_title = (worker_name[:28] + f"#{wo.pk}") if worker_name else f"Parte#{wo.pk}"
+            sheet_title = sheet_title[:31]
+
+            for src_sheet in src_wb.worksheets:
+                dest_sheet = master_wb.create_sheet(title=sheet_title)
+                for row in src_sheet.iter_rows():
+                    for cell in row:
+                        dest_cell = dest_sheet.cell(
+                            row=cell.row,
+                            column=cell.column,
+                            value=cell.value,
+                        )
+                        # Copy cell formatting: font, fill, alignment, border,
+                        # number format.
+                        # Copiar formato de celda: fuente, relleno, alineación,
+                        # borde, formato numérico.
+                        if cell.has_style:
+                            dest_cell.font         = cell.font.copy()
+                            dest_cell.fill         = cell.fill.copy()
+                            dest_cell.alignment    = cell.alignment.copy()
+                            dest_cell.border       = cell.border.copy()
+                            dest_cell.number_format = cell.number_format
+
+                # Copy column widths and row heights.
+                # Copiar anchos de columna y alturas de fila.
+                for col_letter, col_dim in src_sheet.column_dimensions.items():
+                    dest_sheet.column_dimensions[col_letter].width = col_dim.width
+                for row_num, row_dim in src_sheet.row_dimensions.items():
+                    dest_sheet.row_dimensions[row_num].height = row_dim.height
+
+                # Only process the first sheet of each individual workbook.
+                # Solo procesar la primera hoja de cada libro individual.
+                break
+
+        if not master_wb.worksheets:
+            return HttpResponseBadRequest(
+                "# [EXPORT] No se pudo generar ninguna hoja de Excel para los partes seleccionados."
+            )
+
+        # ------------------------------------------------------------------
+        # Serialise and return as a file download response.
+        # Serializar y devolver como respuesta de descarga de archivo.
+        # ------------------------------------------------------------------
+        output = io.BytesIO()
+        master_wb.save(output)
+        output.seek(0)
+
+        filename = f"EXPORTACION_{tz_now().strftime('%d-%m-%y')}.xlsx"
+        response = HttpResponse(
+            output.read(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class AnalyticsView(AdminRoleRequiredMixin, View):
