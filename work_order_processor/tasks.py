@@ -616,6 +616,36 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
             exc_info=True,
         )
         if work_order is not None:
+            # ----------------------------------------------------------
+            # Guard: verify the WorkOrder still exists in DB before
+            # attempting to persist the ERROR status. The record may have
+            # been deleted by a concurrent overwrite confirmation
+            # (WorkOrderUploadView.post() duplicate_wo.delete()) while
+            # this Celery task was already in flight for the old pk.
+            # In that scenario the task failure is expected and harmless
+            # — the new WorkOrder has been created and enqueued separately.
+            # We log a clear diagnostic and abort without retrying.
+            #
+            # Guardia: verificar que el WorkOrder todavía existe en BD
+            # antes de intentar persistir el estado ERROR. El registro
+            # puede haber sido eliminado por una confirmación de
+            # sobrescritura concurrente (duplicate_wo.delete() en
+            # WorkOrderUploadView.post()) mientras esta tarea Celery ya
+            # estaba en vuelo sobre el pk antiguo. En ese escenario el
+            # fallo de la tarea es esperado e inocuo — el nuevo WorkOrder
+            # ha sido creado y encolado de forma independiente.
+            # Registramos un diagnóstico claro y abortamos sin reintentar.
+            # ----------------------------------------------------------
+            still_exists = WorkOrder.objects.filter(pk=work_order.pk).exists()
+            if not still_exists:
+                logger.warning(
+                    "# [Tarea] WorkOrder #%d ya no existe en BD — fue eliminado "
+                    "por una sobrescritura de duplicado mientras la tarea estaba "
+                    "en vuelo. Tarea abortada sin reintentar.",
+                    work_order_id,
+                )
+                return
+
             work_order.status    = WorkOrder.Status.ERROR
             work_order.error_log = f"Error en procesamiento de PDF: {exc}"
             work_order.save(update_fields=["status", "error_log"])

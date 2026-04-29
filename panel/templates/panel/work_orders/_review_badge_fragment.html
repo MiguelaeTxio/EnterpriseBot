@@ -1,0 +1,73 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_review_badge_fragment.html #}
+{#                                                                                                          #}
+{# HTMX partial — review badge + toggle button for a single WorkOrder row in list.html.                    #}
+{# Rendered on initial page load (via {% include %} in list.html tabs 3 and 4) and returned by             #}
+{# WorkOrderMarkReviewedView on every HTMX toggle request.                                                 #}
+{#                                                                                                          #}
+{# The entire fragment is wrapped in a <div id="review-badge-{{ wo.pk }}"> so HTMX can target it           #}
+{# with hx-target="#review-badge-{{ wo.pk }}" and hx-swap="outerHTML".                                     #}
+{#                                                                                                          #}
+{# Context variables expected:                                                                              #}
+{#   wo — WorkOrder instance (must have .reviewed, .reviewed_by, .reviewed_at, .pk).                       #}
+{#                                                                                                          #}
+{# Parcial HTMX — badge de revisión + botón de alternancia para una fila WorkOrder en list.html.           #}
+{# Renderizado en la carga inicial (via {% include %} en las pestañas 3 y 4 de list.html) y                #}
+{# devuelto por WorkOrderMarkReviewedView en cada solicitud de toggle HTMX.                                 #}
+{#                                                                                                          #}
+{# El fragmento completo está envuelto en <div id="review-badge-{{ wo.pk }}"> para que HTMX pueda          #}
+{# apuntarlo con hx-target="#review-badge-{{ wo.pk }}" y hx-swap="outerHTML".                              #}
+{#                                                                                                          #}
+{# Variables de contexto requeridas:                                                                        #}
+{#   wo — instancia de WorkOrder (debe tener .reviewed, .reviewed_by, .reviewed_at, .pk).                  #}
+
+<div id="review-badge-{{ wo.pk }}">
+
+    {% if wo.reviewed %}
+        {# ------------------------------------------------------------------ #}
+        {# Reviewed badge — Badge de revisado                                  #}
+        {# ------------------------------------------------------------------ #}
+        <span class="badge bg-success mb-1">
+            <i class="bi bi-patch-check-fill me-1"></i>Revisado
+        </span>
+        {% if wo.reviewed_by and wo.reviewed_at %}
+            <div class="text-muted" style="font-size: 0.75rem;">
+                {{ wo.reviewed_by.user.get_full_name|default:wo.reviewed_by.user.username }}
+                &mdash; {{ wo.reviewed_at|date:"d/m/Y H:i" }}
+            </div>
+        {% endif %}
+
+        {# Unmark button — Botón desmarcar revisado #}
+        <button type="button"
+                class="btn btn-outline-secondary btn-sm mt-1"
+                hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
+                hx-trigger="click"
+                hx-target="#review-badge-{{ wo.pk }}"
+                hx-swap="outerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                title="Desmarcar como revisado">
+            <i class="bi bi-x-circle me-1"></i>Desmarcar
+        </button>
+
+    {% else %}
+        {# ------------------------------------------------------------------ #}
+        {# Not reviewed badge — Badge de pendiente de revisión                 #}
+        {# ------------------------------------------------------------------ #}
+        <span class="badge bg-warning text-dark mb-1">
+            <i class="bi bi-hourglass-split me-1"></i>Pendiente revisión
+        </span>
+
+        {# Mark reviewed button — Botón marcar como revisado #}
+        <button type="button"
+                class="btn btn-outline-success btn-sm mt-1"
+                hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
+                hx-trigger="click"
+                hx-target="#review-badge-{{ wo.pk }}"
+                hx-swap="outerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                title="Marcar como revisado">
+            <i class="bi bi-patch-check me-1"></i>Marcar revisado
+        </button>
+
+    {% endif %}
+
+</div>

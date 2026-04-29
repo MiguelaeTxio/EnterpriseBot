@@ -1,0 +1,58 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_queue_actions.html #}
+{#                                                                                                    #}
+{# Partial — action dropdown for WorkOrder rows in the "En cola" tab (PENDING / PROCESSING).         #}
+{# Included via {% include %} from list.html pane-queue table.                                       #}
+{#                                                                                                    #}
+{# Intentionally limited action set: editing and downloading are unavailable while the               #}
+{# WorkOrder has not reached DONE status. Only the delete action is exposed so the user              #}
+{# can remove a stuck or errored upload without waiting for it to resolve.                           #}
+{#                                                                                                    #}
+{# Context variables expected:                                                                        #}
+{#   wo — WorkOrder instance (must have .pk, .pdf_display_name, .status).                            #}
+{#                                                                                                    #}
+{# Parcial — desplegable de acciones para filas WorkOrder en la pestaña "En cola"                    #}
+{# (PENDING / PROCESSING). Incluido via {% include %} desde la tabla pane-queue de list.html.        #}
+{#                                                                                                    #}
+{# Conjunto de acciones intencionalmente limitado: la edición y la descarga no están                 #}
+{# disponibles mientras el WorkOrder no ha alcanzado el estado DONE. Solo se expone                  #}
+{# la acción de borrado para que el usuario pueda eliminar una carga bloqueada o con                 #}
+{# error sin tener que esperar a que se resuelva.                                                    #}
+{#                                                                                                    #}
+{# Variables de contexto requeridas:                                                                  #}
+{#   wo — instancia de WorkOrder (debe tener .pk, .pdf_display_name, .status).                       #}
+
+<div class="d-flex justify-content-center align-items-center gap-1">
+    <div class="dropdown">
+        <button class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                title="Más acciones">
+            <i class="bi bi-three-dots-vertical"></i>
+        </button>
+        {# Only the delete action is exposed for in-queue parts.          #}
+        {# Editing and downloading are unavailable until status is DONE.  #}
+        {# Disabled items are intentionally omitted — showing greyed-out  #}
+        {# options creates a misleading scrollable dropdown with no value. #}
+        {# Solo se expone la acción de borrado para partes en cola.        #}
+        {# Editar y descargar no están disponibles hasta que el estado sea #}
+        {# DONE. Los ítems deshabilitados se omiten intencionalmente —     #}
+        {# mostrarlos en gris genera un dropdown con scroll engañoso.      #}
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+
+            {# Delete — always available to abort a stuck upload           #}
+            {# Borrar — siempre disponible para cancelar una carga bloqueada #}
+            <li>
+                <button class="dropdown-item text-danger"
+                        type="button"
+                        data-bs-toggle="modal"
+                        data-bs-target="#deleteModal"
+                        data-wo-pk="{{ wo.pk }}"
+                        data-wo-name="{{ wo.pdf_display_name }}">
+                    <i class="bi bi-trash me-2"></i>Borrar
+                </button>
+            </li>
+
+        </ul>
+    </div>
+</div>

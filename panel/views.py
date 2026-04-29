@@ -2627,45 +2627,55 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
 
     def post(self, request):
         """
-        Processes the uploaded PDF: validates the file, runs duplicate detection
-        against existing WorkOrderEntry records in the DB (worker_name + work_date
-        overlap), optionally deletes the existing duplicate WorkOrder on confirmed
-        overwrite, creates a new WorkOrder and enqueues the Celery processing task.
+        Processes the uploaded PDF: validates the file, computes its SHA-256
+        hash, runs a two-level duplicate detection check, optionally deletes
+        the existing duplicate WorkOrder on confirmed overwrite, creates a new
+        WorkOrder (storing the hash) and enqueues the Celery processing task.
 
-        Duplicate detection strategy (redesigned — Hito 8 / Bloque E fix):
-          The incoming PDF filename is used ONLY to derive the worker name via
-          _worker_name_from_pdf_path(). Period overlap is checked by querying
-          WorkOrderEntry.work_date values for that worker_name within the same
-          company. This approach is robust regardless of PDF filename format
-          (4-digit vs 2-digit year, spaces vs underscores) and works even when
-          source_pdf has been deleted from the existing WorkOrder.
+        Duplicate detection — two levels (Hito 8 / Bloque I):
+          LEVEL 1 — Exact hash match:
+            SHA-256 of the incoming file is compared against source_pdf_hash
+            for all WorkOrders of the same company. A hash match means the
+            exact same file has been uploaded before, regardless of filename.
+          LEVEL 2 — Worker + period overlap (only if no hash match):
+            The incoming PDF filename is used to derive the worker name and,
+            when possible, the work period. Existing WorkOrderEntry records for
+            the same company + worker_name + overlapping work_date range are
+            queried. A match here means a different file covering the same
+            data has already been processed.
 
-          If matching WorkOrderEntry records exist and the user has not confirmed
-          overwrite, the form is re-rendered with duplicate_wo set so the template
-          shows the warning modal. On confirmation the duplicate WorkOrder (cascade-
-          deletes all its entries and lines) is removed before the new one is created.
+          duplicate_reason carries "exact" or "content" so the template can
+          show a differentiated warning message in the modal.
+
+          On confirmed overwrite the duplicate WorkOrder (and all its cascade-
+          deleted children) is removed before the new one is created.
         ---
-        Procesa el PDF cargado: valida el archivo, ejecuta la detección de
-        duplicado contra los registros WorkOrderEntry existentes en BD
-        (worker_name + solapamiento de work_date), elimina opcionalmente el
-        WorkOrder duplicado existente si el usuario confirma la sobrescritura,
-        crea un nuevo WorkOrder y encola la tarea Celery de procesamiento.
+        Procesa el PDF cargado: valida el archivo, calcula su hash SHA-256,
+        ejecuta la detección de duplicado en dos niveles, elimina opcionalmente
+        el WorkOrder duplicado si el usuario confirma la sobrescritura, crea
+        un nuevo WorkOrder (guardando el hash) y encola la tarea Celery.
 
-        Estrategia de detección de duplicado (rediseñada — Hito 8 / Bloque E fix):
-          El nombre del fichero PDF entrante se usa ÚNICAMENTE para derivar el
-          nombre del operario mediante _worker_name_from_pdf_path(). El solapamiento
-          de periodo se comprueba consultando los valores WorkOrderEntry.work_date
-          de ese worker_name en la misma empresa. Este enfoque es robusto
-          independientemente del formato del nombre del PDF (año 4 vs 2 dígitos,
-          espacios vs guiones bajos) y funciona aunque source_pdf haya sido eliminado
-          del WorkOrder existente.
+        Detección de duplicado — dos niveles (Hito 8 / Bloque I):
+          NIVEL 1 — Hash exacto:
+            El SHA-256 del fichero entrante se compara contra source_pdf_hash
+            de todos los WorkOrders de la misma empresa. Un match de hash
+            significa que se ha subido exactamente el mismo fichero antes,
+            con independencia del nombre.
+          NIVEL 2 — Operario + solapamiento de periodo (solo si no hay hash match):
+            El nombre del PDF se usa para derivar el nombre del operario y,
+            cuando es posible, el periodo de trabajo. Se consultan los registros
+            WorkOrderEntry de la misma empresa + worker_name + rango work_date
+            solapado. Un match aquí significa que un fichero diferente pero con
+            los mismos datos ya ha sido procesado.
 
-          Si existen WorkOrderEntry coincidentes y el usuario no ha confirmado
-          la sobrescritura, el formulario se vuelve a renderizar con duplicate_wo
-          para que la plantilla muestre el modal de advertencia. Al confirmar, el
-          WorkOrder duplicado (que elimina en cascada todas sus entries y lines)
-          se elimina antes de crear el nuevo.
+          duplicate_reason transporta "exact" o "content" para que la plantilla
+          muestre un mensaje diferenciado en el modal.
+
+          Al confirmar la sobrescritura el WorkOrder duplicado (y todos sus hijos
+          eliminados en cascada) se elimina antes de crear el nuevo.
         """
+        import hashlib
+
         from django.contrib import messages as django_messages
         from work_order_processor.services import _worker_name_from_pdf_path
         from work_order_processor.tasks import _extract_period_from_pdf_name
@@ -2698,79 +2708,92 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
             })
 
         # ------------------------------------------------------------------
-        # Step 2 — Duplicate detection via WorkOrderEntry records (Bloque E).
-        # Paso 2 — Detección de duplicado via registros WorkOrderEntry.
+        # Step 2 — SHA-256 hash computation (Bloque I).
+        # Paso 2 — Cálculo del hash SHA-256 (Bloque I).
         #
-        # Strategy:
-        #   a) Derive worker_name from the incoming PDF filename.
-        #   b) Optionally extract the period from the filename for a tighter
-        #      date-range check. If the filename format is not recognised,
-        #      fall back to matching ANY existing entry for the same worker.
-        #   c) Query WorkOrderEntry for this company + worker_name + date overlap.
-        #   d) If a match is found, identify the parent WorkOrder as the duplicate.
+        # The file pointer is reset to 0 after reading so that Django's
+        # storage backend can still save the file in Step 4.
+        # El puntero del fichero se resetea a 0 tras la lectura para que el
+        # backend de almacenamiento de Django pueda guardar el fichero en el
+        # Paso 4.
+        # ------------------------------------------------------------------
+        pdf_file.seek(0)
+        incoming_hash = hashlib.sha256(pdf_file.read()).hexdigest()
+        pdf_file.seek(0)
+
+        # ------------------------------------------------------------------
+        # Step 3 — Two-level duplicate detection (Bloque I).
+        # Paso 3 — Detección de duplicado en dos niveles (Bloque I).
         #
-        # Estrategia:
-        #   a) Derivar worker_name del nombre del fichero PDF entrante.
-        #   b) Extraer opcionalmente el periodo del nombre para una comprobación
-        #      de rango de fechas más ajustada. Si el formato no se reconoce,
-        #      se recurre a buscar CUALQUIER entrada existente del mismo operario.
-        #   c) Consultar WorkOrderEntry por empresa + worker_name + solapamiento
-        #      de fechas.
-        #   d) Si se encuentra coincidencia, identificar el WorkOrder padre como
-        #      el duplicado.
+        # Level 1: exact file hash match across WorkOrders of the same company.
+        # Level 2: worker_name + work_date overlap via WorkOrderEntry records,
+        #          only evaluated when Level 1 produces no match.
+        #
+        # Nivel 1: match exacto de hash entre WorkOrders de la misma empresa.
+        # Nivel 2: solapamiento worker_name + work_date via WorkOrderEntry,
+        #          evaluado únicamente cuando el Nivel 1 no produce coincidencia.
         # ------------------------------------------------------------------
         incoming_name   = pdf_file.name
         incoming_worker = _worker_name_from_pdf_path(incoming_name)
-
-        # Attempt period extraction from filename for a date-bounded check.
-        # Intentar extracción de periodo del nombre para comprobación acotada.
         date_from, date_to = _extract_period_from_pdf_name(incoming_name)
 
-        duplicate_wo = None
+        duplicate_wo     = None
+        duplicate_reason = None
 
-        if incoming_worker:
-            # Build base queryset: entries for this company + worker.
-            # Construir queryset base: entries de esta empresa + operario.
+        # -- Level 1: exact SHA-256 hash match. --
+        # -- Nivel 1: match exacto de hash SHA-256. --
+        hash_duplicate = (
+            WorkOrder.objects
+            .filter(company=company, source_pdf_hash=incoming_hash)
+            .exclude(source_pdf_hash="")
+            .first()
+        )
+        if hash_duplicate:
+            duplicate_wo     = hash_duplicate
+            duplicate_reason = "exact"
+
+        # -- Level 2: worker_name + period overlap (only if Level 1 missed). --
+        # -- Nivel 2: solapamiento operario + periodo (solo si Nivel 1 no coincidió). --
+        if not duplicate_wo and incoming_worker:
             entry_qs = WorkOrderEntry.objects.filter(
                 work_order__company=company,
                 worker_name=incoming_worker,
             ).select_related("work_order")
 
             if date_from and date_to:
-                # Period known: check for overlapping work_date values.
-                # Periodo conocido: comprobar solapamiento de work_date.
-                # An existing entry overlaps if its work_date falls within
-                # [date_from, date_to] (inclusive).
-                # Una entrada existente solapa si su work_date cae dentro
-                # de [date_from, date_to] (inclusive).
+                # Tighter check: entries whose work_date falls within the
+                # incoming period [date_from, date_to] (inclusive).
+                # Comprobación ajustada: entradas cuya work_date cae dentro
+                # del periodo entrante [date_from, date_to] (inclusive).
                 entry_qs = entry_qs.filter(
                     work_date__gte=date_from,
                     work_date__lte=date_to,
                 )
-            # else: period unknown — any existing entry for this worker is a match.
-            # else: periodo desconocido — cualquier entrada existente del operario
-            # es considerada coincidencia.
+            # else: period unknown — any entry for this worker is a match.
+            # else: periodo desconocido — cualquier entrada del operario es match.
 
             existing_entry = entry_qs.first()
             if existing_entry:
-                duplicate_wo = existing_entry.work_order
+                duplicate_wo     = existing_entry.work_order
+                duplicate_reason = "content"
 
-        # If a duplicate was found and the user has not confirmed overwrite,
-        # re-render the upload form with the duplicate modal context.
-        # Si se detectó un duplicado y el usuario no ha confirmado sobrescritura,
-        # volver a renderizar el formulario con el contexto del modal de duplicado.
+        # If a duplicate was found and overwrite not yet confirmed, re-render
+        # the upload form so the template shows the differentiated modal.
+        # Si se detectó un duplicado y no se ha confirmado sobrescritura,
+        # volver a renderizar el formulario con el contexto del modal diferenciado.
         if duplicate_wo and not request.POST.get("confirm_overwrite"):
             return render(request, self.template_name, {
-                "company":       company,
-                "company_user":  company_user,
-                "own_presence":  self._get_own_presence(company_user),
-                "active_nav":    "work_orders",
-                "duplicate_wo":  duplicate_wo,
-                "pdf_file_name": incoming_name,
+                "company":          company,
+                "company_user":     company_user,
+                "own_presence":     self._get_own_presence(company_user),
+                "active_nav":       "work_orders",
+                "duplicate_wo":     duplicate_wo,
+                "duplicate_reason": duplicate_reason,
+                "pdf_file_name":    incoming_name,
             })
 
-        # If confirmed overwrite, delete the duplicate and all cascaded children.
-        # Si se confirma sobrescritura, eliminar el duplicado y sus hijos en cascada.
+        # On confirmed overwrite: delete the duplicate and all cascade children.
+        # Al confirmar sobrescritura: eliminar el duplicado y sus hijos en cascada.
         if duplicate_wo and request.POST.get("confirm_overwrite"):
             dup_pk = duplicate_wo.pk
             duplicate_wo.delete()
@@ -2781,13 +2804,20 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
             )
 
         # ------------------------------------------------------------------
-        # Step 3 — Create WorkOrder and enqueue Celery task after DB commit.
-        # Paso 3 — Crear WorkOrder y encolar la tarea Celery tras el commit.
+        # Step 4 — Create WorkOrder, store hash, enqueue Celery task.
+        # Paso 4 — Crear WorkOrder, guardar hash, encolar tarea Celery.
+        #
+        # source_pdf_hash is stored at creation time so that any subsequent
+        # upload of the exact same file is caught immediately by Level 1.
+        # source_pdf_hash se guarda en el momento de la creación para que
+        # cualquier carga posterior del mismo fichero exacto sea detectada
+        # de inmediato por el Nivel 1.
         # ------------------------------------------------------------------
         work_order = WorkOrder.objects.create(
-            company     = company,
-            uploaded_by = company_user,
-            source_pdf  = pdf_file,
+            company         = company,
+            uploaded_by     = company_user,
+            source_pdf      = pdf_file,
+            source_pdf_hash = incoming_hash,
         )
 
         process_work_order_pdf.delay_on_commit(work_order.pk)
@@ -3838,17 +3868,27 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
                 "# [EXPORT] No se han seleccionado partes para exportar."
             )
 
-        # Retrieve DONE WorkOrders scoped to the company.
-        # Recuperar WorkOrders DONE acotados a la empresa.
+        # Retrieve DONE + reviewed WorkOrders scoped to the company.
+        # Directriz de negocio (Alejandro): solo se pueden exportar partes
+        # que hayan sido revisados previamente por un Supervisor o Admin.
+        # Retrieve DONE + reviewed WorkOrders scoped to the company.
+        # Business rule (Alejandro): only WorkOrders that have been reviewed
+        # by a Supervisor or Admin may be exported to Excel.
         work_orders = list(
             WorkOrder.objects
-            .filter(pk__in=pk_list, company=company, status=WorkOrder.Status.DONE)
+            .filter(
+                pk__in=pk_list,
+                company=company,
+                status=WorkOrder.Status.DONE,
+                reviewed=True,
+            )
             .order_by("pk")
         )
 
         if not work_orders:
             return HttpResponseBadRequest(
-                "# [EXPORT] Ninguno de los partes seleccionados está en estado DONE."
+                "# [EXPORT] Ninguno de los partes seleccionados está revisado y en estado DONE. "
+                "Solo se pueden exportar partes marcados como revisados."
             )
 
         # ------------------------------------------------------------------

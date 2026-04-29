@@ -9,4 +9,5 @@ db.sqlite3
 *_venv/
 gcp_credentials.json
 work_orders/
+!**/templates/**/work_orders/
 media/

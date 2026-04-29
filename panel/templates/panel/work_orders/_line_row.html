@@ -1,0 +1,227 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_line_row.html #}
+{#                                                                                              #}
+{# HTMX partial — single editable <tr> row for a WorkOrderEntryLine.                          #}
+{# Rendered on initial page load (via {% include %} in edit.html) and returned by             #}
+{# WorkOrderLineSaveView on every HTMX save request.                                          #}
+{#                                                                                              #}
+{# Each input and textarea posts to /panel/work-orders/{wo_pk}/lines/{line_pk}/save/          #}
+{# on the "change" event. The entire <tr> is replaced with the server response (outerHTML).   #}
+{# hx-include collects all fields within the same row via the .line-row-{{ line.pk }} class.  #}
+{# A brief green flash on the row signals a successful save to the user.                       #}
+{#                                                                                              #}
+{# Parcial HTMX — fila <tr> editable para un WorkOrderEntryLine.                              #}
+{# Renderizado en la carga inicial (via {% include %} en edit.html) y devuelto por            #}
+{# WorkOrderLineSaveView en cada petición de guardado HTMX.                                   #}
+{#                                                                                              #}
+{# Cada input y textarea hace POST a /panel/work-orders/{wo_pk}/lines/{line_pk}/save/         #}
+{# en el evento "change". El <tr> completo se reemplaza con la respuesta del servidor         #}
+{# (outerHTML). hx-include recoge todos los campos de la misma fila via la clase              #}
+{# .line-row-{{ line.pk }}. Un breve destello verde en la fila señala el guardado correcto.   #}
+{# ========================================================================================== #}
+
+{# Shared HTMX attributes for all editable inputs in this row.             #}
+{# Atributos HTMX compartidos por todos los inputs editables de esta fila. #}
+{% with save_url="/panel/work-orders/"|add:wo_pk|stringformat:"s"|add:"/lines/"|add:line.pk|stringformat:"s"|add:"/save/" row_class="line-row-"|add:line.pk|stringformat:"s" %}
+<tr id="line-row-{{ line.pk }}"
+    class="line-row {{ row_class }}{% if line.flags %} row-has-flags{% endif %}"
+    hx-on--after-request="if(event.detail.successful){
+        this.classList.add('row-save-flash');
+        setTimeout(()=>this.classList.remove('row-save-flash'), 800);
+    }">
+
+    {# Hidden inputs — always included in the HTMX POST via hx-include.    #}
+    {# Inputs ocultos — siempre incluidos en el POST HTMX via hx-include.  #}
+    <input type="hidden" name="action"  value="save_line"     class="{{ row_class }}">
+    <input type="hidden" name="line_pk" value="{{ line.pk }}" class="{{ row_class }}">
+
+    {# ------------------------------------------------------------------ #}
+    {# Drag handle + Block number — Asa de arrastre + Número de bloque     #}
+    {# ------------------------------------------------------------------ #}
+    <td class="text-muted fw-semibold cell-nowrap">
+        <i class="bi bi-grip-vertical drag-handle me-1"
+           title="Arrastrar para reordenar"></i>{{ line.line_number }}
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# maquina_norm — normalised machine code / código de máquina norm.    #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        <input type="text"
+               name="maquina_norm"
+               value="{{ line.maquina_norm }}"
+               class="form-control form-control-sm {{ row_class }}{% if 'maquina_norm' in line.flags or 'MAQUINA' in line.flags %} field-flagged{% endif %}"
+               placeholder="Ej. A-54"
+               hx-post="{{ save_url }}"
+               hx-trigger="change"
+               hx-target="#line-row-{{ line.pk }}"
+               hx-swap="outerHTML"
+               hx-include=".{{ row_class }}">
+        {% if line.maquina_raw %}
+        <div class="text-muted text-raw">
+            raw: {{ line.maquina_raw }}
+        </div>
+        {% endif %}
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# machine_asset — resolved asset (read-only) / activo resuelto        #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        {% if line.machine_asset %}
+            <span class="text-success fw-semibold text-asset-code">
+                {{ line.machine_asset.codigo }}
+            </span>
+            <div class="text-muted text-raw">
+                {{ line.machine_asset.marca_modelo|truncatechars:28 }}
+            </div>
+        {% else %}
+            <span class="asset-unresolved">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>No resuelto
+            </span>
+        {% endif %}
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# descripcion_averia — fault description / descripción de avería      #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        <textarea name="descripcion_averia"
+                  class="form-control form-control-sm {{ row_class }}{% if 'descripcion_averia' in line.flags %} field-flagged{% endif %}"
+                  rows="2"
+                  hx-post="{{ save_url }}"
+                  hx-trigger="change"
+                  hx-target="#line-row-{{ line.pk }}"
+                  hx-swap="outerHTML"
+                  hx-include=".{{ row_class }}">{{ line.descripcion_averia }}</textarea>
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# reparacion — repair description / descripción de reparación         #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        <textarea name="reparacion"
+                  class="form-control form-control-sm {{ row_class }}{% if 'reparacion' in line.flags %} field-flagged{% endif %}"
+                  rows="2"
+                  hx-post="{{ save_url }}"
+                  hx-trigger="change"
+                  hx-target="#line-row-{{ line.pk }}"
+                  hx-swap="outerHTML"
+                  hx-include=".{{ row_class }}">{{ line.reparacion }}</textarea>
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# hc — start time / hora de comienzo                                  #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        <input type="time"
+               name="hc"
+               value="{{ line.hc|time:'H:i'|default:'' }}"
+               class="form-control form-control-sm {{ row_class }}{% if 'H.C.' in line.flags or 'hc' in line.flags %} field-flagged{% endif %}"
+               hx-post="{{ save_url }}"
+               hx-trigger="change"
+               hx-target="#line-row-{{ line.pk }}"
+               hx-swap="outerHTML"
+               hx-include=".{{ row_class }}">
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# hf — end time / hora de fin                                         #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        <input type="time"
+               name="hf"
+               value="{{ line.hf|time:'H:i'|default:'' }}"
+               class="form-control form-control-sm {{ row_class }}{% if 'H.F.' in line.flags or 'hf' in line.flags %} field-flagged{% endif %}"
+               hx-post="{{ save_url }}"
+               hx-trigger="change"
+               hx-target="#line-row-{{ line.pk }}"
+               hx-swap="outerHTML"
+               hx-include=".{{ row_class }}">
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# delta_horas — computed, read-only / calculado, solo lectura         #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        {% if line.delta_horas is not None %}
+            <span class="delta-display">{{ line.delta_horas }}h</span>
+        {% else %}
+            <span class="text-muted">—</span>
+        {% endif %}
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# or_val — repair order reference / referencia de orden de reparación #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        <input type="text"
+               name="or_val"
+               value="{{ line.or_val }}"
+               class="form-control form-control-sm {{ row_class }}{% if 'or_val' in line.flags or 'O.R.' in line.flags %} field-flagged{% endif %}"
+               placeholder="O.R."
+               hx-post="{{ save_url }}"
+               hx-trigger="change"
+               hx-target="#line-row-{{ line.pk }}"
+               hx-swap="outerHTML"
+               hx-include=".{{ row_class }}">
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# flags — editable comma-separated / editable separado por comas      #}
+    {# ------------------------------------------------------------------ #}
+    <td>
+        <input type="text"
+               name="flags"
+               value="{{ line.flags|join:', ' }}"
+               class="form-control form-control-sm {{ row_class }}"
+               placeholder="H.C., MAQUINA…"
+               hx-post="{{ save_url }}"
+               hx-trigger="change"
+               hx-target="#line-row-{{ line.pk }}"
+               hx-swap="outerHTML"
+               hx-include=".{{ row_class }}">
+        {% if line.flags %}
+            <div class="mt-1 d-flex flex-wrap gap-1">
+                {% for flag in line.flags %}
+                    <span class="flag-badge">{{ flag }}</span>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </td>
+
+    {# ------------------------------------------------------------------ #}
+    {# Action buttons — C1 insert below + C3 restore + delete line         #}
+    {# Botones de acción — C1 insertar debajo + C3 restaurar + eliminar    #}
+    {# ------------------------------------------------------------------ #}
+    <td class="cell-nowrap">
+        {# C1 — Insert line below this one / Insertar línea debajo de esta #}
+        <button type="button"
+                class="btn btn-outline-secondary btn-sm btn-insert-line p-1"
+                data-wo-pk="{{ wo_pk }}"
+                data-after-line-pk="{{ line.pk }}"
+                data-entry-pk="{{ entry.pk }}"
+                title="Insertar línea debajo">
+            <i class="bi bi-plus-circle"></i>
+        </button>
+        {# C3 — Restore this single line from raw Gemini response          #}
+        {# C3 — Restaurar esta línea desde raw_gemini_response             #}
+        <button type="button"
+                class="btn btn-outline-warning btn-sm btn-restore-line p-1 ms-1"
+                data-wo-pk="{{ wo_pk }}"
+                data-line-pk="{{ line.pk }}"
+                data-entry-pk="{{ entry.pk }}"
+                title="Restaurar esta línea desde extracción Gemini original">
+            <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+        {# Delete line — Eliminar esta línea                               #}
+        <button type="button"
+                class="btn btn-outline-danger btn-sm btn-delete-line p-1 ms-1"
+                data-wo-pk="{{ wo_pk }}"
+                data-line-pk="{{ line.pk }}"
+                title="Eliminar esta línea">
+            <i class="bi bi-trash"></i>
+        </button>
+    </td>
+
+</tr>
+{% endwith %}

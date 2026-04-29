@@ -253,9 +253,13 @@
 ./work_order_processor/apps.py
 ./work_order_processor/models.py
 ./work_order_processor/migrations/0002_remove_workorderentry_end_time_and_more.py
+./work_order_processor/migrations/0004_workorder_source_pdf_hash.py
 ./work_order_processor/migrations/__init__.py
 ./work_order_processor/migrations/0003_workorder_reviewed_workorder_reviewed_at_and_more.py
 ./work_order_processor/migrations/0001_initial.py
 ./work_order_processor/tasks.py
 ./work_order_processor/tests.py
+./work_order_processor/management/commands/__init__.py
+./work_order_processor/management/commands/backfill_pdf_hashes.py
+./work_order_processor/management/__init__.py
 ./work_order_processor/services.py

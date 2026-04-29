@@ -1,0 +1,100 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_entry_group_fragment.html #}
+{#                                                                                                          #}
+{# HTMX partial — full WorkOrderEntry group (header + table with all its lines).                           #}
+{# Returned by WorkOrderLineRestoreView after a page restore from raw_gemini_response.                     #}
+{# Also used as the hx-target container for C1 (insert) and C2 (reorder) operations                       #}
+{# so that the entire group is refreshed atomically after those actions.                                   #}
+{#                                                                                                          #}
+{# Context variables:                                                                                       #}
+{#   group  — dict with keys "entry" (WorkOrderEntry) and "lines" (list of WorkOrderEntryLine).            #}
+{#   wo_pk  — int, primary key of the parent WorkOrder.                                                    #}
+{#                                                                                                          #}
+{# Parcial HTMX — grupo WorkOrderEntry completo (cabecera + tabla con todas sus líneas).                   #}
+{# Devuelto por WorkOrderLineRestoreView tras restaurar una página desde raw_gemini_response.               #}
+{# También usado como contenedor hx-target para las operaciones C1 (insertar) y C2 (reordenar)            #}
+{# de modo que el grupo completo se refresca atómicamente tras dichas acciones.                            #}
+{#                                                                                                          #}
+{# Variables de contexto:                                                                                   #}
+{#   group  — dict con claves "entry" (WorkOrderEntry) y "lines" (lista de WorkOrderEntryLine).            #}
+{#   wo_pk  — int, clave primaria del WorkOrder padre.                                                     #}
+{# ======================================================================================================== #}
+
+<div id="entry-group-{{ group.entry.pk }}" class="mb-4">
+
+    {# ------------------------------------------------------------------ #}
+    {# Page group header — Cabecera del grupo de página                    #}
+    {# ------------------------------------------------------------------ #}
+    <div class="page-group-header d-flex justify-content-between align-items-center">
+        <span>
+            <i class="bi bi-file-text me-1"></i>
+            Página {{ group.entry.page_number }}
+            {% if group.entry.work_date %}
+                — {{ group.entry.work_date|date:"d/m/Y" }}
+                {% if group.entry.fecha_incierta %}
+                    <span class="date-uncertain">
+                        <i class="bi bi-exclamation-triangle-fill"></i> Fecha incierta
+                    </span>
+                {% endif %}
+            {% else %}
+                <span class="date-uncertain">— Sin fecha</span>
+            {% endif %}
+        </span>
+        <span class="badge badge-confidence-{{ group.entry.extraction_confidence }}">
+            {{ group.entry.get_extraction_confidence_display }}
+        </span>
+    </div>
+
+    {% if group.lines %}
+    <div class="table-responsive border border-top-0 rounded-bottom">
+        <table class="table table-hover mb-0 edit-table">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Máquina (norm.)</th>
+                    <th>Activo resuelto</th>
+                    <th>Desc. avería</th>
+                    <th>Reparación</th>
+                    <th>H.C.</th>
+                    <th>H.F.</th>
+                    <th>Δ h</th>
+                    <th>O.R.</th>
+                    <th>Flags</th>
+                    <th></th>
+                </tr>
+            </thead>
+            {# SortableJS drag & drop target — data-entry-pk used by the JS initialiser #}
+            {# Objetivo drag & drop de SortableJS — data-entry-pk usado por el inicializador JS #}
+            <tbody class="sortable-lines" data-entry-pk="{{ group.entry.pk }}" data-wo-pk="{{ wo_pk }}">
+                {% for line in group.lines %}
+                    {% include "panel/work_orders/_line_row.html" with line=line wo_pk=wo_pk entry=group.entry %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Insert-after-last button — Botón insertar tras la última línea      #}
+    {# ------------------------------------------------------------------ #}
+    {% with last_line=group.lines|last %}
+    {% if last_line %}
+    <div class="mt-1 text-end">
+        <button class="btn btn-outline-secondary btn-sm btn-insert-line"
+                data-wo-pk="{{ wo_pk }}"
+                data-after-line-pk="{{ last_line.pk }}"
+                data-entry-pk="{{ group.entry.pk }}"
+                data-target="#entry-group-{{ group.entry.pk }}"
+                title="Insertar línea al final del grupo">
+            <i class="bi bi-plus-circle me-1"></i>Añadir línea
+        </button>
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {% else %}
+    <div class="border border-top-0 rounded-bottom p-3 text-muted text-sm">
+        <i class="bi bi-info-circle me-1"></i>
+        Esta página no tiene bloques de trabajo extraídos.
+    </div>
+    {% endif %}
+
+</div>

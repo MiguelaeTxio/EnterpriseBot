@@ -1,0 +1,359 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/edit.html #}
+{#                                                                                        #}
+{# Inline edit view for WorkOrderEntryLine records belonging to a WorkOrder.             #}
+{# Lines are grouped by their parent WorkOrderEntry (page / date).                       #}
+{# Each line exposes editable fields: maquina_norm, descripcion_averia, reparacion,      #}
+{# hc, hf, or_val, flags. delta_horas is recomputed server-side on save.                #}
+{# A "Regenerar Excel" button re-enqueues the Excel generation task.                     #}
+{#                                                                                        #}
+{# Hito 8 — Paso 2 (2026-04-28): HTMX auto-save per field.                              #}
+{# Each line row is rendered via the _line_row.html partial. On field change, HTMX       #}
+{# posts to /panel/work-orders/{wo_pk}/lines/{line_pk}/save/ and replaces the <tr>      #}
+{# with the server response (outerHTML). No full-page reload. Viewport position kept.   #}
+{#                                                                                        #}
+{# Vista de edición inline para registros WorkOrderEntryLine de un WorkOrder.            #}
+{# Las líneas se agrupan por su WorkOrderEntry padre (página / fecha).                   #}
+{# Cada línea expone campos editables: maquina_norm, descripcion_averia, reparacion,     #}
+{# hc, hf, or_val, flags. delta_horas se recalcula en el servidor al guardar.           #}
+{# Un botón "Regenerar Excel" re-encola la tarea de generación del Excel.                #}
+{#                                                                                        #}
+{# Hito 8 — Paso 2 (2026-04-28): guardado automático por campo via HTMX.                #}
+{# Cada fila se renderiza via el parcial _line_row.html. Al cambiar un campo, HTMX      #}
+{# hace POST a /panel/work-orders/{wo_pk}/lines/{line_pk}/save/ y reemplaza el <tr>     #}
+{# con la respuesta del servidor (outerHTML). Sin recarga completa. Posición del         #}
+{# viewport conservada.                                                                   #}
+{#                                                                                        #}
+{# Hito 8 — Paso 3 (2026-04-28): insertar línea (C1), drag & drop SortableJS (C2),      #}
+{# restaurar grupo desde raw_gemini_response (C3), avisos visuales de flags (C4).        #}
+{# Cada grupo de página se renderiza via _entry_group_fragment.html. Los botones         #}
+{# "+" entre filas y "Restaurar" por fila disparan peticiones HTMX que devuelven         #}
+{# el grupo completo actualizado. SortableJS gestiona el reordenado drag & drop          #}
+{# y notifica al servidor via /panel/work-orders/{wo_pk}/lines/reorder/.                 #}
+{# ==================================================================================== #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Editar PDF #{{ work_order.pk }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ---------------------------------------------------------------
+       Edit table — Tabla de edición inline de líneas de trabajo.
+       --------------------------------------------------------------- */
+    .edit-table th {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #6c757d;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+    .edit-table td {
+        vertical-align: middle;
+        padding: 0.4rem 0.5rem;
+    }
+    .edit-table input[type="text"],
+    .edit-table input[type="time"],
+    .edit-table textarea {
+        font-size: 0.82rem;
+        padding: 0.25rem 0.4rem;
+        min-width: 80px;
+    }
+    .edit-table textarea {
+        resize: vertical;
+        min-height: 52px;
+    }
+    /* Flag badges — Badges de flags de incidencia */
+    .flag-badge {
+        font-size: 0.7rem;
+        padding: 0.2em 0.5em;
+        background-color: #fff3cd;
+        color: #664d03;
+        border: 1px solid #ffecb5;
+        border-radius: 0.25rem;
+        white-space: nowrap;
+    }
+    /* Page group header — Cabecera de grupo de página */
+    .page-group-header {
+        background-color: #1a1f2e;
+        color: #ffffff;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.25rem 0.25rem 0 0;
+    }
+    .page-group-header .badge-confidence-HIGH    { background-color:#d1e7dd; color:#0a3622; }
+    .page-group-header .badge-confidence-MEDIUM  { background-color:#fff3cd; color:#664d03; }
+    .page-group-header .badge-confidence-LOW     { background-color:#f8d7da; color:#58151c; }
+    .page-group-header .badge-confidence-FAILED  { background-color:#e2d9f3; color:#432874; }
+    /* Uncertain date warning — Aviso de fecha incierta */
+    .date-uncertain {
+        font-size: 0.72rem;
+        color: #dc3545;
+        margin-left: 0.4rem;
+    }
+    /* Delta horas display — Visualización de delta horas */
+    .delta-display {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #0d6efd;
+        white-space: nowrap;
+    }
+    /* Unresolved asset warning — Aviso de activo no resuelto */
+    .asset-unresolved {
+        font-size: 0.72rem;
+        color: #dc3545;
+    }
+    /* HTMX save flash — destello verde al guardar correctamente via HTMX */
+    @keyframes rowSaveFlash {
+        0%   { background-color: #d1e7dd; }
+        100% { background-color: transparent; }
+    }
+    .row-save-flash {
+        animation: rowSaveFlash 0.8s ease-out forwards;
+    }
+    /* Flag row highlight — fila con incidencias pendientes */
+    .row-has-flags {
+        background-color: #fffbe6;
+    }
+    /* Flagged field highlight — campo con incidencia pendiente */
+    .field-flagged {
+        border-color: #fd7e14 !important;
+        box-shadow: 0 0 0 0.15rem rgba(253,126,20,.2) !important;
+    }
+    /* SortableJS ghost row — fila fantasma durante el drag & drop */
+    .sortable-ghost {
+        opacity: 0.4;
+        background-color: #e8f4fd;
+    }
+    /* Drag handle — icono de agarre para reordenar filas */
+    .drag-handle {
+        cursor: grab;
+        color: #adb5bd;
+        font-size: 1rem;
+    }
+    .drag-handle:active { cursor: grabbing; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"
+        crossorigin="anonymous"></script>
+<script>
+(function () {
+    "use strict";
+
+    // ------------------------------------------------------------------
+    // C1 — Insert line button handler.
+    // C1 — Manejador del botón de inserción de línea.
+    // ------------------------------------------------------------------
+    document.addEventListener("click", function (event) {
+        var btn = event.target.closest(".btn-insert-line");
+        if (!btn) { return; }
+        event.preventDefault();
+
+        var woPk        = btn.dataset.woPk;
+        var afterLinePk = btn.dataset.afterLinePk;
+        var entryPk     = btn.dataset.entryPk;
+        var url         = "/panel/work-orders/" + woPk + "/lines/insert/";
+
+        var fd = new FormData();
+        fd.append("after_line_pk", afterLinePk);
+        fd.append("entry_pk",      entryPk);
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) { fd.append("csrfmiddlewaretoken", meta.getAttribute("content")); }
+
+        fetch(url, { method: "POST", body: fd })
+            .then(function (r) { return r.text(); })
+            .then(function (html) {
+                // Insert the new <tr> immediately after the reference row.
+                // Insertar el nuevo <tr> inmediatamente tras la fila de referencia.
+                var refRow = document.getElementById("line-row-" + afterLinePk);
+                if (refRow) {
+                    refRow.insertAdjacentHTML("afterend", html);
+                    htmx.process(refRow.nextElementSibling);
+                    initSortable();
+                }
+            })
+            .catch(function (err) {
+                console.error("# [INSERT] Error al insertar línea:", err);
+            });
+    });
+
+    // ------------------------------------------------------------------
+    // C2 — SortableJS initialisation for all .sortable-lines tbodies.
+    // C2 — Inicialización de SortableJS en todos los <tbody> .sortable-lines.
+    // ------------------------------------------------------------------
+    function initSortable() {
+        document.querySelectorAll(".sortable-lines").forEach(function (tbody) {
+            if (tbody._sortableInitialised) { return; }
+            tbody._sortableInitialised = true;
+            Sortable.create(tbody, {
+                animation: 150,
+                handle: ".drag-handle",
+                ghostClass: "sortable-ghost",
+                onEnd: function () {
+                    // Collect all line pks in new DOM order.
+                    // Recoger todos los pks de línea en el nuevo orden DOM.
+                    var rows    = tbody.querySelectorAll("tr[id^='line-row-']");
+                    var linePks = Array.from(rows).map(function (r) {
+                        return r.id.replace("line-row-", "");
+                    });
+                    var woPk    = tbody.dataset.woPk;
+                    var entryPk = tbody.dataset.entryPk;
+                    var url     = "/panel/work-orders/" + woPk + "/lines/reorder/";
+
+                    var fd = new FormData();
+                    fd.append("entry_pk", entryPk);
+                    linePks.forEach(function (pk) { fd.append("line_pks[]", pk); });
+                    var meta = document.querySelector('meta[name="csrf-token"]');
+                    if (meta) { fd.append("csrfmiddlewaretoken", meta.getAttribute("content")); }
+
+                    fetch(url, { method: "POST", body: fd })
+                        .catch(function (err) {
+                            console.error("# [REORDER] Error al reordenar líneas:", err);
+                        });
+                },
+            });
+        });
+    }
+
+    // Initialise on load and after every HTMX swap (new rows may appear).
+    // Inicializar en carga y tras cada swap HTMX (pueden aparecer nuevas filas).
+    initSortable();
+    document.addEventListener("htmx:afterSwap", initSortable);
+
+    // ------------------------------------------------------------------
+    // C3 — Restore single line button handler.
+    // C3 — Manejador del botón de restauración de línea individual.
+    // ------------------------------------------------------------------
+    document.addEventListener("click", function (event) {
+        var btn = event.target.closest(".btn-restore-line");
+        if (!btn) { return; }
+        event.preventDefault();
+        if (!confirm("¿Restaurar esta línea desde la extracción Gemini original? Se perderán los cambios manuales de esta entrada.")) { return; }
+
+        var woPk   = btn.dataset.woPk;
+        var linePk = btn.dataset.linePk;
+        var url    = "/panel/work-orders/" + woPk + "/lines/" + linePk + "/restore/";
+
+        var fd = new FormData();
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) { fd.append("csrfmiddlewaretoken", meta.getAttribute("content")); }
+
+        fetch(url, { method: "POST", body: fd })
+            .then(function (r) { return r.text(); })
+            .then(function (html) {
+                // Replace only this row with the restored line fragment.
+                // Reemplazar únicamente esta fila con el fragmento de línea restaurado.
+                var rowEl = document.getElementById("line-row-" + linePk);
+                if (rowEl) {
+                    rowEl.outerHTML = html;
+                    var newRow = document.getElementById("line-row-" + linePk);
+                    if (newRow) { htmx.process(newRow); }
+                }
+            })
+            .catch(function (err) {
+                console.error("# [RESTORE] Error al restaurar línea:", err);
+            });
+    });
+
+    // ------------------------------------------------------------------
+    // Delete line button handler.
+    // Manejador del botón de eliminar línea.
+    // ------------------------------------------------------------------
+    document.addEventListener("click", function (event) {
+        var btn = event.target.closest(".btn-delete-line");
+        if (!btn) { return; }
+        event.preventDefault();
+        if (!confirm("¿Eliminar esta línea? Esta acción no se puede deshacer.")) { return; }
+
+        var woPk   = btn.dataset.woPk;
+        var linePk = btn.dataset.linePk;
+        var url    = "/panel/work-orders/" + woPk + "/lines/" + linePk + "/delete/";
+
+        var fd = new FormData();
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) { fd.append("csrfmiddlewaretoken", meta.getAttribute("content")); }
+
+        fetch(url, { method: "POST", body: fd })
+            .then(function (r) {
+                if (r.ok) {
+                    // Remove the row from the DOM on success.
+                    // Eliminar la fila del DOM en caso de éxito.
+                    var rowEl = document.getElementById("line-row-" + linePk);
+                    if (rowEl) { rowEl.remove(); }
+                } else {
+                    console.error("# [DELETE] El servidor devolvió un error al eliminar la línea.");
+                }
+            })
+            .catch(function (err) {
+                console.error("# [DELETE] Error al eliminar línea:", err);
+            });
+    });
+
+}());
+</script>
+{% endblock %}
+
+{% block content %}
+
+{# ------------------------------------------------------------------ #}
+{# Page header — Cabecera de página                                    #}
+{# ------------------------------------------------------------------ #}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-2">
+        <a href="{% url 'panel:work_order_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <div>
+            <h5 class="mb-0 fw-semibold">Editar PDF #{{ work_order.pk }}</h5>
+            <small class="text-muted">{{ work_order.source_pdf.name|truncatechars:60 }}</small>
+        </div>
+    </div>
+
+    {# Regenerar Excel button — Botón Regenerar Excel #}
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="regenerate">
+        <button type="submit" class="btn btn-success btn-sm"
+                onclick="return confirm('¿Regenerar el Excel con los datos actuales?')">
+            <i class="bi bi-file-earmark-excel me-1"></i>Regenerar Excel
+        </button>
+    </form>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Status badge — Badge de estado del WorkOrder                        #}
+{# ------------------------------------------------------------------ #}
+<div class="mb-3">
+    {% if work_order.status == 'PENDING' %}
+        <span class="badge bg-secondary">Pendiente</span>
+    {% elif work_order.status == 'PROCESSING' %}
+        <span class="badge bg-warning text-dark">Procesando</span>
+    {% elif work_order.status == 'DONE' %}
+        <span class="badge bg-success">Completado</span>
+    {% elif work_order.status == 'ERROR' %}
+        <span class="badge bg-danger">Error</span>
+    {% endif %}
+    <span class="text-muted text-sm ms-2">
+        {{ work_order.processed_pages }}/{{ work_order.total_pages }} páginas procesadas
+    </span>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Groups — Grupos de líneas por página                                #}
+{# ------------------------------------------------------------------ #}
+{% if groups %}
+    {# Each group is rendered via the _entry_group_fragment.html partial.        #}
+    {# Cada grupo se renderiza via el parcial _entry_group_fragment.html.        #}
+    {% for group in groups %}
+        {% include "panel/work_orders/_entry_group_fragment.html" with group=group wo_pk=work_order.pk %}
+    {% endfor %}
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-file-earmark-x fs-1 d-block mb-3"></i>
+    <p class="mb-1">Este PDF no tiene entradas procesadas todavía.</p>
+    <a href="{% url 'panel:work_order_list' %}" class="btn btn-outline-secondary btn-sm mt-2">
+        <i class="bi bi-arrow-left me-1"></i>Volver a la lista
+    </a>
+</div>
+{% endif %}
+
+{% endblock %}

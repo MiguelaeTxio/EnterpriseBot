@@ -1,0 +1,59 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_status_fragment.html #}
+{# Partial template — WorkOrder status badge and progress bar.                                       #}
+{# Rendered on initial page load and returned by WorkOrderStatusFragmentView on every HTMX poll.     #}
+{# When status is PENDING or PROCESSING, HTMX polling attributes are included so the browser         #}
+{# re-fetches this fragment every 4 seconds. When status reaches DONE or ERROR the fragment          #}
+{# contains no HTMX attributes and polling stops automatically.                                      #}
+{# ---                                                                                               #}
+{# Parcial — Badge de estado y barra de progreso del WorkOrder.                                      #}
+{# Renderizado en la carga inicial y devuelto por WorkOrderStatusFragmentView en cada poll HTMX.     #}
+{# Cuando el estado es PENDING o PROCESSING se incluyen atributos de polling HTMX para que el        #}
+{# navegador vuelva a solicitar este fragmento cada 4 segundos. Cuando el estado alcanza DONE        #}
+{# o ERROR el fragmento no contiene atributos HTMX y el polling se detiene automáticamente.          #}
+<div id="wo-status-{{ wo.pk }}"
+     {% if wo.status == 'PENDING' or wo.status == 'PROCESSING' %}
+     hx-get="{% url 'panel:work_order_status_fragment' pk=wo.pk %}"
+     hx-trigger="every 4s"
+     hx-target="this"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+    {# ------------------------------------------------------------------ #}
+    {# Status badge — Badge de estado                                      #}
+    {# ------------------------------------------------------------------ #}
+    {% if wo.status == 'PENDING' %}
+        <span class="badge bg-secondary">
+            <i class="bi bi-hourglass-split me-1"></i>Pendiente
+        </span>
+    {% elif wo.status == 'PROCESSING' %}
+        <span class="badge bg-warning text-dark">
+            <i class="bi bi-arrow-repeat me-1"></i>Procesando
+        </span>
+    {% elif wo.status == 'DONE' %}
+        <span class="badge bg-success">
+            <i class="bi bi-check-circle me-1"></i>Completado
+        </span>
+    {% elif wo.status == 'ERROR' %}
+        <span class="badge bg-danger">
+            <i class="bi bi-x-circle me-1"></i>Error
+        </span>
+    {% else %}
+        <span class="badge bg-secondary">{{ wo.status }}</span>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Progress bar — only shown while extraction is active               #}
+    {# Barra de progreso — solo visible mientras la extracción está activa #}
+    {# ------------------------------------------------------------------ #}
+    {% if wo.status == 'PENDING' or wo.status == 'PROCESSING' %}
+        <div class="progress mt-1" style="height: 6px;" role="progressbar"
+             aria-valuenow="{{ wo.progress }}"
+             aria-valuemin="0"
+             aria-valuemax="100">
+            <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning"
+                 style="width: {{ wo.progress }}%;"></div>
+        </div>
+        <small class="text-muted">{{ wo.progress }}%</small>
+    {% endif %}
+
+</div>

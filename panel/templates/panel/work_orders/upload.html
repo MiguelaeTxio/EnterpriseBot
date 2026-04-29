@@ -1,0 +1,228 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/upload.html #}
+{#                                                                                           #}
+{# PDF upload form for work order processing.                                               #}
+{# Hito 8 — Paso 5 (2026-04-28): duplicate detection modal (Bloque E).                     #}
+{# If the server detects a duplicate WorkOrder (same worker + overlapping period),          #}
+{# the duplicate_wo context variable is set and the warning modal opens automatically.      #}
+{# The user can cancel or confirm overwrite. On confirmation the form re-submits            #}
+{# with confirm_overwrite=1 hidden field so the server deletes the duplicate first.         #}
+{#                                                                                           #}
+{# Formulario de carga de PDF para procesamiento de partes de trabajo.                      #}
+{# Hito 8 — Paso 5 (2026-04-28): modal de detección de duplicado (Bloque E).               #}
+{# Si el servidor detecta un WorkOrder duplicado (mismo operario + periodo solapado),       #}
+{# la variable de contexto duplicate_wo se establece y el modal de advertencia se abre      #}
+{# automáticamente. El usuario puede cancelar o confirmar la sobrescritura. Al confirmar    #}
+{# el formulario se reenvía con el campo oculto confirm_overwrite=1 para que el servidor    #}
+{# elimine primero el duplicado.                                                             #}
+{# ======================================================================================== #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Subir Partes de Trabajo{% endblock %}
+
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+
+        <div class="d-flex align-items-center mb-4 gap-2">
+            <a href="{% url 'panel:work_order_list' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <h5 class="mb-0 fw-semibold">Subir PDF de Partes de Trabajo</h5>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <p class="text-muted mb-4">
+                    Selecciona el archivo PDF con las fotografías de los partes de trabajo.
+                    El sistema extraerá automáticamente los datos de cada página mediante
+                    visión artificial y generará un informe Excel descargable.
+                </p>
+
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+
+                    <div class="mb-4">
+                        <label for="source_pdf" class="form-label fw-semibold">
+                            Archivo PDF <span class="text-danger">*</span>
+                        </label>
+                        <input type="file"
+                               class="form-control"
+                               id="source_pdf"
+                               name="source_pdf"
+                               accept=".pdf"
+                               required>
+                        <div class="form-text">
+                            Solo se admiten archivos en formato PDF.
+                            Cada página del PDF debe contener la fotografía de un parte de trabajo.
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info d-flex gap-2 align-items-start mb-4" role="alert">
+                        <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+                        <div>
+                            El procesamiento comienza de forma inmediata tras la carga.
+                            Puedes seguir el progreso en la lista de partes de trabajo.
+                            Cuando el estado sea <strong>Completado</strong>, el Excel
+                            estará disponible para descarga.
+                        </div>
+                    </div>
+
+                    {# Hidden field: confirm_overwrite — set to 1 by the duplicate modal  #}
+                    {# on user confirmation to authorise deletion of the existing duplicate #}
+                    {# Campo oculto: confirm_overwrite — establecido a 1 por el modal de  #}
+                    {# duplicado al confirmar para autorizar la eliminación del duplicado  #}
+                    <input type="hidden" id="confirm_overwrite" name="confirm_overwrite" value="">
+
+                    <div class="d-flex gap-2 justify-content-end">
+                        <a href="{% url 'panel:work_order_list' %}"
+                           class="btn btn-outline-secondary">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload me-1"></i>Cargar y procesar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{# ================================================================ #}
+{# Duplicate WorkOrder warning modal — Bloque I, Paso 9, Hito 8    #}
+{# Shown automatically when duplicate_wo is set in the context.    #}
+{# duplicate_reason controls the message shown:                    #}
+{#   'exact'   — same SHA-256 hash: identical file re-uploaded.    #}
+{#   'content' — different file, same worker + overlapping period.  #}
+{# Modal de aviso de WorkOrder duplicado — Bloque I, Paso 9, H8   #}
+{# Se muestra automáticamente cuando duplicate_wo está en contexto. #}
+{# duplicate_reason controla el mensaje mostrado:                  #}
+{#   'exact'   — mismo hash SHA-256: fichero idéntico re-subido.   #}
+{#   'content' — fichero distinto, mismo operario + periodo.       #}
+{# ================================================================ #}
+{% if duplicate_wo %}
+<div class="modal fade" id="duplicateModal" tabindex="-1"
+     aria-labelledby="duplicateModalLabel" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title fw-bold" id="duplicateModalLabel">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Parte duplicado detectado
+                </h5>
+            </div>
+            <div class="modal-body">
+
+                {# -------------------------------------------------------- #}
+                {# Differentiated message block — Bloque I, Hito 8          #}
+                {# 'exact'   -> identical file (SHA-256 match).             #}
+                {# 'content' -> different file, same worker + period.       #}
+                {# Bloque de mensaje diferenciado — Bloque I, Hito 8        #}
+                {# 'exact'   -> fichero idéntico (match SHA-256).           #}
+                {# 'content' -> fichero distinto, mismo operario + periodo. #}
+                {# -------------------------------------------------------- #}
+                {% if duplicate_reason == 'exact' %}
+                <p>
+                    Se ha detectado que el fichero PDF que intentas subir es
+                    <strong>idéntico</strong> al parte
+                    <strong>#{{ duplicate_wo.pk }}</strong>
+                    (<em>{{ duplicate_wo.pdf_display_name }}</em>,
+                    cargado el {{ duplicate_wo.upload_date|date:"d/m/Y H:i" }}).
+                    El fichero tiene exactamente el mismo contenido — es una
+                    carga duplicada exacta.
+                </p>
+                {% else %}
+                <p>
+                    Ya existen datos del operario
+                    <strong>{{ duplicate_wo.pdf_display_name }}</strong>
+                    para este periodo en el parte
+                    <strong>#{{ duplicate_wo.pk }}</strong>
+                    (cargado el {{ duplicate_wo.upload_date|date:"d/m/Y H:i" }}).
+                    El fichero es distinto pero cubre los mismos datos.
+                </p>
+                {% endif %}
+
+                <div class="alert alert-danger mb-0">
+                    <ul class="mb-0 ps-3">
+                        <li>Los datos actuales del parte existente serán eliminados.</li>
+                        <li>Esta acción <strong>no se puede deshacer</strong>.</li>
+                        <li>Para recuperar los datos tendrás que volver a subir el PDF
+                            o editar las entradas manualmente.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a href="{% url 'panel:work_order_list' %}" class="btn btn-secondary btn-sm">
+                    Cancelar
+                </a>
+                <button type="button" class="btn btn-danger btn-sm" id="btn-confirm-overwrite">
+                    <i class="bi bi-trash me-1"></i>Continuar y sobrescribir
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Auto-open the modal and wire the confirm button on page load. #}
+{# Abrir el modal automáticamente y conectar el botón de confirmación al cargar. #}
+<script>
+(function () {
+    "use strict";
+
+    /*
+     * Wait for Bootstrap JS to be fully loaded before initialising the modal.
+     * Bootstrap is loaded at the bottom of base.html — by the time this inline
+     * script runs the bundle may not yet be parsed. We poll every 50 ms until
+     * the global bootstrap object is available (max 3 s) and then show the modal.
+     *
+     * Esperar a que Bootstrap JS esté completamente cargado antes de inicializar
+     * el modal. Bootstrap se carga al final de base.html — en el momento en que
+     * este script inline se ejecuta el bundle puede no estar aún parseado.
+     * Hacemos polling cada 50 ms hasta que el objeto global bootstrap esté
+     * disponible (máximo 3 s) y entonces mostramos el modal.
+     */
+    var modalEl = document.getElementById("duplicateModal");
+    if (!modalEl) { return; }
+
+    var _maxWait  = 3000;   // ms
+    var _interval = 50;     // ms
+    var _elapsed  = 0;
+
+    var _timer = setInterval(function () {
+        _elapsed += _interval;
+
+        if (typeof bootstrap !== "undefined" && bootstrap.Modal) {
+            clearInterval(_timer);
+
+            // Bootstrap available — show the modal.
+            // Bootstrap disponible — mostrar el modal.
+            var bsModal = new bootstrap.Modal(modalEl);
+            bsModal.show();
+
+            // On confirm: set the hidden field and re-submit the form.
+            // Al confirmar: establecer el campo oculto y reenviar el formulario.
+            document.getElementById("btn-confirm-overwrite").addEventListener(
+                "click",
+                function () {
+                    document.getElementById("confirm_overwrite").value = "1";
+                    document.querySelector("form").submit();
+                }
+            );
+        }
+
+        if (_elapsed >= _maxWait) {
+            clearInterval(_timer);
+            // Fallback: show modal via data-bs attributes if Bootstrap never loaded.
+            // Fallback: mostrar modal via atributos data-bs si Bootstrap no cargó.
+            console.error("# [upload] Bootstrap no disponible tras 3 s — modal no mostrado.");
+        }
+    }, _interval);
+
+}());
+</script>
+{% endif %}
+
+{% endblock %}

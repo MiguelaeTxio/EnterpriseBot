@@ -187,6 +187,24 @@ class WorkOrder(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Duplicate detection — Hito 8 / Bloque I
+    # Detección de duplicados — Hito 8 / Bloque I
+    # ------------------------------------------------------------------
+    source_pdf_hash = models.CharField(
+        _("Hash SHA-256 del PDF"),
+        max_length=64,
+        blank=True,
+        db_index=True,
+        help_text=_(
+            "Hash SHA-256 del fichero PDF original calculado en el momento "
+            "de la carga. Permite detectar duplicados exactos con independencia "
+            "del nombre del fichero. Vacío en registros anteriores a la "
+            "implantación del Bloque I — rellenable mediante el comando de "
+            "gestión backfill_pdf_hashes."
+        ),
+    )
+
     class Meta:
         verbose_name        = _("Parte de Trabajo")
         verbose_name_plural = _("Partes de Trabajo")
