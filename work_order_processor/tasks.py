@@ -596,6 +596,82 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
         )
         generate_work_order_excel(work_order_id)
 
+        # ------------------------------------------------------------------
+        # Step 5 — Delete source PDF from disk (Paso 14 — Hito 8)
+        # Paso 5 — Eliminar el PDF original del disco (Paso 14 — Hito 8)
+        #
+        # The source PDF is consumed by this point: all pages have been
+        # rasterised, extracted, persisted in DB and the Excel has been
+        # generated. Retaining the file provides no further value and
+        # wastes PythonAnywhere storage quota.
+        #
+        # Strategy:
+        #   - Obtain the physical path from source_pdf before clearing the
+        #     field, so the file can be removed even if the field is later
+        #     cleared by another process.
+        #   - Delete the physical file via Django's storage backend
+        #     (source_pdf.delete(save=False)) which handles both local and
+        #     cloud storage transparently.
+        #   - Set source_pdf to '' (empty) in the DB so that any code that
+        #     checks `if wo.source_pdf` correctly evaluates to False.
+        #   - The source_pdf_hash field is deliberately kept intact: it is
+        #     the sole mechanism for Level-1 exact-duplicate detection and
+        #     must survive the PDF deletion.
+        #
+        # El PDF de origen queda consumido en este punto: todas las páginas
+        # han sido rasterizadas, extraídas, persistidas en BD y el Excel ha
+        # sido generado. Conservar el fichero no aporta valor y desperdicia
+        # cuota de almacenamiento en PythonAnywhere.
+        #
+        # Estrategia:
+        #   - Obtener la ruta física desde source_pdf antes de limpiar el
+        #     campo, de modo que el fichero pueda eliminarse aunque otra
+        #     parte del código limpie el campo posteriormente.
+        #   - Eliminar el fichero físico via el backend de almacenamiento de
+        #     Django (source_pdf.delete(save=False)), que gestiona tanto
+        #     almacenamiento local como en nube de forma transparente.
+        #   - Vaciar source_pdf en BD para que el código que comprueba
+        #     `if wo.source_pdf` evalúe correctamente a False.
+        #   - El campo source_pdf_hash se conserva deliberadamente intacto:
+        #     es el único mecanismo de detección de duplicados exactos
+        #     (Nivel 1) y debe sobrevivir al borrado del PDF.
+        # ------------------------------------------------------------------
+        work_order.refresh_from_db(fields=["source_pdf"])
+
+        if work_order.source_pdf:
+            pdf_physical_path = work_order.source_pdf.path
+            try:
+                work_order.source_pdf.delete(save=False)
+                work_order.source_pdf = ""
+                work_order.save(update_fields=["source_pdf"])
+                logger.info(
+                    "# [Tarea] PDF original eliminado del disco: %s "
+                    "(WorkOrder #%d).",
+                    pdf_physical_path,
+                    work_order_id,
+                )
+            except Exception as pdf_exc:
+                # Deletion failure is non-fatal: the WorkOrder is already DONE
+                # and the Excel is available. Log the error and continue — a
+                # failed PDF deletion must not revert the processing result.
+                # El fallo en el borrado no es fatal: el WorkOrder ya está DONE
+                # y el Excel está disponible. Registrar el error y continuar —
+                # un fallo al borrar el PDF no debe revertir el resultado del
+                # procesamiento.
+                logger.warning(
+                    "# [Tarea] No se pudo eliminar el PDF físico %s "
+                    "para WorkOrder #%d: %s. El parte sigue disponible.",
+                    pdf_physical_path,
+                    work_order_id,
+                    pdf_exc,
+                )
+        else:
+            logger.info(
+                "# [Tarea] source_pdf ya estaba vacío para WorkOrder #%d — "
+                "borrado omitido.",
+                work_order_id,
+            )
+
         logger.info(
             "# [Tarea] process_work_order_pdf completada para WorkOrder #%d.",
             work_order_id,

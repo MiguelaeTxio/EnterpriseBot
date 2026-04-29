@@ -2777,12 +2777,48 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
                 duplicate_wo     = existing_entry.work_order
                 duplicate_reason = "content"
 
+        # -- Level 3: concrete work_date overlap within the extracted period. --
+        # -- Nivel 3: solapamiento de work_date concretas dentro del periodo extraído. --
+        # Only evaluated when Levels 1 and 2 produced no match, incoming_worker
+        # is known and date_from / date_to were successfully parsed from the filename.
+        # Solo se evalúa cuando los Niveles 1 y 2 no produjeron coincidencia, se conoce
+        # incoming_worker y date_from / date_to se parsearon correctamente del nombre.
+        if not duplicate_wo and incoming_worker and date_from and date_to:
+            conflicting_entries = (
+                WorkOrderEntry.objects
+                .filter(
+                    work_order__company=company,
+                    worker_name=incoming_worker,
+                    work_date__gte=date_from,
+                    work_date__lte=date_to,
+                )
+                .exclude(work_order__source_pdf_hash=incoming_hash)
+                .exclude(work_order__source_pdf_hash="")
+                .select_related("work_order")
+                .order_by("work_date")
+            )
+            if conflicting_entries.exists():
+                # Build deduplicated list of concrete conflict dates for the modal.
+                # Construir lista deduplicada de fechas concretas conflictivas para el modal.
+                seen_dates   = set()
+                duplicate_dates = []
+                for entry in conflicting_entries:
+                    if entry.work_date:
+                        date_key = entry.work_date.strftime("%d/%m/%y")
+                        if date_key not in seen_dates:
+                            seen_dates.add(date_key)
+                            duplicate_dates.append(date_key)
+
+                first_entry      = conflicting_entries.first()
+                duplicate_wo     = first_entry.work_order
+                duplicate_reason = "duplicate_entries"
+
         # If a duplicate was found and overwrite not yet confirmed, re-render
         # the upload form so the template shows the differentiated modal.
         # Si se detectó un duplicado y no se ha confirmado sobrescritura,
         # volver a renderizar el formulario con el contexto del modal diferenciado.
         if duplicate_wo and not request.POST.get("confirm_overwrite"):
-            return render(request, self.template_name, {
+            ctx = {
                 "company":          company,
                 "company_user":     company_user,
                 "own_presence":     self._get_own_presence(company_user),
@@ -2790,7 +2826,12 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
                 "duplicate_wo":     duplicate_wo,
                 "duplicate_reason": duplicate_reason,
                 "pdf_file_name":    incoming_name,
-            })
+            }
+            # Pass duplicate_dates only when reason is duplicate_entries.
+            # Pasar duplicate_dates solo cuando el motivo es duplicate_entries.
+            if duplicate_reason == "duplicate_entries":
+                ctx["duplicate_dates"] = duplicate_dates
+            return render(request, self.template_name, ctx)
 
         # On confirmed overwrite: delete the duplicate and all cascade children.
         # Al confirmar sobrescritura: eliminar el duplicado y sus hijos en cascada.
@@ -4191,6 +4232,187 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
         )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+class WorkOrderDuplicateSearchView(SupervisorAccessMixin, View):
+    """
+    HTMX endpoint that detects duplicate WorkOrders for the authenticated
+    company by querying WorkOrderEntry records sharing identical
+    (worker_name, work_date) tuples across distinct WorkOrders.
+    Returns a rendered _duplicates_fragment.html partial with the grouped
+    results, or an informational fragment when no duplicates are found.
+
+    POST /panel/work-orders/duplicates/search/
+         Returns HTTP 200 with the rendered fragment in all cases.
+         Returns HTTP 404 if the authenticated user has no CompanyUser profile.
+
+    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
+
+    ---
+
+    Endpoint HTMX que detecta WorkOrders duplicados para la empresa autenticada
+    consultando registros WorkOrderEntry que comparten tuplas (worker_name,
+    work_date) idénticas entre distintos WorkOrders. Devuelve el parcial
+    _duplicates_fragment.html renderizado con los resultados agrupados, o un
+    fragmento informativo cuando no se detectan duplicados.
+
+    POST /panel/work-orders/duplicates/search/
+         Devuelve HTTP 200 con el fragmento renderizado en todos los casos.
+         Devuelve HTTP 404 si el usuario autenticado no tiene perfil CompanyUser.
+
+    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
+    """
+
+    def post(self, request):
+        """
+        Executes the duplicate detection query scoped to the authenticated
+        company and returns the rendered _duplicates_fragment.html partial.
+
+        Detection logic mirrors detect_duplicate_entries management command:
+          1. Query (company, worker_name, work_date) groups where more than one
+             distinct WorkOrder contributes WorkOrderEntry records.
+          2. For each group, fetch all implicated WorkOrders ordered by pk.
+          3. Identify keeper (highest pk) and candidates for deletion (lower pks).
+
+        ---
+
+        Ejecuta la consulta de detección de duplicados acotada a la empresa
+        autenticada y devuelve el parcial _duplicates_fragment.html renderizado.
+
+        La lógica de detección es equivalente al comando de gestión
+        detect_duplicate_entries:
+          1. Consultar grupos (empresa, operario, fecha) donde más de un
+             WorkOrder distinto aporta registros WorkOrderEntry.
+          2. Por cada grupo, obtener todos los WorkOrders implicados ordenados
+             por pk.
+          3. Identificar el conservado (pk más alto) y los candidatos a
+             eliminación (pks inferiores).
+        """
+        from django.db.models import Count
+        from work_order_processor.models import WorkOrderEntry
+
+        company = request.user.company_user.company
+
+        # ------------------------------------------------------------------
+        # Step 1 — Query duplicate (company, worker_name, work_date) groups.
+        # Paso 1 — Consultar los grupos (empresa, operario, fecha) duplicados.
+        # ------------------------------------------------------------------
+        raw_groups = list(
+            WorkOrderEntry.objects
+            .filter(work_order__company=company)
+            .values("worker_name", "work_date")
+            .annotate(wo_count=Count("work_order_id", distinct=True))
+            .filter(wo_count__gt=1)
+            .order_by("worker_name", "work_date")
+        )
+
+        if not raw_groups:
+            # No duplicates found — render informational fragment.
+            # Sin duplicados — renderizar fragmento informativo.
+            return render(
+                request,
+                "panel/work_orders/_duplicates_fragment.html",
+                {"duplicate_groups": [], "no_duplicates": True},
+            )
+
+        # ------------------------------------------------------------------
+        # Step 2 — Enrich each group with the implicated WorkOrder records.
+        # Paso 2 — Enriquecer cada grupo con los registros WorkOrder implicados.
+        # ------------------------------------------------------------------
+        enriched_groups = []
+
+        for raw in raw_groups:
+            worker_name = raw["worker_name"] or ""
+            work_date   = raw["work_date"]
+
+            # Fetch all WorkOrders sharing this (company, worker, date) pair.
+            # Obtener todos los WorkOrders que comparten este par (empresa, operario, fecha).
+            implicated = list(
+                WorkOrder.objects
+                .filter(
+                    company=company,
+                    entries__worker_name=worker_name,
+                    entries__work_date=work_date,
+                )
+                .select_related("uploaded_by__user")
+                .distinct()
+                .order_by("pk")
+            )
+
+            if len(implicated) < 2:
+                # Guard against race conditions between aggregation and fetch.
+                # Proteger contra condiciones de carrera entre agregación y fetch.
+                continue
+
+            enriched_groups.append({
+                "worker_name": worker_name,
+                "work_date":   work_date,
+                "work_orders": implicated,
+                "keeper":      implicated[-1],    # highest pk — preserved
+                "to_delete":   implicated[:-1],   # lower pks — deletion candidates
+            })
+
+        return render(
+            request,
+            "panel/work_orders/_duplicates_fragment.html",
+            {
+                "duplicate_groups": enriched_groups,
+                "no_duplicates":    False,
+                "company_user":     request.user.company_user,
+            },
+        )
+
+
+class WorkOrderDuplicateDeleteView(AdminRoleRequiredMixin, View):
+    """
+    HTMX endpoint that deletes a single WorkOrder identified by pk, scoped
+    to the authenticated company. Intended for use in the duplicates panel:
+    the caller is responsible for ensuring the pk belongs to a duplicate
+    group (not the keeper). Returns an empty HTTP 200 response so that HTMX
+    removes the corresponding row from the DOM via hx-swap="outerHTML".
+
+    POST /panel/work-orders/duplicates/<pk>/delete/
+         Returns HTTP 404 if the WorkOrder does not exist or belongs to
+         another company.
+
+    Restricted to the ADMIN role (AdminRoleRequiredMixin).
+
+    ---
+
+    Endpoint HTMX que elimina un único WorkOrder identificado por pk, acotado
+    a la empresa autenticada. Diseñado para su uso en el panel de duplicados:
+    el llamador es responsable de garantizar que el pk pertenece a un grupo
+    duplicado (no al conservado). Devuelve una respuesta HTTP 200 vacía para
+    que HTMX elimine la fila correspondiente del DOM via hx-swap="outerHTML".
+
+    POST /panel/work-orders/duplicates/<pk>/delete/
+         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra empresa.
+
+    Restringido al rol ADMIN (AdminRoleRequiredMixin).
+    """
+
+    def post(self, request, pk):
+        """
+        Deletes the WorkOrder identified by pk, cascade-removing all its
+        children (WorkOrderEntry, WorkOrderEntryLine, source PDF, Excel file).
+        Returns an empty response body for HTMX outerHTML swap.
+
+        ---
+
+        Elimina el WorkOrder identificado por pk, eliminando en cascada todos
+        sus hijos (WorkOrderEntry, WorkOrderEntryLine, PDF original, Excel).
+        Devuelve cuerpo vacío para el swap outerHTML de HTMX.
+        """
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponse
+
+        company = request.user.company_user.company
+        wo      = get_object_or_404(WorkOrder, pk=pk, company=company)
+        wo.delete()
+
+        # Return empty body — HTMX replaces the target element with nothing.
+        # Devolver cuerpo vacío — HTMX reemplaza el elemento objetivo con nada.
+        return HttpResponse("")
 
 
 class AnalyticsView(AdminRoleRequiredMixin, View):

@@ -262,6 +262,28 @@
     {# ---------------------------------------------------------------- #}
     <div class="tab-pane fade {% if default_tab == 'pending' %}show active{% endif %}"
          id="pane-pending" role="tabpanel" aria-labelledby="tab-pending">
+
+        {# ------------------------------------------------------------ #}
+        {# Duplicate search button + HTMX results container             #}
+        {# Botón de búsqueda de duplicados + contenedor de resultados   #}
+        {# Paso 13 — Hito 8 (2026-04-29)                                #}
+        {# Visible only to SUPERVISOR and ADMIN roles.                  #}
+        {# Solo visible para los roles SUPERVISOR y ADMIN.              #}
+        {# ------------------------------------------------------------ #}
+        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+        <div class="d-flex justify-content-end mb-3">
+            <button type="button"
+                    class="btn btn-outline-warning btn-sm"
+                    hx-post="{% url 'panel:work_order_duplicates_search' %}"
+                    hx-target="#duplicates-results"
+                    hx-swap="innerHTML"
+                    hx-include="[name='csrfmiddlewaretoken']">
+                <i class="bi bi-search me-1"></i>Buscar duplicados
+            </button>
+        </div>
+        <div id="duplicates-results" class="mb-3"></div>
+        {% endif %}
+
         {% if wo_pending %}
         <div class="card border-0 shadow-sm">
             <div class="card-body p-0">

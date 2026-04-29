@@ -134,7 +134,7 @@
                     El fichero tiene exactamente el mismo contenido — es una
                     carga duplicada exacta.
                 </p>
-                {% else %}
+                {% elif duplicate_reason == 'content' %}
                 <p>
                     Ya existen datos del operario
                     <strong>{{ duplicate_wo.pdf_display_name }}</strong>
@@ -142,6 +142,18 @@
                     <strong>#{{ duplicate_wo.pk }}</strong>
                     (cargado el {{ duplicate_wo.upload_date|date:"d/m/Y H:i" }}).
                     El fichero es distinto pero cubre los mismos datos.
+                </p>
+                {% elif duplicate_reason == 'duplicate_entries' %}
+                {# Nivel 3 — fechas concretas de solapamiento detectadas en BD. #}
+                {# Level 3 — concrete overlap dates detected in the database.   #}
+                <p>
+                    Ya existen entradas del operario
+                    <strong>{{ duplicate_wo.pdf_display_name }}</strong>
+                    para los días concretos
+                    <strong>{{ duplicate_dates|join:", " }}</strong>
+                    en el parte <strong>#{{ duplicate_wo.pk }}</strong>
+                    (cargado el {{ duplicate_wo.upload_date|date:"d/m/Y H:i" }}).
+                    El fichero es distinto pero los datos se solapan exactamente.
                 </p>
                 {% endif %}
 

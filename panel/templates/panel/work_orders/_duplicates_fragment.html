@@ -1,0 +1,307 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_duplicates_fragment.html #}
+{#                                                                                                         #}
+{# HTMX partial — Duplicate WorkOrder detection results fragment.                                         #}
+{# Rendered by WorkOrderDuplicateSearchView and injected into the #duplicates-results                     #}
+{# container in pane-pending of list.html.                                                                 #}
+{#                                                                                                         #}
+{# Context variables:                                                                                      #}
+{#   duplicate_groups : list of enriched group dicts — each contains:                                     #}
+{#     worker_name  : str                                                                                  #}
+{#     work_date    : date | None                                                                          #}
+{#     work_orders  : list[WorkOrder] ordered by pk ascending                                             #}
+{#     keeper       : WorkOrder — highest pk, preserved                                                   #}
+{#     to_delete    : list[WorkOrder] — lower pks, deletion candidates                                    #}
+{#   no_duplicates  : bool — True when the query returned no groups                                       #}
+{#   company_user   : CompanyUser — authenticated user (for role check)                                   #}
+{#                                                                                                         #}
+{# Parcial HTMX — Fragmento de resultados de detección de WorkOrders duplicados.                         #}
+{# Renderizado por WorkOrderDuplicateSearchView e inyectado en el contenedor                              #}
+{# #duplicates-results del pane-pending de list.html.                                                     #}
+{#                                                                                                         #}
+{# Variables de contexto:                                                                                  #}
+{#   duplicate_groups : lista de dicts de grupo enriquecidos — cada uno contiene:                         #}
+{#     worker_name  : str                                                                                  #}
+{#     work_date    : date | None                                                                          #}
+{#     work_orders  : list[WorkOrder] ordenados por pk ascendente                                         #}
+{#     keeper       : WorkOrder — pk más alto, conservado                                                  #}
+{#     to_delete    : list[WorkOrder] — pks inferiores, candidatos a eliminación                          #}
+{#   no_duplicates  : bool — True cuando la consulta no devolvió ningún grupo                             #}
+{#   company_user   : CompanyUser — usuario autenticado (para comprobación de rol)                        #}
+
+{% if no_duplicates %}
+
+{# ------------------------------------------------------------------ #}
+{# No duplicates found / Sin duplicados detectados                     #}
+{# ------------------------------------------------------------------ #}
+<div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3" role="alert">
+    <i class="bi bi-check-circle-fill flex-shrink-0"></i>
+    <span class="text-sm">No se han detectado WorkOrders duplicados. La base de datos está limpia.</span>
+</div>
+
+{% else %}
+
+{# ------------------------------------------------------------------ #}
+{# Duplicates found — grouped table / Duplicados detectados — tabla    #}
+{# ------------------------------------------------------------------ #}
+<div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+    <span class="text-sm">
+        Se han detectado <strong>{{ duplicate_groups|length }}</strong>
+        grupo(s) con entradas duplicadas entre distintos partes.
+        {% if company_user.role == 'ADMIN' %}
+        El botón <strong>Eliminar</strong> borra el parte antiguo en cascada (acción irreversible).
+        {% else %}
+        Contacta con un ADMIN para resolver los duplicados.
+        {% endif %}
+    </span>
+</div>
+
+{% for group in duplicate_groups %}
+
+{# ------------------------------------------------------------------ #}
+{# Group card / Tarjeta de grupo                                       #}
+{# ------------------------------------------------------------------ #}
+<div class="card border-warning shadow-sm mb-3">
+    <div class="card-header bg-warning bg-opacity-10 py-2 px-3">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="text-sm fw-semibold">
+                <i class="bi bi-person-fill me-1"></i>{{ group.worker_name|default:"(Operario desconocido)" }}
+                <span class="text-muted fw-normal ms-2">
+                    {% if group.work_date %}
+                        {{ group.work_date|date:"d/m/Y" }}
+                    {% else %}
+                        (sin fecha)
+                    {% endif %}
+                </span>
+            </div>
+            <span class="badge bg-warning text-dark">
+                {{ group.work_orders|length }} partes implicados
+            </span>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Parte</th>
+                        <th>Nombre PDF</th>
+                        <th>Subido por</th>
+                        <th>Fecha carga</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Revisado</th>
+                        <th class="text-center">Rol</th>
+                        {% if company_user.role == 'ADMIN' %}
+                        <th class="text-center pe-3">Acción</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for wo in group.work_orders %}
+                    {# Determine if this WorkOrder is the keeper (highest pk). #}
+                    {# Determinar si este WorkOrder es el conservado (pk más alto). #}
+                    {% if wo.pk == group.keeper.pk %}
+
+                    {# -------------------------------------------------- #}
+                    {# Keeper row — highlighted green / Fila conservada     #}
+                    {# -------------------------------------------------- #}
+                    <tr class="table-success" id="dup-row-{{ wo.pk }}">
+                        <td class="ps-3">
+                            <span class="fw-semibold text-sm">#{{ wo.pk }}</span>
+                        </td>
+                        <td class="text-sm">{{ wo.pdf_display_name }}</td>
+                        <td class="text-sm">
+                            {% if wo.uploaded_by %}
+                                {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                        <td class="text-center">
+                            <span class="badge bg-success">{{ wo.get_status_display }}</span>
+                        </td>
+                        <td class="text-center">
+                            {% if wo.reviewed %}
+                                <i class="bi bi-patch-check-fill text-success" title="Revisado"></i>
+                            {% else %}
+                                <i class="bi bi-clock text-warning" title="Sin revisar"></i>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-success">
+                                <i class="bi bi-shield-check me-1"></i>Conservar
+                            </span>
+                        </td>
+                        {% if company_user.role == 'ADMIN' %}
+                        <td class="text-center pe-3">
+                            {# No action for keeper row / Sin acción para la fila conservada #}
+                            <span class="text-muted text-sm">—</span>
+                        </td>
+                        {% endif %}
+                    </tr>
+
+                    {% else %}
+
+                    {# -------------------------------------------------- #}
+                    {# Candidate row — highlighted red / Fila candidata     #}
+                    {# -------------------------------------------------- #}
+                    <tr class="table-danger" id="dup-row-{{ wo.pk }}">
+                        <td class="ps-3">
+                            <span class="fw-semibold text-sm">#{{ wo.pk }}</span>
+                        </td>
+                        <td class="text-sm">{{ wo.pdf_display_name }}</td>
+                        <td class="text-sm">
+                            {% if wo.uploaded_by %}
+                                {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary">{{ wo.get_status_display }}</span>
+                        </td>
+                        <td class="text-center">
+                            {% if wo.reviewed %}
+                                <i class="bi bi-patch-check-fill text-success" title="Revisado"></i>
+                            {% else %}
+                                <i class="bi bi-clock text-warning" title="Sin revisar"></i>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-danger">
+                                <i class="bi bi-trash me-1"></i>Duplicado
+                            </span>
+                        </td>
+                        {% if company_user.role == 'ADMIN' %}
+                        <td class="text-center pe-3">
+                            {# ------------------------------------------ #}
+                            {# Delete button with confirmation modal        #}
+                            {# Botón de eliminación con modal de confirmación #}
+                            {# ------------------------------------------ #}
+                            <button type="button"
+                                    class="btn btn-danger btn-sm"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#dupDeleteModal"
+                                    data-dup-pk="{{ wo.pk }}"
+                                    data-dup-name="{{ wo.pdf_display_name }}"
+                                    data-dup-keeper="#{{ group.keeper.pk }}">
+                                <i class="bi bi-trash me-1"></i>Eliminar
+                            </button>
+                        </td>
+                        {% endif %}
+                    </tr>
+
+                    {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endfor %}
+
+{% endif %}
+
+{# ================================================================== #}
+{# Duplicate delete confirmation modal                                  #}
+{# Modal de confirmación de eliminación de duplicado                    #}
+{# Shown only when company_user is ADMIN.                               #}
+{# Solo visible cuando company_user es ADMIN.                           #}
+{# ================================================================== #}
+{% if company_user.role == 'ADMIN' and not no_duplicates %}
+<div class="modal fade" id="dupDeleteModal" tabindex="-1"
+     aria-labelledby="dupDeleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fw-bold" id="dupDeleteModalLabel">
+                    <i class="bi bi-trash me-2"></i>Eliminar duplicado
+                </h5>
+                <button type="button" class="btn-close btn-close-white"
+                        data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>
+                    Vas a eliminar el parte duplicado
+                    <strong id="dup-modal-name"></strong>
+                    conservando <strong id="dup-modal-keeper"></strong>.
+                </p>
+                <div class="alert alert-danger mb-0 text-sm">
+                    <ul class="mb-0 ps-3">
+                        <li>Se eliminarán el parte, todas sus entradas y líneas.</li>
+                        <li>Esta acción <strong>no se puede deshacer</strong>.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        data-bs-dismiss="modal">Cancelar</button>
+                {# HTMX DELETE button — posts to WorkOrderDuplicateDeleteView  #}
+                {# Botón HTMX DELETE — envía a WorkOrderDuplicateDeleteView    #}
+                <button type="button"
+                        id="btn-dup-confirm-delete"
+                        class="btn btn-danger btn-sm">
+                    <i class="bi bi-trash me-1"></i>Eliminar definitivamente
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Modal wiring script                                                  #}
+{# Script de conexión del modal                                         #}
+{# ------------------------------------------------------------------ #}
+<script>
+(function () {
+    "use strict";
+
+    var dupModal = document.getElementById("dupDeleteModal");
+    if (!dupModal) { return; }
+
+    /*
+     * On modal show: populate name/keeper fields from button data attributes
+     * and wire the confirm button to the HTMX delete endpoint.
+     * ---
+     * Al abrir el modal: rellenar campos nombre/keeper desde atributos data
+     * del botón y conectar el botón de confirmación al endpoint HTMX de borrado.
+     */
+    dupModal.addEventListener("show.bs.modal", function (event) {
+        var trigger  = event.relatedTarget;
+        var dupPk    = trigger.getAttribute("data-dup-pk");
+        var dupName  = trigger.getAttribute("data-dup-name");
+        var keeperLbl = trigger.getAttribute("data-dup-keeper");
+
+        document.getElementById("dup-modal-name").textContent   = dupName;
+        document.getElementById("dup-modal-keeper").textContent = keeperLbl;
+
+        /*
+         * Build the delete URL dynamically from dupPk and wire it to the
+         * confirm button via htmx.ajax so the response (empty body) triggers
+         * an outerHTML swap that removes the duplicate row from the DOM.
+         * ---
+         * Construir la URL de borrado dinámicamente desde dupPk y conectarla
+         * al botón de confirmación via htmx.ajax para que la respuesta (cuerpo
+         * vacío) dispare un swap outerHTML que elimine la fila del DOM.
+         */
+        var confirmBtn = document.getElementById("btn-dup-confirm-delete");
+
+        // Remove any previous listener to avoid stacking handlers across modal opens.
+        // Eliminar cualquier listener previo para evitar acumulación de handlers.
+        var freshBtn = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(freshBtn, confirmBtn);
+
+        freshBtn.addEventListener("click", function () {
+            var deleteUrl = "/panel/work-orders/duplicates/" + dupPk + "/delete/";
+            htmx.ajax("POST", deleteUrl, {
+                target:  "#dup-row-" + dupPk,
+                swap:    "outerHTML",
+                headers: { "X-CSRFToken": document.cookie.match(/csrftoken=([^;]+)/)[1] },
+            });
+            var bsModal = bootstrap.Modal.getInstance(dupModal);
+            if (bsModal) { bsModal.hide(); }
+        });
+    });
+
+}());
+</script>
+{% endif %}

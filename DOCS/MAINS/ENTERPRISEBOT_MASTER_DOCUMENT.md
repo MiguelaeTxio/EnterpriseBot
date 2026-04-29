@@ -104,7 +104,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -117,7 +117,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - El formulario de confirmación es el punto de convergencia de las tres vías.
 - Pasos 1 y 2 completados. Pausado en sesión 002 (2026-04-28) para abrir H8.
 
-### Hito 8: Mejoras Procesador PDF→Excel + HTMX (EN PROGRESO)
+### Hito 8: Mejoras Procesador PDF→Excel + HTMX (COMPLETADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md`)
 - Implantación quirúrgica de HTMX en lista de PDFs (polling de estado automático)
   y editor de entradas inline (guardado automático por campo sin scroll al top).
@@ -126,5 +126,28 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Correcciones pipeline: columna mano de obra vacía en Excel + parser OCR (O/0, L/1, t/7).
 - Detección de PDF duplicado en upload con modal de advertencia y confirmación.
 - Concatenación de múltiples Excels con membrete individual por operario.
+
+### Hito 9: Informes y Analítica Cruzada de Costes de Maquinaria (PAUSADO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V09.md`)
+- Informes de costes de maquinaria cruzando mano de obra (Hito 6/8) con repuestos
+  (Hito 10, pendiente de implementación).
+- Visualización cruzada en el módulo de Analítica existente con gráficas personalizables.
+- Los informes generados deben poderse representar en gráficas configurables por usuario.
+
+### Hito 10: Albaranes de Proveedores — Entrada Digital vía Foto/PDF (PAUSADO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`)
+- Procesamiento de albaranes de proveedores mediante Gemini Vision (foto o PDF).
+- Extracción automática de artículos, cantidades, precios y proveedor.
+- Anotaciones sobre el albarán completo o por línea de artículo para asignar
+  a centros de gasto (flota por vehículo, almacén, administración, secciones).
+- Integración con el módulo de Informes (Hito 9) para cruzar costes de repuestos
+  con costes de mano de obra por máquina.
+
+### Hito 11: Albaranes a Clientes — Generación y Gestión Digital (PAUSADO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V11.md`)
+- Generación de albaranes a clientes desde el panel de gestión.
+- Entrada de datos via formulario web o dictado STT (reutilizando infraestructura Hito 7).
+- Extracción desde documentos físicos existentes vía Gemini Vision si procede.
+- Integración con centros de gasto y módulo de Informes (Hito 9).
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

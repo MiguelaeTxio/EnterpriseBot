@@ -51,6 +51,8 @@ from panel.views import (
     WorkOrderDeleteView,
     WorkOrderExportView,
     WorkOrderMarkReviewedView,
+    WorkOrderDuplicateSearchView,
+    WorkOrderDuplicateDeleteView,
     AnalyticsView,
     AnalyticsDataView,
     AnalyticsProfileListCreateView,
@@ -164,6 +166,14 @@ urlpatterns = [
     # WorkOrder review toggle — Marcar/desmarcar revisión HTMX (rol SUPERVISOR y ADMIN).
     # Paso 7 — Hito 8 (2026-04-28)
     path("work-orders/<int:pk>/review/", WorkOrderMarkReviewedView.as_view(), name="work_order_review"),
+
+    # WorkOrder duplicate search — Búsqueda HTMX de duplicados (rol SUPERVISOR y ADMIN).
+    # Paso 13 — Hito 8 (2026-04-29)
+    path("work-orders/duplicates/search/", WorkOrderDuplicateSearchView.as_view(), name="work_order_duplicates_search"),
+
+    # WorkOrder duplicate delete — Eliminación HTMX de duplicado concreto (rol ADMIN).
+    # Paso 13 — Hito 8 (2026-04-29)
+    path("work-orders/duplicates/<int:pk>/delete/", WorkOrderDuplicateDeleteView.as_view(), name="work_order_duplicate_delete"),
 
     # WorkOrder Excel export — Concatenación de Excels de partes seleccionados (rol SUPERVISOR y ADMIN).
     # Paso 6/8 — Hito 8 (2026-04-28)

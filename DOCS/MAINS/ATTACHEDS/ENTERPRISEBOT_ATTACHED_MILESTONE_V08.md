@@ -2,8 +2,9 @@
 
 # Anexo de Hito V08 — Mejoras Procesador PDF->Excel + HTMX
 # Proyecto: EnterpriseBot
-# Estado: EN PROGRESO
+# Estado: COMPLETADO
 # Fecha de inicio: 2026-04-28
+# Fecha de cierre: 2026-04-29
 
 ---
 
@@ -216,14 +217,14 @@ Fix adicional sesion 004 — _queue_actions.html dropdown limpio:
 - Validar insercion, reordenado, restauracion individual y eliminacion de lineas: VALIDADO.
 - Validar correccion columna mano de obra en Excel descargado: VALIDADO.
 - Validar deteccion duplicado exacto (hash) + modal + sobrescritura: VALIDADO sesion 004.
-- Validar deteccion duplicado por contenido (operario + periodo) + modal: PENDIENTE.
+- Validar deteccion duplicado por contenido (operario + periodo) + modal: VALIDADO sesion 005.
 - Validar exportacion multi-Excel en ambos modos (single_sheet, multi_sheet): VALIDADO.
 - Validar pestanas y filtrado por estado/revision: VALIDADO.
 - Validar permisos del rol SUPERVISOR: VALIDADO.
 - Validar toggle de revision HTMX inline: VALIDADO.
-- Estado: PARCIALMENTE COMPLETADO (pendiente punto 6).
+- Estado: COMPLETADO (sesion 005).
 
-### Paso 11 — Comando detect_duplicate_entries (PENDIENTE)
+### Paso 11 — Comando detect_duplicate_entries (COMPLETADO sesion 005)
 Comando de gestion que detecta WorkOrders distintos (hashes distintos) de la
 misma empresa que comparten entradas con el mismo (worker_name, work_date).
 Opera sobre datos ya extraidos por Gemini — maxima precision.
@@ -238,7 +239,7 @@ Opera sobre datos ya extraidos por Gemini — maxima precision.
     WorkOrders implicados y (si --fix) eliminados.
   Ruta: work_order_processor/management/commands/detect_duplicate_entries.py
 
-### Paso 12 — Barrera Nivel 3 en upload: modal duplicate_entries (PENDIENTE)
+### Paso 12 — Barrera Nivel 3 en upload: modal duplicate_entries (COMPLETADO sesion 005)
 En WorkOrderUploadView.post(), tras los Niveles 1 (hash) y 2 (periodo),
 anadir Nivel 3: buscar WorkOrderEntry del mismo operario con work_date
 concretas que caigan dentro del periodo extraido del nombre del fichero,
@@ -251,7 +252,7 @@ en WorkOrders con hash distinto al entrante.
     con mensaje enriquecido que lista las fechas concretas.
   - La variable duplicate_dates (lista de strings DD/MM/YY) se pasa al contexto.
 
-### Paso 13 — Boton Buscar duplicados en pestana Pendiente revision (PENDIENTE)
+### Paso 13 — Boton Buscar duplicados en pestana Pendiente revision (COMPLETADO sesion 005)
 Boton "Buscar duplicados" en la cabecera de pane-pending en list.html.
 Llama a un endpoint Django que ejecuta la logica de detect_duplicate_entries
 acotada a la empresa del usuario autenticado y devuelve resultados inline
@@ -275,16 +276,15 @@ en el panel via HTMX.
 | 002    | 2026-04-28 | 1-6 + E2E       | Implementacion completa bloques A-F. Correcciones E2E: atomic INSERT, restore individual de linea, WorkOrderLineDeleteView, WorkOrderDeleteView. Bugfix formula COSTE M.O. Especificacion acordada para bloques G y H. |
 | 003    | 2026-04-28 | 7-8 + fixes     | Implementacion bloques G y H: rol SUPERVISOR, SupervisorAccessMixin, WorkOrderMarkReviewedView, cuatro pestanas list.html, exportacion single_sheet/multi_sheet, neonatos _review_badge_fragment.html y _queue_actions.html. Fix deteccion duplicado por WorkOrderEntry. Fix modal Bootstrap bootstrap is not defined. Especificacion Bloque I (hash SHA-256). |
 | 004    | 2026-04-29 | 9 + fixes E2E   | Implementacion completa Bloque I: campo source_pdf_hash (models.py + migracion 0004), WorkOrderUploadView.post() con deteccion dos niveles (hash exacto + operario/periodo), upload.html con mensajes diferenciados exact/content, neonato backfill_pdf_hashes con --purge-duplicates, backfill ejecutado (11 registros). Fix tasks.py: guard WorkOrder eliminado en vuelo por sobrescritura concurrente. Fix _queue_actions.html: dropdown limpio sin items deshabilitados. Directriz de negocio Alejandro: Excel solo en pestana Revisados (list.html + WorkOrderExportView). Skill pisa actualizada: directriz lectura integra obligatoria. Validacion E2E parcial (9/10 puntos). Especificacion Pasos 11-13 para sesion 005. |
+| 005    | 2026-04-29 | 10-14 + cierre  | Validacion E2E punto 6 completada (duplicate_reason=content). Paso 11: neonato detect_duplicate_entries.py con flags --company y --fix. Paso 12: barrera Nivel 3 en WorkOrderUploadView.post() + bloque duplicate_entries en upload.html. Paso 13: WorkOrderDuplicateSearchView + WorkOrderDuplicateDeleteView + neonato _duplicates_fragment.html + 2 rutas en urls.py + boton Buscar duplicados en pane-pending de list.html. Paso 14: borrado automatico PDF fisico en tasks.py al alcanzar DONE. Debate y decision sobre persistencia de PDFs (Opcion A). Creacion hitos H9 (Informes), H10 (Albaranes Proveedores), H11 (Albaranes Clientes) en PAUSADO. H7 reactivado como EN PROGRESO. Hito 8 cerrado. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (005)
+## 5. Hoja de Ruta para la Siguiente Sesion (HITO CERRADO)
 
-### Objetivo principal
-Paso 10 (completar punto 6 de validacion E2E pendiente) +
-Paso 11 (comando detect_duplicate_entries) +
-Paso 12 (barrera Nivel 3 en upload: modal duplicate_entries) +
-Paso 13 (boton Buscar duplicados en pestana Pendiente revision).
+Hito 8 completado en sesion 005. Todos los pasos (1-14) implementados y validados.
+El siguiente hito activo es el Hito 7 — Partes Diarios de Reparacion (EN PROGRESO).
+Ver ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md para la hoja de ruta de la proxima sesion.
 
 ### PRIMERA ACCION — Completar validacion E2E Paso 10
 
@@ -436,6 +436,16 @@ Anadir:
     path("work-orders/duplicates/<int:pk>/delete/",
          WorkOrderDuplicateDeleteView.as_view(),
          name="work_order_duplicate_delete"),
+
+### Paso 14 — Borrado automatico del PDF fisico al alcanzar DONE (COMPLETADO sesion 005)
+
+Modificacion en work_order_processor/tasks.py — process_work_order_pdf():
+Tras la llamada a generate_work_order_excel() (Paso 4), se añade el Paso 5
+que elimina el fichero PDF fisico del disco via source_pdf.delete(save=False)
+y vacia el campo source_pdf en BD. El campo source_pdf_hash se conserva
+intacto para mantener la deteccion de duplicados exactos (Nivel 1). El
+borrado es no-fatal: un fallo en la eliminacion del fichero se registra como
+WARNING pero no revierte el estado DONE ni el Excel generado.
 
 ### Estado de migraciones al inicio de la sesion 005
 
