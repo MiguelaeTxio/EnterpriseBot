@@ -330,3 +330,15 @@ body {
     width: 100%;
     box-shadow: 0 4px 12px rgba(0,0,0,0.12);
 }
+
+/* -----------------------------------------------------------------------
+   Hito 7 / Paso 8 — STT transcript display box.
+   Hito 7 / Paso 8 — Caja de visualización de la transcripción STT.
+   Replaces inline style in stt_entry.html (H021 djlint fix).
+   Sustituye el style inline en stt_entry.html (corrección H021 djlint).
+   ----------------------------------------------------------------------- */
+.stt-transcript-box {
+    min-height: 4rem;
+    white-space: pre-wrap;
+    font-size: .85rem;
+}

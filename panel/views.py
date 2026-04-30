@@ -5003,6 +5003,218 @@ class WorkOrderEntryUploadView(WorkshopRequiredMixin, View):
         return redirect("/panel/operator/confirm/")
 
 
+# ---------------------------------------------------------------------------
+# Module-level helpers shared by WorkOrderEntryFormView (and WorkOrderEntrySTTView
+# via delegation). Centralise POST parsing and two-pass asset resolution so
+# that no view duplicates this logic.
+#
+# Helpers de módulo compartidos por WorkOrderEntryFormView (y WorkOrderEntrySTTView
+# mediante delegación). Centralizan el parseo del POST y la resolución de activos
+# en dos pasadas para que ninguna vista duplique esta lógica.
+# ---------------------------------------------------------------------------
+
+def _parse_entry_lines_from_post(POST, company):
+    """
+    Parses and resolves work-block entry lines submitted via POST.
+
+    Resolution strategy for machine_asset (two-pass):
+      Pass 1 — direct iexact on maquina_raw: covers autocomplete selections
+               where the field contains the exact asset.codigo string.
+      Pass 2 — iexact on _normalise_machine_code(maquina_raw): covers OCR
+               and handwritten input where normalisation is required.
+
+    Returns a list of dicts ready to feed the integrity gate and the
+    atomic persistence block.
+    ---
+    Parsea y resuelve las líneas de entrada de bloque de trabajo enviadas
+    por POST.
+
+    Estrategia de resolución para machine_asset (dos pasadas):
+      Pasada 1 — iexact directo sobre maquina_raw: cubre selecciones del
+                 autocompletado donde el campo contiene el asset.codigo exacto.
+      Pasada 2 — iexact sobre _normalise_machine_code(maquina_raw): cubre
+                 entrada OCR y manuscrita donde se requiere normalización.
+
+    Devuelve una lista de dicts lista para la barrera de integridad y el
+    bloque de persistencia atómica.
+    """
+    import json as _json
+    from datetime import time as _dt_time
+    from fleet.models import MachineAsset
+    from work_order_processor.services import (
+        _normalise_machine_code,
+        _compute_delta_horas,
+    )
+
+    num_entradas     = int(POST.get("num_entradas", "1") or "1")
+    entry_lines_data = []
+
+    for i in range(1, num_entradas + 1):
+        pfx         = f"entrada_{i}_"
+        maquina_raw = POST.get(f"{pfx}maquina_raw", "").strip()
+        desc_averia = POST.get(f"{pfx}descripcion_averia", "").strip()
+        reparacion  = POST.get(f"{pfx}reparacion", "").strip()
+        hc_str      = POST.get(f"{pfx}hc", "").strip()
+        hf_str      = POST.get(f"{pfx}hf", "").strip()
+        or_val      = POST.get(f"{pfx}or_val", "").strip()
+        flags_raw   = POST.get(f"{pfx}flags", "[]")
+
+        def _parse_t(s):
+            """
+            Parses HH:MM string into time object, returns None on failure.
+            ---
+            Parsea cadena HH:MM a objeto time, devuelve None en fallo.
+            """
+            if not s:
+                return None
+            try:
+                parts = s.split(":")
+                return _dt_time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                return None
+
+        hc = _parse_t(hc_str)
+        hf = _parse_t(hf_str)
+
+        maquina_norm  = _normalise_machine_code(maquina_raw)
+        machine_asset = None
+
+        if maquina_raw:
+            # Pass 1 — direct iexact on raw (autocomplete writes exact codigo).
+            # Pasada 1 — iexact directo sobre raw (autocompletado escribe codigo exacto).
+            try:
+                machine_asset = MachineAsset.objects.get(
+                    codigo__iexact=maquina_raw, company=company
+                )
+            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                machine_asset = MachineAsset.objects.filter(
+                    codigo__iexact=maquina_raw, company=company
+                ).first()
+
+        if machine_asset is None and maquina_norm:
+            # Pass 2 — normalised code (OCR / handwritten input).
+            # Pasada 2 — código normalizado (entrada OCR / manuscrita).
+            try:
+                machine_asset = MachineAsset.objects.get(
+                    codigo__iexact=maquina_norm, company=company
+                )
+            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                machine_asset = MachineAsset.objects.filter(
+                    codigo__iexact=maquina_norm, company=company
+                ).first()
+
+        delta_horas = _compute_delta_horas(hc, hf)
+
+        try:
+            flags = _json.loads(flags_raw) if flags_raw else []
+        except (ValueError, TypeError):
+            flags = []
+
+        entry_lines_data.append({
+            "line_number":        i,
+            "maquina_raw":        maquina_raw,
+            "maquina_norm":       maquina_norm or "",
+            "machine_asset":      machine_asset,
+            "descripcion_averia": desc_averia,
+            "reparacion":         reparacion,
+            "hc":                 hc,
+            "hf":                 hf,
+            "or_val":             or_val,
+            "delta_horas":        delta_horas,
+            "flags":              flags,
+        })
+
+    return entry_lines_data
+
+
+def _parse_spare_parts_from_post(POST, company):
+    """
+    Parses and resolves spare-part lines submitted via POST.
+
+    Applies the same two-pass resolution strategy as _parse_entry_lines_from_post
+    for the vehicle asset field (vehiculo_raw).
+
+    Returns a list of dicts ready to feed the integrity gate and the
+    atomic persistence block.
+    ---
+    Parsea y resuelve las líneas de repuesto enviadas por POST.
+
+    Aplica la misma estrategia de resolución en dos pasadas que
+    _parse_entry_lines_from_post para el campo de activo de vehículo (vehiculo_raw).
+
+    Devuelve una lista de dicts lista para la barrera de integridad y el
+    bloque de persistencia atómica.
+    """
+    from decimal import Decimal, InvalidOperation
+    from fleet.models import MachineAsset
+    from work_order_processor.services import _normalise_machine_code
+
+    num_repuestos    = int(POST.get("num_repuestos", "0") or "0")
+    spare_parts_data = []
+
+    for r in range(1, num_repuestos + 1):
+        pfx          = f"repuesto_{r}_"
+        referencia   = POST.get(f"{pfx}referencia", "").strip()
+        vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
+        material     = POST.get(f"{pfx}material", "").strip()
+        unidades_str = POST.get(f"{pfx}unidades", "").strip()
+        origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
+        proveedor    = POST.get(f"{pfx}proveedor", "").strip()
+        entry_idx    = int(POST.get(f"{pfx}entry_idx", "1") or "1")
+
+        quantity = None
+        if unidades_str:
+            try:
+                quantity = Decimal(unidades_str.replace(",", "."))
+            except InvalidOperation:
+                quantity = None
+
+        if origen not in ("SUPPLIER", "WAREHOUSE"):
+            origen = "WAREHOUSE"
+
+        veh_norm  = _normalise_machine_code(vehiculo_raw)
+        veh_asset = None
+
+        if vehiculo_raw:
+            # Pass 1 — direct iexact on raw.
+            # Pasada 1 — iexact directo sobre raw.
+            try:
+                veh_asset = MachineAsset.objects.get(
+                    codigo__iexact=vehiculo_raw, company=company
+                )
+            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                veh_asset = MachineAsset.objects.filter(
+                    codigo__iexact=vehiculo_raw, company=company
+                ).first()
+
+        if veh_asset is None and veh_norm:
+            # Pass 2 — normalised code.
+            # Pasada 2 — código normalizado.
+            try:
+                veh_asset = MachineAsset.objects.get(
+                    codigo__iexact=veh_norm, company=company
+                )
+            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                veh_asset = MachineAsset.objects.filter(
+                    codigo__iexact=veh_norm, company=company
+                ).first()
+
+        spare_parts_data.append({
+            "line_number":   r,
+            "referencia":    referencia,
+            "vehiculo_raw":  vehiculo_raw,
+            "vehicle_asset": veh_asset,
+            "material":      material,
+            "quantity":      quantity,
+            "source":        origen,
+            "supplier":      proveedor if origen == "SUPPLIER" else "",
+            "flags":         [],
+            "entry_idx":     entry_idx,
+        })
+
+    return spare_parts_data
+
+
 class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
     """
     Confirmation and persistence view for the operator Upload path (Via C).
@@ -5220,132 +5432,16 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     continue
 
         # ------------------------------------------------------------------
-        # Parse entry lines from POST.
-        # Parsear líneas de entrada desde POST.
+        # Parse and resolve entry lines and spare parts from POST.
+        # Parsear y resolver líneas de entrada y repuestos desde POST.
+        # Delegated to module-level helpers (DRY). Resolution uses two-pass
+        # strategy: raw iexact first (autocomplete), then normalised code
+        # (OCR / handwritten).
+        # Delegado a helpers de módulo (DRY). Resolución en dos pasadas:
+        # iexact sobre raw primero (autocompletado), luego normalizado.
         # ------------------------------------------------------------------
-        num_entradas = int(POST.get("num_entradas", "0") or "0")
-        entry_lines_data = []
-
-        for i in range(1, num_entradas + 1):
-            pfx          = f"entrada_{i}_"
-            maquina_raw  = POST.get(f"{pfx}maquina_raw", "").strip()
-            desc_averia  = POST.get(f"{pfx}descripcion_averia", "").strip()
-            reparacion   = POST.get(f"{pfx}reparacion", "").strip()
-            hc_str       = POST.get(f"{pfx}hc", "").strip()
-            hf_str       = POST.get(f"{pfx}hf", "").strip()
-            or_val       = POST.get(f"{pfx}or_val", "").strip()
-            flags_raw    = POST.get(f"{pfx}flags", "[]")
-
-            # Parse time fields / Parsear campos de hora.
-            def _parse_t(s):
-                if not s:
-                    return None
-                try:
-                    parts = s.split(":")
-                    return dt_time(int(parts[0]), int(parts[1]))
-                except (ValueError, IndexError):
-                    return None
-
-            hc = _parse_t(hc_str)
-            hf = _parse_t(hf_str)
-
-            # Resolve machine asset / Resolver activo de flota.
-            maquina_norm  = _normalise_machine_code(maquina_raw)
-            machine_asset = None
-            if maquina_norm:
-                try:
-                    machine_asset = MachineAsset.objects.get(
-                        codigo__iexact=maquina_norm, company=company
-                    )
-                except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
-                    machine_asset = MachineAsset.objects.filter(
-                        codigo__iexact=maquina_norm, company=company
-                    ).first()
-
-            # Compute net hours / Calcular horas netas.
-            delta_horas = _compute_delta_horas(hc, hf)
-
-            # Parse flags / Parsear flags.
-            try:
-                flags = _json.loads(flags_raw) if flags_raw else []
-            except (ValueError, TypeError):
-                flags = []
-
-            entry_lines_data.append({
-                "maquina_raw":    maquina_raw,
-                "maquina_norm":   maquina_norm,
-                "machine_asset":  machine_asset,
-                "descripcion_averia": desc_averia,
-                "reparacion":     reparacion,
-                "hc":             hc,
-                "hf":             hf,
-                "or_val":         or_val,
-                "delta_horas":    delta_horas,
-                "flags":          flags,
-                "line_number":    i,
-            })
-
-        # ------------------------------------------------------------------
-        # Parse spare-part lines from POST.
-        # Parsear líneas de repuesto desde POST.
-        # ------------------------------------------------------------------
-        num_repuestos = int(POST.get("num_repuestos", "0") or "0")
-        spare_parts_data = []
-
-        for r in range(1, num_repuestos + 1):
-            pfx          = f"repuesto_{r}_"
-            referencia   = POST.get(f"{pfx}referencia", "").strip()
-            vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
-            material     = POST.get(f"{pfx}material", "").strip()
-            unidades_str = POST.get(f"{pfx}unidades", "").strip()
-            origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
-            proveedor    = POST.get(f"{pfx}proveedor", "").strip()
-            entry_idx    = int(POST.get(f"{pfx}entry_idx", "1") or "1")
-            flags_raw    = POST.get(f"{pfx}flags", "[]")
-
-            # Parse quantity / Parsear cantidad.
-            quantity = None
-            if unidades_str:
-                try:
-                    quantity = Decimal(unidades_str.replace(",", "."))
-                except InvalidOperation:
-                    quantity = None
-
-            # Validate origin value / Validar valor de procedencia.
-            if origen not in ("SUPPLIER", "WAREHOUSE"):
-                origen = "WAREHOUSE"
-
-            # Resolve vehicle asset / Resolver activo de flota para vehículo.
-            veh_norm  = _normalise_machine_code(vehiculo_raw)
-            veh_asset = None
-            if veh_norm:
-                try:
-                    veh_asset = MachineAsset.objects.get(
-                        codigo__iexact=veh_norm, company=company
-                    )
-                except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
-                    veh_asset = MachineAsset.objects.filter(
-                        codigo__iexact=veh_norm, company=company
-                    ).first()
-
-            # Parse flags / Parsear flags.
-            try:
-                flags = _json.loads(flags_raw) if flags_raw else []
-            except (ValueError, TypeError):
-                flags = []
-
-            spare_parts_data.append({
-                "referencia":    referencia,
-                "vehiculo_raw":  vehiculo_raw,
-                "vehicle_asset": veh_asset,
-                "material":      material,
-                "quantity":      quantity,
-                "source":        origen,
-                "supplier":      proveedor if origen == "SUPPLIER" else "",
-                "flags":         flags,
-                "entry_idx":     entry_idx,
-                "line_number":   r,
-            })
+        entry_lines_data = _parse_entry_lines_from_post(POST, company)
+        spare_parts_data = _parse_spare_parts_from_post(POST, company)
 
 
         # ------------------------------------------------------------------
@@ -5493,6 +5589,20 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     cu.user.get_full_name() or cu.user.username
                 ).upper()
 
+                # Build a human-readable synthetic filename mirroring the
+                # historical pipeline pattern: WORKER_DD-MM-AAAA.pdf.
+                # No real file is created — only the FileField name string
+                # is populated so the list view renders a meaningful label.
+                #
+                # Construir un nombre de fichero sintético legible siguiendo
+                # el patrón del pipeline histórico: TRABAJADOR_DD-MM-AAAA.pdf.
+                # No se crea ningún fichero real — sólo se asigna la cadena
+                # al campo name del FileField para que el listado sea legible.
+                date_tag = (
+                    work_date.strftime("%d-%m-%Y") if work_date else "SIN-FECHA"
+                )
+                synthetic_name = f"{worker_name}_{date_tag}.pdf"
+
                 work_order = WorkOrder(
                     company         = company,
                     uploaded_by     = cu,
@@ -5501,9 +5611,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     processed_pages = 1,
                     reviewed        = False,
                 )
-                # source_pdf left blank (no file) — FileField accepts empty string.
-                # source_pdf se deja en blanco (sin fichero) — FileField acepta cadena vacía.
-                work_order.source_pdf.name = ""
+                work_order.source_pdf.name = synthetic_name
                 work_order.save()
 
                 # WorkOrderEntry — one per submitted form (page 1).
@@ -5737,117 +5845,17 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     continue
 
         # ------------------------------------------------------------------
-        # Parse entry lines from POST / Parsear bloques de trabajo del POST.
+        # Parse and resolve entry lines and spare parts from POST.
+        # Parsear y resolver líneas de entrada y repuestos desde POST.
+        # Delegated to module-level helpers (DRY). Resolution uses two-pass
+        # strategy: raw iexact first (autocomplete), then normalised code
+        # (OCR / handwritten). STTView.post() delegates here via MRO.
+        # Delegado a helpers de módulo (DRY). La resolución usa estrategia
+        # en dos pasadas: iexact sobre raw primero (autocompletado), luego
+        # código normalizado (OCR / manuscrito). STTView.post() delega aquí.
         # ------------------------------------------------------------------
-        num_entradas     = int(POST.get("num_entradas", "1") or "1")
-        entry_lines_data = []
-
-        for i in range(1, num_entradas + 1):
-            pfx         = f"entrada_{i}_"
-            maquina_raw = POST.get(f"{pfx}maquina_raw", "").strip()
-            desc_averia = POST.get(f"{pfx}descripcion_averia", "").strip()
-            reparacion  = POST.get(f"{pfx}reparacion", "").strip()
-            hc_str      = POST.get(f"{pfx}hc", "").strip()
-            hf_str      = POST.get(f"{pfx}hf", "").strip()
-            or_val      = POST.get(f"{pfx}or_val", "").strip()
-
-            def _parse_t(s):
-                """
-                Parses HH:MM string into time object, returns None on failure.
-                ---
-                Parsea cadena HH:MM a objeto time, devuelve None en fallo.
-                """
-                if not s:
-                    return None
-                try:
-                    parts = s.split(":")
-                    return dt_time(int(parts[0]), int(parts[1]))
-                except (ValueError, IndexError):
-                    return None
-
-            hc = _parse_t(hc_str)
-            hf = _parse_t(hf_str)
-
-            maquina_norm  = _normalise_machine_code(maquina_raw)
-            machine_asset = None
-            if maquina_norm:
-                try:
-                    machine_asset = MachineAsset.objects.get(
-                        codigo__iexact=maquina_norm, company=company
-                    )
-                except MachineAsset.DoesNotExist:
-                    machine_asset = None
-                except MachineAsset.MultipleObjectsReturned:
-                    machine_asset = MachineAsset.objects.filter(
-                        codigo__iexact=maquina_norm, company=company
-                    ).first()
-
-            delta_horas = _compute_delta_horas(hc, hf)
-
-            entry_lines_data.append({
-                "line_number":        i,
-                "maquina_raw":        maquina_raw,
-                "maquina_norm":       maquina_norm or "",
-                "machine_asset":      machine_asset,
-                "descripcion_averia": desc_averia,
-                "reparacion":         reparacion,
-                "hc":                 hc,
-                "hf":                 hf,
-                "or_val":             or_val,
-                "delta_horas":        delta_horas,
-                "flags":              [],
-            })
-
-        # ------------------------------------------------------------------
-        # Parse spare-part lines from POST / Parsear repuestos del POST.
-        # ------------------------------------------------------------------
-        num_repuestos    = int(POST.get("num_repuestos", "0") or "0")
-        spare_parts_data = []
-
-        for r in range(1, num_repuestos + 1):
-            pfx          = f"repuesto_{r}_"
-            referencia   = POST.get(f"{pfx}referencia", "").strip()
-            vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
-            material     = POST.get(f"{pfx}material", "").strip()
-            unidades_str = POST.get(f"{pfx}unidades", "").strip()
-            origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
-            proveedor    = POST.get(f"{pfx}proveedor", "").strip()
-            entry_idx    = int(POST.get(f"{pfx}entry_idx", "1") or "1")
-
-            quantity = None
-            if unidades_str:
-                try:
-                    quantity = Decimal(unidades_str.replace(",", "."))
-                except InvalidOperation:
-                    quantity = None
-
-            if origen not in ("SUPPLIER", "WAREHOUSE"):
-                origen = "WAREHOUSE"
-
-            veh_norm  = _normalise_machine_code(vehiculo_raw)
-            veh_asset = None
-            if veh_norm:
-                try:
-                    veh_asset = MachineAsset.objects.get(
-                        codigo__iexact=veh_norm, company=company
-                    )
-                except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
-                    veh_asset = MachineAsset.objects.filter(
-                        codigo__iexact=veh_norm, company=company
-                    ).first()
-
-            spare_parts_data.append({
-                "line_number":   r,
-                "referencia":    referencia,
-                "vehiculo_raw":  vehiculo_raw,
-                "vehicle_asset": veh_asset,
-                "material":      material,
-                "quantity":      quantity,
-                "source":        origen,
-                "supplier":      proveedor if origen == "SUPPLIER" else "",
-                "flags":         [],
-                "entry_idx":     entry_idx,
-            })
+        entry_lines_data = _parse_entry_lines_from_post(POST, company)
+        spare_parts_data = _parse_spare_parts_from_post(POST, company)
 
         # ------------------------------------------------------------------
         # Integrity validation (sine qua non gate).
@@ -5951,7 +5959,21 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     processed_pages = 1,
                     reviewed        = False,
                 )
-                work_order.source_pdf.name = ""
+                # Build a human-readable synthetic filename mirroring the
+                # historical pipeline pattern: WORKER_DD-MM-AAAA.pdf.
+                # No real file is created — only the FileField name string
+                # is populated so the list view renders a meaningful label.
+                #
+                # Construir un nombre de fichero sintético legible siguiendo
+                # el patrón del pipeline histórico: TRABAJADOR_DD-MM-AAAA.pdf.
+                # No se crea ningún fichero real — sólo se asigna la cadena
+                # al campo name del FileField para que el listado sea legible.
+                date_tag = (
+                    work_date.strftime("%d-%m-%Y") if work_date else "SIN-FECHA"
+                )
+                synthetic_name = f"{worker_name}_{date_tag}.pdf"
+
+                work_order.source_pdf.name = synthetic_name
                 work_order.save()
 
                 entry = WorkOrderEntry.objects.create(
@@ -6140,353 +6162,212 @@ class WorkOrderEntrySTTView(WorkshopRequiredMixin, View):
 
     def post(self, request, *args, **kwargs):
         """
-        Parses, validates and atomically persists the submitted form data.
-        Applies exactly the same three-gate integrity barrier and atomic
-        persistence block used by WorkOrderEntryFormView.post(). On
-        validation failure re-renders stt_entry.html with error context,
-        preserving all data already entered by the operator.
+        Delegates entirely to WorkOrderEntryFormView.post(), which contains
+        the canonical implementation of the three-gate integrity barrier and
+        atomic persistence block shared by both Via A (Form) and Via B (STT).
+        The only behavioural difference between the two views is the template
+        rendered on validation failure — WorkOrderEntryFormView uses
+        form_entry.html while this view uses stt_entry.html. That difference
+        is handled transparently because both views define self.template_name
+        and the FormView.post() renders via self.template_name.
+
+        Since STTView inherits WorkshopRequiredMixin and defines its own
+        _get_company_user() and _get_context_base() — identical to FormView —
+        the delegation is safe: FormView.post() calls self._get_company_user()
+        and self._get_context_base(), which resolve to STTView's own methods
+        via normal MRO, so the correct template and context are used throughout.
         ---
-        Parsea, valida y persiste atómicamente los datos del formulario enviado.
-        Aplica exactamente la misma barrera de integridad de tres gates y el
-        bloque de persistencia atómica de WorkOrderEntryFormView.post(). En
-        caso de fallo re-renderiza stt_entry.html con contexto de error,
-        preservando todos los datos introducidos por el operario.
+        Delega completamente en WorkOrderEntryFormView.post(), que contiene la
+        implementación canónica de la barrera de integridad de tres gates y el
+        bloque de persistencia atómica compartidos por la Vía A (Form) y la
+        Vía B (STT). La única diferencia de comportamiento entre ambas vistas
+        es el template renderizado en fallo de validación — WorkOrderEntryFormView
+        usa form_entry.html mientras esta vista usa stt_entry.html. Esa diferencia
+        se gestiona de forma transparente porque ambas vistas definen
+        self.template_name y FormView.post() renderiza mediante self.template_name.
+
+        Como STTView hereda WorkshopRequiredMixin y define sus propios métodos
+        _get_company_user() y _get_context_base() — idénticos a los de FormView —
+        la delegación es segura: FormView.post() llama a self._get_company_user()
+        y self._get_context_base(), que resuelven a los métodos propios de STTView
+        vía MRO normal, por lo que el template y contexto correctos se usan en
+        todo momento.
+        """
+        return WorkOrderEntryFormView.post(self, request, *args, **kwargs)
+
+
+class WorkOrderEntrySTTExtractView(WorkshopRequiredMixin, View):
+    """
+    JSON endpoint that receives a raw speech-to-text transcript and uses
+    Gemini Flash (text-only, Vertex AI) to extract structured work-order
+    fields from natural-language Spanish input.
+
+    POST /panel/operator/stt/extract/
+         Body (JSON): {"transcript": "<text>"}
+         Response (JSON):
+           {
+             "fecha":              "DD/MM/AAAA" | "",
+             "maquina_raw":        "<code>" | "",
+             "hc":                 "HH:MM" | "",
+             "hf":                 "HH:MM" | "",
+             "descripcion_averia": "<text>" | "",
+             "reparacion":         "<text>" | "",
+             "or_val":             "<text>" | ""
+           }
+         On extraction failure returns the same schema with all empty strings
+         so the client can still render the form for manual correction.
+    ---
+    Endpoint JSON que recibe una transcripción de dictado por voz y utiliza
+    Gemini Flash (solo texto, Vertex AI) para extraer campos estructurados
+    de un parte de trabajo desde entrada en español coloquial.
+
+    POST /panel/operator/stt/extract/
+         Cuerpo (JSON): {"transcript": "<texto>"}
+         Respuesta (JSON): misma estructura que arriba.
+         En caso de fallo devuelve el mismo esquema con cadenas vacías para
+         que el cliente pueda renderizar el formulario para corrección manual.
+    """
+
+    # Extraction prompt for natural-language Spanish work-order dictation.
+    # Prompt de extracción para dictado de parte de trabajo en español coloquial.
+    _STT_EXTRACT_PROMPT = """Eres un asistente especializado en extraer datos de partes de trabajo dictados
+por voz en español coloquial por operarios de taller de maquinaria industrial.
+
+El operario puede usar lenguaje informal, números hablados (ocho, catorce, veinte),
+meses en letra o número, abreviaturas y frases coloquiales. Tu tarea es interpretar
+el texto con máxima tolerancia y extraer los siguientes campos:
+
+- fecha: fecha del parte en formato DD/MM/AAAA. Acepta "veinte del cuatro de 2026",
+  "20/4/2026", "20 de abril de 2026", "el dia 3 de mayo de 2026", etc.
+  Si no puedes determinarla con certeza, devuelve cadena vacía.
+- maquina_raw: código alfanumérico de la máquina. Puede aparecer como "A-44",
+  "A44", "vehículo A 44", "maquina JD5090R", etc. Devuelve solo el código,
+  sin la keyword. Si el reconocedor de voz separa letras y números con espacio
+  (ej: "a 44"), reconstruye el código sin espacio ("A44").
+- hc: hora de inicio en formato HH:MM. Acepta "de 8 a 14", "hora de inicio 8",
+  "desde las ocho", "8:00", etc. Si no puedes determinarla, devuelve cadena vacía.
+- hf: hora de fin en formato HH:MM. Mismas variantes que hc.
+- descripcion_averia: descripción de la avería o tarea. Texto limpio en español,
+  sin keywords ni relleno (elimina frases como "descripción de la avería",
+  "parte de reparaciones", "orden de reparación", "ahora", etc.).
+- reparacion: descripción de la reparación realizada. Texto limpio. Si no se
+  menciona explícitamente, devuelve cadena vacía.
+- or_val: referencia de la orden de reparación (O.R.). Puede ser un nombre propio,
+  número o código. Si no se menciona, devuelve cadena vacía.
+
+REGLAS OBLIGATORIAS:
+1. Responde ÚNICAMENTE con un objeto JSON válido. Sin texto adicional, sin bloques
+   de código markdown, sin explicaciones.
+2. Todos los campos son obligatorios en la respuesta. Si no puedes extraer un valor,
+   usa cadena vacía "".
+3. Las horas siempre en formato HH:MM con ceros a la izquierda (08:00, 14:00).
+4. La fecha siempre en formato DD/MM/AAAA con ceros a la izquierda (20/04/2026).
+5. maquina_raw siempre en MAYÚSCULAS.
+
+Formato de respuesta exacto:
+{
+  "fecha": "",
+  "maquina_raw": "",
+  "hc": "",
+  "hf": "",
+  "descripcion_averia": "",
+  "reparacion": "",
+  "or_val": ""
+}
+
+Transcripción del operario:
+"""
+
+    def post(self, request, *args, **kwargs):
+        """
+        Receives a raw audio file uploaded via multipart/form-data, sends it
+        to Gemini 2.5 Flash as inline bytes, and returns a structured JSON
+        with the extracted work-order fields.
+
+        Expected multipart field: "audio" (binary, any browser-recorded format:
+        audio/webm, audio/ogg, audio/mp4, audio/wav).
+
+        On any failure (network, Gemini error, JSON parse) returns the same
+        schema with all empty strings so the client can render the form for
+        manual correction.
+        ---
+        Recibe un archivo de audio subido via multipart/form-data, lo envía a
+        Gemini 2.5 Flash como bytes inline y devuelve un JSON estructurado con
+        los campos del parte de trabajo extraídos.
+
+        Campo multipart esperado: "audio" (binario, cualquier formato grabado
+        por el navegador: audio/webm, audio/ogg, audio/mp4, audio/wav).
+
+        En cualquier fallo devuelve el mismo esquema con cadenas vacías para
+        que el cliente pueda renderizar el formulario para corrección manual.
         """
         import json as _json
-        from datetime import datetime, time as dt_time
-        from decimal import Decimal, InvalidOperation
-        from django.db import transaction
-        from fleet.models import MachineAsset
-        from work_order_processor.models import (
-            WorkOrder, WorkOrderEntry, WorkOrderEntryLine, SparePartLine,
+        import re as _re
+        from django.http import JsonResponse
+        from work_order_processor.services import _get_gemini_client, _GEMINI_MODEL
+        from google.genai import types as _genai_types
+        from google.genai.types import GenerateContentConfig, HttpOptions
+
+        _EMPTY = {
+            "fecha": "", "maquina_raw": "", "hc": "", "hf": "",
+            "descripcion_averia": "", "reparacion": "", "or_val": "",
+        }
+
+        audio_file = request.FILES.get("audio")
+        if not audio_file:
+            return JsonResponse({"error": "No se recibió archivo de audio."}, status=400)
+
+        audio_bytes  = audio_file.read()
+        content_type = audio_file.content_type or "audio/webm"
+        if content_type == "application/octet-stream":
+            content_type = "audio/webm"
+
+        logger.info(
+            "# [STTExtract] Audio recibido: %d bytes | content_type=%s.",
+            len(audio_bytes), content_type,
         )
-        from work_order_processor.services import (
-            generate_work_order_excel,
-            _normalise_machine_code,
-            _compute_delta_horas,
-        )
 
-        cu      = self._get_company_user(request)
-        company = cu.company
-        POST    = request.POST
+        try:
+            client = _get_gemini_client()
 
-        # ------------------------------------------------------------------
-        # Parse work date / Parsear fecha del parte.
-        # ------------------------------------------------------------------
-        fecha_str = POST.get("fecha", "").strip()
-        work_date = None
-        if fecha_str:
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-                try:
-                    work_date = datetime.strptime(fecha_str, fmt).date()
-                    break
-                except ValueError:
-                    continue
-
-        # ------------------------------------------------------------------
-        # Parse entry lines from POST / Parsear bloques de trabajo del POST.
-        # ------------------------------------------------------------------
-        num_entradas     = int(POST.get("num_entradas", "1") or "1")
-        entry_lines_data = []
-
-        for i in range(1, num_entradas + 1):
-            pfx         = f"entrada_{i}_"
-            maquina_raw = POST.get(f"{pfx}maquina_raw", "").strip()
-            desc_averia = POST.get(f"{pfx}descripcion_averia", "").strip()
-            reparacion  = POST.get(f"{pfx}reparacion", "").strip()
-            hc_str      = POST.get(f"{pfx}hc", "").strip()
-            hf_str      = POST.get(f"{pfx}hf", "").strip()
-            or_val      = POST.get(f"{pfx}or_val", "").strip()
-
-            def _parse_t(s):
-                """
-                Parses HH:MM string into time object, returns None on failure.
-                ---
-                Parsea cadena HH:MM a objeto time, devuelve None en fallo.
-                """
-                if not s:
-                    return None
-                try:
-                    parts = s.split(":")
-                    return dt_time(int(parts[0]), int(parts[1]))
-                except (ValueError, IndexError):
-                    return None
-
-            hc = _parse_t(hc_str)
-            hf = _parse_t(hf_str)
-
-            maquina_norm  = _normalise_machine_code(maquina_raw)
-            machine_asset = None
-            if maquina_norm:
-                try:
-                    machine_asset = MachineAsset.objects.get(
-                        codigo__iexact=maquina_norm, company=company
-                    )
-                except MachineAsset.DoesNotExist:
-                    machine_asset = None
-                except MachineAsset.MultipleObjectsReturned:
-                    machine_asset = MachineAsset.objects.filter(
-                        codigo__iexact=maquina_norm, company=company
-                    ).first()
-
-            delta_horas = _compute_delta_horas(hc, hf)
-
-            entry_lines_data.append({
-                "line_number":        i,
-                "maquina_raw":        maquina_raw,
-                "maquina_norm":       maquina_norm or "",
-                "machine_asset":      machine_asset,
-                "descripcion_averia": desc_averia,
-                "reparacion":         reparacion,
-                "hc":                 hc,
-                "hf":                 hf,
-                "or_val":             or_val,
-                "delta_horas":        delta_horas,
-                "flags":              [],
-            })
-
-        # ------------------------------------------------------------------
-        # Parse spare-part lines from POST / Parsear repuestos del POST.
-        # ------------------------------------------------------------------
-        num_repuestos    = int(POST.get("num_repuestos", "0") or "0")
-        spare_parts_data = []
-
-        for r in range(1, num_repuestos + 1):
-            pfx          = f"repuesto_{r}_"
-            referencia   = POST.get(f"{pfx}referencia", "").strip()
-            vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
-            material     = POST.get(f"{pfx}material", "").strip()
-            unidades_str = POST.get(f"{pfx}unidades", "").strip()
-            origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
-            proveedor    = POST.get(f"{pfx}proveedor", "").strip()
-            entry_idx    = int(POST.get(f"{pfx}entry_idx", "1") or "1")
-
-            quantity = None
-            if unidades_str:
-                try:
-                    quantity = Decimal(unidades_str.replace(",", "."))
-                except InvalidOperation:
-                    quantity = None
-
-            if origen not in ("SUPPLIER", "WAREHOUSE"):
-                origen = "WAREHOUSE"
-
-            veh_norm  = _normalise_machine_code(vehiculo_raw)
-            veh_asset = None
-            if veh_norm:
-                try:
-                    veh_asset = MachineAsset.objects.get(
-                        codigo__iexact=veh_norm, company=company
-                    )
-                except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
-                    veh_asset = MachineAsset.objects.filter(
-                        codigo__iexact=veh_norm, company=company
-                    ).first()
-
-            spare_parts_data.append({
-                "line_number":   r,
-                "referencia":    referencia,
-                "vehiculo_raw":  vehiculo_raw,
-                "vehicle_asset": veh_asset,
-                "material":      material,
-                "quantity":      quantity,
-                "source":        origen,
-                "supplier":      proveedor if origen == "SUPPLIER" else "",
-                "flags":         [],
-                "entry_idx":     entry_idx,
-            })
-
-        # ------------------------------------------------------------------
-        # Integrity validation (sine qua non gate).
-        # Validacion de integridad (barrera sine qua non).
-        # ------------------------------------------------------------------
-        integrity_errors = []
-
-        if not work_date:
-            integrity_errors.append(
-                "La fecha del parte es obligatoria y debe tener formato DD/MM/AAAA."
+            response = client.models.generate_content(
+                model    = _GEMINI_MODEL,
+                contents = [
+                    _genai_types.Part.from_bytes(
+                        data      = audio_bytes,
+                        mime_type = content_type,
+                    ),
+                    self._STT_EXTRACT_PROMPT,
+                ],
+                config = GenerateContentConfig(
+                    http_options      = HttpOptions(timeout=60_000),
+                    temperature       = 0.0,
+                    max_output_tokens = 256,
+                ),
             )
 
-        if not entry_lines_data:
-            integrity_errors.append("El parte debe contener al menos un bloque de trabajo.")
+            raw_text = response.text.strip()
+            cleaned  = _re.sub(r"```(?:json)?|```", "", raw_text).strip()
+            m        = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+            if not m:
+                raise ValueError(f"Sin JSON en respuesta Gemini: {raw_text[:200]}")
 
-        for ld in entry_lines_data:
-            blk = f"Bloque {ld['line_number']}"
-            if not ld["maquina_raw"]:
-                integrity_errors.append(f"{blk}: el codigo de maquina es obligatorio.")
-            elif ld["machine_asset"] is None:
-                integrity_errors.append(
-                    f"{blk}: el codigo '{ld['maquina_raw']}' no se ha podido "
-                    f"identificar en el catalogo de flota. Corrigelo antes de guardar."
-                )
-            if not ld["hc"]:
-                integrity_errors.append(f"{blk}: la hora de inicio (H.C.) es obligatoria.")
-            if not ld["hf"]:
-                integrity_errors.append(f"{blk}: la hora de fin (H.F.) es obligatoria.")
-            if ld["hc"] and ld["hf"] and ld["delta_horas"] is not None:
-                if ld["delta_horas"] <= 0:
-                    integrity_errors.append(
-                        f"{blk}: la H.F. debe ser posterior a la H.C. "
-                        f"(Delta horas calculado: {ld['delta_horas']})."
-                    )
-            if not ld["descripcion_averia"]:
-                integrity_errors.append(
-                    f"{blk}: la descripcion de la averia es obligatoria."
-                )
-
-        for spd in spare_parts_data:
-            rep = f"Repuesto {spd['line_number']}"
-            if not spd["material"]:
-                integrity_errors.append(f"{rep}: la descripcion del material es obligatoria.")
-            if spd["quantity"] is None or spd["quantity"] <= 0:
-                integrity_errors.append(f"{rep}: las unidades deben ser un numero positivo.")
-
-        if integrity_errors:
-            entradas_post = [
-                {
-                    "idx":                ld["line_number"],
-                    "maquina_raw":        ld["maquina_raw"],
-                    "machine_asset":      ld["machine_asset"],
-                    "descripcion_averia": ld["descripcion_averia"],
-                    "reparacion":         ld["reparacion"],
-                    "hc":  ld["hc"].strftime("%H:%M") if ld["hc"] else "",
-                    "hf":  ld["hf"].strftime("%H:%M") if ld["hf"] else "",
-                    "or_val":             ld["or_val"],
-                    "flags":              [],
-                }
-                for ld in entry_lines_data
-            ]
-            repuestos_post = [
-                {
-                    "ridx":          spd["line_number"],
-                    "referencia":    spd["referencia"],
-                    "vehiculo_raw":  spd["vehiculo_raw"],
-                    "vehicle_asset": spd["vehicle_asset"],
-                    "material":      spd["material"],
-                    "unidades":      str(spd["quantity"]) if spd["quantity"] is not None else "",
-                    "origen":        spd["source"],
-                    "proveedor":     spd["supplier"],
-                    "flags":         [],
-                }
-                for spd in spare_parts_data
-            ]
-            context = self._get_context_base(request)
-            context.update({
-                "error":              " | ".join(integrity_errors),
-                "fecha":              fecha_str,
-                "entradas_enriched":  entradas_post,
-                "repuestos_enriched": repuestos_post,
-                "num_entradas":       len(entry_lines_data),
-                "num_repuestos":      len(spare_parts_data),
-            })
-            return render(request, self.template_name, context)
-
-        # ------------------------------------------------------------------
-        # Atomic persistence / Persistencia atomica.
-        # ------------------------------------------------------------------
-        try:
-            with transaction.atomic():
-                worker_name = (
-                    cu.user.get_full_name() or cu.user.username
-                ).upper()
-
-                work_order = WorkOrder(
-                    company         = company,
-                    uploaded_by     = cu,
-                    status          = WorkOrder.Status.DONE,
-                    total_pages     = 1,
-                    processed_pages = 1,
-                    reviewed        = False,
-                )
-                work_order.source_pdf.name = ""
-                work_order.save()
-
-                entry = WorkOrderEntry.objects.create(
-                    work_order            = work_order,
-                    page_number           = 1,
-                    worker_name           = worker_name,
-                    work_date             = work_date,
-                    fecha_incierta        = False,
-                    extraction_confidence = WorkOrderEntry.Confidence.HIGH,
-                    raw_gemini_response   = None,
-                )
-
-                created_lines = {}
-                for ld in entry_lines_data:
-                    line = WorkOrderEntryLine.objects.create(
-                        entry              = entry,
-                        line_number        = ld["line_number"],
-                        machine_asset      = ld["machine_asset"],
-                        maquina_raw        = ld["maquina_raw"],
-                        maquina_norm       = ld["maquina_norm"],
-                        descripcion_averia = ld["descripcion_averia"],
-                        reparacion         = ld["reparacion"],
-                        hc                 = ld["hc"],
-                        hf                 = ld["hf"],
-                        or_val             = ld["or_val"],
-                        delta_horas        = ld["delta_horas"],
-                        flags              = ld["flags"],
-                    )
-                    created_lines[ld["line_number"]] = line
-
-                for spd in spare_parts_data:
-                    target_line = created_lines.get(spd["entry_idx"])
-                    if target_line is None:
-                        target_line = next(iter(created_lines.values()), None)
-                    if target_line is None:
-                        continue
-                    SparePartLine.objects.create(
-                        entry_line  = target_line,
-                        line_number = spd["line_number"],
-                        reference   = spd["referencia"],
-                        vehicle     = spd["vehicle_asset"],
-                        material    = spd["material"],
-                        quantity    = spd["quantity"],
-                        source      = spd["source"],
-                        supplier    = spd["supplier"],
-                        flags       = spd["flags"],
-                    )
+            extracted = _json.loads(m.group())
+            result    = {k: str(extracted.get(k, "") or "").strip() for k in _EMPTY}
 
             logger.info(
-                "# [STTView] WorkOrder #%d creado correctamente (Via B). "
-                "Bloques: %d | Repuestos: %d.",
-                work_order.pk,
-                len(entry_lines_data),
-                len(spare_parts_data),
+                "# [STTExtract] Extracción Gemini completada. "
+                "maquina=%s | fecha=%s | hc=%s | hf=%s.",
+                result["maquina_raw"], result["fecha"],
+                result["hc"], result["hf"],
             )
+            return JsonResponse(result)
 
         except Exception as exc:
             logger.error(
-                "# [STTView] Error en persistencia atomica: %s", exc, exc_info=True
+                "# [STTExtract] Error en extracción Gemini audio: %s", exc, exc_info=True
             )
-            context = self._get_context_base(request)
-            context["error"] = (
-                f"Error al guardar el parte: {exc}. "
-                "Por favor, intentalo de nuevo o contacta con el administrador."
-            )
-            return render(request, self.template_name, context)
-
-        # ------------------------------------------------------------------
-        # Synchronous Excel generation / Generacion sincrona de Excel.
-        # ------------------------------------------------------------------
-        try:
-            generate_work_order_excel(work_order.pk)
-            logger.info(
-                "# [STTView] Excel generado correctamente para WorkOrder #%d.",
-                work_order.pk,
-            )
-        except Exception as exc:
-            logger.warning(
-                "# [STTView] Excel no generado para WorkOrder #%d: %s.",
-                work_order.pk, exc,
-            )
-
-        django_messages.success(
-            request,
-            f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
-            f"El informe Excel esta disponible en la lista de partes."
-        )
-        return redirect("/panel/work-orders/")
+            return JsonResponse(_EMPTY)
 
 
 class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):

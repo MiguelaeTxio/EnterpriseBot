@@ -52,6 +52,9 @@
 
         {# ================================================================== #}
         {# SECTION 0 — Voice recorder / Grabador de voz                       #}
+        {# MediaRecorder API — compatible con Chrome, Edge, Firefox, Opera.   #}
+        {# El audio grabado se envía a Gemini para transcripción y extracción #}
+        {# de campos en una sola llamada. Sin dependencia de Web Speech API.  #}
         {# ================================================================== #}
         <div class="card border-0 shadow-sm mb-4" id="stt-recorder-card">
             <div class="card-header bg-white border-bottom py-3">
@@ -67,52 +70,51 @@
                      id="stt-compat-warning">
                     <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
                     <div>
-                        <strong>Tu navegador no soporta el dictado por voz.</strong>
-                        Usa Chrome o Edge para utilizar esta función, o introduce los
-                        datos manualmente en el formulario de abajo.
+                        <strong>Tu navegador no soporta la grabación de audio.</strong>
+                        Introduce los datos manualmente en el formulario de abajo.
                     </div>
                 </div>
 
                 {# ── Instructions / Instrucciones ── #}
                 <p class="text-muted text-sm mb-3">
-                    Pulsa el botón de micrófono y dicta tu parte. Ejemplo:
-                    <em>"Parte del quince de mayo de dos mil veintiséis. Máquina
-                    JD5090R. De ocho a doce. Avería en el sistema hidráulico."</em>
+                    Pulsa <strong>Iniciar grabación</strong>, dicta el parte con claridad
+                    y pulsa <strong>Detener y procesar</strong> cuando termines.
+                    Gemini extraerá automáticamente los campos del formulario.
+                    <br>
+                    <em>Ejemplo: "Parte del veinte de abril de dos mil veintiséis.
+                    Máquina A44. De ocho a catorce. Avería en el sistema hidráulico."</em>
                 </p>
 
-                {# ── Mic button / Botón de micrófono ── #}
+                {# ── Recording buttons / Botones de grabación ── #}
                 <div class="d-flex align-items-center gap-3 mb-3">
                     <button type="button"
                             id="stt-btn-start"
                             class="btn btn-primary px-4">
-                        <i class="bi bi-mic-fill me-2"></i>Iniciar dictado
+                        <i class="bi bi-mic-fill me-2"></i>Iniciar grabación
                     </button>
                     <button type="button"
                             id="stt-btn-stop"
                             class="btn btn-danger px-4 d-none">
-                        <i class="bi bi-stop-fill me-2"></i>Detener
+                        <i class="bi bi-stop-fill me-2"></i>Detener y procesar
                     </button>
                     <span id="stt-status" class="text-muted text-sm"></span>
                 </div>
 
-                {# ── Live transcript / Transcripción en tiempo real ── #}
-                <div class="mb-3">
-                    <label class="form-label fw-medium text-sm">Transcripción reconocida</label>
-                    <div id="stt-transcript"
-                         class="form-control bg-light"
-                         style="min-height:4rem; white-space:pre-wrap; font-size:.85rem;">
+                {# ── Processing spinner / Spinner de procesamiento ── #}
+                <div class="d-none mb-3" id="stt-spinner">
+                    <div class="d-flex align-items-center gap-2 text-primary">
+                        <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                        <span class="text-sm">Procesando audio con Gemini IA…</span>
                     </div>
                 </div>
 
-                {# ── Apply button / Botón aplicar ── #}
-                <button type="button"
-                        id="stt-btn-apply"
-                        class="btn btn-success btn-sm px-3 d-none">
-                    <i class="bi bi-check2-circle me-1"></i>Aplicar al formulario
-                </button>
-                <p class="text-muted text-sm mt-2 mb-0">
-                    Revisa y corrige los campos antes de guardar.
-                </p>
+                {# ── Result summary / Resumen de resultado ── #}
+                <div class="d-none mb-0" id="stt-result-summary">
+                    <p class="text-success text-sm mb-0">
+                        <i class="bi bi-check2-circle me-1"></i>
+                        <span id="stt-result-text">Formulario pre-rellenado por IA. Revisa y corrige si es necesario.</span>
+                    </p>
+                </div>
 
             </div>
         </div>
@@ -140,15 +142,13 @@
                             Fecha <span class="text-danger">*</span>
                         </label>
                         <input
-                            type="text"
+                            type="date"
                             id="id_fecha"
                             name="fecha"
                             class="form-control {% if not fecha %}field-flagged{% endif %}"
                             value="{{ fecha }}"
-                            placeholder="DD/MM/AAAA"
                             autocomplete="off"
                         >
-                        <div class="form-text">Formato: DD/MM/AAAA</div>
                     </div>
                 </div>
             </div>
@@ -200,21 +200,19 @@
                                     <label class="form-label fw-medium">
                                         H.C. <span class="text-danger">*</span>
                                     </label>
-                                    <input type="text"
+                                    <input type="time"
                                            name="entrada_{{ entrada.idx }}_hc"
                                            class="form-control {% if not entrada.hc %}field-flagged{% endif %}"
-                                           value="{{ entrada.hc }}"
-                                           placeholder="HH:MM">
+                                           value="{{ entrada.hc }}">
                                 </div>
                                 <div class="col-6 col-md-2">
                                     <label class="form-label fw-medium">
                                         H.F. <span class="text-danger">*</span>
                                     </label>
-                                    <input type="text"
+                                    <input type="time"
                                            name="entrada_{{ entrada.idx }}_hf"
                                            class="form-control {% if not entrada.hf %}field-flagged{% endif %}"
-                                           value="{{ entrada.hf }}"
-                                           placeholder="HH:MM">
+                                           value="{{ entrada.hf }}">
                                 </div>
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-medium">O.R.</label>
@@ -269,23 +267,21 @@
                                 <label class="form-label fw-medium">
                                     H.C. <span class="text-danger">*</span>
                                 </label>
-                                <input type="text"
+                                <input type="time"
                                        id="stt-field-hc-1"
                                        name="entrada_1_hc"
                                        class="form-control field-flagged"
-                                       value=""
-                                       placeholder="HH:MM">
+                                       value="">
                             </div>
                             <div class="col-6 col-md-2">
                                 <label class="form-label fw-medium">
                                     H.F. <span class="text-danger">*</span>
                                 </label>
-                                <input type="text"
+                                <input type="time"
                                        id="stt-field-hf-1"
                                        name="entrada_1_hf"
                                        class="form-control field-flagged"
-                                       value=""
-                                       placeholder="HH:MM">
+                                       value="">
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">O.R.</label>
@@ -459,75 +455,147 @@
     ];
 
     /* ------------------------------------------------------------------ */
-    /* 2. STT ENGINE — Motor de reconocimiento de voz                      */
+    /* 2. MEDIARECORDER ENGINE — Motor de grabación de audio               */
+    /*                                                                      */
+    /* Replaces Web Speech API with MediaRecorder (universal browser       */
+    /* support). Records audio, sends binary to the Gemini extract         */
+    /* endpoint, and applies the structured JSON response to the form.     */
+    /*                                                                      */
+    /* Sustituye Web Speech API por MediaRecorder (soporte universal en    */
+    /* navegadores). Graba audio, envía binario al endpoint de extracción  */
+    /* Gemini y aplica la respuesta JSON estructurada al formulario.       */
     /* ------------------------------------------------------------------ */
 
-    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    var recognition       = null;
-    var fullTranscript    = "";
+    var btnStart      = document.getElementById("stt-btn-start");
+    var btnStop       = document.getElementById("stt-btn-stop");
+    var statusEl      = document.getElementById("stt-status");
+    var compatWarn    = document.getElementById("stt-compat-warning");
+    var spinnerEl     = document.getElementById("stt-spinner");
+    var resultSummary = document.getElementById("stt-result-summary");
+    var resultText    = document.getElementById("stt-result-text");
 
-    var btnStart    = document.getElementById("stt-btn-start");
-    var btnStop     = document.getElementById("stt-btn-stop");
-    var btnApply    = document.getElementById("stt-btn-apply");
-    var statusEl    = document.getElementById("stt-status");
-    var transcEl    = document.getElementById("stt-transcript");
-    var compatWarn  = document.getElementById("stt-compat-warning");
+    var mediaRecorder  = null;
+    var audioChunks    = [];
+    var audioMimeType  = "audio/webm";
 
-    if (!SpeechRecognition) {
-        /* Navigator does not support Web Speech API. */
-        /* El navegador no soporta Web Speech API.   */
+    function _applyGeminiResult(data) {
+        /*
+         * Applies the structured JSON from Gemini to the form fields.
+         * Fecha is converted DD/MM/AAAA to YYYY-MM-DD for type="date".
+         *
+         * Aplica el JSON estructurado de Gemini a los campos del formulario.
+         * La fecha se convierte DD/MM/AAAA a YYYY-MM-DD para type="date".
+         */
+        var fechaEl  = document.getElementById("id_fecha");
+        var maqEl    = document.getElementById("stt-field-maquina-1");
+        var hcEl     = document.getElementById("stt-field-hc-1");
+        var hfEl     = document.getElementById("stt-field-hf-1");
+        var averiaEl = document.getElementById("stt-field-averia-1");
+
+        if (fechaEl && data.fecha) {
+            var p = data.fecha.split("/");
+            fechaEl.value = p.length === 3 ? p[2] + "-" + p[1] + "-" + p[0] : data.fecha;
+            fechaEl.classList.remove("field-flagged");
+        }
+        if (maqEl    && data.maquina_raw)        { maqEl.value    = data.maquina_raw;        maqEl.classList.remove("field-flagged"); }
+        if (hcEl     && data.hc)                 { hcEl.value     = data.hc;                 hcEl.classList.remove("field-flagged"); }
+        if (hfEl     && data.hf)                 { hfEl.value     = data.hf;                 hfEl.classList.remove("field-flagged"); }
+        if (averiaEl && data.descripcion_averia) { averiaEl.value = data.descripcion_averia; averiaEl.classList.remove("field-flagged"); }
+
+        document.getElementById("id_fecha").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function _sendAudioToGemini(audioBlob) {
+        /*
+         * Sends the recorded audio blob to the server-side Gemini extract
+         * endpoint via multipart/form-data and applies the JSON response.
+         *
+         * Envía el blob de audio grabado al endpoint Gemini del servidor
+         * via multipart/form-data y aplica la respuesta JSON.
+         */
+        spinnerEl.classList.remove("d-none");
+        resultSummary.classList.add("d-none");
+        statusEl.textContent = "";
+
+        var ext      = audioMimeType.split("/")[1] || "webm";
+        var formData = new FormData();
+        formData.append("audio", audioBlob, "recording." + ext);
+
+        fetch("{% url 'panel:operator_stt_extract' %}", {
+            method:  "POST",
+            headers: {
+                "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute("content"),
+            },
+            body: formData,
+        })
+        .then(function (r) {
+            if (!r.ok) { throw new Error("HTTP " + r.status); }
+            return r.json();
+        })
+        .then(function (data) {
+            spinnerEl.classList.add("d-none");
+            _applyGeminiResult(data);
+            resultText.textContent = "Formulario pre-rellenado por IA. Revisa y corrige si es necesario.";
+            resultSummary.classList.remove("d-none");
+            btnStart.disabled = false;
+        })
+        .catch(function (err) {
+            spinnerEl.classList.add("d-none");
+            console.error("# [STT] Gemini extract error:", err);
+            resultText.textContent = "Error al procesar el audio. Inténtalo de nuevo o rellena el formulario manualmente.";
+            resultSummary.classList.remove("d-none");
+            btnStart.disabled = false;
+        });
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         compatWarn.classList.remove("d-none");
         btnStart.disabled = true;
     } else {
-        recognition = new SpeechRecognition();
-        recognition.lang              = "es-ES";
-        recognition.continuous        = false;
-        recognition.interimResults    = false;
-        recognition.maxAlternatives   = 1;
-
-        recognition.onstart = function () {
-            fullTranscript = "";
-            transcEl.textContent = "";
-            statusEl.textContent = "Escuchando…";
-            btnStart.classList.add("d-none");
-            btnStop.classList.remove("d-none");
-            btnApply.classList.add("d-none");
-        };
-
-        recognition.onresult = function (e) {
-            var transcript = "";
-            for (var i = e.resultIndex; i < e.results.length; i++) {
-                transcript += e.results[i][0].transcript;
+        var _mimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+        for (var _mi = 0; _mi < _mimeTypes.length; _mi++) {
+            if (MediaRecorder.isTypeSupported(_mimeTypes[_mi])) {
+                audioMimeType = _mimeTypes[_mi].split(";")[0];
+                break;
             }
-            fullTranscript   += " " + transcript;
-            transcEl.textContent = fullTranscript.trim();
-        };
-
-        recognition.onerror = function (e) {
-            statusEl.textContent = "Error: " + e.error;
-            _resetButtons();
-        };
-
-        recognition.onend = function () {
-            statusEl.textContent = fullTranscript.trim()
-                ? "Dictado completado. Revisa la transcripción y pulsa «Aplicar al formulario»."
-                : "Sin resultado. Inténtalo de nuevo.";
-            _resetButtons();
-            if (fullTranscript.trim()) {
-                btnApply.classList.remove("d-none");
-            }
-        };
+        }
 
         btnStart.addEventListener("click", function () {
-            recognition.start();
+            navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(function (stream) {
+                audioChunks   = [];
+                mediaRecorder = new MediaRecorder(stream, { mimeType: audioMimeType });
+
+                mediaRecorder.ondataavailable = function (e) {
+                    if (e.data && e.data.size > 0) { audioChunks.push(e.data); }
+                };
+
+                mediaRecorder.onstop = function () {
+                    stream.getTracks().forEach(function (t) { t.stop(); });
+                    var audioBlob = new Blob(audioChunks, { type: audioMimeType });
+                    btnStart.disabled = true;
+                    _sendAudioToGemini(audioBlob);
+                };
+
+                mediaRecorder.start();
+                statusEl.textContent = "Grabando… Pulsa «Detener y procesar» cuando termines.";
+                btnStart.classList.add("d-none");
+                btnStop.classList.remove("d-none");
+                resultSummary.classList.add("d-none");
+            })
+            .catch(function (err) {
+                console.error("# [STT] getUserMedia error:", err);
+                statusEl.textContent = "No se pudo acceder al micrófono: " + err.message;
+            });
         });
 
         btnStop.addEventListener("click", function () {
-            recognition.stop();
-        });
-
-        btnApply.addEventListener("click", function () {
-            _applyTranscript(fullTranscript.trim());
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                btnStop.classList.add("d-none");
+                btnStart.classList.remove("d-none");
+                statusEl.textContent = "Procesando con Gemini IA…";
+            }
         });
     }
 
@@ -547,24 +615,62 @@
     /* ------------------------------------------------------------------ */
 
     var MONTH_MAP = {
-        "enero":10, "febrero":11, "marzo":12, "abril":13, "mayo":14, "junio":15,
-        "julio":16, "agosto":17, "septiembre":18, "octubre":19, "noviembre":20,
-        "diciembre":21
+        "enero":1, "febrero":2, "marzo":3, "abril":4, "mayo":5, "junio":6,
+        "julio":7, "agosto":8, "septiembre":9, "octubre":10, "noviembre":11,
+        "diciembre":12
     };
 
+    /* Ordinal/cardinal day words in Spanish (spoken dates like "veinte").
+       Palabras ordinales/cardinales de día en español (fechas habladas). */
+    var DAY_WORDS = {
+        "uno":1,"dos":2,"tres":3,"cuatro":4,"cinco":5,"seis":6,"siete":7,
+        "ocho":8,"nueve":9,"diez":10,"once":11,"doce":12,"trece":13,
+        "catorce":14,"quince":15,"dieciseis":16,"diecisiete":17,"dieciocho":18,
+        "diecinueve":19,"veinte":20,"veintiuno":21,"veintidos":22,
+        "veintitres":23,"veinticuatro":24,"veinticinco":25,"veintiseis":26,
+        "veintisiete":27,"veintiocho":28,"veintinueve":29,"treinta":30,
+        "treinta y uno":31
+    };
+
+    /* Month words including numeric variants spoken aloud.
+       Palabras de mes incluyendo variantes numéricas habladas. */
+    var MONTH_WORDS = {
+        "uno":1,"dos":2,"tres":3,"cuatro":4,"cinco":5,"seis":6,"siete":7,
+        "ocho":8,"nueve":9,"diez":10,"once":11,"doce":12,
+        "enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,
+        "julio":7,"agosto":8,"septiembre":9,"octubre":10,"noviembre":11,
+        "diciembre":12
+    };
+
+    function _norm(s) {
+        /*
+         * Strips diacritics and lowercases a string for fuzzy matching.
+         * Elimina diacríticos y pone en minúsculas para comparación flexible.
+         */
+        return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+
     function _monthNum(name) {
-        var n = MONTH_MAP[name.toLowerCase()];
-        return n ? String(n - 9).padStart(2, "0") : null;
+        var n = MONTH_MAP[_norm(name)];
+        return n ? String(n).padStart(2, "0") : null;
     }
 
     function _parseTime(tok) {
         /*
          * Converts spoken time tokens to HH:MM format.
+         * Only processes the FIRST word/token — prevents over-capture of
+         * adjacent text when the regex delivers a two-word group.
          * Convierte tokens de hora hablada a formato HH:MM.
+         * Solo procesa el PRIMER token — evita captura excesiva de texto
+         * adyacente cuando la regex entrega un grupo de dos palabras.
          * Accepts: "ocho", "las ocho", "8", "8:30", number words up to 23.
          */
         if (!tok) return null;
-        tok = tok.trim().replace(/^las?\s+/i, "").replace(/^a las?\s+/i, "");
+        /* Take only the first word to avoid "14 la" → failure. */
+        /* Tomar solo la primera palabra para evitar "14 la" → fallo.  */
+        tok = tok.trim().split(/\s+/)[0];
+        tok = tok.replace(/^las?$/i, "").trim();
+        if (!tok) return null;
 
         /* Direct HH:MM / HH:MM directo */
         var m = tok.match(/^(\d{1,2}):(\d{2})$/);
@@ -582,7 +688,7 @@
             "diecisiete":17,"dieciocho":18,"diecinueve":19,"veinte":20,
             "veintiuno":21,"veintidos":22,"veintitres":23
         };
-        var key = tok.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        var key = _norm(tok);
         if (words.hasOwnProperty(key)) {
             return String(words[key]).padStart(2, "0") + ":00";
         }
@@ -592,7 +698,9 @@
     function _applyTranscript(text) {
         if (!text) return;
 
-        var remaining = text;
+        /* Normalise input: collapse multiple spaces, strip leading/trailing.
+           Normalizar entrada: colapsar espacios múltiples, recortar. */
+        var remaining = text.replace(/\s+/g, " ").trim();
         var fecha     = "";
         var maquina   = "";
         var hc        = "";
@@ -600,28 +708,66 @@
 
         /* ── Date extraction / Extraccion de fecha ── */
 
-        /* Pattern: DD/MM/AAAA */
+        /* Pattern A: DD/MM/AAAA */
         var mDate = remaining.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
         if (mDate) {
             fecha     = mDate[1].padStart(2,"0") + "/" + mDate[2].padStart(2,"0") + "/" + mDate[3];
             remaining = remaining.replace(mDate[0], "").trim();
         } else {
-            /* Pattern: "DD de mes de AAAA" / "el dia DD de mes de AAAA" */
-            var mLong = remaining.match(
-                /(?:el\s+)?(?:parte\s+del?\s+)?(?:dia\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:del?\s+)?(\d{4})/i
+            /* Pattern B: numeric day + named/numeric month + year.
+               "el veinte del cuatro de 2026", "20 de abril de 2026",
+               "el dia 5 de mayo de 2026", "parte del 3 de marzo de 2026".
+               Patrón B: día numérico/letra + mes nombre/número + año. */
+            var _dayPat   = "(\\d{1,2}|" + Object.keys(DAY_WORDS).join("|") + ")";
+            var _monthPat = "(\\d{1,2}|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)";
+            var _longRe   = new RegExp(
+                "(?:el\\s+)?(?:parte\\s+del?\\s+)?(?:d[ií]a\\s+)?" +
+                _dayPat + "\\s+de(?:l)?\\s+" + _monthPat +
+                "\\s+de(?:l)?\\s+(\\d{4})", "i"
             );
+            var mLong = remaining.match(_longRe);
             if (mLong) {
-                var mm = _monthNum(mLong[2]);
-                if (mm) {
-                    fecha     = mLong[1].padStart(2,"0") + "/" + mm + "/" + mLong[3];
+                /* Resolve day / Resolver día */
+                var dayRaw  = _norm(mLong[1]);
+                var dayNum  = parseInt(mLong[1], 10);
+                if (isNaN(dayNum)) { dayNum = DAY_WORDS[dayRaw] || 0; }
+
+                /* Resolve month / Resolver mes */
+                var monRaw  = _norm(mLong[2]);
+                var monNum  = parseInt(mLong[2], 10);
+                if (isNaN(monNum)) { monNum = MONTH_WORDS[monRaw] || 0; }
+
+                var yearNum = parseInt(mLong[3], 10);
+
+                if (dayNum > 0 && monNum > 0 && yearNum > 0) {
+                    fecha     = String(dayNum).padStart(2,"0") + "/" +
+                                String(monNum).padStart(2,"0") + "/" + yearNum;
                     remaining = remaining.replace(mLong[0], "").trim();
                 }
             }
         }
 
+        /* ── Machine code extraction / Extraccion de codigo de maquina ── */
+        /* Done BEFORE time extraction so keywords like "a" in machine names
+           do not confuse the time-range regex.
+           Se hace ANTES de la extracción de horas para que keywords como
+           "a" en nombres de máquina no confundan la regex de rango horario. */
+
+        /* Normalise remaining for keyword matching (strip diacritics inline).
+           Normalizar remaining para coincidencia de keywords (strip tildes). */
+        var mMaq = remaining.match(
+            /(?:m[aá]quinas?|veh[ií]culos?|equipos?|aparatos?)[:\s]+([A-Za-z0-9][A-Za-z0-9_\-]*)/i
+        );
+        if (mMaq) {
+            maquina   = mMaq[1].toUpperCase();
+            remaining = remaining.replace(mMaq[0], "").trim();
+        }
+
         /* ── Time range extraction / Extraccion de rango horario ── */
 
-        /* Pattern: "de X a Y" / "desde X hasta Y" */
+        /* Pattern: "de X a Y" / "desde X hasta Y"
+           Token is now consumed one-word-at-a-time by _parseTime.
+           El token es consumido palabra a palabra por _parseTime. */
         var mRange = remaining.match(
             /(?:de|desde)\s+([^\s]+(?:\s+[^\s]+)?)\s+(?:a|hasta)\s+([^\s]+(?:\s+[^\s]+)?)/i
         );
@@ -639,25 +785,23 @@
             }
         }
 
-        /* ── Machine code extraction / Extraccion de codigo de maquina ── */
-
-        var mMaq = remaining.match(
-            /(?:maquina|vehiculo|equipo|aparato)[:\s]+([A-Za-z0-9_\-]+)/i
-        );
-        if (mMaq) {
-            maquina   = mMaq[1].toUpperCase();
-            remaining = remaining.replace(mMaq[0], "").trim();
-        }
-
         /* ── Clean up remaining text / Limpiar texto restante ── */
-        /* Remove leading connectors and filler words. */
-        /* Eliminar conectores y palabras de relleno iniciales. */
+        /* Remove filler words, keywords, leading connectors and punctuation.
+           Eliminar palabras de relleno, keywords, conectores y puntuación. */
         remaining = remaining
+            .replace(/\b(?:parte|partes)\s+de\s+reparaciones?\b/gi, "")
+            .replace(/\bparte\s+de\s+trabajo\b/gi, "")
+            .replace(/\borden\s+de\s+reparaci[oó]n\b/gi, "")
+            .replace(/\bla\s+orden\s+de\b/gi, "")
+            .replace(/\breparaci[oó]n[:\s]*/gi, "")
+            .replace(/\bdescripci[oó]n\s+de\s+la\s+aver[ií]a[:\s]*/gi, "")
+            .replace(/\bdescripci[oó]n[:\s]*/gi, "")
+            .replace(/\baver[ií]a[:\s]*/gi, "")
+            .replace(/\btarea[:\s]*/gi, "")
+            .replace(/\bparte[:\s]*/gi, "")
+            .replace(/\bahora\b/gi, "")
             .replace(/^[,.\s]+/, "")
-            .replace(/\baveria[:\s]*/i, "")
-            .replace(/\bdescripcion[:\s]*/i, "")
-            .replace(/\btarea[:\s]*/i, "")
-            .replace(/\bparte[:\s]*/i, "")
+            .replace(/[,.\s]+$/, "")
             .trim();
 
         /* ── Apply to form fields / Aplicar a los campos del formulario ── */
@@ -668,7 +812,16 @@
         var hfEl      = document.getElementById("stt-field-hf-1");
         var averiaEl  = document.getElementById("stt-field-averia-1");
 
-        if (fechaEl  && fecha)     { fechaEl.value   = fecha;     fechaEl.classList.remove("field-flagged"); }
+        if (fechaEl && fecha) {
+            /* Convert DD/MM/AAAA → YYYY-MM-DD required by type="date".
+               Convertir DD/MM/AAAA → YYYY-MM-DD requerido por type="date". */
+            var fechaParts = fecha.split("/");
+            var fechaIso   = fechaParts.length === 3
+                ? fechaParts[2] + "-" + fechaParts[1] + "-" + fechaParts[0]
+                : fecha;
+            fechaEl.value = fechaIso;
+            fechaEl.classList.remove("field-flagged");
+        }
         if (maqEl    && maquina)   { maqEl.value     = maquina;   maqEl.classList.remove("field-flagged"); }
         if (hcEl     && hc)        { hcEl.value      = hc;        hcEl.classList.remove("field-flagged"); }
         if (hfEl     && hf)        { hfEl.value      = hf;        hfEl.classList.remove("field-flagged"); }
@@ -689,6 +842,17 @@
         var dropdown = input.parentElement.querySelector(".asset-dropdown");
         if (!dropdown) return;
 
+        /* Guard flag: true while the user is pressing a dropdown option.
+           Bandera de guardia: true mientras el usuario pulsa una opcion del dropdown.
+           Prevents blur from hiding the dropdown before pointerdown writes the value,
+           which on mobile (Android/iOS) fires in a different order than on desktop. */
+        var _selecting = false;
+
+        function _hideDropdown() {
+            dropdown.classList.add("d-none");
+            dropdown.innerHTML = "";
+        }
+
         input.addEventListener("input", function () {
             var q = input.value.trim().toUpperCase();
             dropdown.innerHTML = "";
@@ -702,11 +866,23 @@
                 item.type      = "button";
                 item.className = "list-group-item list-group-item-action text-sm py-1 px-2";
                 item.textContent = a.label;
-                item.addEventListener("mousedown", function (e) {
+
+                /* pointerdown fires before blur on all platforms including
+                   Android Chrome — set guard so blur does not close dropdown
+                   before the selection is committed.
+                   pointerdown se dispara antes que blur en todas las plataformas
+                   incluido Android Chrome — la guardia evita que blur cierre el
+                   dropdown antes de que se confirme la seleccion. */
+                item.addEventListener("pointerdown", function (e) {
                     e.preventDefault();
+                    _selecting = true;
+                });
+                item.addEventListener("click", function () {
                     input.value = a.codigo;
                     input.classList.remove("field-flagged");
-                    dropdown.classList.add("d-none");
+                    _selecting = false;
+                    _hideDropdown();
+                    input.focus();
                 });
                 dropdown.appendChild(item);
             });
@@ -714,7 +890,11 @@
         });
 
         input.addEventListener("blur", function () {
-            setTimeout(function () { dropdown.classList.add("d-none"); }, 150);
+            /* Only hide if the user is NOT in the middle of selecting an option.
+               Solo ocultar si el usuario NO esta en proceso de seleccionar una opcion. */
+            if (!_selecting) {
+                setTimeout(_hideDropdown, 150);
+            }
         });
     }
 
@@ -875,9 +1055,11 @@
         var nReps    = parseInt(document.getElementById("num-repuestos-input").value, 10) || 0;
 
         /* Gate 1 — fecha */
-        var fechaOk = /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(fecha) || /^\d{4}-\d{2}-\d{2}$/.test(fecha);
+        /* type="date" always delivers YYYY-MM-DD or empty string. */
+        /* type="date" entrega siempre YYYY-MM-DD o cadena vacía.  */
+        var fechaOk = /^\d{4}-\d{2}-\d{2}$/.test(fecha);
         _markField("fecha", !fechaOk);
-        if (!fechaOk) errors.push("La fecha del parte es obligatoria (DD/MM/AAAA).");
+        if (!fechaOk) errors.push("La fecha del parte es obligatoria (selecciona una fecha).");
 
         /* Gate 2 — blocks */
         for (var i = 1; i <= nBlocks; i++) {

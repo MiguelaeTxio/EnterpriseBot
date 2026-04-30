@@ -67,15 +67,13 @@
                             Fecha <span class="text-danger">*</span>
                         </label>
                         <input
-                            type="text"
+                            type="date"
                             id="id_fecha"
                             name="fecha"
                             class="form-control {% if not fecha %}field-flagged{% endif %}"
                             value="{{ fecha }}"
-                            placeholder="DD/MM/AAAA"
                             autocomplete="off"
                         >
-                        <div class="form-text">Formato: DD/MM/AAAA</div>
                     </div>
                 </div>
             </div>
@@ -127,21 +125,19 @@
                                     <label class="form-label fw-medium">
                                         H.C. <span class="text-danger">*</span>
                                     </label>
-                                    <input type="text"
+                                    <input type="time"
                                            name="entrada_{{ entrada.idx }}_hc"
                                            class="form-control {% if not entrada.hc %}field-flagged{% endif %}"
-                                           value="{{ entrada.hc }}"
-                                           placeholder="HH:MM">
+                                           value="{{ entrada.hc }}">
                                 </div>
                                 <div class="col-6 col-md-2">
                                     <label class="form-label fw-medium">
                                         H.F. <span class="text-danger">*</span>
                                     </label>
-                                    <input type="text"
+                                    <input type="time"
                                            name="entrada_{{ entrada.idx }}_hf"
                                            class="form-control {% if not entrada.hf %}field-flagged{% endif %}"
-                                           value="{{ entrada.hf }}"
-                                           placeholder="HH:MM">
+                                           value="{{ entrada.hf }}">
                                 </div>
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-medium">O.R.</label>
@@ -195,21 +191,19 @@
                                 <label class="form-label fw-medium">
                                     H.C. <span class="text-danger">*</span>
                                 </label>
-                                <input type="text"
+                                <input type="time"
                                        name="entrada_1_hc"
                                        class="form-control field-flagged"
-                                       value=""
-                                       placeholder="HH:MM">
+                                       value="">
                             </div>
                             <div class="col-6 col-md-2">
                                 <label class="form-label fw-medium">
                                     H.F. <span class="text-danger">*</span>
                                 </label>
-                                <input type="text"
+                                <input type="time"
                                        name="entrada_1_hf"
                                        class="form-control field-flagged"
-                                       value=""
-                                       placeholder="HH:MM">
+                                       value="">
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">O.R.</label>
@@ -427,7 +421,17 @@
         var dropdown = input.parentElement.querySelector(".asset-dropdown");
         if (!dropdown) { return; }
 
-        var lastQuery = "";
+        var lastQuery  = "";
+        /* Guard flag: true while the user is pressing a dropdown option.
+           Bandera de guardia: true mientras el usuario pulsa una opcion del dropdown.
+           Prevents blur from hiding the dropdown before pointerdown writes the value,
+           which on mobile (Android/iOS) fires in a different order than on desktop. */
+        var _selecting = false;
+
+        function _hideDropdown() {
+            dropdown.classList.add("d-none");
+            dropdown.innerHTML = "";
+        }
 
         function fetchAndRender(q) {
             if (q === lastQuery) { return; }
@@ -444,13 +448,24 @@
                         var btn = document.createElement("button");
                         btn.type      = "button";
                         btn.className = "list-group-item list-group-item-action text-sm py-1 px-2";
-                        btn.textContent = asset.codigo + " \u2014 " + asset.marca_modelo;
-                        btn.addEventListener("mousedown", function (e) {
+                        btn.textContent = asset.codigo + " — " + asset.marca_modelo;
+
+                        /* pointerdown fires before blur on all platforms including
+                           Android Chrome — set guard so blur does not close dropdown
+                           before the selection is committed.
+                           pointerdown se dispara antes que blur en todas las plataformas
+                           incluido Android Chrome — la guardia evita que blur cierre el
+                           dropdown antes de que se confirme la seleccion. */
+                        btn.addEventListener("pointerdown", function (e) {
                             e.preventDefault();
+                            _selecting = true;
+                        });
+                        btn.addEventListener("click", function () {
                             input.value = asset.codigo;
-                            dropdown.classList.add("d-none");
-                            dropdown.innerHTML = "";
-                            lastQuery = asset.codigo;
+                            lastQuery   = asset.codigo;
+                            _selecting  = false;
+                            _hideDropdown();
+                            input.focus();
                         });
                         dropdown.appendChild(btn);
                     });
@@ -465,11 +480,15 @@
             fetchAndRender(q);
         }, 250);
 
-        input.addEventListener("input",  debouncedFetch);
-        input.addEventListener("blur",   function () {
-            setTimeout(function () { dropdown.classList.add("d-none"); }, 200);
+        input.addEventListener("input", debouncedFetch);
+        input.addEventListener("blur",  function () {
+            /* Only hide if the user is NOT in the middle of selecting an option.
+               Solo ocultar si el usuario NO esta en proceso de seleccionar una opcion. */
+            if (!_selecting) {
+                setTimeout(_hideDropdown, 200);
+            }
         });
-        input.addEventListener("focus",  function () {
+        input.addEventListener("focus", function () {
             if (input.value.trim().length > 0) { fetchAndRender(input.value.trim()); }
         });
     }
@@ -530,13 +549,11 @@
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">H.C. <span class="text-danger">*</span></label>' +
-                    '<input type="text" name="entrada_' + idx + '_hc" ' +
-                           'class="form-control" placeholder="HH:MM">' +
+                    '<input type="time" name="entrada_' + idx + '_hc" class="form-control">' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">H.F. <span class="text-danger">*</span></label>' +
-                    '<input type="text" name="entrada_' + idx + '_hf" ' +
-                           'class="form-control" placeholder="HH:MM">' +
+                    '<input type="time" name="entrada_' + idx + '_hf" class="form-control">' +
                 '</div>' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">O.R.</label>' +
@@ -716,9 +733,11 @@
             var errors = [];
 
             // Gate 1 — Date / Fecha.
+            // type="date" always delivers YYYY-MM-DD or empty string.
+            // type="date" entrega siempre YYYY-MM-DD o cadena vacía.
             var fecha = _val("fecha");
             _markField("fecha", !fecha);
-            if (!fecha) { errors.push("La fecha del parte es obligatoria."); }
+            if (!fecha) { errors.push("La fecha del parte es obligatoria (selecciona una fecha)."); }
 
             // Gate 2 — Work blocks / Bloques de trabajo.
             var numEntradas = parseInt(_val("num_entradas"), 10) || 1;

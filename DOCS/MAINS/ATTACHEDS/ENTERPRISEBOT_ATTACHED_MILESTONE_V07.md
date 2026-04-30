@@ -192,28 +192,34 @@ Estado: COMPLETADO (2026-04-30).
 - Dashboard Via A activada: boton deshabilitado sustituido por enlace activo.
 
 ### Paso 8 — Via B: dictado por voz (STT)
-Estado: COMPLETADO PARCIAL (sesion 005, 2026-04-30) — pendiente correccion H021 CSS.
-- WorkOrderEntrySTTView implementada en panel/views.py (PMA). Logica POST
-  identica a WorkOrderEntryFormView: misma barrera sine qua non, misma
-  persistencia atomica, mismo Excel sincronamente tras guardado.
-- Template panel/operator/stt_entry.html creado (PEA — Neonato Puro):
-  seccion de grabacion de voz (Section 0) con boton mic, transcripcion en
-  tiempo real, boton Aplicar al formulario y aviso de incompatibilidad para
-  Firefox/Safari. Formulario identico a form_entry.html (mismos name=).
-- Parser JS client-side en stt_entry.html: extrae fecha (DD/MM/AAAA y
-  "DD de mes de AAAA"), maquina_raw (tras keyword maquina/vehiculo/equipo),
-  hc/hf ("de X a Y", numeros hablados en es-ES, HH:MM), descripcion_averia
-  (texto restante). Pre-rellena los campos del bloque 1 del formulario.
-- Validacion client-side identica a form_entry.html (tres gates).
-- panel/urls.py actualizado (PMA): import WorkOrderEntrySTTView + ruta
-  operator/stt/ (name=operator_stt). Comentario: Paso 8 — Hito 7.
-- panel/templates/panel/operator/dashboard.html actualizado (PMA): boton
-  Via B activado con href={% url 'panel:operator_stt' %}.
-- Pendiente: correccion H021 djlint (inline style en div#stt-transcript) —
-  mover style a panel/static/panel/css/panel.css en sesion 006.
+Estado: COMPLETADO PARCIAL (sesion 006, 2026-04-30) — pendiente validacion E2E Via B.
+- WorkOrderEntrySTTView implementada en panel/views.py. Logica POST
+  delegada completamente en WorkOrderEntryFormView.post() via MRO (refactor DRY).
+- Correccion H021 djlint (sesion 006): inline style div#stt-transcript extraido
+  a clase .stt-transcript-box en panel/static/panel/css/panel.css (PMA).
+- Motor STT reemplazado (sesion 006): Web Speech API eliminada. Sustituida por
+  MediaRecorder API (soporte universal: Chrome, Edge, Firefox, Opera, Android).
+  El audio grabado se envia al endpoint WorkOrderEntrySTTExtractView via
+  multipart/form-data. Gemini 2.5 Flash procesa el audio directamente y
+  devuelve JSON estructurado con los campos del parte. Sin dependencia de
+  transcripcion intermedia ni parser JS local (este queda como fallback offline).
+- Nuevo endpoint: POST /panel/operator/stt/extract/ (WorkOrderEntrySTTExtractView).
+  Recibe audio binario, llama a Gemini con Part.from_bytes, devuelve JSON con:
+  fecha (DD/MM/AAAA), maquina_raw, hc (HH:MM), hf (HH:MM),
+  descripcion_averia, reparacion, or_val.
+- panel/urls.py actualizado: import WorkOrderEntrySTTExtractView + ruta
+  operator/stt/extract/ (name=operator_stt_extract).
+- stt_entry.html: SECTION 0 rediseñada con botones Iniciar grabacion /
+  Detener y procesar, spinner de procesamiento y resumen de resultado.
+- Pendiente: validacion E2E Via B en sesion 007.
 
 ### Paso 9 — Validacion E2E de las tres vias
-Estado: PENDIENTE.
+Estado: COMPLETADO PARCIAL (sesion 006, 2026-04-30).
+- Via A (Form): VALIDADA. Persistencia correcta, nombre sintetico legible
+  en listado (OPERARIO_DD-MM-AAAA.pdf), resolucion de activo funcionando.
+- Via B (STT): PENDIENTE validacion E2E. Motor MediaRecorder implementado
+  y conectado a Gemini. Pendiente de prueba real en sesion 007.
+- Via C (Upload): PENDIENTE validacion E2E.
 
 ---
 
@@ -226,51 +232,51 @@ Estado: PENDIENTE.
 | 003    | 2026-04-30 | Pasos 3-5 + fixes | Modelo SparePartLine creado y migrado (0005). Prompt Gemini ampliado (_EXTRACTION_PROMPT_FULL + extract_work_order_page_full). Via C implementada: WorkOrderEntryUploadView + WorkOrderEntryConfirmView + WorkshopAssetAutocompleteView + templates + CSS + pdf2image. Fix multiempresa en _resolve_machine_asset (company=). Fix HTMX _line_row.html (row_class con pk_str). Fix WorkOrderLineRestoreView para partes digitales. Fix doble form en users/form.html. Fix listado roles (badge-supervisor, badge-workshop). |
 | 004    | 2026-04-30 | Paso 6 + Paso 7 + fixes fuera HR | Diagnostico y limpieza de duplicados en BD (race condition upload). UniqueConstraint parcial + select_for_update en WorkOrderUploadView. Barrera integridad sine qua non en Vias A y C (server-side + client-side). Boton Anadir repuesto dinamico en confirm_entry.html. Hoja Repuestos en generate_work_order_excel(). WorkOrderEntryFormView implementada (Via A). form_entry.html creado (Neonato Puro). Dashboard Via A activada. |
 | 005    | 2026-04-30 | Paso 8 (parcial)                  | WorkOrderEntrySTTView implementada en panel/views.py (PMA). stt_entry.html creado (PEA): grabador Web Speech API es-ES, parser JS client-side, formulario identico a form_entry.html, validacion client-side. urls.py actualizado: import + ruta operator/stt/. Dashboard Via B activada. Pendiente H021 CSS (inline style en stt-transcript div). |
+| 006    | 2026-04-30 | Paso 8 (completado parcial) + fixes | H021 CSS corregido: .stt-transcript-box extraida a panel.css (PMA). Nombre sintetico source_pdf en Vias A/B/C (PMA views.py). Fix autocomplete mobile: pointerdown + guardia _selecting en form_entry.html y stt_entry.html. type=date para fecha y type=time para hc/hf en form_entry.html y stt_entry.html. Refactor DRY: STTView.post() delega en FormView.post() via MRO; funciones de modulo _parse_entry_lines_from_post() y _parse_spare_parts_from_post() con resolucion en dos pasadas (raw iexact primero, normalizado despues). Via A validada E2E. Motor STT reemplazado: Web Speech API → MediaRecorder + Gemini audio. Nuevo endpoint WorkOrderEntrySTTExtractView (operator/stt/extract/). Parser JS queda como fallback offline. Pendiente: validacion E2E Via B y C. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion
+## 5. Hoja de Ruta para la Siguiente Sesion (007)
 
-### Primera accion — Correccion H021: inline style en stt_entry.html
+### Primera accion — Validacion E2E Via B (STT con MediaRecorder + Gemini)
 
-djlint reporta H021 (inline style) en el div#stt-transcript de stt_entry.html.
-La correccion requiere dos PMA quirurgicos en archivos sensibles:
+El motor STT fue reemplazado en sesion 006 por MediaRecorder + Gemini audio.
+La validacion E2E Via B no pudo completarse al cierre de sesion.
 
-1. panel/static/panel/css/panel.css (PMA):
-   - Anadir al final del archivo la clase CSS:
-       .stt-transcript-box {
-           min-height: 4rem;
-           white-space: pre-wrap;
-           font-size: .85rem;
-       }
+Flujo esperado:
+1. Acceder a /panel/operator/stt/ desde taller_test_01 (Chrome/Opera/Firefox).
+2. Pulsar "Iniciar grabacion" — el navegador pedira permiso de microfono.
+3. Dictar el parte con claridad. Ejemplo:
+   "Parte del veinte de abril de dos mil veintisei. Maquina A44.
+    De ocho a catorce. Averia en el sistema hidraulico."
+4. Pulsar "Detener y procesar" — aparece el spinner.
+5. Gemini procesa el audio (endpoint POST /panel/operator/stt/extract/).
+6. Los campos del formulario se pre-rellenan con el JSON devuelto.
+7. El operario revisa, corrige si es necesario y guarda el parte.
+8. Verificar persistencia en BD y Excel descargable con nombre sintetico legible.
 
-2. panel/templates/panel/operator/stt_entry.html (PMA):
-   - Localizar el div con id="stt-transcript":
-       <div id="stt-transcript"
-            class="form-control bg-light"
-            style="min-height:4rem; white-space:pre-wrap; font-size:.85rem;">
-   - Sustituir por:
-       <div id="stt-transcript"
-            class="form-control bg-light stt-transcript-box">
-   - La clase stt-transcript-box proviene de panel.css (recien anadida).
+Si la llamada Gemini falla (error de red, timeout, formato audio no soportado):
+- Comprobar logs del servidor: buscar "# [STTExtract]" en el log de Django.
+- El content_type del blob grabado por el navegador puede variar por plataforma.
+  En ese caso ajustar la deteccion de MIME en WorkOrderEntrySTTExtractView.post()
+  o en el JS (audioMimeType). Los formatos aceptados por Gemini son:
+  audio/webm, audio/ogg, audio/mp4, audio/wav, audio/mpeg.
 
-Tras ambos PMA ejecutar:
-   - djlint stt_entry.html --lint -> 0 errores esperados.
-   - python -m dotenv run python manage.py collectstatic --noinput --clear
+### Segunda accion — Validacion E2E Via C (Upload foto/PDF manuscrito)
 
-### Segunda accion — Paso 9: Validacion E2E de las tres vias
+Flujo:
+1. Acceder a /panel/operator/upload/ desde taller_test_01.
+2. Subir foto de parte manuscrito.
+3. Verificar extraccion Gemini Vision, formulario de confirmacion campo a campo.
+4. Persistencia en BD y Excel con hoja Repuestos.
 
-Con las tres vias implementadas y el CSS corregido, ejecutar validacion
-extremo a extremo desde el usuario taller_test_01:
+### Tercera accion — Validacion barrera de integridad (todas las vias)
 
-- Via A (Form): crear parte con al menos 2 bloques y 1 repuesto.
-  Verificar persistencia en BD, Excel descargable con hoja Repuestos.
-- Via B (STT): dictar parte por voz en Chrome/Edge (lang=es-ES).
-  Verificar pre-relleno de campos, correccion manual, persistencia y Excel.
-- Via C (Upload): subir foto de parte manuscrito.
-  Verificar extraccion Gemini, confirmacion campo a campo, persistencia y Excel.
-- En los tres casos: intentar enviar con campos vacios y verificar que la
-  barrera de integridad bloquea el submit client-side y server-side.
+En cada via, intentar enviar el formulario con campos obligatorios vacios y
+verificar que:
+- La barrera client-side bloquea el submit y muestra el error antes de enviar.
+- Si se fuerza el envio directo (desactivando JS), la barrera server-side
+  re-renderiza el formulario con el mensaje de error detallado por campo.
 
 ### Tema pendiente de estudio — Colas Celery diferenciadas
 
@@ -282,9 +288,9 @@ Estudiar en sesion posterior (no bloquea el Paso 9):
 - Auditar enterprise_core/celery.py: configuracion actual de colas y workers.
 - Definir cola-historicos para process_work_order_pdf.
 - Definir cola-operarios para cualquier tarea futura de alta prioridad.
-- Revisar configuracion de workers en PythonAnywhere (numero y asignacion).
+- Revisar configuracion de workers en PythonAnywhere.
 
-### Estado de migraciones al cierre de sesion 004
+### Estado de migraciones al cierre de sesion 006
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
@@ -293,15 +299,17 @@ Estudiar en sesion posterior (no bloquea el Paso 9):
 | ivr_config             | 0013_alter_companyuser_role                            |
 | panel                  | 0001_initial (AnalyticsProfile)                        |
 
-### Archivos clave modificados en sesion 004
+### Archivos clave modificados en sesion 006
 
-- work_order_processor/models.py — UniqueConstraint parcial (company, source_pdf_hash).
-- work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py — Neonato Puro.
-- work_order_processor/services.py — hoja Repuestos en generate_work_order_excel().
-- panel/views.py — select_for_update race condition fix, barrera integridad
-  Vias A y C, WorkOrderEntryFormView (nueva).
-- panel/urls.py — importar WorkOrderEntryFormView, ruta operator/form/.
-- panel/templates/panel/operator/confirm_entry.html — boton Anadir repuesto
-  dinamico + validacion client-side.
-- panel/templates/panel/operator/dashboard.html — Via A activada.
-- panel/templates/panel/operator/form_entry.html — Neonato Puro.
+- panel/static/panel/css/panel.css — clase .stt-transcript-box (H021 fix) +
+  collectstatic ejecutado.
+- panel/views.py — source_pdf sintetico en Vias A/B/C; refactor DRY
+  (STTView.post() delega en FormView.post(), funciones de modulo
+  _parse_entry_lines_from_post y _parse_spare_parts_from_post con resolucion
+  en dos pasadas); WorkOrderEntrySTTExtractView (nueva, audio binario Gemini).
+- panel/urls.py — ruta operator/stt/extract/ + import WorkOrderEntrySTTExtractView.
+- panel/templates/panel/operator/form_entry.html — autocomplete fix mobile
+  (pointerdown + _selecting), type=date fecha, type=time hc/hf.
+- panel/templates/panel/operator/stt_entry.html — H021 fix (.stt-transcript-box),
+  autocomplete fix mobile, type=date fecha, type=time hc/hf, motor STT
+  reemplazado: Web Speech API eliminada, MediaRecorder + fetch Gemini audio.
