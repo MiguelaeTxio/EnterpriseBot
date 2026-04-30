@@ -341,11 +341,25 @@
                         </div>
                     </div>
                     {% empty %}
-                    <p class="text-muted">
+                    <p class="text-muted" id="no-repuestos-msg">
                         <i class="bi bi-info-circle me-1"></i>
                         No se extrajeron repuestos de la parte trasera del formulario.
+                        Puedes añadirlos manualmente con el botón inferior.
                     </p>
                     {% endfor %}
+
+                    {# Dynamic spare-part rows added via JS will be injected here. #}
+                    {# Las filas de repuesto añadidas dinámicamente via JS se inyectan aquí. #}
+                    <div id="extra-repuestos-container"></div>
+
+                    {# Add spare-part row button / Botón añadir línea de repuesto #}
+                    <div class="d-flex justify-content-start mt-3">
+                        <button type="button"
+                                id="btn-add-repuesto"
+                                class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-plus-lg me-1"></i>Añadir repuesto
+                        </button>
+                    </div>
 
                 </div>
             </div>
@@ -353,12 +367,16 @@
             {# ================================================================ #}
             {# Submit buttons / Botones de envío                                #}
             {# ================================================================ #}
+            <div id="integrity-alert" class="alert alert-danger d-none mb-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <span id="integrity-alert-text"></span>
+            </div>
             <div class="d-flex gap-2 justify-content-end mb-5">
                 <a href="{% url 'panel:operator_upload' %}"
                    class="btn btn-outline-secondary">
                     <i class="bi bi-x-lg me-1"></i>Cancelar
                 </a>
-                <button type="submit" class="btn btn-dark px-4">
+                <button type="submit" id="btn-confirm-submit" class="btn btn-dark px-4">
                     <i class="bi bi-check-lg me-1"></i>Confirmar y guardar
                 </button>
             </div>
@@ -471,6 +489,246 @@
     // Attach to all asset-search inputs on the page.
     // Asociar a todos los inputs asset-search de la página.
     document.querySelectorAll(".asset-search").forEach(attachAutocomplete);
+
+    // ==================================================================
+    // Dynamic spare-part row addition / Adición dinámica de filas de repuesto
+    // ==================================================================
+    var numRepuestosInput = document.querySelector('input[name="num_repuestos"]');
+    var extraContainer    = document.getElementById("extra-repuestos-container");
+    var btnAddRepuesto    = document.getElementById("btn-add-repuesto");
+    var noRepuestosMsg    = document.getElementById("no-repuestos-msg");
+
+    function _buildRepuestoRow(ridx) {
+        /*
+         * Builds and returns a DOM node for a new spare-part row with
+         * the given ridx index. Mirrors the structure of the Jinja/Django
+         * template rows so server-side parsing works identically.
+         *
+         * Construye y devuelve un nodo DOM para una nueva fila de repuesto
+         * con el índice ridx dado. Replica la estructura de las filas del
+         * template Django para que el parseo server-side funcione igual.
+         */
+        var div = document.createElement("div");
+        div.className = "confirm-block mb-4 pb-4 border-bottom extra-repuesto-row";
+        div.innerHTML =
+            '<div class="d-flex align-items-center gap-2 mb-3">' +
+                '<span class="badge bg-secondary">Repuesto ' + ridx + '</span>' +
+                '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-2 btn-remove-repuesto">' +
+                    '<i class="bi bi-trash"></i> Eliminar' +
+                '</button>' +
+            '</div>' +
+            '<div class="row g-3">' +
+                '<div class="col-12 col-md-3">' +
+                    '<label class="form-label fw-medium">Referencia</label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_referencia" ' +
+                           'class="form-control" placeholder="Ref. albarán">' +
+                '</div>' +
+                '<div class="col-12 col-md-3">' +
+                    '<label class="form-label fw-medium">Vehículo</label>' +
+                    '<div class="position-relative">' +
+                        '<input type="text" name="repuesto_' + ridx + '_vehiculo_raw" ' +
+                               'class="form-control asset-search" ' +
+                               'placeholder="Código de máquina" autocomplete="off" ' +
+                               'data-asset-input="true">' +
+                        '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
+                    '</div>' +
+                    '<input type="hidden" name="repuesto_' + ridx + '_flags" value="[]">' +
+                '</div>' +
+                '<div class="col-12 col-md-4">' +
+                    '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_material" ' +
+                           'class="form-control field-required" ' +
+                           'placeholder="Descripción del material">' +
+                '</div>' +
+                '<div class="col-6 col-md-2">' +
+                    '<label class="form-label fw-medium">Unidades <span class="text-danger">*</span></label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_unidades" ' +
+                           'class="form-control field-required" placeholder="Cantidad">' +
+                '</div>' +
+                '<div class="col-12 col-md-3">' +
+                    '<label class="form-label fw-medium">Procedencia</label>' +
+                    '<select name="repuesto_' + ridx + '_origen" class="form-select">' +
+                        '<option value="WAREHOUSE">Almacén</option>' +
+                        '<option value="SUPPLIER">Proveedor</option>' +
+                    '</select>' +
+                '</div>' +
+                '<div class="col-12 col-md-4">' +
+                    '<label class="form-label fw-medium">Proveedor</label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_proveedor" ' +
+                           'class="form-control" placeholder="Nombre proveedor (si aplica)">' +
+                '</div>' +
+                '<div class="col-12 col-md-5">' +
+                    '<label class="form-label fw-medium">Bloque de trabajo asociado</label>' +
+                    '<select name="repuesto_' + ridx + '_entry_idx" class="form-select">' +
+                        _buildEntryOptions() +
+                    '</select>' +
+                '</div>' +
+            '</div>';
+        return div;
+    }
+
+    function _buildEntryOptions() {
+        /*
+         * Reads existing block badges from the DOM to build <option> tags
+         * matching the work blocks currently in the form.
+         *
+         * Lee los badges de bloque existentes en el DOM para construir
+         * las etiquetas <option> correspondientes a los bloques de trabajo.
+         */
+        var opts = "";
+        document.querySelectorAll(".confirm-block .badge.bg-dark").forEach(function (badge) {
+            var text  = badge.textContent.trim();
+            var match = text.match(/(\d+)/);
+            if (match) {
+                var idx = match[1];
+                opts += '<option value="' + idx + '">' + text + '</option>';
+            }
+        });
+        return opts || '<option value="1">Bloque 1</option>';
+    }
+
+    if (btnAddRepuesto) {
+        btnAddRepuesto.addEventListener("click", function () {
+            var current = parseInt(numRepuestosInput.value, 10) || 0;
+            var nextIdx = current + 1;
+            numRepuestosInput.value = nextIdx;
+
+            var row = _buildRepuestoRow(nextIdx);
+            extraContainer.appendChild(row);
+
+            // Hide "no spare parts" message once a row is added.
+            // Ocultar mensaje "sin repuestos" al añadir la primera fila.
+            if (noRepuestosMsg) {
+                noRepuestosMsg.classList.add("d-none");
+            }
+
+            // Attach autocomplete to the new asset-search input.
+            // Asociar autocompletado al nuevo input asset-search.
+            var newInput = row.querySelector(".asset-search");
+            if (newInput) { attachAutocomplete(newInput); }
+
+            // Attach remove handler / Asociar manejador de eliminación.
+            var btnRemove = row.querySelector(".btn-remove-repuesto");
+            if (btnRemove) {
+                btnRemove.addEventListener("click", function () {
+                    extraContainer.removeChild(row);
+                    numRepuestosInput.value = parseInt(numRepuestosInput.value, 10) - 1;
+                    // Re-show "no spare parts" if all rows removed and no
+                    // server-rendered rows exist.
+                    // Mostrar mensaje "sin repuestos" si se eliminaron todas
+                    // las filas y no quedan filas renderizadas por el servidor.
+                    var remaining = extraContainer.querySelectorAll(".extra-repuesto-row");
+                    var serverRows = document.querySelectorAll(
+                        ".confirm-block .badge.bg-secondary"
+                    );
+                    if (noRepuestosMsg && remaining.length === 0 && serverRows.length === 0) {
+                        noRepuestosMsg.classList.remove("d-none");
+                    }
+                });
+            }
+        });
+    }
+
+    // ==================================================================
+    // Client-side integrity validation / Validación de integridad client-side
+    // Mirrors the server-side gate in WorkOrderEntryConfirmView.post().
+    // Replica la barrera server-side de WorkOrderEntryConfirmView.post().
+    // ==================================================================
+    var form         = document.getElementById("form-confirm-entry");
+    var alertBox     = document.getElementById("integrity-alert");
+    var alertText    = document.getElementById("integrity-alert-text");
+    var btnSubmit    = document.getElementById("btn-confirm-submit");
+
+    function _val(name) {
+        var el = form.querySelector('[name="' + name + '"]');
+        return el ? el.value.trim() : "";
+    }
+
+    function _showAlert(msg) {
+        alertText.textContent = msg;
+        alertBox.classList.remove("d-none");
+        alertBox.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function _clearAlert() {
+        alertBox.classList.add("d-none");
+        alertText.textContent = "";
+    }
+
+    function _markField(name, bad) {
+        var el = form.querySelector('[name="' + name + '"]');
+        if (!el) { return; }
+        if (bad) {
+            el.classList.add("field-flagged");
+        } else {
+            el.classList.remove("field-flagged");
+        }
+    }
+
+    if (form && btnSubmit) {
+        form.addEventListener("submit", function (e) {
+            _clearAlert();
+            var errors = [];
+
+            // Gate 1 — Work date / Fecha del parte.
+            var fecha = _val("fecha");
+            _markField("fecha", !fecha);
+            if (!fecha) {
+                errors.push("La fecha del parte es obligatoria.");
+            }
+
+            // Gate 2 — Work blocks / Bloques de trabajo.
+            var numEntradas = parseInt(_val("num_entradas"), 10) || 0;
+            for (var i = 1; i <= numEntradas; i++) {
+                var blk     = "Bloque " + i;
+                var maq     = _val("entrada_" + i + "_maquina_raw");
+                var hc      = _val("entrada_" + i + "_hc");
+                var hf      = _val("entrada_" + i + "_hf");
+                var desc    = _val("entrada_" + i + "_descripcion_averia");
+
+                _markField("entrada_" + i + "_maquina_raw", !maq);
+                _markField("entrada_" + i + "_hc",  !hc);
+                _markField("entrada_" + i + "_hf",  !hf);
+                _markField("entrada_" + i + "_descripcion_averia", !desc);
+
+                if (!maq)  { errors.push(blk + ": código de máquina obligatorio."); }
+                if (!hc)   { errors.push(blk + ": H.C. obligatoria."); }
+                if (!hf)   { errors.push(blk + ": H.F. obligatoria."); }
+                if (!desc) { errors.push(blk + ": descripción de avería obligatoria."); }
+
+                // Check HF > HC / Verificar HF > HC.
+                if (hc && hf && hf <= hc) {
+                    _markField("entrada_" + i + "_hf", true);
+                    errors.push(blk + ": H.F. debe ser posterior a H.C.");
+                }
+            }
+
+            // Gate 3 — Spare-part lines / Líneas de repuesto.
+            var numRepuestos = parseInt(_val("num_repuestos"), 10) || 0;
+            for (var r = 1; r <= numRepuestos; r++) {
+                var rep      = "Repuesto " + r;
+                var material = _val("repuesto_" + r + "_material");
+                var unidades = _val("repuesto_" + r + "_unidades");
+                var qty      = parseFloat(unidades.replace(",", "."));
+
+                _markField("repuesto_" + r + "_material", !material);
+                _markField("repuesto_" + r + "_unidades", !unidades || isNaN(qty) || qty <= 0);
+
+                if (!material) {
+                    errors.push(rep + ": descripción de material obligatoria.");
+                }
+                if (!unidades || isNaN(qty) || qty <= 0) {
+                    errors.push(rep + ": unidades deben ser un número positivo.");
+                }
+            }
+
+            if (errors.length > 0) {
+                e.preventDefault();
+                _showAlert(errors.join(" | "));
+                btnSubmit.disabled = false;
+            }
+        });
+    }
 
 }());
 </script>

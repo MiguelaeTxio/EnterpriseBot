@@ -1,0 +1,779 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/form_entry.html -->
+<!--                                                                                             -->
+<!-- Work-order structured form — Via A entry path (Paso 7, Hito 7, 2026-04-30).               -->
+<!-- Allows WORKSHOP and ADMIN users to submit a daily work-order part directly via a           -->
+<!-- multi-block web form with no AI dependency and zero cost.                                  -->
+<!--                                                                                             -->
+<!-- Features:                                                                                   -->
+<!--   A) Date field with format hint.                                                           -->
+<!--   B) One default work block rendered server-side; additional blocks added via JS.           -->
+<!--   C) Spare-parts section with "Anadir repuesto" dynamic button.                            -->
+<!--   D) Asset autocomplete shared with Via C (WorkshopAssetAutocompleteView).                 -->
+<!--   E) Client-side integrity validation mirroring server-side gate.                           -->
+<!--   F) Server-side integrity gate in WorkOrderEntryFormView.post().                          -->
+<!--                                                                                             -->
+<!-- Formulario estructurado de partes — via de entrada A (Paso 7, Hito 7, 2026-04-30).        -->
+<!-- Permite a usuarios WORKSHOP y ADMIN enviar un parte diario mediante un formulario          -->
+<!-- web multi-bloque sin dependencia de IA y con coste cero.                                   -->
+{% extends "panel/base.html" %}
+
+{% block title %}Nuevo parte — Formulario{% endblock %}
+{% block page_title %}Nuevo parte — Formulario{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
+
+        {# ------------------------------------------------------------------ #}
+        {# Back link / Enlace de retorno                                       #}
+        {# ------------------------------------------------------------------ #}
+        <div class="mb-3">
+            <a href="{% url 'panel:operator_dashboard' %}"
+               class="text-muted text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>Volver al selector
+            </a>
+        </div>
+
+        {# ------------------------------------------------------------------ #}
+        {# Error alert — Alerta de error (integridad server-side)              #}
+        {# ------------------------------------------------------------------ #}
+        {% if error %}
+        <div class="alert alert-danger d-flex align-items-start gap-2 mb-4">
+            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+            <div>{{ error }}</div>
+        </div>
+        {% endif %}
+
+        <form method="post" id="form-entry">
+            {% csrf_token %}
+
+            {# Hidden counters updated by JS / Contadores ocultos actualizados por JS #}
+            <input type="hidden" name="num_entradas"  id="num-entradas-input"  value="{{ num_entradas }}">
+            <input type="hidden" name="num_repuestos" id="num-repuestos-input" value="{{ num_repuestos }}">
+
+            {# ================================================================ #}
+            {# SECTION 1 — Work date / Fecha del parte                         #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-calendar3 me-2 text-primary"></i>
+                        Fecha del parte
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="col-12 col-md-4">
+                        <label for="id_fecha" class="form-label fw-medium">
+                            Fecha <span class="text-danger">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            id="id_fecha"
+                            name="fecha"
+                            class="form-control {% if not fecha %}field-flagged{% endif %}"
+                            value="{{ fecha }}"
+                            placeholder="DD/MM/AAAA"
+                            autocomplete="off"
+                        >
+                        <div class="form-text">Formato: DD/MM/AAAA</div>
+                    </div>
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# SECTION 2 — Work blocks / Bloques de trabajo                    #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-wrench me-2 text-primary"></i>
+                        Bloques de trabajo
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+
+                    {# Server-rendered blocks on validation failure / Bloques renderizados en fallo de validacion #}
+                    {% if entradas_enriched %}
+                        {% for entrada in entradas_enriched %}
+                        <div class="confirm-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %}" id="block-{{ entrada.idx }}">
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <span class="badge bg-dark">Bloque {{ entrada.idx }}</span>
+                                {% if entrada.machine_asset %}
+                                    <span class="badge badge-active text-sm">
+                                        {{ entrada.machine_asset.codigo }} — {{ entrada.machine_asset.marca_modelo }}
+                                    </span>
+                                {% elif entrada.maquina_raw %}
+                                    <span class="badge badge-inactive text-sm">
+                                        {{ entrada.maquina_raw }} — no identificado
+                                    </span>
+                                {% endif %}
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">
+                                        Máquina <span class="text-danger">*</span>
+                                    </label>
+                                    <div class="position-relative">
+                                        <input type="text"
+                                               name="entrada_{{ entrada.idx }}_maquina_raw"
+                                               class="form-control asset-search {% if not entrada.maquina_raw %}field-flagged{% endif %}"
+                                               value="{{ entrada.maquina_raw }}"
+                                               placeholder="Código de máquina"
+                                               autocomplete="off">
+                                        <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">
+                                        H.C. <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="entrada_{{ entrada.idx }}_hc"
+                                           class="form-control {% if not entrada.hc %}field-flagged{% endif %}"
+                                           value="{{ entrada.hc }}"
+                                           placeholder="HH:MM">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">
+                                        H.F. <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="entrada_{{ entrada.idx }}_hf"
+                                           class="form-control {% if not entrada.hf %}field-flagged{% endif %}"
+                                           value="{{ entrada.hf }}"
+                                           placeholder="HH:MM">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">O.R.</label>
+                                    <input type="text"
+                                           name="entrada_{{ entrada.idx }}_or_val"
+                                           class="form-control"
+                                           value="{{ entrada.or_val }}"
+                                           placeholder="Referencia O.R. (opcional)">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-medium">
+                                        Descripción avería <span class="text-danger">*</span>
+                                    </label>
+                                    <textarea name="entrada_{{ entrada.idx }}_descripcion_averia"
+                                              class="form-control {% if not entrada.descripcion_averia %}field-flagged{% endif %}"
+                                              rows="3"
+                                              placeholder="Descripción de la avería o tarea">{{ entrada.descripcion_averia }}</textarea>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-medium">Reparación realizada</label>
+                                    <textarea name="entrada_{{ entrada.idx }}_reparacion"
+                                              class="form-control"
+                                              rows="3"
+                                              placeholder="Descripción de la reparación">{{ entrada.reparacion }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    {# Default first block rendered on GET / Primer bloque por defecto en GET #}
+                    <div class="confirm-block mb-4 pb-4" id="block-1">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span class="badge bg-dark">Bloque 1</span>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-medium">
+                                    Máquina <span class="text-danger">*</span>
+                                </label>
+                                <div class="position-relative">
+                                    <input type="text"
+                                           name="entrada_1_maquina_raw"
+                                           class="form-control asset-search field-flagged"
+                                           value=""
+                                           placeholder="Código de máquina"
+                                           autocomplete="off">
+                                    <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label class="form-label fw-medium">
+                                    H.C. <span class="text-danger">*</span>
+                                </label>
+                                <input type="text"
+                                       name="entrada_1_hc"
+                                       class="form-control field-flagged"
+                                       value=""
+                                       placeholder="HH:MM">
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label class="form-label fw-medium">
+                                    H.F. <span class="text-danger">*</span>
+                                </label>
+                                <input type="text"
+                                       name="entrada_1_hf"
+                                       class="form-control field-flagged"
+                                       value=""
+                                       placeholder="HH:MM">
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-medium">O.R.</label>
+                                <input type="text"
+                                       name="entrada_1_or_val"
+                                       class="form-control"
+                                       value=""
+                                       placeholder="Referencia O.R. (opcional)">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-medium">
+                                    Descripción avería <span class="text-danger">*</span>
+                                </label>
+                                <textarea name="entrada_1_descripcion_averia"
+                                          class="form-control field-flagged"
+                                          rows="3"
+                                          placeholder="Descripción de la avería o tarea"></textarea>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-medium">Reparación realizada</label>
+                                <textarea name="entrada_1_reparacion"
+                                          class="form-control"
+                                          rows="3"
+                                          placeholder="Descripción de la reparación"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {# Container for dynamically added blocks / Contenedor de bloques anadidos dinamicamente #}
+                    <div id="extra-blocks-container"></div>
+
+                    {# Add block button / Boton anadir bloque #}
+                    <div class="d-flex justify-content-start mt-2">
+                        <button type="button" id="btn-add-block"
+                                class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-plus-lg me-1"></i>Anadir bloque
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# SECTION 3 — Spare parts / Repuestos                             #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-box-seam me-2 text-primary"></i>
+                        Repuestos utilizados
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+
+                    {# Server-rendered spare-part rows on validation failure #}
+                    {# Filas de repuesto renderizadas en fallo de validacion #}
+                    {% if repuestos_enriched %}
+                        {% for rep in repuestos_enriched %}
+                        <div class="confirm-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %} extra-repuesto-row">
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <span class="badge bg-secondary">Repuesto {{ rep.ridx }}</span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-12 col-md-3">
+                                    <label class="form-label fw-medium">Referencia</label>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_referencia"
+                                           class="form-control"
+                                           value="{{ rep.referencia }}"
+                                           placeholder="Ref. albarán">
+                                </div>
+                                <div class="col-12 col-md-3">
+                                    <label class="form-label fw-medium">Vehículo</label>
+                                    <div class="position-relative">
+                                        <input type="text"
+                                               name="repuesto_{{ rep.ridx }}_vehiculo_raw"
+                                               class="form-control asset-search"
+                                               value="{{ rep.vehiculo_raw }}"
+                                               placeholder="Código de máquina"
+                                               autocomplete="off">
+                                        <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                    </div>
+                                    <input type="hidden" name="repuesto_{{ rep.ridx }}_flags" value="[]">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">
+                                        Material <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_material"
+                                           class="form-control {% if not rep.material %}field-flagged{% endif %}"
+                                           value="{{ rep.material }}"
+                                           placeholder="Descripción del material">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">
+                                        Unidades <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_unidades"
+                                           class="form-control {% if not rep.unidades %}field-flagged{% endif %}"
+                                           value="{{ rep.unidades|default:'' }}"
+                                           placeholder="Cantidad">
+                                </div>
+                                <div class="col-12 col-md-3">
+                                    <label class="form-label fw-medium">Procedencia</label>
+                                    <select name="repuesto_{{ rep.ridx }}_origen" class="form-select">
+                                        <option value="WAREHOUSE" {% if rep.origen == 'WAREHOUSE' %}selected{% endif %}>Almacén</option>
+                                        <option value="SUPPLIER"  {% if rep.origen == 'SUPPLIER'  %}selected{% endif %}>Proveedor</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">Proveedor</label>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_proveedor"
+                                           class="form-control"
+                                           value="{{ rep.proveedor }}"
+                                           placeholder="Nombre proveedor (si aplica)">
+                                </div>
+                                <div class="col-12 col-md-5">
+                                    <label class="form-label fw-medium">Bloque asociado</label>
+                                    <select name="repuesto_{{ rep.ridx }}_entry_idx" class="form-select">
+                                        {% for entrada in entradas_enriched %}
+                                        <option value="{{ entrada.idx }}"
+                                            {% if rep.ridx == entrada.idx %}selected{% endif %}>
+                                            Bloque {{ entrada.idx }}
+                                            {% if entrada.maquina_raw %}— {{ entrada.maquina_raw }}{% endif %}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <p class="text-muted" id="no-repuestos-msg">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Si se han utilizado repuestos o materiales, añádelos con el botón inferior.
+                    </p>
+                    {% endif %}
+
+                    {# Container for dynamically added spare-part rows #}
+                    {# Contenedor de filas de repuesto anadidas dinamicamente #}
+                    <div id="extra-repuestos-container"></div>
+
+                    {# Add spare-part row button / Boton anadir repuesto #}
+                    <div class="d-flex justify-content-start mt-3">
+                        <button type="button" id="btn-add-repuesto"
+                                class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-plus-lg me-1"></i>Anadir repuesto
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# Client-side integrity alert / Alerta de integridad client-side  #}
+            {# ================================================================ #}
+            <div id="integrity-alert" class="alert alert-danger d-none mb-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <span id="integrity-alert-text"></span>
+            </div>
+
+            {# ================================================================ #}
+            {# Submit buttons / Botones de envio                               #}
+            {# ================================================================ #}
+            <div class="d-flex gap-2 justify-content-end mb-5">
+                <a href="{% url 'panel:operator_dashboard' %}"
+                   class="btn btn-outline-secondary">
+                    <i class="bi bi-x-lg me-1"></i>Cancelar
+                </a>
+                <button type="submit" id="btn-form-submit" class="btn btn-success px-4">
+                    <i class="bi bi-check-lg me-1"></i>Guardar parte
+                </button>
+            </div>
+
+        </form>
+    </div>
+</div>
+
+{# ================================================================ #}
+{# Asset data for autocomplete / Datos de activos para autocompletado #}
+{# ================================================================ #}
+<script>
+(function () {
+    "use strict";
+
+    var ASSETS_URL = "{% url 'panel:operator_assets' %}";
+
+    /*
+     * Debounce helper: delays execution until after 'wait' ms have elapsed
+     * since the last call. Prevents excessive API requests while typing.
+     *
+     * Helper debounce: retrasa la ejecucion hasta que transcurran 'wait' ms
+     * desde la ultima llamada. Evita peticiones API excesivas al escribir.
+     */
+    function debounce(fn, wait) {
+        var timer;
+        return function () {
+            var ctx  = this;
+            var args = arguments;
+            clearTimeout(timer);
+            timer = setTimeout(function () { fn.apply(ctx, args); }, wait);
+        };
+    }
+
+    /*
+     * Attaches autocomplete behaviour to a single asset-search input.
+     *
+     * Asocia comportamiento de autocompletado a un unico input asset-search.
+     */
+    function attachAutocomplete(input) {
+        var dropdown = input.parentElement.querySelector(".asset-dropdown");
+        if (!dropdown) { return; }
+
+        var lastQuery = "";
+
+        function fetchAndRender(q) {
+            if (q === lastQuery) { return; }
+            lastQuery = q;
+            fetch(ASSETS_URL + "?q=" + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    dropdown.innerHTML = "";
+                    if (!data.assets || data.assets.length === 0) {
+                        dropdown.classList.add("d-none");
+                        return;
+                    }
+                    data.assets.forEach(function (asset) {
+                        var btn = document.createElement("button");
+                        btn.type      = "button";
+                        btn.className = "list-group-item list-group-item-action text-sm py-1 px-2";
+                        btn.textContent = asset.codigo + " \u2014 " + asset.marca_modelo;
+                        btn.addEventListener("mousedown", function (e) {
+                            e.preventDefault();
+                            input.value = asset.codigo;
+                            dropdown.classList.add("d-none");
+                            dropdown.innerHTML = "";
+                            lastQuery = asset.codigo;
+                        });
+                        dropdown.appendChild(btn);
+                    });
+                    dropdown.classList.remove("d-none");
+                })
+                .catch(function () { dropdown.classList.add("d-none"); });
+        }
+
+        var debouncedFetch = debounce(function () {
+            var q = input.value.trim();
+            if (q.length === 0) { dropdown.classList.add("d-none"); return; }
+            fetchAndRender(q);
+        }, 250);
+
+        input.addEventListener("input",  debouncedFetch);
+        input.addEventListener("blur",   function () {
+            setTimeout(function () { dropdown.classList.add("d-none"); }, 200);
+        });
+        input.addEventListener("focus",  function () {
+            if (input.value.trim().length > 0) { fetchAndRender(input.value.trim()); }
+        });
+    }
+
+    // Attach autocomplete to all pre-rendered inputs.
+    // Asociar autocompletado a todos los inputs pre-renderizados.
+    document.querySelectorAll(".asset-search").forEach(attachAutocomplete);
+
+    // ==================================================================
+    // Block counter / Contador de bloques
+    // ==================================================================
+    var numEntradasInput  = document.getElementById("num-entradas-input");
+    var numRepuestosInput = document.getElementById("num-repuestos-input");
+    var extraBlocksCont   = document.getElementById("extra-blocks-container");
+    var extraRepCont      = document.getElementById("extra-repuestos-container");
+    var btnAddBlock       = document.getElementById("btn-add-block");
+    var btnAddRepuesto    = document.getElementById("btn-add-repuesto");
+    var noRepuestosMsg    = document.getElementById("no-repuestos-msg");
+
+    /*
+     * Returns the current total number of rendered work blocks (both
+     * server-rendered and dynamically added).
+     *
+     * Devuelve el numero total actual de bloques de trabajo renderizados
+     * (tanto del servidor como anadidos dinamicamente).
+     */
+    function _currentBlockCount() {
+        return parseInt(numEntradasInput.value, 10) || 1;
+    }
+
+    /*
+     * Builds a work-block DOM node for the given idx.
+     * Mirrors the field names expected by WorkOrderEntryFormView.post().
+     *
+     * Construye un nodo DOM de bloque de trabajo para el idx dado.
+     * Replica los nombres de campo esperados por WorkOrderEntryFormView.post().
+     */
+    function _buildBlockRow(idx) {
+        var div = document.createElement("div");
+        div.className = "confirm-block mb-4 pb-4 border-bottom extra-block-row";
+        div.id = "block-" + idx;
+        div.innerHTML =
+            '<div class="d-flex align-items-center gap-2 mb-3">' +
+                '<span class="badge bg-dark">Bloque ' + idx + '</span>' +
+                '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-2 btn-remove-block">' +
+                    '<i class="bi bi-trash"></i> Eliminar bloque' +
+                '</button>' +
+            '</div>' +
+            '<div class="row g-3">' +
+                '<div class="col-12 col-md-4">' +
+                    '<label class="form-label fw-medium">Maquina <span class="text-danger">*</span></label>' +
+                    '<div class="position-relative">' +
+                        '<input type="text" name="entrada_' + idx + '_maquina_raw" ' +
+                               'class="form-control asset-search" ' +
+                               'placeholder="Codigo de maquina" autocomplete="off">' +
+                        '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="col-6 col-md-2">' +
+                    '<label class="form-label fw-medium">H.C. <span class="text-danger">*</span></label>' +
+                    '<input type="text" name="entrada_' + idx + '_hc" ' +
+                           'class="form-control" placeholder="HH:MM">' +
+                '</div>' +
+                '<div class="col-6 col-md-2">' +
+                    '<label class="form-label fw-medium">H.F. <span class="text-danger">*</span></label>' +
+                    '<input type="text" name="entrada_' + idx + '_hf" ' +
+                           'class="form-control" placeholder="HH:MM">' +
+                '</div>' +
+                '<div class="col-12 col-md-4">' +
+                    '<label class="form-label fw-medium">O.R.</label>' +
+                    '<input type="text" name="entrada_' + idx + '_or_val" ' +
+                           'class="form-control" placeholder="Referencia O.R. (opcional)">' +
+                '</div>' +
+                '<div class="col-12 col-md-6">' +
+                    '<label class="form-label fw-medium">Descripcion averia <span class="text-danger">*</span></label>' +
+                    '<textarea name="entrada_' + idx + '_descripcion_averia" ' +
+                              'class="form-control" rows="3" ' +
+                              'placeholder="Descripcion de la averia o tarea"></textarea>' +
+                '</div>' +
+                '<div class="col-12 col-md-6">' +
+                    '<label class="form-label fw-medium">Reparacion realizada</label>' +
+                    '<textarea name="entrada_' + idx + '_reparacion" ' +
+                              'class="form-control" rows="3" ' +
+                              'placeholder="Descripcion de la reparacion"></textarea>' +
+                '</div>' +
+            '</div>';
+        return div;
+    }
+
+    /*
+     * Builds a spare-part row DOM node for the given ridx.
+     *
+     * Construye un nodo DOM de fila de repuesto para el ridx dado.
+     */
+    function _buildRepuestoRow(ridx) {
+        var blockCount = _currentBlockCount();
+        var opts = "";
+        for (var b = 1; b <= blockCount; b++) {
+            opts += '<option value="' + b + '">Bloque ' + b + '</option>';
+        }
+        var div = document.createElement("div");
+        div.className = "confirm-block mb-4 pb-4 border-bottom extra-repuesto-row";
+        div.innerHTML =
+            '<div class="d-flex align-items-center gap-2 mb-3">' +
+                '<span class="badge bg-secondary">Repuesto ' + ridx + '</span>' +
+                '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-2 btn-remove-repuesto">' +
+                    '<i class="bi bi-trash"></i> Eliminar' +
+                '</button>' +
+            '</div>' +
+            '<div class="row g-3">' +
+                '<div class="col-12 col-md-3">' +
+                    '<label class="form-label fw-medium">Referencia</label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_referencia" ' +
+                           'class="form-control" placeholder="Ref. albaran">' +
+                '</div>' +
+                '<div class="col-12 col-md-3">' +
+                    '<label class="form-label fw-medium">Vehiculo</label>' +
+                    '<div class="position-relative">' +
+                        '<input type="text" name="repuesto_' + ridx + '_vehiculo_raw" ' +
+                               'class="form-control asset-search" ' +
+                               'placeholder="Codigo de maquina" autocomplete="off">' +
+                        '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
+                    '</div>' +
+                    '<input type="hidden" name="repuesto_' + ridx + '_flags" value="[]">' +
+                '</div>' +
+                '<div class="col-12 col-md-4">' +
+                    '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_material" ' +
+                           'class="form-control" placeholder="Descripcion del material">' +
+                '</div>' +
+                '<div class="col-6 col-md-2">' +
+                    '<label class="form-label fw-medium">Unidades <span class="text-danger">*</span></label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_unidades" ' +
+                           'class="form-control" placeholder="Cantidad">' +
+                '</div>' +
+                '<div class="col-12 col-md-3">' +
+                    '<label class="form-label fw-medium">Procedencia</label>' +
+                    '<select name="repuesto_' + ridx + '_origen" class="form-select">' +
+                        '<option value="WAREHOUSE">Almacen</option>' +
+                        '<option value="SUPPLIER">Proveedor</option>' +
+                    '</select>' +
+                '</div>' +
+                '<div class="col-12 col-md-4">' +
+                    '<label class="form-label fw-medium">Proveedor</label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_proveedor" ' +
+                           'class="form-control" placeholder="Nombre proveedor (si aplica)">' +
+                '</div>' +
+                '<div class="col-12 col-md-5">' +
+                    '<label class="form-label fw-medium">Bloque asociado</label>' +
+                    '<select name="repuesto_' + ridx + '_entry_idx" class="form-select">' +
+                        opts +
+                    '</select>' +
+                '</div>' +
+            '</div>';
+        return div;
+    }
+
+    // -- Add block handler / Manejador anadir bloque --
+    if (btnAddBlock) {
+        btnAddBlock.addEventListener("click", function () {
+            var current = parseInt(numEntradasInput.value, 10) || 1;
+            var nextIdx = current + 1;
+            numEntradasInput.value = nextIdx;
+            var row = _buildBlockRow(nextIdx);
+            extraBlocksCont.appendChild(row);
+            // Attach autocomplete to new input.
+            // Asociar autocompletado al nuevo input.
+            var newInput = row.querySelector(".asset-search");
+            if (newInput) { attachAutocomplete(newInput); }
+            // Remove handler / Manejador de eliminacion.
+            var btnRemove = row.querySelector(".btn-remove-block");
+            if (btnRemove) {
+                btnRemove.addEventListener("click", function () {
+                    extraBlocksCont.removeChild(row);
+                    numEntradasInput.value = parseInt(numEntradasInput.value, 10) - 1;
+                });
+            }
+        });
+    }
+
+    // -- Add repuesto handler / Manejador anadir repuesto --
+    if (btnAddRepuesto) {
+        btnAddRepuesto.addEventListener("click", function () {
+            var current = parseInt(numRepuestosInput.value, 10) || 0;
+            var nextIdx = current + 1;
+            numRepuestosInput.value = nextIdx;
+            var row = _buildRepuestoRow(nextIdx);
+            extraRepCont.appendChild(row);
+            if (noRepuestosMsg) { noRepuestosMsg.classList.add("d-none"); }
+            // Attach autocomplete / Asociar autocompletado.
+            var newInput = row.querySelector(".asset-search");
+            if (newInput) { attachAutocomplete(newInput); }
+            // Remove handler / Manejador de eliminacion.
+            var btnRemove = row.querySelector(".btn-remove-repuesto");
+            if (btnRemove) {
+                btnRemove.addEventListener("click", function () {
+                    extraRepCont.removeChild(row);
+                    numRepuestosInput.value = parseInt(numRepuestosInput.value, 10) - 1;
+                    var remaining = extraRepCont.querySelectorAll(".extra-repuesto-row");
+                    if (noRepuestosMsg && remaining.length === 0) {
+                        noRepuestosMsg.classList.remove("d-none");
+                    }
+                });
+            }
+        });
+    }
+
+    // ==================================================================
+    // Client-side integrity validation / Validacion de integridad client-side
+    // ==================================================================
+    var form      = document.getElementById("form-entry");
+    var alertBox  = document.getElementById("integrity-alert");
+    var alertText = document.getElementById("integrity-alert-text");
+    var btnSubmit = document.getElementById("btn-form-submit");
+
+    function _val(name) {
+        var el = form ? form.querySelector('[name="' + name + '"]') : null;
+        return el ? el.value.trim() : "";
+    }
+
+    function _showAlert(msg) {
+        if (!alertBox || !alertText) { return; }
+        alertText.textContent = msg;
+        alertBox.classList.remove("d-none");
+        alertBox.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function _clearAlert() {
+        if (!alertBox || !alertText) { return; }
+        alertBox.classList.add("d-none");
+        alertText.textContent = "";
+    }
+
+    function _markField(name, bad) {
+        var el = form ? form.querySelector('[name="' + name + '"]') : null;
+        if (!el) { return; }
+        if (bad) { el.classList.add("field-flagged"); }
+        else     { el.classList.remove("field-flagged"); }
+    }
+
+    if (form && btnSubmit) {
+        form.addEventListener("submit", function (e) {
+            _clearAlert();
+            var errors = [];
+
+            // Gate 1 — Date / Fecha.
+            var fecha = _val("fecha");
+            _markField("fecha", !fecha);
+            if (!fecha) { errors.push("La fecha del parte es obligatoria."); }
+
+            // Gate 2 — Work blocks / Bloques de trabajo.
+            var numEntradas = parseInt(_val("num_entradas"), 10) || 1;
+            for (var i = 1; i <= numEntradas; i++) {
+                var blk  = "Bloque " + i;
+                var maq  = _val("entrada_" + i + "_maquina_raw");
+                var hc   = _val("entrada_" + i + "_hc");
+                var hf   = _val("entrada_" + i + "_hf");
+                var desc = _val("entrada_" + i + "_descripcion_averia");
+
+                _markField("entrada_" + i + "_maquina_raw",        !maq);
+                _markField("entrada_" + i + "_hc",                 !hc);
+                _markField("entrada_" + i + "_hf",                 !hf);
+                _markField("entrada_" + i + "_descripcion_averia", !desc);
+
+                if (!maq)  { errors.push(blk + ": codigo de maquina obligatorio."); }
+                if (!hc)   { errors.push(blk + ": H.C. obligatoria."); }
+                if (!hf)   { errors.push(blk + ": H.F. obligatoria."); }
+                if (!desc) { errors.push(blk + ": descripcion de averia obligatoria."); }
+                if (hc && hf && hf <= hc) {
+                    _markField("entrada_" + i + "_hf", true);
+                    errors.push(blk + ": H.F. debe ser posterior a H.C.");
+                }
+            }
+
+            // Gate 3 — Spare parts / Repuestos.
+            var numRepuestos = parseInt(_val("num_repuestos"), 10) || 0;
+            for (var r = 1; r <= numRepuestos; r++) {
+                var rep      = "Repuesto " + r;
+                var material = _val("repuesto_" + r + "_material");
+                var unidades = _val("repuesto_" + r + "_unidades");
+                var qty      = parseFloat(unidades.replace(",", "."));
+
+                _markField("repuesto_" + r + "_material", !material);
+                _markField("repuesto_" + r + "_unidades", !unidades || isNaN(qty) || qty <= 0);
+
+                if (!material) { errors.push(rep + ": descripcion de material obligatoria."); }
+                if (!unidades || isNaN(qty) || qty <= 0) {
+                    errors.push(rep + ": unidades deben ser un numero positivo.");
+                }
+            }
+
+            if (errors.length > 0) {
+                e.preventDefault();
+                _showAlert(errors.join(" | "));
+            }
+        });
+    }
+
+}());
+</script>
+
+{# ================================================================ #}
+{# First block rendered inline for GET requests                      #}
+{# Primer bloque renderizado inline para peticiones GET              #}
+{# This hidden template is cloned by JS for dynamically added blocks #}
+{# Este template oculto es clonado por JS para bloques dinamicos    #}
+{% endblock %}

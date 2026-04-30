@@ -1738,6 +1738,121 @@ def generate_work_order_excel(work_order_id: int) -> None:
         ws_ley.column_dimensions["C"].width = 40
 
         # ------------------------------------------------------------------
+        # REPUESTOS sheet / Hoja REPUESTOS
+        # One row per SparePartLine linked to the WorkOrderEntryLine records
+        # of this WorkOrder. Columns: FECHA, BLOQUE, REFERENCIA, VEHICULO,
+        # MATERIAL, UNIDADES, ORIGEN, PROVEEDOR.
+        # Only created when at least one SparePartLine exists.
+        #
+        # Hoja REPUESTOS: una fila por SparePartLine vinculada a las
+        # WorkOrderEntryLine de este WorkOrder. Columnas: FECHA, BLOQUE,
+        # REFERENCIA, VEHICULO, MATERIAL, UNIDADES, ORIGEN, PROVEEDOR.
+        # Solo se crea cuando existe al menos un SparePartLine.
+        # ------------------------------------------------------------------
+        from work_order_processor.models import SparePartLine
+
+        spare_parts = (
+            SparePartLine.objects
+            .filter(entry_line__entry__work_order=work_order)
+            .select_related(
+                "entry_line__entry",
+                "entry_line__machine_asset",
+                "vehicle",
+            )
+            .order_by(
+                "entry_line__entry__page_number",
+                "entry_line__line_number",
+                "line_number",
+            )
+        )
+
+        if spare_parts.exists():
+            ws_rep = wb.create_sheet(title="Repuestos")
+
+            # -- Header row / Fila de cabecera --
+            _REP_COLS = [
+                ("FECHA",      14),
+                ("BLOQUE",     10),
+                ("REFERENCIA", 18),
+                ("VEHICULO",   14),
+                ("MATERIAL",   40),
+                ("UNIDADES",   10),
+                ("ORIGEN",     12),
+                ("PROVEEDOR",  24),
+            ]
+            rep_hdr_font = Font(bold=True, color=_CLR_HEADER_FG)
+            rep_hdr_fill = _make_fill(_CLR_HEADER_BG)
+            rep_hdr_aln  = Alignment(horizontal="center", vertical="center",
+                                     wrap_text=True)
+
+            for ci, (hdr, width) in enumerate(_REP_COLS, start=1):
+                cell           = ws_rep.cell(row=1, column=ci, value=hdr)
+                cell.font      = rep_hdr_font
+                cell.fill      = rep_hdr_fill
+                cell.alignment = rep_hdr_aln
+                cell.border    = _make_border_thin()
+                ws_rep.column_dimensions[get_column_letter(ci)].width = width
+
+            ws_rep.row_dimensions[1].height = 24
+
+            # -- Data rows / Filas de datos --
+            for rep_offset, spl in enumerate(spare_parts, start=2):
+                entry      = spl.entry_line.entry
+                date_str   = (
+                    entry.work_date.strftime("%d/%m/%Y")
+                    if entry.work_date else ""
+                )
+                bloque_val = f"Bloque {spl.entry_line.line_number}"
+
+                # VEHICULO: prefer resolved MachineAsset code, fall back to
+                # raw vehicle name stored on the SparePartLine.
+                # VEHICULO: preferir código MachineAsset resuelto; si no,
+                # usar el nombre de vehículo crudo almacenado en SparePartLine.
+                if spl.vehicle:
+                    vehiculo_val = spl.vehicle.codigo or spl.vehicle.descripcion or ""
+                else:
+                    # vehicle_raw is not stored on SparePartLine; use reference
+                    # as fallback since it may carry the vehicle code in some cases.
+                    # vehicle_raw no se almacena en SparePartLine; usar referencia
+                    # como fallback ya que puede contener el código de vehículo.
+                    vehiculo_val = ""
+
+                origen_val   = spl.get_source_display()
+                proveedor_val = spl.supplier if spl.source == SparePartLine.Source.SUPPLIER else ""
+
+                row_vals = [
+                    date_str,
+                    bloque_val,
+                    spl.reference  or "",
+                    vehiculo_val,
+                    spl.material   or "",
+                    float(spl.quantity) if spl.quantity is not None else "",
+                    origen_val,
+                    proveedor_val,
+                ]
+                for ci, val in enumerate(row_vals, start=1):
+                    cell           = ws_rep.cell(row=rep_offset, column=ci, value=val)
+                    cell.border    = _make_border_thin()
+                    cell.alignment = Alignment(vertical="center")
+                    if ci == 6:
+                        # UNIDADES — right-aligned, 2 decimal places.
+                        # UNIDADES — alineación derecha, 2 decimales.
+                        cell.alignment    = Alignment(horizontal="right",
+                                                      vertical="center")
+                        cell.number_format = "0.00"
+
+                ws_rep.row_dimensions[rep_offset].height = 16
+
+            ws_rep.freeze_panes = "A2"
+
+            logger.info(
+                "# Excel: hoja Repuestos generada con %d líneas para "
+                "WorkOrder #%d.",
+                spare_parts.count(),
+                work_order_id,
+            )
+
+        # ------------------------------------------------------------------
         # Persist / Persistir
         # ------------------------------------------------------------------
         buffer = io.BytesIO()

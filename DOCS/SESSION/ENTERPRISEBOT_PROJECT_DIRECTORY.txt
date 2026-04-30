@@ -50,6 +50,7 @@
 ./panel/templates/panel/work_orders/upload.html
 ./panel/templates/panel/work_orders/_entry_group_fragment.html
 ./panel/templates/panel/work_orders/_review_badge_fragment.html
+./panel/templates/panel/operator/form_entry.html
 ./panel/templates/panel/operator/confirm_entry.html
 ./panel/templates/panel/operator/dashboard.html
 ./panel/templates/panel/operator/upload_entry.html
@@ -257,6 +258,7 @@
 ./work_order_processor/models.py
 ./work_order_processor/migrations/0002_remove_workorderentry_end_time_and_more.py
 ./work_order_processor/migrations/0005_add_spare_part_line.py
+./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py
 ./work_order_processor/migrations/0004_workorder_source_pdf_hash.py
 ./work_order_processor/migrations/__init__.py
 ./work_order_processor/migrations/0003_workorder_reviewed_workorder_reviewed_at_and_more.py

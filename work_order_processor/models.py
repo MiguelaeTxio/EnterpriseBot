@@ -209,6 +209,20 @@ class WorkOrder(models.Model):
         verbose_name        = _("Parte de Trabajo")
         verbose_name_plural = _("Partes de Trabajo")
         ordering            = ["-upload_date"]
+        constraints         = [
+            # Prevents duplicate uploads of the exact same PDF file per company.
+            # A partial index is used to exclude synthetic work orders created
+            # via the operator Upload view (Via C), which have an empty hash.
+            #
+            # Impide cargas duplicadas del mismo fichero PDF exacto por empresa.
+            # Se usa un índice parcial para excluir los partes sintéticos creados
+            # desde la vista Upload del operario (Vía C), que tienen hash vacío.
+            models.UniqueConstraint(
+                fields     = ["company", "source_pdf_hash"],
+                condition  = ~models.Q(source_pdf_hash=""),
+                name       = "unique_pdf_hash_per_company",
+            ),
+        ]
 
     def __str__(self):
         return (

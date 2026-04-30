@@ -2851,18 +2851,58 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
         # Step 4 — Create WorkOrder, store hash, enqueue Celery task.
         # Paso 4 — Crear WorkOrder, guardar hash, encolar tarea Celery.
         #
-        # source_pdf_hash is stored at creation time so that any subsequent
-        # upload of the exact same file is caught immediately by Level 1.
-        # source_pdf_hash se guarda en el momento de la creación para que
-        # cualquier carga posterior del mismo fichero exacto sea detectada
-        # de inmediato por el Nivel 1.
+        # The creation is wrapped in an atomic block with select_for_update
+        # to close the race-condition window that allowed two concurrent
+        # POSTs of the same file to bypass Level 1 and create duplicate
+        # WorkOrders. select_for_update acquires a row-level lock on any
+        # existing WorkOrder with the same hash before the INSERT, so a
+        # second concurrent request will block until the first commits.
+        # If the lock reveals an existing record the second request aborts
+        # the creation and redirects to the list with an informational message.
+        #
+        # La creación se envuelve en un bloque atómico con select_for_update
+        # para cerrar la ventana de race condition que permitía que dos POSTs
+        # concurrentes del mismo fichero eludieran el Nivel 1 y crearan
+        # WorkOrders duplicados. select_for_update adquiere un bloqueo a
+        # nivel de fila sobre cualquier WorkOrder existente con el mismo hash
+        # antes del INSERT, de modo que una segunda petición concurrente
+        # queda bloqueada hasta que la primera hace commit. Si el bloqueo
+        # revela un registro existente, la segunda petición aborta la
+        # creación y redirige a la lista con un mensaje informativo.
         # ------------------------------------------------------------------
-        work_order = WorkOrder.objects.create(
-            company         = company,
-            uploaded_by     = company_user,
-            source_pdf      = pdf_file,
-            source_pdf_hash = incoming_hash,
-        )
+        from django.db import transaction
+
+        with transaction.atomic():
+            # Re-check for hash duplicate inside the lock to eliminate the
+            # race-condition window between the pre-check (Level 1) and the
+            # INSERT. select_for_update serialises concurrent requests on the
+            # same hash.
+            #
+            # Recomprobar duplicado de hash dentro del bloqueo para eliminar
+            # la ventana de race condition entre la pre-comprobación (Nivel 1)
+            # y el INSERT. select_for_update serializa las peticiones
+            # concurrentes sobre el mismo hash.
+            race_duplicate = (
+                WorkOrder.objects
+                .filter(company=company, source_pdf_hash=incoming_hash)
+                .exclude(source_pdf_hash="")
+                .select_for_update()
+                .first()
+            )
+            if race_duplicate:
+                django_messages.info(
+                    request,
+                    f"El fichero ya había sido registrado como Parte "
+                    f"#{race_duplicate.pk}. No se ha creado un duplicado."
+                )
+                return redirect("panel:work_order_list")
+
+            work_order = WorkOrder.objects.create(
+                company         = company,
+                uploaded_by     = company_user,
+                source_pdf      = pdf_file,
+                source_pdf_hash = incoming_hash,
+            )
 
         process_work_order_pdf.delay_on_commit(work_order.pk)
 
@@ -5307,6 +5347,141 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 "line_number":   r,
             })
 
+
+        # ------------------------------------------------------------------
+        # Integrity validation (sine qua non gate).
+        # Validación de integridad (barrera sine qua non).
+        #
+        # Every submitted work order must be 100 % complete before it can
+        # be persisted. The following checks are performed in order:
+        #   1. Work date must be present and parseable.
+        #   2. Every work block must have: a non-empty raw machine code that
+        #      resolves to a known MachineAsset, both H.C. and H.F. present
+        #      and yielding a positive delta_horas, and a non-empty fault
+        #      description.
+        #   3. Every spare-part line must have: a non-empty material
+        #      description and a parseable positive quantity.
+        #
+        # Any failure re-renders the confirmation form with a detailed error
+        # message pinpointing the offending field and block. No data is lost:
+        # the form is reconstructed from the already-parsed POST data.
+        #
+        # Cada parte enviado debe estar completo al 100 % antes de poder
+        # persistirse. Se realizan las siguientes comprobaciones en orden:
+        #   1. La fecha del parte debe estar presente y ser parseable.
+        #   2. Cada bloque de trabajo debe tener: código de máquina no vacío
+        #      que resuelva a un MachineAsset conocido, H.C. y H.F. presentes
+        #      generando un delta_horas positivo, y descripción de avería no vacía.
+        #   3. Cada línea de repuesto debe tener: descripción de material no
+        #      vacía y cantidad parseable y positiva.
+        #
+        # Cualquier fallo re-renderiza el formulario con un mensaje de error
+        # detallado indicando el campo y bloque afectados. No se pierde ningún
+        # dato: el formulario se reconstruye desde los datos POST ya parseados.
+        # ------------------------------------------------------------------
+        integrity_errors = []
+
+        # Gate 1 — Work date / Fecha del parte.
+        if not work_date:
+            integrity_errors.append(
+                "La fecha del parte es obligatoria y debe tener formato DD/MM/AAAA."
+            )
+
+        # Gate 2 — Work blocks / Bloques de trabajo.
+        if not entry_lines_data:
+            integrity_errors.append(
+                "El parte debe contener al menos un bloque de trabajo."
+            )
+
+        for ld in entry_lines_data:
+            blk = f"Bloque {ld['line_number']}"
+            if not ld["maquina_raw"]:
+                integrity_errors.append(
+                    f"{blk}: el código de máquina es obligatorio."
+                )
+            elif ld["machine_asset"] is None:
+                integrity_errors.append(
+                    f"{blk}: el código '{ld['maquina_raw']}' no se ha podido "
+                    f"identificar en el catálogo de flota. "
+                    f"Corrígelo antes de guardar."
+                )
+            if not ld["hc"]:
+                integrity_errors.append(
+                    f"{blk}: la hora de inicio (H.C.) es obligatoria."
+                )
+            if not ld["hf"]:
+                integrity_errors.append(
+                    f"{blk}: la hora de fin (H.F.) es obligatoria."
+                )
+            if ld["hc"] and ld["hf"] and ld["delta_horas"] is not None:
+                if ld["delta_horas"] <= 0:
+                    integrity_errors.append(
+                        f"{blk}: la H.F. debe ser posterior a la H.C. "
+                        f"(Δ horas calculado: {ld['delta_horas']})."
+                    )
+            if not ld["descripcion_averia"]:
+                integrity_errors.append(
+                    f"{blk}: la descripción de la avería es obligatoria."
+                )
+
+        # Gate 3 — Spare-part lines / Líneas de repuesto.
+        for spd in spare_parts_data:
+            rep = f"Repuesto {spd['line_number']}"
+            if not spd["material"]:
+                integrity_errors.append(
+                    f"{rep}: la descripción del material es obligatoria."
+                )
+            if spd["quantity"] is None or spd["quantity"] <= 0:
+                integrity_errors.append(
+                    f"{rep}: las unidades deben ser un número positivo."
+                )
+
+        if integrity_errors:
+            # Re-build enriched context from already-parsed POST data so the
+            # operator does not lose any corrections already entered.
+            # Reconstruir contexto enriquecido desde los datos POST ya parseados
+            # para que el operario no pierda las correcciones introducidas.
+            entradas_enriched_post = [
+                {
+                    "idx":               ld["line_number"],
+                    "maquina_raw":       ld["maquina_raw"],
+                    "machine_asset":     ld["machine_asset"],
+                    "descripcion_averia": ld["descripcion_averia"],
+                    "reparacion":        ld["reparacion"],
+                    "hc":    ld["hc"].strftime("%H:%M") if ld["hc"] else "",
+                    "hf":    ld["hf"].strftime("%H:%M") if ld["hf"] else "",
+                    "or_val":            ld["or_val"],
+                    "flags":             ld["flags"],
+                }
+                for ld in entry_lines_data
+            ]
+            spare_enriched_post = [
+                {
+                    "ridx":       spd["line_number"],
+                    "referencia": spd["referencia"],
+                    "vehiculo_raw": spd["vehiculo_raw"],
+                    "vehicle_asset": spd["vehicle_asset"],
+                    "material":   spd["material"],
+                    "unidades":   str(spd["quantity"]) if spd["quantity"] is not None else "",
+                    "origen":     spd["source"],
+                    "proveedor":  spd["supplier"],
+                    "flags":      spd["flags"],
+                }
+                for spd in spare_parts_data
+            ]
+            context = self._get_context_base(request)
+            context.update({
+                "error":               " | ".join(integrity_errors),
+                "fecha":               fecha_str,
+                "fecha_incierta":      False,
+                "confidence":          POST.get("confidence", ""),
+                "entradas_enriched":   entradas_enriched_post,
+                "repuestos_enriched":  spare_enriched_post,
+                "num_entradas":        len(entry_lines_data),
+                "num_repuestos":       len(spare_parts_data),
+            })
+            return render(request, self.template_name, context)
+
         # ------------------------------------------------------------------
         # Atomic persistence / Persistencia atómica.
         # ------------------------------------------------------------------
@@ -5429,6 +5604,440 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             request,
             f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
             f"El informe Excel está disponible en la lista de partes."
+        )
+        return redirect("/panel/work-orders/")
+
+
+class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
+    """
+    Structured web form entry path for work orders (Via A).
+    Allows WORKSHOP and ADMIN users to submit a daily work-order part
+    directly via a multi-block web form, with no AI dependency and zero cost.
+
+    GET  /panel/operator/form/
+         Renders an empty form with one default work block and an empty
+         spare-parts section. Additional blocks and spare-part rows can
+         be added dynamically via JavaScript.
+    POST /panel/operator/form/
+         Applies the same integrity gate as WorkOrderEntryConfirmView and,
+         on success, atomically persists:
+           WorkOrder (status=DONE, source_pdf blank) +
+           WorkOrderEntry (page 1, confidence=HIGH) +
+           N x WorkOrderEntryLine +
+           M x SparePartLine per entry line.
+         Generates the Excel report synchronously after persistence.
+    ---
+    Via de entrada mediante formulario web estructurado para partes de
+    trabajo (Via A). Permite a usuarios WORKSHOP y ADMIN enviar un parte
+    diario directamente mediante un formulario web multi-bloque, sin
+    dependencia de IA y con coste cero.
+
+    GET  /panel/operator/form/
+         Renderiza un formulario vacio con un bloque de trabajo por defecto
+         y una seccion de repuestos vacia. Bloques y repuestos adicionales
+         se anaden dinamicamente via JavaScript.
+    POST /panel/operator/form/
+         Aplica la misma barrera de integridad que WorkOrderEntryConfirmView
+         y, en caso de exito, persiste atomicamente:
+           WorkOrder (status=DONE, source_pdf en blanco) +
+           WorkOrderEntry (pagina 1, confianza=HIGH) +
+           N x WorkOrderEntryLine +
+           M x SparePartLine por linea de entrada.
+         Genera el informe Excel de forma sincrona tras la persistencia.
+    """
+
+    template_name = "panel/operator/form_entry.html"
+
+    def _get_company_user(self, request):
+        """
+        Returns the CompanyUser for the authenticated request user.
+        ---
+        Devuelve el CompanyUser del usuario autenticado en la solicitud.
+        """
+        return request.user.company_user
+
+    def _get_context_base(self, request):
+        """
+        Returns the base template context with company and navigation data.
+        Also provides the list of active MachineAsset records for autocomplete.
+        ---
+        Devuelve el contexto base con empresa y datos de navegacion.
+        Tambien proporciona la lista de MachineAsset activos para autocompletado.
+        """
+        from fleet.models import MachineAsset
+        cu      = self._get_company_user(request)
+        company = cu.company
+        assets  = list(
+            MachineAsset.objects.filter(company=company, es_activo=True)
+            .order_by("codigo")
+            .values("codigo", "marca_modelo")
+        )
+        return {
+            "company":      company,
+            "company_user": cu,
+            "active_nav":   "operator_dashboard",
+            "assets":       assets,
+        }
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the empty structured form with one default work block.
+        ---
+        Renderiza el formulario vacio con un bloque de trabajo por defecto.
+        """
+        context = self._get_context_base(request)
+        context.update({
+            "num_entradas":  1,
+            "num_repuestos": 0,
+            "fecha":         "",
+        })
+        return render(request, self.template_name, context)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Parses, validates and atomically persists the submitted form data.
+        Applies the same integrity gate used by WorkOrderEntryConfirmView.post().
+        On validation failure re-renders the form with error context, preserving
+        all data already entered by the operator.
+        ---
+        Parsea, valida y persiste atomicamente los datos del formulario enviado.
+        Aplica la misma barrera de integridad que WorkOrderEntryConfirmView.post().
+        En caso de fallo re-renderiza el formulario con contexto de error,
+        preservando todos los datos introducidos por el operario.
+        """
+        import json as _json
+        from datetime import datetime, time as dt_time
+        from decimal import Decimal, InvalidOperation
+        from django.db import transaction
+        from fleet.models import MachineAsset
+        from work_order_processor.models import (
+            WorkOrder, WorkOrderEntry, WorkOrderEntryLine, SparePartLine,
+        )
+        from work_order_processor.services import (
+            generate_work_order_excel,
+            _normalise_machine_code,
+            _compute_delta_horas,
+        )
+
+        cu      = self._get_company_user(request)
+        company = cu.company
+        POST    = request.POST
+
+        # ------------------------------------------------------------------
+        # Parse work date / Parsear fecha del parte.
+        # ------------------------------------------------------------------
+        fecha_str = POST.get("fecha", "").strip()
+        work_date = None
+        if fecha_str:
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    work_date = datetime.strptime(fecha_str, fmt).date()
+                    break
+                except ValueError:
+                    continue
+
+        # ------------------------------------------------------------------
+        # Parse entry lines from POST / Parsear bloques de trabajo del POST.
+        # ------------------------------------------------------------------
+        num_entradas     = int(POST.get("num_entradas", "1") or "1")
+        entry_lines_data = []
+
+        for i in range(1, num_entradas + 1):
+            pfx         = f"entrada_{i}_"
+            maquina_raw = POST.get(f"{pfx}maquina_raw", "").strip()
+            desc_averia = POST.get(f"{pfx}descripcion_averia", "").strip()
+            reparacion  = POST.get(f"{pfx}reparacion", "").strip()
+            hc_str      = POST.get(f"{pfx}hc", "").strip()
+            hf_str      = POST.get(f"{pfx}hf", "").strip()
+            or_val      = POST.get(f"{pfx}or_val", "").strip()
+
+            def _parse_t(s):
+                """
+                Parses HH:MM string into time object, returns None on failure.
+                ---
+                Parsea cadena HH:MM a objeto time, devuelve None en fallo.
+                """
+                if not s:
+                    return None
+                try:
+                    parts = s.split(":")
+                    return dt_time(int(parts[0]), int(parts[1]))
+                except (ValueError, IndexError):
+                    return None
+
+            hc = _parse_t(hc_str)
+            hf = _parse_t(hf_str)
+
+            maquina_norm  = _normalise_machine_code(maquina_raw)
+            machine_asset = None
+            if maquina_norm:
+                try:
+                    machine_asset = MachineAsset.objects.get(
+                        codigo__iexact=maquina_norm, company=company
+                    )
+                except MachineAsset.DoesNotExist:
+                    machine_asset = None
+                except MachineAsset.MultipleObjectsReturned:
+                    machine_asset = MachineAsset.objects.filter(
+                        codigo__iexact=maquina_norm, company=company
+                    ).first()
+
+            delta_horas = _compute_delta_horas(hc, hf)
+
+            entry_lines_data.append({
+                "line_number":        i,
+                "maquina_raw":        maquina_raw,
+                "maquina_norm":       maquina_norm or "",
+                "machine_asset":      machine_asset,
+                "descripcion_averia": desc_averia,
+                "reparacion":         reparacion,
+                "hc":                 hc,
+                "hf":                 hf,
+                "or_val":             or_val,
+                "delta_horas":        delta_horas,
+                "flags":              [],
+            })
+
+        # ------------------------------------------------------------------
+        # Parse spare-part lines from POST / Parsear repuestos del POST.
+        # ------------------------------------------------------------------
+        num_repuestos    = int(POST.get("num_repuestos", "0") or "0")
+        spare_parts_data = []
+
+        for r in range(1, num_repuestos + 1):
+            pfx          = f"repuesto_{r}_"
+            referencia   = POST.get(f"{pfx}referencia", "").strip()
+            vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
+            material     = POST.get(f"{pfx}material", "").strip()
+            unidades_str = POST.get(f"{pfx}unidades", "").strip()
+            origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
+            proveedor    = POST.get(f"{pfx}proveedor", "").strip()
+            entry_idx    = int(POST.get(f"{pfx}entry_idx", "1") or "1")
+
+            quantity = None
+            if unidades_str:
+                try:
+                    quantity = Decimal(unidades_str.replace(",", "."))
+                except InvalidOperation:
+                    quantity = None
+
+            if origen not in ("SUPPLIER", "WAREHOUSE"):
+                origen = "WAREHOUSE"
+
+            veh_norm  = _normalise_machine_code(vehiculo_raw)
+            veh_asset = None
+            if veh_norm:
+                try:
+                    veh_asset = MachineAsset.objects.get(
+                        codigo__iexact=veh_norm, company=company
+                    )
+                except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                    veh_asset = MachineAsset.objects.filter(
+                        codigo__iexact=veh_norm, company=company
+                    ).first()
+
+            spare_parts_data.append({
+                "line_number":   r,
+                "referencia":    referencia,
+                "vehiculo_raw":  vehiculo_raw,
+                "vehicle_asset": veh_asset,
+                "material":      material,
+                "quantity":      quantity,
+                "source":        origen,
+                "supplier":      proveedor if origen == "SUPPLIER" else "",
+                "flags":         [],
+                "entry_idx":     entry_idx,
+            })
+
+        # ------------------------------------------------------------------
+        # Integrity validation (sine qua non gate).
+        # Validacion de integridad (barrera sine qua non).
+        # ------------------------------------------------------------------
+        integrity_errors = []
+
+        if not work_date:
+            integrity_errors.append(
+                "La fecha del parte es obligatoria y debe tener formato DD/MM/AAAA."
+            )
+
+        if not entry_lines_data:
+            integrity_errors.append("El parte debe contener al menos un bloque de trabajo.")
+
+        for ld in entry_lines_data:
+            blk = f"Bloque {ld['line_number']}"
+            if not ld["maquina_raw"]:
+                integrity_errors.append(f"{blk}: el codigo de maquina es obligatorio.")
+            elif ld["machine_asset"] is None:
+                integrity_errors.append(
+                    f"{blk}: el codigo '{ld['maquina_raw']}' no se ha podido "
+                    f"identificar en el catalogo de flota. Corrigelo antes de guardar."
+                )
+            if not ld["hc"]:
+                integrity_errors.append(f"{blk}: la hora de inicio (H.C.) es obligatoria.")
+            if not ld["hf"]:
+                integrity_errors.append(f"{blk}: la hora de fin (H.F.) es obligatoria.")
+            if ld["hc"] and ld["hf"] and ld["delta_horas"] is not None:
+                if ld["delta_horas"] <= 0:
+                    integrity_errors.append(
+                        f"{blk}: la H.F. debe ser posterior a la H.C. "
+                        f"(Delta horas calculado: {ld['delta_horas']})."
+                    )
+            if not ld["descripcion_averia"]:
+                integrity_errors.append(
+                    f"{blk}: la descripcion de la averia es obligatoria."
+                )
+
+        for spd in spare_parts_data:
+            rep = f"Repuesto {spd['line_number']}"
+            if not spd["material"]:
+                integrity_errors.append(f"{rep}: la descripcion del material es obligatoria.")
+            if spd["quantity"] is None or spd["quantity"] <= 0:
+                integrity_errors.append(f"{rep}: las unidades deben ser un numero positivo.")
+
+        if integrity_errors:
+            entradas_post = [
+                {
+                    "idx":               ld["line_number"],
+                    "maquina_raw":       ld["maquina_raw"],
+                    "machine_asset":     ld["machine_asset"],
+                    "descripcion_averia": ld["descripcion_averia"],
+                    "reparacion":        ld["reparacion"],
+                    "hc":  ld["hc"].strftime("%H:%M") if ld["hc"] else "",
+                    "hf":  ld["hf"].strftime("%H:%M") if ld["hf"] else "",
+                    "or_val":            ld["or_val"],
+                    "flags":             [],
+                }
+                for ld in entry_lines_data
+            ]
+            repuestos_post = [
+                {
+                    "ridx":         spd["line_number"],
+                    "referencia":   spd["referencia"],
+                    "vehiculo_raw": spd["vehiculo_raw"],
+                    "vehicle_asset": spd["vehicle_asset"],
+                    "material":     spd["material"],
+                    "unidades":     str(spd["quantity"]) if spd["quantity"] is not None else "",
+                    "origen":       spd["source"],
+                    "proveedor":    spd["supplier"],
+                    "flags":        [],
+                }
+                for spd in spare_parts_data
+            ]
+            context = self._get_context_base(request)
+            context.update({
+                "error":              " | ".join(integrity_errors),
+                "fecha":              fecha_str,
+                "entradas_enriched":  entradas_post,
+                "repuestos_enriched": repuestos_post,
+                "num_entradas":       len(entry_lines_data),
+                "num_repuestos":      len(spare_parts_data),
+            })
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Atomic persistence / Persistencia atomica.
+        # ------------------------------------------------------------------
+        try:
+            with transaction.atomic():
+                worker_name = (
+                    cu.user.get_full_name() or cu.user.username
+                ).upper()
+
+                work_order = WorkOrder(
+                    company         = company,
+                    uploaded_by     = cu,
+                    status          = WorkOrder.Status.DONE,
+                    total_pages     = 1,
+                    processed_pages = 1,
+                    reviewed        = False,
+                )
+                work_order.source_pdf.name = ""
+                work_order.save()
+
+                entry = WorkOrderEntry.objects.create(
+                    work_order            = work_order,
+                    page_number           = 1,
+                    worker_name           = worker_name,
+                    work_date             = work_date,
+                    fecha_incierta        = False,
+                    extraction_confidence = WorkOrderEntry.Confidence.HIGH,
+                    raw_gemini_response   = None,
+                )
+
+                created_lines = {}
+                for ld in entry_lines_data:
+                    line = WorkOrderEntryLine.objects.create(
+                        entry              = entry,
+                        line_number        = ld["line_number"],
+                        machine_asset      = ld["machine_asset"],
+                        maquina_raw        = ld["maquina_raw"],
+                        maquina_norm       = ld["maquina_norm"],
+                        descripcion_averia = ld["descripcion_averia"],
+                        reparacion         = ld["reparacion"],
+                        hc                 = ld["hc"],
+                        hf                 = ld["hf"],
+                        or_val             = ld["or_val"],
+                        delta_horas        = ld["delta_horas"],
+                        flags              = ld["flags"],
+                    )
+                    created_lines[ld["line_number"]] = line
+
+                for spd in spare_parts_data:
+                    target_line = created_lines.get(spd["entry_idx"])
+                    if target_line is None:
+                        target_line = next(iter(created_lines.values()), None)
+                    if target_line is None:
+                        continue
+                    SparePartLine.objects.create(
+                        entry_line  = target_line,
+                        line_number = spd["line_number"],
+                        reference   = spd["referencia"],
+                        vehicle     = spd["vehicle_asset"],
+                        material    = spd["material"],
+                        quantity    = spd["quantity"],
+                        source      = spd["source"],
+                        supplier    = spd["supplier"],
+                        flags       = spd["flags"],
+                    )
+
+            logger.info(
+                "# [FormView] WorkOrder #%d creado correctamente (Via A). "
+                "Bloques: %d | Repuestos: %d.",
+                work_order.pk,
+                len(entry_lines_data),
+                len(spare_parts_data),
+            )
+
+        except Exception as exc:
+            logger.error(
+                "# [FormView] Error en persistencia atomica: %s", exc, exc_info=True
+            )
+            context = self._get_context_base(request)
+            context["error"] = (
+                f"Error al guardar el parte: {exc}. "
+                "Por favor, intentalo de nuevo o contacta con el administrador."
+            )
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Synchronous Excel generation / Generacion sincrona de Excel.
+        # ------------------------------------------------------------------
+        try:
+            generate_work_order_excel(work_order.pk)
+            logger.info(
+                "# [FormView] Excel generado correctamente para WorkOrder #%d.",
+                work_order.pk,
+            )
+        except Exception as exc:
+            logger.warning(
+                "# [FormView] Excel no generado para WorkOrder #%d: %s.",
+                work_order.pk, exc,
+            )
+
+        django_messages.success(
+            request,
+            f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
+            f"El informe Excel esta disponible en la lista de partes."
         )
         return redirect("/panel/work-orders/")
 

@@ -105,9 +105,52 @@ original desde raw_gemini_response.
 - Web Speech API (nativa en Chrome/Edge) — STT sin coste ni dependencias.
 - google-genai 1.69.0 / Vertex AI — Gemini Vision para Via C.
 - pdf2image 1.x + Pillow 12.2.0 + poppler 0.86.1 — rasterizacion de PDF.
-- openpyxl — generacion Excel sincrona postpersistencia.
+- openpyxl — generacion Excel sincrona postpersistencia con hoja Repuestos.
 - Django 5.2.12 — vistas sincronas estandar (sin Celery para Vias A y B).
 - Bootstrap 5.3 + Bootstrap Icons — UI del formulario de confirmacion.
+
+### 2.9. Correccion race condition en WorkOrderUploadView
+
+Bug: dos POSTs concurrentes del mismo PDF eludian el Nivel 1 de deteccion
+de duplicados creando dos WorkOrder identicos (mismo hash SHA-256). Causa:
+la ventana entre la pre-comprobacion y el INSERT permitia que la segunda
+peticion pasara antes de que la primera hiciera commit.
+
+Correccion: bloque transaction.atomic() + select_for_update() en Step 4
+de WorkOrderUploadView.post() en panel/views.py. La segunda peticion queda
+bloqueada hasta que la primera hace commit; si entonces detecta un registro
+existente con el mismo hash, aborta con mensaje informativo.
+
+Complemento: UniqueConstraint parcial sobre (company, source_pdf_hash)
+excluyendo hash vacio en WorkOrder.Meta. Nota: MySQL no soporta constraints
+parciales a nivel de DDL (W036) — la barrera real es el select_for_update.
+Migracion: 0006_workorder_unique_pdf_hash_per_company.
+
+Limpieza: 2 pares de WorkOrders duplicados existentes eliminados de BD
+(#27 y #29), conservando el editado de cada par (#26 y #28).
+
+### 2.10. Barrera de integridad sine qua non en Vias A y C
+
+Toda persistencia de parte digital (Via A y Via C) requiere superar una
+barrera de integridad obligatoria antes del INSERT. Los datos deben estar
+completos al 100% — no se permite guardar un parte incompleto bajo ninguna
+circunstancia.
+
+Barrera server-side en WorkOrderEntryConfirmView.post() y
+WorkOrderEntryFormView.post() (panel/views.py):
+  Gate 1: fecha presente y parseable (DD/MM/AAAA o YYYY-MM-DD).
+  Gate 2: cada bloque tiene maquina_raw no vacio, machine_asset resuelto
+          en catalogo, hc y hf presentes, delta_horas positivo, y
+          descripcion_averia no vacia.
+  Gate 3: cada repuesto tiene material no vacio y quantity positiva.
+
+En caso de fallo: re-renderiza el formulario con mensaje de error detallado
+por campo y bloque, sin perder los datos ya introducidos.
+
+Barrera client-side en confirm_entry.html y form_entry.html:
+  Replica las tres gates antes del submit. Marca campos con field-flagged,
+  hace scroll al alert y bloquea el envio si hay errores. El servidor actua
+  como segunda barrera independiente.
 
 ---
 
@@ -129,20 +172,24 @@ Estado: COMPLETADO (2026-04-30).
 Estado: COMPLETADO (2026-04-30).
 
 ### Paso 6 — Excel ampliado: hoja Repuestos en generate_work_order_excel()
-Estado: PENDIENTE.
-- Anadir hoja "Repuestos" al Excel generado con columnas:
+Estado: COMPLETADO (2026-04-30).
+- Hoja "Repuestos" añadida al Excel generado con columnas:
   FECHA, BLOQUE, REFERENCIA, VEHICULO, MATERIAL, UNIDADES, ORIGEN, PROVEEDOR.
 - Datos obtenidos de SparePartLine relacionados con las WorkOrderEntryLine
-  del WorkOrder.
+  del WorkOrder. Solo se crea cuando existe al menos un SparePartLine.
+- Implementado en work_order_processor/services.py via PMA.
 
 ### Paso 7 — Via A: formulario web estructurado (Form)
-Estado: PENDIENTE.
-- WorkOrderEntryFormView en panel/views.py.
+Estado: COMPLETADO (2026-04-30).
+- WorkOrderEntryFormView implementada en panel/views.py con barrera de
+  integridad sine qua non identica a la Via C.
 - Template panel/operator/form_entry.html: formulario multi-bloque con
-  autocompletado MachineAsset, time pickers, boton Anadir bloque y
-  seccion de repuestos por bloque.
+  autocompletado MachineAsset, botones Anadir bloque y Anadir repuesto
+  dinamicos via JS, validacion client-side y server-side.
 - Persistencia sincrona: WorkOrder sintetico + WorkOrderEntry +
   WorkOrderEntryLine + SparePartLine + Excel.
+- Ruta: GET/POST /panel/operator/form/ (name=operator_form).
+- Dashboard Via A activada: boton deshabilitado sustituido por enlace activo.
 
 ### Paso 8 — Via B: dictado por voz (STT)
 Estado: PENDIENTE.
@@ -162,47 +209,95 @@ Estado: PENDIENTE.
 | 001    | 2026-04-27 | —               | Creacion del anexo. Inicio formal del hito. |
 | 002    | 2026-04-28 | Pasos 1 y 2     | Arquitectura de roles ampliada: WORKSHOP y DRIVER anadidos a CompanyUser.role. WorkshopRequiredMixin creado en panel/mixins.py. OperatorDashboardView implementada. Navegacion restringida. Template operator/dashboard.html creado. Usuario taller_test_01 validado E2E. Hito pausado para abrir H8. |
 | 003    | 2026-04-30 | Pasos 3-5 + fixes | Modelo SparePartLine creado y migrado (0005). Prompt Gemini ampliado (_EXTRACTION_PROMPT_FULL + extract_work_order_page_full). Via C implementada: WorkOrderEntryUploadView + WorkOrderEntryConfirmView + WorkshopAssetAutocompleteView + templates + CSS + pdf2image. Fix multiempresa en _resolve_machine_asset (company=). Fix HTMX _line_row.html (row_class con pk_str). Fix WorkOrderLineRestoreView para partes digitales. Fix doble form en users/form.html. Fix listado roles (badge-supervisor, badge-workshop). |
+| 004    | 2026-04-30 | Paso 6 + Paso 7 + fixes fuera HR | Diagnostico y limpieza de duplicados en BD (race condition upload). UniqueConstraint parcial + select_for_update en WorkOrderUploadView. Barrera integridad sine qua non en Vias A y C (server-side + client-side). Boton Anadir repuesto dinamico en confirm_entry.html. Hoja Repuestos en generate_work_order_excel(). WorkOrderEntryFormView implementada (Via A). form_entry.html creado (Neonato Puro). Dashboard Via A activada. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
-### Primera accion — Investigar duplicados en lista de partes historicos
-Alejandro (jefe) reporta que aparecen entradas duplicadas en la lista de partes
-(mismo nombre con y sin extension .pdf) sin haber subido el PDF dos veces.
-Hipotesis: la regeneracion del Excel puede estar creando WorkOrder duplicados
-o el mecanismo de deteccion de duplicados falla en algun escenario especifico.
-Investigar antes de continuar con el Paso 6.
+### Primera accion — Paso 8: Via B — Dictado por voz (STT)
 
-### Segunda accion — Paso 6: Excel ampliado con hoja Repuestos
-Anadir hoja "Repuestos" a generate_work_order_excel() en
-work_order_processor/services.py. Ver seccion 3 (Paso 6) para detalle
-de columnas y origen de datos.
+Implementar la via de entrada por dictado de voz usando la Web Speech API
+nativa de Chrome/Edge, sin dependencias externas ni coste de IA.
 
-### Estado de migraciones al cierre de sesion 003
+Artefactos a crear o modificar:
+
+1. WorkOrderEntrySTTView en panel/views.py (PMA):
+   - GET /panel/operator/stt/ — renderiza template vacio con el grabador de voz.
+   - No procesa nada en GET. El parser JS client-side pre-rellena los campos.
+   - POST — reutiliza EXACTAMENTE la misma logica de parseo, validacion
+     e integridad que WorkOrderEntryFormView.post(). Misma barrera sine qua non.
+     Mismo template de respuesta en caso de error.
+   - Template: panel/operator/stt_entry.html.
+
+2. panel/urls.py (PMA):
+   - Importar WorkOrderEntrySTTView.
+   - Anadir ruta: path("operator/stt/", WorkOrderEntrySTTView.as_view(), name="operator_stt").
+   - Comentario: # Paso 8 — Hito 7 (2026-04-30)
+
+3. panel/templates/panel/operator/stt_entry.html (PEA — Neonato Puro):
+   - Estructura identica a form_entry.html pero con seccion de grabacion de voz
+     encima del formulario.
+   - Boton de microfono: al pulsar inicia SpeechRecognition con lang="es-ES",
+     continuous=false, interimResults=false.
+   - El texto reconocido se parsea con un parser JS client-side que extrae:
+       * fecha: patron DD/MM/AAAA o DD de mes de AAAA.
+       * maquina_raw: primer token que coincide con patron alfanumerico tras
+         palabras clave "maquina", "vehiculo", "equipo".
+       * hc / hf: patrones HH:MM o "de X a Y".
+       * descripcion_averia: texto restante tras extraer los campos anteriores.
+   - El parser pre-rellena los campos del formulario estatico subyacente
+     (mismos name= que form_entry.html: entrada_1_maquina_raw, etc.).
+   - El operario revisa y corrige antes de enviar.
+   - Aviso de compatibilidad: mostrar alerta si SpeechRecognition no esta
+     disponible en el navegador (Firefox, Safari).
+
+4. panel/templates/panel/operator/dashboard.html (PMA):
+   - Activar boton Via B: sustituir href="#" disabled por
+     href="{% url 'panel:operator_stt' %}".
+
+### Segunda accion — Paso 9: Validacion E2E de las tres vias
+
+Con las tres vias implementadas, ejecutar validacion extremo a extremo:
+- Via A: crear parte con al menos 2 bloques y 1 repuesto. Verificar Excel
+  descargable con hoja Repuestos correctamente poblada.
+- Via C: subir foto de parte manuscrito. Verificar extraccion, confirmacion,
+  persistencia y Excel con hoja Repuestos.
+- Via B: dictar parte por voz. Verificar pre-relleno, correccion manual,
+  persistencia y Excel.
+- En los tres casos: intentar enviar con campos vacios y verificar que la
+  barrera de integridad bloquea el submit (client-side y server-side).
+
+### Tema pendiente de estudio — Colas Celery diferenciadas
+
+Los partes de Via A y Via C persisten sincronamente — no usan Celery.
+El riesgo es futuro: si la Via C o cualquier tarea del operario usa Celery,
+competira con process_work_order_pdf (historicos, lentos) por los mismos workers.
+
+Estudiar en la siguiente sesion:
+- Auditar enterprise_core/celery.py: configuracion actual de colas y workers.
+- Definir cola-historicos para process_work_order_pdf.
+- Definir cola-operarios para cualquier tarea futura de alta prioridad.
+- Revisar configuracion de workers en PythonAnywhere (numero y asignacion).
+
+### Estado de migraciones al cierre de sesion 004
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
 | fleet                  | 0002_maintenancelog_work_entry_line                    |
-| work_order_processor   | 0005_add_spare_part_line                               |
+| work_order_processor   | 0006_workorder_unique_pdf_hash_per_company             |
 | ivr_config             | 0013_alter_companyuser_role                            |
 | panel                  | 0001_initial (AnalyticsProfile)                        |
 
-### Archivos clave modificados en sesion 003
+### Archivos clave modificados en sesion 004
 
-- work_order_processor/models.py — nuevo modelo SparePartLine.
-- work_order_processor/services.py — _EXTRACTION_PROMPT_FULL,
-  extract_work_order_page_full(), _resolve_machine_asset(company=).
-- panel/views.py — WorkshopAssetAutocompleteView, WorkOrderEntryUploadView,
-  WorkOrderEntryConfirmView, fix _resolve_machine_asset calls,
-  fix WorkOrderLineRestoreView, logger declarado.
-- panel/urls.py — rutas operator/upload/, operator/confirm/, operator/assets/.
-- panel/mixins.py — sin cambios (WorkshopRequiredMixin ya existia).
-- panel/static/panel/css/panel.css — badge-supervisor, badge-workshop,
-  operator-preview-img, confirm-block, confirm-dropdown.
-- panel/templates/panel/operator/upload_entry.html — Neonato Puro.
-- panel/templates/panel/operator/confirm_entry.html — Neonato Puro.
-- panel/templates/panel/operator/dashboard.html — Via C activada.
-- panel/templates/panel/users/list.html — badges de rol completos.
-- panel/templates/panel/users/form.html — fix doble form.
-- panel/templates/panel/work_orders/_line_row.html — fix HTMX row_class.
+- work_order_processor/models.py — UniqueConstraint parcial (company, source_pdf_hash).
+- work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py — Neonato Puro.
+- work_order_processor/services.py — hoja Repuestos en generate_work_order_excel().
+- panel/views.py — select_for_update race condition fix, barrera integridad
+  Vias A y C, WorkOrderEntryFormView (nueva).
+- panel/urls.py — importar WorkOrderEntryFormView, ruta operator/form/.
+- panel/templates/panel/operator/confirm_entry.html — boton Anadir repuesto
+  dinamico + validacion client-side.
+- panel/templates/panel/operator/dashboard.html — Via A activada.
+- panel/templates/panel/operator/form_entry.html — Neonato Puro.
