@@ -392,6 +392,272 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
             "entradas":             [],
         }
 
+# ---------------------------------------------------------------------------
+# Extraction prompt — full (front + back of physical form)
+# Prompt de extracción — completo (cara delantera + trasera del formulario)
+# ---------------------------------------------------------------------------
+# Used exclusively by extract_work_order_page_full() for new work orders
+# submitted via the operator Upload view (WorkOrderEntryUploadView).
+# The historical pipeline (tasks.py / Celery) continues using
+# _EXTRACTION_PROMPT and extract_work_order_page() without modification.
+#
+# Usado exclusivamente por extract_work_order_page_full() para partes nuevos
+# enviados via la vista Upload del operario (WorkOrderEntryUploadView).
+# El pipeline histórico (tasks.py / Celery) sigue usando _EXTRACTION_PROMPT
+# y extract_work_order_page() sin ninguna modificación.
+
+_EXTRACTION_PROMPT_FULL = """Eres un asistente especializado en la extracción de datos de partes de trabajo
+manuscritos de una empresa de grúas y maquinaria industrial (grúas móviles,
+plataformas elevadoras, autocargantes, cabezas tractoras, semirremolques,
+carretillas elevadoras). El parte tiene DOS caras:
+
+CARA DELANTERA — Partes de trabajo diarios:
+  Una única fecha en la cabecera y hasta 4 bloques de trabajo con campos:
+  MAQUINA, DESCRIPCION AVERIA, REPARACION, H.C., H.F., O.R.
+
+CARA TRASERA — Repuestos utilizados:
+  Una tabla con filas de materiales consumidos. Columnas:
+  REFERENCIA (ref. del albarán del proveedor), VEHICULO (código de máquina),
+  MATERIAL (descripción del repuesto), UNIDADES (cantidad numérica), y
+  PROCEDENCIA (proveedor externo o almacén interno).
+
+REGLAS OBLIGATORIAS (aplican a ambas caras):
+1. Responde ÚNICAMENTE con un objeto JSON válido. Sin texto adicional, sin
+   bloques de código markdown, sin explicaciones.
+2. Si un campo no es legible o no aparece, usa null.
+3. Fechas en formato "DD/MM/YYYY". Horas en formato "HH:MM".
+4. Horarios SIEMPRE redondeados a fracciones de media hora (:00 o :30).
+   Ejemplos: 09:20 → "09:30", 07:10 → "07:00", 17:45 → "18:00".
+5. El campo "fecha_incierta" es true solo si la fecha es genuinamente ilegible
+   tras intentar deducirla por contexto. No lo uses si puedes leerla.
+6. En "maquina_raw" copia exactamente lo que lees tras aplicar las reglas de
+   caligrafía. Si aparece cualquier variante del alias Larios en contexto de
+   máquina, normalízalo a "Larios". El tipo de vehículo que precede al alias
+   va separado por un espacio (ej. "Furgon Larios"). NUNCA concatenar sin espacio.
+   "Salida polígonos" NO es una máquina: deja maquina_raw null en ese caso.
+7. Interpreta abreviaturas técnicas en contexto de vehículos pesados:
+   "hid." → hidráulico, "trans." → transmisión, "dir." → dirección,
+   "mto." → mantenimiento, "ace." → aceite, "fil." → filtro.
+8. Si un campo es de lectura incierta (no imposible, sino dudosa), inclúyelo
+   con el valor más probable y añade el nombre del campo a "flags".
+   Campos que pueden ir en flags de entradas: "FECHA", "H.C.", "H.F.",
+   "DESCRIPCION", "MAQUINA".
+   Campos que pueden ir en flags de repuestos: "REFERENCIA", "MATERIAL",
+   "UNIDADES", "VEHICULO", "PROCEDENCIA".
+9. Procesa SOLO los bloques de trabajo que tengan al menos un campo relleno.
+   Procesa SOLO las filas de repuestos que tengan al menos un campo relleno.
+   Ignora bloques y filas completamente vacíos.
+10. "extraction_confidence" evalúa la calidad global de la página:
+    "HIGH" = todos los campos principales legibles,
+    "MEDIUM" = alguna duda menor,
+    "LOW" = campos importantes ilegibles,
+    "FAILED" = imagen ilegible o no es un parte de trabajo.
+
+REGLAS ESPECÍFICAS — CARA TRASERA (REPUESTOS):
+R1. "referencia" es el código o número de referencia del albarán del proveedor.
+    Puede ser alfanumérico. Si no aparece, usa null.
+R2. "vehiculo_raw" es el código o descripción de la máquina a la que se imputa
+    el repuesto. Aplica las mismas reglas de caligrafía que para maquina_raw.
+R3. "material" es la descripción textual del repuesto o material. Puede inferirse
+    de la referencia si el campo está vacío pero la referencia es descriptiva.
+R4. "unidades" es un número (entero o decimal). Usa null si no es legible.
+R5. "origen" debe ser exactamente "SUPPLIER" si el material proviene de un
+    proveedor externo, o "WAREHOUSE" si proviene del almacén interno.
+    Indicadores de proveedor: nombre de empresa, número de albarán externo.
+    Indicadores de almacén: "almacén", "stock", "almacen", sin nombre de empresa.
+    Si no se puede determinar con certeza, usa "WAREHOUSE" por defecto y añade
+    "PROCEDENCIA" a flags.
+R6. "proveedor" es el nombre del proveedor externo. Solo se rellena cuando
+    origen = "SUPPLIER". En caso contrario usa null.
+
+CALIGRAFÍA RÁPIDA — REGLAS DE INFERENCIA (aplican a ambas caras):
+A) CONFUSIÓN LETRA/NÚMERO EN CÓDIGOS:
+   - "6" en posición de letra inicial → leer como "G".
+   - "0" en posición de letra → leer como "O" y viceversa.
+   - "1" en posición de letra → leer como "I" o "L".
+   - "S" en posición numérica → leer como "5".
+   - "B" en posición numérica → leer como "8".
+   - Punto "." como separador en código → tratar como guion "-".
+B) ALIAS DE EMPRESA "LARIOS": cualquier variante normalizar a "Larios".
+C) TACHONES: usar el valor escrito fuera del tachón, ignorar el tachado.
+D) DESCRIPCIONES: siempre estructura VERBO + OBJETO.
+E) CURVAS DEGENERADAS: leer por estructura global, no trazo a trazo.
+
+Formato de respuesta (claves exactas):
+{
+  "fecha": "<DD/MM/YYYY o null>",
+  "fecha_incierta": <true | false>,
+  "extraction_confidence": "<HIGH | MEDIUM | LOW | FAILED>",
+  "entradas": [
+    {
+      "maquina_raw": "<código o alias normalizado, o null>",
+      "descripcion_averia": "<descripción de la avería o tarea, o null>",
+      "reparacion": "<descripción de la reparación realizada, o null>",
+      "hc": "<HH:MM o null>",
+      "hf": "<HH:MM o null>",
+      "or_val": "<referencia O.R. o null>",
+      "flags": ["CAMPO1", "CAMPO2"]
+    }
+  ],
+  "repuestos": [
+    {
+      "referencia": "<referencia albarán o null>",
+      "vehiculo_raw": "<código máquina o null>",
+      "material": "<descripción material o null>",
+      "unidades": <número o null>,
+      "origen": "<SUPPLIER | WAREHOUSE>",
+      "proveedor": "<nombre proveedor o null>",
+      "flags": ["CAMPO1"]
+    }
+  ]
+}
+"""
+
+
+# ---------------------------------------------------------------------------
+# Public service: full page extraction (front + back)
+# Servicio público: extracción completa de página (delantera + trasera)
+# ---------------------------------------------------------------------------
+
+def extract_work_order_page_full(image_bytes: bytes) -> dict:
+    """
+    Sends a rasterized work-order page (PNG bytes) to Gemini Vision using
+    the full prompt (_EXTRACTION_PROMPT_FULL) which covers both the front
+    (work blocks) and the back (spare parts table) of the physical form.
+
+    Returns a structured dict with keys: fecha, fecha_incierta,
+    extraction_confidence, entradas (list of work blocks) and repuestos
+    (list of spare part lines). On total failure returns a safe fallback
+    dict with empty lists and confidence FAILED.
+
+    This function is used exclusively by the operator Upload view
+    (WorkOrderEntryUploadView) for new work orders submitted under the
+    active system. The historical pipeline continues using
+    extract_work_order_page() without modification.
+
+    ---
+
+    Envía una página de parte de trabajo rasterizada (bytes PNG) a Gemini
+    Vision usando el prompt completo (_EXTRACTION_PROMPT_FULL) que cubre
+    tanto la cara delantera (bloques de trabajo) como la trasera (tabla de
+    repuestos) del formulario físico.
+
+    Devuelve un dict estructurado con claves: fecha, fecha_incierta,
+    extraction_confidence, entradas (lista de bloques de trabajo) y repuestos
+    (lista de líneas de repuesto). En caso de fallo total devuelve un dict
+    de reserva seguro con listas vacías y confianza FAILED.
+
+    Esta función es usada exclusivamente por la vista Upload del operario
+    (WorkOrderEntryUploadView) para partes nuevos enviados bajo el sistema
+    activo. El pipeline histórico sigue usando extract_work_order_page()
+    sin modificación.
+    """
+    client = _get_gemini_client()
+
+    try:
+        logger.info(
+            "# Gemini Vision (full): iniciando extracción completa de página "
+            "(delantera + trasera)."
+        )
+
+        _MAX_RETRIES_429 = 3
+        _response = None
+        for _attempt in range(_MAX_RETRIES_429 + 1):
+            try:
+                _response = client.models.generate_content(
+                    model=_GEMINI_MODEL,
+                    contents=[
+                        Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                        _EXTRACTION_PROMPT_FULL,
+                    ],
+                    config=_GEMINI_REQUEST_CONFIG,
+                )
+                break
+            except Exception as _e429:
+                _is_429 = (
+                    hasattr(_e429, "status_code") and _e429.status_code == 429
+                ) or "429" in str(_e429) or "RESOURCE_EXHAUSTED" in str(_e429)
+                if _is_429 and _attempt < _MAX_RETRIES_429:
+                    logger.warning(
+                        "# Gemini Vision (full): 429 RESOURCE_EXHAUSTED — "
+                        "reintento %d/%d en 60 segundos.",
+                        _attempt + 1, _MAX_RETRIES_429,
+                    )
+                    _time.sleep(60)
+                else:
+                    raise
+
+        response = _response
+        raw_text = response.text.strip()
+        logger.info(
+            "# Gemini Vision (full): respuesta recibida. Parseando JSON."
+        )
+
+        # Strip markdown fences / Eliminar bloques markdown.
+        cleaned = re.sub(r"```(?:json)?|```", "", raw_text).strip()
+
+        # Locate outermost JSON object / Localizar objeto JSON más externo.
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not match:
+            raise ValueError(
+                f"No se encontró ningún objeto JSON en la respuesta de Gemini: "
+                f"{raw_text[:200]}"
+            )
+
+        extracted: dict = json.loads(match.group())
+
+        # Ensure entradas and repuestos are always lists.
+        # Garantizar que entradas y repuestos son siempre listas.
+        if not isinstance(extracted.get("entradas"), list):
+            extracted["entradas"] = []
+        if not isinstance(extracted.get("repuestos"), list):
+            extracted["repuestos"] = []
+
+        logger.info(
+            "# Gemini Vision (full): extracción completada. "
+            "Confianza: %s | Entradas: %d | Repuestos: %d",
+            extracted.get("extraction_confidence", "DESCONOCIDA"),
+            len(extracted.get("entradas", [])),
+            len(extracted.get("repuestos", [])),
+        )
+
+        # Post-processing: fix Larios alias concatenated without space.
+        # Post-procesado: corregir alias Larios concatenado sin espacio.
+        _LARIOS_RE = re.compile(r'(?i)^([A-Za-z]+)(L[ao]r[aio][a-z]*)$')
+        for _entrada in (extracted.get("entradas") or []):
+            _raw = (_entrada.get("maquina_raw") or "").strip()
+            if _raw:
+                _m = _LARIOS_RE.match(_raw)
+                if _m:
+                    _prefix = _m.group(1).capitalize()
+                    _entrada["maquina_raw"] = f"{_prefix} Larios"
+
+        # Apply same Larios fix to vehiculo_raw in repuestos.
+        # Aplicar el mismo fix Larios a vehiculo_raw en repuestos.
+        for _repuesto in (extracted.get("repuestos") or []):
+            _vraw = (_repuesto.get("vehiculo_raw") or "").strip()
+            if _vraw:
+                _m = _LARIOS_RE.match(_vraw)
+                if _m:
+                    _prefix = _m.group(1).capitalize()
+                    _repuesto["vehiculo_raw"] = f"{_prefix} Larios"
+
+        return extracted
+
+    except Exception as exc:
+        logger.error(
+            "# Error crítico en extract_work_order_page_full: %s",
+            exc,
+            exc_info=True,
+        )
+        return {
+            "fecha":                 None,
+            "fecha_incierta":        False,
+            "extraction_confidence": "FAILED",
+            "entradas":              [],
+            "repuestos":             [],
+        }
+
 
 # ---------------------------------------------------------------------------
 # Helper functions / Funciones auxiliares
@@ -541,20 +807,39 @@ _LARIOS_TWO_WORD_RE = re.compile(
 )
 
 
-def _resolve_machine_asset(maquina_norm: str) -> MachineAsset | None:
+def _resolve_machine_asset(
+    maquina_norm: str,
+    company=None,
+) -> MachineAsset | None:
     """
     Attempts to resolve a normalised machine code to a MachineAsset record.
     Tries exact match first, then zero-padded variants (G-8 → G-08, G-08 → G-8).
     Returns None if no match is found.
+
+    When 'company' is provided, all queries are scoped to that company.
+    This is mandatory in multicompany contexts (panel views) to prevent
+    cross-company asset resolution. Internal pipeline calls (tasks.py,
+    services.py) may omit 'company' for backward compatibility.
 
     ---
 
     Intenta resolver un código de máquina normalizado a un registro MachineAsset.
     Prueba primero coincidencia exacta, luego variantes con ceros (G-8 → G-08,
     G-08 → G-8). Devuelve None si no se encuentra coincidencia.
+
+    Cuando se proporciona 'company', todas las consultas se acotan a esa empresa.
+    Esto es obligatorio en contextos multiempresa (vistas del panel) para evitar
+    la resolución de activos entre empresas. Las llamadas internas del pipeline
+    (tasks.py, services.py) pueden omitir 'company' por compatibilidad.
     """
     if not maquina_norm:
         return None
+
+    # Build base queryset — scoped to company when provided.
+    # Construir queryset base — acotado a empresa cuando se proporciona.
+    qs = MachineAsset.objects
+    if company is not None:
+        qs = qs.filter(company=company)
 
     # Larios alias resolution: any two-word value where the second word is a
     # Larios variant maps to FURGLAR regardless of the vehicle type prefix.
@@ -562,13 +847,13 @@ def _resolve_machine_asset(maquina_norm: str) -> MachineAsset | None:
     # es una variante de Larios se mapea a FURGLAR independientemente del tipo.
     if _LARIOS_TWO_WORD_RE.match(maquina_norm):
         try:
-            return MachineAsset.objects.get(codigo="FURGLAR")
+            return qs.get(codigo="FURGLAR")
         except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
             pass
 
     # Exact match / Coincidencia exacta.
     try:
-        return MachineAsset.objects.get(codigo=maquina_norm)
+        return qs.get(codigo=maquina_norm)
     except MachineAsset.DoesNotExist:
         pass
     except MachineAsset.MultipleObjectsReturned:

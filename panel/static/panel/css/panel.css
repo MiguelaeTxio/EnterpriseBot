@@ -163,7 +163,9 @@ body {
 .badge-inactive { background-color:#f8d7da; color:#58151c; font-weight:500; border:1px solid #f1aeb5; }
 .badge-internal { background-color:#cfe2ff; color:#084298; font-weight:500; border:1px solid #9ec5fe; }
 .badge-external { background-color:#e9ecef; color:#495057; font-weight:500; border:1px solid #ced4da; }
-.badge-admin    { background-color:#e2d9f3; color:#432874; font-weight:500; border:1px solid #c5b3e6; }
+.badge-admin       { background-color:#e2d9f3; color:#432874; font-weight:500; border:1px solid #c5b3e6; }
+.badge-supervisor  { background-color:#fff3cd; color:#664d03; font-weight:500; border:1px solid #ffe69c; }
+.badge-workshop    { background-color:#d1ecf1; color:#0c5460; font-weight:500; border:1px solid #bee5eb; }
 .badge-flow     { background-color:#e8f4fd; color:#084298; font-weight:500; border:1px solid #9ec5fe; }
 
 /* -----------------------------------------------------------------------
@@ -296,3 +298,35 @@ body {
 .cell-nowrap        { white-space: nowrap; }
 .text-raw           { font-size: 0.68rem; }
 .text-asset-code    { font-size: 0.8rem; }
+
+/* -----------------------------------------------------------------------
+   Hito 7 / Paso 5 — Operator entry views (upload + confirm).
+   Hito 7 / Paso 5 — Vistas de entrada del operario (subida + confirmación).
+   ----------------------------------------------------------------------- */
+
+/* Preview image in upload_entry.html — max height enforced via CSS class.
+   Imagen de vista previa en upload_entry.html — altura máxima via clase CSS. */
+.operator-preview-img {
+    max-height: 320px;
+    width: auto;
+    object-fit: contain;
+}
+
+/* Confirmation form work block / spare-part separator.
+   Separador de bloques de trabajo / repuestos en el formulario de confirmación. */
+.confirm-block:last-child {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    border-bottom: none !important;
+}
+
+/* Autocomplete dropdown in confirm_entry.html — positioned and scrollable.
+   Dropdown de autocompletado en confirm_entry.html — posicionado y con scroll. */
+.confirm-dropdown {
+    position: absolute;
+    z-index: 200;
+    max-height: 200px;
+    overflow-y: auto;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}

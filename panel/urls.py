@@ -58,6 +58,9 @@ from panel.views import (
     AnalyticsProfileListCreateView,
     AnalyticsProfileDeleteView,
     OperatorDashboardView,
+    WorkshopAssetAutocompleteView,
+    WorkOrderEntryUploadView,
+    WorkOrderEntryConfirmView,
 )
 
 app_name = "panel"
@@ -128,6 +131,12 @@ urlpatterns = [
     path("datacapturesets/", DataCaptureSetListView.as_view(), name="datacaptureset_list"),
     path("datacapturesets/create/", DataCaptureSetCreateView.as_view(), name="datacaptureset_create"),
     path("datacapturesets/<int:pk>/edit/", DataCaptureSetUpdateView.as_view(), name="datacaptureset_edit"),
+
+    # Operator entry paths — Vías de entrada de partes del operario (rol WORKSHOP y ADMIN).
+    # Paso 5 — Hito 7 (2026-04-29)
+    path("operator/upload/", WorkOrderEntryUploadView.as_view(), name="operator_upload"),
+    path("operator/confirm/", WorkOrderEntryConfirmView.as_view(), name="operator_confirm"),
+    path("operator/assets/", WorkshopAssetAutocompleteView.as_view(), name="operator_assets"),
 
     # WorkOrder management — PDFs de partes de trabajo (rol SUPERVISOR y ADMIN).
     # Paso 7 — Hito 6 (2026-04-22) | Bloque G — Hito 8 (2026-04-28)

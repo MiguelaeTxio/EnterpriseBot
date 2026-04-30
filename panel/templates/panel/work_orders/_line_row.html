@@ -21,7 +21,9 @@
 
 {# Shared HTMX attributes for all editable inputs in this row.             #}
 {# Atributos HTMX compartidos por todos los inputs editables de esta fila. #}
-{% with save_url="/panel/work-orders/"|add:wo_pk|stringformat:"s"|add:"/lines/"|add:line.pk|stringformat:"s"|add:"/save/" row_class="line-row-"|add:line.pk|stringformat:"s" %}
+{% url 'panel:work_order_line_save' wo_pk=wo_pk line_pk=line.pk as save_url %}
+{% with pk_str=line.pk|stringformat:"s" %}
+{% with row_class="line-row-"|add:pk_str %}
 <tr id="line-row-{{ line.pk }}"
     class="line-row {{ row_class }}{% if line.flags %} row-has-flags{% endif %}"
     hx-on--after-request="if(event.detail.successful){
@@ -224,4 +226,5 @@
     </td>
 
 </tr>
+{% endwith %}
 {% endwith %}

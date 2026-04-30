@@ -559,3 +559,172 @@ class WorkOrderEntryLine(models.Model):
             f"{hc}–{hf}"
             + (f" ({self.delta_horas}h)" if self.delta_horas is not None else "")
         )
+
+
+# ---------------------------------------------------------------------------
+# SparePartLine — spare parts / materials used in a work block
+# SparePartLine — repuestos / materiales usados en un bloque de trabajo
+# ---------------------------------------------------------------------------
+
+class SparePartLine(models.Model):
+    """
+    Represents a single spare part or material consumed during a work block
+    (WorkOrderEntryLine). Each work block may have zero or more associated
+    spare part lines, forming the reverse side of the physical repair form.
+
+    The source field indicates whether the material was sourced from an
+    external supplier (SUPPLIER) or drawn from internal warehouse stock
+    (WAREHOUSE).
+
+    ---
+
+    Representa un repuesto o material individual consumido durante un bloque
+    de trabajo (WorkOrderEntryLine). Cada bloque puede tener cero o más líneas
+    de repuesto asociadas, formando la cara trasera del formulario físico de
+    reparación.
+
+    El campo source indica si el material provino de un proveedor externo
+    (SUPPLIER) o se extrajo del stock del almacén interno (WAREHOUSE).
+    """
+
+    # ------------------------------------------------------------------
+    # Source choices / Opciones de procedencia
+    # ------------------------------------------------------------------
+    class Source(models.TextChoices):
+        SUPPLIER  = "SUPPLIER",  _("Proveedor")
+        WAREHOUSE = "WAREHOUSE", _("Almacén")
+
+    # ------------------------------------------------------------------
+    # Relation / Relación
+    # ------------------------------------------------------------------
+    entry_line = models.ForeignKey(
+        WorkOrderEntryLine,
+        on_delete=models.CASCADE,
+        related_name="spare_parts",
+        verbose_name=_("Línea de Bloque de Trabajo"),
+        help_text=_(
+            "Bloque de trabajo al que pertenece este repuesto. "
+            "Un bloque puede tener varios repuestos asociados."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Ordering / Ordenación
+    # ------------------------------------------------------------------
+    line_number = models.PositiveSmallIntegerField(
+        _("Número de Línea"),
+        help_text=_(
+            "Posición de esta línea de repuesto dentro del bloque "
+            "de trabajo (base 1)."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Part identification / Identificación del repuesto
+    # ------------------------------------------------------------------
+    reference = models.CharField(
+        _("Referencia"),
+        max_length=100,
+        blank=True,
+        help_text=_(
+            "Referencia del repuesto tal como aparece en el albarán del "
+            "proveedor. Se usa como clave de identificación y puede usarse "
+            "para inferir la descripción del material."
+        ),
+    )
+    material = models.CharField(
+        _("Material"),
+        max_length=200,
+        blank=True,
+        help_text=_(
+            "Descripción del material o repuesto. Puede inferirse de la "
+            "referencia del albarán cuando el operario no la especifica "
+            "explícitamente."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Vehicle / Centro de gasto
+    # ------------------------------------------------------------------
+    vehicle = models.ForeignKey(
+        MachineAsset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="spare_part_lines",
+        verbose_name=_("Vehículo / Centro de Gasto"),
+        help_text=_(
+            "Vehículo o máquina al que se imputa este repuesto. "
+            "Suele coincidir con la máquina del bloque de trabajo, "
+            "pero puede diferir si el repuesto se aplica a otra unidad."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Quantity / Cantidad
+    # ------------------------------------------------------------------
+    quantity = models.DecimalField(
+        _("Unidades"),
+        max_digits=9,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Número de unidades consumidas del repuesto. "
+            "Admite decimales para materiales vendidos por peso o longitud."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Source / Procedencia
+    # ------------------------------------------------------------------
+    source = models.CharField(
+        _("Procedencia"),
+        max_length=10,
+        choices=Source.choices,
+        default=Source.WAREHOUSE,
+        help_text=_(
+            "Indica si el material llegó directamente de un proveedor externo "
+            "(Proveedor) o se extrajo del stock del almacén interno (Almacén)."
+        ),
+    )
+    supplier = models.CharField(
+        _("Proveedor"),
+        max_length=200,
+        blank=True,
+        help_text=_(
+            "Nombre del proveedor externo. Se cumplimenta únicamente cuando "
+            "source = SUPPLIER. Se deja vacío si el material es de almacén."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Extraction flags / Flags de extracción Gemini
+    # ------------------------------------------------------------------
+    flags = models.JSONField(
+        _("Flags de Incidencia"),
+        default=list,
+        blank=True,
+        help_text=_(
+            "Lista de campos con lectura incierta extraídos por Gemini Vision "
+            "de la parte trasera del formulario. Valores posibles: "
+            "'REFERENCIA', 'MATERIAL', 'UNIDADES', 'VEHICULO', 'PROCEDENCIA'. "
+            "Vacío para líneas introducidas manualmente (Form / STT)."
+        ),
+    )
+
+    class Meta:
+        verbose_name        = _("Línea de Repuesto")
+        verbose_name_plural = _("Líneas de Repuesto")
+        ordering            = ["entry_line", "line_number"]
+        unique_together     = [("entry_line", "line_number")]
+
+    def __str__(self) -> str:
+        ref = self.reference or "Sin ref."
+        mat = self.material  or "Sin descripción"
+        qty = f"{self.quantity}" if self.quantity is not None else "?"
+        return (
+            f"Repuesto {self.line_number} | {ref} — {mat} "
+            f"× {qty} | {self.get_source_display()}"
+        )
+

@@ -55,7 +55,7 @@
                         {% endif %}
                     </div>
                     {% if object != company_user %}
-                    <form method="post">
+                    <form method="post" id="form-force-reset" action="">
                         {% csrf_token %}
                         <button type="submit" name="force_reset" value="1"
                                 class="btn btn-sm btn-outline-warning">
@@ -65,7 +65,7 @@
                     {% endif %}
                 </div>
 
-                <form method="post">
+                <form method="post" id="form-force-reset" action="">
                     {% csrf_token %}
 
                     <!-- Role field — Campo de rol -->

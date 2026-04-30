@@ -1,0 +1,477 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/confirm_entry.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Confirmar parte{% endblock %}
+{% block page_title %}Confirmar parte{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
+
+        <div class="mb-3">
+            <a href="{% url 'panel:operator_upload' %}"
+               class="text-muted text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>Volver a subir otro archivo
+            </a>
+        </div>
+
+        {% if error %}
+        <div class="alert alert-danger d-flex align-items-start gap-2 mb-4">
+            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+            <div>{{ error }}</div>
+        </div>
+        {% endif %}
+
+        {# Confidence badge — Indicador de confianza de extracción #}
+        <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+            <h6 class="mb-0 fw-semibold">Revisión del parte extraído</h6>
+            {% if confidence == 'HIGH' %}
+                <span class="badge badge-active">
+                    <i class="bi bi-check-circle me-1"></i>Confianza Alta
+                </span>
+            {% elif confidence == 'MEDIUM' %}
+                <span class="badge badge-supervisor">
+                    <i class="bi bi-exclamation-circle me-1"></i>Confianza Media
+                </span>
+            {% elif confidence == 'LOW' %}
+                <span class="badge badge-inactive">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Confianza Baja
+                </span>
+            {% endif %}
+            {% if fecha_incierta %}
+            <span class="badge badge-inactive">
+                <i class="bi bi-calendar-x me-1"></i>Fecha incierta
+            </span>
+            {% endif %}
+        </div>
+
+        <form method="post" id="form-confirm-entry">
+            {% csrf_token %}
+            <input type="hidden" name="num_entradas" value="{{ num_entradas }}">
+            <input type="hidden" name="num_repuestos" value="{{ num_repuestos }}">
+
+            {# ================================================================ #}
+            {# SECTION 1 — Work date / Fecha del parte                         #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-calendar3 me-2 text-primary"></i>
+                        Fecha del parte
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="col-12 col-md-4">
+                        <label for="id_fecha" class="form-label fw-medium">
+                            Fecha
+                            <span class="text-danger">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            id="id_fecha"
+                            name="fecha"
+                            class="form-control {% if not fecha or fecha_incierta %}field-flagged{% endif %}"
+                            value="{{ fecha }}"
+                            placeholder="DD/MM/AAAA"
+                            required
+                        >
+                        <div class="form-text">Formato: DD/MM/AAAA</div>
+                    </div>
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# SECTION 2 — Work blocks / Bloques de trabajo                    #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-wrench me-2 text-primary"></i>
+                        Bloques de trabajo
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+
+                    {% for entrada in entradas_enriched %}
+                    <div class="confirm-block mb-4 pb-4
+                                {% if not forloop.last %}border-bottom{% endif %}">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span class="badge bg-dark">Bloque {{ entrada.idx }}</span>
+                            {% if entrada.machine_asset %}
+                                <span class="badge badge-active text-sm">
+                                    {{ entrada.machine_asset.codigo }} —
+                                    {{ entrada.machine_asset.marca_modelo }}
+                                </span>
+                            {% elif entrada.maquina_raw %}
+                                <span class="badge badge-inactive text-sm">
+                                    {{ entrada.maquina_raw }} — no identificado
+                                </span>
+                            {% endif %}
+                        </div>
+
+                        <div class="row g-3">
+
+                            {# Machine code / Código de máquina #}
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-medium">
+                                    Máquina
+                                </label>
+                                <input
+                                    type="text"
+                                    name="entrada_{{ entrada.idx }}_maquina_raw"
+                                    class="form-control asset-search
+                                           {% if 'MAQUINA' in entrada.flags or not entrada.maquina_raw %}field-flagged{% endif %}"
+                                    value="{{ entrada.maquina_raw }}"
+                                    placeholder="Código de máquina"
+                                    autocomplete="off"
+                                    data-asset-input="true"
+                                >
+                                <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                <input type="hidden"
+                                       name="entrada_{{ entrada.idx }}_flags"
+                                       value="{{ entrada.flags|default:'[]' }}">
+                            </div>
+
+                            {# H.C. / H.F. #}
+                            <div class="col-6 col-md-2">
+                                <label class="form-label fw-medium">H.C.</label>
+                                <input
+                                    type="text"
+                                    name="entrada_{{ entrada.idx }}_hc"
+                                    class="form-control
+                                           {% if 'H.C.' in entrada.flags or not entrada.hc %}field-flagged{% endif %}"
+                                    value="{{ entrada.hc }}"
+                                    placeholder="HH:MM"
+                                >
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label class="form-label fw-medium">H.F.</label>
+                                <input
+                                    type="text"
+                                    name="entrada_{{ entrada.idx }}_hf"
+                                    class="form-control
+                                           {% if 'H.F.' in entrada.flags or not entrada.hf %}field-flagged{% endif %}"
+                                    value="{{ entrada.hf }}"
+                                    placeholder="HH:MM"
+                                >
+                            </div>
+
+                            {# O.R. #}
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-medium">O.R.</label>
+                                <input
+                                    type="text"
+                                    name="entrada_{{ entrada.idx }}_or_val"
+                                    class="form-control"
+                                    value="{{ entrada.or_val }}"
+                                    placeholder="Referencia O.R. (opcional)"
+                                >
+                            </div>
+
+                            {# Fault description / Descripción de avería #}
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-medium">
+                                    Descripción avería
+                                </label>
+                                <textarea
+                                    name="entrada_{{ entrada.idx }}_descripcion_averia"
+                                    class="form-control
+                                           {% if 'DESCRIPCION' in entrada.flags or not entrada.descripcion_averia %}field-flagged{% endif %}"
+                                    rows="3"
+                                    placeholder="Descripción de la avería o tarea"
+                                >{{ entrada.descripcion_averia }}</textarea>
+                            </div>
+
+                            {# Repair notes / Reparación #}
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-medium">
+                                    Reparación realizada
+                                </label>
+                                <textarea
+                                    name="entrada_{{ entrada.idx }}_reparacion"
+                                    class="form-control"
+                                    rows="3"
+                                    placeholder="Descripción de la reparación"
+                                >{{ entrada.reparacion }}</textarea>
+                            </div>
+
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        No se extrajeron bloques de trabajo del parte.
+                    </p>
+                    {% endfor %}
+
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# SECTION 3 — Spare parts / Repuestos                             #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-box-seam me-2 text-primary"></i>
+                        Repuestos utilizados
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+
+                    {% for rep in repuestos_enriched %}
+                    <div class="confirm-block mb-4 pb-4
+                                {% if not forloop.last %}border-bottom{% endif %}">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span class="badge bg-secondary">Repuesto {{ rep.ridx }}</span>
+                        </div>
+
+                        <div class="row g-3">
+
+                            {# Reference / Referencia #}
+                            <div class="col-12 col-md-3">
+                                <label class="form-label fw-medium">Referencia</label>
+                                <input
+                                    type="text"
+                                    name="repuesto_{{ rep.ridx }}_referencia"
+                                    class="form-control
+                                           {% if 'REFERENCIA' in rep.flags or not rep.referencia %}field-flagged{% endif %}"
+                                    value="{{ rep.referencia }}"
+                                    placeholder="Ref. albarán"
+                                >
+                            </div>
+
+                            {# Vehicle / Vehículo #}
+                            <div class="col-12 col-md-3">
+                                <label class="form-label fw-medium">Vehículo</label>
+                                <input
+                                    type="text"
+                                    name="repuesto_{{ rep.ridx }}_vehiculo_raw"
+                                    class="form-control asset-search
+                                           {% if 'VEHICULO' in rep.flags or not rep.vehiculo_raw %}field-flagged{% endif %}"
+                                    value="{{ rep.vehiculo_raw }}"
+                                    placeholder="Código de máquina"
+                                    autocomplete="off"
+                                    data-asset-input="true"
+                                >
+                                <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                <input type="hidden"
+                                       name="repuesto_{{ rep.ridx }}_flags"
+                                       value="{{ rep.flags|default:'[]' }}">
+                            </div>
+
+                            {# Material #}
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-medium">Material</label>
+                                <input
+                                    type="text"
+                                    name="repuesto_{{ rep.ridx }}_material"
+                                    class="form-control
+                                           {% if 'MATERIAL' in rep.flags or not rep.material %}field-flagged{% endif %}"
+                                    value="{{ rep.material }}"
+                                    placeholder="Descripción del material"
+                                >
+                            </div>
+
+                            {# Quantity / Unidades #}
+                            <div class="col-6 col-md-2">
+                                <label class="form-label fw-medium">Unidades</label>
+                                <input
+                                    type="text"
+                                    name="repuesto_{{ rep.ridx }}_unidades"
+                                    class="form-control
+                                           {% if 'UNIDADES' in rep.flags or rep.unidades is None %}field-flagged{% endif %}"
+                                    value="{{ rep.unidades|default:'' }}"
+                                    placeholder="Cantidad"
+                                >
+                            </div>
+
+                            {# Source / Procedencia #}
+                            <div class="col-12 col-md-3">
+                                <label class="form-label fw-medium">Procedencia</label>
+                                <select
+                                    name="repuesto_{{ rep.ridx }}_origen"
+                                    class="form-select
+                                           {% if 'PROCEDENCIA' in rep.flags %}field-flagged{% endif %}"
+                                >
+                                    <option value="WAREHOUSE"
+                                        {% if rep.origen == 'WAREHOUSE' %}selected{% endif %}>
+                                        Almacén
+                                    </option>
+                                    <option value="SUPPLIER"
+                                        {% if rep.origen == 'SUPPLIER' %}selected{% endif %}>
+                                        Proveedor
+                                    </option>
+                                </select>
+                            </div>
+
+                            {# Supplier / Proveedor #}
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-medium">Proveedor</label>
+                                <input
+                                    type="text"
+                                    name="repuesto_{{ rep.ridx }}_proveedor"
+                                    class="form-control"
+                                    value="{{ rep.proveedor }}"
+                                    placeholder="Nombre proveedor (si aplica)"
+                                >
+                            </div>
+
+                            {# Entry line assignment / Asignación al bloque de trabajo #}
+                            <div class="col-12 col-md-5">
+                                <label class="form-label fw-medium">
+                                    Bloque de trabajo asociado
+                                </label>
+                                <select
+                                    name="repuesto_{{ rep.ridx }}_entry_idx"
+                                    class="form-select"
+                                >
+                                    {% for entrada in entradas_enriched %}
+                                    <option value="{{ entrada.idx }}"
+                                        {% if rep.ridx == entrada.idx %}selected{% endif %}>
+                                        Bloque {{ entrada.idx }}
+                                        {% if entrada.maquina_raw %}
+                                            — {{ entrada.maquina_raw }}
+                                        {% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        No se extrajeron repuestos de la parte trasera del formulario.
+                    </p>
+                    {% endfor %}
+
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# Submit buttons / Botones de envío                                #}
+            {# ================================================================ #}
+            <div class="d-flex gap-2 justify-content-end mb-5">
+                <a href="{% url 'panel:operator_upload' %}"
+                   class="btn btn-outline-secondary">
+                    <i class="bi bi-x-lg me-1"></i>Cancelar
+                </a>
+                <button type="submit" class="btn btn-dark px-4">
+                    <i class="bi bi-check-lg me-1"></i>Confirmar y guardar
+                </button>
+            </div>
+
+        </form>
+    </div>
+</div>
+
+{# ================================================================ #}
+{# Asset autocomplete script                                         #}
+{# Script de autocompletado de activos de flota                     #}
+{# ================================================================ #}
+<script>
+(function () {
+    "use strict";
+
+    var ASSETS_URL = "{% url 'panel:operator_assets' %}";
+
+    /*
+     * Debounce helper: delays fn execution until after 'wait' ms have elapsed
+     * since the last call. Prevents excessive API requests while typing.
+     *
+     * Helper debounce: retrasa la ejecución de fn hasta que hayan transcurrido
+     * 'wait' ms desde la última llamada. Evita peticiones API excesivas al escribir.
+     */
+    function debounce(fn, wait) {
+        var timer;
+        return function () {
+            var ctx  = this;
+            var args = arguments;
+            clearTimeout(timer);
+            timer = setTimeout(function () { fn.apply(ctx, args); }, wait);
+        };
+    }
+
+    /*
+     * Attach autocomplete behaviour to a single asset-search input.
+     * The dropdown sibling is the next .asset-dropdown element.
+     *
+     * Asociar comportamiento de autocompletado a un único input asset-search.
+     * El dropdown hermano es el elemento .asset-dropdown siguiente.
+     */
+    function attachAutocomplete(input) {
+        var dropdown = input.parentElement.querySelector(".asset-dropdown");
+        if (!dropdown) { return; }
+
+        var lastQuery = "";
+
+        function fetchAndRender(q) {
+            if (q === lastQuery) { return; }
+            lastQuery = q;
+
+            fetch(ASSETS_URL + "?q=" + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    dropdown.innerHTML = "";
+                    if (!data.assets || data.assets.length === 0) {
+                        dropdown.classList.add("d-none");
+                        return;
+                    }
+                    data.assets.forEach(function (asset) {
+                        var btn = document.createElement("button");
+                        btn.type      = "button";
+                        btn.className = "list-group-item list-group-item-action text-sm py-1 px-2";
+                        btn.textContent = asset.codigo + " — " + asset.marca_modelo;
+                        btn.addEventListener("mousedown", function (e) {
+                            // Use mousedown so the input blur doesn't fire first.
+                            // Usar mousedown para que el blur del input no se dispare primero.
+                            e.preventDefault();
+                            input.value = asset.codigo;
+                            dropdown.classList.add("d-none");
+                            dropdown.innerHTML = "";
+                            lastQuery = asset.codigo;
+                        });
+                        dropdown.appendChild(btn);
+                    });
+                    dropdown.classList.remove("d-none");
+                })
+                .catch(function () {
+                    dropdown.classList.add("d-none");
+                });
+        }
+
+        var debouncedFetch = debounce(function () {
+            var q = input.value.trim();
+            if (q.length === 0) {
+                dropdown.classList.add("d-none");
+                return;
+            }
+            fetchAndRender(q);
+        }, 250);
+
+        input.addEventListener("input", debouncedFetch);
+
+        input.addEventListener("blur", function () {
+            // Delay hiding so mousedown on dropdown item fires first.
+            // Retrasar ocultación para que el mousedown en el item se dispare primero.
+            setTimeout(function () {
+                dropdown.classList.add("d-none");
+            }, 200);
+        });
+
+        input.addEventListener("focus", function () {
+            if (input.value.trim().length > 0) {
+                fetchAndRender(input.value.trim());
+            }
+        });
+    }
+
+    // Attach to all asset-search inputs on the page.
+    // Asociar a todos los inputs asset-search de la página.
+    document.querySelectorAll(".asset-search").forEach(attachAutocomplete);
+
+}());
+</script>
+{% endblock %}

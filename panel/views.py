@@ -64,8 +64,11 @@ from whatsapp.models import WhatsAppTemplate, WhatsAppSession
 from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 from work_order_processor.tasks import process_work_order_pdf
 from fleet.models import MachineAsset
+import logging
 import plotly.graph_objects as go
 import plotly.io as pio
+
+logger = logging.getLogger(__name__)
 
 
 class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
@@ -3050,7 +3053,7 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
             # Parsear y actualizar maquina_norm + machine_asset.
             raw_norm = request.POST.get("maquina_norm", "").strip()
             norm     = _normalise_machine_code(raw_norm) if raw_norm else raw_norm
-            asset    = _resolve_machine_asset(norm) if norm else None
+            asset    = _resolve_machine_asset(norm, company=company) if norm else None
 
             # Parse hc / hf.
             # Parsear hc / hf.
@@ -3243,7 +3246,7 @@ class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
         # ------------------------------------------------------------------
         raw_norm = request.POST.get("maquina_norm", "").strip()
         norm     = _normalise_machine_code(raw_norm) if raw_norm else raw_norm
-        asset    = _resolve_machine_asset(norm) if norm else None
+        asset    = _resolve_machine_asset(norm, company=company) if norm else None
 
         # ------------------------------------------------------------------
         # Parse hc / hf and recompute delta_horas.
@@ -3573,15 +3576,42 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
         )
         entry = line.entry
 
-        # Guard: raw_gemini_response must exist.
-        # Guardia: raw_gemini_response debe existir.
+        # Guard: raw_gemini_response must exist for Gemini-sourced work orders.
+        # For digital work orders (Via A/B/C confirm) raw_gemini_response is None —
+        # in that case restore re-resolves machine_asset from the stored maquina_norm
+        # and recomputes delta_horas from the stored hc/hf, preserving all other fields.
+        #
+        # Guardia: raw_gemini_response debe existir para partes con origen Gemini.
+        # Para partes digitales (Vía A/B/C confirm) raw_gemini_response es None —
+        # en ese caso el restore re-resuelve machine_asset desde maquina_norm almacenado
+        # y recalcula delta_horas desde hc/hf almacenados, preservando el resto.
         raw = entry.raw_gemini_response
+
         if not raw or not isinstance(raw, dict):
-            return HttpResponseBadRequest(
-                "# [RESTORE] No hay raw_gemini_response almacenado para esta entrada."
+            # Digital work order path — re-resolve asset and recompute hours only.
+            # Ruta de parte digital — re-resolver activo y recalcular horas únicamente.
+            maquina_norm  = _normalise_machine_code(line.maquina_raw or "")
+            machine_asset = _resolve_machine_asset(maquina_norm, company=company) if maquina_norm else None
+            delta         = _compute_delta_horas(line.hc, line.hf)
+
+            line.maquina_norm  = maquina_norm
+            line.machine_asset = machine_asset
+            line.delta_horas   = delta
+            line.save(update_fields=["maquina_norm", "machine_asset", "delta_horas"])
+
+            return render(
+                request,
+                "panel/work_orders/_line_row.html",
+                {
+                    "line":  line,
+                    "wo_pk": wo.pk,
+                    "entry": entry,
+                },
             )
 
-        entradas = raw.get("entradas") or []
+        # Gemini-sourced path — restore from raw_gemini_response block.
+        # Ruta con origen Gemini — restaurar desde bloque raw_gemini_response.
+        entradas    = raw.get("entradas") or []
         block_index = line.line_number - 1   # line_number is 1-based.
 
         if block_index < 0 or block_index >= len(entradas):
@@ -3596,7 +3626,7 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
         # Re-parsear los valores del bloque original y sobreescribir solo esta línea.
         maquina_raw   = (bloque.get("maquina_raw") or "").strip()
         maquina_norm  = _normalise_machine_code(maquina_raw)
-        machine_asset = _resolve_machine_asset(maquina_norm)
+        machine_asset = _resolve_machine_asset(maquina_norm, company=company)
         hc            = _parse_time(bloque.get("hc"))
         hf            = _parse_time(bloque.get("hf"))
         delta         = _compute_delta_horas(hc, hf)
@@ -3604,16 +3634,16 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
         if not isinstance(flags, list):
             flags = []
 
-        line.maquina_raw       = maquina_raw
-        line.maquina_norm      = maquina_norm
-        line.machine_asset     = machine_asset
+        line.maquina_raw        = maquina_raw
+        line.maquina_norm       = maquina_norm
+        line.machine_asset      = machine_asset
         line.descripcion_averia = (bloque.get("descripcion_averia") or "")
-        line.reparacion        = (bloque.get("reparacion") or "")
-        line.hc                = hc
-        line.hf                = hf
-        line.or_val            = (bloque.get("or_val") or "")
-        line.delta_horas       = delta
-        line.flags             = flags
+        line.reparacion         = (bloque.get("reparacion") or "")
+        line.hc                 = hc
+        line.hf                 = hf
+        line.or_val             = (bloque.get("or_val") or "")
+        line.delta_horas        = delta
+        line.flags              = flags
         line.save(update_fields=[
             "maquina_raw", "maquina_norm", "machine_asset",
             "descripcion_averia", "reparacion", "hc", "hf",
@@ -4728,6 +4758,679 @@ class AnalyticsProfileListCreateView(AdminRoleRequiredMixin, View):
             "nombre": profile.nombre,
             "config": profile.config,
         })
+
+
+class WorkshopAssetAutocompleteView(WorkshopRequiredMixin, View):
+    """
+    JSON endpoint returning MachineAsset records for the authenticated
+    CompanyUser's company. Supports incremental search via the optional
+    'q' GET parameter (matches against codigo and marca_modelo).
+    Used by the operator work-order entry form (Hito 7 / Paso 5).
+
+    GET /panel/operator/assets/?q=<query>
+        Returns a JSON array of {codigo, marca_modelo} objects, max 20 results.
+        If 'q' is absent or blank, returns the first 20 active assets ordered
+        by codigo.
+    ---
+    Endpoint JSON que devuelve registros MachineAsset de la empresa del
+    CompanyUser autenticado. Admite búsqueda incremental mediante el parámetro
+    GET opcional 'q' (busca en codigo y marca_modelo).
+    Usado por el formulario de entrada de partes del operario (Hito 7 / Paso 5).
+
+    GET /panel/operator/assets/?q=<query>
+        Devuelve un array JSON de objetos {codigo, marca_modelo}, máx. 20 resultados.
+        Si 'q' está ausente o vacío, devuelve los primeros 20 activos ordenados
+        por codigo.
+    """
+
+    def get(self, request, *args, **kwargs):
+        """
+        Returns a filtered list of active MachineAsset records as JSON.
+        ---
+        Devuelve una lista filtrada de registros MachineAsset activos como JSON.
+        """
+        from django.http import JsonResponse
+        from fleet.models import MachineAsset
+
+        try:
+            company = request.user.company_user.company
+        except AttributeError:
+            return JsonResponse({"error": "Sin perfil de empresa."}, status=403)
+
+        q = request.GET.get("q", "").strip()
+        qs = MachineAsset.objects.filter(company=company, es_activo=True)
+
+        if q:
+            # Case-insensitive search on codigo and marca_modelo.
+            # Búsqueda sin distinción de mayúsculas en codigo y marca_modelo.
+            qs = qs.filter(
+                django_models.Q(codigo__icontains=q) |
+                django_models.Q(marca_modelo__icontains=q)
+            )
+
+        assets = list(
+            qs.order_by("codigo")
+            .values("codigo", "marca_modelo")[:20]
+        )
+        return JsonResponse({"assets": assets})
+
+
+class WorkOrderEntryUploadView(WorkshopRequiredMixin, View):
+    """
+    Handles the operator Upload path (Via C) for new work orders.
+    Accepts a photo or PDF file, rasterises it and sends it to Gemini Vision
+    via extract_work_order_page_full() which returns both work blocks (front)
+    and spare-part lines (back). The extracted data is stored in the session
+    and the user is redirected to WorkOrderEntryConfirmView for full validation
+    before any database write occurs.
+
+    GET  /panel/operator/upload/
+         Renders the upload form (upload_entry.html).
+    POST /panel/operator/upload/
+         Processes the uploaded file, stores extraction result in session,
+         redirects to /panel/operator/confirm/.
+    ---
+    Gestiona la vía Upload (Vía C) del operario para partes nuevos.
+    Acepta una foto o PDF, lo rasteriza y lo envía a Gemini Vision mediante
+    extract_work_order_page_full() que devuelve tanto los bloques de trabajo
+    (cara delantera) como las líneas de repuesto (cara trasera). Los datos
+    extraídos se almacenan en la sesión y el usuario es redirigido a
+    WorkOrderEntryConfirmView para validación completa antes de escribir en BD.
+
+    GET  /panel/operator/upload/
+         Renderiza el formulario de subida (upload_entry.html).
+    POST /panel/operator/upload/
+         Procesa el archivo subido, almacena el resultado de extracción en
+         sesión, redirige a /panel/operator/confirm/.
+    """
+
+    template_name = "panel/operator/upload_entry.html"
+
+    def _get_context(self, request, error=None):
+        """
+        Builds base template context for the upload view.
+        ---
+        Construye el contexto base para la vista de subida.
+        """
+        cu = request.user.company_user
+        return {
+            "company":      cu.company,
+            "company_user": cu,
+            "active_nav":   "operator_dashboard",
+            "error":        error,
+        }
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the upload form.
+        ---
+        Renderiza el formulario de subida.
+        """
+        return render(request, self.template_name, self._get_context(request))
+
+    def post(self, request, *args, **kwargs):
+        """
+        Processes the uploaded file through Gemini Vision (full prompt).
+        Stores the structured extraction result in the session and redirects
+        to the confirmation view. On Gemini failure (confidence=FAILED) the
+        form is re-rendered with a descriptive error message.
+        ---
+        Procesa el archivo subido mediante Gemini Vision (prompt completo).
+        Almacena el resultado de extracción estructurado en la sesión y redirige
+        a la vista de confirmación. En caso de fallo de Gemini (confidence=FAILED)
+        se re-renderiza el formulario con un mensaje de error descriptivo.
+        """
+        import io
+        from pdf2image import convert_from_bytes
+        from PIL import Image
+        from work_order_processor.services import extract_work_order_page_full
+
+        uploaded_file = request.FILES.get("work_order_file")
+        if not uploaded_file:
+            return render(
+                request, self.template_name,
+                self._get_context(request, error="Debes seleccionar un archivo.")
+            )
+
+        file_bytes = uploaded_file.read()
+        content_type = uploaded_file.content_type or ""
+
+        try:
+            # Rasterise: PDF → PNG bytes / PNG/JPEG → pass through as PNG bytes.
+            # Rasterizar: PDF → bytes PNG / PNG/JPEG → pasar como bytes PNG.
+            if "pdf" in content_type or uploaded_file.name.lower().endswith(".pdf"):
+                # Convert first page of PDF to PNG at 200 DPI.
+                # Convertir la primera página del PDF a PNG a 200 DPI.
+                pages = convert_from_bytes(file_bytes, dpi=200, first_page=1, last_page=1)
+                if not pages:
+                    raise ValueError("# No se pudieron extraer páginas del PDF.")
+                buf = io.BytesIO()
+                pages[0].save(buf, format="PNG")
+                image_bytes = buf.getvalue()
+            else:
+                # Image input: re-encode as PNG for Gemini.
+                # Entrada imagen: recodificar como PNG para Gemini.
+                img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                image_bytes = buf.getvalue()
+
+        except Exception as exc:
+            logger.error(
+                "# [Upload] Error al rasterizar archivo: %s", exc, exc_info=True
+            )
+            return render(
+                request, self.template_name,
+                self._get_context(
+                    request,
+                    error=(
+                        "No se pudo procesar el archivo. "
+                        "Asegúrate de que es una imagen o PDF válido."
+                    ),
+                )
+            )
+
+        # Call Gemini Vision with the full (front+back) prompt.
+        # Llamar a Gemini Vision con el prompt completo (delantera + trasera).
+        extraction = extract_work_order_page_full(image_bytes)
+
+        if extraction.get("extraction_confidence") == "FAILED":
+            return render(
+                request, self.template_name,
+                self._get_context(
+                    request,
+                    error=(
+                        "Gemini no pudo extraer datos del archivo. "
+                        "Comprueba que la imagen sea legible y corresponda "
+                        "a un parte de trabajo."
+                    ),
+                )
+            )
+
+        # Store extraction result in session for the confirmation view.
+        # Almacenar resultado de extracción en sesión para la vista de confirmación.
+        request.session["operator_upload_extraction"] = extraction
+        request.session.modified = True
+
+        logger.info(
+            "# [Upload] Extracción completada. Confianza: %s | "
+            "Entradas: %d | Repuestos: %d. Redirigiendo a confirmación.",
+            extraction.get("extraction_confidence"),
+            len(extraction.get("entradas", [])),
+            len(extraction.get("repuestos", [])),
+        )
+
+        return redirect("/panel/operator/confirm/")
+
+
+class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
+    """
+    Confirmation and persistence view for the operator Upload path (Via C).
+    Reads the extraction result stored in the session by WorkOrderEntryUploadView,
+    renders a fully editable confirmation form and, on POST, atomically persists
+    the validated data to the database:
+      WorkOrder (status=DONE, source_pdf blank) +
+      WorkOrderEntry (page 1, confidence from Gemini) +
+      N × WorkOrderEntryLine +
+      M × SparePartLine per entry line.
+    After persistence, generate_work_order_excel() is called synchronously.
+
+    GET  /panel/operator/confirm/
+         Renders the confirmation form pre-filled from session data.
+         Redirects to the upload view if no session data is found.
+    POST /panel/operator/confirm/
+         Validates, persists and redirects to the work-order list on success.
+    ---
+    Vista de confirmación y persistencia para la vía Upload del operario (Vía C).
+    Lee el resultado de extracción almacenado en sesión por WorkOrderEntryUploadView,
+    renderiza un formulario de confirmación completamente editable y, en POST,
+    persiste atómicamente los datos validados en la base de datos:
+      WorkOrder (status=DONE, source_pdf en blanco) +
+      WorkOrderEntry (página 1, confianza de Gemini) +
+      N × WorkOrderEntryLine +
+      M × SparePartLine por línea de entrada.
+    Tras la persistencia, generate_work_order_excel() se llama de forma síncrona.
+
+    GET  /panel/operator/confirm/
+         Renderiza el formulario de confirmación pre-rellenado con datos de sesión.
+         Redirige a la vista de subida si no hay datos de sesión.
+    POST /panel/operator/confirm/
+         Valida, persiste y redirige a la lista de partes en caso de éxito.
+    """
+
+    template_name = "panel/operator/confirm_entry.html"
+
+    def _get_company_user(self, request):
+        """
+        Returns the CompanyUser for the authenticated request user.
+        ---
+        Devuelve el CompanyUser del usuario autenticado en la solicitud.
+        """
+        return request.user.company_user
+
+    def _get_context_base(self, request):
+        """
+        Returns the base template context with company and navigation data.
+        ---
+        Devuelve el contexto base con empresa y datos de navegación.
+        """
+        cu = self._get_company_user(request)
+        return {
+            "company":      cu.company,
+            "company_user": cu,
+            "active_nav":   "operator_dashboard",
+        }
+
+    def _resolve_machine(self, company, raw_code):
+        """
+        Attempts to resolve a raw machine code string to a MachineAsset
+        belonging to the given company, applying the same D4 normalisation
+        used by the historical pipeline (_normalise_machine_code).
+        Returns the MachineAsset instance or None if no match is found.
+        ---
+        Intenta resolver un código de máquina bruto a un MachineAsset
+        perteneciente a la empresa dada, aplicando la misma normalización D4
+        usada por el pipeline histórico (_normalise_machine_code).
+        Devuelve la instancia MachineAsset o None si no hay coincidencia.
+        """
+        from work_order_processor.services import _normalise_machine_code
+        from fleet.models import MachineAsset
+
+        if not raw_code:
+            return None
+        norm = _normalise_machine_code(raw_code)
+        if not norm:
+            return None
+        try:
+            return MachineAsset.objects.get(codigo__iexact=norm, company=company)
+        except MachineAsset.DoesNotExist:
+            return None
+        except MachineAsset.MultipleObjectsReturned:
+            return MachineAsset.objects.filter(
+                codigo__iexact=norm, company=company
+            ).first()
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the confirmation form using extraction data from the session.
+        Redirects to the upload view if the session contains no extraction data.
+        ---
+        Renderiza el formulario de confirmación usando los datos de extracción
+        de la sesión. Redirige a la vista de subida si la sesión no contiene
+        datos de extracción.
+        """
+        from fleet.models import MachineAsset
+
+        extraction = request.session.get("operator_upload_extraction")
+        if not extraction:
+            logger.warning(
+                "# [Confirm] No hay datos de extracción en sesión. "
+                "Redirigiendo a la vista de subida."
+            )
+            return redirect("/panel/operator/upload/")
+
+        cu      = self._get_company_user(request)
+        company = cu.company
+
+        # Build enriched entry list for template rendering.
+        # Construir lista de entradas enriquecida para el renderizado del template.
+        entradas_enriched = []
+        for idx, entrada in enumerate(extraction.get("entradas", []), start=1):
+            raw_code     = entrada.get("maquina_raw") or ""
+            machine_asset = self._resolve_machine(company, raw_code)
+            entradas_enriched.append({
+                "idx":            idx,
+                "maquina_raw":    raw_code,
+                "machine_asset":  machine_asset,
+                "descripcion_averia": entrada.get("descripcion_averia") or "",
+                "reparacion":     entrada.get("reparacion") or "",
+                "hc":             entrada.get("hc") or "",
+                "hf":             entrada.get("hf") or "",
+                "or_val":         entrada.get("or_val") or "",
+                "flags":          entrada.get("flags") or [],
+            })
+
+        # Build spare-part list for template rendering.
+        # Construir lista de repuestos para el renderizado del template.
+        repuestos_enriched = []
+        for ridx, rep in enumerate(extraction.get("repuestos", []), start=1):
+            veh_raw      = rep.get("vehiculo_raw") or ""
+            vehicle_asset = self._resolve_machine(company, veh_raw)
+            repuestos_enriched.append({
+                "ridx":          ridx,
+                "referencia":    rep.get("referencia") or "",
+                "vehiculo_raw":  veh_raw,
+                "vehicle_asset": vehicle_asset,
+                "material":      rep.get("material") or "",
+                "unidades":      rep.get("unidades"),
+                "origen":        rep.get("origen") or "WAREHOUSE",
+                "proveedor":     rep.get("proveedor") or "",
+                "flags":         rep.get("flags") or [],
+            })
+
+        # Active assets for the autocomplete selector.
+        # Activos disponibles para el selector de autocompletado.
+        assets = list(
+            MachineAsset.objects.filter(company=company, es_activo=True)
+            .order_by("codigo")
+            .values("codigo", "marca_modelo")
+        )
+
+        context = self._get_context_base(request)
+        context.update({
+            "extraction":          extraction,
+            "fecha":               extraction.get("fecha") or "",
+            "fecha_incierta":      extraction.get("fecha_incierta", False),
+            "confidence":          extraction.get("extraction_confidence", ""),
+            "entradas_enriched":   entradas_enriched,
+            "repuestos_enriched":  repuestos_enriched,
+            "assets":              assets,
+            "num_entradas":        len(entradas_enriched),
+            "num_repuestos":       len(repuestos_enriched),
+        })
+        return render(request, self.template_name, context)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates the confirmed form data and atomically persists:
+          WorkOrder → WorkOrderEntry → WorkOrderEntryLine(s) → SparePartLine(s).
+        Generates the Excel report synchronously after persistence.
+        Clears the session extraction data on success.
+        On validation failure, re-renders the confirmation form with error context.
+        ---
+        Valida los datos del formulario confirmado y persiste atómicamente:
+          WorkOrder → WorkOrderEntry → WorkOrderEntryLine(s) → SparePartLine(s).
+        Genera el informe Excel de forma síncrona tras la persistencia.
+        Elimina los datos de extracción de la sesión en caso de éxito.
+        En caso de fallo de validación, re-renderiza el formulario con contexto
+        de error.
+        """
+        import json as _json
+        from datetime import date, time as dt_time
+        from decimal import Decimal, InvalidOperation
+        from django.db import transaction
+        from django.utils import timezone
+        from fleet.models import MachineAsset
+        from work_order_processor.models import (
+            WorkOrder, WorkOrderEntry, WorkOrderEntryLine, SparePartLine,
+        )
+        from work_order_processor.services import (
+            generate_work_order_excel,
+            _normalise_machine_code,
+            _compute_delta_horas,
+        )
+
+        cu      = self._get_company_user(request)
+        company = cu.company
+        POST    = request.POST
+
+        # ------------------------------------------------------------------
+        # Parse and validate the work date.
+        # Parsear y validar la fecha del parte.
+        # ------------------------------------------------------------------
+        fecha_str = POST.get("fecha", "").strip()
+        work_date = None
+        if fecha_str:
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    from datetime import datetime
+                    work_date = datetime.strptime(fecha_str, fmt).date()
+                    break
+                except ValueError:
+                    continue
+
+        # ------------------------------------------------------------------
+        # Parse entry lines from POST.
+        # Parsear líneas de entrada desde POST.
+        # ------------------------------------------------------------------
+        num_entradas = int(POST.get("num_entradas", "0") or "0")
+        entry_lines_data = []
+
+        for i in range(1, num_entradas + 1):
+            pfx          = f"entrada_{i}_"
+            maquina_raw  = POST.get(f"{pfx}maquina_raw", "").strip()
+            desc_averia  = POST.get(f"{pfx}descripcion_averia", "").strip()
+            reparacion   = POST.get(f"{pfx}reparacion", "").strip()
+            hc_str       = POST.get(f"{pfx}hc", "").strip()
+            hf_str       = POST.get(f"{pfx}hf", "").strip()
+            or_val       = POST.get(f"{pfx}or_val", "").strip()
+            flags_raw    = POST.get(f"{pfx}flags", "[]")
+
+            # Parse time fields / Parsear campos de hora.
+            def _parse_t(s):
+                if not s:
+                    return None
+                try:
+                    parts = s.split(":")
+                    return dt_time(int(parts[0]), int(parts[1]))
+                except (ValueError, IndexError):
+                    return None
+
+            hc = _parse_t(hc_str)
+            hf = _parse_t(hf_str)
+
+            # Resolve machine asset / Resolver activo de flota.
+            maquina_norm  = _normalise_machine_code(maquina_raw)
+            machine_asset = None
+            if maquina_norm:
+                try:
+                    machine_asset = MachineAsset.objects.get(
+                        codigo__iexact=maquina_norm, company=company
+                    )
+                except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                    machine_asset = MachineAsset.objects.filter(
+                        codigo__iexact=maquina_norm, company=company
+                    ).first()
+
+            # Compute net hours / Calcular horas netas.
+            delta_horas = _compute_delta_horas(hc, hf)
+
+            # Parse flags / Parsear flags.
+            try:
+                flags = _json.loads(flags_raw) if flags_raw else []
+            except (ValueError, TypeError):
+                flags = []
+
+            entry_lines_data.append({
+                "maquina_raw":    maquina_raw,
+                "maquina_norm":   maquina_norm,
+                "machine_asset":  machine_asset,
+                "descripcion_averia": desc_averia,
+                "reparacion":     reparacion,
+                "hc":             hc,
+                "hf":             hf,
+                "or_val":         or_val,
+                "delta_horas":    delta_horas,
+                "flags":          flags,
+                "line_number":    i,
+            })
+
+        # ------------------------------------------------------------------
+        # Parse spare-part lines from POST.
+        # Parsear líneas de repuesto desde POST.
+        # ------------------------------------------------------------------
+        num_repuestos = int(POST.get("num_repuestos", "0") or "0")
+        spare_parts_data = []
+
+        for r in range(1, num_repuestos + 1):
+            pfx          = f"repuesto_{r}_"
+            referencia   = POST.get(f"{pfx}referencia", "").strip()
+            vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
+            material     = POST.get(f"{pfx}material", "").strip()
+            unidades_str = POST.get(f"{pfx}unidades", "").strip()
+            origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
+            proveedor    = POST.get(f"{pfx}proveedor", "").strip()
+            entry_idx    = int(POST.get(f"{pfx}entry_idx", "1") or "1")
+            flags_raw    = POST.get(f"{pfx}flags", "[]")
+
+            # Parse quantity / Parsear cantidad.
+            quantity = None
+            if unidades_str:
+                try:
+                    quantity = Decimal(unidades_str.replace(",", "."))
+                except InvalidOperation:
+                    quantity = None
+
+            # Validate origin value / Validar valor de procedencia.
+            if origen not in ("SUPPLIER", "WAREHOUSE"):
+                origen = "WAREHOUSE"
+
+            # Resolve vehicle asset / Resolver activo de flota para vehículo.
+            veh_norm  = _normalise_machine_code(vehiculo_raw)
+            veh_asset = None
+            if veh_norm:
+                try:
+                    veh_asset = MachineAsset.objects.get(
+                        codigo__iexact=veh_norm, company=company
+                    )
+                except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                    veh_asset = MachineAsset.objects.filter(
+                        codigo__iexact=veh_norm, company=company
+                    ).first()
+
+            # Parse flags / Parsear flags.
+            try:
+                flags = _json.loads(flags_raw) if flags_raw else []
+            except (ValueError, TypeError):
+                flags = []
+
+            spare_parts_data.append({
+                "referencia":    referencia,
+                "vehiculo_raw":  vehiculo_raw,
+                "vehicle_asset": veh_asset,
+                "material":      material,
+                "quantity":      quantity,
+                "source":        origen,
+                "supplier":      proveedor if origen == "SUPPLIER" else "",
+                "flags":         flags,
+                "entry_idx":     entry_idx,
+                "line_number":   r,
+            })
+
+        # ------------------------------------------------------------------
+        # Atomic persistence / Persistencia atómica.
+        # ------------------------------------------------------------------
+        try:
+            with transaction.atomic():
+                # WorkOrder sintético — sin PDF, status=DONE desde creación.
+                # Synthetic WorkOrder — no PDF, status=DONE from creation.
+                worker_name = (
+                    cu.user.get_full_name() or cu.user.username
+                ).upper()
+
+                work_order = WorkOrder(
+                    company         = company,
+                    uploaded_by     = cu,
+                    status          = WorkOrder.Status.DONE,
+                    total_pages     = 1,
+                    processed_pages = 1,
+                    reviewed        = False,
+                )
+                # source_pdf left blank (no file) — FileField accepts empty string.
+                # source_pdf se deja en blanco (sin fichero) — FileField acepta cadena vacía.
+                work_order.source_pdf.name = ""
+                work_order.save()
+
+                # WorkOrderEntry — one per submitted form (page 1).
+                # WorkOrderEntry — uno por formulario enviado (página 1).
+                entry = WorkOrderEntry.objects.create(
+                    work_order          = work_order,
+                    page_number         = 1,
+                    worker_name         = worker_name,
+                    work_date           = work_date,
+                    fecha_incierta      = False,
+                    extraction_confidence = WorkOrderEntry.Confidence.HIGH,
+                    raw_gemini_response = None,
+                )
+
+                # WorkOrderEntryLine records / Registros WorkOrderEntryLine.
+                created_lines = {}
+                for ld in entry_lines_data:
+                    line = WorkOrderEntryLine.objects.create(
+                        entry             = entry,
+                        line_number       = ld["line_number"],
+                        machine_asset     = ld["machine_asset"],
+                        maquina_raw       = ld["maquina_raw"],
+                        maquina_norm      = ld["maquina_norm"],
+                        descripcion_averia = ld["descripcion_averia"],
+                        reparacion        = ld["reparacion"],
+                        hc                = ld["hc"],
+                        hf                = ld["hf"],
+                        or_val            = ld["or_val"],
+                        delta_horas       = ld["delta_horas"],
+                        flags             = ld["flags"],
+                    )
+                    created_lines[ld["line_number"]] = line
+
+                # SparePartLine records linked to their entry line.
+                # Registros SparePartLine vinculados a su línea de entrada.
+                for spd in spare_parts_data:
+                    target_line = created_lines.get(spd["entry_idx"])
+                    if target_line is None:
+                        # Fallback: link to first line if index is invalid.
+                        # Fallback: vincular a la primera línea si el índice no es válido.
+                        target_line = next(iter(created_lines.values()), None)
+                    if target_line is None:
+                        continue
+
+                    SparePartLine.objects.create(
+                        entry_line  = target_line,
+                        line_number = spd["line_number"],
+                        reference   = spd["referencia"],
+                        vehicle     = spd["vehicle_asset"],
+                        material    = spd["material"],
+                        quantity    = spd["quantity"],
+                        source      = spd["source"],
+                        supplier    = spd["supplier"],
+                        flags       = spd["flags"],
+                    )
+
+            logger.info(
+                "# [Confirm] WorkOrder #%d creado correctamente. "
+                "Entradas: %d | Repuestos: %d.",
+                work_order.pk,
+                len(entry_lines_data),
+                len(spare_parts_data),
+            )
+
+        except Exception as exc:
+            logger.error(
+                "# [Confirm] Error en persistencia atómica: %s", exc, exc_info=True
+            )
+            context = self._get_context_base(request)
+            context["error"] = (
+                f"Error al guardar el parte: {exc}. "
+                "Por favor, inténtalo de nuevo o contacta con el administrador."
+            )
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Synchronous Excel generation / Generación síncrona de Excel.
+        # ------------------------------------------------------------------
+        try:
+            generate_work_order_excel(work_order.pk)
+            logger.info(
+                "# [Confirm] Excel generado correctamente para WorkOrder #%d.",
+                work_order.pk,
+            )
+        except Exception as exc:
+            logger.warning(
+                "# [Confirm] Excel no generado para WorkOrder #%d: %s.",
+                work_order.pk, exc,
+            )
+            # Non-fatal: the work order is persisted; Excel can be regenerated.
+            # No fatal: el parte está persistido; el Excel puede regenerarse.
+
+        # Clear session extraction data / Limpiar datos de extracción de sesión.
+        request.session.pop("operator_upload_extraction", None)
+        request.session.modified = True
+
+        django_messages.success(
+            request,
+            f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
+            f"El informe Excel está disponible en la lista de partes."
+        )
+        return redirect("/panel/work-orders/")
 
 
 class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):
