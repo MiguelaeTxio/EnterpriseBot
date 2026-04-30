@@ -1,0 +1,938 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/stt_entry.html #}
+{#                                                                                           #}
+{# Work-order STT dictation — Via B entry path (Paso 8, Hito 7, 2026-04-30).               #}
+{# Allows WORKSHOP and ADMIN users to dictate a daily work-order part using the             #}
+{# browser-native Web Speech API (Chrome/Edge, lang=es-ES). A JavaScript parser            #}
+{# extracts date, machine code, start/end times and fault description from the             #}
+{# recognised text and pre-fills the underlying standard form fields. The operator         #}
+{# reviews and corrects the pre-filled data before submitting.                             #}
+{#                                                                                           #}
+{# Features:                                                                                 #}
+{#   A) Voice recording section above the form with mic button and live transcript.         #}
+{#   B) Client-side JS parser: extracts fecha, maquina_raw, hc, hf, descripcion_averia.    #}
+{#   C) Compatibility warning if SpeechRecognition is unavailable (Firefox, Safari).       #}
+{#   D) Identical form structure to form_entry.html — same name= attributes.               #}
+{#   E) Client-side integrity validation mirroring server-side gate.                        #}
+{#   F) Server-side integrity gate in WorkOrderEntrySTTView.post().                         #}
+{#                                                                                           #}
+{# Dictado STT de partes — vía de entrada B (Paso 8, Hito 7, 2026-04-30).                  #}
+{# Permite a usuarios WORKSHOP y ADMIN dictar un parte diario usando la Web Speech API      #}
+{# nativa del navegador (Chrome/Edge, lang=es-ES). Un parser JavaScript extrae fecha,      #}
+{# código de máquina, horas de inicio/fin y descripción de avería del texto reconocido     #}
+{# y pre-rellena los campos del formulario estándar. El operario revisa y corrige los       #}
+{# datos antes de enviar.                                                                    #}
+{% extends "panel/base.html" %}
+
+{% block title %}Nuevo parte — Dictado por voz{% endblock %}
+{% block page_title %}Nuevo parte — Dictado por voz{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
+
+        {# ------------------------------------------------------------------ #}
+        {# Back link / Enlace de retorno                                       #}
+        {# ------------------------------------------------------------------ #}
+        <div class="mb-3">
+            <a href="{% url 'panel:operator_dashboard' %}"
+               class="text-muted text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>Volver al selector
+            </a>
+        </div>
+
+        {# ------------------------------------------------------------------ #}
+        {# Error alert — Alerta de error (integridad server-side)              #}
+        {# ------------------------------------------------------------------ #}
+        {% if error %}
+        <div class="alert alert-danger d-flex align-items-start gap-2 mb-4" id="stt-error-alert">
+            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+            <div>{{ error }}</div>
+        </div>
+        {% endif %}
+
+        {# ================================================================== #}
+        {# SECTION 0 — Voice recorder / Grabador de voz                       #}
+        {# ================================================================== #}
+        <div class="card border-0 shadow-sm mb-4" id="stt-recorder-card">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-mic-fill me-2 text-primary"></i>
+                    Dictado por voz
+                </h6>
+            </div>
+            <div class="card-body p-4">
+
+                {# ── Compatibility warning / Aviso de compatibilidad ── #}
+                <div class="alert alert-warning d-flex align-items-start gap-2 mb-3 d-none"
+                     id="stt-compat-warning">
+                    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+                    <div>
+                        <strong>Tu navegador no soporta el dictado por voz.</strong>
+                        Usa Chrome o Edge para utilizar esta función, o introduce los
+                        datos manualmente en el formulario de abajo.
+                    </div>
+                </div>
+
+                {# ── Instructions / Instrucciones ── #}
+                <p class="text-muted text-sm mb-3">
+                    Pulsa el botón de micrófono y dicta tu parte. Ejemplo:
+                    <em>"Parte del quince de mayo de dos mil veintiséis. Máquina
+                    JD5090R. De ocho a doce. Avería en el sistema hidráulico."</em>
+                </p>
+
+                {# ── Mic button / Botón de micrófono ── #}
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <button type="button"
+                            id="stt-btn-start"
+                            class="btn btn-primary px-4">
+                        <i class="bi bi-mic-fill me-2"></i>Iniciar dictado
+                    </button>
+                    <button type="button"
+                            id="stt-btn-stop"
+                            class="btn btn-danger px-4 d-none">
+                        <i class="bi bi-stop-fill me-2"></i>Detener
+                    </button>
+                    <span id="stt-status" class="text-muted text-sm"></span>
+                </div>
+
+                {# ── Live transcript / Transcripción en tiempo real ── #}
+                <div class="mb-3">
+                    <label class="form-label fw-medium text-sm">Transcripción reconocida</label>
+                    <div id="stt-transcript"
+                         class="form-control bg-light"
+                         style="min-height:4rem; white-space:pre-wrap; font-size:.85rem;">
+                    </div>
+                </div>
+
+                {# ── Apply button / Botón aplicar ── #}
+                <button type="button"
+                        id="stt-btn-apply"
+                        class="btn btn-success btn-sm px-3 d-none">
+                    <i class="bi bi-check2-circle me-1"></i>Aplicar al formulario
+                </button>
+                <p class="text-muted text-sm mt-2 mb-0">
+                    Revisa y corrige los campos antes de guardar.
+                </p>
+
+            </div>
+        </div>
+
+        <form method="post" id="form-entry">
+            {% csrf_token %}
+
+            {# Hidden counters updated by JS / Contadores ocultos actualizados por JS #}
+            <input type="hidden" name="num_entradas"  id="num-entradas-input"  value="{{ num_entradas }}">
+            <input type="hidden" name="num_repuestos" id="num-repuestos-input" value="{{ num_repuestos }}">
+
+            {# ================================================================ #}
+            {# SECTION 1 — Work date / Fecha del parte                         #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-calendar3 me-2 text-primary"></i>
+                        Fecha del parte
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="col-12 col-md-4">
+                        <label for="id_fecha" class="form-label fw-medium">
+                            Fecha <span class="text-danger">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            id="id_fecha"
+                            name="fecha"
+                            class="form-control {% if not fecha %}field-flagged{% endif %}"
+                            value="{{ fecha }}"
+                            placeholder="DD/MM/AAAA"
+                            autocomplete="off"
+                        >
+                        <div class="form-text">Formato: DD/MM/AAAA</div>
+                    </div>
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# SECTION 2 — Work blocks / Bloques de trabajo                    #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-wrench me-2 text-primary"></i>
+                        Bloques de trabajo
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+
+                    {# Server-rendered blocks on validation failure / Bloques renderizados en fallo de validacion #}
+                    {% if entradas_enriched %}
+                        {% for entrada in entradas_enriched %}
+                        <div class="confirm-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %}" id="block-{{ entrada.idx }}">
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <span class="badge bg-dark">Bloque {{ entrada.idx }}</span>
+                                {% if entrada.machine_asset %}
+                                    <span class="badge badge-active text-sm">
+                                        {{ entrada.machine_asset.codigo }} — {{ entrada.machine_asset.marca_modelo }}
+                                    </span>
+                                {% elif entrada.maquina_raw %}
+                                    <span class="badge badge-inactive text-sm">
+                                        {{ entrada.maquina_raw }} — no identificado
+                                    </span>
+                                {% endif %}
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">
+                                        Máquina <span class="text-danger">*</span>
+                                    </label>
+                                    <div class="position-relative">
+                                        <input type="text"
+                                               name="entrada_{{ entrada.idx }}_maquina_raw"
+                                               class="form-control asset-search {% if not entrada.maquina_raw %}field-flagged{% endif %}"
+                                               value="{{ entrada.maquina_raw }}"
+                                               placeholder="Código de máquina"
+                                               autocomplete="off">
+                                        <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">
+                                        H.C. <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="entrada_{{ entrada.idx }}_hc"
+                                           class="form-control {% if not entrada.hc %}field-flagged{% endif %}"
+                                           value="{{ entrada.hc }}"
+                                           placeholder="HH:MM">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">
+                                        H.F. <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="entrada_{{ entrada.idx }}_hf"
+                                           class="form-control {% if not entrada.hf %}field-flagged{% endif %}"
+                                           value="{{ entrada.hf }}"
+                                           placeholder="HH:MM">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">O.R.</label>
+                                    <input type="text"
+                                           name="entrada_{{ entrada.idx }}_or_val"
+                                           class="form-control"
+                                           value="{{ entrada.or_val }}"
+                                           placeholder="Referencia O.R. (opcional)">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-medium">
+                                        Descripción avería <span class="text-danger">*</span>
+                                    </label>
+                                    <textarea name="entrada_{{ entrada.idx }}_descripcion_averia"
+                                              class="form-control {% if not entrada.descripcion_averia %}field-flagged{% endif %}"
+                                              rows="3"
+                                              placeholder="Descripción de la avería o tarea">{{ entrada.descripcion_averia }}</textarea>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-medium">Reparación realizada</label>
+                                    <textarea name="entrada_{{ entrada.idx }}_reparacion"
+                                              class="form-control"
+                                              rows="3"
+                                              placeholder="Descripción de la reparación">{{ entrada.reparacion }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    {# Default first block rendered on GET / Primer bloque por defecto en GET #}
+                    <div class="confirm-block mb-4 pb-4" id="block-1">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span class="badge bg-dark">Bloque 1</span>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-medium">
+                                    Máquina <span class="text-danger">*</span>
+                                </label>
+                                <div class="position-relative">
+                                    <input type="text"
+                                           id="stt-field-maquina-1"
+                                           name="entrada_1_maquina_raw"
+                                           class="form-control asset-search field-flagged"
+                                           value=""
+                                           placeholder="Código de máquina"
+                                           autocomplete="off">
+                                    <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label class="form-label fw-medium">
+                                    H.C. <span class="text-danger">*</span>
+                                </label>
+                                <input type="text"
+                                       id="stt-field-hc-1"
+                                       name="entrada_1_hc"
+                                       class="form-control field-flagged"
+                                       value=""
+                                       placeholder="HH:MM">
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label class="form-label fw-medium">
+                                    H.F. <span class="text-danger">*</span>
+                                </label>
+                                <input type="text"
+                                       id="stt-field-hf-1"
+                                       name="entrada_1_hf"
+                                       class="form-control field-flagged"
+                                       value=""
+                                       placeholder="HH:MM">
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-medium">O.R.</label>
+                                <input type="text"
+                                       name="entrada_1_or_val"
+                                       class="form-control"
+                                       value=""
+                                       placeholder="Referencia O.R. (opcional)">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-medium">
+                                    Descripción avería <span class="text-danger">*</span>
+                                </label>
+                                <textarea id="stt-field-averia-1"
+                                          name="entrada_1_descripcion_averia"
+                                          class="form-control field-flagged"
+                                          rows="3"
+                                          placeholder="Descripción de la avería o tarea"></textarea>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-medium">Reparación realizada</label>
+                                <textarea name="entrada_1_reparacion"
+                                          class="form-control"
+                                          rows="3"
+                                          placeholder="Descripción de la reparación"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {# Add block button / Botón añadir bloque #}
+                    <div class="mt-3">
+                        <button type="button" id="btn-add-block" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-plus-circle me-1"></i>Añadir bloque
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# SECTION 3 — Spare parts / Repuestos                             #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-box-seam me-2 text-warning"></i>
+                        Repuestos y materiales
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+
+                    {# Server-rendered spare parts on validation failure / Repuestos renderizados en fallo #}
+                    {% if repuestos_enriched %}
+                        <div id="repuestos-container">
+                        {% for rep in repuestos_enriched %}
+                        <div class="repuesto-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %}"
+                             id="repuesto-{{ rep.ridx }}">
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <span class="badge bg-warning text-dark">Repuesto {{ rep.ridx }}</span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-12 col-md-3">
+                                    <label class="form-label fw-medium">Referencia</label>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_referencia"
+                                           class="form-control"
+                                           value="{{ rep.referencia }}"
+                                           placeholder="Ref. artículo (opcional)">
+                                </div>
+                                <div class="col-12 col-md-3">
+                                    <label class="form-label fw-medium">Vehículo</label>
+                                    <div class="position-relative">
+                                        <input type="text"
+                                               name="repuesto_{{ rep.ridx }}_vehiculo_raw"
+                                               class="form-control asset-search"
+                                               value="{{ rep.vehiculo_raw }}"
+                                               placeholder="Código máquina (opcional)"
+                                               autocomplete="off">
+                                        <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                    </div>
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">
+                                        Material <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_material"
+                                           class="form-control {% if not rep.material %}field-flagged{% endif %}"
+                                           value="{{ rep.material }}"
+                                           placeholder="Descripción del material">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">
+                                        Unidades <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_unidades"
+                                           class="form-control {% if not rep.unidades %}field-flagged{% endif %}"
+                                           value="{{ rep.unidades }}"
+                                           placeholder="0">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">Origen</label>
+                                    <select name="repuesto_{{ rep.ridx }}_origen" class="form-select">
+                                        <option value="WAREHOUSE" {% if rep.origen == "WAREHOUSE" %}selected{% endif %}>Almacén</option>
+                                        <option value="SUPPLIER"  {% if rep.origen == "SUPPLIER"  %}selected{% endif %}>Proveedor</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 col-md-4 repuesto-proveedor-field {% if rep.origen != 'SUPPLIER' %}d-none{% endif %}">
+                                    <label class="form-label fw-medium">Proveedor</label>
+                                    <input type="text"
+                                           name="repuesto_{{ rep.ridx }}_proveedor"
+                                           class="form-control"
+                                           value="{{ rep.proveedor }}"
+                                           placeholder="Nombre del proveedor">
+                                </div>
+                                <input type="hidden"
+                                       name="repuesto_{{ rep.ridx }}_entry_idx"
+                                       value="1">
+                            </div>
+                        </div>
+                        {% endfor %}
+                        </div>
+                    {% else %}
+                    <div id="repuestos-container"></div>
+                    {% endif %}
+
+                    {# Add spare-part button / Botón añadir repuesto #}
+                    <div class="mt-3">
+                        <button type="button" id="btn-add-repuesto" class="btn btn-outline-warning btn-sm">
+                            <i class="bi bi-plus-circle me-1"></i>Añadir repuesto
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            {# ================================================================ #}
+            {# SECTION 4 — Submit / Envío                                       #}
+            {# ================================================================ #}
+            <div class="d-flex justify-content-end gap-2 mb-5">
+                <a href="{% url 'panel:operator_dashboard' %}"
+                   class="btn btn-outline-secondary px-4">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-primary px-4" id="btn-submit">
+                    <i class="bi bi-floppy-fill me-1"></i>Guardar parte
+                </button>
+            </div>
+
+        </form>
+
+    </div>
+</div>
+
+{# ================================================================== #}
+{# Asset data for JS autocomplete / Datos de activos para autocompletado JS #}
+{# ================================================================== #}
+<script>
+(function () {
+    "use strict";
+
+    /* ------------------------------------------------------------------ */
+    /* 1. ASSET CATALOGUE — Catalogo de activos para autocompletado        */
+    /* ------------------------------------------------------------------ */
+    var ASSETS = [
+        {% for a in assets %}
+        { "codigo": "{{ a.codigo|escapejs }}", "label": "{{ a.codigo|escapejs }} — {{ a.marca_modelo|escapejs }}" }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    /* ------------------------------------------------------------------ */
+    /* 2. STT ENGINE — Motor de reconocimiento de voz                      */
+    /* ------------------------------------------------------------------ */
+
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var recognition       = null;
+    var fullTranscript    = "";
+
+    var btnStart    = document.getElementById("stt-btn-start");
+    var btnStop     = document.getElementById("stt-btn-stop");
+    var btnApply    = document.getElementById("stt-btn-apply");
+    var statusEl    = document.getElementById("stt-status");
+    var transcEl    = document.getElementById("stt-transcript");
+    var compatWarn  = document.getElementById("stt-compat-warning");
+
+    if (!SpeechRecognition) {
+        /* Navigator does not support Web Speech API. */
+        /* El navegador no soporta Web Speech API.   */
+        compatWarn.classList.remove("d-none");
+        btnStart.disabled = true;
+    } else {
+        recognition = new SpeechRecognition();
+        recognition.lang              = "es-ES";
+        recognition.continuous        = false;
+        recognition.interimResults    = false;
+        recognition.maxAlternatives   = 1;
+
+        recognition.onstart = function () {
+            fullTranscript = "";
+            transcEl.textContent = "";
+            statusEl.textContent = "Escuchando…";
+            btnStart.classList.add("d-none");
+            btnStop.classList.remove("d-none");
+            btnApply.classList.add("d-none");
+        };
+
+        recognition.onresult = function (e) {
+            var transcript = "";
+            for (var i = e.resultIndex; i < e.results.length; i++) {
+                transcript += e.results[i][0].transcript;
+            }
+            fullTranscript   += " " + transcript;
+            transcEl.textContent = fullTranscript.trim();
+        };
+
+        recognition.onerror = function (e) {
+            statusEl.textContent = "Error: " + e.error;
+            _resetButtons();
+        };
+
+        recognition.onend = function () {
+            statusEl.textContent = fullTranscript.trim()
+                ? "Dictado completado. Revisa la transcripción y pulsa «Aplicar al formulario»."
+                : "Sin resultado. Inténtalo de nuevo.";
+            _resetButtons();
+            if (fullTranscript.trim()) {
+                btnApply.classList.remove("d-none");
+            }
+        };
+
+        btnStart.addEventListener("click", function () {
+            recognition.start();
+        });
+
+        btnStop.addEventListener("click", function () {
+            recognition.stop();
+        });
+
+        btnApply.addEventListener("click", function () {
+            _applyTranscript(fullTranscript.trim());
+        });
+    }
+
+    function _resetButtons() {
+        btnStart.classList.remove("d-none");
+        btnStop.classList.add("d-none");
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 3. STT PARSER — Parser client-side del texto dictado                */
+    /*                                                                      */
+    /* Extraction rules / Reglas de extraccion:                            */
+    /*   fecha        — DD/MM/AAAA | "DD de mes de AAAA" | "el/del dia X" */
+    /*   maquina_raw  — first alphanumeric token after keyword             */
+    /*   hc / hf      — HH:MM | "de X a Y" | "desde X hasta Y"            */
+    /*   descripcion  — remaining text after removing matched segments     */
+    /* ------------------------------------------------------------------ */
+
+    var MONTH_MAP = {
+        "enero":10, "febrero":11, "marzo":12, "abril":13, "mayo":14, "junio":15,
+        "julio":16, "agosto":17, "septiembre":18, "octubre":19, "noviembre":20,
+        "diciembre":21
+    };
+
+    function _monthNum(name) {
+        var n = MONTH_MAP[name.toLowerCase()];
+        return n ? String(n - 9).padStart(2, "0") : null;
+    }
+
+    function _parseTime(tok) {
+        /*
+         * Converts spoken time tokens to HH:MM format.
+         * Convierte tokens de hora hablada a formato HH:MM.
+         * Accepts: "ocho", "las ocho", "8", "8:30", number words up to 23.
+         */
+        if (!tok) return null;
+        tok = tok.trim().replace(/^las?\s+/i, "").replace(/^a las?\s+/i, "");
+
+        /* Direct HH:MM / HH:MM directo */
+        var m = tok.match(/^(\d{1,2}):(\d{2})$/);
+        if (m) return m[1].padStart(2, "0") + ":" + m[2];
+
+        /* Numeric hour / Hora numérica */
+        m = tok.match(/^(\d{1,2})$/);
+        if (m) return m[1].padStart(2, "0") + ":00";
+
+        /* Spoken number / Número hablado */
+        var words = {
+            "cero":0,"una":1,"uno":1,"dos":2,"tres":3,"cuatro":4,"cinco":5,
+            "seis":6,"siete":7,"ocho":8,"nueve":9,"diez":10,"once":11,
+            "doce":12,"trece":13,"catorce":14,"quince":15,"dieciseis":16,
+            "diecisiete":17,"dieciocho":18,"diecinueve":19,"veinte":20,
+            "veintiuno":21,"veintidos":22,"veintitres":23
+        };
+        var key = tok.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        if (words.hasOwnProperty(key)) {
+            return String(words[key]).padStart(2, "0") + ":00";
+        }
+        return null;
+    }
+
+    function _applyTranscript(text) {
+        if (!text) return;
+
+        var remaining = text;
+        var fecha     = "";
+        var maquina   = "";
+        var hc        = "";
+        var hf        = "";
+
+        /* ── Date extraction / Extraccion de fecha ── */
+
+        /* Pattern: DD/MM/AAAA */
+        var mDate = remaining.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+        if (mDate) {
+            fecha     = mDate[1].padStart(2,"0") + "/" + mDate[2].padStart(2,"0") + "/" + mDate[3];
+            remaining = remaining.replace(mDate[0], "").trim();
+        } else {
+            /* Pattern: "DD de mes de AAAA" / "el dia DD de mes de AAAA" */
+            var mLong = remaining.match(
+                /(?:el\s+)?(?:parte\s+del?\s+)?(?:dia\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:del?\s+)?(\d{4})/i
+            );
+            if (mLong) {
+                var mm = _monthNum(mLong[2]);
+                if (mm) {
+                    fecha     = mLong[1].padStart(2,"0") + "/" + mm + "/" + mLong[3];
+                    remaining = remaining.replace(mLong[0], "").trim();
+                }
+            }
+        }
+
+        /* ── Time range extraction / Extraccion de rango horario ── */
+
+        /* Pattern: "de X a Y" / "desde X hasta Y" */
+        var mRange = remaining.match(
+            /(?:de|desde)\s+([^\s]+(?:\s+[^\s]+)?)\s+(?:a|hasta)\s+([^\s]+(?:\s+[^\s]+)?)/i
+        );
+        if (mRange) {
+            hc = _parseTime(mRange[1]) || "";
+            hf = _parseTime(mRange[2]) || "";
+            remaining = remaining.replace(mRange[0], "").trim();
+        } else {
+            /* Pattern: two standalone HH:MM tokens */
+            var mTimes = Array.from(remaining.matchAll(/\b(\d{1,2}:\d{2})\b/g));
+            if (mTimes.length >= 2) {
+                hc        = mTimes[0][1].padStart(5, "0");
+                hf        = mTimes[1][1].padStart(5, "0");
+                remaining = remaining.replace(mTimes[0][0], "").replace(mTimes[1][0], "").trim();
+            }
+        }
+
+        /* ── Machine code extraction / Extraccion de codigo de maquina ── */
+
+        var mMaq = remaining.match(
+            /(?:maquina|vehiculo|equipo|aparato)[:\s]+([A-Za-z0-9_\-]+)/i
+        );
+        if (mMaq) {
+            maquina   = mMaq[1].toUpperCase();
+            remaining = remaining.replace(mMaq[0], "").trim();
+        }
+
+        /* ── Clean up remaining text / Limpiar texto restante ── */
+        /* Remove leading connectors and filler words. */
+        /* Eliminar conectores y palabras de relleno iniciales. */
+        remaining = remaining
+            .replace(/^[,.\s]+/, "")
+            .replace(/\baveria[:\s]*/i, "")
+            .replace(/\bdescripcion[:\s]*/i, "")
+            .replace(/\btarea[:\s]*/i, "")
+            .replace(/\bparte[:\s]*/i, "")
+            .trim();
+
+        /* ── Apply to form fields / Aplicar a los campos del formulario ── */
+
+        var fechaEl   = document.getElementById("id_fecha");
+        var maqEl     = document.getElementById("stt-field-maquina-1");
+        var hcEl      = document.getElementById("stt-field-hc-1");
+        var hfEl      = document.getElementById("stt-field-hf-1");
+        var averiaEl  = document.getElementById("stt-field-averia-1");
+
+        if (fechaEl  && fecha)     { fechaEl.value   = fecha;     fechaEl.classList.remove("field-flagged"); }
+        if (maqEl    && maquina)   { maqEl.value     = maquina;   maqEl.classList.remove("field-flagged"); }
+        if (hcEl     && hc)        { hcEl.value      = hc;        hcEl.classList.remove("field-flagged"); }
+        if (hfEl     && hf)        { hfEl.value      = hf;        hfEl.classList.remove("field-flagged"); }
+        if (averiaEl && remaining) { averiaEl.value  = remaining; averiaEl.classList.remove("field-flagged"); }
+
+        statusEl.textContent = "Formulario pre-rellenado. Revisa y corrige si es necesario.";
+        btnApply.classList.add("d-none");
+
+        /* Scroll to form / Desplazar al formulario */
+        document.getElementById("id_fecha").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 4. ASSET AUTOCOMPLETE — Autocompletado de activos de flota          */
+    /* ------------------------------------------------------------------ */
+
+    function _setupAutocomplete(input) {
+        var dropdown = input.parentElement.querySelector(".asset-dropdown");
+        if (!dropdown) return;
+
+        input.addEventListener("input", function () {
+            var q = input.value.trim().toUpperCase();
+            dropdown.innerHTML = "";
+            if (q.length < 1) { dropdown.classList.add("d-none"); return; }
+            var matches = ASSETS.filter(function (a) {
+                return a.codigo.toUpperCase().indexOf(q) !== -1;
+            }).slice(0, 8);
+            if (!matches.length) { dropdown.classList.add("d-none"); return; }
+            matches.forEach(function (a) {
+                var item = document.createElement("button");
+                item.type      = "button";
+                item.className = "list-group-item list-group-item-action text-sm py-1 px-2";
+                item.textContent = a.label;
+                item.addEventListener("mousedown", function (e) {
+                    e.preventDefault();
+                    input.value = a.codigo;
+                    input.classList.remove("field-flagged");
+                    dropdown.classList.add("d-none");
+                });
+                dropdown.appendChild(item);
+            });
+            dropdown.classList.remove("d-none");
+        });
+
+        input.addEventListener("blur", function () {
+            setTimeout(function () { dropdown.classList.add("d-none"); }, 150);
+        });
+    }
+
+    document.querySelectorAll(".asset-search").forEach(_setupAutocomplete);
+
+    /* ------------------------------------------------------------------ */
+    /* 5. DYNAMIC BLOCKS — Bloques de trabajo dinámicos                    */
+    /* ------------------------------------------------------------------ */
+
+    var blockContainer  = document.querySelector(".card-body #block-1")
+                          ? document.querySelector("#block-1").parentElement
+                          : document.querySelector(".card-body");
+    var numEntradasEl   = document.getElementById("num-entradas-input");
+    var numRepuestosEl  = document.getElementById("num-repuestos-input");
+    var repContainer    = document.getElementById("repuestos-container");
+    var numBlocks       = parseInt(numEntradasEl.value, 10) || 1;
+    var numReps         = parseInt(numRepuestosEl.value, 10) || 0;
+
+    function _buildBlock(idx) {
+        /*
+         * Clones the HTML structure of block-1 with updated indices.
+         * Clona la estructura HTML del bloque 1 con índices actualizados.
+         */
+        var tpl  = document.getElementById("block-1");
+        var div  = tpl.cloneNode(true);
+        div.id   = "block-" + idx;
+        div.classList.add("border-top", "pt-4");
+        div.querySelectorAll("[name]").forEach(function (el) {
+            el.name  = el.name.replace(/_1_/, "_" + idx + "_");
+            el.id    = el.id   ? el.id.replace(/-1$/, "-" + idx) : "";
+            el.value = "";
+            if (el.tagName === "TEXTAREA") el.textContent = "";
+            el.classList.add("field-flagged");
+        });
+        var badge = div.querySelector(".badge.bg-dark");
+        if (badge) badge.textContent = "Bloque " + idx;
+        return div;
+    }
+
+    document.getElementById("btn-add-block").addEventListener("click", function () {
+        numBlocks += 1;
+        var newBlock = _buildBlock(numBlocks);
+        var addBtn   = document.getElementById("btn-add-block").parentElement;
+        blockContainer.insertBefore(newBlock, addBtn);
+        newBlock.querySelector(".asset-search") && _setupAutocomplete(newBlock.querySelector(".asset-search"));
+        numEntradasEl.value = numBlocks;
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* 6. DYNAMIC SPARE PARTS — Repuestos dinámicos                        */
+    /* ------------------------------------------------------------------ */
+
+    function _buildRepuesto(ridx) {
+        /*
+         * Creates a new spare-part row with the given index.
+         * Crea una nueva fila de repuesto con el índice indicado.
+         */
+        var div = document.createElement("div");
+        div.className = "repuesto-block mb-4 pb-4 border-top pt-4";
+        div.id        = "repuesto-" + ridx;
+        div.innerHTML =
+            '<div class="d-flex align-items-center gap-2 mb-3">' +
+                '<span class="badge bg-warning text-dark">Repuesto ' + ridx + '</span>' +
+            '</div>' +
+            '<div class="row g-3">' +
+                '<div class="col-12 col-md-3">' +
+                    '<label class="form-label fw-medium">Referencia</label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_referencia" class="form-control" placeholder="Ref. artículo (opcional)">' +
+                '</div>' +
+                '<div class="col-12 col-md-3">' +
+                    '<label class="form-label fw-medium">Vehículo</label>' +
+                    '<div class="position-relative">' +
+                        '<input type="text" name="repuesto_' + ridx + '_vehiculo_raw" class="form-control asset-search" placeholder="Código máquina (opcional)" autocomplete="off">' +
+                        '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="col-12 col-md-4">' +
+                    '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_material" class="form-control field-flagged" placeholder="Descripción del material">' +
+                '</div>' +
+                '<div class="col-6 col-md-2">' +
+                    '<label class="form-label fw-medium">Unidades <span class="text-danger">*</span></label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_unidades" class="form-control field-flagged" placeholder="0">' +
+                '</div>' +
+                '<div class="col-6 col-md-2">' +
+                    '<label class="form-label fw-medium">Origen</label>' +
+                    '<select name="repuesto_' + ridx + '_origen" class="form-select">' +
+                        '<option value="WAREHOUSE">Almacén</option>' +
+                        '<option value="SUPPLIER">Proveedor</option>' +
+                    '</select>' +
+                '</div>' +
+                '<div class="col-12 col-md-4 repuesto-proveedor-field d-none">' +
+                    '<label class="form-label fw-medium">Proveedor</label>' +
+                    '<input type="text" name="repuesto_' + ridx + '_proveedor" class="form-control" placeholder="Nombre del proveedor">' +
+                '</div>' +
+                '<input type="hidden" name="repuesto_' + ridx + '_entry_idx" value="1">' +
+            '</div>';
+        /* Toggle supplier field on origin change. / Mostrar/ocultar campo proveedor. */
+        var sel = div.querySelector("select");
+        sel.addEventListener("change", function () {
+            var pf = div.querySelector(".repuesto-proveedor-field");
+            if (this.value === "SUPPLIER") pf.classList.remove("d-none");
+            else pf.classList.add("d-none");
+        });
+        var assetInput = div.querySelector(".asset-search");
+        if (assetInput) _setupAutocomplete(assetInput);
+        return div;
+    }
+
+    document.getElementById("btn-add-repuesto").addEventListener("click", function () {
+        numReps += 1;
+        var newRep = _buildRepuesto(numReps);
+        repContainer.appendChild(newRep);
+        numRepuestosEl.value = numReps;
+    });
+
+    /* Toggle supplier fields already rendered server-side on page load. */
+    /* Mostrar/ocultar campos proveedor ya renderizados por el servidor.  */
+    document.querySelectorAll(".repuesto-block select").forEach(function (sel) {
+        sel.addEventListener("change", function () {
+            var pf = sel.closest(".repuesto-block").querySelector(".repuesto-proveedor-field");
+            if (pf) {
+                if (sel.value === "SUPPLIER") pf.classList.remove("d-none");
+                else pf.classList.add("d-none");
+            }
+        });
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* 7. CLIENT-SIDE INTEGRITY VALIDATION — Validación client-side        */
+    /* ------------------------------------------------------------------ */
+
+    function _showAlert(msg) {
+        var alertEl = document.getElementById("stt-error-alert");
+        if (!alertEl) {
+            alertEl = document.createElement("div");
+            alertEl.id        = "stt-error-alert";
+            alertEl.className = "alert alert-danger d-flex align-items-start gap-2 mb-4";
+            alertEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i><div></div>';
+            document.querySelector(".row.justify-content-center > div").prepend(alertEl);
+        }
+        alertEl.querySelector("div").textContent = msg;
+        alertEl.classList.remove("d-none");
+        alertEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function _markField(name, flag) {
+        var el = document.querySelector("[name='" + name + "']");
+        if (!el) return;
+        if (flag) el.classList.add("field-flagged");
+        else      el.classList.remove("field-flagged");
+    }
+
+    document.getElementById("form-entry").addEventListener("submit", function (e) {
+        var errors   = [];
+        var fecha    = document.getElementById("id_fecha").value.trim();
+        var nBlocks  = parseInt(document.getElementById("num-entradas-input").value, 10) || 1;
+        var nReps    = parseInt(document.getElementById("num-repuestos-input").value, 10) || 0;
+
+        /* Gate 1 — fecha */
+        var fechaOk = /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(fecha) || /^\d{4}-\d{2}-\d{2}$/.test(fecha);
+        _markField("fecha", !fechaOk);
+        if (!fechaOk) errors.push("La fecha del parte es obligatoria (DD/MM/AAAA).");
+
+        /* Gate 2 — blocks */
+        for (var i = 1; i <= nBlocks; i++) {
+            var blk      = "Bloque " + i;
+            var maqName  = "entrada_" + i + "_maquina_raw";
+            var hcName   = "entrada_" + i + "_hc";
+            var hfName   = "entrada_" + i + "_hf";
+            var avName   = "entrada_" + i + "_descripcion_averia";
+
+            var maq = (document.querySelector("[name='" + maqName + "']") || {}).value || "";
+            var hc  = (document.querySelector("[name='" + hcName  + "']") || {}).value || "";
+            var hf  = (document.querySelector("[name='" + hfName  + "']") || {}).value || "";
+            var av  = (document.querySelector("[name='" + avName  + "']") || {}).value || "";
+
+            _markField(maqName, !maq.trim());
+            _markField(hcName,  !hc.trim());
+            _markField(hfName,  !hf.trim());
+            _markField(avName,  !av.trim());
+
+            if (!maq.trim()) { errors.push(blk + ": el codigo de maquina es obligatorio."); }
+            if (!hc.trim())  { errors.push(blk + ": la hora de inicio (H.C.) es obligatoria."); }
+            if (!hf.trim())  { errors.push(blk + ": la hora de fin (H.F.) es obligatoria."); }
+            if (!av.trim())  { errors.push(blk + ": la descripcion de la averia es obligatoria."); }
+        }
+
+        /* Gate 3 — spare parts */
+        for (var r = 1; r <= nReps; r++) {
+            var rep      = "Repuesto " + r;
+            var matName  = "repuesto_" + r + "_material";
+            var udsName  = "repuesto_" + r + "_unidades";
+            var material = (document.querySelector("[name='" + matName + "']") || {}).value || "";
+            var unidades = (document.querySelector("[name='" + udsName + "']") || {}).value || "";
+            var qty      = parseFloat(unidades.replace(",", "."));
+
+            _markField(matName, !material.trim());
+            _markField(udsName, !unidades || isNaN(qty) || qty <= 0);
+
+            if (!material.trim()) { errors.push(rep + ": descripcion de material obligatoria."); }
+            if (!unidades || isNaN(qty) || qty <= 0) {
+                errors.push(rep + ": unidades deben ser un numero positivo.");
+            }
+        }
+
+        if (errors.length > 0) {
+            e.preventDefault();
+            _showAlert(errors.join(" | "));
+        }
+    });
+
+}());
+</script>
+
+{# ================================================================ #}
+{# First block rendered inline for GET requests                      #}
+{# Primer bloque renderizado inline para peticiones GET              #}
+{# This hidden template is cloned by JS for dynamically added blocks #}
+{# Este template oculto es clonado por JS para bloques dinamicos    #}
+{% endblock %}

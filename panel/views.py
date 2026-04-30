@@ -6042,6 +6042,453 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         return redirect("/panel/work-orders/")
 
 
+class WorkOrderEntrySTTView(WorkshopRequiredMixin, View):
+    """
+    Speech-to-text dictation entry path for work orders (Via B).
+    Allows WORKSHOP and ADMIN users to dictate a daily work-order part using
+    the browser-native Web Speech API (Chrome/Edge). The recognised text is
+    parsed client-side by a JavaScript parser that pre-fills the standard
+    form fields. The operator reviews and corrects the pre-filled form before
+    submitting. On POST, applies exactly the same integrity gate and atomic
+    persistence logic as WorkOrderEntryFormView.
+
+    GET  /panel/operator/stt/
+         Renders the dictation template with an empty, pre-fillable form.
+         No server-side processing is performed on GET.
+    POST /panel/operator/stt/
+         Reuses WorkOrderEntryFormView.post() logic verbatim:
+           - Parses fecha, entry lines and spare-part lines from POST.
+           - Applies the three-gate integrity barrier (sine qua non).
+           - On success, atomically persists WorkOrder + WorkOrderEntry +
+             N x WorkOrderEntryLine + M x SparePartLine and generates Excel.
+           - On failure, re-renders stt_entry.html with error context,
+             preserving all data already entered by the operator.
+    ---
+    Vía de entrada por dictado de voz para partes de trabajo (Vía B).
+    Permite a usuarios WORKSHOP y ADMIN dictar un parte diario usando la
+    Web Speech API nativa del navegador (Chrome/Edge). El texto reconocido
+    es parseado en cliente por un parser JavaScript que pre-rellena los
+    campos estándar del formulario. El operario revisa y corrige antes de
+    enviar. En POST aplica exactamente la misma barrera de integridad y
+    lógica de persistencia atómica que WorkOrderEntryFormView.
+
+    GET  /panel/operator/stt/
+         Renderiza el template de dictado con un formulario vacío y pre-rellenable.
+         No se realiza ningún procesamiento server-side en GET.
+    POST /panel/operator/stt/
+         Reutiliza verbatim la lógica de WorkOrderEntryFormView.post():
+           - Parsea fecha, bloques de entrada y repuestos del POST.
+           - Aplica la barrera de integridad de tres gates (sine qua non).
+           - En caso de éxito, persiste atómicamente WorkOrder + WorkOrderEntry +
+             N x WorkOrderEntryLine + M x SparePartLine y genera el Excel.
+           - En caso de fallo, re-renderiza stt_entry.html con contexto de error,
+             preservando todos los datos introducidos por el operario.
+    """
+
+    template_name = "panel/operator/stt_entry.html"
+
+    def _get_company_user(self, request):
+        """
+        Returns the CompanyUser for the authenticated request user.
+        ---
+        Devuelve el CompanyUser del usuario autenticado en la solicitud.
+        """
+        return request.user.company_user
+
+    def _get_context_base(self, request):
+        """
+        Returns the base template context with company and navigation data.
+        Also provides the list of active MachineAsset records for autocomplete.
+        Identical to WorkOrderEntryFormView._get_context_base().
+        ---
+        Devuelve el contexto base con empresa y datos de navegación.
+        También proporciona la lista de MachineAsset activos para autocompletado.
+        Idéntico a WorkOrderEntryFormView._get_context_base().
+        """
+        from fleet.models import MachineAsset
+        cu      = self._get_company_user(request)
+        company = cu.company
+        assets  = list(
+            MachineAsset.objects.filter(company=company, es_activo=True)
+            .order_by("codigo")
+            .values("codigo", "marca_modelo")
+        )
+        return {
+            "company":      company,
+            "company_user": cu,
+            "active_nav":   "operator_dashboard",
+            "assets":       assets,
+        }
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the STT dictation template with an empty pre-fillable form.
+        One default work block is included server-side; the JS parser may
+        populate it after the operator completes the dictation.
+        ---
+        Renderiza el template de dictado STT con un formulario vacío y
+        pre-rellenable. Un bloque de trabajo por defecto se incluye desde
+        el servidor; el parser JS puede poblarlo tras el dictado del operario.
+        """
+        context = self._get_context_base(request)
+        context.update({
+            "num_entradas":  1,
+            "num_repuestos": 0,
+            "fecha":         "",
+        })
+        return render(request, self.template_name, context)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Parses, validates and atomically persists the submitted form data.
+        Applies exactly the same three-gate integrity barrier and atomic
+        persistence block used by WorkOrderEntryFormView.post(). On
+        validation failure re-renders stt_entry.html with error context,
+        preserving all data already entered by the operator.
+        ---
+        Parsea, valida y persiste atómicamente los datos del formulario enviado.
+        Aplica exactamente la misma barrera de integridad de tres gates y el
+        bloque de persistencia atómica de WorkOrderEntryFormView.post(). En
+        caso de fallo re-renderiza stt_entry.html con contexto de error,
+        preservando todos los datos introducidos por el operario.
+        """
+        import json as _json
+        from datetime import datetime, time as dt_time
+        from decimal import Decimal, InvalidOperation
+        from django.db import transaction
+        from fleet.models import MachineAsset
+        from work_order_processor.models import (
+            WorkOrder, WorkOrderEntry, WorkOrderEntryLine, SparePartLine,
+        )
+        from work_order_processor.services import (
+            generate_work_order_excel,
+            _normalise_machine_code,
+            _compute_delta_horas,
+        )
+
+        cu      = self._get_company_user(request)
+        company = cu.company
+        POST    = request.POST
+
+        # ------------------------------------------------------------------
+        # Parse work date / Parsear fecha del parte.
+        # ------------------------------------------------------------------
+        fecha_str = POST.get("fecha", "").strip()
+        work_date = None
+        if fecha_str:
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    work_date = datetime.strptime(fecha_str, fmt).date()
+                    break
+                except ValueError:
+                    continue
+
+        # ------------------------------------------------------------------
+        # Parse entry lines from POST / Parsear bloques de trabajo del POST.
+        # ------------------------------------------------------------------
+        num_entradas     = int(POST.get("num_entradas", "1") or "1")
+        entry_lines_data = []
+
+        for i in range(1, num_entradas + 1):
+            pfx         = f"entrada_{i}_"
+            maquina_raw = POST.get(f"{pfx}maquina_raw", "").strip()
+            desc_averia = POST.get(f"{pfx}descripcion_averia", "").strip()
+            reparacion  = POST.get(f"{pfx}reparacion", "").strip()
+            hc_str      = POST.get(f"{pfx}hc", "").strip()
+            hf_str      = POST.get(f"{pfx}hf", "").strip()
+            or_val      = POST.get(f"{pfx}or_val", "").strip()
+
+            def _parse_t(s):
+                """
+                Parses HH:MM string into time object, returns None on failure.
+                ---
+                Parsea cadena HH:MM a objeto time, devuelve None en fallo.
+                """
+                if not s:
+                    return None
+                try:
+                    parts = s.split(":")
+                    return dt_time(int(parts[0]), int(parts[1]))
+                except (ValueError, IndexError):
+                    return None
+
+            hc = _parse_t(hc_str)
+            hf = _parse_t(hf_str)
+
+            maquina_norm  = _normalise_machine_code(maquina_raw)
+            machine_asset = None
+            if maquina_norm:
+                try:
+                    machine_asset = MachineAsset.objects.get(
+                        codigo__iexact=maquina_norm, company=company
+                    )
+                except MachineAsset.DoesNotExist:
+                    machine_asset = None
+                except MachineAsset.MultipleObjectsReturned:
+                    machine_asset = MachineAsset.objects.filter(
+                        codigo__iexact=maquina_norm, company=company
+                    ).first()
+
+            delta_horas = _compute_delta_horas(hc, hf)
+
+            entry_lines_data.append({
+                "line_number":        i,
+                "maquina_raw":        maquina_raw,
+                "maquina_norm":       maquina_norm or "",
+                "machine_asset":      machine_asset,
+                "descripcion_averia": desc_averia,
+                "reparacion":         reparacion,
+                "hc":                 hc,
+                "hf":                 hf,
+                "or_val":             or_val,
+                "delta_horas":        delta_horas,
+                "flags":              [],
+            })
+
+        # ------------------------------------------------------------------
+        # Parse spare-part lines from POST / Parsear repuestos del POST.
+        # ------------------------------------------------------------------
+        num_repuestos    = int(POST.get("num_repuestos", "0") or "0")
+        spare_parts_data = []
+
+        for r in range(1, num_repuestos + 1):
+            pfx          = f"repuesto_{r}_"
+            referencia   = POST.get(f"{pfx}referencia", "").strip()
+            vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
+            material     = POST.get(f"{pfx}material", "").strip()
+            unidades_str = POST.get(f"{pfx}unidades", "").strip()
+            origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
+            proveedor    = POST.get(f"{pfx}proveedor", "").strip()
+            entry_idx    = int(POST.get(f"{pfx}entry_idx", "1") or "1")
+
+            quantity = None
+            if unidades_str:
+                try:
+                    quantity = Decimal(unidades_str.replace(",", "."))
+                except InvalidOperation:
+                    quantity = None
+
+            if origen not in ("SUPPLIER", "WAREHOUSE"):
+                origen = "WAREHOUSE"
+
+            veh_norm  = _normalise_machine_code(vehiculo_raw)
+            veh_asset = None
+            if veh_norm:
+                try:
+                    veh_asset = MachineAsset.objects.get(
+                        codigo__iexact=veh_norm, company=company
+                    )
+                except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                    veh_asset = MachineAsset.objects.filter(
+                        codigo__iexact=veh_norm, company=company
+                    ).first()
+
+            spare_parts_data.append({
+                "line_number":   r,
+                "referencia":    referencia,
+                "vehiculo_raw":  vehiculo_raw,
+                "vehicle_asset": veh_asset,
+                "material":      material,
+                "quantity":      quantity,
+                "source":        origen,
+                "supplier":      proveedor if origen == "SUPPLIER" else "",
+                "flags":         [],
+                "entry_idx":     entry_idx,
+            })
+
+        # ------------------------------------------------------------------
+        # Integrity validation (sine qua non gate).
+        # Validacion de integridad (barrera sine qua non).
+        # ------------------------------------------------------------------
+        integrity_errors = []
+
+        if not work_date:
+            integrity_errors.append(
+                "La fecha del parte es obligatoria y debe tener formato DD/MM/AAAA."
+            )
+
+        if not entry_lines_data:
+            integrity_errors.append("El parte debe contener al menos un bloque de trabajo.")
+
+        for ld in entry_lines_data:
+            blk = f"Bloque {ld['line_number']}"
+            if not ld["maquina_raw"]:
+                integrity_errors.append(f"{blk}: el codigo de maquina es obligatorio.")
+            elif ld["machine_asset"] is None:
+                integrity_errors.append(
+                    f"{blk}: el codigo '{ld['maquina_raw']}' no se ha podido "
+                    f"identificar en el catalogo de flota. Corrigelo antes de guardar."
+                )
+            if not ld["hc"]:
+                integrity_errors.append(f"{blk}: la hora de inicio (H.C.) es obligatoria.")
+            if not ld["hf"]:
+                integrity_errors.append(f"{blk}: la hora de fin (H.F.) es obligatoria.")
+            if ld["hc"] and ld["hf"] and ld["delta_horas"] is not None:
+                if ld["delta_horas"] <= 0:
+                    integrity_errors.append(
+                        f"{blk}: la H.F. debe ser posterior a la H.C. "
+                        f"(Delta horas calculado: {ld['delta_horas']})."
+                    )
+            if not ld["descripcion_averia"]:
+                integrity_errors.append(
+                    f"{blk}: la descripcion de la averia es obligatoria."
+                )
+
+        for spd in spare_parts_data:
+            rep = f"Repuesto {spd['line_number']}"
+            if not spd["material"]:
+                integrity_errors.append(f"{rep}: la descripcion del material es obligatoria.")
+            if spd["quantity"] is None or spd["quantity"] <= 0:
+                integrity_errors.append(f"{rep}: las unidades deben ser un numero positivo.")
+
+        if integrity_errors:
+            entradas_post = [
+                {
+                    "idx":                ld["line_number"],
+                    "maquina_raw":        ld["maquina_raw"],
+                    "machine_asset":      ld["machine_asset"],
+                    "descripcion_averia": ld["descripcion_averia"],
+                    "reparacion":         ld["reparacion"],
+                    "hc":  ld["hc"].strftime("%H:%M") if ld["hc"] else "",
+                    "hf":  ld["hf"].strftime("%H:%M") if ld["hf"] else "",
+                    "or_val":             ld["or_val"],
+                    "flags":              [],
+                }
+                for ld in entry_lines_data
+            ]
+            repuestos_post = [
+                {
+                    "ridx":          spd["line_number"],
+                    "referencia":    spd["referencia"],
+                    "vehiculo_raw":  spd["vehiculo_raw"],
+                    "vehicle_asset": spd["vehicle_asset"],
+                    "material":      spd["material"],
+                    "unidades":      str(spd["quantity"]) if spd["quantity"] is not None else "",
+                    "origen":        spd["source"],
+                    "proveedor":     spd["supplier"],
+                    "flags":         [],
+                }
+                for spd in spare_parts_data
+            ]
+            context = self._get_context_base(request)
+            context.update({
+                "error":              " | ".join(integrity_errors),
+                "fecha":              fecha_str,
+                "entradas_enriched":  entradas_post,
+                "repuestos_enriched": repuestos_post,
+                "num_entradas":       len(entry_lines_data),
+                "num_repuestos":      len(spare_parts_data),
+            })
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Atomic persistence / Persistencia atomica.
+        # ------------------------------------------------------------------
+        try:
+            with transaction.atomic():
+                worker_name = (
+                    cu.user.get_full_name() or cu.user.username
+                ).upper()
+
+                work_order = WorkOrder(
+                    company         = company,
+                    uploaded_by     = cu,
+                    status          = WorkOrder.Status.DONE,
+                    total_pages     = 1,
+                    processed_pages = 1,
+                    reviewed        = False,
+                )
+                work_order.source_pdf.name = ""
+                work_order.save()
+
+                entry = WorkOrderEntry.objects.create(
+                    work_order            = work_order,
+                    page_number           = 1,
+                    worker_name           = worker_name,
+                    work_date             = work_date,
+                    fecha_incierta        = False,
+                    extraction_confidence = WorkOrderEntry.Confidence.HIGH,
+                    raw_gemini_response   = None,
+                )
+
+                created_lines = {}
+                for ld in entry_lines_data:
+                    line = WorkOrderEntryLine.objects.create(
+                        entry              = entry,
+                        line_number        = ld["line_number"],
+                        machine_asset      = ld["machine_asset"],
+                        maquina_raw        = ld["maquina_raw"],
+                        maquina_norm       = ld["maquina_norm"],
+                        descripcion_averia = ld["descripcion_averia"],
+                        reparacion         = ld["reparacion"],
+                        hc                 = ld["hc"],
+                        hf                 = ld["hf"],
+                        or_val             = ld["or_val"],
+                        delta_horas        = ld["delta_horas"],
+                        flags              = ld["flags"],
+                    )
+                    created_lines[ld["line_number"]] = line
+
+                for spd in spare_parts_data:
+                    target_line = created_lines.get(spd["entry_idx"])
+                    if target_line is None:
+                        target_line = next(iter(created_lines.values()), None)
+                    if target_line is None:
+                        continue
+                    SparePartLine.objects.create(
+                        entry_line  = target_line,
+                        line_number = spd["line_number"],
+                        reference   = spd["referencia"],
+                        vehicle     = spd["vehicle_asset"],
+                        material    = spd["material"],
+                        quantity    = spd["quantity"],
+                        source      = spd["source"],
+                        supplier    = spd["supplier"],
+                        flags       = spd["flags"],
+                    )
+
+            logger.info(
+                "# [STTView] WorkOrder #%d creado correctamente (Via B). "
+                "Bloques: %d | Repuestos: %d.",
+                work_order.pk,
+                len(entry_lines_data),
+                len(spare_parts_data),
+            )
+
+        except Exception as exc:
+            logger.error(
+                "# [STTView] Error en persistencia atomica: %s", exc, exc_info=True
+            )
+            context = self._get_context_base(request)
+            context["error"] = (
+                f"Error al guardar el parte: {exc}. "
+                "Por favor, intentalo de nuevo o contacta con el administrador."
+            )
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Synchronous Excel generation / Generacion sincrona de Excel.
+        # ------------------------------------------------------------------
+        try:
+            generate_work_order_excel(work_order.pk)
+            logger.info(
+                "# [STTView] Excel generado correctamente para WorkOrder #%d.",
+                work_order.pk,
+            )
+        except Exception as exc:
+            logger.warning(
+                "# [STTView] Excel no generado para WorkOrder #%d: %s.",
+                work_order.pk, exc,
+            )
+
+        django_messages.success(
+            request,
+            f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
+            f"El informe Excel esta disponible en la lista de partes."
+        )
+        return redirect("/panel/work-orders/")
+
+
 class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):
     """
     JSON endpoint for deleting a single AnalyticsProfile by primary key.

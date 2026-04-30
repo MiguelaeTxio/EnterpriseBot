@@ -192,10 +192,25 @@ Estado: COMPLETADO (2026-04-30).
 - Dashboard Via A activada: boton deshabilitado sustituido por enlace activo.
 
 ### Paso 8 — Via B: dictado por voz (STT)
-Estado: PENDIENTE.
-- WorkOrderEntrySTTView en panel/views.py.
-- Template panel/operator/stt_entry.html.
-- Parser JavaScript client-side.
+Estado: COMPLETADO PARCIAL (sesion 005, 2026-04-30) — pendiente correccion H021 CSS.
+- WorkOrderEntrySTTView implementada en panel/views.py (PMA). Logica POST
+  identica a WorkOrderEntryFormView: misma barrera sine qua non, misma
+  persistencia atomica, mismo Excel sincronamente tras guardado.
+- Template panel/operator/stt_entry.html creado (PEA — Neonato Puro):
+  seccion de grabacion de voz (Section 0) con boton mic, transcripcion en
+  tiempo real, boton Aplicar al formulario y aviso de incompatibilidad para
+  Firefox/Safari. Formulario identico a form_entry.html (mismos name=).
+- Parser JS client-side en stt_entry.html: extrae fecha (DD/MM/AAAA y
+  "DD de mes de AAAA"), maquina_raw (tras keyword maquina/vehiculo/equipo),
+  hc/hf ("de X a Y", numeros hablados en es-ES, HH:MM), descripcion_averia
+  (texto restante). Pre-rellena los campos del bloque 1 del formulario.
+- Validacion client-side identica a form_entry.html (tres gates).
+- panel/urls.py actualizado (PMA): import WorkOrderEntrySTTView + ruta
+  operator/stt/ (name=operator_stt). Comentario: Paso 8 — Hito 7.
+- panel/templates/panel/operator/dashboard.html actualizado (PMA): boton
+  Via B activado con href={% url 'panel:operator_stt' %}.
+- Pendiente: correccion H021 djlint (inline style en div#stt-transcript) —
+  mover style a panel/static/panel/css/panel.css en sesion 006.
 
 ### Paso 9 — Validacion E2E de las tres vias
 Estado: PENDIENTE.
@@ -210,71 +225,60 @@ Estado: PENDIENTE.
 | 002    | 2026-04-28 | Pasos 1 y 2     | Arquitectura de roles ampliada: WORKSHOP y DRIVER anadidos a CompanyUser.role. WorkshopRequiredMixin creado en panel/mixins.py. OperatorDashboardView implementada. Navegacion restringida. Template operator/dashboard.html creado. Usuario taller_test_01 validado E2E. Hito pausado para abrir H8. |
 | 003    | 2026-04-30 | Pasos 3-5 + fixes | Modelo SparePartLine creado y migrado (0005). Prompt Gemini ampliado (_EXTRACTION_PROMPT_FULL + extract_work_order_page_full). Via C implementada: WorkOrderEntryUploadView + WorkOrderEntryConfirmView + WorkshopAssetAutocompleteView + templates + CSS + pdf2image. Fix multiempresa en _resolve_machine_asset (company=). Fix HTMX _line_row.html (row_class con pk_str). Fix WorkOrderLineRestoreView para partes digitales. Fix doble form en users/form.html. Fix listado roles (badge-supervisor, badge-workshop). |
 | 004    | 2026-04-30 | Paso 6 + Paso 7 + fixes fuera HR | Diagnostico y limpieza de duplicados en BD (race condition upload). UniqueConstraint parcial + select_for_update en WorkOrderUploadView. Barrera integridad sine qua non en Vias A y C (server-side + client-side). Boton Anadir repuesto dinamico en confirm_entry.html. Hoja Repuestos en generate_work_order_excel(). WorkOrderEntryFormView implementada (Via A). form_entry.html creado (Neonato Puro). Dashboard Via A activada. |
+| 005    | 2026-04-30 | Paso 8 (parcial)                  | WorkOrderEntrySTTView implementada en panel/views.py (PMA). stt_entry.html creado (PEA): grabador Web Speech API es-ES, parser JS client-side, formulario identico a form_entry.html, validacion client-side. urls.py actualizado: import + ruta operator/stt/. Dashboard Via B activada. Pendiente H021 CSS (inline style en stt-transcript div). |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
-### Primera accion — Paso 8: Via B — Dictado por voz (STT)
+### Primera accion — Correccion H021: inline style en stt_entry.html
 
-Implementar la via de entrada por dictado de voz usando la Web Speech API
-nativa de Chrome/Edge, sin dependencias externas ni coste de IA.
+djlint reporta H021 (inline style) en el div#stt-transcript de stt_entry.html.
+La correccion requiere dos PMA quirurgicos en archivos sensibles:
 
-Artefactos a crear o modificar:
+1. panel/static/panel/css/panel.css (PMA):
+   - Anadir al final del archivo la clase CSS:
+       .stt-transcript-box {
+           min-height: 4rem;
+           white-space: pre-wrap;
+           font-size: .85rem;
+       }
 
-1. WorkOrderEntrySTTView en panel/views.py (PMA):
-   - GET /panel/operator/stt/ — renderiza template vacio con el grabador de voz.
-   - No procesa nada en GET. El parser JS client-side pre-rellena los campos.
-   - POST — reutiliza EXACTAMENTE la misma logica de parseo, validacion
-     e integridad que WorkOrderEntryFormView.post(). Misma barrera sine qua non.
-     Mismo template de respuesta en caso de error.
-   - Template: panel/operator/stt_entry.html.
+2. panel/templates/panel/operator/stt_entry.html (PMA):
+   - Localizar el div con id="stt-transcript":
+       <div id="stt-transcript"
+            class="form-control bg-light"
+            style="min-height:4rem; white-space:pre-wrap; font-size:.85rem;">
+   - Sustituir por:
+       <div id="stt-transcript"
+            class="form-control bg-light stt-transcript-box">
+   - La clase stt-transcript-box proviene de panel.css (recien anadida).
 
-2. panel/urls.py (PMA):
-   - Importar WorkOrderEntrySTTView.
-   - Anadir ruta: path("operator/stt/", WorkOrderEntrySTTView.as_view(), name="operator_stt").
-   - Comentario: # Paso 8 — Hito 7 (2026-04-30)
-
-3. panel/templates/panel/operator/stt_entry.html (PEA — Neonato Puro):
-   - Estructura identica a form_entry.html pero con seccion de grabacion de voz
-     encima del formulario.
-   - Boton de microfono: al pulsar inicia SpeechRecognition con lang="es-ES",
-     continuous=false, interimResults=false.
-   - El texto reconocido se parsea con un parser JS client-side que extrae:
-       * fecha: patron DD/MM/AAAA o DD de mes de AAAA.
-       * maquina_raw: primer token que coincide con patron alfanumerico tras
-         palabras clave "maquina", "vehiculo", "equipo".
-       * hc / hf: patrones HH:MM o "de X a Y".
-       * descripcion_averia: texto restante tras extraer los campos anteriores.
-   - El parser pre-rellena los campos del formulario estatico subyacente
-     (mismos name= que form_entry.html: entrada_1_maquina_raw, etc.).
-   - El operario revisa y corrige antes de enviar.
-   - Aviso de compatibilidad: mostrar alerta si SpeechRecognition no esta
-     disponible en el navegador (Firefox, Safari).
-
-4. panel/templates/panel/operator/dashboard.html (PMA):
-   - Activar boton Via B: sustituir href="#" disabled por
-     href="{% url 'panel:operator_stt' %}".
+Tras ambos PMA ejecutar:
+   - djlint stt_entry.html --lint -> 0 errores esperados.
+   - python -m dotenv run python manage.py collectstatic --noinput --clear
 
 ### Segunda accion — Paso 9: Validacion E2E de las tres vias
 
-Con las tres vias implementadas, ejecutar validacion extremo a extremo:
-- Via A: crear parte con al menos 2 bloques y 1 repuesto. Verificar Excel
-  descargable con hoja Repuestos correctamente poblada.
-- Via C: subir foto de parte manuscrito. Verificar extraccion, confirmacion,
-  persistencia y Excel con hoja Repuestos.
-- Via B: dictar parte por voz. Verificar pre-relleno, correccion manual,
-  persistencia y Excel.
+Con las tres vias implementadas y el CSS corregido, ejecutar validacion
+extremo a extremo desde el usuario taller_test_01:
+
+- Via A (Form): crear parte con al menos 2 bloques y 1 repuesto.
+  Verificar persistencia en BD, Excel descargable con hoja Repuestos.
+- Via B (STT): dictar parte por voz en Chrome/Edge (lang=es-ES).
+  Verificar pre-relleno de campos, correccion manual, persistencia y Excel.
+- Via C (Upload): subir foto de parte manuscrito.
+  Verificar extraccion Gemini, confirmacion campo a campo, persistencia y Excel.
 - En los tres casos: intentar enviar con campos vacios y verificar que la
-  barrera de integridad bloquea el submit (client-side y server-side).
+  barrera de integridad bloquea el submit client-side y server-side.
 
 ### Tema pendiente de estudio — Colas Celery diferenciadas
 
-Los partes de Via A y Via C persisten sincronamente — no usan Celery.
-El riesgo es futuro: si la Via C o cualquier tarea del operario usa Celery,
-competira con process_work_order_pdf (historicos, lentos) por los mismos workers.
+Los partes de Via A, B y C persisten sincronamente — no usan Celery.
+El riesgo es futuro: si alguna tarea del operario usa Celery, competira
+con process_work_order_pdf (historicos, lentos) por los mismos workers.
 
-Estudiar en la siguiente sesion:
+Estudiar en sesion posterior (no bloquea el Paso 9):
 - Auditar enterprise_core/celery.py: configuracion actual de colas y workers.
 - Definir cola-historicos para process_work_order_pdf.
 - Definir cola-operarios para cualquier tarea futura de alta prioridad.

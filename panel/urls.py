@@ -62,6 +62,7 @@ from panel.views import (
     WorkOrderEntryUploadView,
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
+    WorkOrderEntrySTTView,
 )
 
 app_name = "panel"
@@ -139,6 +140,7 @@ urlpatterns = [
     path("operator/confirm/", WorkOrderEntryConfirmView.as_view(), name="operator_confirm"),
     path("operator/assets/", WorkshopAssetAutocompleteView.as_view(), name="operator_assets"),
     path("operator/form/", WorkOrderEntryFormView.as_view(), name="operator_form"),
+    path("operator/stt/",  WorkOrderEntrySTTView.as_view(),  name="operator_stt"),   # Paso 8 — Hito 7 (2026-04-30)
 
     # WorkOrder management — PDFs de partes de trabajo (rol SUPERVISOR y ADMIN).
     # Paso 7 — Hito 6 (2026-04-22) | Bloque G — Hito 8 (2026-04-28)

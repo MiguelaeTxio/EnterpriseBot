@@ -54,6 +54,7 @@
 ./panel/templates/panel/operator/confirm_entry.html
 ./panel/templates/panel/operator/dashboard.html
 ./panel/templates/panel/operator/upload_entry.html
+./panel/templates/panel/operator/stt_entry.html
 ./panel/static/panel/css/panel.css
 ./panel/__init__.py
 ./panel/views.py
