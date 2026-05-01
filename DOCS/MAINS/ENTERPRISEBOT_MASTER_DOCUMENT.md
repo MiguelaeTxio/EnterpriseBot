@@ -13,20 +13,20 @@ EnterpriseBot es una solución omnicanal de nivel empresarial orientada a la orq
 *   **Middleware de Audio (Sidecar):** Capa de transcodificación obligatoria entre Twilio (G.711 mu-law/A-law) y Gemini Live (PCM Linear 16-bit).
 
 ## 3. Hoja de Ruta Estratégica
-### Hito 1: Validación de Infraestructura de Voz en Tiempo Real (COMPLETADO)
+### Hito 1: Validación de Infraestructura de Voz en Tiempo Real (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md`)
 - Implementación de puente con Twilio Media Streams.
 - Estabilización del flujo de transcodificación mu-law/A-law -> PCM.
 - Orquestación de audio nativo con Gemini Live 2.5 Flash Native Audio (Vertex AI).
 - Validación E2E con llamada real confirmada.
 
-### Hito 2: Validación y Aislamiento de Diagnóstico vía Aplicación test_live (COMPLETADO)
+### Hito 2: Validación y Aislamiento de Diagnóstico vía Aplicación test_live (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md`)
 - Creación de aplicación Django `test_live` para aislamiento de API.
 - Implementación de interfaz "Walkie-Talkie" para pruebas directas.
 - Auditoría de Handshake de Google GenAI (v1beta) sin dependencias externas.
 
-### Hito 3: IVR Conversacional Configurable desde Producción (COMPLETADO)
+### Hito 3: IVR Conversacional Configurable desde Producción (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md`)
 - Diseño del modelo de datos multiempresa (Company, CompanyUser, Contact, Section,
   PhoneNumber, CallFlow, PresenceStatus, CorporateVoiceProfile, DataCaptureSet).
@@ -67,12 +67,19 @@ este documento y las aplica sin excepción.
 - **Base de datos:** MySQL — `MiguelAeTxio$enterprisebot`
 - **Gestión de dependencias:** `pip-tools` (requirements.in → requirements.txt)
 
+### 4.5. Gestión de Hitos
+Ningún hito se marca como COMPLETADO. Los hitos oscilan únicamente entre
+EN PROGRESO y PAUSADO. Solo puede haber UN hito EN PROGRESO en cada momento.
+Cuando todos los hitos estén suficientemente maduros, el Hito de Ruegos y
+Preguntas (Sistema de Stand-by) pasa a EN PROGRESO para atender incidencias
+generales sin alterar la hoja de ruta.
+
 ### 4.4. Requisito SINE QUA NON
 Antes de entregar o implementar cualquier código que involucre servicios
 externos o APIs, el modelo **DEBE** actualizarse en línea obligatoriamente
 para usar datos actuales de implementación en lugar de datos obsoletos.
 
-### Hito 4: Canal WhatsApp — Chatbot Conversacional y Sistema de Presencia (COMPLETADO)
+### Hito 4: Canal WhatsApp — Chatbot Conversacional y Sistema de Presencia (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V04.md`)
 - Integración de WhatsApp como canal bidireccional sobre infraestructura Twilio existente.
 - Chatbot conversacional impulsado por Gemini 2.5 Flash (texto) con contexto multiempresa.
@@ -93,7 +100,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   transfer de llamada. Flujo: IVR captura → persiste en BD → WhatsApp notifica
   al agente interno → transfer ejecutado. Cierre del ciclo omnicanal completo.
 
-### Hito 6: Procesador de Partes de Trabajo PDF → Excel + BBDD (COMPLETADO)
+### Hito 6: Procesador de Partes de Trabajo PDF → Excel + BBDD (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V06.md`)
 - Procesamiento documental de PDFs con fotografías de partes de trabajo diarios.
 - Extracción automática de campos mediante Gemini Vision por cada página/parte.
@@ -104,7 +111,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -117,7 +124,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - El formulario de confirmación es el punto de convergencia de las tres vías.
 - Pasos 1 y 2 completados. Pausado en sesión 002 (2026-04-28) para abrir H8.
 
-### Hito 8: Mejoras Procesador PDF→Excel + HTMX (COMPLETADO)
+### Hito 8: Mejoras Procesador PDF→Excel + HTMX (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md`)
 - Implantación quirúrgica de HTMX en lista de PDFs (polling de estado automático)
   y editor de entradas inline (guardado automático por campo sin scroll al top).

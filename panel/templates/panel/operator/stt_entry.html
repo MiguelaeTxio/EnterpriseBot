@@ -51,10 +51,11 @@
         {% endif %}
 
         {# ================================================================== #}
-        {# SECTION 0 — Voice recorder / Grabador de voz                       #}
-        {# MediaRecorder API — compatible con Chrome, Edge, Firefox, Opera.   #}
-        {# El audio grabado se envía a Gemini para transcripción y extracción #}
-        {# de campos en una sola llamada. Sin dependencia de Web Speech API.  #}
+        {# SECTION 0 — Voice dictation / Dictado por voz                      #}
+        {# Web Speech API (nativa Chrome/Edge/Opera/Android) — sin coste,     #}
+        {# sin bytes de audio al servidor. El texto transcrito se muestra al  #}
+        {# operario para revisión y se envía como texto plano a Gemini Flash  #}
+        {# para extracción semántica de campos del parte.                     #}
         {# ================================================================== #}
         <div class="card border-0 shadow-sm mb-4" id="stt-recorder-card">
             <div class="card-header bg-white border-bottom py-3">
@@ -70,16 +71,16 @@
                      id="stt-compat-warning">
                     <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
                     <div>
-                        <strong>Tu navegador no soporta la grabación de audio.</strong>
-                        Introduce los datos manualmente en el formulario de abajo.
+                        <strong>Tu navegador no soporta el reconocimiento de voz.</strong>
+                        Usa Chrome, Edge u Opera, o introduce los datos manualmente.
                     </div>
                 </div>
 
                 {# ── Instructions / Instrucciones ── #}
                 <p class="text-muted text-sm mb-3">
                     Pulsa <strong>Iniciar grabación</strong>, dicta el parte con claridad
-                    y pulsa <strong>Detener y procesar</strong> cuando termines.
-                    Gemini extraerá automáticamente los campos del formulario.
+                    y pulsa <strong>Detener</strong> cuando termines. Revisa la transcripción
+                    y pulsa <strong>Enviar a IA</strong> para que Gemini rellene el formulario.
                     <br>
                     <em>Ejemplo: "Parte del veinte de abril de dos mil veintiséis.
                     Máquina A44. De ocho a catorce. Avería en el sistema hidráulico."</em>
@@ -95,16 +96,39 @@
                     <button type="button"
                             id="stt-btn-stop"
                             class="btn btn-danger px-4 d-none">
-                        <i class="bi bi-stop-fill me-2"></i>Detener y procesar
+                        <i class="bi bi-stop-fill me-2"></i>Detener
                     </button>
                     <span id="stt-status" class="text-muted text-sm"></span>
+                </div>
+
+                {# ── Live transcript area / Área de transcripción en vivo ── #}
+                <div class="mb-3 d-none" id="stt-transcript-wrap">
+                    <label class="form-label fw-medium text-sm">
+                        Transcripción — revisa y corrige si es necesario:
+                    </label>
+                    <textarea id="stt-transcript-box"
+                              class="form-control stt-transcript-box"
+                              rows="3"
+                              placeholder="La transcripción aparecerá aquí…"></textarea>
+                    <div class="mt-2 d-flex gap-2">
+                        <button type="button"
+                                id="stt-btn-send"
+                                class="btn btn-success btn-sm px-3">
+                            <i class="bi bi-robot me-1"></i>Enviar a IA
+                        </button>
+                        <button type="button"
+                                id="stt-btn-clear"
+                                class="btn btn-outline-secondary btn-sm px-3">
+                            <i class="bi bi-trash me-1"></i>Limpiar
+                        </button>
+                    </div>
                 </div>
 
                 {# ── Processing spinner / Spinner de procesamiento ── #}
                 <div class="d-none mb-3" id="stt-spinner">
                     <div class="d-flex align-items-center gap-2 text-primary">
                         <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
-                        <span class="text-sm">Procesando audio con Gemini IA…</span>
+                        <span class="text-sm">Procesando con Gemini IA…</span>
                     </div>
                 </div>
 
@@ -455,36 +479,208 @@
     ];
 
     /* ------------------------------------------------------------------ */
-    /* 2. MEDIARECORDER ENGINE — Motor de grabación de audio               */
+    /* 2. WEB SPEECH API ENGINE — Motor de reconocimiento de voz nativo    */
     /*                                                                      */
-    /* Replaces Web Speech API with MediaRecorder (universal browser       */
-    /* support). Records audio, sends binary to the Gemini extract         */
-    /* endpoint, and applies the structured JSON response to the form.     */
+    /* Uses the browser-native SpeechRecognition API (Chrome, Edge, Opera, */
+    /* Android WebView). No audio bytes leave the device — only the plain  */
+    /* text transcript is sent to the Gemini extract endpoint.             */
     /*                                                                      */
-    /* Sustituye Web Speech API por MediaRecorder (soporte universal en    */
-    /* navegadores). Graba audio, envía binario al endpoint de extracción  */
-    /* Gemini y aplica la respuesta JSON estructurada al formulario.       */
+    /* Flow:                                                                */
+    /*   1. User clicks "Iniciar grabación" → SpeechRecognition starts.    */
+    /*   2. Browser transcribes speech in real time (interim + final).     */
+    /*   3. User clicks "Detener" → recognition stops, transcript shown.   */
+    /*   4. User reviews/edits transcript in the textarea.                 */
+    /*   5. User clicks "Enviar a IA" → transcript POSTed as JSON text.    */
+    /*   6. Gemini extracts structured fields → form pre-filled.           */
+    /*                                                                      */
+    /* Usa la API SpeechRecognition nativa del navegador (Chrome, Edge,    */
+    /* Opera, Android WebView). Ningún byte de audio sale del dispositivo  */
+    /* — solo el texto de la transcripción se envía al endpoint Gemini.   */
     /* ------------------------------------------------------------------ */
 
-    var btnStart      = document.getElementById("stt-btn-start");
-    var btnStop       = document.getElementById("stt-btn-stop");
-    var statusEl      = document.getElementById("stt-status");
-    var compatWarn    = document.getElementById("stt-compat-warning");
-    var spinnerEl     = document.getElementById("stt-spinner");
-    var resultSummary = document.getElementById("stt-result-summary");
-    var resultText    = document.getElementById("stt-result-text");
+    var btnStart       = document.getElementById("stt-btn-start");
+    var btnStop        = document.getElementById("stt-btn-stop");
+    var statusEl       = document.getElementById("stt-status");
+    var compatWarn     = document.getElementById("stt-compat-warning");
+    var spinnerEl      = document.getElementById("stt-spinner");
+    var resultSummary  = document.getElementById("stt-result-summary");
+    var resultText     = document.getElementById("stt-result-text");
+    var transcriptWrap = document.getElementById("stt-transcript-wrap");
+    var transcriptBox  = document.getElementById("stt-transcript-box");
+    var btnSend        = document.getElementById("stt-btn-send");
+    var btnClear       = document.getElementById("stt-btn-clear");
 
-    var mediaRecorder  = null;
-    var audioChunks    = [];
-    var audioMimeType  = "audio/webm";
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var recognition       = null;
+
+    /* ── Compatibility check / Comprobación de compatibilidad ── */
+    if (!SpeechRecognition) {
+        compatWarn.classList.remove("d-none");
+        btnStart.disabled = true;
+    } else {
+
+        /* ── Initialise SpeechRecognition / Inicializar SpeechRecognition ── */
+        recognition                 = new SpeechRecognition();
+        recognition.lang            = "es-ES";
+        recognition.continuous      = true;    /* Keep listening until stopped. / Seguir escuchando hasta parar. */
+        recognition.interimResults  = false;   /* Final segments only — avoids duplicate interim events on mobile Chrome.
+                                                  Solo segmentos finales — evita eventos interim duplicados en Chrome móvil. */
+        recognition.maxAlternatives = 1;
+
+        var _finalTranscript = "";
+        var _stopping        = false;   /* True only when user pressed Detener. / True solo cuando el usuario pulsa Detener. */
+
+        recognition.onresult = function (event) {
+            /*
+             * With interimResults=false every result arriving here is already
+             * isFinal=true. We iterate only from event.resultIndex so that
+             * auto-restart cycles (caused by browser silence timeout) do not
+             * re-deliver already-confirmed segments.
+             *
+             * Con interimResults=false cada resultado que llega aquí es ya
+             * isFinal=true. Iteramos solo desde event.resultIndex para que los
+             * ciclos de reinicio automático (por timeout de silencio del navegador)
+             * no vuelvan a entregar segmentos ya confirmados.
+             */
+            for (var i = event.resultIndex; i < event.results.length; i++) {
+                if (event.results[i].isFinal) {
+                    _finalTranscript += event.results[i][0].transcript + " ";
+                }
+            }
+            transcriptBox.value = _finalTranscript.trim();
+        };
+
+        recognition.onerror = function (event) {
+            /*
+             * Handles microphone permission denial and other errors gracefully.
+             * Gestiona la denegación de permisos de micrófono y otros errores.
+             */
+            console.error("# [STT] SpeechRecognition error:", event.error);
+            statusEl.textContent = "Error de micrófono: " + event.error +
+                ". Comprueba los permisos del navegador.";
+            btnStart.classList.remove("d-none");
+            btnStop.classList.add("d-none");
+        };
+
+        recognition.onend = function () {
+            /*
+             * Called when recognition stops (by user or by browser silence timeout).
+             * NO automatic restart — restarting causes Chrome mobile to re-deliver
+             * all previous results from index 0, duplicating the transcript.
+             * Instead: always show whatever transcript has been captured so far,
+             * and let the user press "Iniciar" again if they need to continue.
+             * _finalTranscript persists across multiple start/stop cycles so
+             * additional dictation is appended, not overwritten.
+             *
+             * Se llama cuando el reconocimiento para (por el usuario o por timeout).
+             * SIN reinicio automático — reiniciar hace que Chrome móvil vuelva a
+             * entregar todos los resultados anteriores desde índice 0, duplicando
+             * la transcripción. En su lugar: mostrar siempre lo capturado hasta
+             * ahora y dejar que el usuario pulse "Iniciar" de nuevo si necesita
+             * continuar. _finalTranscript persiste entre ciclos para que el texto
+             * adicional se añada, no se sobreescriba.
+             */
+            btnStart.classList.remove("d-none");
+            btnStop.classList.add("d-none");
+            statusEl.textContent = "";
+            var captured = transcriptBox.value.trim();
+            if (captured) {
+                transcriptWrap.classList.remove("d-none");
+                statusEl.textContent = "Transcripción lista. Pulsa «Iniciar» para seguir dictando o «Enviar a IA» para procesar.";
+            }
+        };
+
+        /* ── Start button / Botón Iniciar ── */
+        btnStart.addEventListener("click", function () {
+            /* Do NOT reset _finalTranscript here — the user may press Start
+               multiple times to continue dictating; each session appends to
+               the existing transcript. Only btnClear resets it.
+               NO resetear _finalTranscript aquí — el usuario puede pulsar
+               Iniciar varias veces para seguir dictando; cada sesión añade
+               al texto existente. Solo btnClear lo resetea. */
+            resultSummary.classList.add("d-none");
+            statusEl.textContent = "Grabando… Pulsa «Detener» cuando termines.";
+            btnStart.classList.add("d-none");
+            btnStop.classList.remove("d-none");
+            try { recognition.start(); } catch (e) { /* already running — ya en marcha */ }
+        });
+
+        /* ── Stop button / Botón Detener ── */
+        btnStop.addEventListener("click", function () {
+            recognition.stop();
+            /* onend handler takes care of UI state. / El handler onend gestiona el estado UI. */
+        });
+
+        /* ── Send to Gemini / Enviar a Gemini ── */
+        btnSend.addEventListener("click", function () {
+            var transcript = transcriptBox.value.trim();
+            if (!transcript) {
+                statusEl.textContent = "La transcripción está vacía. Dicta primero el parte.";
+                return;
+            }
+            _sendTranscriptToGemini(transcript);
+        });
+
+        /* ── Clear transcript / Limpiar transcripción ── */
+        btnClear.addEventListener("click", function () {
+            /* Full reset including _finalTranscript so the next Start begins fresh.
+               Reset completo incluyendo _finalTranscript para que el próximo Iniciar empiece limpio. */
+            _finalTranscript    = "";
+            transcriptBox.value = "";
+            transcriptWrap.classList.add("d-none");
+            resultSummary.classList.add("d-none");
+            statusEl.textContent = "";
+        });
+
+    } /* end if SpeechRecognition */
+
+    function _sendTranscriptToGemini(transcript) {
+        /*
+         * POSTs the plain-text transcript as JSON to the server-side Gemini
+         * extract endpoint and applies the structured JSON response to the form.
+         *
+         * Envía el texto de la transcripción como JSON al endpoint Gemini del
+         * servidor y aplica la respuesta JSON estructurada al formulario.
+         */
+        spinnerEl.classList.remove("d-none");
+        resultSummary.classList.add("d-none");
+        btnSend.disabled = true;
+
+        fetch("{% url 'panel:operator_stt_extract' %}", {
+            method:  "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken":  document.querySelector('meta[name="csrf-token"]').getAttribute("content"),
+            },
+            body: JSON.stringify({ "transcript": transcript }),
+        })
+        .then(function (r) {
+            if (!r.ok) { throw new Error("HTTP " + r.status); }
+            return r.json();
+        })
+        .then(function (data) {
+            spinnerEl.classList.add("d-none");
+            btnSend.disabled = false;
+            _applyGeminiResult(data);
+            resultText.textContent = "Formulario pre-rellenado por IA. Revisa y corrige si es necesario.";
+            resultSummary.classList.remove("d-none");
+        })
+        .catch(function (err) {
+            spinnerEl.classList.add("d-none");
+            btnSend.disabled = false;
+            console.error("# [STT] Gemini extract error:", err);
+            resultText.textContent = "Error al procesar la transcripción. Inténtalo de nuevo o rellena el formulario manualmente.";
+            resultSummary.classList.remove("d-none");
+        });
+    }
 
     function _applyGeminiResult(data) {
         /*
          * Applies the structured JSON from Gemini to the form fields.
-         * Fecha is converted DD/MM/AAAA to YYYY-MM-DD for type="date".
+         * Fecha is converted from DD/MM/AAAA to YYYY-MM-DD for type="date".
          *
          * Aplica el JSON estructurado de Gemini a los campos del formulario.
-         * La fecha se convierte DD/MM/AAAA a YYYY-MM-DD para type="date".
+         * La fecha se convierte de DD/MM/AAAA a YYYY-MM-DD para type="date".
          */
         var fechaEl  = document.getElementById("id_fecha");
         var maqEl    = document.getElementById("stt-field-maquina-1");
@@ -494,7 +690,9 @@
 
         if (fechaEl && data.fecha) {
             var p = data.fecha.split("/");
-            fechaEl.value = p.length === 3 ? p[2] + "-" + p[1] + "-" + p[0] : data.fecha;
+            fechaEl.value = p.length === 3
+                ? p[2] + "-" + p[1] + "-" + p[0]
+                : data.fecha;
             fechaEl.classList.remove("field-flagged");
         }
         if (maqEl    && data.maquina_raw)        { maqEl.value    = data.maquina_raw;        maqEl.classList.remove("field-flagged"); }
@@ -502,106 +700,9 @@
         if (hfEl     && data.hf)                 { hfEl.value     = data.hf;                 hfEl.classList.remove("field-flagged"); }
         if (averiaEl && data.descripcion_averia) { averiaEl.value = data.descripcion_averia; averiaEl.classList.remove("field-flagged"); }
 
-        document.getElementById("id_fecha").scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-
-    function _sendAudioToGemini(audioBlob) {
-        /*
-         * Sends the recorded audio blob to the server-side Gemini extract
-         * endpoint via multipart/form-data and applies the JSON response.
-         *
-         * Envía el blob de audio grabado al endpoint Gemini del servidor
-         * via multipart/form-data y aplica la respuesta JSON.
-         */
-        spinnerEl.classList.remove("d-none");
-        resultSummary.classList.add("d-none");
-        statusEl.textContent = "";
-
-        var ext      = audioMimeType.split("/")[1] || "webm";
-        var formData = new FormData();
-        formData.append("audio", audioBlob, "recording." + ext);
-
-        fetch("{% url 'panel:operator_stt_extract' %}", {
-            method:  "POST",
-            headers: {
-                "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute("content"),
-            },
-            body: formData,
-        })
-        .then(function (r) {
-            if (!r.ok) { throw new Error("HTTP " + r.status); }
-            return r.json();
-        })
-        .then(function (data) {
-            spinnerEl.classList.add("d-none");
-            _applyGeminiResult(data);
-            resultText.textContent = "Formulario pre-rellenado por IA. Revisa y corrige si es necesario.";
-            resultSummary.classList.remove("d-none");
-            btnStart.disabled = false;
-        })
-        .catch(function (err) {
-            spinnerEl.classList.add("d-none");
-            console.error("# [STT] Gemini extract error:", err);
-            resultText.textContent = "Error al procesar el audio. Inténtalo de nuevo o rellena el formulario manualmente.";
-            resultSummary.classList.remove("d-none");
-            btnStart.disabled = false;
-        });
-    }
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        compatWarn.classList.remove("d-none");
-        btnStart.disabled = true;
-    } else {
-        var _mimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-        for (var _mi = 0; _mi < _mimeTypes.length; _mi++) {
-            if (MediaRecorder.isTypeSupported(_mimeTypes[_mi])) {
-                audioMimeType = _mimeTypes[_mi].split(";")[0];
-                break;
-            }
+        if (fechaEl) {
+            fechaEl.scrollIntoView({ behavior: "smooth", block: "center" });
         }
-
-        btnStart.addEventListener("click", function () {
-            navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(function (stream) {
-                audioChunks   = [];
-                mediaRecorder = new MediaRecorder(stream, { mimeType: audioMimeType });
-
-                mediaRecorder.ondataavailable = function (e) {
-                    if (e.data && e.data.size > 0) { audioChunks.push(e.data); }
-                };
-
-                mediaRecorder.onstop = function () {
-                    stream.getTracks().forEach(function (t) { t.stop(); });
-                    var audioBlob = new Blob(audioChunks, { type: audioMimeType });
-                    btnStart.disabled = true;
-                    _sendAudioToGemini(audioBlob);
-                };
-
-                mediaRecorder.start();
-                statusEl.textContent = "Grabando… Pulsa «Detener y procesar» cuando termines.";
-                btnStart.classList.add("d-none");
-                btnStop.classList.remove("d-none");
-                resultSummary.classList.add("d-none");
-            })
-            .catch(function (err) {
-                console.error("# [STT] getUserMedia error:", err);
-                statusEl.textContent = "No se pudo acceder al micrófono: " + err.message;
-            });
-        });
-
-        btnStop.addEventListener("click", function () {
-            if (mediaRecorder && mediaRecorder.state !== "inactive") {
-                mediaRecorder.stop();
-                btnStop.classList.add("d-none");
-                btnStart.classList.remove("d-none");
-                statusEl.textContent = "Procesando con Gemini IA…";
-            }
-        });
-    }
-
-    function _resetButtons() {
-        btnStart.classList.remove("d-none");
-        btnStop.classList.add("d-none");
     }
 
     /* ------------------------------------------------------------------ */

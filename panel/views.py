@@ -46,6 +46,7 @@ from panel.forms import (
     BlockedCallerForm,
     CompanyUserCreateForm,
     PanelPasswordChangeForm,
+    PanelSetPasswordForm,
     DataCaptureSetForm,
 )
 from ivr_config.models import (
@@ -2042,11 +2043,45 @@ class PanelPasswordChangeView(CompanyUserRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
+    def _build_form(self, request, data=None):
+        """
+        Returns the appropriate password form depending on whether the change
+        is forced (must_change_password=True) or voluntary.
+
+        Forced change  → PanelSetPasswordForm: does not require old_password.
+                         The newly created user does not know the system-assigned
+                         initial password ('1234') and must not be asked for it.
+        Voluntary change → PanelPasswordChangeForm: requires old_password as
+                           an additional security gate.
+        ---
+        Retorna el formulario de contraseña adecuado según si el cambio es
+        forzado (must_change_password=True) o voluntario.
+
+        Cambio forzado   → PanelSetPasswordForm: no requiere old_password.
+                           El usuario recién creado desconoce la contraseña
+                           inicial asignada por el sistema ('1234') y no debe
+                           ser preguntado por ella.
+        Cambio voluntario → PanelPasswordChangeForm: requiere old_password como
+                            barrera de seguridad adicional.
+        """
+        cu = request.user.company_user
+        if cu.must_change_password:
+            # Forced flow: only new_password1 + new_password2 required.
+            # Flujo forzado: solo new_password1 + new_password2 requeridos.
+            return PanelSetPasswordForm(user=request.user, data=data)
+        # Voluntary flow: old_password + new_password1 + new_password2.
+        # Flujo voluntario: old_password + new_password1 + new_password2.
+        return PanelPasswordChangeForm(user=request.user, data=data)
+
     def _get_context(self, request, form=None):
         """
         Builds template context including is_forced flag for UI messaging.
+        When is_forced=True the template hides the old_password block, since
+        PanelSetPasswordForm does not expose that field.
         ---
         Construye el contexto de plantilla incluyendo el flag is_forced para la UI.
+        Cuando is_forced=True el template oculta el bloque old_password, ya que
+        PanelSetPasswordForm no expone ese campo.
         """
         cu = request.user.company_user
         return {
@@ -2054,27 +2089,31 @@ class PanelPasswordChangeView(CompanyUserRequiredMixin, View):
             "company_user": cu,
             "own_presence": self._get_own_presence(cu),
             "active_nav":   "",
-            "form":         form or PanelPasswordChangeForm(user=request.user),
+            "form":         form or self._build_form(request),
             "is_forced":    cu.must_change_password,
         }
 
     def get(self, request, *args, **kwargs):
         """
-        Renders the password change form.
+        Renders the password change form (forced or voluntary depending on context).
         ---
-        Renderiza el formulario de cambio de contraseña.
+        Renderiza el formulario de cambio de contraseña (forzado o voluntario
+        según el contexto).
         """
         return render(request, self.template_name, self._get_context(request))
 
     def post(self, request, *args, **kwargs):
         """
-        Validates and saves the new password. On success clears must_change_password,
-        updates session auth hash and redirects to the dashboard.
+        Validates and saves the new password using the appropriate form.
+        On success clears must_change_password (if forced), updates the session
+        auth hash so the user stays logged in, and redirects to the dashboard.
         ---
-        Valida y guarda la nueva contraseña. En caso de éxito limpia must_change_password,
-        actualiza el hash de sesión y redirige al dashboard.
+        Valida y guarda la nueva contraseña usando el formulario adecuado.
+        En caso de éxito limpia must_change_password (si es forzado), actualiza
+        el hash de sesión para que el usuario permanezca autenticado y redirige
+        al dashboard.
         """
-        form = PanelPasswordChangeForm(user=request.user, data=request.POST)
+        form = self._build_form(request, data=request.POST)
         if form.is_valid():
             form.save()
             update_session_auth_hash(request, form.user)
@@ -6280,23 +6319,44 @@ Transcripción del operario:
 
     def post(self, request, *args, **kwargs):
         """
-        Receives a raw audio file uploaded via multipart/form-data, sends it
-        to Gemini 2.5 Flash as inline bytes, and returns a structured JSON
-        with the extracted work-order fields.
+        Receives a plain-text Spanish transcript from the browser's Web Speech
+        API via a JSON body {"transcript": "<text>"}, sends it to Gemini 2.5
+        Flash (text-only, Vertex AI) and returns a structured JSON with the
+        extracted work-order fields.
 
-        Expected multipart field: "audio" (binary, any browser-recorded format:
-        audio/webm, audio/ogg, audio/mp4, audio/wav).
+        This is intentionally text-in / JSON-out: the browser transcribes the
+        audio natively (free, no server round-trip for audio bytes) and only
+        the resulting text string reaches the server. Gemini handles all the
+        semantic extraction — date parsing, machine code normalisation, time
+        range detection, fault description cleanup — with far higher accuracy
+        than a client-side JS parser.
 
-        On any failure (network, Gemini error, JSON parse) returns the same
-        schema with all empty strings so the client can render the form for
-        manual correction.
+        POST /panel/operator/stt/extract/
+             Body (JSON): {"transcript": "<texto dictado por el operario>"}
+             Response (JSON):
+               {
+                 "fecha":              "DD/MM/AAAA" | "",
+                 "maquina_raw":        "<codigo>" | "",
+                 "hc":                 "HH:MM" | "",
+                 "hf":                 "HH:MM" | "",
+                 "descripcion_averia": "<texto>" | "",
+                 "reparacion":         "<texto>" | "",
+                 "or_val":             "<texto>" | ""
+               }
+             On any failure returns the same schema with all empty strings so
+             the client can still render the form for manual correction.
         ---
-        Recibe un archivo de audio subido via multipart/form-data, lo envía a
-        Gemini 2.5 Flash como bytes inline y devuelve un JSON estructurado con
-        los campos del parte de trabajo extraídos.
+        Recibe una transcripción de texto plano en español desde la Web Speech
+        API del navegador vía cuerpo JSON {"transcript": "<texto>"}, la envía a
+        Gemini 2.5 Flash (solo texto, Vertex AI) y devuelve un JSON estructurado
+        con los campos del parte de trabajo extraídos.
 
-        Campo multipart esperado: "audio" (binario, cualquier formato grabado
-        por el navegador: audio/webm, audio/ogg, audio/mp4, audio/wav).
+        El diseño es texto-entrada / JSON-salida: el navegador transcribe el
+        audio de forma nativa (gratuita, sin envío de bytes de audio al servidor)
+        y solo la cadena de texto resultante llega al servidor. Gemini gestiona
+        toda la extracción semántica — parsing de fechas, normalización de códigos
+        de máquina, detección de rangos horarios, limpieza de descripción de avería
+        — con una precisión muy superior a la de un parser JS en cliente.
 
         En cualquier fallo devuelve el mismo esquema con cadenas vacías para
         que el cliente pueda renderizar el formulario para corrección manual.
@@ -6305,26 +6365,47 @@ Transcripción del operario:
         import re as _re
         from django.http import JsonResponse
         from work_order_processor.services import _get_gemini_client, _GEMINI_MODEL
-        from google.genai import types as _genai_types
-        from google.genai.types import GenerateContentConfig, HttpOptions
+        from google.genai.types import GenerateContentConfig, HttpOptions, ThinkingConfig
 
         _EMPTY = {
             "fecha": "", "maquina_raw": "", "hc": "", "hf": "",
             "descripcion_averia": "", "reparacion": "", "or_val": "",
         }
 
-        audio_file = request.FILES.get("audio")
-        if not audio_file:
-            return JsonResponse({"error": "No se recibió archivo de audio."}, status=400)
+        # JSON schema for structured output — guarantees field presence and types.
+        # Esquema JSON para salida estructurada — garantiza presencia y tipo de campos.
+        _RESPONSE_SCHEMA = {
+            "type": "object",
+            "properties": {
+                "fecha":              {"type": "string"},
+                "maquina_raw":        {"type": "string"},
+                "hc":                 {"type": "string"},
+                "hf":                 {"type": "string"},
+                "descripcion_averia": {"type": "string"},
+                "reparacion":         {"type": "string"},
+                "or_val":             {"type": "string"},
+            },
+            "required": [
+                "fecha", "maquina_raw", "hc", "hf",
+                "descripcion_averia", "reparacion", "or_val",
+            ],
+        }
 
-        audio_bytes  = audio_file.read()
-        content_type = audio_file.content_type or "audio/webm"
-        if content_type == "application/octet-stream":
-            content_type = "audio/webm"
+        # Parse JSON body — reject requests without a non-empty transcript.
+        # Parsear cuerpo JSON — rechazar peticiones sin transcripción no vacía.
+        try:
+            body       = _json.loads(request.body)
+            transcript = (body.get("transcript") or "").strip()
+        except (_json.JSONDecodeError, AttributeError):
+            return JsonResponse({"error": "Cuerpo JSON inválido."}, status=400)
+
+        if not transcript:
+            return JsonResponse({"error": "La transcripción está vacía."}, status=400)
 
         logger.info(
-            "# [STTExtract] Audio recibido: %d bytes | content_type=%s.",
-            len(audio_bytes), content_type,
+            "# [STTExtract] Transcripción recibida (%d chars): %s…",
+            len(transcript),
+            transcript[:120],
         )
 
         try:
@@ -6332,27 +6413,28 @@ Transcripción del operario:
 
             response = client.models.generate_content(
                 model    = _GEMINI_MODEL,
-                contents = [
-                    _genai_types.Part.from_bytes(
-                        data      = audio_bytes,
-                        mime_type = content_type,
-                    ),
-                    self._STT_EXTRACT_PROMPT,
-                ],
-                config = GenerateContentConfig(
-                    http_options      = HttpOptions(timeout=60_000),
-                    temperature       = 0.0,
-                    max_output_tokens = 256,
+                contents = [self._STT_EXTRACT_PROMPT + transcript],
+                config   = GenerateContentConfig(
+                    http_options       = HttpOptions(timeout=30_000),
+                    response_mime_type = "application/json",
+                    response_schema    = _RESPONSE_SCHEMA,
+                    thinking_config    = ThinkingConfig(thinking_budget=0),
+                    temperature        = 0.0,
+                    max_output_tokens  = 512,
                 ),
             )
 
-            raw_text = response.text.strip()
-            cleaned  = _re.sub(r"```(?:json)?|```", "", raw_text).strip()
-            m        = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
-            if not m:
-                raise ValueError(f"Sin JSON en respuesta Gemini: {raw_text[:200]}")
-
-            extracted = _json.loads(m.group())
+            # response_mime_type + response_schema guarantee pure structured JSON
+            # without markdown fences and with all fields present.
+            # thinking_budget=0 disables thinking for this simple extraction task,
+            # preventing thinking tokens from consuming the output token budget.
+            #
+            # response_mime_type + response_schema garantizan JSON estructurado puro
+            # sin bloques markdown y con todos los campos presentes.
+            # thinking_budget=0 desactiva el thinking para esta tarea simple de
+            # extracción, evitando que los tokens de pensamiento consuman el budget.
+            raw_text  = response.text.strip()
+            extracted = _json.loads(raw_text)
             result    = {k: str(extracted.get(k, "") or "").strip() for k in _EMPTY}
 
             logger.info(
@@ -6365,7 +6447,7 @@ Transcripción del operario:
 
         except Exception as exc:
             logger.error(
-                "# [STTExtract] Error en extracción Gemini audio: %s", exc, exc_info=True
+                "# [STTExtract] Error en extracción Gemini texto: %s", exc, exc_info=True
             )
             return JsonResponse(_EMPTY)
 

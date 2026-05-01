@@ -157,19 +157,27 @@
     </li>
 
     <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
-           href="{% url 'panel:work_order_list' %}">
-            <i class="bi bi-file-earmark-pdf"></i>PDFs
-        </a>
-    </li>
-
-    <li class="nav-item">
         <a class="nav-link {% if active_nav == 'analytics' %}active{% endif %}"
            href="{% url 'panel:analytics' %}">
             <i class="bi bi-bar-chart-line"></i>Analítica
         </a>
     </li>
 
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Partes PDF (SUPERVISOR y ADMIN)                            #}
+    {# Section: PDF Work Orders (SUPERVISOR and ADMIN)                     #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'SUPERVISOR' or company_user.role == 'ADMIN' %}
+    <li><div class="sidebar-section-label">Partes</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
+           href="{% url 'panel:work_order_list' %}">
+            <i class="bi bi-file-earmark-pdf"></i>PDFs
+        </a>
+    </li>
     {% endif %}
 
 </ul>

@@ -29,6 +29,7 @@
 ./panel/templates/panel/dashboard.html
 ./panel/templates/panel/presence/status.html
 ./panel/templates/panel/password/change.html
+./panel/templates/panel/password/_field_pw.html
 ./panel/templates/panel/phonenumbers/list.html
 ./panel/templates/panel/users/list.html
 ./panel/templates/panel/users/create.html

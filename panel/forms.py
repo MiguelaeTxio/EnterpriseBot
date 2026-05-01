@@ -14,7 +14,7 @@ y BlockedCallerForm añadidos.
 """
 
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm, SetPasswordForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 
@@ -409,10 +409,12 @@ class CompanyUserCreateForm(forms.Form):
 class PanelPasswordChangeForm(PasswordChangeForm):
     """
     Custom password change form for the panel with Bootstrap CSS classes.
-    Inherits full validation from Django's PasswordChangeForm.
+    Used for voluntary password changes where the user knows their current password.
+    Inherits full validation from Django's PasswordChangeForm (requires old_password).
     ---
     Formulario de cambio de contraseña para el panel con clases CSS Bootstrap.
-    Hereda la validación completa de PasswordChangeForm de Django.
+    Se usa para cambios voluntarios de contraseña donde el usuario conoce la actual.
+    Hereda la validación completa de PasswordChangeForm de Django (requiere old_password).
     """
 
     def __init__(self, *args, **kwargs):
@@ -425,6 +427,39 @@ class PanelPasswordChangeForm(PasswordChangeForm):
         for field_name in ("old_password", "new_password1", "new_password2"):
             self.fields[field_name].widget.attrs.update({"class": "form-control"})
         self.fields["old_password"].label  = "Contraseña actual"
+        self.fields["new_password1"].label = "Nueva contraseña"
+        self.fields["new_password2"].label = "Confirmar nueva contraseña"
+        self.fields["new_password1"].help_text = (
+            "Mínimo 8 caracteres. No puede ser completamente numérica "
+            "ni demasiado similar a tu nombre de usuario."
+        )
+
+
+class PanelSetPasswordForm(SetPasswordForm):
+    """
+    Password set form for forced password changes (must_change_password=True).
+    Does NOT require the current password — the user arriving here for the first
+    time does not know their system-assigned initial password ('1234').
+    Inherits full validation from Django's SetPasswordForm (new_password1 +
+    new_password2 only).
+    ---
+    Formulario de establecimiento de contraseña para cambios forzados
+    (must_change_password=True). NO requiere la contraseña actual — el usuario
+    que llega aquí por primera vez desconoce la contraseña inicial asignada
+    por el sistema ('1234').
+    Hereda la validación completa de SetPasswordForm de Django (solo new_password1
+    y new_password2).
+    """
+
+    def __init__(self, *args, **kwargs):
+        """
+        Applies Bootstrap form-control CSS class to both new-password fields.
+        ---
+        Aplica la clase CSS form-control de Bootstrap a los dos campos de nueva contraseña.
+        """
+        super().__init__(*args, **kwargs)
+        for field_name in ("new_password1", "new_password2"):
+            self.fields[field_name].widget.attrs.update({"class": "form-control"})
         self.fields["new_password1"].label = "Nueva contraseña"
         self.fields["new_password2"].label = "Confirmar nueva contraseña"
         self.fields["new_password1"].help_text = (

@@ -2,9 +2,8 @@
 
 # Anexo de Hito V08 — Mejoras Procesador PDF->Excel + HTMX
 # Proyecto: EnterpriseBot
-# Estado: COMPLETADO
+# Estado: EN PROGRESO
 # Fecha de inicio: 2026-04-28
-# Fecha de cierre: 2026-04-29
 
 ---
 
@@ -464,4 +463,206 @@ WARNING pero no revierte el estado DONE ni el Excel generado.
 - panel/templates/panel/work_orders/upload.html — bloque duplicate_entries (Paso 12).
 - panel/templates/panel/work_orders/list.html — boton Buscar duplicados (Paso 13).
 - panel/templates/panel/work_orders/_duplicates_fragment.html — neonato (Paso 13).
-- work_order_processor/management/commands/detect_duplicate_entries.py — neonato (Paso 11).
+- work_order_processor/management/commands/detect_duplicate_entries.py — neonato (Paso 13).
+
+---
+
+## 4. Registro de Sesiones
+
+| Sesion | Fecha      | Pasos trabajados | Resumen |
+|--------|------------|-----------------|---------|
+| 001    | 2026-04-28 | Bloques A-F     | Implantacion HTMX en lista PDFs y editor inline. Exportacion Excels. Deteccion de duplicados Nivel 1 y 2. |
+| 002    | 2026-04-28 | Bloques G, H    | Campo reviewed + rol SUPERVISOR. Pestanas en list.html. SupervisorAccessMixin. |
+| 003    | 2026-04-29 | Bloques E fix, I| Fix modal Bootstrap duplicados. Hash SHA-256 Nivel 1. backfill_pdf_hashes. |
+| 004    | 2026-04-29 | Pasos 11-13     | detect_duplicate_entries. Nivel 3 upload. Vistas WorkOrderDuplicateSearch/Delete. |
+| 005    | 2026-04-29 | Paso 14         | Borrado automatico PDF fisico al alcanzar DONE en tasks.py. |
+| 006    | 2026-04-30 | Fuera HR        | Hito reactivado. Correcciones panel: _field_pw.html (TemplateDoesNotExist), PanelSetPasswordForm (cambio forzado sin old_password), sidebar PDFs visible para SUPERVISOR. |
+| 007    | 2026-05-01 | Nuevo trabajo   | Reactivacion del hito. Via B STT validada E2E: motor reemplazado de MediaRecorder a Web Speech API nativa (sin bytes de audio al servidor). WorkOrderEntrySTTExtractView.post() refactorizado: recibe JSON transcript, usa response_mime_type=application/json + response_schema + thinking_budget=0. Formulario pre-rellenado correctamente desde dictado natural. Problemas resueltos: TemplateDoesNotExist _field_pw.html, PanelSetPasswordForm para nuevos usuarios, sidebar SUPERVISOR, duplicacion de transcripcion (interimResults=false + sin reinicio automatico), truncado JSON Gemini (thinking tokens consumian output budget). |
+
+---
+
+## 5. Hoja de Ruta para la Siguiente Sesion (008)
+
+### Contexto
+
+Los partes de trabajo manuscritos procesados via PDF presentan sistematicamente
+problemas de calidad en los datos extraidos por Gemini Vision:
+
+- Multiples bloques de trabajo colapsados en una sola WorkOrderEntryLine
+  (el operario escribe varias tareas seguidas sin separacion clara).
+- Una misma tarea asignada a multiples centros de gasto (vehiculos) en la
+  misma linea, cuando deberia generar una WorkOrderEntryLine por centro.
+- El horario (H.C./H.F.) escrito en el campo reservado a la O.R. y viceversa.
+- Codigos de maquina con errores OCR no corregidos por _normalise_machine_code().
+- Descripciones de averia con texto de relleno o instrucciones del propio
+  formulario capturadas como contenido.
+
+El objetivo de la sesion 008 es doble:
+1. Reforzar _EXTRACTION_PROMPT (el prompt historico de PDFs) y
+   _EXTRACTION_PROMPT_FULL (el prompt de la Via C del H7) para que Gemini
+   gestione correctamente estos casos patron.
+2. Confeccionar un comando de gestion Django permanente que se aplique sobre
+   los WorkOrderEntryLine ya persistidos en BD y corrija automaticamente
+   las incidencias detectables de forma programatica.
+
+---
+
+### Primera accion — Auditoria de partes historicos con incidencias
+
+Antes de tocar ningun prompt ni escribir ningun comando, realizar una
+auditoria exhaustiva de los WorkOrderEntryLine existentes en BD para
+catalogar los tipos de incidencia reales y su frecuencia.
+
+Herramienta: shell Django con ORM.
+
+Consultas de auditoria a ejecutar:
+
+````python
+# 1. Lineas con H.C. o H.F. vacios o con valor no horario (posible confusion con O.R.)
+from work_order_processor.models import WorkOrderEntryLine
+import re
+TIME_RE = re.compile(r'^\d{1,2}:\d{2}$')
+bad_times = WorkOrderEntryLine.objects.exclude(hc='').exclude(hf='').filter(
+    models.Q(hc__isnull=False) | models.Q(hf__isnull=False)
+)
+# Filtrar los que no matchean HH:MM
+non_time_hc = [l for l in WorkOrderEntryLine.objects.exclude(hc='') if not TIME_RE.match(l.hc or '')]
+non_time_hf = [l for l in WorkOrderEntryLine.objects.exclude(hf='') if not TIME_RE.match(l.hf or '')]
+
+# 2. Lineas con descripcion_averia que contenga patrones de formulario
+suspect_desc = WorkOrderEntryLine.objects.filter(
+    models.Q(descripcion_averia__icontains='descripcion') |
+    models.Q(descripcion_averia__icontains='averia') |
+    models.Q(descripcion_averia__icontains='reparacion')
+)
+
+# 3. Lineas con or_val que parezca un horario
+or_as_time = [l for l in WorkOrderEntryLine.objects.exclude(or_val='')
+              if TIME_RE.match(l.or_val or '')]
+
+# 4. Lineas con maquina_raw vacio o no resuelto (machine_asset es None)
+unresolved = WorkOrderEntryLine.objects.filter(machine_asset__isnull=True).exclude(maquina_raw='')
+````
+
+Los resultados de esta auditoria determinan:
+- Que patrones anadir al prompt para prevenirlos en nuevas extracciones.
+- Que correcciones puede aplicar el comando de gestion automaticamente
+  (reglas deterministicas) y cuales requieren revision manual.
+
+---
+
+### Segunda accion — Refuerzo de _EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL
+
+Archivo: work_order_processor/services.py
+
+Directriz: NO reescribir el prompt desde cero. Anadir secciones
+especificas de manejo de casos patron al final del bloque de instrucciones
+existente, antes del esquema JSON de respuesta esperada.
+
+Casos patron a cubrir (minimo, ampliar con los hallazgos de la auditoria):
+
+1. Multiples bloques de trabajo en una misma celda fisica:
+   "Si un operario ha escrito mas de una tarea en el mismo espacio,
+   genera una WorkOrderEntryLine separada por cada tarea identificable.
+   Criterio de separacion: cambio de maquina, cambio de horario, o
+   separacion visual clara (linea, barra, punto y aparte)."
+
+2. Una tarea para multiples centros de gasto:
+   "Si la misma descripcion de averia aparece asociada a mas de un
+   codigo de maquina, genera una WorkOrderEntryLine por cada maquina,
+   repitiendo la descripcion y el horario en cada una."
+
+3. Confusion H.C./H.F. con O.R.:
+   "El campo O.R. (Orden de Reparacion) es un identificador alfanumerico
+   como 'OR-1234' o un nombre propio. Si el valor encontrado en el campo
+   O.R. del formulario fisico tiene formato HH:MM, interpreta que el
+   operario ha escrito el horario en el lugar equivocado: coloca ese
+   valor en hc o hf segun corresponda y deja or_val vacio."
+
+4. Texto de formulario capturado como contenido:
+   "Si descripcion_averia contiene literalmente palabras como 'descripcion',
+   'averia', 'reparacion', 'tarea' o similares que son etiquetas del propio
+   formulario, ignora ese texto y deja el campo vacio."
+
+5. Codigos de maquina con caracteres OCR:
+   "Aplica las siguientes sustituciones al bloque numerico del codigo
+   de maquina: O->0, L->1, T->7, S->5, Z->2, G->6."
+
+---
+
+### Tercera accion — Comando de gestion: repair_entry_lines
+
+Archivo nuevo (neonato puro):
+  work_order_processor/management/commands/repair_entry_lines.py
+
+El comando opera sobre WorkOrderEntryLine ya persistidos en BD aplicando
+correcciones automaticas deterministicas. No usa IA — solo reglas de
+transformacion seguras.
+
+Estructura del comando:
+
+````python
+# Invocacion:
+#   python -m dotenv run python manage.py repair_entry_lines
+#   python -m dotenv run python manage.py repair_entry_lines --company <pk_o_nombre>
+#   python -m dotenv run python manage.py repair_entry_lines --dry-run
+#   python -m dotenv run python manage.py repair_entry_lines --apply
+
+# Flags:
+#   --company    Filtrar por company pk o nombre exacto (opcional).
+#   --dry-run    (por defecto) Mostrar incidencias detectadas sin modificar nada.
+#   --apply      Aplicar correcciones. IRREVERSIBLE sin --dry-run previo.
+
+# Reglas de correccion automatica (ejecutadas en orden):
+#
+# REGLA 1 — Intercambio H.C./H.F. con O.R.:
+#   Si or_val matchea TIME_RE (HH:MM) y hc esta vacio:
+#     hc = or_val, or_val = ''
+#   Si or_val matchea TIME_RE y hf esta vacio:
+#     hf = or_val, or_val = ''
+#
+# REGLA 2 — Normalizar codigos de maquina:
+#   Aplicar _normalise_machine_code() sobre maquina_raw.
+#   Si el resultado difiere de maquina_raw, actualizar maquina_raw
+#   e intentar re-resolver machine_asset via _resolve_machine_asset().
+#
+# REGLA 3 — Limpiar descripcion_averia con texto de formulario:
+#   KEYWORDS = ['descripcion', 'averia', 'reparacion', 'tarea']
+#   Si descripcion_averia (en minusculas) es exactamente una de las keywords
+#   o contiene solo keywords y espacios: vaciar el campo.
+#
+# Informe de salida:
+#   Por cada linea afectada: pk, worker_name, work_date, regla aplicada,
+#   valor anterior → valor nuevo.
+#   Resumen final: total lineas inspeccionadas / total correcciones aplicadas /
+#   total lineas con incidencias no automatizables (flags activos).
+````
+
+La implementacion exacta se construira en sesion 008 tras la auditoria
+de la primera accion, que puede revelar nuevas reglas deterministicas
+no contempladas aqui.
+
+---
+
+### Estado de migraciones al cierre de sesion 007
+
+| App                    | Ultima migracion aplicada                              |
+|------------------------|--------------------------------------------------------|
+| fleet                  | 0002_maintenancelog_work_entry_line                    |
+| work_order_processor   | 0006_workorder_unique_pdf_hash_per_company             |
+| ivr_config             | 0013_alter_companyuser_role                            |
+| panel                  | 0001_initial (AnalyticsProfile)                        |
+
+### Archivos clave modificados en sesion 007 (H8 reactivado)
+
+- panel/forms.py — SetPasswordForm importado + PanelSetPasswordForm anadido.
+- panel/views.py — PanelSetPasswordForm importado; _build_form() en
+  PanelPasswordChangeView; WorkOrderEntrySTTExtractView.post() refactorizado
+  (JSON transcript, response_mime_type, response_schema, thinking_budget=0).
+- panel/templates/panel/password/_field_pw.html — neonato creado.
+- panel/templates/panel/password/change.html — bloque old_password envuelto
+  en {% if not is_forced %}.
+- panel/templates/panel/_nav_items.html — seccion Partes visible para SUPERVISOR.
+- panel/templates/panel/operator/stt_entry.html — motor STT reemplazado:
+  Web Speech API nativa (interimResults=false, sin reinicio automatico);
+  textarea de transcripcion visible; boton Enviar a IA.
