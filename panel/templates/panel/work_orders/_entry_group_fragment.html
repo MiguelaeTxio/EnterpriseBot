@@ -24,6 +24,10 @@
     {# ------------------------------------------------------------------ #}
     {# Page group header — Cabecera del grupo de página                    #}
     {# ------------------------------------------------------------------ #}
+    {# day_total and day_css are computed in WorkOrderEditView._build_groups().  #}
+    {# The template is intentionally dumb — no logic, only presentation.        #}
+    {# day_total y day_css se calculan en WorkOrderEditView._build_groups().    #}
+    {# La plantilla es intencionadamente tonta — sin lógica, solo presentación. #}
     <div class="page-group-header d-flex justify-content-between align-items-center">
         <span>
             <i class="bi bi-file-text me-1"></i>
@@ -39,9 +43,16 @@
                 <span class="date-uncertain">— Sin fecha</span>
             {% endif %}
         </span>
-        <span class="badge badge-confidence-{{ group.entry.extraction_confidence }}">
-            {{ group.entry.get_extraction_confidence_display }}
-        </span>
+        <div class="d-flex align-items-center gap-2">
+            {% if group.day_total is not None %}
+            <span class="day-total-display {{ group.day_css }}">
+                <i class="bi bi-clock me-1"></i>{{ group.day_total }}h
+            </span>
+            {% endif %}
+            <span class="badge badge-confidence-{{ group.entry.extraction_confidence }}">
+                {{ group.entry.get_extraction_confidence_display }}
+            </span>
+        </div>
     </div>
 
     {% if group.lines %}
@@ -58,7 +69,6 @@
                     <th>H.F.</th>
                     <th>Δ h</th>
                     <th>O.R.</th>
-                    <th>Flags</th>
                     <th></th>
                 </tr>
             </thead>

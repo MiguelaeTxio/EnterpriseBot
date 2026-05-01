@@ -3037,9 +3037,52 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
         )
         groups = []
         for entry in entries:
+            lines = list(entry.lines.order_by("line_number"))
+
+            # Compute the total worked hours for this entry (day) by summing
+            # delta_horas across all its lines. None values are skipped.
+            # Used by _entry_group_fragment.html to render the day-total badge.
+            #
+            # Calcular el total de horas trabajadas en esta entrada (día) sumando
+            # delta_horas de todas sus líneas. Los valores None se omiten.
+            # Usado por _entry_group_fragment.html para el badge de total de jornada.
+            day_total_raw = sum(
+                (l.delta_horas for l in lines if l.delta_horas is not None),
+                0,
+            )
+            day_total = round(day_total_raw, 2) if any(
+                l.delta_horas is not None for l in lines
+            ) else None
+
+            # Determine the CSS modifier class for the day-total badge based on
+            # the total hours worked. Four levels defined:
+            #   < 8h   → day-total-short   (blue  — incomplete shift)
+            #   8-12h  → day-total-normal  (green — normal / moderate overtime)
+            #   12-16h → day-total-warning (amber — excessive overtime, review)
+            #   > 16h  → day-total-danger  (red   — impossible shift, likely data error)
+            #
+            # Determinar la clase CSS modificadora del badge de total de jornada según
+            # las horas totales trabajadas. Cuatro niveles definidos:
+            #   < 8h   → day-total-short   (azul  — jornada incompleta)
+            #   8-12h  → day-total-normal  (verde — jornada normal / horas extras moderadas)
+            #   12-16h → day-total-warning (ámbar — exceso de extras, revisar)
+            #   > 16h  → day-total-danger  (rojo  — jornada imposible, probable error de datos)
+            if day_total is None:
+                day_css = ""
+            elif day_total < 8:
+                day_css = "day-total-short"
+            elif day_total <= 12:
+                day_css = "day-total-normal"
+            elif day_total <= 16:
+                day_css = "day-total-warning"
+            else:
+                day_css = "day-total-danger"
+
             groups.append({
-                "entry": entry,
-                "lines": list(entry.lines.order_by("line_number")),
+                "entry":     entry,
+                "lines":     lines,
+                "day_total": day_total,
+                "day_css":   day_css,
             })
         return groups
 

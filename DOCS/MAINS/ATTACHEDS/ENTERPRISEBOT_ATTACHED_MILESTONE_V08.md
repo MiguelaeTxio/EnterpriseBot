@@ -279,11 +279,17 @@ en el panel via HTMX.
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (HITO CERRADO)
+## 5. Hoja de Ruta para la Siguiente Sesion (HITO PAUSADO)
 
-Hito 8 completado en sesion 005. Todos los pasos (1-14) implementados y validados.
-El siguiente hito activo es el Hito 7 — Partes Diarios de Reparacion (EN PROGRESO).
-Ver ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md para la hoja de ruta de la proxima sesion.
+El Hito 8 queda PAUSADO al cierre de la sesion 008.
+
+Pendiente si se reactiva:
+  - Coloracion de incidencias (flags activos) en el Excel de salida generado por
+    generate_work_order_excel() en services.py, si el supervisor lo requiere.
+    Actualmente los flags se conservan en BD y son visibles en el editor del panel.
+
+El siguiente hito activo es el Hito 12 — Gestion de Centros de Gasto y Panel.
+Ver ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md para la hoja de ruta de la proxima sesion.
 
 ### PRIMERA ACCION — Completar validacion E2E Paso 10
 
@@ -478,6 +484,7 @@ WARNING pero no revierte el estado DONE ni el Excel generado.
 | 005    | 2026-04-29 | Paso 14         | Borrado automatico PDF fisico al alcanzar DONE en tasks.py. |
 | 006    | 2026-04-30 | Fuera HR        | Hito reactivado. Correcciones panel: _field_pw.html (TemplateDoesNotExist), PanelSetPasswordForm (cambio forzado sin old_password), sidebar PDFs visible para SUPERVISOR. |
 | 007    | 2026-05-01 | Nuevo trabajo   | Reactivacion del hito. Via B STT validada E2E: motor reemplazado de MediaRecorder a Web Speech API nativa (sin bytes de audio al servidor). WorkOrderEntrySTTExtractView.post() refactorizado: recibe JSON transcript, usa response_mime_type=application/json + response_schema + thinking_budget=0. Formulario pre-rellenado correctamente desde dictado natural. Problemas resueltos: TemplateDoesNotExist _field_pw.html, PanelSetPasswordForm para nuevos usuarios, sidebar SUPERVISOR, duplicacion de transcripcion (interimResults=false + sin reinicio automatico), truncado JSON Gemini (thinking tokens consumian output budget). |
+| 008    | 2026-05-01 | Calidad datos + UX editor | Auditoria exhaustiva de 441 WorkOrderEntryLine en BD. Identificacion y confirmacion de tres incidencias reales: desbordamiento de linea (or_val con horario), multiples maquinas en un campo, confusion morfologica OCR en codigos de maquina. Diseno de mapa de confusion simetrico bidireccional (T<->7<->4, Z<->2, O<->0, L/I<->1, S<->5, G<->6, B<->8) validado contra catalogo de 313 MachineAsset incluyendo matrículas espanolas (guarda 4 digitos + 3 letras). PMA services.py: _OCR_CONFUSION_MAP anadido, _resolve_machine_asset ampliado con algoritmo de candidatos morfologicos por niveles (Nivel 1: 1 sustitucion; Nivel 2: 2 sustituciones simultaneas), _OCR_DIGIT_MAP legacy preservado con guarda de bloque numerico con letras, _EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL reforzados con casos patron G-J (multiples maquinas, desbordamiento de linea, confusion morfologica, texto de etiqueta de formulario). Neonato repair_entry_lines.py con tres reglas deterministicas (R1: or_val->hc cuando hc=None; R2: explosion maquina_raw multi-codigo con normalizacion Y-inicial, guarda codigo-unico y guarda validacion de tokens; R3: re-resolucion morfologica de machine_asset=None). Ejecucion --apply: 2 lineas R1, 7 lineas R2 explosionadas en 14 nuevas, 36/72 lineas R3 resueltas. UX editor: columna Flags eliminada del panel (flags conservados en BD para Excel de incidencias); badge de jornada diaria en cabecera de grupo con cuatro niveles de color (day_total + day_css calculados en _build_groups()): <8h azul, 8-12h verde, 12-16h ambar, >16h rojo. Validado E2E. Hito pausado al cierre de sesion 008. |
 
 ---
 

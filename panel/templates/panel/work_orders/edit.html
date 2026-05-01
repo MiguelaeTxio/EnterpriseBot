@@ -61,16 +61,8 @@
         resize: vertical;
         min-height: 52px;
     }
-    /* Flag badges — Badges de flags de incidencia */
-    .flag-badge {
-        font-size: 0.7rem;
-        padding: 0.2em 0.5em;
-        background-color: #fff3cd;
-        color: #664d03;
-        border: 1px solid #ffecb5;
-        border-radius: 0.25rem;
-        white-space: nowrap;
-    }
+    /* Flag badges — Badges de flags de incidencia (visual en panel eliminado H8/S008;
+       los flags se conservan en BD y aparecen en el Excel de incidencias)             */
     /* Page group header — Cabecera de grupo de página */
     .page-group-header {
         background-color: #1a1f2e;
@@ -111,10 +103,23 @@
     .row-save-flash {
         animation: rowSaveFlash 0.8s ease-out forwards;
     }
-    /* Flag row highlight — fila con incidencias pendientes */
-    .row-has-flags {
-        background-color: #fffbe6;
+    /* Workday duration indicators — Indicadores de duración de jornada diaria.
+       El total se calcula sumando delta_horas de todas las líneas del grupo.
+       < 8h   → jornada incompleta (azul info)
+       8-12h  → jornada normal / horas extras moderadas (verde)
+       12-16h → exceso de horas extras — revisar (naranja)
+       > 16h  → jornada imposible — casi seguro error de datos (rojo)          */
+    .day-total-display {
+        font-size: 0.82rem;
+        font-weight: 700;
+        padding: 0.15em 0.55em;
+        border-radius: 0.3rem;
+        white-space: nowrap;
     }
+    .day-total-short   { background-color: #cfe2ff; color: #084298; }
+    .day-total-normal  { background-color: #d1e7dd; color: #0a3622; }
+    .day-total-warning { background-color: #fff3cd; color: #664d03; }
+    .day-total-danger  { background-color: #f8d7da; color: #58151c; }
     /* Flagged field highlight — campo con incidencia pendiente */
     .field-flagged {
         border-color: #fd7e14 !important;

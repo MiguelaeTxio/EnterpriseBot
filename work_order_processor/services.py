@@ -483,6 +483,60 @@ C) TACHONES: usar el valor escrito fuera del tachón, ignorar el tachado.
 D) DESCRIPCIONES: siempre estructura VERBO + OBJETO.
 E) CURVAS DEGENERADAS: leer por estructura global, no trazo a trazo.
 
+F) MÚLTIPLES MÁQUINAS EN UN ÚNICO CAMPO:
+   Si el operario ha escrito más de un código de máquina en el campo
+   MAQUINA: separados por coma, punto y coma, la conjunción "y", barra
+   oblicua o espacio (ej. "Z59, Z73, Z62", "T-11 y Z-107 Z-123",
+   "F-22 y V04"), genera una entrada separada por cada código de máquina
+   identificado, repitiendo en cada una la misma descripcion_averia,
+   reparacion, hc, hf y or_val. Añade "MAQUINA" a flags en todas las
+   entradas resultantes para indicar que proceden de un campo múltiple.
+
+G) DESBORDAMIENTO DE LÍNEA — DOS TAREAS EN UN MISMO BLOQUE FÍSICO:
+   El formulario tiene 4 filas de trabajo por página. Cuando un operario
+   necesita más de 4 tareas, reutiliza filas existentes escribiendo una
+   segunda tarea encima, debajo o al lado de la primera, usando el campo
+   O.R. para anotar el horario de la segunda tarea.
+   Si detectas en un bloque físico que el campo O.R. contiene un valor
+   con formato HH:MM y los campos H.C./H.F. ya están ocupados con otro
+   horario, genera DOS entradas separadas:
+     - Entrada 1: hc y hf del horario principal, or_val vacío, misma máquina
+       y descripción de la primera tarea si se puede distinguir.
+     - Entrada 2: hc = hf de la entrada 1, hf = valor HH:MM del campo O.R.,
+       or_val vacío, misma máquina, descripción de la segunda tarea si se
+       puede distinguir (o la misma si no hay distinción visual clara).
+   Añade "H.C." y "H.F." a flags en ambas entradas para indicar desdoblamiento.
+
+H) CONFUSIÓN MORFOLÓGICA EN CÓDIGOS DE MÁQUINA — TODOS LOS CARACTERES:
+   Los caracteres de los códigos de máquina pueden confundirse en cualquier
+   posición (prefijo alfabético o bloque numérico) por escritura rápida.
+   Pares de confusión confirmados en este catálogo:
+     T ↔ 7  (la T con barra baja parece 7, el 7 sin gancho parece T)
+     T ↔ 4  (la T con vertical corta parece 4)
+     Z ↔ 2  (morfológicamente idénticos a velocidad)
+     O ↔ 0  (indistinguibles en escritura rápida)
+     L ↔ 1, I ↔ 1  (trazo único)
+     S ↔ 5  (curva aplanada)
+     G ↔ 6  (forma circular con trazo horizontal)
+     B ↔ 8  (dos bucles apilados)
+   Cuando un código leído no te resulte coherente con el catálogo de
+   maquinaria de una empresa de grúas y plataformas elevadoras, aplica
+   estas sustituciones para intentar leer el código correcto. Transcribe
+   en maquina_raw el código más probable e incluye "MAQUINA" en flags si
+   hay ambigüedad residual.
+   EXCEPCIÓN: los vehículos de la familia TURISMOS usan matrícula española
+   (4 dígitos seguidos de 3 letras, ej. "2030JVK") — transcribir tal cual
+   sin aplicar sustituciones.
+
+I) TEXTO DE ETIQUETA DEL FORMULARIO CAPTURADO COMO CONTENIDO:
+   Si descripcion_averia o reparacion contienen exclusivamente palabras
+   que son etiquetas impresas del propio formulario ("Descripción",
+   "Avería", "Reparación", "Tarea") sin ningún contenido real añadido,
+   deja el campo vacío (null). Si la palabra de etiqueta aparece como
+   parte de una frase con contenido real (ej. "Buscar avería eléctrica",
+   "Reparar avería mangera cortada"), transcribe la frase completa — es
+   contenido válido del operario, no una etiqueta del formulario.
+
 Formato de respuesta (claves exactas):
 {
   "fecha": "<DD/MM/YYYY o null>",
@@ -720,14 +774,60 @@ def _coerce_confidence(value: str | None) -> str:
     return WorkOrderEntry.Confidence.LOW
 
 
-# OCR digit-block character substitution map — applied only to the numeric
-# portion of machine codes to correct common handwriting misreads.
-# Each key is misread as its value when written quickly by hand.
-# Verified against the fleet MachineAsset catalogue to avoid false collisions:
-#   O→0, L→1, t→7  (new — Hito 8, Paso 4, D2)
-#   S→5, Z→2, G→6  (confirmed active)
-# Map de sustitución de caracteres en el bloque numérico del código de máquina.
-# Se aplica únicamente a la parte numérica para corregir errores OCR caligráficos.
+# Symmetric morphological confusion map for machine-code characters.
+# Applied character-by-character at ANY position of the code (prefix or numeric
+# block) by _resolve_machine_asset when the exact lookup fails.
+# Each entry maps ONE character to its list of visually similar alternatives.
+# Direction is fully bidirectional: digit↔letter and letter↔digit alike.
+# Validated against the full MachineAsset catalogue (313 records, Hito 8 / S008).
+#
+# Mapa de confusión morfológica simétrico para caracteres de código de máquina.
+# Se aplica carácter a carácter en CUALQUIER posición del código (prefijo o
+# bloque numérico) por _resolve_machine_asset cuando la búsqueda exacta falla.
+# Cada entrada mapea UN carácter a su lista de alternativas visualmente similares.
+# La dirección es totalmente bidireccional: dígito↔letra y letra↔dígito.
+_OCR_CONFUSION_MAP: dict[str, list[str]] = {
+    # T written quickly degenerates to 7 (crossbar too low) or 4 (short vertical).
+    # La T escrita rápido degenera a 7 (barra demasiado baja) o a 4 (vertical corta).
+    "T": ["7", "4"],
+    "7": ["T"],
+    "4": ["T"],
+    # Z is morphologically identical to 2 at speed.
+    # La Z es morfológicamente idéntica al 2 a velocidad de escritura.
+    "Z": ["2"],
+    "2": ["Z"],
+    # O and 0 are indistinguishable in fast handwriting.
+    # La O y el 0 son indistinguibles en escritura rápida.
+    "O": ["0"],
+    "0": ["O"],
+    # L/I and 1 share a single-stroke form.
+    # L/I y 1 comparten trazo único.
+    "L": ["1"],
+    "I": ["1"],
+    "1": ["L", "I"],
+    # S degenerates to 5 when the curve flattens.
+    # La S degenera a 5 cuando la curva se aplana.
+    "S": ["5"],
+    "5": ["S"],
+    # G and 6 share a circular form with a horizontal stroke.
+    # G y 6 comparten forma circular con trazo horizontal.
+    "G": ["6"],
+    "6": ["G"],
+    # B and 8 share two stacked loops.
+    # B y 8 comparten dos bucles apilados.
+    "B": ["8"],
+    "8": ["B"],
+}
+
+# Legacy map kept for backward compatibility with _normalise_machine_code.
+# Only the numeric-block substitutions that are safe to apply unconditionally
+# (never ambiguous in the numeric position) are preserved here.
+# These are a strict subset of _OCR_CONFUSION_MAP.
+#
+# Mapa heredado mantenido por compatibilidad con _normalise_machine_code.
+# Solo las sustituciones del bloque numérico que son seguras aplicar sin
+# condición (nunca ambiguas en posición numérica) se conservan aquí.
+# Son un subconjunto estricto de _OCR_CONFUSION_MAP.
 _OCR_DIGIT_MAP: dict[str, str] = {
     "O": "0",
     "L": "1",
@@ -784,11 +884,21 @@ def _normalise_machine_code(raw: str | None) -> str:
     # Insertar guion entre letras iniciales y dígitos si no está presente.
     code = re.sub(r"^([A-Z]+)(\d)", r"\1-\2", code)
 
-    # Apply OCR substitutions to the numeric block only (right of hyphen).
-    # Aplicar sustituciones OCR solo al bloque numérico (derecha del guion).
+    # Apply OCR substitutions to the numeric block only (right of hyphen),
+    # and only when the numeric block contains exclusively digits — never
+    # when it contains letters (e.g. compound codes like "ZOP-Z124").
+    # Applying the map to letter characters in the numeric block would
+    # corrupt valid codes (Z→2 turning "Z124" into "2124").
+    #
+    # Aplicar sustituciones OCR solo al bloque numérico (derecha del guion),
+    # y únicamente cuando el bloque numérico contiene exclusivamente dígitos —
+    # nunca cuando contiene letras (ej. códigos compuestos como "ZOP-Z124").
+    # Aplicar el mapa a caracteres de letra en el bloque numérico corrompería
+    # códigos válidos (Z→2 convirtiendo "Z124" en "2124").
     if "-" in code:
         prefix, _, numeric = code.partition("-")
-        numeric = "".join(_OCR_DIGIT_MAP.get(ch, ch) for ch in numeric)
+        if numeric.isdigit():
+            numeric = "".join(_OCR_DIGIT_MAP.get(ch, ch) for ch in numeric)
         code = f"{prefix}-{numeric}"
 
     return code
@@ -898,6 +1008,93 @@ def _resolve_machine_asset(
         for candidate in sorted(candidates):
             try:
                 return MachineAsset.objects.get(codigo=candidate)
+            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+                continue
+
+    # ------------------------------------------------------------------
+    # Morphological substitution candidates — Nivel 1 and Nivel 2.
+    # Candidatos por sustitución morfológica — Nivel 1 y Nivel 2.
+    #
+    # Guard: Spanish vehicle licence plates (4 digits + 3 letters, e.g.
+    # "2030JVK") are stored verbatim in the catalogue. Never apply
+    # morphological substitutions to them — their format is unambiguous.
+    #
+    # Guarda: las matrículas españolas (4 dígitos + 3 letras, ej.
+    # "2030JVK") se almacenan tal cual en el catálogo. Nunca aplicar
+    # sustituciones morfológicas — su formato es inequívoco.
+    # ------------------------------------------------------------------
+    _PLATE_RE = re.compile(r"^\d{4}[A-Z]{3}$")
+    if _PLATE_RE.match(maquina_norm):
+        return None
+
+    def _substitution_candidates(code: str, max_subs: int) -> set[str]:
+        """
+        Generates all variants of `code` obtained by substituting up to
+        `max_subs` characters using _OCR_CONFUSION_MAP. Each substitution
+        replaces exactly one character at one position with one alternative.
+        Returns a flat set of candidate strings (original excluded).
+
+        ---
+
+        Genera todas las variantes de `code` obtenidas sustituyendo hasta
+        `max_subs` caracteres usando _OCR_CONFUSION_MAP. Cada sustitución
+        reemplaza exactamente un carácter en una posición por una alternativa.
+        Devuelve un conjunto plano de cadenas candidatas (el original excluido).
+        """
+        results: set[str] = set()
+
+        def _apply_single(base: str) -> set[str]:
+            """One-substitution pass over base. / Pasada de una sustitución sobre base."""
+            variants: set[str] = set()
+            for idx, ch in enumerate(base):
+                for alt in _OCR_CONFUSION_MAP.get(ch, []):
+                    variants.add(base[:idx] + alt + base[idx + 1:])
+            return variants
+
+        level1 = _apply_single(code)
+        results.update(level1)
+
+        if max_subs >= 2:
+            for lvl1_code in level1:
+                results.update(_apply_single(lvl1_code))
+
+        results.discard(code)
+        return results
+
+    # Normalise the raw code to strip hyphens before generating substitution
+    # candidates, then re-probe with and without hyphen insertion.
+    # Normalizar el código crudo eliminando guiones antes de generar candidatos
+    # de sustitución, y luego re-probar con y sin inserción de guion.
+    stripped = maquina_norm.replace("-", "")
+
+    # Nivel 1 — single substitution / sustitución única.
+    # Nivel 2 — two simultaneous substitutions / dos sustituciones simultáneas.
+    for max_subs in (1, 2):
+        sub_candidates: set[str] = _substitution_candidates(stripped, max_subs)
+        # For each substitution candidate, probe both the raw form and the
+        # hyphenated form (letter-prefix + hyphen + digits).
+        # Para cada candidato de sustitución, probar la forma cruda y la
+        # forma con guion (prefijo de letras + guion + dígitos).
+        probe_set: set[str] = set()
+        for cand in sub_candidates:
+            probe_set.add(cand)
+            # Insert hyphen between leading letters and digits if absent.
+            # Insertar guion entre letras iniciales y dígitos si no está.
+            hyphenated = re.sub(r"^([A-Z]+)(\d)", r"-", cand)
+            probe_set.add(hyphenated)
+
+        for candidate in sorted(probe_set):
+            qs_probe = MachineAsset.objects
+            if company is not None:
+                qs_probe = qs_probe.filter(company=company)
+            try:
+                asset = qs_probe.get(codigo=candidate)
+                logger.info(
+                    "# _resolve_machine_asset: '%s' resuelto como '%s' "
+                    "mediante sustitución morfológica (nivel %d).",
+                    maquina_norm, candidate, max_subs,
+                )
+                return asset
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
                 continue
 

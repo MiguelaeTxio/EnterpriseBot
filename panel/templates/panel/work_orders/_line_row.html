@@ -25,7 +25,7 @@
 {% with pk_str=line.pk|stringformat:"s" %}
 {% with row_class="line-row-"|add:pk_str %}
 <tr id="line-row-{{ line.pk }}"
-    class="line-row {{ row_class }}{% if line.flags %} row-has-flags{% endif %}"
+    class="line-row {{ row_class }}"
     hx-on--after-request="if(event.detail.successful){
         this.classList.add('row-save-flash');
         setTimeout(()=>this.classList.remove('row-save-flash'), 800);
@@ -168,28 +168,10 @@
                hx-include=".{{ row_class }}">
     </td>
 
-    {# ------------------------------------------------------------------ #}
-    {# flags — editable comma-separated / editable separado por comas      #}
-    {# ------------------------------------------------------------------ #}
-    <td>
-        <input type="text"
-               name="flags"
-               value="{{ line.flags|join:', ' }}"
-               class="form-control form-control-sm {{ row_class }}"
-               placeholder="H.C., MAQUINA…"
-               hx-post="{{ save_url }}"
-               hx-trigger="change"
-               hx-target="#line-row-{{ line.pk }}"
-               hx-swap="outerHTML"
-               hx-include=".{{ row_class }}">
-        {% if line.flags %}
-            <div class="mt-1 d-flex flex-wrap gap-1">
-                {% for flag in line.flags %}
-                    <span class="flag-badge">{{ flag }}</span>
-                {% endfor %}
-            </div>
-        {% endif %}
-    </td>
+    {# flags — columna eliminada del panel H8/S008. Los flags se conservan en BD  #}
+    {# y aparecen en el Excel de incidencias. No se editan desde el panel.        #}
+    {# flags column removed from panel H8/S008. Flags are kept in DB and appear   #}
+    {# in the incidences Excel. Not editable from the panel.                      #}
 
     {# ------------------------------------------------------------------ #}
     {# Action buttons — C1 insert below + C3 restore + delete line         #}

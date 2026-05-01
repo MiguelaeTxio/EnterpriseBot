@@ -222,6 +222,7 @@
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md
+./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V03/V03DOC_DATA_MODEL.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V03/V03DOC_PRESENCE_SYSTEM.md
@@ -268,6 +269,7 @@
 ./work_order_processor/tasks.py
 ./work_order_processor/tests.py
 ./work_order_processor/management/commands/__init__.py
+./work_order_processor/management/commands/repair_entry_lines.py
 ./work_order_processor/management/commands/backfill_pdf_hashes.py
 ./work_order_processor/management/commands/detect_duplicate_entries.py
 ./work_order_processor/management/__init__.py

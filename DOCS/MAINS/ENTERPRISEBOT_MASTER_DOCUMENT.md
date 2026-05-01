@@ -124,7 +124,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - El formulario de confirmación es el punto de convergencia de las tres vías.
 - Pasos 1 y 2 completados. Pausado en sesión 002 (2026-04-28) para abrir H8.
 
-### Hito 8: Mejoras Procesador PDF→Excel + HTMX (EN PROGRESO)
+### Hito 8: Mejoras Procesador PDF→Excel + HTMX (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md`)
 - Implantación quirúrgica de HTMX en lista de PDFs (polling de estado automático)
   y editor de entradas inline (guardado automático por campo sin scroll al top).
@@ -133,6 +133,9 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Correcciones pipeline: columna mano de obra vacía en Excel + parser OCR (O/0, L/1, t/7).
 - Detección de PDF duplicado en upload con modal de advertencia y confirmación.
 - Concatenación de múltiples Excels con membrete individual por operario.
+- Sesion 008: mejora de calidad de datos (auditoria BD, refuerzo prompt extraccion,
+  comando repair_entry_lines, resolver morfologico simetrico). UX editor: badge de
+  jornada diaria con cuatro niveles de color, columna Flags eliminada del panel.
 
 ### Hito 9: Informes y Analítica Cruzada de Costes de Maquinaria (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V09.md`)
@@ -156,5 +159,17 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Entrada de datos via formulario web o dictado STT (reutilizando infraestructura Hito 7).
 - Extracción desde documentos físicos existentes vía Gemini Vision si procede.
 - Integración con centros de gasto y módulo de Informes (Hito 9).
+
+### Hito 12: Gestión de Centros de Gasto y Reorganización del Panel (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md`)
+- Ampliacion del concepto MachineAsset a Centro de Gasto: maquinaria, administracion,
+  almacen, alquiler, secciones externas y cualquier entidad facturable o asignable.
+- Comando de gestion import_cost_centers para importar fichero actualizado CSV/Excel.
+- CRUD de centros de gasto desde el panel: alta, baja, modificacion, dar de baja
+  (campo activo) sin eliminar historico.
+- Reorganizacion de la navegacion del panel: separacion de secciones mezcladas,
+  agrupacion logica de flujos IVR, usuarios, partes, maquinaria/centros de gasto.
+- Los centros de gasto no resueltos en partes historicos podran asignarse tras
+  crear el centro de gasto correspondiente.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)
