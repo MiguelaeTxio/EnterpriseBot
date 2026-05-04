@@ -5,22 +5,30 @@ Django management command: import_machine_catalog.
 Parses the LISTADO MAQUINARIA PDF exported from the fleet management system
 and imports all machine records into the MachineAsset model.
 
-The PDF follows a fixed hierarchical structure:
-  EMPRESA: <codigo> - <nombre>
-    FAMILIA: <nombre_familia>
-      TIPO: <codigo_tipo> - <nombre_tipo>
-        <codigo> <matricula> <num_bastidor> <marca_modelo> <fecha_compra> <kms> <horas>
+PyMuPDF renders each table cell as a separate line. The column order within
+each table block is fixed, but fields with long values (plate+chassis on one
+line, multi-word brand_model split across lines) cause variable line counts
+per record. The parser uses a date-anchored strategy:
 
-Each machine row is mapped to a MachineAsset record. The command is
-idempotent: existing records (matched by `codigo`) are updated, not
-duplicated. Records not present in the PDF are left untouched unless
---deactivate-missing is passed, in which case they are marked inactive.
+  - Lines are accumulated into a dynamic buffer (a plain list).
+  - After each line is added, the buffer is scanned right-to-left for the
+    pattern DATE NUMERIC NUMERIC. When found, everything before the date is
+    the pre-date block [code, plate, chassis_number, brand_model...] and the
+    three trailing tokens are [purchase_date, mileage, hours].
+  - The first token of the pre-date block is validated as a machine code.
+  - Consumed tokens are removed from the buffer with del, not reassigned,
+    so the mutation is visible to the enclosing scope on the next iteration.
+  - Structural markers (EMPRESA, FAMILIA, TIPO) and page metadata flush any
+    pending record and reset the buffer.
+
+The command is idempotent: existing records (matched by `code`) are updated,
+not duplicated.
 
 Usage:
-    python -m dotenv run python manage.py import_machine_catalog \
-        --pdf /ruta/al/LISTADO_MAQUINARIA.pdf \
-        --company-map GRA=1 TRA=2 GRH=3 GRB=4 GRG=5 GLA=6 LRA=7 BEN=8 \
-        [--deactivate-missing] \
+    python -m dotenv run python manage.py import_machine_catalog \\
+        --pdf /ruta/al/LISTADO_MAQUINARIA.pdf \\
+        --company-map GRA=1 TRA=2 GRH=3 GRB=4 GRG=5 GLA=6 LRA=7 BEN=8 \\
+        [--deactivate-missing] \\
         [--dry-run]
 
 ---
@@ -29,23 +37,31 @@ Comando de gestión Django: import_machine_catalog.
 Parsea el PDF LISTADO MAQUINARIA exportado del sistema de gestión de flota
 e importa todos los registros de maquinaria al modelo MachineAsset.
 
-El PDF sigue una estructura jerárquica fija:
-  EMPRESA: <codigo> - <nombre>
-    FAMILIA: <nombre_familia>
-      TIPO: <codigo_tipo> - <nombre_tipo>
-        <codigo> <matricula> <num_bastidor> <marca_modelo> <fecha_compra> <kms> <horas>
+PyMuPDF renderiza cada celda de tabla como una línea separada. El orden de
+columnas es fijo, pero campos con valores largos generan un número variable
+de líneas por registro. El parser usa una estrategia anclada en la fecha:
 
-Cada fila de máquina se mapea a un registro MachineAsset. El comando es
-idempotente: los registros existentes (identificados por `codigo`) se
-actualizan, no se duplican. Los registros ausentes en el PDF se dejan
-intactos salvo que se pase --deactivate-missing, en cuyo caso se marcan
-como inactivos.
+  - Las líneas se acumulan en un buffer dinámico (lista simple).
+  - Tras añadir cada línea, el buffer se escanea de derecha a izquierda
+    buscando el patrón FECHA NUMERICO NUMERICO. Cuando se encuentra, todo
+    lo anterior a la fecha es el bloque pre-fecha [code, plate,
+    chassis_number, brand_model...] y los tres tokens finales son
+    [purchase_date, mileage, hours].
+  - El primer token del bloque pre-fecha se valida como código de máquina.
+  - Los tokens consumidos se eliminan del buffer con del, no reasignando,
+    de modo que la mutación es visible en el scope superior en la siguiente
+    iteración.
+  - Los marcadores estructurales (EMPRESA, FAMILIA, TIPO) y los metadatos
+    de página vacían cualquier registro pendiente y resetean el buffer.
+
+El comando es idempotente: los registros existentes (identificados por `code`)
+se actualizan, no se duplican.
 
 Uso:
-    python -m dotenv run python manage.py import_machine_catalog \
-        --pdf /ruta/al/LISTADO_MAQUINARIA.pdf \
-        --company-map GRA=1 TRA=2 GRH=3 GRB=4 GRG=5 GLA=6 LRA=7 BEN=8 \
-        [--deactivate-missing] \
+    python -m dotenv run python manage.py import_machine_catalog \\
+        --pdf /ruta/al/LISTADO_MAQUINARIA.pdf \\
+        --company-map GRA=1 TRA=2 GRH=3 GRB=4 GRG=5 GLA=6 LRA=7 BEN=8 \\
+        [--deactivate-missing] \\
         [--dry-run]
 """
 
@@ -62,63 +78,55 @@ from ivr_config.models import Company
 
 
 # ---------------------------------------------------------------------------
-# Regex patterns for PDF line classification
-# Patrones regex para clasificación de líneas del PDF
+# Regex patterns / Patrones regex
 # ---------------------------------------------------------------------------
 
-# Matches:  EMPRESA: GRA - GRUAS ADOLFO ALVAREZ, S.L. CIF B29405040
+# Structural markers — double space after colon matches PyMuPDF output.
+# Marcadores estructurales — doble espacio tras los dos puntos = salida PyMuPDF.
 _RE_EMPRESA = re.compile(
-    r"^\s*EMPRESA:\s*(?P<codigo>[A-Z0-9]+)\s*-\s*(?P<nombre>.+?)\s*$"
+    r"^EMPRESA:\s+(?P<codigo>[A-Z0-9]+)\s+-\s+(?P<nombre>.+?)\s*$"
 )
-
-# Matches:  FAMILIA: MOVILES - GRUAS MOVILES   or   FAMILIA: MOVILES
 _RE_FAMILIA = re.compile(
-    r"^\s*FAMILIA:\s*(?P<codigo>[A-Z0-9./\- ]+?)(?:\s*-\s*(?P<nombre>.+?))?\s*$"
+    r"^FAMILIA:\s+(?P<codigo>[A-Z0-9./\- ]+?)(?:\s+-\s+(?P<nombre>.+?))?\s*$"
 )
-
-# Matches:  TIPO: MV035 - GRUA MOVIL DE 35 TM   or   TIPO: MV035
 _RE_TIPO = re.compile(
-    r"^\s*TIPO:\s*(?P<codigo>[A-Z0-9./\- ]+?)(?:\s*-\s*(?P<nombre>.+?))?\s*$"
+    r"^TIPO:\s+(?P<codigo>[A-Z0-9./\- ]+?)(?:\s+-\s+(?P<nombre>.+?))?\s*$"
 )
 
-# Matches the table header line — used to skip it.
-# Coincide con la línea de cabecera de la tabla — se usa para saltarla.
-_RE_HEADER = re.compile(
-    r"^\s*C[oó]digo\s+Matr[ií]cula\s+N[oº°]\s*Bastidor"
-)
-
-# Matches a machine data row. The PDF places each field separated by
-# variable whitespace. Fields after marca_modelo may be absent.
-# Coincide con una fila de datos de máquina. El PDF separa cada campo con
-# espacios variables. Los campos tras marca_modelo pueden estar ausentes.
-#
-# Strategy: split on 2+ spaces to isolate tokens, then validate the first
-# token as a plausible machine code (starts with letter or digit, short).
-# Estrategia: dividir en 2+ espacios para aislar tokens, luego validar el
-# primer token como un código de máquina plausible.
+# Date token DD/MM/YYYY — flush anchor / Token de fecha — ancla de volcado.
 _RE_DATE = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 
+# Numeric value token (mileage / hours) / Token de valor numérico (kms/horas).
+_RE_NUMERIC = re.compile(r"^[\d.,]+$")
 
-def _is_machine_code(token: str) -> bool:
-    """
-    Heuristic to decide whether a token looks like a machine code.
-    Machine codes are short (≤20 chars), start with a letter or digit,
-    and do not contain keywords that identify structural lines.
+# Page metadata lines to skip / Líneas de metadatos de página a saltar.
+# Note: bare single/double digit strings (0, 1 .. 99) are NOT excluded here
+# because they are valid mileage/hours values. The PDF page-number token
+# always appears after an explicit "Página:" line and is handled by that prefix.
+# Bare time tokens (HH:MM) are excluded because they never appear as data values.
+#
+# Nota: los números solos de uno o dos dígitos (0, 1 .. 99) NO se excluyen aquí
+# porque son valores válidos de kms/horas. El token de número de página del PDF
+# siempre aparece tras una línea "Página:" explícita y se gestiona con ese prefijo.
+# Los tokens de hora aislados (HH:MM) sí se excluyen porque nunca son valores de dato.
+_RE_META = re.compile(
+    r"^(Hora:|Fecha:|Página:|v\s*\d|Maquinaria de Empresas|Criterios de Selección"
+    r"|Empresa:|Familia:|Tipo:|Bajas:|\d{1,2}:\d{2}$)"
+)
 
-    ---
+# Column header tokens / Tokens de cabecera de columna.
+_HEADER_TOKENS = {
+    "Código", "Matrícula", "Nº Bastidor",
+    "Marca / Modelo", "Compra", "Kms.", "Horas",
+}
 
-    Heurístico para decidir si un token parece un código de máquina.
-    Los códigos de máquina son cortos (≤20 caracteres), comienzan con
-    letra o dígito y no contienen palabras clave de líneas estructurales.
-    """
-    if not token or len(token) > 20:
-        return False
-    if token.startswith(("EMPRESA", "FAMILIA", "TIPO", "Código", "Hora", "Fecha",
-                          "Página", "Maquinaria", "Criterios", "Familia", "Tipo",
-                          "Bajas", "v ", "v1")):
-        return False
-    return bool(re.match(r"^[A-Za-z0-9]", token))
+# Structural line prefixes / Prefijos de líneas estructurales.
+_STRUCTURAL_PREFIXES = ("EMPRESA:", "FAMILIA:", "TIPO:")
 
+
+# ---------------------------------------------------------------------------
+# Helper functions / Funciones auxiliares
+# ---------------------------------------------------------------------------
 
 def _parse_date(value: str) -> date | None:
     """
@@ -151,6 +159,122 @@ def _parse_int(value: str) -> int:
         return 0
 
 
+def _is_machine_code(token: str) -> bool:
+    """
+    Heuristic to decide whether a token looks like a machine code.
+    Rejects empty strings, tokens longer than 30 chars, structural keywords,
+    metadata patterns and pure date strings.
+
+    ---
+
+    Heurístico para decidir si un token parece un código de máquina.
+    Rechaza cadenas vacías, tokens de más de 30 caracteres, palabras clave
+    estructurales, patrones de metadatos y cadenas de fecha puras.
+    """
+    if not token or len(token) > 30:
+        return False
+    if any(token.startswith(p) for p in _STRUCTURAL_PREFIXES):
+        return False
+    if _RE_META.match(token):
+        return False
+    if _RE_DATE.match(token):
+        return False
+    return bool(re.match(r"^[A-Za-z0-9]", token))
+
+
+def _scan_and_consume(
+    buf: list[str],
+    company_code: str,
+    company_name: str,
+    family: str,
+    type_code: str,
+    type_name: str,
+) -> list[dict]:
+    """
+    Scans the buffer right-to-left for DATE NUMERIC NUMERIC anchor patterns.
+    For each match found, builds a machine record and removes the consumed
+    tokens from the buffer in place using del (not reassignment).
+    Returns the list of records extracted in this pass.
+
+    Pre-date block layout (variable length ≥ 2):
+      [0]    code
+      [1]    plate
+      [2]    chassis_number  (optional — may be absent or merged with plate)
+      [3..n] brand_model tokens (concatenated with space)
+
+    ---
+
+    Escanea el buffer de derecha a izquierda buscando patrones ancla
+    FECHA NUMERICO NUMERICO. Por cada coincidencia, construye un registro
+    de máquina y elimina los tokens consumidos del buffer en sitio usando
+    del (no reasignación). Devuelve la lista de registros extraídos en
+    este pase.
+
+    Disposición del bloque pre-fecha (longitud variable ≥ 2):
+      [0]    code
+      [1]    plate
+      [2]    chassis_number  (opcional — puede estar fusionado con plate)
+      [3..n] tokens de brand_model (concatenados con espacio)
+    """
+    extracted: list[dict] = []
+
+    while True:
+        # Need at least: code + date + mileage + hours = 4 tokens.
+        # Necesitamos al menos: code + fecha + kms + horas = 4 tokens.
+        if len(buf) < 4:
+            break
+
+        anchor = None
+        for i in range(len(buf) - 3, 0, -1):
+            if (
+                _RE_DATE.match(buf[i])
+                and _RE_NUMERIC.match(buf[i + 1])
+                and _RE_NUMERIC.match(buf[i + 2])
+            ):
+                anchor = i
+                break
+
+        if anchor is None:
+            break
+
+        pre_date    = buf[:anchor]
+        purchase    = buf[anchor]
+        mileage_raw = buf[anchor + 1]
+        hours_raw   = buf[anchor + 2]
+
+        # Remove consumed tokens from buffer in place.
+        # Eliminar tokens consumidos del buffer en sitio.
+        del buf[:anchor + 3]
+
+        if len(pre_date) < 2:
+            continue
+        if not _is_machine_code(pre_date[0]):
+            continue
+
+        code           = pre_date[0].strip().upper()
+        plate          = pre_date[1].strip()
+        chassis_number = pre_date[2].strip() if len(pre_date) > 2 else ""
+        brand_model    = " ".join(pre_date[3:]).strip() if len(pre_date) > 3 else ""
+
+        extracted.append({
+            "code":           code,
+            "plate":          plate,
+            "chassis_number": chassis_number,
+            "brand_model":    brand_model,
+            "purchase_date":  _parse_date(purchase),
+            "mileage":        _parse_int(mileage_raw),
+            "hours":          _parse_int(hours_raw),
+            "company_code":   company_code,
+            "company_name":   company_name,
+            "family":         family,
+            "type_code"
+:      type_code,
+            "type_name":      type_name,
+        })
+
+    return extracted
+
+
 def _extract_text_from_pdf(pdf_path: Path) -> list[str]:
     """
     Extracts all text lines from the PDF using PyMuPDF.
@@ -174,146 +298,102 @@ def _extract_text_from_pdf(pdf_path: Path) -> list[str]:
     return lines
 
 
-def _parse_machine_row(tokens: list[str]) -> dict | None:
-    """
-    Attempts to parse a list of whitespace-split tokens into a machine
-    record dict. Returns None if the tokens do not represent a valid row.
-
-    Token order from the PDF:
-      [0] codigo
-      [1] matricula
-      [2] num_bastidor
-      [3] marca (may span multiple tokens before the date)
-      [-3] fecha_compra (DD/MM/YYYY)
-      [-2] kms
-      [-1] horas
-
-    ---
-
-    Intenta parsear una lista de tokens separados por espacios en un dict
-    de registro de máquina. Devuelve None si los tokens no representan
-    una fila válida.
-
-    Orden de tokens del PDF:
-      [0] codigo
-      [1] matricula
-      [2] num_bastidor
-      [3] marca (puede abarcar varios tokens antes de la fecha)
-      [-3] fecha_compra (DD/MM/YYYY)
-      [-2] kms
-      [-1] horas
-    """
-    if len(tokens) < 4:
-        return None
-    if not _is_machine_code(tokens[0]):
-        return None
-
-    codigo       = tokens[0].strip().upper()
-    matricula    = tokens[1].strip() if len(tokens) > 1 else ""
-    num_bastidor = tokens[2].strip() if len(tokens) > 2 else ""
-
-    # Locate the date token to split off marca_modelo, kms, horas.
-    # Localizar el token de fecha para separar marca_modelo, kms, horas.
-    date_idx = None
-    for i, tok in enumerate(tokens):
-        if _RE_DATE.match(tok):
-            date_idx = i
-            break
-
-    if date_idx is not None and date_idx >= 3:
-        marca_modelo  = " ".join(tokens[3:date_idx]).strip()
-        fecha_compra  = _parse_date(tokens[date_idx])
-        kms           = _parse_int(tokens[date_idx + 1]) if date_idx + 1 < len(tokens) else 0
-        horas         = _parse_int(tokens[date_idx + 2]) if date_idx + 2 < len(tokens) else 0
-    else:
-        # No date found — marca_modelo spans remaining tokens.
-        # Sin fecha — marca_modelo abarca los tokens restantes.
-        marca_modelo = " ".join(tokens[3:]).strip()
-        fecha_compra = None
-        kms          = 0
-        horas        = 0
-
-    return {
-        "codigo":       codigo,
-        "matricula":    matricula,
-        "num_bastidor": num_bastidor,
-        "marca_modelo": marca_modelo,
-        "fecha_compra": fecha_compra,
-        "kms":          kms,
-        "horas":        horas,
-    }
-
-
 def _parse_catalogue(lines: list[str]) -> list[dict]:
     """
-    Iterates the extracted PDF lines and returns a list of machine record
-    dicts enriched with empresa, familia and tipo context.
+    Iterates extracted PDF lines and returns machine record dicts enriched
+    with company, family and type context.
+
+    Uses a date-anchored strategy with in-place buffer mutation via del.
+    The buffer is a plain list shared by reference; _scan_and_consume
+    modifies it in place so the main loop always sees the current state.
 
     ---
 
-    Itera las líneas extraídas del PDF y devuelve una lista de dicts de
-    registro de máquina enriquecidos con el contexto de empresa, familia
-    y tipo.
+    Itera las líneas extraídas del PDF y devuelve dicts de registro de
+    máquina enriquecidos con el contexto de empresa, familia y tipo.
+
+    Usa una estrategia anclada en la fecha con mutación en sitio del buffer
+    mediante del. El buffer es una lista simple compartida por referencia;
+    _scan_and_consume la modifica en sitio de modo que el bucle principal
+    siempre ve el estado actual.
     """
     records: list[dict] = []
 
-    current_empresa_codigo  = ""
-    current_empresa_nombre  = ""
-    current_familia         = ""
-    current_tipo_codigo     = ""
-    current_tipo_nombre     = ""
+    current_company_code = ""
+    current_company_name = ""
+    current_family       = ""
+    current_type_code    = ""
+    current_type_name    = ""
+
+    buf: list[str] = []
+
+    def flush() -> None:
+        """Flush any pending record from buf and clear it."""
+        found = _scan_and_consume(
+            buf,
+            current_company_code, current_company_name,
+            current_family, current_type_code, current_type_name,
+        )
+        records.extend(found)
+        buf.clear()
 
     for line in lines:
-        # --- Structural markers / Marcadores estructurales ---
+
+        # --- Structural markers ---
         m = _RE_EMPRESA.match(line)
         if m:
-            current_empresa_codigo = m.group("codigo").strip()
-            current_empresa_nombre = m.group("nombre").strip()
-            current_familia        = ""
-            current_tipo_codigo    = ""
-            current_tipo_nombre    = ""
+            flush()
+            current_company_code = m.group("codigo").strip()
+            current_company_name = m.group("nombre").strip()
+            current_family       = ""
+            current_type_code    = ""
+            current_type_name    = ""
             continue
 
         m = _RE_FAMILIA.match(line)
         if m:
-            current_familia     = m.group("codigo").strip()
-            current_tipo_codigo = ""
-            current_tipo_nombre = ""
+            flush()
+            current_family    = m.group("codigo").strip()
+            current_type_code = ""
+            current_type_name = ""
             continue
 
         m = _RE_TIPO.match(line)
         if m:
-            current_tipo_codigo = m.group("codigo").strip()
-            current_tipo_nombre = (m.group("nombre") or "").strip()
+            flush()
+            current_type_code = m.group("codigo").strip()
+            current_type_name = (m.group("nombre") or "").strip()
             continue
 
-        # Skip table header / Saltar cabecera de tabla.
-        if _RE_HEADER.match(line):
+        # --- Page metadata ---
+        if _RE_META.match(line):
+            flush()
             continue
 
-        # Skip page metadata lines / Saltar líneas de metadatos de página.
-        if re.match(r"^\s*(Hora:|Fecha:|Página:|v\s*\d)", line):
+        # --- Column header tokens ---
+        if line in _HEADER_TOKENS:
+            if line == "Código":
+                flush()
             continue
 
-        # Attempt to parse as machine row using 2+-space split.
-        # Intentar parsear como fila de máquina usando separación de 2+ espacios.
-        tokens = re.split(r"\s{2,}", line.strip())
-        record = _parse_machine_row(tokens)
+        # --- Accumulate and attempt incremental flush ---
+        buf.append(line)
+        found = _scan_and_consume(
+            buf,
+            current_company_code, current_company_name,
+            current_family, current_type_code, current_type_name,
+        )
+        records.extend(found)
 
-        if record is None:
-            continue
-
-        record.update({
-            "empresa_codigo": current_empresa_codigo,
-            "empresa_nombre": current_empresa_nombre,
-            "familia":        current_familia,
-            "tipo_codigo":    current_tipo_codigo,
-            "tipo_nombre":    current_tipo_nombre,
-        })
-        records.append(record)
+    # Final flush / Volcado final.
+    flush()
 
     return records
 
+
+# ---------------------------------------------------------------------------
+# Management command / Comando de gestión
+# ---------------------------------------------------------------------------
 
 class Command(BaseCommand):
     """
@@ -394,8 +474,8 @@ class Command(BaseCommand):
         company_map: dict[str, int] = {}
         for entry in options["company_map"]:
             try:
-                codigo, company_id = entry.split("=")
-                company_map[codigo.strip().upper()] = int(company_id.strip())
+                code_key, company_id = entry.split("=")
+                company_map[code_key.strip().upper()] = int(company_id.strip())
             except ValueError:
                 raise CommandError(
                     f"# Formato inválido en --company-map: '{entry}'. "
@@ -403,7 +483,7 @@ class Command(BaseCommand):
                 )
 
         self.stdout.write("# Extrayendo texto del PDF...")
-        lines   = _extract_text_from_pdf(pdf_path)
+        lines = _extract_text_from_pdf(pdf_path)
         self.stdout.write(f"# Líneas extraídas: {len(lines)}")
 
         self.stdout.write("# Parseando catálogo de maquinaria...")
@@ -414,10 +494,12 @@ class Command(BaseCommand):
             self.stdout.write("# [DRY-RUN] Registros parseados:")
             for r in records:
                 self.stdout.write(
-                    f"  {r['codigo']:20s} | {r['empresa_codigo']:6s} | "
-                    f"{r['familia']:15s} | {r['marca_modelo']}"
+                    f"  {r['code']:20s} | {r['company_code']:6s} | "
+                    f"{r['family']:15s} | {r['brand_model']}"
                 )
-            self.stdout.write(f"# [DRY-RUN] Total: {len(records)} registros. Sin escritura en BD.")
+            self.stdout.write(
+                f"# [DRY-RUN] Total: {len(records)} registros. Sin escritura en BD."
+            )
             return
 
         # --- Resolve Company instances / Resolver instancias de Company ---
@@ -432,66 +514,67 @@ class Command(BaseCommand):
                 )
 
         # --- Upsert loop / Bucle de upsert ---
-        created_count   = 0
-        updated_count   = 0
-        skipped_count   = 0
+        created_count  = 0
+        updated_count  = 0
+        skipped_count  = 0
         imported_codes: set[str] = set()
 
         with transaction.atomic():
             for rec in records:
-                emp_codigo = rec["empresa_codigo"].upper()
+                emp_code = rec["company_code"].upper()
 
-                if emp_codigo not in company_map:
+                if emp_code not in company_map:
                     self.stdout.write(
                         f"# OMITIDO (sin mapeo de empresa): "
-                        f"{rec['codigo']} [{emp_codigo}]"
+                        f"{rec['code']} [{emp_code}]"
                     )
                     skipped_count += 1
                     continue
 
-                company    = company_cache[company_map[emp_codigo]]
-                codigo     = rec["codigo"]
-                imported_codes.add(codigo)
+                company = company_cache[company_map[emp_code]]
+                code    = rec["code"]
+                imported_codes.add(code)
 
                 defaults = {
                     "company":        company,
-                    "empresa_codigo": emp_codigo,
-                    "empresa_nombre": rec["empresa_nombre"],
-                    "familia":        rec["familia"],
-                    "tipo_codigo":    rec["tipo_codigo"],
-                    "tipo_nombre":    rec["tipo_nombre"],
-                    "matricula":      rec["matricula"],
-                    "num_bastidor":   rec["num_bastidor"],
-                    "marca_modelo":   rec["marca_modelo"],
-                    "fecha_compra":   rec["fecha_compra"],
-                    "kms":            rec["kms"],
-                    "horas":          rec["horas"],
-                    "es_activo":      True,
+                    "company_code":   emp_code,
+                    "company_name":   rec["company_name"],
+                    "family":         rec["family"],
+                    "type_code":      rec["type_code"],
+                    "type_name":      rec["type_name"],
+                    "plate":          rec["plate"],
+                    "chassis_number": rec["chassis_number"],
+                    "brand_model":    rec["brand_model"],
+                    "purchase_date":  rec["purchase_date"],
+                    "mileage":        rec["mileage"],
+                    "hours":          rec["hours"],
+                    "is_active":      True,
                 }
 
                 obj, created = MachineAsset.objects.update_or_create(
-                    codigo=codigo,
+                    code=code,
                     defaults=defaults,
                 )
 
                 if created:
                     created_count += 1
-                    self.stdout.write(f"# CREADO:       {codigo} — {rec['marca_modelo']}")
+                    self.stdout.write(f"# CREADO:       {code} — {rec['brand_model']}")
                 else:
                     updated_count += 1
-                    self.stdout.write(f"# ACTUALIZADO:  {codigo} — {rec['marca_modelo']}")
+                    self.stdout.write(f"# ACTUALIZADO:  {code} — {rec['brand_model']}")
 
             # --- Deactivate missing / Desactivar ausentes ---
             if deactivate_missing:
-                missing_qs = MachineAsset.objects.exclude(codigo__in=imported_codes)
-                deactivated = missing_qs.update(es_activo=False)
+                deactivated = MachineAsset.objects.exclude(
+                    code__in=imported_codes
+                ).update(is_active=False)
                 self.stdout.write(
                     f"# DESACTIVADOS: {deactivated} registros no presentes en el PDF."
                 )
 
         self.stdout.write(
             f"\n# Importación completada.\n"
-            f"#   Creados:    {created_count}\n"
+            f"#   Creados:      {created_count}\n"
             f"#   Actualizados: {updated_count}\n"
-            f"#   Omitidos:   {skipped_count}"
+            f"#   Omitidos:     {skipped_count}"
         )

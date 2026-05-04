@@ -64,6 +64,12 @@ from panel.views import (
     WorkOrderEntryFormView,
     WorkOrderEntrySTTView,
     WorkOrderEntrySTTExtractView,
+    MachineAssetListView,
+    MachineAssetCreateView,
+    MachineAssetUpdateView,
+    MachineAssetDeactivateView,
+    MachineAssetReactivateView,
+    MachineAssetDeleteView,
 )
 
 app_name = "panel"
@@ -206,4 +212,12 @@ urlpatterns = [
     # Subtarea 9.6.1 — Hito 6 (2026-04-27)
     path("analytics/profiles/", AnalyticsProfileListCreateView.as_view(), name="analytics_profile_list_create"),
     path("analytics/profiles/<int:pk>/", AnalyticsProfileDeleteView.as_view(), name="analytics_profile_delete"),
+
+    # Fleet / Centros de gasto — Hito 12 Paso 4
+    path("fleet/", MachineAssetListView.as_view(), name="fleet_list"),
+    path("fleet/create/", MachineAssetCreateView.as_view(), name="fleet_create"),
+    path("fleet/<int:pk>/update/", MachineAssetUpdateView.as_view(), name="fleet_update"),
+    path("fleet/<int:pk>/deactivate/", MachineAssetDeactivateView.as_view(), name="fleet_deactivate"),
+    path("fleet/<int:pk>/reactivate/", MachineAssetReactivateView.as_view(), name="fleet_reactivate"),
+    path("fleet/<int:pk>/delete/", MachineAssetDeleteView.as_view(), name="fleet_delete"),
 ]

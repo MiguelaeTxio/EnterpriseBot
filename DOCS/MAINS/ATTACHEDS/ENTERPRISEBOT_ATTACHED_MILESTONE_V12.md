@@ -127,30 +127,30 @@ Principios de reorganizacion:
 - Solicitar fleet/models.py y fleet/management/ via SFTP.
 - Verificar campos actuales, relacion Company, migraciones aplicadas.
 - Determinar si el campo activo existe o hay que crearlo.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (2026-05-04). Campo es_activo ya existia — renombrado a is_active via migracion 0003.
 
 ### Paso 2 — Migracion campo activo (si no existe)
 - Anadir activo = BooleanField(default=True, db_index=True) a MachineAsset.
 - Generar y aplicar migracion.
-- Estado: PENDIENTE (condicional al resultado del Paso 1).
+- Estado: DESCARTADO (2026-05-04). Campo ya existia en BD.
 
 ### Paso 3 — Comando import_cost_centers
 - Neonato puro: fleet/management/commands/import_cost_centers.py
 - Validar con --dry-run sobre el fichero actualizado entregado por el cliente.
 - Ejecutar con --apply tras validacion.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (2026-05-04). 474 registros importados en produccion. Parser PDF reescrito con estrategia de ancla de fecha.
 
 ### Paso 4 — Vistas CRUD MachineAsset en el panel
 - MachineAssetListView + vistas auxiliares Create/Update/Deactivate/Delete.
 - Templates nuevos: panel/fleet/list.html + parciales HTMX.
 - URLs en panel/urls.py.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (2026-05-04). Vistas CRUD operativas con HTMX. Incluye ReactivateView.
 
 ### Paso 5 — Reorganizacion del sidebar
 - Revision del estado actual de _nav_items.html con el usuario.
 - Acuerdo sobre la nueva estructura de secciones.
 - PMA sobre _nav_items.html.
-- Estado: PENDIENTE.
+- Estado: COMPLETADO (2026-05-04). Nueva estructura de navegacion: IVR, WhatsApp, Taller, Administracion, Analitica. Icono sidebar actualizado a bi-building-fill.
 
 ### Paso 6 — Validacion E2E
 - Verificar importacion del fichero actualizado contra BD de produccion.
@@ -158,7 +158,7 @@ Principios de reorganizacion:
 - Verificar que centros de gasto no resueltos en partes historicos son
   ahora asignables tras crear el centro correspondiente.
 - Verificar nueva navegacion del panel para todos los roles.
-- Estado: PENDIENTE.
+- Estado: PENDIENTE. Validacion E2E parcial realizada durante la sesion 001.
 
 ---
 
@@ -166,28 +166,49 @@ Principios de reorganizacion:
 
 | Sesion | Fecha | Pasos trabajados | Resumen |
 |--------|-------|-----------------|---------|
+| 001 | 2026-05-04 | 1,2(desc),3,4,5 + Nomenclatura | Renombrado completo de campos fleet a ingles (migracion 0003). Parser PDF import_machine_catalog reescrito con estrategia de ancla de fecha: 474 registros importados. Vistas CRUD MachineAsset con HTMX (List, Create, Update, Deactivate, Reactivate, Delete). Reorganizacion completa del sidebar del panel. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (001)
+## 5. Hoja de Ruta para la Siguiente Sesion (002)
 
-### Orden de trabajo sesion 001
+### Orden de trabajo sesion 002
 
-PRIMERA ACCION — Solicitar y leer fleet/models.py y el directorio
-fleet/management/ para verificar el estado actual del modelo MachineAsset
-y las migraciones aplicadas. Determinar si el campo activo existe.
+DEUDA TECNICA PENDIENTE — work_order_processor Regla de Oro del Idioma:
+  Campos a renombrar en WorkOrderEntryLine:
+    maquina_raw       -> machine_raw
+    maquina_norm      -> machine_norm
+    descripcion_averia -> fault_description
+    reparacion        -> repair_notes
+  Campos a renombrar en WorkOrderEntry:
+    fecha_incierta    -> uncertain_date
+  Archivos afectados con referencias cruzadas:
+    work_order_processor/models.py
+    work_order_processor/services.py
+    work_order_processor/tasks.py
+    work_order_processor/admin.py
+    work_order_processor/management/commands/repair_entry_lines.py
+    panel/views.py (WorkOrderEditView y relacionadas)
+    panel/templates/panel/work_orders/ (todos los templates)
+  OBLIGATORIO: solicitar todos estos archivos via SFTP al inicio de sesion
+  antes de generar ninguna migracion RenameField. Las migraciones tienen datos
+  de produccion — ejecutar con extrema precaucion.
 
-SEGUNDA ACCION — Acordar con el usuario la nueva estructura de navegacion
-del panel antes de tocar ningun archivo. Solicitar _nav_items.html y revisar
-el estado actual del sidebar. Proponer la nueva estructura de secciones y
-esperar confirmacion explicita antes de implementar.
+PRIMERA ACCION — Validacion E2E formal del Paso 6:
+  - Verificar importacion del fichero actualizado contra BD de produccion
+    usando import_machine_catalog con --dry-run.
+  - Verificar alta, edicion, baja y reactivacion desde el panel /panel/fleet/.
+  - Verificar que centros de gasto no resueltos en partes historicos son
+    ahora asignables tras crear el centro correspondiente.
+  - Verificar nueva navegacion del panel para todos los roles.
 
-TERCERA ACCION — Implementar en este orden:
-  1. Migracion campo activo si no existe (Paso 2).
-  2. Comando import_cost_centers con --dry-run sobre el fichero del cliente (Paso 3).
-  3. Vistas CRUD en el panel (Paso 4).
-  4. Reorganizacion del sidebar tras acuerdo con el usuario (Paso 5).
-  5. Validacion E2E (Paso 6).
+SEGUNDA ACCION — Deuda tecnica work_order_processor (si queda tiempo):
+  Ejecutar renombrado de campos segun la lista anterior.
+  Generar migraciones RenameField en work_order_processor.
+  Actualizar todas las referencias cruzadas.
+  Ejecutar py_compile y check antes de aplicar migraciones.
 
-NOTA CRITICA: el fichero actualizado de centros de gasto lo entrega el usuario
-al inicio de la sesion. No iniciar el Paso 3 sin tener el fichero en mano.
+NOTA CRITICA: La columna Activo resuelto en el editor de PDFs historicos
+aparece vacia cuando machine_asset es NULL (codigo no coincide con ningun
+MachineAsset del catalogo). Esto debe mostrarse con un indicador visual
+claro (badge de advertencia) — queda pendiente para el Hito 8.

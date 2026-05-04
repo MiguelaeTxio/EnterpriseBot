@@ -2,52 +2,49 @@
 
 """
 Django admin configuration for the fleet application.
-Currently registers MachineAsset only. MaintenanceLog and MaintenanceItem
-admins are deferred until WorkOrderEntryLine exists in the database
-(work_order_processor migration 0002), because MaintenanceLog carries a
-ForeignKey to that model which Django's admin checks cannot resolve until
-the model is migrated.
+Registers MachineAsset, MaintenanceLog and MaintenanceItem with customised
+list displays, filters, search fields and inline editors.
 
 ---
 
-Configuración del admin Django para la aplicación fleet.
-Actualmente registra únicamente MachineAsset. Los admins de MaintenanceLog
-y MaintenanceItem están diferidos hasta que WorkOrderEntryLine exista en BD
-(migración 0002 de work_order_processor), ya que MaintenanceLog tiene un
-ForeignKey a ese modelo que los checks del admin de Django no pueden resolver
-hasta que el modelo esté migrado.
+Configuración del admin de Django para la aplicación fleet.
+Registra MachineAsset, MaintenanceLog y MaintenanceItem con visualizaciones
+de lista, filtros, campos de búsqueda y editores inline personalizados.
 """
 
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
-from .models import MachineAsset, MaintenanceItem, MaintenanceLog
+from fleet.models import MachineAsset, MaintenanceLog, MaintenanceItem
 
 
 # ---------------------------------------------------------------------------
-# Inlines compartidos / Shared inlines
+# Inlines
 # ---------------------------------------------------------------------------
 
 class MaintenanceItemInline(admin.TabularInline):
     """
     Inline editor for MaintenanceItem records within a MaintenanceLog.
+    Provides compact access to spare parts and labour items from the
+    intervention detail view.
 
     ---
 
     Editor inline para registros MaintenanceItem dentro de un MaintenanceLog.
+    Proporciona acceso compacto a repuestos y conceptos de mano de obra desde
+    la vista de detalle de la intervención.
     """
 
-    model            = MaintenanceItem
-    extra            = 1
-    fields           = (
-        "tipo",
-        "descripcion",
-        "referencia",
-        "cantidad",
-        "coste_unitario",
-        "albaran_ref",
+    model  = MaintenanceItem
+    extra  = 0
+    fields = (
+        "item_type",
+        "description",
+        "reference",
+        "quantity",
+        "unit_cost",
+        "delivery_note_ref",
     )
-    show_change_link = True
 
 
 class MaintenanceLogInline(admin.TabularInline):
@@ -65,10 +62,10 @@ class MaintenanceLogInline(admin.TabularInline):
     model            = MaintenanceLog
     extra            = 0
     fields           = (
-        "fecha",
-        "operario",
-        "horas_imputadas",
-        "descripcion",
+        "date",
+        "worker",
+        "charged_hours",
+        "description",
         "work_entry_line",
     )
     readonly_fields  = ("work_entry_line",)
@@ -85,89 +82,83 @@ class MachineAssetAdmin(admin.ModelAdmin):
     Admin view for MachineAsset.
     Provides list display with key identification fields, search by code
     and model, and filters by company, family and active status.
-    MaintenanceLog inline is deferred until WorkOrderEntryLine is migrated.
 
     ---
 
     Vista admin para MachineAsset.
     Proporciona visualización de lista con campos de identificación clave,
-    búsqueda por código y modelo, y filtros por empresa, familia y estado
-    activo. El inline de MaintenanceLog está diferido hasta que
-    WorkOrderEntryLine esté migrado.
+    búsqueda por código y modelo, y filtros por empresa, familia y estado activo.
     """
 
     list_display    = (
-        "codigo",
-        "marca_modelo",
-        "empresa_codigo",
-        "familia",
-        "tipo_nombre",
-        "matricula",
-        "es_activo",
-        "importado_en",
+        "code",
+        "brand_model",
+        "company_code",
+        "family",
+        "type_name",
+        "plate",
+        "is_active",
+        "imported_at",
     )
     list_filter     = (
-        "empresa_codigo",
-        "familia",
-        "es_activo",
+        "company_code",
+        "family",
+        "is_active",
         "company",
     )
     search_fields   = (
-        "codigo",
-        "matricula",
-        "marca_modelo",
-        "num_bastidor",
-        "empresa_codigo",
-        "empresa_nombre",
+        "code",
+        "plate",
+        "brand_model",
+        "chassis_number",
+        "company_code",
+        "company_name",
     )
     readonly_fields = (
-        "importado_en",
-        "actualizado_en",
+        "imported_at",
+        "updated_at",
     )
     fieldsets       = (
         (_("Identificación"), {
             "fields": (
                 "company",
-                "codigo",
-                "matricula",
-                "num_bastidor",
-                "marca_modelo",
+                "code",
+                "plate",
+                "chassis_number",
+                "brand_model",
             ),
         }),
         (_("Clasificación Catálogo"), {
             "fields": (
-                "empresa_codigo",
-                "empresa_nombre",
-                "familia",
-                "tipo_codigo",
-                "tipo_nombre",
+                "company_code",
+                "company_name",
+                "family",
+                "type_code",
+                "type_name",
             ),
         }),
         (_("Datos de Adquisición"), {
             "fields": (
-                "fecha_compra",
-                "kms",
-                "horas",
+                "purchase_date",
+                "mileage",
+                "hours",
             ),
         }),
         (_("Estado y Auditoría"), {
             "fields": (
-                "es_activo",
-                "importado_en",
-                "actualizado_en",
+                "is_active",
+                "imported_at",
+                "updated_at",
             ),
         }),
     )
     inlines         = [MaintenanceLogInline]
-    ordering        = ["empresa_codigo", "familia", "codigo"]
+    ordering        = ["company_code", "family", "code"]
 
 
 # ---------------------------------------------------------------------------
-# MaintenanceLog admin — ACTIVO / ACTIVE
+# MaintenanceLog admin / Admin de MaintenanceLog
 # ---------------------------------------------------------------------------
-
-
-
 
 @admin.register(MaintenanceLog)
 class MaintenanceLogAdmin(admin.ModelAdmin):
@@ -181,26 +172,26 @@ class MaintenanceLogAdmin(admin.ModelAdmin):
 
     list_display    = (
         "machine_asset",
-        "fecha",
-        "operario",
-        "horas_imputadas",
+        "date",
+        "worker",
+        "charged_hours",
         "work_entry_line",
-        "creado_en",
+        "created_at",
     )
     list_filter     = (
-        "fecha",
-        "machine_asset__empresa_codigo",
-        "machine_asset__familia",
+        "date",
+        "machine_asset__company_code",
+        "machine_asset__family",
     )
     search_fields   = (
-        "machine_asset__codigo",
-        "machine_asset__marca_modelo",
-        "operario",
-        "descripcion",
+        "machine_asset__code",
+        "machine_asset__brand_model",
+        "worker",
+        "description",
     )
     readonly_fields = (
-        "creado_en",
-        "actualizado_en",
+        "created_at",
+        "updated_at",
     )
     raw_id_fields   = (
         "machine_asset",
@@ -211,27 +202,31 @@ class MaintenanceLogAdmin(admin.ModelAdmin):
             "fields": (
                 "machine_asset",
                 "work_entry_line",
-                "fecha",
-                "operario",
-                "horas_imputadas",
+                "date",
+                "worker",
+                "charged_hours",
             ),
         }),
         (_("Detalle"), {
             "fields": (
-                "descripcion",
-                "observaciones",
+                "description",
+                "notes",
             ),
         }),
         (_("Auditoría"), {
             "fields": (
-                "creado_en",
-                "actualizado_en",
+                "created_at",
+                "updated_at",
             ),
         }),
     )
     inlines         = [MaintenanceItemInline]
-    ordering        = ["-fecha", "machine_asset"]
+    ordering        = ["-date", "machine_asset"]
 
+
+# ---------------------------------------------------------------------------
+# MaintenanceItem admin / Admin de MaintenanceItem
+# ---------------------------------------------------------------------------
 
 @admin.register(MaintenanceItem)
 class MaintenanceItemAdmin(admin.ModelAdmin):
@@ -245,24 +240,24 @@ class MaintenanceItemAdmin(admin.ModelAdmin):
 
     list_display    = (
         "maintenance_log",
-        "tipo",
-        "descripcion",
-        "referencia",
-        "cantidad",
-        "coste_unitario",
-        "albaran_ref",
-        "creado_en",
+        "item_type",
+        "description",
+        "reference",
+        "quantity",
+        "unit_cost",
+        "delivery_note_ref",
+        "created_at",
     )
     list_filter     = (
-        "tipo",
-        "maintenance_log__machine_asset__empresa_codigo",
+        "item_type",
+        "maintenance_log__machine_asset__company_code",
     )
     search_fields   = (
-        "descripcion",
-        "referencia",
-        "albaran_ref",
-        "maintenance_log__machine_asset__codigo",
+        "description",
+        "reference",
+        "delivery_note_ref",
+        "maintenance_log__machine_asset__code",
     )
-    readonly_fields = ("creado_en",)
+    readonly_fields = ("created_at",)
     raw_id_fields   = ("maintenance_log",)
-    ordering        = ["-creado_en"]
+    ordering        = ["-created_at"]

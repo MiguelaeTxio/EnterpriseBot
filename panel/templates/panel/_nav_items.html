@@ -12,54 +12,46 @@
 {# inyectada por cada vista. No se usan etiquetas {% block %} aquí — esta           #}
 {# plantilla se incluye, no se extiende.                                            #}
 {#                                                                                  #}
-{# Mapa de valores de active_nav:                                                   #}
-{#   "dashboard"          → Inicio                                                  #}
-{#   "presence"           → Mi estado                                               #}
-{#   "callflows"          → Flujos IVR                                              #}
-{#   "sections"           → Secciones                                               #}
-{#   "contacts"           → Contactos                                               #}
-{#   "phonenumbers"       → Números de teléfono                                     #}
-{#   "voiceprofile"       → Perfil de voz                                           #}
-{#   "blockedcallers"     → Bloqueados                                              #}
-{#   "whatsapp_templates" → Plantillas (WhatsApp)                                   #}
-{#   "whatsapp_sessions"  → Sesiones activas (WhatsApp)                             #}
-{#   "users"              → Usuarios                                                #}
-{#   "datacapturesets"    → Conjuntos de captura                                    #}
-{#   "work_orders"        → PDFs                                                    #}
-{#   "analytics"          → Analítica                                               #}
-{#   "operator_dashboard" → Dashboard de operario de taller                        #}
+{# Mapa de valores de active_nav (H12):                                             #}
+{#   "dashboard"          → Inicio                           (ADMIN, SUPERVISOR)    #}
+{#   "presence"           → Mi estado                        (ADMIN, SUPERVISOR)    #}
+{#   "callflows"          → Flujos IVR                       (ADMIN)               #}
+{#   "sections"           → Secciones                        (ADMIN)               #}
+{#   "contacts"           → Contactos                        (ADMIN)               #}
+{#   "phonenumbers"       → Números de teléfono              (ADMIN)               #}
+{#   "voiceprofile"       → Perfil de voz                    (ADMIN)               #}
+{#   "blockedcallers"     → Bloqueados                       (ADMIN)               #}
+{#   "datacapturesets"    → Conjuntos de captura             (ADMIN)               #}
+{#   "whatsapp_templates" → Plantillas (WhatsApp)            (ADMIN)               #}
+{#   "whatsapp_sessions"  → Sesiones activas (WhatsApp)      (ADMIN)               #}
+{#   "operator_dashboard" → Nuevo parte                      (WORKSHOP, ADMIN)     #}
+{#   "work_orders"        → PDFs                             (ADMIN, SUPERVISOR)    #}
+{#   "fleet"              → Centros de gasto                 (ADMIN, SUPERVISOR) — pendiente H12 P4 #}
+{#   "users"              → Usuarios                         (ADMIN, SUPERVISOR)    #}
+{#   "analytics"          → Gráficas                         (ADMIN)               #}
+{#   "reports"            → Informes                         (ADMIN) — pendiente H9 #}
 {# ================================================================================ #}
 
 <ul class="nav flex-column mt-2">
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Taller — Section: Workshop (WORKSHOP y ADMIN)              #}
+    {# Inicio — visible para ADMIN y SUPERVISOR                            #}
+    {# Dashboard — visible to ADMIN and SUPERVISOR                        #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
-    <li><div class="sidebar-section-label">Taller</div></li>
-
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
-           href="{% url 'panel:operator_dashboard' %}">
-            <i class="bi bi-tools"></i>Nuevo parte
-        </a>
-    </li>
-    {% endif %}
-
-    {# ------------------------------------------------------------------ #}
-    {# Inicio / Dashboard (solo ADMIN y OPERATOR)                          #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role != 'WORKSHOP' %}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}"
            href="{% url 'panel:dashboard' %}">
             <i class="bi bi-speedometer2"></i>Inicio
         </a>
     </li>
+    {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Presencia — Section: Presence (solo ADMIN y OPERATOR)      #}
+    {# Sección: Presencia — ADMIN y SUPERVISOR                             #}
+    {# Section: Presence — ADMIN and SUPERVISOR                           #}
     {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
     <li><div class="sidebar-section-label">Presencia</div></li>
 
     <li class="nav-item">
@@ -71,10 +63,11 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Voz (solo ADMIN) — Section: Voice (ADMIN only)            #}
+    {# Sección: IVR — solo ADMIN                                           #}
+    {# Section: IVR — ADMIN only                                          #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' %}
-    <li><div class="sidebar-section-label">Voz</div></li>
+    <li><div class="sidebar-section-label">IVR</div></li>
 
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
@@ -118,8 +111,16 @@
         </a>
     </li>
 
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
+           href="{% url 'panel:datacaptureset_list' %}">
+            <i class="bi bi-ui-checks"></i>Conjuntos de captura
+        </a>
+    </li>
+
     {# ------------------------------------------------------------------ #}
-    {# Sección: WhatsApp (solo ADMIN) — Section: WhatsApp (ADMIN only)    #}
+    {# Sección: WhatsApp — solo ADMIN                                      #}
+    {# Section: WhatsApp — ADMIN only                                     #}
     {# ------------------------------------------------------------------ #}
     <li><div class="sidebar-section-label">WhatsApp</div></li>
 
@@ -137,10 +138,53 @@
         </a>
     </li>
 
+    {% endif %}
+
     {# ------------------------------------------------------------------ #}
-    {# Sección: Administración (solo ADMIN) — Section: Admin (ADMIN only) #}
+    {# Sección: Taller — WORKSHOP y ADMIN                                  #}
+    {# Section: Workshop — WORKSHOP and ADMIN                             #}
     {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
+    <li><div class="sidebar-section-label">Taller</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
+           href="{% url 'panel:operator_dashboard' %}">
+            <i class="bi bi-tools"></i>Nuevo parte
+        </a>
+    </li>
+
+    <!-- Historial de partes del operario — pendiente Hito 7
+         Operator work-order history — pending Milestone 7
+    <li class="nav-item">
+        <a class="nav-link" href="#">
+            <i class="bi bi-clock-history"></i>Historial
+        </a>
+    </li>
+    -->
+
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Administración — ADMIN y SUPERVISOR                        #}
+    {# Section: Administration — ADMIN and SUPERVISOR                     #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
     <li><div class="sidebar-section-label">Administración</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
+           href="{% url 'panel:work_order_list' %}">
+            <i class="bi bi-file-earmark-pdf"></i>PDFs
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'fleet' %}active{% endif %}"
+           href="{% url 'panel:fleet_list' %}">
+            <i class="bi bi-truck"></i>Centros de gasto
+        </a>
+    </li>
 
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
@@ -149,35 +193,31 @@
         </a>
     </li>
 
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
-           href="{% url 'panel:datacaptureset_list' %}">
-            <i class="bi bi-ui-checks"></i>Conjuntos de captura
-        </a>
-    </li>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Analítica — solo ADMIN                                     #}
+    {# Section: Analytics — ADMIN only                                    #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' %}
+    <li><div class="sidebar-section-label">Analítica</div></li>
 
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'analytics' %}active{% endif %}"
            href="{% url 'panel:analytics' %}">
-            <i class="bi bi-bar-chart-line"></i>Analítica
+            <i class="bi bi-bar-chart-line"></i>Gráficas
         </a>
     </li>
 
-    {% endif %}
-
-    {# ------------------------------------------------------------------ #}
-    {# Sección: Partes PDF (SUPERVISOR y ADMIN)                            #}
-    {# Section: PDF Work Orders (SUPERVISOR and ADMIN)                     #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'SUPERVISOR' or company_user.role == 'ADMIN' %}
-    <li><div class="sidebar-section-label">Partes</div></li>
-
+    <!-- Informes — pendiente Hito 9
+         Reports — pending Milestone 9
     <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
-           href="{% url 'panel:work_order_list' %}">
-            <i class="bi bi-file-earmark-pdf"></i>PDFs
+        <a class="nav-link" href="#">
+            <i class="bi bi-file-earmark-bar-graph"></i>Informes
         </a>
     </li>
+    -->
+
     {% endif %}
 
 </ul>

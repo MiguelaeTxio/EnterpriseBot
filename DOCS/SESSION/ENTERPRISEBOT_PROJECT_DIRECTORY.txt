@@ -20,6 +20,10 @@
 ./panel/templates/panel/whatsapp/active_session_list.html
 ./panel/templates/panel/whatsapp/template_list.html
 ./panel/templates/panel/voiceprofile/detail.html
+./panel/templates/panel/fleet/list.html
+./panel/templates/panel/fleet/_form_fragment.html
+./panel/templates/panel/fleet/_form_fields.html
+./panel/templates/panel/fleet/_table_fragment.html
 ./panel/templates/panel/datacapturesets/list.html
 ./panel/templates/panel/datacapturesets/form.html
 ./panel/templates/panel/analytics.html
@@ -86,6 +90,7 @@
 ./fleet/apps.py
 ./fleet/models.py
 ./fleet/migrations/0002_maintenancelog_work_entry_line.py
+./fleet/migrations/0003_rename_fields_english.py
 ./fleet/migrations/__init__.py
 ./fleet/migrations/0001_initial.py
 ./fleet/tests.py

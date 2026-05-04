@@ -1,0 +1,16 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/_form_fragment.html #}
+{% if form_action == 'create' %}
+{% url 'panel:fleet_create' as action_url %}
+<form hx-post="{{ action_url }}"
+      hx-target="#fleet-table-container"
+      hx-swap="innerHTML">
+    {% include "panel/fleet/_form_fields.html" %}
+</form>
+{% else %}
+{% url 'panel:fleet_update' pk=asset.pk as action_url %}
+<form hx-post="{{ action_url }}"
+      hx-target="#fleet-table-container"
+      hx-swap="innerHTML">
+    {% include "panel/fleet/_form_fields.html" %}
+</form>
+{% endif %}

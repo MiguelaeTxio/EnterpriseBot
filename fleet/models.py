@@ -37,9 +37,9 @@ class MachineAsset(models.Model):
     fleet catalogue. Each instance is a cost centre: maintenance hours from
     work orders and third-party delivery notes are imputed against it.
 
-    The `codigo` field is the primary lookup key used when resolving the
+    The `code` field is the primary lookup key used when resolving the
     machine reference extracted from handwritten work-order slips
-    (field `maquina_norm` in WorkOrderEntryLine). Normalisation rules D4
+    (field `machine_norm` in WorkOrderEntryLine). Normalisation rules D4
     from the partes-trabajo skill are applied before the lookup.
 
     ---
@@ -49,9 +49,9 @@ class MachineAsset(models.Model):
     mecánica de los partes de trabajo y los albaranes de terceros se imputan
     contra ella.
 
-    El campo `codigo` es la clave de búsqueda principal que se utiliza al
+    El campo `code` es la clave de búsqueda principal que se utiliza al
     resolver la referencia de máquina extraída de los partes manuscritos
-    (campo `maquina_norm` en WorkOrderEntryLine). Las reglas de normalización
+    (campo `machine_norm` en WorkOrderEntryLine). Las reglas de normalización
     D4 de la skill partes-trabajo se aplican antes de la búsqueda.
     """
 
@@ -72,7 +72,7 @@ class MachineAsset(models.Model):
     # ------------------------------------------------------------------
     # Catalogue origin fields / Campos de origen del catálogo
     # ------------------------------------------------------------------
-    empresa_codigo = models.CharField(
+    company_code = models.CharField(
         _("Código de Empresa"),
         max_length=20,
         db_index=True,
@@ -81,12 +81,12 @@ class MachineAsset(models.Model):
             "Se usa para agrupación y filtrado por empresa origen."
         ),
     )
-    empresa_nombre = models.CharField(
+    company_name = models.CharField(
         _("Nombre de Empresa"),
         max_length=200,
         help_text=_("Nombre completo de la empresa tal como aparece en el catálogo."),
     )
-    familia = models.CharField(
+    family = models.CharField(
         _("Familia"),
         max_length=100,
         blank=True,
@@ -95,7 +95,7 @@ class MachineAsset(models.Model):
             "AUTOCARG, REMOLQUE, TTE.)."
         ),
     )
-    tipo_codigo = models.CharField(
+    type_code = models.CharField(
         _("Código de Tipo"),
         max_length=50,
         blank=True,
@@ -104,7 +104,7 @@ class MachineAsset(models.Model):
             "(ej: MV035, PLTJ-E08, CG050)."
         ),
     )
-    tipo_nombre = models.CharField(
+    type_name = models.CharField(
         _("Nombre de Tipo"),
         max_length=200,
         blank=True,
@@ -117,7 +117,7 @@ class MachineAsset(models.Model):
     # ------------------------------------------------------------------
     # Primary identification / Identificación principal
     # ------------------------------------------------------------------
-    codigo = models.CharField(
+    code = models.CharField(
         _("Código"),
         max_length=50,
         unique=True,
@@ -128,7 +128,7 @@ class MachineAsset(models.Model):
             "partes de trabajo. Se almacena en mayúsculas."
         ),
     )
-    matricula = models.CharField(
+    plate = models.CharField(
         _("Matrícula"),
         max_length=50,
         blank=True,
@@ -137,13 +137,13 @@ class MachineAsset(models.Model):
             "Puede coincidir con el código en equipos sin matrícula oficial."
         ),
     )
-    num_bastidor = models.CharField(
+    chassis_number = models.CharField(
         _("Nº Bastidor"),
         max_length=100,
         blank=True,
         help_text=_("Número de bastidor completo tal como figura en el catálogo."),
     )
-    marca_modelo = models.CharField(
+    brand_model = models.CharField(
         _("Marca / Modelo"),
         max_length=200,
         blank=True,
@@ -156,18 +156,18 @@ class MachineAsset(models.Model):
     # ------------------------------------------------------------------
     # Acquisition data / Datos de adquisición
     # ------------------------------------------------------------------
-    fecha_compra = models.DateField(
+    purchase_date = models.DateField(
         _("Fecha de Compra"),
         null=True,
         blank=True,
         help_text=_("Fecha de adquisición del vehículo o maquinaria."),
     )
-    kms = models.IntegerField(
+    mileage = models.IntegerField(
         _("Kilómetros"),
         default=0,
         help_text=_("Kilómetros registrados en el catálogo en el momento de la importación."),
     )
-    horas = models.IntegerField(
+    hours = models.IntegerField(
         _("Horas de Trabajo"),
         default=0,
         help_text=_(
@@ -179,7 +179,7 @@ class MachineAsset(models.Model):
     # ------------------------------------------------------------------
     # Status / Estado
     # ------------------------------------------------------------------
-    es_activo = models.BooleanField(
+    is_active = models.BooleanField(
         _("Activo"),
         default=True,
         db_index=True,
@@ -192,43 +192,43 @@ class MachineAsset(models.Model):
     # ------------------------------------------------------------------
     # Audit / Auditoría
     # ------------------------------------------------------------------
-    importado_en = models.DateTimeField(
+    imported_at = models.DateTimeField(
         _("Importado en"),
         auto_now_add=True,
         help_text=_(
             "Fecha y hora en que se importó este registro desde el catálogo."
         ),
     )
-    actualizado_en = models.DateTimeField(
+    updated_at = models.DateTimeField(
         _("Actualizado en"),
         auto_now=True,
         help_text=_("Fecha y hora de la última modificación del registro."),
     )
 
     class Meta:
-        verbose_name        = _("Activo de Flota")
-        verbose_name_plural = _("Activos de Flota")
-        ordering            = ["empresa_codigo", "familia", "codigo"]
+        verbose_name        = _("Centro de gasto")
+        verbose_name_plural = _("Centros de gasto")
+        ordering            = ["company_code", "family", "code"]
         indexes             = [
-            models.Index(fields=["empresa_codigo", "familia"]),
-            models.Index(fields=["codigo"]),
+            models.Index(fields=["company_code", "family"]),
+            models.Index(fields=["code"]),
         ]
 
     def __str__(self) -> str:
-        return f"{self.codigo} — {self.marca_modelo} [{self.empresa_codigo}]"
+        return f"{self.code} — {self.brand_model} [{self.company_code}]"
 
     def save(self, *args, **kwargs) -> None:
         """
-        Normalises the `codigo` field to uppercase before saving to ensure
+        Normalises the `code` field to uppercase before saving to ensure
         consistent lookup regardless of the source casing.
 
         ---
 
-        Normaliza el campo `codigo` a mayúsculas antes de guardar para
+        Normaliza el campo `code` a mayúsculas antes de guardar para
         garantizar búsquedas consistentes independientemente de las
         mayúsculas/minúsculas del origen.
         """
-        self.codigo = self.codigo.strip().upper()
+        self.code = self.code.strip().upper()
         super().save(*args, **kwargs)
 
 
@@ -260,7 +260,7 @@ class MaintenanceLog(models.Model):
         MachineAsset,
         on_delete=models.CASCADE,
         related_name="maintenance_logs",
-        verbose_name=_("Activo de Flota"),
+        verbose_name=_("Centro de gasto"),
         help_text=_("Máquina o vehículo sobre el que se realiza la intervención."),
     )
     work_entry_line = models.ForeignKey(
@@ -279,18 +279,18 @@ class MaintenanceLog(models.Model):
     # ------------------------------------------------------------------
     # Intervention data / Datos de la intervención
     # ------------------------------------------------------------------
-    fecha = models.DateField(
+    date = models.DateField(
         _("Fecha"),
         help_text=_("Fecha en que se realizó la intervención de mantenimiento."),
     )
-    descripcion = models.TextField(
+    description = models.TextField(
         _("Descripción"),
         help_text=_(
             "Descripción detallada de los trabajos realizados durante "
             "la intervención."
         ),
     )
-    operario = models.CharField(
+    worker = models.CharField(
         _("Operario"),
         max_length=200,
         blank=True,
@@ -299,7 +299,7 @@ class MaintenanceLog(models.Model):
             "Se propaga desde el parte de trabajo cuando procede."
         ),
     )
-    horas_imputadas = models.DecimalField(
+    charged_hours = models.DecimalField(
         _("Horas Imputadas"),
         max_digits=6,
         decimal_places=2,
@@ -309,7 +309,7 @@ class MaintenanceLog(models.Model):
             "Se calcula a partir del delta de horas del parte de trabajo."
         ),
     )
-    observaciones = models.TextField(
+    notes = models.TextField(
         _("Observaciones"),
         blank=True,
         help_text=_("Observaciones adicionales del supervisor o del operario."),
@@ -318,11 +318,11 @@ class MaintenanceLog(models.Model):
     # ------------------------------------------------------------------
     # Audit / Auditoría
     # ------------------------------------------------------------------
-    creado_en = models.DateTimeField(
+    created_at = models.DateTimeField(
         _("Creado en"),
         auto_now_add=True,
     )
-    actualizado_en = models.DateTimeField(
+    updated_at = models.DateTimeField(
         _("Actualizado en"),
         auto_now=True,
     )
@@ -330,12 +330,12 @@ class MaintenanceLog(models.Model):
     class Meta:
         verbose_name        = _("Registro de Mantenimiento")
         verbose_name_plural = _("Registros de Mantenimiento")
-        ordering            = ["-fecha", "machine_asset"]
+        ordering            = ["-date", "machine_asset"]
 
     def __str__(self) -> str:
         return (
-            f"[{self.fecha}] {self.machine_asset.codigo} — "
-            f"{self.descripcion[:60]}"
+            f"[{self.date}] {self.machine_asset.code} — "
+            f"{self.description[:60]}"
         )
 
 
@@ -351,11 +351,11 @@ class MaintenanceItem(models.Model):
     component sourced from a third party, or third-party labour (treated
     as a line item in the corresponding delivery note).
 
-    The `tipo` field drives the accounting logic:
-      - REPUESTO_ALMACEN  → cost deducted from internal warehouse stock (future).
-      - REPUESTO_TERCERO  → cost from an external supplier delivery note.
-      - MANO_OBRA_TERCERO → third-party labour detailed in a delivery note,
-                            treated as a repuesto line per business convention.
+    The `item_type` field drives the accounting logic:
+      - WAREHOUSE_PART   → cost deducted from internal warehouse stock (future).
+      - THIRD_PARTY_PART → cost from an external supplier delivery note.
+      - THIRD_PARTY_LABOUR → third-party labour detailed in a delivery note,
+                             treated as a part line per business convention.
 
     ---
 
@@ -364,17 +364,17 @@ class MaintenanceItem(models.Model):
     de tercero, o mano de obra de tercero (tratada como línea de albarán
     según el convenio del negocio).
 
-    El campo `tipo` impulsa la lógica contable:
-      - REPUESTO_ALMACEN  → coste deducido del stock del almacén interno (futuro).
-      - REPUESTO_TERCERO  → coste procedente de un albarán de proveedor externo.
-      - MANO_OBRA_TERCERO → mano de obra de tercero detallada en albarán,
-                            tratada como línea de repuesto por convenio del negocio.
+    El campo `item_type` impulsa la lógica contable:
+      - WAREHOUSE_PART     → coste deducido del stock del almacén interno (futuro).
+      - THIRD_PARTY_PART   → coste procedente de un albarán de proveedor externo.
+      - THIRD_PARTY_LABOUR → mano de obra de tercero detallada en albarán,
+                             tratada como línea de repuesto por convenio del negocio.
     """
 
     class ItemType(models.TextChoices):
-        REPUESTO_ALMACEN  = "REPUESTO_ALMACEN",  _("Repuesto — Almacén propio")
-        REPUESTO_TERCERO  = "REPUESTO_TERCERO",  _("Repuesto — Tercero")
-        MANO_OBRA_TERCERO = "MANO_OBRA_TERCERO", _("Mano de obra — Tercero")
+        WAREHOUSE_PART    = "WAREHOUSE_PART",    _("Repuesto — Almacén propio")
+        THIRD_PARTY_PART  = "THIRD_PARTY_PART",  _("Repuesto — Tercero")
+        THIRD_PARTY_LABOUR = "THIRD_PARTY_LABOUR", _("Mano de obra — Tercero")
 
     # ------------------------------------------------------------------
     # Relation / Relación
@@ -390,7 +390,7 @@ class MaintenanceItem(models.Model):
     # ------------------------------------------------------------------
     # Item classification / Clasificación del concepto
     # ------------------------------------------------------------------
-    tipo = models.CharField(
+    item_type = models.CharField(
         _("Tipo"),
         max_length=20,
         choices=ItemType.choices,
@@ -404,14 +404,14 @@ class MaintenanceItem(models.Model):
     # ------------------------------------------------------------------
     # Item description / Descripción del concepto
     # ------------------------------------------------------------------
-    descripcion = models.CharField(
+    description = models.CharField(
         _("Descripción"),
         max_length=300,
         help_text=_(
             "Nombre o descripción del repuesto, pieza o concepto de mano de obra."
         ),
     )
-    referencia = models.CharField(
+    reference = models.CharField(
         _("Referencia"),
         max_length=100,
         blank=True,
@@ -424,14 +424,14 @@ class MaintenanceItem(models.Model):
     # ------------------------------------------------------------------
     # Quantity and cost / Cantidad y coste
     # ------------------------------------------------------------------
-    cantidad = models.DecimalField(
+    quantity = models.DecimalField(
         _("Cantidad"),
         max_digits=10,
         decimal_places=3,
         default=1,
         help_text=_("Cantidad consumida del repuesto o pieza."),
     )
-    coste_unitario = models.DecimalField(
+    unit_cost = models.DecimalField(
         _("Coste Unitario (€)"),
         max_digits=10,
         decimal_places=2,
@@ -446,7 +446,7 @@ class MaintenanceItem(models.Model):
     # ------------------------------------------------------------------
     # Third-party traceability / Trazabilidad de tercero
     # ------------------------------------------------------------------
-    albaran_ref = models.CharField(
+    delivery_note_ref = models.CharField(
         _("Referencia de Albarán"),
         max_length=100,
         blank=True,
@@ -460,7 +460,7 @@ class MaintenanceItem(models.Model):
     # ------------------------------------------------------------------
     # Audit / Auditoría
     # ------------------------------------------------------------------
-    creado_en = models.DateTimeField(
+    created_at = models.DateTimeField(
         _("Creado en"),
         auto_now_add=True,
     )
@@ -468,21 +468,21 @@ class MaintenanceItem(models.Model):
     class Meta:
         verbose_name        = _("Línea de Mantenimiento")
         verbose_name_plural = _("Líneas de Mantenimiento")
-        ordering            = ["maintenance_log", "tipo", "descripcion"]
+        ordering            = ["maintenance_log", "item_type", "description"]
 
     def __str__(self) -> str:
-        coste = (
-            f"{self.coste_unitario} €/ud."
-            if self.coste_unitario is not None
+        cost = (
+            f"{self.unit_cost} €/ud."
+            if self.unit_cost is not None
             else "sin coste"
         )
         return (
-            f"{self.get_tipo_display()} — {self.descripcion} "
-            f"x{self.cantidad} ({coste})"
+            f"{self.get_item_type_display()} — {self.description} "
+            f"x{self.quantity} ({cost})"
         )
 
     @property
-    def coste_total(self) -> float | None:
+    def total_cost(self) -> float | None:
         """
         Returns the total cost of the line item (quantity × unit cost),
         or None if the unit cost is not set.
@@ -492,6 +492,6 @@ class MaintenanceItem(models.Model):
         Devuelve el coste total de la línea (cantidad × coste unitario),
         o None si el coste unitario no está definido.
         """
-        if self.coste_unitario is None:
+        if self.unit_cost is None:
             return None
-        return float(self.cantidad * self.coste_unitario)
+        return float(self.quantity * self.unit_cost)

@@ -1,0 +1,126 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/_form_fields.html #}
+{#                                                                                           #}
+{# Reusable form fields partial for MachineAsset create/edit forms.                        #}
+{# Included by _form_fragment.html. Requires: form, form_action in context.                #}
+{#                                                                                           #}
+{# Parcial de campos de formulario reutilizable para formularios de alta/edición           #}
+{# de MachineAsset. Incluido por _form_fragment.html.                                       #}
+{# Requiere en contexto: form, form_action.                                                 #}
+{% load static %}
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+<div class="row g-3">
+
+    {# Identificación principal #}
+    <div class="col-12">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Identificación</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.code.label }} <span class="text-danger">*</span></label>
+        {{ form.code }}
+        {% if form.code.errors %}
+        <div class="invalid-feedback d-block">{{ form.code.errors.0 }}</div>
+        {% endif %}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.plate.label }}</label>
+        {{ form.plate }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.chassis_number.label }}</label>
+        {{ form.chassis_number }}
+    </div>
+
+    <div class="col-12">
+        <label class="form-label form-label-sm">{{ form.brand_model.label }}</label>
+        {{ form.brand_model }}
+    </div>
+
+    {# Clasificación catálogo #}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Clasificación catálogo</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.company_code.label }}</label>
+        {{ form.company_code }}
+    </div>
+
+    <div class="col-12 col-sm-8">
+        <label class="form-label form-label-sm">{{ form.company_name.label }}</label>
+        {{ form.company_name }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.family.label }}</label>
+        {{ form.family }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.type_code.label }}</label>
+        {{ form.type_code }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.type_name.label }}</label>
+        {{ form.type_name }}
+    </div>
+
+    {# Datos de adquisición #}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Adquisición</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.purchase_date.label }}</label>
+        {{ form.purchase_date }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.mileage.label }}</label>
+        {{ form.mileage }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.hours.label }}</label>
+        {{ form.hours }}
+    </div>
+
+    {# Estado #}
+    <div class="col-12 mt-1">
+        <div class="form-check">
+            {{ form.is_active }}
+            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                {{ form.is_active.label }}
+            </label>
+        </div>
+    </div>
+
+    {# Non-field errors #}
+    {% if form.non_field_errors %}
+    <div class="col-12">
+        <div class="alert alert-danger py-2 mb-0">
+            {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+{# Form footer with action buttons #}
+<div class="d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
+    <button type="button" class="btn btn-sm btn-outline-secondary"
+            data-bs-dismiss="modal">Cancelar</button>
+    <button type="submit" class="btn btn-sm btn-primary">
+        {% if form_action == 'create' %}
+        <i class="bi bi-plus-lg me-1"></i>Crear
+        {% else %}
+        <i class="bi bi-check-lg me-1"></i>Guardar
+        {% endif %}
+    </button>
+</div>

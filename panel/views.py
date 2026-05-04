@@ -6533,3 +6533,435 @@ class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):
         nombre = profile.nombre
         profile.delete()
         return JsonResponse({"deleted": True, "nombre": nombre})
+
+
+# ===========================================================================
+# Fleet / Centros de gasto — Hito 12 Paso 4
+# ===========================================================================
+
+class MachineAssetListView(AdminRoleRequiredMixin, View):
+    """
+    List view for MachineAsset records belonging to the authenticated user's
+    company. Supports filtering by family and is_active status.
+    Renders the full list page on GET. HTMX partial refresh is triggered by
+    the filter controls in the template.
+
+    GET /panel/fleet/
+
+    ---
+
+    Vista de listado de registros MachineAsset pertenecientes a la empresa
+    del usuario autenticado. Soporta filtrado por family e is_active.
+    Renderiza la página completa en GET. El refresco parcial HTMX se activa
+    desde los controles de filtro del template.
+
+    GET /panel/fleet/
+    """
+
+    template_name         = "panel/fleet/list.html"
+    template_name_partial = "panel/fleet/_table_fragment.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _build_queryset(self, company, request):
+        """
+        Builds the filtered MachineAsset queryset from GET parameters.
+        Supported filters: family (str), is_active ('1'=active, '0'=inactive, ''=all).
+        ---
+        Construye el queryset filtrado de MachineAsset desde los parámetros GET.
+        Filtros soportados: family (str), is_active ('1'=activo, '0'=inactivo, ''=todos).
+        """
+        from fleet.models import MachineAsset
+
+        qs = MachineAsset.objects.filter(company=company).order_by(
+            "company_code", "family", "code"
+        )
+
+        family_filter = request.GET.get("family", "").strip()
+        if family_filter:
+            qs = qs.filter(family__iexact=family_filter)
+
+        active_filter = request.GET.get("is_active", "")
+        if active_filter == "1":
+            qs = qs.filter(is_active=True)
+        elif active_filter == "0":
+            qs = qs.filter(is_active=False)
+
+        return qs
+
+    def _get_families(self, company):
+        """
+        Returns a sorted list of distinct family values for the company's assets.
+        Used to populate the family filter dropdown.
+        ---
+        Retorna una lista ordenada de valores de family distintos para los activos
+        de la empresa. Se usa para poblar el desplegable de filtro de familia.
+        """
+        from fleet.models import MachineAsset
+
+        return (
+            MachineAsset.objects
+            .filter(company=company)
+            .exclude(family="")
+            .values_list("family", flat=True)
+            .distinct()
+            .order_by("family")
+        )
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the fleet list page or a partial HTMX table fragment.
+        Detects HTMX requests via the HX-Request header and returns only
+        the table fragment for partial page updates.
+        ---
+        Renderiza la página de listado de flota o un fragmento parcial HTMX.
+        Detecta peticiones HTMX via la cabecera HX-Request y devuelve solo
+        el fragmento de tabla para actualizaciones parciales.
+        """
+        from fleet.models import MachineAsset
+        from panel.forms import MachineAssetForm
+
+        company_user = request.user.company_user
+        company      = company_user.company
+        qs           = self._build_queryset(company, request)
+        families     = self._get_families(company)
+        form         = MachineAssetForm()
+
+        ctx = {
+            "company":      company,
+            "company_user": company_user,
+            "own_presence": self._get_own_presence(company_user),
+            "active_nav":   "fleet",
+            "assets":       qs,
+            "families":     families,
+            "form":         form,
+            "filter_family":    request.GET.get("family", ""),
+            "filter_is_active": request.GET.get("is_active", ""),
+        }
+
+        if request.headers.get("HX-Request"):
+            return render(request, self.template_name_partial, ctx)
+        return render(request, self.template_name, ctx)
+
+
+class MachineAssetCreateView(AdminRoleRequiredMixin, View):
+    """
+    Creates a new MachineAsset for the authenticated user's company.
+    Accepts HTMX POST requests and returns an updated table fragment on success,
+    or a form fragment with validation errors on failure.
+
+    POST /panel/fleet/create/
+
+    ---
+
+    Crea un nuevo MachineAsset para la empresa del usuario autenticado.
+    Acepta peticiones POST HTMX y devuelve un fragmento de tabla actualizado
+    en caso de éxito, o un fragmento de formulario con errores en caso de fallo.
+
+    POST /panel/fleet/create/
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates the form and creates the MachineAsset. On success returns
+        the updated table fragment. On failure returns the form with errors.
+        ---
+        Valida el formulario y crea el MachineAsset. En caso de éxito devuelve
+        el fragmento de tabla actualizado. En caso de fallo devuelve el formulario
+        con errores.
+        """
+        from fleet.models import MachineAsset
+        from panel.forms import MachineAssetForm
+
+        company_user = request.user.company_user
+        company      = company_user.company
+        form         = MachineAssetForm(request.POST)
+
+        if form.is_valid():
+            asset         = form.save(commit=False)
+            asset.company = company
+            asset.code    = asset.code.strip().upper()
+            asset.save()
+            qs = MachineAsset.objects.filter(company=company).order_by(
+                "company_code", "family", "code"
+            )
+            return render(request, "panel/fleet/_table_fragment.html", {
+                "assets":       qs,
+                "company_user": company_user,
+                "company":      company,
+            })
+
+        return render(request, "panel/fleet/_form_fragment.html", {
+            "form":         form,
+            "company_user": company_user,
+            "company":      company,
+            "form_action":  "create",
+        })
+
+
+class MachineAssetUpdateView(AdminRoleRequiredMixin, View):
+    """
+    Updates an existing MachineAsset belonging to the authenticated user's company.
+    Accepts HTMX POST requests and returns an updated table fragment on success,
+    or a form fragment with validation errors on failure.
+
+    POST /panel/fleet/<pk>/update/
+
+    ---
+
+    Actualiza un MachineAsset existente perteneciente a la empresa del usuario
+    autenticado. Acepta peticiones POST HTMX y devuelve un fragmento de tabla
+    actualizado en caso de éxito, o un formulario con errores en caso de fallo.
+
+    POST /panel/fleet/<pk>/update/
+    """
+
+    def get(self, request, pk, *args, **kwargs):
+        """
+        Returns the pre-filled edit form fragment for the given asset pk.
+        Called via HTMX GET from the edit modal trigger in the table.
+        Returns 404 if the asset does not belong to the company.
+        ---
+        Devuelve el fragmento de formulario de edición pre-relleno para el pk dado.
+        Invocado via HTMX GET desde el disparador del modal de edición en la tabla.
+        Devuelve 404 si el activo no pertenece a la empresa.
+        """
+        from fleet.models import MachineAsset
+        from panel.forms import MachineAssetForm
+        from django.http import Http404
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        try:
+            asset = MachineAsset.objects.get(pk=pk, company=company)
+        except MachineAsset.DoesNotExist:
+            raise Http404
+
+        form = MachineAssetForm(instance=asset)
+        return render(request, "panel/fleet/_form_fragment.html", {
+            "form":         form,
+            "asset":        asset,
+            "company_user": company_user,
+            "company":      company,
+            "form_action":  "update",
+        })
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Validates the form and updates the MachineAsset identified by pk.
+        Returns 404 if the asset does not belong to the company.
+        ---
+        Valida el formulario y actualiza el MachineAsset identificado por pk.
+        Devuelve 404 si el activo no pertenece a la empresa.
+        """
+        from fleet.models import MachineAsset
+        from panel.forms import MachineAssetForm
+        from django.http import Http404
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        try:
+            asset = MachineAsset.objects.get(pk=pk, company=company)
+        except MachineAsset.DoesNotExist:
+            raise Http404
+
+        form = MachineAssetForm(request.POST, instance=asset)
+
+        if form.is_valid():
+            updated       = form.save(commit=False)
+            updated.code  = updated.code.strip().upper()
+            updated.save()
+            qs = MachineAsset.objects.filter(company=company).order_by(
+                "company_code", "family", "code"
+            )
+            return render(request, "panel/fleet/_table_fragment.html", {
+                "assets":       qs,
+                "company_user": company_user,
+                "company":      company,
+            })
+
+        return render(request, "panel/fleet/_form_fragment.html", {
+            "form":         form,
+            "asset":        asset,
+            "company_user": company_user,
+            "company":      company,
+            "form_action":  "update",
+        })
+
+
+class MachineAssetDeactivateView(AdminRoleRequiredMixin, View):
+    """
+    Sets is_active=False on a MachineAsset belonging to the authenticated user's
+    company. Does not delete the record — preserves historical data integrity.
+    Returns an updated table row fragment via HTMX.
+
+    POST /panel/fleet/<pk>/deactivate/
+
+    ---
+
+    Establece is_active=False en un MachineAsset perteneciente a la empresa del
+    usuario autenticado. No elimina el registro — preserva la integridad del
+    histórico. Devuelve un fragmento de fila de tabla actualizado via HTMX.
+
+    POST /panel/fleet/<pk>/deactivate/
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Marks the asset as inactive and returns the updated table fragment.
+        Returns 404 if the asset does not belong to the company.
+        ---
+        Marca el activo como inactivo y devuelve el fragmento de tabla actualizado.
+        Devuelve 404 si el activo no pertenece a la empresa.
+        """
+        from fleet.models import MachineAsset
+        from django.http import Http404
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        try:
+            asset = MachineAsset.objects.get(pk=pk, company=company)
+        except MachineAsset.DoesNotExist:
+            raise Http404
+
+        asset.is_active = False
+        asset.save(update_fields=["is_active"])
+
+        qs = MachineAsset.objects.filter(company=company).order_by(
+            "company_code", "family", "code"
+        )
+        return render(request, "panel/fleet/_table_fragment.html", {
+            "assets":       qs,
+            "company_user": company_user,
+            "company":      company,
+        })
+
+
+class MachineAssetReactivateView(AdminRoleRequiredMixin, View):
+    """
+    Sets is_active=True on a MachineAsset belonging to the authenticated user's
+    company. Counterpart to MachineAssetDeactivateView — allows reversing an
+    accidental deactivation. Returns an updated table fragment via HTMX.
+
+    POST /panel/fleet/<pk>/reactivate/
+
+    ---
+
+    Establece is_active=True en un MachineAsset perteneciente a la empresa del
+    usuario autenticado. Contraparte de MachineAssetDeactivateView — permite
+    revertir una baja accidental. Devuelve un fragmento de tabla actualizado
+    via HTMX.
+
+    POST /panel/fleet/<pk>/reactivate/
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Marks the asset as active and returns the updated table fragment.
+        Returns 404 if the asset does not belong to the company.
+        ---
+        Marca el activo como activo y devuelve el fragmento de tabla actualizado.
+        Devuelve 404 si el activo no pertenece a la empresa.
+        """
+        from fleet.models import MachineAsset
+        from django.http import Http404
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        try:
+            asset = MachineAsset.objects.get(pk=pk, company=company)
+        except MachineAsset.DoesNotExist:
+            raise Http404
+
+        asset.is_active = True
+        asset.save(update_fields=["is_active"])
+
+        qs = MachineAsset.objects.filter(company=company).order_by(
+            "company_code", "family", "code"
+        )
+        return render(request, "panel/fleet/_table_fragment.html", {
+            "assets":       qs,
+            "company_user": company_user,
+            "company":      company,
+        })
+
+
+class MachineAssetDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Permanently deletes a MachineAsset only if it has no associated
+    WorkOrderEntryLine records (referential integrity guard).
+    Only available to ADMIN role.
+    Returns an updated table fragment on success or a JSON error on failure.
+
+    POST /panel/fleet/<pk>/delete/
+
+    ---
+
+    Elimina permanentemente un MachineAsset solo si no tiene registros
+    WorkOrderEntryLine asociados (guardia de integridad referencial).
+    Solo disponible para el rol ADMIN.
+    Devuelve un fragmento de tabla actualizado en caso de éxito o un error
+    JSON en caso de fallo.
+
+    POST /panel/fleet/<pk>/delete/
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Deletes the asset if it has no linked work-order lines.
+        Returns HTTP 409 with a JSON error message if linked lines exist.
+        Returns 404 if the asset does not belong to the company.
+        ---
+        Elimina el activo si no tiene líneas de parte asociadas.
+        Devuelve HTTP 409 con un mensaje de error JSON si existen líneas vinculadas.
+        Devuelve 404 si el activo no pertenece a la empresa.
+        """
+        from fleet.models import MachineAsset
+        from django.http import Http404, JsonResponse
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        try:
+            asset = MachineAsset.objects.get(pk=pk, company=company)
+        except MachineAsset.DoesNotExist:
+            raise Http404
+
+        # Referential integrity guard — block deletion if work-order lines exist.
+        # Guardia de integridad referencial — bloquear si existen líneas de parte.
+        if asset.work_order_lines.exists():
+            return JsonResponse(
+                {
+                    "error": (
+                        f"No se puede eliminar '{asset.code}': tiene partes de trabajo "
+                        f"asociados. Use 'Dar de baja' para desactivarlo."
+                    )
+                },
+                status=409,
+            )
+
+        asset.delete()
+
+        qs = MachineAsset.objects.filter(company=company).order_by(
+            "company_code", "family", "code"
+        )
+        return render(request, "panel/fleet/_table_fragment.html", {
+            "assets":       qs,
+            "company_user": company_user,
+            "company":      company,
+        })

@@ -236,8 +236,8 @@ class WorkOrderEntryLineAdmin(admin.ModelAdmin):
     )
     list_filter     = (
         "entry__extraction_confidence",
-        "machine_asset__empresa_codigo",
-        "machine_asset__familia",
+        "machine_asset__company_code",
+        "machine_asset__family",
     )
     search_fields   = (
         "maquina_raw",

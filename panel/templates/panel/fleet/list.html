@@ -1,0 +1,182 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/list.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}Centros de gasto{% endblock %}
+{% block page_title %}Centros de gasto{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <h5 class="mb-0 fw-semibold">Centros de gasto</h5>
+        <button class="btn btn-sm btn-primary"
+                data-bs-toggle="modal"
+                data-bs-target="#fleetCreateModal">
+            <i class="bi bi-plus-lg me-1"></i>Nuevo centro
+        </button>
+    </div>
+
+    <div class="card card-body mb-3 py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-sm-auto">
+                <label class="form-label form-label-sm mb-1">Familia</label>
+                <select id="filter-family" class="form-select form-select-sm"
+                        hx-get="{% url 'panel:fleet_list' %}"
+                        hx-target="#fleet-table-container"
+                        hx-include="#filter-family, #filter-is-active"
+                        hx-trigger="change"
+                        name="family">
+                    <option value="">Todas</option>
+                    {% for fam in families %}
+                    <option value="{{ fam }}" {% if filter_family == fam %}selected{% endif %}>{{ fam }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-sm-auto">
+                <label class="form-label form-label-sm mb-1">Estado</label>
+                <select id="filter-is-active" class="form-select form-select-sm"
+                        hx-get="{% url 'panel:fleet_list' %}"
+                        hx-target="#fleet-table-container"
+                        hx-include="#filter-family, #filter-is-active"
+                        hx-trigger="change"
+                        name="is_active">
+                    <option value="" {% if filter_is_active == '' %}selected{% endif %}>Todos</option>
+                    <option value="1" {% if filter_is_active == '1' %}selected{% endif %}>Activos</option>
+                    <option value="0" {% if filter_is_active == '0' %}selected{% endif %}>Inactivos</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div id="fleet-table-container">
+        {% include "panel/fleet/_table_fragment.html" %}
+    </div>
+
+</div>
+
+<div class="modal fade" id="fleetCreateModal" tabindex="-1"
+     aria-labelledby="fleetCreateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fleetCreateModalLabel">
+                    <i class="bi bi-truck me-2"></i>Nuevo centro de gasto
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="fleet-create-form-container">
+                {% include "panel/fleet/_form_fragment.html" with form=form form_action="create" %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="fleetEditModal" tabindex="-1"
+     aria-labelledby="fleetEditModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fleetEditModalLabel">
+                    <i class="bi bi-pencil me-2"></i>Editar centro de gasto
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="fleet-edit-form-container">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="fleet-delete-toast" class="toast align-items-center text-bg-danger border-0"
+         role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body" id="fleet-delete-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    "use strict";
+
+    function openEditModal(pk) {
+        const container = document.getElementById("fleet-edit-form-container");
+        const modal     = new bootstrap.Modal(document.getElementById("fleetEditModal"));
+        htmx.ajax("GET", `/panel/fleet/${pk}/update/`, {target: container});
+        modal.show();
+    }
+
+    function deactivateAsset(pk) {
+        if (!confirm("Dar de baja este centro de gasto? Quedara inactivo pero se conservara el historico.")) return;
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+        fetch(`/panel/fleet/${pk}/deactivate/`, {
+            method:  "POST",
+            headers: {"X-CSRFToken": csrfToken},
+        })
+        .then(r => r.text())
+        .then(html => {
+            document.getElementById("fleet-table-container").innerHTML = html;
+        });
+    }
+
+    function reactivateAsset(pk) {
+        if (!confirm("Reactivar este centro de gasto?")) return;
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+        fetch(`/panel/fleet/${pk}/reactivate/`, {
+            method:  "POST",
+            headers: {"X-CSRFToken": csrfToken},
+        })
+        .then(r => r.text())
+        .then(html => {
+            document.getElementById("fleet-table-container").innerHTML = html;
+        });
+    }
+
+    function deleteAsset(pk) {
+        if (!confirm("Eliminar definitivamente este centro de gasto? Esta accion no se puede deshacer.")) return;
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+        fetch(`/panel/fleet/${pk}/delete/`, {
+            method:  "POST",
+            headers: {"X-CSRFToken": csrfToken},
+        })
+        .then(r => {
+            if (r.status === 409) {
+                return r.json().then(data => {
+                    const toast    = document.getElementById("fleet-delete-toast");
+                    const toastMsg = document.getElementById("fleet-delete-toast-msg");
+                    toastMsg.textContent = data.error || "No se puede eliminar este centro de gasto.";
+                    new bootstrap.Toast(toast).show();
+                });
+            }
+            return r.text().then(html => {
+                document.getElementById("fleet-table-container").innerHTML = html;
+            });
+        });
+    }
+
+    window.fleetOpenEditModal    = openEditModal;
+    window.fleetDeactivateAsset  = deactivateAsset;
+    window.fleetReactivateAsset  = reactivateAsset;
+    window.fleetDeleteAsset      = deleteAsset;
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "fleet-table-container") {
+            const createModal = bootstrap.Modal.getInstance(
+                document.getElementById("fleetCreateModal")
+            );
+            if (createModal) createModal.hide();
+            const editModal = bootstrap.Modal.getInstance(
+                document.getElementById("fleetEditModal")
+            );
+            if (editModal) editModal.hide();
+        }
+    });
+}());
+</script>
+{% endblock %}
