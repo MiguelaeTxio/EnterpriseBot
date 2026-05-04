@@ -331,7 +331,7 @@ class WorkOrderEntry(models.Model):
             "Puede ser deducida por contexto calendario (directriz D2)."
         ),
     )
-    fecha_incierta = models.BooleanField(
+    uncertain_date = models.BooleanField(
         _("Fecha Incierta"),
         default=False,
         help_text=_(
@@ -390,8 +390,8 @@ class WorkOrderEntryLine(models.Model):
     O.R. reference.
 
     The machine reference is stored in two forms:
-      - maquina_raw:  exactly as extracted by Gemini Vision from the manuscript.
-      - maquina_norm: normalised according to D4 rules (uppercase, hyphen,
+      - machine_raw:  exactly as extracted by Gemini Vision from the manuscript.
+      - machine_norm: normalised according to D4 rules (uppercase, hyphen,
                       zero-padding) used for catalogue lookup.
 
     The resolved MachineAsset FK is set during processing if the normalised
@@ -409,8 +409,8 @@ class WorkOrderEntryLine(models.Model):
     horas de inicio y fin, y una referencia O.R. opcional.
 
     La referencia de máquina se almacena en dos formas:
-      - maquina_raw:  tal como la extrae Gemini Vision del manuscrito.
-      - maquina_norm: normalizada según las reglas D4 (mayúsculas, guion,
+      - machine_raw:  tal como la extrae Gemini Vision del manuscrito.
+      - machine_norm: normalizada según las reglas D4 (mayúsculas, guion,
                       relleno de ceros) usada para la búsqueda en el catálogo.
 
     El FK resuelto a MachineAsset se establece durante el procesamiento si el
@@ -454,11 +454,11 @@ class WorkOrderEntryLine(models.Model):
         related_name="work_order_lines",
         verbose_name=_("Activo de Flota"),
         help_text=_(
-            "Máquina del catálogo de flota resuelta a partir de maquina_norm. "
+            "Máquina del catálogo de flota resuelta a partir de machine_norm. "
             "Nulo si el código no se encontró en el catálogo tras aplicar D4."
         ),
     )
-    maquina_raw = models.CharField(
+    machine_raw = models.CharField(
         _("Máquina (Raw)"),
         max_length=100,
         blank=True,
@@ -467,7 +467,7 @@ class WorkOrderEntryLine(models.Model):
             "Se preserva sin modificar para auditoría."
         ),
     )
-    maquina_norm = models.CharField(
+    machine_norm = models.CharField(
         _("Máquina (Normalizada)"),
         max_length=100,
         blank=True,
@@ -481,7 +481,7 @@ class WorkOrderEntryLine(models.Model):
     # ------------------------------------------------------------------
     # Work description / Descripción del trabajo
     # ------------------------------------------------------------------
-    descripcion_averia = models.TextField(
+    fault_description = models.TextField(
         _("Descripción de Avería"),
         blank=True,
         help_text=_(
@@ -489,7 +489,7 @@ class WorkOrderEntryLine(models.Model):
             "Interpretada en contexto de vehículos pesados industriales (D7)."
         ),
     )
-    reparacion = models.TextField(
+    repair_notes = models.TextField(
         _("Reparación"),
         blank=True,
         help_text=_(
@@ -531,7 +531,7 @@ class WorkOrderEntryLine(models.Model):
     # ------------------------------------------------------------------
     # Computed / Calculado
     # ------------------------------------------------------------------
-    delta_horas = models.DecimalField(
+    delta_hours = models.DecimalField(
         _("Δ Horas (Netas)"),
         max_digits=5,
         decimal_places=2,
@@ -567,11 +567,11 @@ class WorkOrderEntryLine(models.Model):
     def __str__(self) -> str:
         hc  = self.hc.strftime("%H:%M")  if self.hc else "--:--"
         hf  = self.hf.strftime("%H:%M")  if self.hf else "--:--"
-        maq = self.maquina_norm or self.maquina_raw or "Sin máquina"
+        maq = self.machine_norm or self.machine_raw or "Sin máquina"
         return (
             f"Bloque {self.line_number} | {maq} | "
             f"{hc}–{hf}"
-            + (f" ({self.delta_horas}h)" if self.delta_horas is not None else "")
+            + (f" ({self.delta_hours}h)" if self.delta_hours is not None else "")
         )
 
 

@@ -264,6 +264,7 @@
 ./work_order_processor/views.py
 ./work_order_processor/apps.py
 ./work_order_processor/models.py
+./work_order_processor/migrations/0007_rename_fields_english.py
 ./work_order_processor/migrations/0002_remove_workorderentry_end_time_and_more.py
 ./work_order_processor/migrations/0005_add_spare_part_line.py
 ./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py

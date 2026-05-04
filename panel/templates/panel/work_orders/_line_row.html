@@ -45,22 +45,22 @@
     </td>
 
     {# ------------------------------------------------------------------ #}
-    {# maquina_norm — normalised machine code / código de máquina norm.    #}
+    {# machine_norm — normalised machine code / código de máquina norm.    #}
     {# ------------------------------------------------------------------ #}
     <td>
         <input type="text"
-               name="maquina_norm"
-               value="{{ line.maquina_norm }}"
-               class="form-control form-control-sm {{ row_class }}{% if 'maquina_norm' in line.flags or 'MAQUINA' in line.flags %} field-flagged{% endif %}"
+               name="machine_norm"
+               value="{{ line.machine_norm }}"
+               class="form-control form-control-sm {{ row_class }}{% if 'machine_norm' in line.flags or 'MAQUINA' in line.flags %} field-flagged{% endif %}"
                placeholder="Ej. A-54"
                hx-post="{{ save_url }}"
                hx-trigger="change"
                hx-target="#line-row-{{ line.pk }}"
                hx-swap="outerHTML"
                hx-include=".{{ row_class }}">
-        {% if line.maquina_raw %}
+        {% if line.machine_raw %}
         <div class="text-muted text-raw">
-            raw: {{ line.maquina_raw }}
+            raw: {{ line.machine_raw }}
         </div>
         {% endif %}
     </td>
@@ -71,10 +71,10 @@
     <td>
         {% if line.machine_asset %}
             <span class="text-success fw-semibold text-asset-code">
-                {{ line.machine_asset.codigo }}
+                {{ line.machine_asset.code }}
             </span>
             <div class="text-muted text-raw">
-                {{ line.machine_asset.marca_modelo|truncatechars:28 }}
+                {{ line.machine_asset.brand_model|truncatechars:28 }}
             </div>
         {% else %}
             <span class="asset-unresolved">
@@ -84,31 +84,31 @@
     </td>
 
     {# ------------------------------------------------------------------ #}
-    {# descripcion_averia — fault description / descripción de avería      #}
+    {# fault_description — fault description / descripción de avería      #}
     {# ------------------------------------------------------------------ #}
     <td>
-        <textarea name="descripcion_averia"
-                  class="form-control form-control-sm {{ row_class }}{% if 'descripcion_averia' in line.flags %} field-flagged{% endif %}"
+        <textarea name="fault_description"
+                  class="form-control form-control-sm {{ row_class }}{% if 'fault_description' in line.flags %} field-flagged{% endif %}"
                   rows="2"
                   hx-post="{{ save_url }}"
                   hx-trigger="change"
                   hx-target="#line-row-{{ line.pk }}"
                   hx-swap="outerHTML"
-                  hx-include=".{{ row_class }}">{{ line.descripcion_averia }}</textarea>
+                  hx-include=".{{ row_class }}">{{ line.fault_description }}</textarea>
     </td>
 
     {# ------------------------------------------------------------------ #}
-    {# reparacion — repair description / descripción de reparación         #}
+    {# repair_notes — repair description / descripción de reparación         #}
     {# ------------------------------------------------------------------ #}
     <td>
-        <textarea name="reparacion"
-                  class="form-control form-control-sm {{ row_class }}{% if 'reparacion' in line.flags %} field-flagged{% endif %}"
+        <textarea name="repair_notes"
+                  class="form-control form-control-sm {{ row_class }}{% if 'repair_notes' in line.flags %} field-flagged{% endif %}"
                   rows="2"
                   hx-post="{{ save_url }}"
                   hx-trigger="change"
                   hx-target="#line-row-{{ line.pk }}"
                   hx-swap="outerHTML"
-                  hx-include=".{{ row_class }}">{{ line.reparacion }}</textarea>
+                  hx-include=".{{ row_class }}">{{ line.repair_notes }}</textarea>
     </td>
 
     {# ------------------------------------------------------------------ #}
@@ -142,11 +142,11 @@
     </td>
 
     {# ------------------------------------------------------------------ #}
-    {# delta_horas — computed, read-only / calculado, solo lectura         #}
+    {# delta_hours — computed, read-only / calculado, solo lectura         #}
     {# ------------------------------------------------------------------ #}
     <td>
-        {% if line.delta_horas is not None %}
-            <span class="delta-display">{{ line.delta_horas }}h</span>
+        {% if line.delta_hours is not None %}
+            <span class="delta-display">{{ line.delta_hours }}h</span>
         {% else %}
             <span class="text-muted">—</span>
         {% endif %}

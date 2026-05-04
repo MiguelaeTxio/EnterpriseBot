@@ -44,14 +44,14 @@ class WorkOrderEntryLineInline(admin.TabularInline):
     readonly_fields  = (
         "line_number",
         "machine_asset",
-        "maquina_raw",
-        "maquina_norm",
-        "descripcion_averia",
-        "reparacion",
+        "machine_raw",
+        "machine_norm",
+        "fault_description",
+        "repair_notes",
         "hc",
         "hf",
         "or_val",
-        "delta_horas",
+        "delta_hours",
         "flags",
     )
     fields = readonly_fields
@@ -81,7 +81,7 @@ class WorkOrderEntryInline(admin.TabularInline):
         "page_number",
         "worker_name",
         "work_date",
-        "fecha_incierta",
+        "uncertain_date",
         "extraction_confidence",
     )
     fields = readonly_fields
@@ -173,10 +173,10 @@ class WorkOrderEntryAdmin(admin.ModelAdmin):
         "page_number",
         "worker_name",
         "work_date",
-        "fecha_incierta",
+        "uncertain_date",
         "extraction_confidence",
     )
-    list_filter     = ("extraction_confidence", "work_date", "fecha_incierta")
+    list_filter     = ("extraction_confidence", "work_date", "uncertain_date")
     search_fields   = ("worker_name", "work_order__company__name")
     readonly_fields = (
         "work_order",
@@ -194,7 +194,7 @@ class WorkOrderEntryAdmin(admin.ModelAdmin):
             "fields": (
                 "worker_name",
                 "work_date",
-                "fecha_incierta",
+                "uncertain_date",
             ),
         }),
         (_("Auditoría de Extracción"), {
@@ -227,11 +227,11 @@ class WorkOrderEntryLineAdmin(admin.ModelAdmin):
         "id",
         "entry",
         "line_number",
-        "maquina_norm",
+        "machine_norm",
         "machine_asset",
         "hc",
         "hf",
-        "delta_horas",
+        "delta_hours",
         "extraction_confidence_display",
     )
     list_filter     = (
@@ -240,19 +240,19 @@ class WorkOrderEntryLineAdmin(admin.ModelAdmin):
         "machine_asset__family",
     )
     search_fields   = (
-        "maquina_raw",
-        "maquina_norm",
-        "descripcion_averia",
+        "machine_raw",
+        "machine_norm",
+        "fault_description",
         "entry__worker_name",
         "entry__work_order__company__name",
     )
     readonly_fields = (
         "entry",
         "line_number",
-        "maquina_raw",
-        "maquina_norm",
+        "machine_raw",
+        "machine_norm",
         "machine_asset",
-        "delta_horas",
+        "delta_hours",
         "flags",
     )
     raw_id_fields   = ("machine_asset",)
@@ -264,18 +264,18 @@ class WorkOrderEntryLineAdmin(admin.ModelAdmin):
         (_("Máquina"), {
             "fields": (
                 "machine_asset",
-                "maquina_raw",
-                "maquina_norm",
+                "machine_raw",
+                "machine_norm",
             ),
         }),
         (_("Trabajo"), {
             "fields": (
-                "descripcion_averia",
-                "reparacion",
+                "fault_description",
+                "repair_notes",
                 "hc",
                 "hf",
                 "or_val",
-                "delta_horas",
+                "delta_hours",
             ),
         }),
         (_("Flags de Incidencia"), {

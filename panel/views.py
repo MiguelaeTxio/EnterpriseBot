@@ -2962,8 +2962,8 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
     GET  — Renders the editable table grouped by page.
     POST — Two actions dispatched via hidden input `action`:
       "save_line"      : Saves a single WorkOrderEntryLine identified by `line_pk`.
-                         Recomputes delta_horas from hc/hf and re-resolves
-                         machine_asset from the updated maquina_norm.
+                         Recomputes delta_hours from hc/hf and re-resolves
+                         machine_asset from the updated machine_norm.
       "regenerate"     : Re-enqueues the Excel generation task for this WorkOrder
                          (status reset to PENDING) and redirects to the list view.
 
@@ -2979,8 +2979,8 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
     GET  — Renderiza la tabla editable agrupada por página.
     POST — Dos acciones despachadas mediante el input oculto `action`:
       "save_line"      : Guarda un único WorkOrderEntryLine identificado por `line_pk`.
-                         Recalcula delta_horas desde hc/hf y re-resuelve machine_asset
-                         desde el maquina_norm actualizado.
+                         Recalcula delta_hours desde hc/hf y re-resuelve machine_asset
+                         desde el machine_norm actualizado.
       "regenerate"     : Re-encola la tarea de generación de Excel para este WorkOrder
                          (estado reseteado a PENDING) y redirige a la vista de lista.
 
@@ -3040,18 +3040,18 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
             lines = list(entry.lines.order_by("line_number"))
 
             # Compute the total worked hours for this entry (day) by summing
-            # delta_horas across all its lines. None values are skipped.
+            # delta_hours across all its lines. None values are skipped.
             # Used by _entry_group_fragment.html to render the day-total badge.
             #
             # Calcular el total de horas trabajadas en esta entrada (día) sumando
-            # delta_horas de todas sus líneas. Los valores None se omiten.
+            # delta_hours de todas sus líneas. Los valores None se omiten.
             # Usado por _entry_group_fragment.html para el badge de total de jornada.
             day_total_raw = sum(
-                (l.delta_horas for l in lines if l.delta_horas is not None),
+                (l.delta_hours for l in lines if l.delta_hours is not None),
                 0,
             )
             day_total = round(day_total_raw, 2) if any(
-                l.delta_horas is not None for l in lines
+                l.delta_hours is not None for l in lines
             ) else None
 
             # Determine the CSS modifier class for the day-total badge based on
@@ -3121,7 +3121,7 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
         """
         from work_order_processor.models import WorkOrderEntry, WorkOrderEntryLine
         from work_order_processor.services import (
-            _compute_delta_horas,
+            _compute_delta_hours,
             _normalise_machine_code,
             _resolve_machine_asset,
         )
@@ -3171,9 +3171,9 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
                 django_messages.error(request, "Línea no encontrada.")
                 return redirect("panel:work_order_edit", pk=pk)
 
-            # Parse and update maquina_norm + machine_asset.
-            # Parsear y actualizar maquina_norm + machine_asset.
-            raw_norm = request.POST.get("maquina_norm", "").strip()
+            # Parse and update machine_norm + machine_asset.
+            # Parsear y actualizar machine_norm + machine_asset.
+            raw_norm = request.POST.get("machine_norm", "").strip()
             norm     = _normalise_machine_code(raw_norm) if raw_norm else raw_norm
             asset    = _resolve_machine_asset(norm, company=company) if norm else None
 
@@ -3192,7 +3192,7 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
 
             hc    = _parse_time_str(request.POST.get("hc", ""))
             hf    = _parse_time_str(request.POST.get("hf", ""))
-            delta = _compute_delta_horas(hc, hf)
+            delta = _compute_delta_hours(hc, hf)
 
             # Parse flags from comma-separated string.
             # Parsear flags desde cadena separada por comas.
@@ -3201,18 +3201,18 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
 
             # Persist changes.
             # Persistir cambios.
-            line.maquina_norm       = norm
+            line.machine_norm       = norm
             line.machine_asset      = asset
-            line.descripcion_averia = request.POST.get("descripcion_averia", "").strip()
-            line.reparacion         = request.POST.get("reparacion", "").strip()
+            line.fault_description  = request.POST.get("fault_description", "").strip()
+            line.repair_notes       = request.POST.get("repair_notes", "").strip()
             line.hc                 = hc
             line.hf                 = hf
             line.or_val             = request.POST.get("or_val", "").strip()
-            line.delta_horas        = delta
+            line.delta_hours        = delta
             line.flags              = flags
             line.save(update_fields=[
-                "maquina_norm", "machine_asset", "descripcion_averia",
-                "reparacion", "hc", "hf", "or_val", "delta_horas", "flags",
+                "machine_norm", "machine_asset", "fault_description",
+                "repair_notes", "hc", "hf", "or_val", "delta_hours", "flags",
             ])
 
             django_messages.success(
@@ -3287,15 +3287,15 @@ class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
 
     POST /panel/work-orders/<wo_pk>/lines/<line_pk>/save/
          Expected POST fields (all optional — missing fields are treated as empty):
-           maquina_norm        : str  — normalised machine code.
-           descripcion_averia  : str  — fault description.
-           reparacion          : str  — repair description.
+           machine_norm        : str  — normalised machine code.
+           fault_description  : str  — fault description.
+           repair_notes          : str  — repair description.
            hc                  : str  — start time  HH:MM.
            hf                  : str  — end time    HH:MM.
            or_val              : str  — repair order reference.
            flags               : str  — comma-separated flag list.
-         Server recomputes delta_horas from hc/hf and re-resolves machine_asset
-         from the updated maquina_norm. Returns the rendered _line_row.html partial
+         Server recomputes delta_hours from hc/hf and re-resolves machine_asset
+         from the updated machine_norm. Returns the rendered _line_row.html partial
          (a single <tr> element) with HTTP 200.
          Returns HTTP 404 if the WorkOrder or line do not exist or belong to another
          company. Returns HTTP 400 on an unexpected processing error.
@@ -3309,15 +3309,15 @@ class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
 
     POST /panel/work-orders/<wo_pk>/lines/<line_pk>/save/
          Campos POST esperados (todos opcionales — los ausentes se tratan como vacíos):
-           maquina_norm        : str  — código de máquina normalizado.
-           descripcion_averia  : str  — descripción de la avería.
-           reparacion          : str  — descripción de la reparación.
+           machine_norm        : str  — código de máquina normalizado.
+           fault_description  : str  — descripción de la avería.
+           repair_notes          : str  — descripción de la reparación.
            hc                  : str  — hora de comienzo HH:MM.
            hf                  : str  — hora de fin      HH:MM.
            or_val              : str  — referencia de orden de reparación.
            flags               : str  — lista de flags separada por comas.
-         El servidor recalcula delta_horas desde hc/hf y re-resuelve machine_asset
-         desde el maquina_norm actualizado. Devuelve el parcial _line_row.html
+         El servidor recalcula delta_hours desde hc/hf y re-resuelve machine_asset
+         desde el machine_norm actualizado. Devuelve el parcial _line_row.html
          renderizado (un único elemento <tr>) con HTTP 200.
          Devuelve HTTP 404 si el WorkOrder o la línea no existen o pertenecen a
          otra empresa. Devuelve HTTP 400 ante un error de procesamiento inesperado.
@@ -3336,7 +3336,7 @@ class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
         from django.shortcuts import get_object_or_404
         from work_order_processor.models import WorkOrderEntryLine
         from work_order_processor.services import (
-            _compute_delta_horas,
+            _compute_delta_hours,
             _normalise_machine_code,
             _resolve_machine_asset,
         )
@@ -3363,16 +3363,16 @@ class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
         )
 
         # ------------------------------------------------------------------
-        # Parse maquina_norm and re-resolve machine_asset.
-        # Parsear maquina_norm y re-resolver machine_asset.
+        # Parse machine_norm and re-resolve machine_asset.
+        # Parsear machine_norm y re-resolver machine_asset.
         # ------------------------------------------------------------------
-        raw_norm = request.POST.get("maquina_norm", "").strip()
+        raw_norm = request.POST.get("machine_norm", "").strip()
         norm     = _normalise_machine_code(raw_norm) if raw_norm else raw_norm
         asset    = _resolve_machine_asset(norm, company=company) if norm else None
 
         # ------------------------------------------------------------------
-        # Parse hc / hf and recompute delta_horas.
-        # Parsear hc / hf y recalcular delta_horas.
+        # Parse hc / hf and recompute delta_hours.
+        # Parsear hc / hf y recalcular delta_hours.
         # ------------------------------------------------------------------
         def _parse_time_str(val):
             """Parses HH:MM string into time object, returns None on failure.
@@ -3387,7 +3387,7 @@ class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
 
         hc    = _parse_time_str(request.POST.get("hc", ""))
         hf    = _parse_time_str(request.POST.get("hf", ""))
-        delta = _compute_delta_horas(hc, hf)
+        delta = _compute_delta_hours(hc, hf)
 
         # ------------------------------------------------------------------
         # Parse flags from comma-separated string.
@@ -3400,18 +3400,18 @@ class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
         # Persist all changes in a single save call.
         # Persistir todos los cambios en una única llamada save.
         # ------------------------------------------------------------------
-        line.maquina_norm       = norm
+        line.machine_norm       = norm
         line.machine_asset      = asset
-        line.descripcion_averia = request.POST.get("descripcion_averia", "").strip()
-        line.reparacion         = request.POST.get("reparacion", "").strip()
+        line.fault_description = request.POST.get("fault_description", "").strip()
+        line.repair_notes         = request.POST.get("repair_notes", "").strip()
         line.hc                 = hc
         line.hf                 = hf
         line.or_val             = request.POST.get("or_val", "").strip()
-        line.delta_horas        = delta
+        line.delta_hours        = delta
         line.flags              = flags
         line.save(update_fields=[
-            "maquina_norm", "machine_asset", "descripcion_averia",
-            "reparacion", "hc", "hf", "or_val", "delta_horas", "flags",
+            "machine_norm", "machine_asset", "fault_description",
+            "repair_notes", "hc", "hf", "or_val", "delta_hours", "flags",
         ])
 
         # ------------------------------------------------------------------
@@ -3519,14 +3519,14 @@ class WorkOrderLineInsertView(AdminRoleRequiredMixin, View):
             new_line = WorkOrderEntryLine.objects.create(
                 entry=entry,
                 line_number=after_line.line_number + 1,
-                maquina_norm="",
-                maquina_raw="",
-                descripcion_averia="",
-                reparacion="",
+                machine_norm="",
+                machine_raw="",
+                fault_description="",
+                repair_notes="",
                 hc=None,
                 hf=None,
                 or_val="",
-                delta_horas=None,
+                delta_hours=None,
                 flags=[],
                 machine_asset=None,
             )
@@ -3638,9 +3638,9 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
 
     POST /panel/work-orders/<wo_pk>/lines/<line_pk>/restore/
          Locates the bloque at raw_gemini_response["entradas"][line_number - 1],
-         overwrites only the fields of the target line (maquina_raw, maquina_norm,
-         machine_asset, descripcion_averia, reparacion, hc, hf, or_val,
-         delta_horas, flags) and returns the rendered _line_row.html partial
+         overwrites only the fields of the target line (machine_raw, machine_norm,
+         machine_asset, fault_description, repair_notes, hc, hf, or_val,
+         delta_hours, flags) and returns the rendered _line_row.html partial
          for that single row with HTTP 200.
          Returns HTTP 404 if the WorkOrder or line do not belong to the company.
          Returns HTTP 400 if no raw_gemini_response is stored or the block index
@@ -3656,9 +3656,9 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
 
     POST /panel/work-orders/<wo_pk>/lines/<line_pk>/restore/
          Localiza el bloque en raw_gemini_response["entradas"][line_number - 1],
-         sobreescribe únicamente los campos de la línea objetivo (maquina_raw,
-         maquina_norm, machine_asset, descripcion_averia, reparacion, hc, hf,
-         or_val, delta_horas, flags) y devuelve el parcial _line_row.html
+         sobreescribe únicamente los campos de la línea objetivo (machine_raw,
+         machine_norm, machine_asset, fault_description, repair_notes, hc, hf,
+         or_val, delta_hours, flags) y devuelve el parcial _line_row.html
          renderizado para esa única fila con HTTP 200.
          Devuelve HTTP 404 si el WorkOrder o la línea no pertenecen a la empresa.
          Devuelve HTTP 400 si no hay raw_gemini_response almacenado o el índice
@@ -3682,7 +3682,7 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
         from work_order_processor.services import (
             _normalise_machine_code,
             _resolve_machine_asset,
-            _compute_delta_horas,
+            _compute_delta_hours,
             _parse_time,
         )
 
@@ -3700,26 +3700,26 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
 
         # Guard: raw_gemini_response must exist for Gemini-sourced work orders.
         # For digital work orders (Via A/B/C confirm) raw_gemini_response is None —
-        # in that case restore re-resolves machine_asset from the stored maquina_norm
-        # and recomputes delta_horas from the stored hc/hf, preserving all other fields.
+        # in that case restore re-resolves machine_asset from the stored machine_norm
+        # and recomputes delta_hours from the stored hc/hf, preserving all other fields.
         #
         # Guardia: raw_gemini_response debe existir para partes con origen Gemini.
         # Para partes digitales (Vía A/B/C confirm) raw_gemini_response es None —
-        # en ese caso el restore re-resuelve machine_asset desde maquina_norm almacenado
-        # y recalcula delta_horas desde hc/hf almacenados, preservando el resto.
+        # en ese caso el restore re-resuelve machine_asset desde machine_norm almacenado
+        # y recalcula delta_hours desde hc/hf almacenados, preservando el resto.
         raw = entry.raw_gemini_response
 
         if not raw or not isinstance(raw, dict):
             # Digital work order path — re-resolve asset and recompute hours only.
             # Ruta de parte digital — re-resolver activo y recalcular horas únicamente.
-            maquina_norm  = _normalise_machine_code(line.maquina_raw or "")
-            machine_asset = _resolve_machine_asset(maquina_norm, company=company) if maquina_norm else None
-            delta         = _compute_delta_horas(line.hc, line.hf)
+            machine_norm  = _normalise_machine_code(line.machine_raw or "")
+            machine_asset = _resolve_machine_asset(machine_norm, company=company) if machine_norm else None
+            delta         = _compute_delta_hours(line.hc, line.hf)
 
-            line.maquina_norm  = maquina_norm
+            line.machine_norm  = machine_norm
             line.machine_asset = machine_asset
-            line.delta_horas   = delta
-            line.save(update_fields=["maquina_norm", "machine_asset", "delta_horas"])
+            line.delta_hours   = delta
+            line.save(update_fields=["machine_norm", "machine_asset", "delta_hours"])
 
             return render(
                 request,
@@ -3746,30 +3746,30 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
 
         # Re-parse the original block values and overwrite only this line.
         # Re-parsear los valores del bloque original y sobreescribir solo esta línea.
-        maquina_raw   = (bloque.get("maquina_raw") or "").strip()
-        maquina_norm  = _normalise_machine_code(maquina_raw)
-        machine_asset = _resolve_machine_asset(maquina_norm, company=company)
+        machine_raw   = (bloque.get("machine_raw") or "").strip()
+        machine_norm  = _normalise_machine_code(machine_raw)
+        machine_asset = _resolve_machine_asset(machine_norm, company=company)
         hc            = _parse_time(bloque.get("hc"))
         hf            = _parse_time(bloque.get("hf"))
-        delta         = _compute_delta_horas(hc, hf)
+        delta         = _compute_delta_hours(hc, hf)
         flags         = bloque.get("flags") or []
         if not isinstance(flags, list):
             flags = []
 
-        line.maquina_raw        = maquina_raw
-        line.maquina_norm       = maquina_norm
+        line.machine_raw        = machine_raw
+        line.machine_norm       = machine_norm
         line.machine_asset      = machine_asset
-        line.descripcion_averia = (bloque.get("descripcion_averia") or "")
-        line.reparacion         = (bloque.get("reparacion") or "")
+        line.fault_description = (bloque.get("fault_description") or "")
+        line.repair_notes         = (bloque.get("repair_notes") or "")
         line.hc                 = hc
         line.hf                 = hf
         line.or_val             = (bloque.get("or_val") or "")
-        line.delta_horas        = delta
+        line.delta_hours        = delta
         line.flags              = flags
         line.save(update_fields=[
-            "maquina_raw", "maquina_norm", "machine_asset",
-            "descripcion_averia", "reparacion", "hc", "hf",
-            "or_val", "delta_horas", "flags",
+            "machine_raw", "machine_norm", "machine_asset",
+            "fault_description", "repair_notes", "hc", "hf",
+            "or_val", "delta_hours", "flags",
         ])
 
         return render(
@@ -4254,7 +4254,7 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
                     if entry.work_date else ""
                 )
                 asset_code    = (
-                    line.machine_asset.codigo if line.machine_asset else ""
+                    line.machine_asset.code if line.machine_asset else ""
                 )
                 hc_display    = (
                     line.hc.strftime("%H:%M") if line.hc else ""
@@ -4263,7 +4263,7 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
                     line.hf.strftime("%H:%M") if line.hf else ""
                 )
                 delta_display = (
-                    str(line.delta_horas) if line.delta_horas is not None else ""
+                    str(line.delta_hours) if line.delta_hours is not None else ""
                 )
                 flags_display = ", ".join(line.flags) if line.flags else ""
 
@@ -4271,11 +4271,11 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
                     worker_name,
                     date_display,
                     line.line_number,
-                    line.maquina_norm,
-                    line.maquina_raw,
+                    line.machine_norm,
+                    line.machine_raw,
                     asset_code,
-                    line.descripcion_averia,
-                    line.reparacion,
+                    line.fault_description,
+                    line.repair_notes,
                     hc_display,
                     hf_display,
                     delta_display,
@@ -4631,9 +4631,9 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
                 "work_date":   "YYYY-MM-DD" | null,
                 "work_order":  int,
                 "pdf_name":    str,
-                "codigo":      str,
-                "marca_modelo": str,
-                "delta_horas": float | null,
+                "code":      str,
+                "brand_model": str,
+                "delta_hours": float | null,
                 "weekday":     int | null   // 0=Mon … 4=Fri
             },
             ...
@@ -4643,7 +4643,7 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
             ...
         ],
         "assets": [
-            {"codigo": str, "marca_modelo": str},
+            {"code": str, "brand_model": str},
             ...
         ]
     }
@@ -4664,9 +4664,9 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
                 "work_date":    "YYYY-MM-DD" | null,
                 "work_order":   int,
                 "pdf_name":     str,
-                "codigo":       str,
-                "marca_modelo": str,
-                "delta_horas":  float | null,
+                "code":       str,
+                "brand_model": str,
+                "delta_hours":  float | null,
                 "weekday":      int | null   // 0=Lun … 4=Vie
             },
             ...
@@ -4676,7 +4676,7 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
             ...
         ],
         "assets": [
-            {"codigo": str, "marca_modelo": str},
+            {"code": str, "brand_model": str},
             ...
         ]
     }
@@ -4728,7 +4728,7 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
         lines = []
         for line in qs:
             work_date  = line.entry.work_date
-            delta      = float(line.delta_horas) if line.delta_horas is not None else None
+            delta      = float(line.delta_hours) if line.delta_hours is not None else None
             pdf_name   = line.entry.work_order.source_pdf.name.split("/")[-1]
             # Strip Django random suffix from filename for readability.
             # Eliminar sufijo aleatorio de Django del nombre de fichero para legibilidad.
@@ -4740,9 +4740,9 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
                 "work_date":   work_date.isoformat() if work_date else None,
                 "work_order":  line.entry.work_order_id,
                 "pdf_name":    pdf_label,
-                "codigo":      line.machine_asset.codigo,
-                "marca_modelo": line.machine_asset.marca_modelo,
-                "delta_horas": delta,
+                "code":      line.machine_asset.code,
+                "brand_model": line.machine_asset.brand_model,
+                "delta_hours": delta,
                 "weekday":     work_date.weekday() if work_date else None,
             })
 
@@ -4767,11 +4767,11 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
         # Activos distintos presentes en los datos, ordenados por codigo.
         seen_assets: dict[str, str] = {}
         for line in lines:
-            c = line["codigo"]
+            c = line["code"]
             if c not in seen_assets:
-                seen_assets[c] = line["marca_modelo"]
+                seen_assets[c] = line["brand_model"]
         assets = [
-            {"codigo": c, "marca_modelo": m}
+            {"code": c, "brand_model": m}
             for c, m in sorted(seen_assets.items())
         ]
 
@@ -4886,21 +4886,21 @@ class WorkshopAssetAutocompleteView(WorkshopRequiredMixin, View):
     """
     JSON endpoint returning MachineAsset records for the authenticated
     CompanyUser's company. Supports incremental search via the optional
-    'q' GET parameter (matches against codigo and marca_modelo).
+    'q' GET parameter (matches against codigo and brand_model).
     Used by the operator work-order entry form (Hito 7 / Paso 5).
 
     GET /panel/operator/assets/?q=<query>
-        Returns a JSON array of {codigo, marca_modelo} objects, max 20 results.
+        Returns a JSON array of {codigo, brand_model} objects, max 20 results.
         If 'q' is absent or blank, returns the first 20 active assets ordered
         by codigo.
     ---
     Endpoint JSON que devuelve registros MachineAsset de la empresa del
     CompanyUser autenticado. Admite búsqueda incremental mediante el parámetro
-    GET opcional 'q' (busca en codigo y marca_modelo).
+    GET opcional 'q' (busca en codigo y brand_model).
     Usado por el formulario de entrada de partes del operario (Hito 7 / Paso 5).
 
     GET /panel/operator/assets/?q=<query>
-        Devuelve un array JSON de objetos {codigo, marca_modelo}, máx. 20 resultados.
+        Devuelve un array JSON de objetos {codigo, brand_model}, máx. 20 resultados.
         Si 'q' está ausente o vacío, devuelve los primeros 20 activos ordenados
         por codigo.
     """
@@ -4923,16 +4923,16 @@ class WorkshopAssetAutocompleteView(WorkshopRequiredMixin, View):
         qs = MachineAsset.objects.filter(company=company, es_activo=True)
 
         if q:
-            # Case-insensitive search on codigo and marca_modelo.
-            # Búsqueda sin distinción de mayúsculas en codigo y marca_modelo.
+            # Case-insensitive search on codigo and brand_model.
+            # Búsqueda sin distinción de mayúsculas en codigo y brand_model.
             qs = qs.filter(
                 django_models.Q(codigo__icontains=q) |
-                django_models.Q(marca_modelo__icontains=q)
+                django_models.Q(brand_model__icontains=q)
             )
 
         assets = list(
-            qs.order_by("codigo")
-            .values("codigo", "marca_modelo")[:20]
+            qs.order_by("code")
+            .values("code", "brand_model")[:20]
         )
         return JsonResponse({"assets": assets})
 
@@ -5100,9 +5100,9 @@ def _parse_entry_lines_from_post(POST, company):
     Parses and resolves work-block entry lines submitted via POST.
 
     Resolution strategy for machine_asset (two-pass):
-      Pass 1 — direct iexact on maquina_raw: covers autocomplete selections
-               where the field contains the exact asset.codigo string.
-      Pass 2 — iexact on _normalise_machine_code(maquina_raw): covers OCR
+      Pass 1 — direct iexact on machine_raw: covers autocomplete selections
+               where the field contains the exact asset.code string.
+      Pass 2 — iexact on _normalise_machine_code(machine_raw): covers OCR
                and handwritten input where normalisation is required.
 
     Returns a list of dicts ready to feed the integrity gate and the
@@ -5112,9 +5112,9 @@ def _parse_entry_lines_from_post(POST, company):
     por POST.
 
     Estrategia de resolución para machine_asset (dos pasadas):
-      Pasada 1 — iexact directo sobre maquina_raw: cubre selecciones del
-                 autocompletado donde el campo contiene el asset.codigo exacto.
-      Pasada 2 — iexact sobre _normalise_machine_code(maquina_raw): cubre
+      Pasada 1 — iexact directo sobre machine_raw: cubre selecciones del
+                 autocompletado donde el campo contiene el asset.code exacto.
+      Pasada 2 — iexact sobre _normalise_machine_code(machine_raw): cubre
                  entrada OCR y manuscrita donde se requiere normalización.
 
     Devuelve una lista de dicts lista para la barrera de integridad y el
@@ -5125,7 +5125,7 @@ def _parse_entry_lines_from_post(POST, company):
     from fleet.models import MachineAsset
     from work_order_processor.services import (
         _normalise_machine_code,
-        _compute_delta_horas,
+        _compute_delta_hours,
     )
 
     num_entradas     = int(POST.get("num_entradas", "1") or "1")
@@ -5133,9 +5133,9 @@ def _parse_entry_lines_from_post(POST, company):
 
     for i in range(1, num_entradas + 1):
         pfx         = f"entrada_{i}_"
-        maquina_raw = POST.get(f"{pfx}maquina_raw", "").strip()
-        desc_averia = POST.get(f"{pfx}descripcion_averia", "").strip()
-        reparacion  = POST.get(f"{pfx}reparacion", "").strip()
+        machine_raw = POST.get(f"{pfx}machine_raw", "").strip()
+        desc_averia = POST.get(f"{pfx}fault_description", "").strip()
+        repair_notes  = POST.get(f"{pfx}repair_notes", "").strip()
         hc_str      = POST.get(f"{pfx}hc", "").strip()
         hf_str      = POST.get(f"{pfx}hf", "").strip()
         or_val      = POST.get(f"{pfx}or_val", "").strip()
@@ -5158,34 +5158,34 @@ def _parse_entry_lines_from_post(POST, company):
         hc = _parse_t(hc_str)
         hf = _parse_t(hf_str)
 
-        maquina_norm  = _normalise_machine_code(maquina_raw)
+        machine_norm  = _normalise_machine_code(machine_raw)
         machine_asset = None
 
-        if maquina_raw:
+        if machine_raw:
             # Pass 1 — direct iexact on raw (autocomplete writes exact codigo).
             # Pasada 1 — iexact directo sobre raw (autocompletado escribe codigo exacto).
             try:
                 machine_asset = MachineAsset.objects.get(
-                    codigo__iexact=maquina_raw, company=company
+                    codigo__iexact=machine_raw, company=company
                 )
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
                 machine_asset = MachineAsset.objects.filter(
-                    codigo__iexact=maquina_raw, company=company
+                    codigo__iexact=machine_raw, company=company
                 ).first()
 
-        if machine_asset is None and maquina_norm:
+        if machine_asset is None and machine_norm:
             # Pass 2 — normalised code (OCR / handwritten input).
             # Pasada 2 — código normalizado (entrada OCR / manuscrita).
             try:
                 machine_asset = MachineAsset.objects.get(
-                    codigo__iexact=maquina_norm, company=company
+                    codigo__iexact=machine_norm, company=company
                 )
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
                 machine_asset = MachineAsset.objects.filter(
-                    codigo__iexact=maquina_norm, company=company
+                    codigo__iexact=machine_norm, company=company
                 ).first()
 
-        delta_horas = _compute_delta_horas(hc, hf)
+        delta_hours = _compute_delta_hours(hc, hf)
 
         try:
             flags = _json.loads(flags_raw) if flags_raw else []
@@ -5194,15 +5194,15 @@ def _parse_entry_lines_from_post(POST, company):
 
         entry_lines_data.append({
             "line_number":        i,
-            "maquina_raw":        maquina_raw,
-            "maquina_norm":       maquina_norm or "",
+            "machine_raw":        machine_raw,
+            "machine_norm":       machine_norm or "",
             "machine_asset":      machine_asset,
-            "descripcion_averia": desc_averia,
-            "reparacion":         reparacion,
+            "fault_description": desc_averia,
+            "repair_notes":         repair_notes,
             "hc":                 hc,
             "hf":                 hf,
             "or_val":             or_val,
-            "delta_horas":        delta_horas,
+            "delta_hours":        delta_hours,
             "flags":              flags,
         })
 
@@ -5410,14 +5410,14 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         # Construir lista de entradas enriquecida para el renderizado del template.
         entradas_enriched = []
         for idx, entrada in enumerate(extraction.get("entradas", []), start=1):
-            raw_code     = entrada.get("maquina_raw") or ""
+            raw_code     = entrada.get("machine_raw") or ""
             machine_asset = self._resolve_machine(company, raw_code)
             entradas_enriched.append({
                 "idx":            idx,
-                "maquina_raw":    raw_code,
+                "machine_raw":    raw_code,
                 "machine_asset":  machine_asset,
-                "descripcion_averia": entrada.get("descripcion_averia") or "",
-                "reparacion":     entrada.get("reparacion") or "",
+                "fault_description": entrada.get("fault_description") or "",
+                "repair_notes":     entrada.get("repair_notes") or "",
                 "hc":             entrada.get("hc") or "",
                 "hf":             entrada.get("hf") or "",
                 "or_val":         entrada.get("or_val") or "",
@@ -5446,15 +5446,15 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         # Activos disponibles para el selector de autocompletado.
         assets = list(
             MachineAsset.objects.filter(company=company, es_activo=True)
-            .order_by("codigo")
-            .values("codigo", "marca_modelo")
+            .order_by("code")
+            .values("code", "brand_model")
         )
 
         context = self._get_context_base(request)
         context.update({
             "extraction":          extraction,
             "fecha":               extraction.get("fecha") or "",
-            "fecha_incierta":      extraction.get("fecha_incierta", False),
+            "uncertain_date":      extraction.get("uncertain_date", False),
             "confidence":          extraction.get("extraction_confidence", ""),
             "entradas_enriched":   entradas_enriched,
             "repuestos_enriched":  repuestos_enriched,
@@ -5491,7 +5491,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         from work_order_processor.services import (
             generate_work_order_excel,
             _normalise_machine_code,
-            _compute_delta_horas,
+            _compute_delta_hours,
         )
 
         cu      = self._get_company_user(request)
@@ -5535,7 +5535,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         #   1. Work date must be present and parseable.
         #   2. Every work block must have: a non-empty raw machine code that
         #      resolves to a known MachineAsset, both H.C. and H.F. present
-        #      and yielding a positive delta_horas, and a non-empty fault
+        #      and yielding a positive delta_hours, and a non-empty fault
         #      description.
         #   3. Every spare-part line must have: a non-empty material
         #      description and a parseable positive quantity.
@@ -5549,7 +5549,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         #   1. La fecha del parte debe estar presente y ser parseable.
         #   2. Cada bloque de trabajo debe tener: código de máquina no vacío
         #      que resuelva a un MachineAsset conocido, H.C. y H.F. presentes
-        #      generando un delta_horas positivo, y descripción de avería no vacía.
+        #      generando un delta_hours positivo, y descripción de avería no vacía.
         #   3. Cada línea de repuesto debe tener: descripción de material no
         #      vacía y cantidad parseable y positiva.
         #
@@ -5573,13 +5573,13 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
 
         for ld in entry_lines_data:
             blk = f"Bloque {ld['line_number']}"
-            if not ld["maquina_raw"]:
+            if not ld["machine_raw"]:
                 integrity_errors.append(
                     f"{blk}: el código de máquina es obligatorio."
                 )
             elif ld["machine_asset"] is None:
                 integrity_errors.append(
-                    f"{blk}: el código '{ld['maquina_raw']}' no se ha podido "
+                    f"{blk}: el código '{ld['machine_raw']}' no se ha podido "
                     f"identificar en el catálogo de flota. "
                     f"Corrígelo antes de guardar."
                 )
@@ -5591,13 +5591,13 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 integrity_errors.append(
                     f"{blk}: la hora de fin (H.F.) es obligatoria."
                 )
-            if ld["hc"] and ld["hf"] and ld["delta_horas"] is not None:
-                if ld["delta_horas"] <= 0:
+            if ld["hc"] and ld["hf"] and ld["delta_hours"] is not None:
+                if ld["delta_hours"] <= 0:
                     integrity_errors.append(
                         f"{blk}: la H.F. debe ser posterior a la H.C. "
-                        f"(Δ horas calculado: {ld['delta_horas']})."
+                        f"(Δ horas calculado: {ld['delta_hours']})."
                     )
-            if not ld["descripcion_averia"]:
+            if not ld["fault_description"]:
                 integrity_errors.append(
                     f"{blk}: la descripción de la avería es obligatoria."
                 )
@@ -5622,10 +5622,10 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             entradas_enriched_post = [
                 {
                     "idx":               ld["line_number"],
-                    "maquina_raw":       ld["maquina_raw"],
+                    "machine_raw":       ld["machine_raw"],
                     "machine_asset":     ld["machine_asset"],
-                    "descripcion_averia": ld["descripcion_averia"],
-                    "reparacion":        ld["reparacion"],
+                    "fault_description": ld["fault_description"],
+                    "repair_notes":        ld["repair_notes"],
                     "hc":    ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf":    ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val":            ld["or_val"],
@@ -5651,7 +5651,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             context.update({
                 "error":               " | ".join(integrity_errors),
                 "fecha":               fecha_str,
-                "fecha_incierta":      False,
+                "uncertain_date":      False,
                 "confidence":          POST.get("confidence", ""),
                 "entradas_enriched":   entradas_enriched_post,
                 "repuestos_enriched":  spare_enriched_post,
@@ -5703,7 +5703,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     page_number         = 1,
                     worker_name         = worker_name,
                     work_date           = work_date,
-                    fecha_incierta      = False,
+                    uncertain_date      = False,
                     extraction_confidence = WorkOrderEntry.Confidence.HIGH,
                     raw_gemini_response = None,
                 )
@@ -5715,14 +5715,14 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                         entry             = entry,
                         line_number       = ld["line_number"],
                         machine_asset     = ld["machine_asset"],
-                        maquina_raw       = ld["maquina_raw"],
-                        maquina_norm      = ld["maquina_norm"],
-                        descripcion_averia = ld["descripcion_averia"],
-                        reparacion        = ld["reparacion"],
+                        machine_raw       = ld["machine_raw"],
+                        machine_norm      = ld["machine_norm"],
+                        fault_description = ld["fault_description"],
+                        repair_notes        = ld["repair_notes"],
                         hc                = ld["hc"],
                         hf                = ld["hf"],
                         or_val            = ld["or_val"],
-                        delta_horas       = ld["delta_horas"],
+                        delta_hours       = ld["delta_hours"],
                         flags             = ld["flags"],
                     )
                     created_lines[ld["line_number"]] = line
@@ -5859,8 +5859,8 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         company = cu.company
         assets  = list(
             MachineAsset.objects.filter(company=company, es_activo=True)
-            .order_by("codigo")
-            .values("codigo", "marca_modelo")
+            .order_by("code")
+            .values("code", "brand_model")
         )
         return {
             "company":      company,
@@ -5906,7 +5906,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         from work_order_processor.services import (
             generate_work_order_excel,
             _normalise_machine_code,
-            _compute_delta_horas,
+            _compute_delta_hours,
         )
 
         cu      = self._get_company_user(request)
@@ -5955,24 +5955,24 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
 
         for ld in entry_lines_data:
             blk = f"Bloque {ld['line_number']}"
-            if not ld["maquina_raw"]:
+            if not ld["machine_raw"]:
                 integrity_errors.append(f"{blk}: el codigo de maquina es obligatorio.")
             elif ld["machine_asset"] is None:
                 integrity_errors.append(
-                    f"{blk}: el codigo '{ld['maquina_raw']}' no se ha podido "
+                    f"{blk}: el codigo '{ld['machine_raw']}' no se ha podido "
                     f"identificar en el catalogo de flota. Corrigelo antes de guardar."
                 )
             if not ld["hc"]:
                 integrity_errors.append(f"{blk}: la hora de inicio (H.C.) es obligatoria.")
             if not ld["hf"]:
                 integrity_errors.append(f"{blk}: la hora de fin (H.F.) es obligatoria.")
-            if ld["hc"] and ld["hf"] and ld["delta_horas"] is not None:
-                if ld["delta_horas"] <= 0:
+            if ld["hc"] and ld["hf"] and ld["delta_hours"] is not None:
+                if ld["delta_hours"] <= 0:
                     integrity_errors.append(
                         f"{blk}: la H.F. debe ser posterior a la H.C. "
-                        f"(Delta horas calculado: {ld['delta_horas']})."
+                        f"(Delta horas calculado: {ld['delta_hours']})."
                     )
-            if not ld["descripcion_averia"]:
+            if not ld["fault_description"]:
                 integrity_errors.append(
                     f"{blk}: la descripcion de la averia es obligatoria."
                 )
@@ -5988,10 +5988,10 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             entradas_post = [
                 {
                     "idx":               ld["line_number"],
-                    "maquina_raw":       ld["maquina_raw"],
+                    "machine_raw":       ld["machine_raw"],
                     "machine_asset":     ld["machine_asset"],
-                    "descripcion_averia": ld["descripcion_averia"],
-                    "reparacion":        ld["reparacion"],
+                    "fault_description": ld["fault_description"],
+                    "repair_notes":        ld["repair_notes"],
                     "hc":  ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf":  ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val":            ld["or_val"],
@@ -6063,7 +6063,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     page_number           = 1,
                     worker_name           = worker_name,
                     work_date             = work_date,
-                    fecha_incierta        = False,
+                    uncertain_date        = False,
                     extraction_confidence = WorkOrderEntry.Confidence.HIGH,
                     raw_gemini_response   = None,
                 )
@@ -6074,14 +6074,14 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                         entry              = entry,
                         line_number        = ld["line_number"],
                         machine_asset      = ld["machine_asset"],
-                        maquina_raw        = ld["maquina_raw"],
-                        maquina_norm       = ld["maquina_norm"],
-                        descripcion_averia = ld["descripcion_averia"],
-                        reparacion         = ld["reparacion"],
+                        machine_raw        = ld["machine_raw"],
+                        machine_norm       = ld["machine_norm"],
+                        fault_description = ld["fault_description"],
+                        repair_notes         = ld["repair_notes"],
                         hc                 = ld["hc"],
                         hf                 = ld["hf"],
                         or_val             = ld["or_val"],
-                        delta_horas        = ld["delta_horas"],
+                        delta_hours        = ld["delta_hours"],
                         flags              = ld["flags"],
                     )
                     created_lines[ld["line_number"]] = line
@@ -6214,8 +6214,8 @@ class WorkOrderEntrySTTView(WorkshopRequiredMixin, View):
         company = cu.company
         assets  = list(
             MachineAsset.objects.filter(company=company, es_activo=True)
-            .order_by("codigo")
-            .values("codigo", "marca_modelo")
+            .order_by("code")
+            .values("code", "brand_model")
         )
         return {
             "company":      company,
@@ -6289,11 +6289,11 @@ class WorkOrderEntrySTTExtractView(WorkshopRequiredMixin, View):
          Response (JSON):
            {
              "fecha":              "DD/MM/AAAA" | "",
-             "maquina_raw":        "<code>" | "",
+             "machine_raw":        "<code>" | "",
              "hc":                 "HH:MM" | "",
              "hf":                 "HH:MM" | "",
-             "descripcion_averia": "<text>" | "",
-             "reparacion":         "<text>" | "",
+             "fault_description": "<text>" | "",
+             "repair_notes":         "<text>" | "",
              "or_val":             "<text>" | ""
            }
          On extraction failure returns the same schema with all empty strings
@@ -6322,17 +6322,17 @@ el texto con máxima tolerancia y extraer los siguientes campos:
 - fecha: fecha del parte en formato DD/MM/AAAA. Acepta "veinte del cuatro de 2026",
   "20/4/2026", "20 de abril de 2026", "el dia 3 de mayo de 2026", etc.
   Si no puedes determinarla con certeza, devuelve cadena vacía.
-- maquina_raw: código alfanumérico de la máquina. Puede aparecer como "A-44",
+- machine_raw: código alfanumérico de la máquina. Puede aparecer como "A-44",
   "A44", "vehículo A 44", "maquina JD5090R", etc. Devuelve solo el código,
   sin la keyword. Si el reconocedor de voz separa letras y números con espacio
   (ej: "a 44"), reconstruye el código sin espacio ("A44").
 - hc: hora de inicio en formato HH:MM. Acepta "de 8 a 14", "hora de inicio 8",
   "desde las ocho", "8:00", etc. Si no puedes determinarla, devuelve cadena vacía.
 - hf: hora de fin en formato HH:MM. Mismas variantes que hc.
-- descripcion_averia: descripción de la avería o tarea. Texto limpio en español,
+- fault_description: descripción de la avería o tarea. Texto limpio en español,
   sin keywords ni relleno (elimina frases como "descripción de la avería",
-  "parte de reparaciones", "orden de reparación", "ahora", etc.).
-- reparacion: descripción de la reparación realizada. Texto limpio. Si no se
+  "parte de repair_noteses", "orden de reparación", "ahora", etc.).
+- repair_notes: descripción de la reparación realizada. Texto limpio. Si no se
   menciona explícitamente, devuelve cadena vacía.
 - or_val: referencia de la orden de reparación (O.R.). Puede ser un nombre propio,
   número o código. Si no se menciona, devuelve cadena vacía.
@@ -6344,16 +6344,16 @@ REGLAS OBLIGATORIAS:
    usa cadena vacía "".
 3. Las horas siempre en formato HH:MM con ceros a la izquierda (08:00, 14:00).
 4. La fecha siempre en formato DD/MM/AAAA con ceros a la izquierda (20/04/2026).
-5. maquina_raw siempre en MAYÚSCULAS.
+5. machine_raw siempre en MAYÚSCULAS.
 
 Formato de respuesta exacto:
 {
   "fecha": "",
-  "maquina_raw": "",
+  "machine_raw": "",
   "hc": "",
   "hf": "",
-  "descripcion_averia": "",
-  "reparacion": "",
+  "fault_description": "",
+  "repair_notes": "",
   "or_val": ""
 }
 
@@ -6379,11 +6379,11 @@ Transcripción del operario:
              Response (JSON):
                {
                  "fecha":              "DD/MM/AAAA" | "",
-                 "maquina_raw":        "<codigo>" | "",
+                 "machine_raw":        "<codigo>" | "",
                  "hc":                 "HH:MM" | "",
                  "hf":                 "HH:MM" | "",
-                 "descripcion_averia": "<texto>" | "",
-                 "reparacion":         "<texto>" | "",
+                 "fault_description": "<texto>" | "",
+                 "repair_notes":         "<texto>" | "",
                  "or_val":             "<texto>" | ""
                }
              On any failure returns the same schema with all empty strings so
@@ -6411,8 +6411,8 @@ Transcripción del operario:
         from google.genai.types import GenerateContentConfig, HttpOptions, ThinkingConfig
 
         _EMPTY = {
-            "fecha": "", "maquina_raw": "", "hc": "", "hf": "",
-            "descripcion_averia": "", "reparacion": "", "or_val": "",
+            "fecha": "", "machine_raw": "", "hc": "", "hf": "",
+            "fault_description": "", "repair_notes": "", "or_val": "",
         }
 
         # JSON schema for structured output — guarantees field presence and types.
@@ -6421,16 +6421,16 @@ Transcripción del operario:
             "type": "object",
             "properties": {
                 "fecha":              {"type": "string"},
-                "maquina_raw":        {"type": "string"},
+                "machine_raw":        {"type": "string"},
                 "hc":                 {"type": "string"},
                 "hf":                 {"type": "string"},
-                "descripcion_averia": {"type": "string"},
-                "reparacion":         {"type": "string"},
+                "fault_description": {"type": "string"},
+                "repair_notes":         {"type": "string"},
                 "or_val":             {"type": "string"},
             },
             "required": [
-                "fecha", "maquina_raw", "hc", "hf",
-                "descripcion_averia", "reparacion", "or_val",
+                "fecha", "machine_raw", "hc", "hf",
+                "fault_description", "repair_notes", "or_val",
             ],
         }
 
@@ -6483,7 +6483,7 @@ Transcripción del operario:
             logger.info(
                 "# [STTExtract] Extracción Gemini completada. "
                 "maquina=%s | fecha=%s | hc=%s | hf=%s.",
-                result["maquina_raw"], result["fecha"],
+                result["machine_raw"], result["fecha"],
                 result["hc"], result["hf"],
             )
             return JsonResponse(result)

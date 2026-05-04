@@ -31,7 +31,7 @@ from enterprise_core.celery import app
 from .models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 from .services import (
     _coerce_confidence,
-    _compute_delta_horas,
+    _compute_delta_hours,
     _normalise_machine_code,
     _parse_date,
     _parse_time,
@@ -498,7 +498,7 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
 
                     hc = _parse_time(bloque.get("hc"))
                     hf = _parse_time(bloque.get("hf"))
-                    delta = _compute_delta_horas(hc, hf)
+                    delta = _compute_delta_hours(hc, hf)
 
                     flags = bloque.get("flags") or []
                     if not isinstance(flags, list):
@@ -530,7 +530,7 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                         line_idx,
                         maquina_raw,
                         maquina_norm,
-                        machine_asset.codigo if machine_asset else "NO RESUELTO",
+                        machine_asset.code if machine_asset else "NO RESUELTO",
                         hc.strftime("%H:%M") if hc else "--",
                         hf.strftime("%H:%M") if hf else "--",
                         str(delta) if delta is not None else "?",

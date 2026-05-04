@@ -2,8 +2,8 @@
 {#                                                                                        #}
 {# Inline edit view for WorkOrderEntryLine records belonging to a WorkOrder.             #}
 {# Lines are grouped by their parent WorkOrderEntry (page / date).                       #}
-{# Each line exposes editable fields: maquina_norm, descripcion_averia, reparacion,      #}
-{# hc, hf, or_val, flags. delta_horas is recomputed server-side on save.                #}
+{# Each line exposes editable fields: machine_norm, fault_description, repair_notes,      #}
+{# hc, hf, or_val, flags. delta_hours is recomputed server-side on save.                #}
 {# A "Regenerar Excel" button re-enqueues the Excel generation task.                     #}
 {#                                                                                        #}
 {# Hito 8 — Paso 2 (2026-04-28): HTMX auto-save per field.                              #}
@@ -13,8 +13,8 @@
 {#                                                                                        #}
 {# Vista de edición inline para registros WorkOrderEntryLine de un WorkOrder.            #}
 {# Las líneas se agrupan por su WorkOrderEntry padre (página / fecha).                   #}
-{# Cada línea expone campos editables: maquina_norm, descripcion_averia, reparacion,     #}
-{# hc, hf, or_val, flags. delta_horas se recalcula en el servidor al guardar.           #}
+{# Cada línea expone campos editables: machine_norm, fault_description, repair_notes,     #}
+{# hc, hf, or_val, flags. delta_hours se recalcula en el servidor al guardar.           #}
 {# Un botón "Regenerar Excel" re-encola la tarea de generación del Excel.                #}
 {#                                                                                        #}
 {# Hito 8 — Paso 2 (2026-04-28): guardado automático por campo via HTMX.                #}
@@ -104,7 +104,7 @@
         animation: rowSaveFlash 0.8s ease-out forwards;
     }
     /* Workday duration indicators — Indicadores de duración de jornada diaria.
-       El total se calcula sumando delta_horas de todas las líneas del grupo.
+       El total se calcula sumando delta_hours de todas las líneas del grupo.
        < 8h   → jornada incompleta (azul info)
        8-12h  → jornada normal / horas extras moderadas (verde)
        12-16h → exceso de horas extras — revisar (naranja)

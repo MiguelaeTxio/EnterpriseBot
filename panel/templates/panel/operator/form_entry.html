@@ -98,7 +98,7 @@
                                 <span class="badge bg-dark">Bloque {{ entrada.idx }}</span>
                                 {% if entrada.machine_asset %}
                                     <span class="badge badge-active text-sm">
-                                        {{ entrada.machine_asset.codigo }} — {{ entrada.machine_asset.marca_modelo }}
+                                        {{ entrada.machine_asset.code }} — {{ entrada.machine_asset.brand_model }}
                                     </span>
                                 {% elif entrada.maquina_raw %}
                                     <span class="badge badge-inactive text-sm">
@@ -448,7 +448,7 @@
                         var btn = document.createElement("button");
                         btn.type      = "button";
                         btn.className = "list-group-item list-group-item-action text-sm py-1 px-2";
-                        btn.textContent = asset.codigo + " — " + asset.marca_modelo;
+                        btn.textContent = asset.code + " — " + asset.brand_model;
 
                         /* pointerdown fires before blur on all platforms including
                            Android Chrome — set guard so blur does not close dropdown
@@ -461,8 +461,8 @@
                             _selecting = true;
                         });
                         btn.addEventListener("click", function () {
-                            input.value = asset.codigo;
-                            lastQuery   = asset.codigo;
+                            input.value = asset.code;
+                            lastQuery   = asset.code;
                             _selecting  = false;
                             _hideDropdown();
                             input.focus();

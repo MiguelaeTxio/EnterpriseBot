@@ -343,7 +343,7 @@ def _parse_catalogue(lines: list[str]) -> list[dict]:
         m = _RE_EMPRESA.match(line)
         if m:
             flush()
-            current_company_code = m.group("codigo").strip()
+            current_company_code = m.group("code").strip()
             current_company_name = m.group("nombre").strip()
             current_family       = ""
             current_type_code    = ""
@@ -353,7 +353,7 @@ def _parse_catalogue(lines: list[str]) -> list[dict]:
         m = _RE_FAMILIA.match(line)
         if m:
             flush()
-            current_family    = m.group("codigo").strip()
+            current_family    = m.group("code").strip()
             current_type_code = ""
             current_type_name = ""
             continue
@@ -361,7 +361,7 @@ def _parse_catalogue(lines: list[str]) -> list[dict]:
         m = _RE_TIPO.match(line)
         if m:
             flush()
-            current_type_code = m.group("codigo").strip()
+            current_type_code = m.group("code").strip()
             current_type_name = (m.group("nombre") or "").strip()
             continue
 

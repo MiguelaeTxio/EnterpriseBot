@@ -65,20 +65,20 @@ def _build_fleet_block(section) -> str:
     assets = (
         MachineAsset.objects
         .filter(familia__in=families, es_activo=True)
-        .order_by("familia", "tipo_nombre", "codigo")
-        .values("codigo", "marca_modelo", "tipo_nombre", "familia")
+        .order_by("family", "type_name", "code")
+        .values("code", "brand_model", "type_name", "family")
     )
 
     if not assets:
         return ""
 
-    # Group by tipo_nombre for readability.
-    # Agrupar por tipo_nombre para legibilidad.
+    # Group by type_name for readability.
+    # Agrupar por type_name para legibilidad.
     from collections import defaultdict
     by_type: dict = defaultdict(list)
     for asset in assets:
-        by_type[asset["tipo_nombre"]].append(
-            f"{asset['codigo']} ({asset['marca_modelo']})"
+        by_type[asset["type_name"]].append(
+            f"{asset['codigo']} ({asset['brand_model']})"
         )
 
     lines = ["MAQUINARIA DISPONIBLE EN ESTA SECCIÓN:"]

@@ -281,15 +281,18 @@ en el panel via HTMX.
 
 ## 5. Hoja de Ruta para la Siguiente Sesion (HITO PAUSADO)
 
-El Hito 8 queda PAUSADO al cierre de la sesion 008.
+El Hito 8 queda PAUSADO al cierre de la sesion 009.
 
 Pendiente si se reactiva:
   - Coloracion de incidencias (flags activos) en el Excel de salida generado por
     generate_work_order_excel() en services.py, si el supervisor lo requiere.
     Actualmente los flags se conservan en BD y son visibles en el editor del panel.
+  - Badge de advertencia visual en el editor de partes para lineas con
+    machine_asset=NULL (centro de gasto no resuelto en catalogo). Actualmente
+    el campo Activo resuelto aparece vacio sin indicador diferenciado.
 
-El siguiente hito activo es el Hito 12 — Gestion de Centros de Gasto y Panel.
-Ver ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md para la hoja de ruta de la proxima sesion.
+El siguiente hito activo es el Hito 7 — Partes Diarios de Reparacion Entrada Digital.
+Ver ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md para la hoja de ruta de la proxima sesion.
 
 ### PRIMERA ACCION — Completar validacion E2E Paso 10
 
@@ -485,6 +488,7 @@ WARNING pero no revierte el estado DONE ni el Excel generado.
 | 006    | 2026-04-30 | Fuera HR        | Hito reactivado. Correcciones panel: _field_pw.html (TemplateDoesNotExist), PanelSetPasswordForm (cambio forzado sin old_password), sidebar PDFs visible para SUPERVISOR. |
 | 007    | 2026-05-01 | Nuevo trabajo   | Reactivacion del hito. Via B STT validada E2E: motor reemplazado de MediaRecorder a Web Speech API nativa (sin bytes de audio al servidor). WorkOrderEntrySTTExtractView.post() refactorizado: recibe JSON transcript, usa response_mime_type=application/json + response_schema + thinking_budget=0. Formulario pre-rellenado correctamente desde dictado natural. Problemas resueltos: TemplateDoesNotExist _field_pw.html, PanelSetPasswordForm para nuevos usuarios, sidebar SUPERVISOR, duplicacion de transcripcion (interimResults=false + sin reinicio automatico), truncado JSON Gemini (thinking tokens consumian output budget). |
 | 008    | 2026-05-01 | Calidad datos + UX editor | Auditoria exhaustiva de 441 WorkOrderEntryLine en BD. Identificacion y confirmacion de tres incidencias reales: desbordamiento de linea (or_val con horario), multiples maquinas en un campo, confusion morfologica OCR en codigos de maquina. Diseno de mapa de confusion simetrico bidireccional (T<->7<->4, Z<->2, O<->0, L/I<->1, S<->5, G<->6, B<->8) validado contra catalogo de 313 MachineAsset incluyendo matrículas espanolas (guarda 4 digitos + 3 letras). PMA services.py: _OCR_CONFUSION_MAP anadido, _resolve_machine_asset ampliado con algoritmo de candidatos morfologicos por niveles (Nivel 1: 1 sustitucion; Nivel 2: 2 sustituciones simultaneas), _OCR_DIGIT_MAP legacy preservado con guarda de bloque numerico con letras, _EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL reforzados con casos patron G-J (multiples maquinas, desbordamiento de linea, confusion morfologica, texto de etiqueta de formulario). Neonato repair_entry_lines.py con tres reglas deterministicas (R1: or_val->hc cuando hc=None; R2: explosion maquina_raw multi-codigo con normalizacion Y-inicial, guarda codigo-unico y guarda validacion de tokens; R3: re-resolucion morfologica de machine_asset=None). Ejecucion --apply: 2 lineas R1, 7 lineas R2 explosionadas en 14 nuevas, 36/72 lineas R3 resueltas. UX editor: columna Flags eliminada del panel (flags conservados en BD para Excel de incidencias); badge de jornada diaria en cabecera de grupo con cuatro niveles de color (day_total + day_css calculados en _build_groups()): <8h azul, 8-12h verde, 12-16h ambar, >16h rojo. Validado E2E. Hito pausado al cierre de sesion 008. |
+| 009    | 2026-05-04 | Deuda tecnica + fix OCR inverso + Regla 4 | Renombrado completo de 6 campos a ingles (Regla de Oro del Idioma): maquina_raw->machine_raw, maquina_norm->machine_norm, descripcion_averia->fault_description, reparacion->repair_notes, delta_horas->delta_hours, fecha_incierta->uncertain_date. Migracion 0007_rename_fields_english aplicada. PMA sobre models.py, services.py, tasks.py, admin.py, repair_entry_lines.py, panel/views.py, 3 templates work_orders. Saneado de referencias a campos H12 (code, brand_model, type_name, family, is_active) en 12 archivos adicionales (panel/views.py, signals.py, 5 templates operator, analytics.html, _line_row.html, import_machine_catalog.py). Fix OCR inverso: _OCR_DIGIT_TO_LETTER_MAP anadido en services.py — codigos puramente numericos con digito inicial interpretable como letra (ej. 294->Z-94, 225->Z-25). Regla 4 anadida a repair_entry_lines.py: re-normaliza machine_norm en lineas ya resueltas donde el valor actual es crudo (igual al raw, vacio o puramente numerico), con guarda que protege machine_norm establecido por el resolver morfologico. Ejecucion --apply: 47 machine_norm actualizados. Fix import_name _compute_delta_horas->_compute_delta_hours en tasks.py y panel/views.py. |
 
 ---
 

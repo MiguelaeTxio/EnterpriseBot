@@ -310,8 +310,8 @@
         assetSel.innerHTML = '<option value="__all__" selected>Todos los activos</option>';
         _assets.forEach(a => {
             const opt = document.createElement("option");
-            opt.value       = a.codigo;
-            opt.textContent = a.codigo + " — " + a.marca_modelo;
+            opt.value       = a.code;
+            opt.textContent = a.code + " — " + a.brand_model;
             assetSel.appendChild(opt);
         });
         // Resize to show up to 6 options / Redimensionar para mostrar hasta 6 opciones.
@@ -363,7 +363,7 @@
         return _allLines.filter(line => {
             if (dateFrom && line.work_date < dateFrom) return false;
             if (dateTo   && line.work_date > dateTo)   return false;
-            if (selAssets && !selAssets.includes(line.codigo))               return false;
+            if (selAssets && !selAssets.includes(line.code))               return false;
             if (selWOs    && !selWOs.includes(String(line.work_order)))      return false;
             return true;
         });
@@ -377,7 +377,7 @@
         // Contar intervenciones por código de activo.
         const counts = {};
         lines.forEach(l => {
-            counts[l.codigo] = (counts[l.codigo] || 0) + 1;
+            counts[l.code] = (counts[l.code] || 0) + 1;
         });
         const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
         return {
@@ -392,8 +392,8 @@
         // Sumar horas netas por código de activo.
         const hours = {};
         lines.forEach(l => {
-            if (l.delta_horas !== null) {
-                hours[l.codigo] = (hours[l.codigo] || 0) + l.delta_horas;
+            if (l.delta_hours !== null) {
+                hours[l.code] = (hours[l.code] || 0) + l.delta_hours;
             }
         });
         const sorted = Object.entries(hours).sort((a, b) => b[1] - a[1]);
@@ -409,8 +409,8 @@
         // Sumar horas netas por día de semana (0=Lun … 4=Vie).
         const hours = {0:0, 1:0, 2:0, 3:0, 4:0};
         lines.forEach(l => {
-            if (l.weekday !== null && l.delta_horas !== null && l.weekday < 5) {
-                hours[l.weekday] += l.delta_horas;
+            if (l.weekday !== null && l.delta_hours !== null && l.weekday < 5) {
+                hours[l.weekday] += l.delta_hours;
             }
         });
         return {
@@ -425,8 +425,8 @@
         // Sumar horas netas por activo, devolver top 10 descendente.
         const hours = {};
         lines.forEach(l => {
-            if (l.delta_horas !== null) {
-                hours[l.codigo] = (hours[l.codigo] || 0) + l.delta_horas;
+            if (l.delta_hours !== null) {
+                hours[l.code] = (hours[l.code] || 0) + l.delta_hours;
             }
         });
         const sorted = Object.entries(hours)
@@ -579,9 +579,9 @@
     // Update summary row / Actualizar fila de resumen
     // ------------------------------------------------------------------
     function updateSummary(lines) {
-        const assets  = new Set(lines.map(l => l.codigo));
+        const assets  = new Set(lines.map(l => l.code));
         const pdfs    = new Set(lines.map(l => l.work_order));
-        const hours   = lines.reduce((acc, l) => acc + (l.delta_horas || 0), 0);
+        const hours   = lines.reduce((acc, l) => acc + (l.delta_hours || 0), 0);
 
         el("summary-lines").textContent  = lines.length.toLocaleString("es-ES");
         el("summary-assets").textContent = assets.size.toLocaleString("es-ES");

@@ -127,11 +127,11 @@
                     <tbody>
                         {% for line in today_work_orders %}
                         <tr>
-                            <td class="px-4 text-sm fw-semibold">{{ line.machine_asset.codigo }}</td>
+                            <td class="px-4 text-sm fw-semibold">{{ line.machine_asset.code }}</td>
                             <td class="text-sm text-muted">{{ line.entry.fault_description|truncatechars:60 }}</td>
                             <td class="text-sm">{{ line.start_time|time:"H:i" }}</td>
                             <td class="text-sm">{{ line.end_time|time:"H:i" }}</td>
-                            <td class="text-sm">{{ line.delta_horas }}</td>
+                            <td class="text-sm">{{ line.delta_hours }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

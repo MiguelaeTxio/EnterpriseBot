@@ -152,7 +152,7 @@ _EXTRACTION_PROMPT = """\
 Eres un asistente especializado en la extracción de datos de partes de trabajo
 manuscritos de una empresa de grúas y maquinaria industrial (grúas móviles,
 plataformas elevadoras, autocargantes, cabezas tractoras, semirremolques,
-carretillas elevadoras). Las averías y reparaciones pertenecen siempre a este
+carretillas elevadoras). Las averías y repair_noteses pertenecen siempre a este
 tipo de vehículos y maquinaria pesada industrial.
 
 Analiza la imagen del parte de trabajo manuscrito. Cada página es un parte
@@ -165,14 +165,14 @@ REGLAS OBLIGATORIAS:
 3. Fechas en formato "DD/MM/YYYY". Horas en formato "HH:MM".
 4. Horarios SIEMPRE redondeados a fracciones de media hora (:00 o :30).
    Ejemplos: 09:20 → "09:30", 07:10 → "07:00", 17:45 → "18:00".
-5. El campo "fecha_incierta" es true solo si la fecha es genuinamente ilegible
+5. El campo "uncertain_date" es true solo si la fecha es genuinamente ilegible
    tras intentar deducirla por contexto. No lo uses si puedes leerla.
-6. En "maquina_raw" copia exactamente lo que lees tras aplicar las reglas de
+6. En "machine_raw" copia exactamente lo que lees tras aplicar las reglas de
    caligrafía (ver sección CALIGRAFÍA). Si aparece cualquier variante del
    alias Larios en contexto de máquina, normalízalo a "Larios". El tipo de
    vehículo que precede al alias va separado por un espacio (ej. "Furgon
    Larios", "Mercedes Larios"). NUNCA concatenar tipo y alias sin espacio.
-   "Salida polígonos" NO es una máquina: deja maquina_raw null en ese caso.
+   "Salida polígonos" NO es una máquina: deja machine_raw null en ese caso.
 7. Interpreta abreviaturas técnicas en contexto de vehículos pesados:
    "hid." → hidráulico, "trans." → transmisión, "dir." → dirección,
    "mto." → mantenimiento, "ace." → aceite, "fil." → filtro.
@@ -239,18 +239,18 @@ F) CÓDIGO DE MÁQUINA EN CAMPO KM:
    dejando el campo MAQUINA: en blanco. Si MAQUINA: está vacío pero
    KM: contiene un valor con formato de código de máquina (letras
    seguidas de guion y número, ej. G-8, A-54, B-42), usar ese valor
-   como maquina_raw. El valor numérico de KM queda en ese caso sin dato.
+   como machine_raw. El valor numérico de KM queda en ese caso sin dato.
 
 Formato de respuesta (claves exactas):
 {
   "fecha": "<DD/MM/YYYY o null>",
-  "fecha_incierta": <true | false>,
+  "uncertain_date": <true | false>,
   "extraction_confidence": "<HIGH | MEDIUM | LOW | FAILED>",
   "entradas": [
     {
-      "maquina_raw": "<código o alias normalizado tal como se lee, o null>",
-      "descripcion_averia": "<descripción de la avería o tarea, o null>",
-      "reparacion": "<descripción de la reparación realizada, o null>",
+      "machine_raw": "<código o alias normalizado tal como se lee, o null>",
+      "fault_description": "<descripción de la avería o tarea, o null>",
+      "repair_notes": "<descripción de la reparación realizada, o null>",
       "hc": "<HH:MM o null>",
       "hf": "<HH:MM o null>",
       "or_val": "<referencia O.R. o null>",
@@ -355,21 +355,21 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
         # Post-processing: fix Larios alias concatenated without space.
         # The prompt instructs Gemini to separate them, but caligraphic OCR
         # sometimes produces "MERCEDESLARIOS", "FURGONLARIOS", etc.
-        # We apply a deterministic Python fix: if maquina_raw matches the
+        # We apply a deterministic Python fix: if machine_raw matches the
         # pattern VEHICLETYPE+LARIOS_VARIANT (no space), insert the space
         # and normalise the alias to "Larios".
         #
         # Post-procesado: corregir alias Larios concatenado sin espacio.
         # El prompt instruye a Gemini a separarlos, pero el OCR caligráfico
         # a veces produce "MERCEDESLARIOS", "FURGONLARIOS", etc.
-        # Aplicamos un fix Python determinista: si maquina_raw coincide con
+        # Aplicamos un fix Python determinista: si machine_raw coincide con
         # el patrón TIPOVEHICULO+VARIANTE_LARIOS (sin espacio), se inserta
         # el espacio y se normaliza el alias a "Larios".
         _LARIOS_RE = re.compile(
             r'(?i)^([A-Za-z]+)(L[ao]r[aio][a-z]*)$'
         )
         for _entrada in (extracted.get("entradas") or []):
-            _raw = (_entrada.get("maquina_raw") or "").strip()
+            _raw = (_entrada.get("machine_raw") or "").strip()
             if not _raw:
                 continue
             _m = _LARIOS_RE.match(_raw)
@@ -377,7 +377,7 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
                 # Separate prefix and normalise alias to "Larios".
                 # Separar prefijo y normalizar alias a "Larios".
                 _prefix = _m.group(1).capitalize()
-                _entrada["maquina_raw"] = f"{_prefix} Larios"
+                _entrada["machine_raw"] = f"{_prefix} Larios"
 
         return extracted
 
@@ -387,7 +387,7 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
         )
         return {
             "fecha":                None,
-            "fecha_incierta":       False,
+            "uncertain_date":       False,
             "extraction_confidence": "FAILED",
             "entradas":             [],
         }
@@ -428,13 +428,13 @@ REGLAS OBLIGATORIAS (aplican a ambas caras):
 3. Fechas en formato "DD/MM/YYYY". Horas en formato "HH:MM".
 4. Horarios SIEMPRE redondeados a fracciones de media hora (:00 o :30).
    Ejemplos: 09:20 → "09:30", 07:10 → "07:00", 17:45 → "18:00".
-5. El campo "fecha_incierta" es true solo si la fecha es genuinamente ilegible
+5. El campo "uncertain_date" es true solo si la fecha es genuinamente ilegible
    tras intentar deducirla por contexto. No lo uses si puedes leerla.
-6. En "maquina_raw" copia exactamente lo que lees tras aplicar las reglas de
+6. En "machine_raw" copia exactamente lo que lees tras aplicar las reglas de
    caligrafía. Si aparece cualquier variante del alias Larios en contexto de
    máquina, normalízalo a "Larios". El tipo de vehículo que precede al alias
    va separado por un espacio (ej. "Furgon Larios"). NUNCA concatenar sin espacio.
-   "Salida polígonos" NO es una máquina: deja maquina_raw null en ese caso.
+   "Salida polígonos" NO es una máquina: deja machine_raw null en ese caso.
 7. Interpreta abreviaturas técnicas en contexto de vehículos pesados:
    "hid." → hidráulico, "trans." → transmisión, "dir." → dirección,
    "mto." → mantenimiento, "ace." → aceite, "fil." → filtro.
@@ -457,7 +457,7 @@ REGLAS ESPECÍFICAS — CARA TRASERA (REPUESTOS):
 R1. "referencia" es el código o número de referencia del albarán del proveedor.
     Puede ser alfanumérico. Si no aparece, usa null.
 R2. "vehiculo_raw" es el código o descripción de la máquina a la que se imputa
-    el repuesto. Aplica las mismas reglas de caligrafía que para maquina_raw.
+    el repuesto. Aplica las mismas reglas de caligrafía que para machine_raw.
 R3. "material" es la descripción textual del repuesto o material. Puede inferirse
     de la referencia si el campo está vacío pero la referencia es descriptiva.
 R4. "unidades" es un número (entero o decimal). Usa null si no es legible.
@@ -488,8 +488,8 @@ F) MÚLTIPLES MÁQUINAS EN UN ÚNICO CAMPO:
    MAQUINA: separados por coma, punto y coma, la conjunción "y", barra
    oblicua o espacio (ej. "Z59, Z73, Z62", "T-11 y Z-107 Z-123",
    "F-22 y V04"), genera una entrada separada por cada código de máquina
-   identificado, repitiendo en cada una la misma descripcion_averia,
-   reparacion, hc, hf y or_val. Añade "MAQUINA" a flags en todas las
+   identificado, repitiendo en cada una la misma fault_description,
+   repair_notes, hc, hf y or_val. Añade "MAQUINA" a flags en todas las
    entradas resultantes para indicar que proceden de un campo múltiple.
 
 G) DESBORDAMIENTO DE LÍNEA — DOS TAREAS EN UN MISMO BLOQUE FÍSICO:
@@ -522,14 +522,14 @@ H) CONFUSIÓN MORFOLÓGICA EN CÓDIGOS DE MÁQUINA — TODOS LOS CARACTERES:
    Cuando un código leído no te resulte coherente con el catálogo de
    maquinaria de una empresa de grúas y plataformas elevadoras, aplica
    estas sustituciones para intentar leer el código correcto. Transcribe
-   en maquina_raw el código más probable e incluye "MAQUINA" en flags si
+   en machine_raw el código más probable e incluye "MAQUINA" en flags si
    hay ambigüedad residual.
    EXCEPCIÓN: los vehículos de la familia TURISMOS usan matrícula española
    (4 dígitos seguidos de 3 letras, ej. "2030JVK") — transcribir tal cual
    sin aplicar sustituciones.
 
 I) TEXTO DE ETIQUETA DEL FORMULARIO CAPTURADO COMO CONTENIDO:
-   Si descripcion_averia o reparacion contienen exclusivamente palabras
+   Si fault_description o repair_notes contienen exclusivamente palabras
    que son etiquetas impresas del propio formulario ("Descripción",
    "Avería", "Reparación", "Tarea") sin ningún contenido real añadido,
    deja el campo vacío (null). Si la palabra de etiqueta aparece como
@@ -540,13 +540,13 @@ I) TEXTO DE ETIQUETA DEL FORMULARIO CAPTURADO COMO CONTENIDO:
 Formato de respuesta (claves exactas):
 {
   "fecha": "<DD/MM/YYYY o null>",
-  "fecha_incierta": <true | false>,
+  "uncertain_date": <true | false>,
   "extraction_confidence": "<HIGH | MEDIUM | LOW | FAILED>",
   "entradas": [
     {
-      "maquina_raw": "<código o alias normalizado, o null>",
-      "descripcion_averia": "<descripción de la avería o tarea, o null>",
-      "reparacion": "<descripción de la reparación realizada, o null>",
+      "machine_raw": "<código o alias normalizado, o null>",
+      "fault_description": "<descripción de la avería o tarea, o null>",
+      "repair_notes": "<descripción de la reparación realizada, o null>",
       "hc": "<HH:MM o null>",
       "hf": "<HH:MM o null>",
       "or_val": "<referencia O.R. o null>",
@@ -579,7 +579,7 @@ def extract_work_order_page_full(image_bytes: bytes) -> dict:
     the full prompt (_EXTRACTION_PROMPT_FULL) which covers both the front
     (work blocks) and the back (spare parts table) of the physical form.
 
-    Returns a structured dict with keys: fecha, fecha_incierta,
+    Returns a structured dict with keys: fecha, uncertain_date,
     extraction_confidence, entradas (list of work blocks) and repuestos
     (list of spare part lines). On total failure returns a safe fallback
     dict with empty lists and confidence FAILED.
@@ -596,7 +596,7 @@ def extract_work_order_page_full(image_bytes: bytes) -> dict:
     tanto la cara delantera (bloques de trabajo) como la trasera (tabla de
     repuestos) del formulario físico.
 
-    Devuelve un dict estructurado con claves: fecha, fecha_incierta,
+    Devuelve un dict estructurado con claves: fecha, uncertain_date,
     extraction_confidence, entradas (lista de bloques de trabajo) y repuestos
     (lista de líneas de repuesto). En caso de fallo total devuelve un dict
     de reserva seguro con listas vacías y confianza FAILED.
@@ -679,12 +679,12 @@ def extract_work_order_page_full(image_bytes: bytes) -> dict:
         # Post-procesado: corregir alias Larios concatenado sin espacio.
         _LARIOS_RE = re.compile(r'(?i)^([A-Za-z]+)(L[ao]r[aio][a-z]*)$')
         for _entrada in (extracted.get("entradas") or []):
-            _raw = (_entrada.get("maquina_raw") or "").strip()
+            _raw = (_entrada.get("machine_raw") or "").strip()
             if _raw:
                 _m = _LARIOS_RE.match(_raw)
                 if _m:
                     _prefix = _m.group(1).capitalize()
-                    _entrada["maquina_raw"] = f"{_prefix} Larios"
+                    _entrada["machine_raw"] = f"{_prefix} Larios"
 
         # Apply same Larios fix to vehiculo_raw in repuestos.
         # Aplicar el mismo fix Larios a vehiculo_raw en repuestos.
@@ -706,7 +706,7 @@ def extract_work_order_page_full(image_bytes: bytes) -> dict:
         )
         return {
             "fecha":                 None,
-            "fecha_incierta":        False,
+            "uncertain_date":        False,
             "extraction_confidence": "FAILED",
             "entradas":              [],
             "repuestos":             [],
@@ -837,39 +837,70 @@ _OCR_DIGIT_MAP: dict[str, str] = {
     "G": "6",
 }
 
+# Inverse OCR map: digit misread → most likely letter candidate.
+# Used in _normalise_machine_code step 6 for purely-numeric codes where the
+# leading digit is actually a letter confounded by handwriting (e.g. 2→Z, 6→G).
+# Only digits with a single unambiguous letter counterpart are included —
+# digits with multiple plausible letter readings (e.g. 1→L/I) are excluded
+# to avoid false positives.
+#
+# Mapa OCR inverso: dígito mal leído → letra candidata más probable.
+# Usado en _normalise_machine_code paso 6 para códigos puramente numéricos
+# donde el dígito inicial es en realidad una letra confundida por caligrafía
+# (ej. 2→Z, 6→G). Solo se incluyen dígitos con un único candidato de letra
+# inequívoco — los dígitos con múltiples lecturas plausibles (ej. 1→L/I)
+# se excluyen para evitar falsos positivos.
+_OCR_DIGIT_TO_LETTER_MAP: dict[str, str] = {
+    "2": "Z",   # 2 ↔ Z  — trazo diagonal en escritura rápida
+    "6": "G",   # 6 ↔ G  — forma circular con trazo horizontal
+    "5": "S",   # 5 ↔ S  — curva degenerada a trazo vertical con visera
+    "8": "B",   # 8 ↔ B  — dos bucles apilados
+}
+
 
 def _normalise_machine_code(raw: str | None) -> str:
     """
     Normalises a raw machine code string according to partes-trabajo skill
     directive D4, extended in Hito 8 (Paso 4, D2) with OCR character
-    substitutions applied only to the numeric block:
+    substitutions applied only to the numeric block, and further extended
+    to handle purely-numeric codes where the leading digit is actually a
+    letter misread by OCR (e.g. "294" where "2" is a misread "Z" → "Z94").
+
+    Processing steps:
       1. Strip and uppercase.
       2. Remove internal spaces and equals signs.
-      3. Insert a hyphen between the leading letter(s) and the numeric block
+      3. Multi-word alias: return uppercased with space preserved.
+      4. Insert a hyphen between the leading letter(s) and the numeric block
          if not already present.
-      4. Apply _OCR_DIGIT_MAP substitutions to each character of the numeric
-         block (right of the hyphen) to correct common handwriting misreads.
-      5. Return empty string if raw is None or blank.
-
-    Multi-word aliases (e.g. "Mercedes Larios") are returned uppercased with
-    the space preserved so the resolver can apply the company alias map.
+      5. Apply _OCR_DIGIT_MAP substitutions to the numeric block (right of
+         hyphen) when the block contains exclusively digits.
+      6. Purely-numeric codes (no letter prefix found after step 4): attempt
+         to reinterpret the first digit as a letter via _OCR_DIGIT_TO_LETTER_MAP.
+         If a mapping exists, return the candidate LETTER-REST form so the
+         resolver can try it against the catalogue. If no mapping exists,
+         return the numeric string as-is and let the resolver handle it.
 
     ---
 
     Normaliza un código de máquina bruto según la directriz D4 de la skill
-    partes-trabajo, ampliada en el Hito 8 (Paso 4, D2) con sustituciones
-    de caracteres OCR aplicadas únicamente al bloque numérico:
+    partes-trabajo, ampliada en el Hito 8 (Paso 4, D2) con sustituciones OCR
+    sobre el bloque numérico, y extendida para manejar códigos puramente
+    numéricos donde el dígito inicial es en realidad una letra mal leída por
+    OCR (ej. "294" donde "2" es una "Z" mal leída → "Z94").
+
+    Pasos de procesamiento:
       1. Strip y mayúsculas.
       2. Eliminar espacios internos y signos igual.
-      3. Insertar guion entre la(s) letra(s) inicial(es) y el bloque numérico
-         si no está ya presente.
-      4. Aplicar sustituciones de _OCR_DIGIT_MAP a cada carácter del bloque
-         numérico (derecha del guion) para corregir errores OCR caligráficos.
-      5. Devolver cadena vacía si raw es None o en blanco.
-
-    Los alias de múltiples palabras (ej. "Mercedes Larios") se devuelven en
-    mayúsculas conservando el espacio para que el resolver aplique el mapa
-    de aliases de empresa.
+      3. Alias de múltiples palabras: devolver en mayúsculas conservando espacio.
+      4. Insertar guion entre letras iniciales y bloque numérico si no está.
+      5. Aplicar sustituciones _OCR_DIGIT_MAP al bloque numérico (derecha del
+         guion) cuando el bloque contiene exclusivamente dígitos.
+      6. Códigos puramente numéricos (sin prefijo de letras tras el paso 4):
+         intentar reinterpretar el primer dígito como letra via
+         _OCR_DIGIT_TO_LETTER_MAP. Si existe mapeo, devolver la forma candidata
+         LETRA-RESTO para que el resolver la pruebe contra el catálogo. Si no
+         existe mapeo, devolver la cadena numérica tal cual y dejar que el
+         resolver la gestione.
     """
     if not raw:
         return ""
@@ -900,17 +931,34 @@ def _normalise_machine_code(raw: str | None) -> str:
         if numeric.isdigit():
             numeric = "".join(_OCR_DIGIT_MAP.get(ch, ch) for ch in numeric)
         code = f"{prefix}-{numeric}"
+        return code
+
+    # Step 6 — Purely-numeric code: no letter prefix was found after hyphen
+    # insertion. This occurs when OCR misread a leading letter as a digit
+    # (e.g. "Z" → "2", "G" → "6", "S" → "5"). Attempt to reinterpret the
+    # first character as a letter using the inverse OCR map.
+    #
+    # Paso 6 — Código puramente numérico: no se encontró prefijo de letras
+    # tras la inserción del guion. Ocurre cuando el OCR confundió una letra
+    # inicial con un dígito (ej. "Z" → "2", "G" → "6", "S" → "5"). Se intenta
+    # reinterpretar el primer carácter como letra usando el mapa OCR inverso.
+    if code.isdigit() and len(code) >= 2:
+        first_digit = code[0]
+        letter_candidate = _OCR_DIGIT_TO_LETTER_MAP.get(first_digit)
+        if letter_candidate:
+            rest = code[1:]
+            return f"{letter_candidate}-{rest}"
 
     return code
 
 
-# Regex to detect any Larios alias variant as the second word of maquina_norm.
+# Regex to detect any Larios alias variant as the second word of machine_norm.
 # All such combinations map to the catalogue code FURGLAR regardless of the
 # vehicle type prefix (Mercedes, Furgon, Camion, etc.).
 # Covers: "MERCEDES LARIOS", "FURGON LARIOS", "MERCEDES LORIOL", etc.
 #
 # Regex para detectar cualquier variante del alias Larios como segunda palabra
-# de maquina_norm. Todas estas combinaciones se mapean a FURGLAR independientemente
+# de machine_norm. Todas estas combinaciones se mapean a FURGLAR independientemente
 # del tipo de vehículo. Cubre: "MERCEDES LARIOS", "FURGON LARIOS", etc.
 _LARIOS_TWO_WORD_RE = re.compile(
     r'(?i)^\S+\s+L[ao]r[aio][a-z]*$'
@@ -918,7 +966,7 @@ _LARIOS_TWO_WORD_RE = re.compile(
 
 
 def _resolve_machine_asset(
-    maquina_norm: str,
+    machine_norm: str,
     company=None,
 ) -> MachineAsset | None:
     """
@@ -942,7 +990,7 @@ def _resolve_machine_asset(
     la resolución de activos entre empresas. Las llamadas internas del pipeline
     (tasks.py, services.py) pueden omitir 'company' por compatibilidad.
     """
-    if not maquina_norm:
+    if not machine_norm:
         return None
 
     # Build base queryset — scoped to company when provided.
@@ -955,20 +1003,20 @@ def _resolve_machine_asset(
     # Larios variant maps to FURGLAR regardless of the vehicle type prefix.
     # Resolución alias Larios: cualquier valor de dos palabras donde la segunda
     # es una variante de Larios se mapea a FURGLAR independientemente del tipo.
-    if _LARIOS_TWO_WORD_RE.match(maquina_norm):
+    if _LARIOS_TWO_WORD_RE.match(machine_norm):
         try:
-            return qs.get(codigo="FURGLAR")
+            return qs.get(code="FURGLAR")
         except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
             pass
 
     # Exact match / Coincidencia exacta.
     try:
-        return qs.get(codigo=maquina_norm)
+        return qs.get(code=machine_norm)
     except MachineAsset.DoesNotExist:
         pass
     except MachineAsset.MultipleObjectsReturned:
         logger.warning(
-            "# _resolve_machine_asset: múltiples coincidencias para '%s'.", maquina_norm
+            "# _resolve_machine_asset: múltiples coincidencias para '%s'.", machine_norm
         )
         return None
 
@@ -981,7 +1029,7 @@ def _resolve_machine_asset(
     # El catálogo usa códigos SIN guion (ej. "A54"), mientras que el
     # normalizador inserta guion (ej. "A-54"). Hay que probar ambas formas
     # más variantes con relleno de ceros para maximizar la resolución.
-    m = re.match(r"^([A-Z]+)-?(\d+)$", maquina_norm)
+    m = re.match(r"^([A-Z]+)-?(\d+)$", machine_norm)
     if m:
         letters, digits = m.group(1), m.group(2)
         candidates: set[str] = set()
@@ -1003,11 +1051,11 @@ def _resolve_machine_asset(
 
         # Remove the already-tried exact match to avoid redundant queries.
         # Eliminar la coincidencia exacta ya intentada para evitar consultas redundantes.
-        candidates.discard(maquina_norm)
+        candidates.discard(machine_norm)
 
         for candidate in sorted(candidates):
             try:
-                return MachineAsset.objects.get(codigo=candidate)
+                return MachineAsset.objects.get(code=candidate)
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
                 continue
 
@@ -1024,7 +1072,7 @@ def _resolve_machine_asset(
     # sustituciones morfológicas — su formato es inequívoco.
     # ------------------------------------------------------------------
     _PLATE_RE = re.compile(r"^\d{4}[A-Z]{3}$")
-    if _PLATE_RE.match(maquina_norm):
+    if _PLATE_RE.match(machine_norm):
         return None
 
     def _substitution_candidates(code: str, max_subs: int) -> set[str]:
@@ -1065,7 +1113,7 @@ def _resolve_machine_asset(
     # candidates, then re-probe with and without hyphen insertion.
     # Normalizar el código crudo eliminando guiones antes de generar candidatos
     # de sustitución, y luego re-probar con y sin inserción de guion.
-    stripped = maquina_norm.replace("-", "")
+    stripped = machine_norm.replace("-", "")
 
     # Nivel 1 — single substitution / sustitución única.
     # Nivel 2 — two simultaneous substitutions / dos sustituciones simultáneas.
@@ -1088,11 +1136,11 @@ def _resolve_machine_asset(
             if company is not None:
                 qs_probe = qs_probe.filter(company=company)
             try:
-                asset = qs_probe.get(codigo=candidate)
+                asset = qs_probe.get(code=candidate)
                 logger.info(
                     "# _resolve_machine_asset: '%s' resuelto como '%s' "
                     "mediante sustitución morfológica (nivel %d).",
-                    maquina_norm, candidate, max_subs,
+                    machine_norm, candidate, max_subs,
                 )
                 return asset
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
@@ -1101,7 +1149,7 @@ def _resolve_machine_asset(
     return None
 
 
-def _compute_delta_horas(hc: time | None, hf: time | None) -> Decimal | None:
+def _compute_delta_hours(hc: time | None, hf: time | None) -> Decimal | None:
     """
     Computes the net hours for a work block by subtracting the lunch break
     (13:30–15:00, 90 minutes) if the block covers that interval, as defined
@@ -1226,7 +1274,7 @@ _COLS = [
     ("HORAS EXTRAS",     12),   # M 13
     ("SALARIO EXTRAS",   14),   # N 14
     ("REVISIÓN HORARIO", 16),   # O 15
-    ("COSTE M.O.",        14),   # P 16  — delta_horas × C3 (coste hora ordinaria)
+    ("COSTE M.O.",        14),   # P 16  — delta_hours × C3 (coste hora ordinaria)
 ]
 
 _DATA_ROW_START = 5   # Datos comienzan en fila 5 (filas 1-3 config, 4 cabecera)
@@ -1356,7 +1404,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
         #   - is_first_day  : True for the first line of a new day
         #   - is_last_day   : True for the last line of a day (set in post-pass)
         #   - day_net_hours : Decimal total net hours for the day (set in post-pass)
-        #   - fecha_incierta: bool from parent WorkOrderEntry
+        #   - uncertain_date: bool from parent WorkOrderEntry
 
         flat_rows: list[dict] = []
 
@@ -1370,7 +1418,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
             for line in lines:
                 flat_rows.append({
                     "date_key":       date_key,
-                    "fecha_incierta": entry.fecha_incierta,
+                    "uncertain_date": entry.uncertain_date,
                     "worker_name":    entry.worker_name or worker_name,
                     "line":           line,
                     "is_first_day":   False,
@@ -1399,12 +1447,12 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 # Sombreado alterno: los días con índice ordinal par se sombrean.
                 shade = (day_ordinal % 2 == 1)
 
-                # Sum delta_horas for the day.
-                # Sumar delta_horas del día.
+                # Sum delta_hours for the day.
+                # Sumar delta_hours del día.
                 day_total = Decimal("0.00")
                 all_valid = True
                 for idx in indices:
-                    dh = flat_rows[idx]["line"].delta_horas
+                    dh = flat_rows[idx]["line"].delta_hours
                     if dh is not None:
                         day_total += dh
                     else:
@@ -1498,7 +1546,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
             is_first   = row_data["is_first_day"]
             is_last    = row_data["is_last_day"]
             day_net    = row_data["day_net_hours"]
-            fecha_inc  = row_data["fecha_incierta"]
+            fecha_inc  = row_data["uncertain_date"]
             day_shade  = row_data.get("day_shade", False)
 
             # Pre-fill shaded rows: apply alternating day background to all
@@ -1539,10 +1587,10 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 ws.cell(row=r, column=1).border = _make_border_thin()
 
             # Col B — CÓDIGO / VEH.
-            codigo_val  = line.maquina_norm or line.maquina_raw or ""
-            c_cell      = ws.cell(row=r, column=2, value=codigo_val)
+            code_val  = line.machine_norm or line.machine_raw or ""
+            c_cell      = ws.cell(row=r, column=2, value=code_val)
             c_cell.border = _make_border_thin()
-            if not codigo_val:
+            if not code_val:
                 c_cell.fill = _make_fill(_CLR_MACHINE_EMPT)
             elif not line.machine_asset:
                 c_cell.fill = _make_fill(_CLR_MACHINE_UNKN)
@@ -1552,14 +1600,14 @@ def generate_work_order_excel(work_order_id: int) -> None:
                              f"{line.hf.strftime('%H:%M') if line.hf else '?'}",
                     "campo": "MAQUINA",
                     "descripcion": (
-                        f"Código '{codigo_val}' no encontrado en catálogo "
+                        f"Código '{code_val}' no encontrado en catálogo "
                         "tras normalización D4."
                     ),
                 })
 
             # Col C — MARCA / MODELO
             marca_val = (
-                line.machine_asset.marca_modelo if line.machine_asset else ""
+                line.machine_asset.brand_model if line.machine_asset else ""
             )
             ws.cell(row=r, column=3,
                     value=marca_val).border = _make_border_thin()
@@ -1577,7 +1625,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
 
             # Col F — DESCRIPCIÓN AVERÍA
             g_cell = ws.cell(row=r, column=6,
-                             value=line.descripcion_averia or "")
+                             value=line.fault_description or "")
             g_cell.alignment = Alignment(wrap_text=True, vertical="top")
             g_cell.border    = _make_border_thin()
             if "DESCRIPCION" in (line.flags or []):
@@ -1590,7 +1638,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 })
 
             # Col G — REPARACIÓN
-            h_cell = ws.cell(row=r, column=7, value=line.reparacion or "")
+            h_cell = ws.cell(row=r, column=7, value=line.repair_notes or "")
             h_cell.alignment = Alignment(wrap_text=True, vertical="top")
             h_cell.border    = _make_border_thin()
 
@@ -1636,7 +1684,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
             # Col K — Δ HORAS (neta)
             l_cell = ws.cell(
                 row=r, column=11,
-                value=float(line.delta_horas) if line.delta_horas is not None else "",
+                value=float(line.delta_hours) if line.delta_hours is not None else "",
             )
             l_cell.number_format = '0.00" h"'
             l_cell.alignment     = Alignment(horizontal="center")
@@ -1708,9 +1756,9 @@ def generate_work_order_excel(work_order_id: int) -> None:
             else:
                 ws.cell(row=r, column=15).border = _make_border_thin()
 
-            # Col P — COSTE M.O. (formula: delta_horas * $C$3)
-            # Col P — COSTE M.O. (fórmula: delta_horas * $C$3)
-            if line.delta_horas is not None:
+            # Col P — COSTE M.O. (formula: delta_hours * $C$3)
+            # Col P — COSTE M.O. (fórmula: delta_hours * $C$3)
+            if line.delta_hours is not None:
                 q_cell = ws.cell(
                     row=r, column=16,
                     value=f'=IFERROR(IF($C$3=0,"",K{r}*$C$3),"")',
@@ -2006,7 +2054,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 # VEHICULO: preferir código MachineAsset resuelto; si no,
                 # usar el nombre de vehículo crudo almacenado en SparePartLine.
                 if spl.vehicle:
-                    vehiculo_val = spl.vehicle.codigo or spl.vehicle.descripcion or ""
+                    vehiculo_val = spl.vehicle.code or spl.vehicle.brand_model or ""
                 else:
                     # vehicle_raw is not stored on SparePartLine; use reference
                     # as fallback since it may carry the vehicle code in some cases.

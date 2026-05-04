@@ -34,7 +34,7 @@
             Página {{ group.entry.page_number }}
             {% if group.entry.work_date %}
                 — {{ group.entry.work_date|date:"d/m/Y" }}
-                {% if group.entry.fecha_incierta %}
+                {% if group.entry.uncertain_date %}
                     <span class="date-uncertain">
                         <i class="bi bi-exclamation-triangle-fill"></i> Fecha incierta
                     </span>
