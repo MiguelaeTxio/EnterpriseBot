@@ -116,6 +116,7 @@
     {# ------------------------------------------------------------------ #}
     <td>
         <input type="time"
+               step="1800"
                name="hc"
                value="{{ line.hc|time:'H:i'|default:'' }}"
                class="form-control form-control-sm {{ row_class }}{% if 'H.C.' in line.flags or 'hc' in line.flags %} field-flagged{% endif %}"
@@ -131,6 +132,7 @@
     {# ------------------------------------------------------------------ #}
     <td>
         <input type="time"
+               step="1800"
                name="hf"
                value="{{ line.hf|time:'H:i'|default:'' }}"
                class="form-control form-control-sm {{ row_class }}{% if 'H.F.' in line.flags or 'hf' in line.flags %} field-flagged{% endif %}"

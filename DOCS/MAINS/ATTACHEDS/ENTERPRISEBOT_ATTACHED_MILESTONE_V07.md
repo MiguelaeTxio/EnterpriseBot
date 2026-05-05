@@ -213,6 +213,75 @@ Estado: COMPLETADO PARCIAL (sesion 006, 2026-04-30) — pendiente validacion E2E
   Detener y procesar, spinner de procesamiento y resumen de resultado.
 - Pendiente: validacion E2E Via B en sesion 007.
 
+### 2.11. Correccion identificadores Regla de Oro del Idioma (sesion 008)
+
+Los templates del operario y panel/views.py usaban los nombres de campo
+anteriores al renombrado aplicado en H8/S009. La correccion fue atomica
+y simultanea en vistas + templates.
+
+Mapa de renombrado aplicado:
+  maquina_raw        → machine_raw       (WorkOrderEntryLine.machine_raw)
+  descripcion_averia → fault_description (WorkOrderEntryLine.fault_description)
+  reparacion         → repair_notes      (WorkOrderEntryLine.repair_notes)
+  fecha_incierta     → uncertain_date    (contexto de confirmacion)
+
+Archivos corregidos:
+  - panel/views.py:
+    - _resolve_machine: codigo__iexact → code__iexact (x2)
+    - WorkOrderEntryConfirmView.get: es_activo=True → is_active=True (x4)
+    - _parse_entry_lines_from_post: codigo__iexact → code__iexact (x4)
+    - _parse_spare_parts_from_post: codigo__iexact → code__iexact (x4)
+    - WorkshopAssetAutocompleteView.get: codigo__icontains → code__icontains (x1)
+  - panel/templates/panel/operator/confirm_entry.html: todos los name=, variables
+    de contexto, condicionales fecha_incierta y JS gate.
+  - panel/templates/panel/operator/form_entry.html: idem + _buildBlockRow JS.
+  - panel/templates/panel/operator/stt_entry.html: idem.
+
+### 2.12. Widget TimePicker custom (sesion 008)
+
+El atributo step="1800" en input[type="time"] no restringe el selector
+visual del navegador (Chrome/Firefox lo ignoran visualmente). Se implemento
+un selector custom de dos columnas (horas 00-23 scrollable / minutos 00|30
+fijos) como partial Django reutilizable.
+
+Partial: panel/templates/panel/_time_picker_widget.html
+  - CSS embebido: .tp-wrapper, .tp-display, .tp-dropdown, .tp-col-hours,
+    .tp-col-minutes, .tp-option, .tp-selected, .tp-flagged.
+  - JS embebido: motor TimePicker con API publica TimePicker.init(input) /
+    TimePicker.initAll(). Oculta el input[type="time"] original (display:none)
+    y lo mantiene como campo real del formulario.
+  - Dropdown anclado al <body> via getBoundingClientRect() para escapar
+    del contexto de apilado de tablas HTMX (fix necesario para edit.html).
+  - MutationObserver: activa el widget sobre inputs anadidos dinamicamente
+    (_buildBlockRow en form_entry.html, swaps HTMX en edit.html).
+  - Dispara evento change nativo sobre el input oculto para compatibilidad
+    con hx-trigger="change" de HTMX en _line_row.html.
+  - Sincronizacion de flag field-flagged via MutationObserver sobre el input.
+
+Templates que incluyen el partial via {% block extra_scripts %}:
+  - panel/templates/panel/operator/form_entry.html
+  - panel/templates/panel/operator/stt_entry.html
+  - panel/templates/panel/work_orders/edit.html
+    (requiere reglas CSS adicionales en {% block extra_head %} para
+    integracion con .edit-table: position/overflow en td y overrides
+    de .tp-display, .tp-dropdown dentro de la tabla)
+
+### 2.13. Restriccion de minutos a 00/30 con step="1800"
+
+Anadido atributo step="1800" a todos los input[type="time"] de:
+  - panel/templates/panel/operator/form_entry.html (x6: dinamico + estatico + JS)
+  - panel/templates/panel/operator/stt_entry.html (x4: dinamico + estatico)
+  - panel/templates/panel/work_orders/_line_row.html (x2: hc + hf)
+El atributo step actua como barrera de validacion HTML5 aunque el navegador
+no lo aplique visualmente al selector nativo (cubierto por widget 2.12).
+
+### 2.14. Fix WorkshopAssetAutocompleteView (sesion 008)
+
+Bug: codigo__icontains en el filtro de busqueda (nombre anterior al renombrado
+de H8/S009). Corregido a code__icontains en panel/views.py linea ~4929.
+El autocompletado de centros de gasto en form_entry.html y stt_entry.html
+queda operativo.
+
 ### Paso 9 — Validacion E2E de las tres vias
 Estado: COMPLETADO PARCIAL (sesion 006, 2026-04-30).
 - Via A (Form): VALIDADA. Persistencia correcta, nombre sintetico legible
@@ -234,104 +303,111 @@ Estado: COMPLETADO PARCIAL (sesion 006, 2026-04-30).
 | 005    | 2026-04-30 | Paso 8 (parcial)                  | WorkOrderEntrySTTView implementada en panel/views.py (PMA). stt_entry.html creado (PEA): grabador Web Speech API es-ES, parser JS client-side, formulario identico a form_entry.html, validacion client-side. urls.py actualizado: import + ruta operator/stt/. Dashboard Via B activada. Pendiente H021 CSS (inline style en stt-transcript div). |
 | 006    | 2026-04-30 | Paso 8 (completado parcial) + fixes | H021 CSS corregido: .stt-transcript-box extraida a panel.css (PMA). Nombre sintetico source_pdf en Vias A/B/C (PMA views.py). Fix autocomplete mobile: pointerdown + guardia _selecting en form_entry.html y stt_entry.html. type=date para fecha y type=time para hc/hf en form_entry.html y stt_entry.html. Refactor DRY: STTView.post() delega en FormView.post() via MRO; funciones de modulo _parse_entry_lines_from_post() y _parse_spare_parts_from_post() con resolucion en dos pasadas (raw iexact primero, normalizado despues). Via A validada E2E. Motor STT reemplazado: Web Speech API → MediaRecorder + Gemini audio. Nuevo endpoint WorkOrderEntrySTTExtractView (operator/stt/extract/). Parser JS queda como fallback offline. Pendiente: validacion E2E Via B y C. |
 | 007    | 2026-05-01 | Sesion 007 (ver H8 sesion 007)      | Hito pausado para trabajar H8. Ver registro de sesiones de ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md sesion 007 para detalle de cambios aplicados durante esta sesion. |
-| 008    | 2026-05-04 | Reactivacion — pendiente ejecucion  | Hito reactivado por peticion de Alejandro. Hoja de ruta confeccionada: correccion urgente de identificadores renombrados en vistas y templates del operario, validacion E2E de las tres vias, nueva funcionalidad historial de partes y horas por trabajador. |
+| 008    | 2026-05-05 | Pasos 8 (fix), 9 (parcial), flecos  | PRIMERA ACCION completada: correccion atomica de identificadores renombrados en panel/views.py (code__iexact, is_active, code__icontains) y en los tres templates del operario (machine_raw, fault_description, repair_notes, uncertain_date) incluido JS gate y _buildBlockRow. Widget TimePicker custom implementado (_time_picker_widget.html): selector de dos columnas 00/30 con dropdown anclado al body, compatible HTMX. Fix WorkshopAssetAutocompleteView (code__icontains). step="1800" en todos los inputs de hora. SEGUNDA y TERCERA ACCION pendientes para sesion 009. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (008)
+## 5. Hoja de Ruta para la Siguiente Sesion (009)
 
-### CONTEXTO DE REACTIVACION
+### CONTEXTO
 
-El hito se reactiva por peticion de Alejandro con dos objetivos:
-  1. Corregir el error de produccion causado por el renombrado de campos
-     (Regla de Oro del Idioma aplicada en H8 sesion 009): los templates y
-     vistas del operario usan los nombres antiguos de campos como claves
-     POST y atributos de contexto.
-  2. Ampliar la funcionalidad con historial de partes y horas por trabajador.
+La sesion 008 completo la PRIMERA ACCION (correccion de identificadores) y
+los flecos de UX (widget TimePicker, step 1800, autocompletado centros de
+gasto). Quedan pendientes la SEGUNDA ACCION (validacion E2E) y la TERCERA
+ACCION (historial de partes), asi como el fleco de autocompletado de
+descripciones.
 
-### PRIMERA ACCION — Correccion urgente de identificadores en vistas del operario
+### PRIMERA ACCION — Validacion E2E de las tres vias
 
-OBLIGATORIO ejecutar esta accion antes que cualquier otra — el sistema
-esta en error en produccion.
+Validar en produccion con el usuario taller_test_01 (Chrome/Edge) que las
+tres vias funcionan correctamente tras la correccion de identificadores.
 
-Los nombres de campos POST y claves de contexto en los templates del operario
-y en panel/views.py siguen usando los nombres anteriores al renombrado.
-Deben actualizarse a los nombres nuevos definidos en el modelo.
+Via A (Form) — /panel/operator/form/:
+  1. Rellenar un parte completo con al menos dos bloques de trabajo y
+     un repuesto. Usar el widget TimePicker para hc/hf.
+  2. Verificar que el autocompletado de centros de gasto funciona
+     (GET /panel/operator/assets/?q=XXX devuelve JSON correcto).
+  3. Confirmar y verificar:
+     - Persistencia en BD: WorkOrder (status=DONE, source=DIGITAL),
+       WorkOrderEntry, WorkOrderEntryLine(s), SparePartLine(s).
+     - Excel descargable con nombre sintetico OPERARIO_DD-MM-AAAA.pdf.
+     - Hoja Repuestos en Excel si hay repuestos.
+  4. Barrera de integridad: intentar enviar con campos obligatorios vacios
+     y verificar que el gate client-side bloquea el submit.
 
-Mapa de renombrado aplicable a templates y vistas del operario:
-  maquina_raw        → machine_raw
-  descripcion_averia → fault_description
-  reparacion         → repair_notes
-  fecha_incierta     → uncertain_date
+Via B (STT) — /panel/operator/stt/:
+  1. Iniciar grabacion, dictar un parte completo en voz alta.
+  2. Detener y procesar: verificar que WorkOrderEntrySTTExtractView
+     devuelve JSON correcto con los campos pre-rellenados.
+  3. Revisar pre-relleno en el formulario (campos machine_raw,
+     fault_description, repair_notes, hc, hf correctamente mapeados).
+  4. Confirmar y verificar persistencia identica a Via A.
 
-Archivos afectados (verificar con grep antes de parchear):
-  - panel/views.py — _parse_entry_lines_from_post(), _parse_spare_parts_from_post(),
-    WorkOrderEntryFormView, WorkOrderEntryConfirmView, WorkOrderEntrySTTExtractView,
-    WorkshopAssetAutocompleteView. Buscar: request.POST.get("entrada_X_maquina_raw"),
-    request.POST.get("entrada_X_descripcion_averia"), etc.
-  - panel/templates/panel/operator/form_entry.html — atributos name= de inputs
-    y textareas, referencias JS a _val("entrada_X_maquina_raw"), etc.
-  - panel/templates/panel/operator/confirm_entry.html — idem.
-  - panel/templates/panel/operator/stt_entry.html — idem + comentario cabecera
-    (linea 12: maquina_raw en comentario de bloque {# ... #}).
-  - panel/templates/panel/operator/dashboard.html — line.machine_asset.code
-    ya corregido; verificar si hay referencias a delta_horas.
-
-ATENCION — Los nombres de campo POST (name="entrada_X_maquina_raw") son
-contratos entre el template y la vista. El renombrado debe ser atomico y
-simultaneo en template + vista para evitar romper la recepcion de datos.
-Solicitar panel/views.py y los tres templates antes de generar ningun PMA.
-
-### SEGUNDA ACCION — Validacion E2E de las tres vias
-
-Tras corregir los identificadores, validar que las tres vias funcionan
-correctamente en produccion:
-
-Via A (Form):
-  1. Acceder a /panel/operator/form/ desde taller_test_01.
-  2. Rellenar el formulario manualmente con un parte completo.
-  3. Verificar persistencia en BD y Excel descargable con nombre sintetico.
-
-Via B (STT con Web Speech API):
-  1. Acceder a /panel/operator/stt/ desde taller_test_01 (Chrome/Edge).
-  2. Dictar un parte por voz y verificar pre-relleno del formulario.
-  3. Confirmar y verificar persistencia en BD.
-
-Via C (Upload foto/PDF manuscrito):
-  1. Acceder a /panel/operator/upload/ desde taller_test_01.
-  2. Subir foto de parte manuscrito.
-  3. Verificar extraccion Gemini Vision y formulario de confirmacion.
-  4. Persistencia en BD y Excel con hoja Repuestos.
+Via C (Upload) — /panel/operator/upload/:
+  1. Subir foto o PDF de parte manuscrito.
+  2. Verificar extraccion Gemini Vision: confirm_entry.html pre-rellenado
+     con datos extraidos, campos flaggeados en rojo si son inciertos.
+  3. Corregir campos si procede y confirmar.
+  4. Verificar persistencia y Excel con hoja Repuestos.
 
 Barrera de integridad (todas las vias):
-  Intentar enviar formulario con campos obligatorios vacios. Verificar que
-  la barrera client-side bloquea el submit y la server-side re-renderiza
-  con mensaje de error por campo.
+  Verificar gate client-side (campo field-flagged resaltado, submit bloqueado)
+  y gate server-side (re-render con errores por campo si se manipula el POST).
 
-### TERCERA ACCION — Historial de partes y horas por trabajador
+### SEGUNDA ACCION — Historial de partes y horas por trabajador
 
-Nueva funcionalidad solicitada por Alejandro: cada operario (rol WORKSHOP)
-debe poder consultar desde el panel sus propios partes entregados y el
-computo de horas acumuladas.
+Alcance acordado con Alejandro (confirmar al inicio de sesion si ha cambiado):
 
-Alcance preliminar a confirmar al inicio de sesion:
-  - Nueva vista WorkOrderEntryHistoryView (WorkshopRequiredMixin).
-    Endpoint: GET /panel/operator/history/
-    Muestra listado de WorkOrders del operario autenticado, agrupados
-    por periodo (semana o mes — decidir al inicio de sesion).
-    Por cada WorkOrder: fecha, horas totales del parte (suma de delta_hours
-    de todas las WorkOrderEntryLine del WorkOrder), estado de revision.
-  - Resumen acumulado en cabecera: total horas del mes en curso.
-  - El ADMIN y SUPERVISOR pueden ver el historial de cualquier operario
-    de su empresa filtrando por CompanyUser.
-  - Template nuevo: panel/operator/history.html
-  - Entrada en sidebar para rol WORKSHOP: icono bi-clock-history, texto
-    'Mis partes'.
+  Nueva vista: WorkOrderEntryHistoryView (WorkshopRequiredMixin + LoginRequiredMixin).
+  Endpoint: GET /panel/operator/history/
+  URL name: operator_history
 
-NOTA: El alcance exacto de esta vista se acordara con Alejandro al inicio
-de la sesion. La especificacion anterior es preliminar.
+  Comportamiento:
+    - Rol WORKSHOP: muestra unicamente los WorkOrders propios del operario
+      autenticado (filtro: WorkOrder.created_by = request.user o
+      WorkOrderEntry.operator = CompanyUser del request.user — verificar
+      que campo existe antes de implementar).
+    - Rol ADMIN / SUPERVISOR: puede ver el historial de cualquier operario
+      de su empresa. Incluir selector de operario por CompanyUser (GET param
+      ?user_pk=XX). Si no se pasa, mostrar listado propio.
+    - Agrupacion: por mes (AAAA-MM). Cada grupo muestra cabecera con mes
+      y total de horas del mes.
+    - Por cada WorkOrder: fecha, numero de partes (entradas), horas totales
+      del parte (suma de WorkOrderEntryLine.delta_hours), estado de revision
+      (WorkOrder.status badge).
+    - Resumen en cabecera de pagina: total horas del mes en curso para el
+      operario visualizado.
 
-### Estado de migraciones al cierre de sesion 007
+  Modelo de datos:
+    - WorkOrder.created_by: verificar si este campo existe o si el filtro
+      debe hacerse por WorkOrderEntry → CompanyUser → user.
+    - WorkOrderEntryLine.delta_hours: campo DecimalField ya existente.
+    - Solicitar work_order_processor/models.py al inicio de sesion para
+      confirmar la cadena de FK antes de implementar.
+
+  Template: panel/templates/panel/operator/history.html (Neonato Puro).
+    - Extiende panel/base.html.
+    - Tabla Bootstrap agrupada por mes con cabecera colapsable (opcional).
+    - Resumen de horas del mes en badge prominente en cabecera.
+    - Enlace a Excel del WorkOrder si disponible.
+
+  Sidebar: anadir entrada en panel/templates/panel/_nav_items.html
+    para rol WORKSHOP: icono bi-clock-history, texto 'Mis partes',
+    url operator_history. Solicitar _nav_items.html al inicio de sesion.
+
+  URL: anadir en panel/urls.py. Solicitar panel/urls.py al inicio de sesion.
+
+### TERCER FLECO — Autocompletado de descripciones (typeahead)
+
+Pendiente de decision de alcance al inicio de sesion. Opciones:
+  A) Typeahead sobre fault_description y repair_notes: endpoint GET
+     /panel/operator/descriptions/?q=XXX que consulta WorkOrderEntryLine
+     filtrando por company y el campo correspondiente icontains, devuelve
+     lista de valores unicos. Coste: una consulta BD por tecla pulsada
+     con debounce de 300ms. Implementar solo si Alejandro lo confirma.
+  B) Dejar solo el autocompletado de centros de gasto (ya operativo).
+
+### Estado de migraciones al cierre de sesion 008
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
@@ -340,12 +416,10 @@ de la sesion. La especificacion anterior es preliminar.
 | ivr_config             | 0013_alter_companyuser_role                            |
 | panel                  | 0001_initial (AnalyticsProfile)                        |
 
-### Archivos clave a solicitar al inicio de sesion 008
+### Archivos clave a solicitar al inicio de sesion 009
 
 OBLIGATORIO solicitarlos via SFTP antes de generar ningun PMA:
-  - panel/views.py
-  - panel/templates/panel/operator/form_entry.html
-  - panel/templates/panel/operator/confirm_entry.html
-  - panel/templates/panel/operator/stt_entry.html
-  - panel/templates/panel/operator/dashboard.html
-  - panel/templates/panel/_nav_items.html
+  - work_order_processor/models.py (verificar cadena FK para historial)
+  - panel/urls.py (anadir ruta operator_history)
+  - panel/templates/panel/_nav_items.html (anadir entrada sidebar)
+  - panel/views.py (implementar WorkOrderEntryHistoryView)

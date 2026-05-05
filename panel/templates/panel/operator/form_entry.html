@@ -100,9 +100,9 @@
                                     <span class="badge badge-active text-sm">
                                         {{ entrada.machine_asset.code }} — {{ entrada.machine_asset.brand_model }}
                                     </span>
-                                {% elif entrada.maquina_raw %}
+                                {% elif entrada.machine_raw %}
                                     <span class="badge badge-inactive text-sm">
-                                        {{ entrada.maquina_raw }} — no identificado
+                                        {{ entrada.machine_raw }} — no identificado
                                     </span>
                                 {% endif %}
                             </div>
@@ -113,9 +113,9 @@
                                     </label>
                                     <div class="position-relative">
                                         <input type="text"
-                                               name="entrada_{{ entrada.idx }}_maquina_raw"
-                                               class="form-control asset-search {% if not entrada.maquina_raw %}field-flagged{% endif %}"
-                                               value="{{ entrada.maquina_raw }}"
+                                               name="entrada_{{ entrada.idx }}_machine_raw"
+                                               class="form-control asset-search {% if not entrada.machine_raw %}field-flagged{% endif %}"
+                                               value="{{ entrada.machine_raw }}"
                                                placeholder="Código de máquina"
                                                autocomplete="off">
                                         <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
@@ -126,6 +126,7 @@
                                         H.C. <span class="text-danger">*</span>
                                     </label>
                                     <input type="time"
+                                           step="1800"
                                            name="entrada_{{ entrada.idx }}_hc"
                                            class="form-control {% if not entrada.hc %}field-flagged{% endif %}"
                                            value="{{ entrada.hc }}">
@@ -135,6 +136,7 @@
                                         H.F. <span class="text-danger">*</span>
                                     </label>
                                     <input type="time"
+                                           step="1800"
                                            name="entrada_{{ entrada.idx }}_hf"
                                            class="form-control {% if not entrada.hf %}field-flagged{% endif %}"
                                            value="{{ entrada.hf }}">
@@ -151,17 +153,17 @@
                                     <label class="form-label fw-medium">
                                         Descripción avería <span class="text-danger">*</span>
                                     </label>
-                                    <textarea name="entrada_{{ entrada.idx }}_descripcion_averia"
-                                              class="form-control {% if not entrada.descripcion_averia %}field-flagged{% endif %}"
+                                    <textarea name="entrada_{{ entrada.idx }}_fault_description"
+                                              class="form-control {% if not entrada.fault_description %}field-flagged{% endif %}"
                                               rows="3"
-                                              placeholder="Descripción de la avería o tarea">{{ entrada.descripcion_averia }}</textarea>
+                                              placeholder="Descripción de la avería o tarea">{{ entrada.fault_description }}</textarea>
                                 </div>
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-medium">Reparación realizada</label>
-                                    <textarea name="entrada_{{ entrada.idx }}_reparacion"
+                                    <textarea name="entrada_{{ entrada.idx }}_repair_notes"
                                               class="form-control"
                                               rows="3"
-                                              placeholder="Descripción de la reparación">{{ entrada.reparacion }}</textarea>
+                                              placeholder="Descripción de la reparación">{{ entrada.repair_notes }}</textarea>
                                 </div>
                             </div>
                         </div>
@@ -179,7 +181,7 @@
                                 </label>
                                 <div class="position-relative">
                                     <input type="text"
-                                           name="entrada_1_maquina_raw"
+                                           name="entrada_1_machine_raw"
                                            class="form-control asset-search field-flagged"
                                            value=""
                                            placeholder="Código de máquina"
@@ -192,6 +194,7 @@
                                     H.C. <span class="text-danger">*</span>
                                 </label>
                                 <input type="time"
+                                       step="1800"
                                        name="entrada_1_hc"
                                        class="form-control field-flagged"
                                        value="">
@@ -201,6 +204,7 @@
                                     H.F. <span class="text-danger">*</span>
                                 </label>
                                 <input type="time"
+                                       step="1800"
                                        name="entrada_1_hf"
                                        class="form-control field-flagged"
                                        value="">
@@ -217,14 +221,14 @@
                                 <label class="form-label fw-medium">
                                     Descripción avería <span class="text-danger">*</span>
                                 </label>
-                                <textarea name="entrada_1_descripcion_averia"
+                                <textarea name="entrada_1_fault_description"
                                           class="form-control field-flagged"
                                           rows="3"
                                           placeholder="Descripción de la avería o tarea"></textarea>
                             </div>
                             <div class="col-12 col-md-6">
                                 <label class="form-label fw-medium">Reparación realizada</label>
-                                <textarea name="entrada_1_reparacion"
+                                <textarea name="entrada_1_repair_notes"
                                           class="form-control"
                                           rows="3"
                                           placeholder="Descripción de la reparación"></textarea>
@@ -331,7 +335,7 @@
                                         <option value="{{ entrada.idx }}"
                                             {% if rep.ridx == entrada.idx %}selected{% endif %}>
                                             Bloque {{ entrada.idx }}
-                                            {% if entrada.maquina_raw %}— {{ entrada.maquina_raw }}{% endif %}
+                                            {% if entrada.machine_raw %}— {{ entrada.machine_raw }}{% endif %}
                                         </option>
                                         {% endfor %}
                                     </select>
@@ -541,7 +545,7 @@
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">Maquina <span class="text-danger">*</span></label>' +
                     '<div class="position-relative">' +
-                        '<input type="text" name="entrada_' + idx + '_maquina_raw" ' +
+                        '<input type="text" name="entrada_' + idx + '_machine_raw" ' +
                                'class="form-control asset-search" ' +
                                'placeholder="Codigo de maquina" autocomplete="off">' +
                         '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
@@ -549,11 +553,11 @@
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">H.C. <span class="text-danger">*</span></label>' +
-                    '<input type="time" name="entrada_' + idx + '_hc" class="form-control">' +
+                    '<input type="time" step="1800" name="entrada_' + idx + '_hc" class="form-control">' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">H.F. <span class="text-danger">*</span></label>' +
-                    '<input type="time" name="entrada_' + idx + '_hf" class="form-control">' +
+                    '<input type="time" step="1800" name="entrada_' + idx + '_hf" class="form-control">' +
                 '</div>' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">O.R.</label>' +
@@ -562,13 +566,13 @@
                 '</div>' +
                 '<div class="col-12 col-md-6">' +
                     '<label class="form-label fw-medium">Descripcion averia <span class="text-danger">*</span></label>' +
-                    '<textarea name="entrada_' + idx + '_descripcion_averia" ' +
+                    '<textarea name="entrada_' + idx + '_fault_description" ' +
                               'class="form-control" rows="3" ' +
                               'placeholder="Descripcion de la averia o tarea"></textarea>' +
                 '</div>' +
                 '<div class="col-12 col-md-6">' +
                     '<label class="form-label fw-medium">Reparacion realizada</label>' +
-                    '<textarea name="entrada_' + idx + '_reparacion" ' +
+                    '<textarea name="entrada_' + idx + '_repair_notes" ' +
                               'class="form-control" rows="3" ' +
                               'placeholder="Descripcion de la reparacion"></textarea>' +
                 '</div>' +
@@ -743,15 +747,15 @@
             var numEntradas = parseInt(_val("num_entradas"), 10) || 1;
             for (var i = 1; i <= numEntradas; i++) {
                 var blk  = "Bloque " + i;
-                var maq  = _val("entrada_" + i + "_maquina_raw");
+                var maq  = _val("entrada_" + i + "_machine_raw");
                 var hc   = _val("entrada_" + i + "_hc");
                 var hf   = _val("entrada_" + i + "_hf");
-                var desc = _val("entrada_" + i + "_descripcion_averia");
+                var desc = _val("entrada_" + i + "_fault_description");
 
-                _markField("entrada_" + i + "_maquina_raw",        !maq);
+                _markField("entrada_" + i + "_machine_raw",        !maq);
                 _markField("entrada_" + i + "_hc",                 !hc);
                 _markField("entrada_" + i + "_hf",                 !hf);
-                _markField("entrada_" + i + "_descripcion_averia", !desc);
+                _markField("entrada_" + i + "_fault_description", !desc);
 
                 if (!maq)  { errors.push(blk + ": codigo de maquina obligatorio."); }
                 if (!hc)   { errors.push(blk + ": H.C. obligatoria."); }
@@ -795,4 +799,8 @@
 {# Primer bloque renderizado inline para peticiones GET              #}
 {# This hidden template is cloned by JS for dynamically added blocks #}
 {# Este template oculto es clonado por JS para bloques dinamicos    #}
+{% endblock %}
+
+{% block extra_scripts %}
+{% include "panel/_time_picker_widget.html" %}
 {% endblock %}

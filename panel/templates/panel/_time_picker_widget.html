@@ -1,0 +1,624 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_time_picker_widget.html #}
+{#                                                                                            #}
+{# Time Picker Widget — Custom half-hour selector (00 / 30 minutes only).                   #}
+{# Replaces all input[type="time"] elements on the page with a two-column dropdown           #}
+{# (hours 00-23 scrollable | minutes fixed: 00 / 30). The original input is hidden and      #}
+{# retains the real value for form submission. A native 'change' event is dispatched on      #}
+{# the hidden input after each selection so that HTMX hx-trigger="change" keeps working.    #}
+{# A MutationObserver activates the widget on inputs added dynamically (e.g. _buildBlockRow  #}
+{# in form_entry.html).                                                                      #}
+{#                                                                                           #}
+{# Widget Selector de Hora — Selector custom de media hora (solo minutos 00 / 30).          #}
+{# Reemplaza todos los input[type="time"] de la página con un desplegable de dos columnas   #}
+{# (horas 00-23 scrollable | minutos fijos: 00 / 30). El input original queda oculto y      #}
+{# conserva el valor real para el envío del formulario. Se despacha un evento 'change'      #}
+{# nativo sobre el input oculto tras cada selección para que HTMX hx-trigger="change"       #}
+{# siga funcionando. Un MutationObserver activa el widget sobre inputs añadidos             #}
+{# dinámicamente (ej: _buildBlockRow en form_entry.html).                                   #}
+{#                                                                                           #}
+{# Usage / Uso: {% include "panel/_time_picker_widget.html" %}                              #}
+{# Place inside {% block extra_scripts %} of any template that contains time inputs.        #}
+{# Colocar dentro de {% block extra_scripts %} de cualquier template con inputs de hora.    #}
+
+<style>
+/* =========================================================================
+   Time Picker Widget — Estilos del selector custom de media hora.
+   ========================================================================= */
+
+/* Wrapper that replaces the hidden input visually.
+   Envoltorio que reemplaza visualmente el input oculto. */
+.tp-wrapper {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+/* Display button — shows the current value or placeholder.
+   Botón de visualización — muestra el valor actual o el placeholder. */
+.tp-display {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.25rem 0.5rem;
+    font-size: inherit;
+    line-height: 1.5;
+    color: var(--bs-body-color, #212529);
+    background-color: var(--bs-body-bg, #fff);
+    border: 1px solid var(--bs-border-color, #ced4da);
+    border-radius: var(--bs-border-radius, 0.375rem);
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    min-height: calc(1.5em + 0.5rem + 2px);
+}
+
+/* Display button inherits form-control-sm sizing when present.
+   El botón hereda el tamaño form-control-sm cuando está presente. */
+.tp-wrapper.tp-sm .tp-display {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.82rem;
+    min-height: calc(1.5em + 0.25rem + 2px);
+}
+
+/* Focus / open state border.
+   Borde en estado focus / abierto. */
+.tp-display:focus,
+.tp-display.tp-open {
+    outline: 0;
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* field-flagged propagation to the display button.
+   Propagación de field-flagged al botón de visualización. */
+.tp-wrapper.tp-flagged .tp-display {
+    border-color: #dc3545;
+    background-color: #fff8f8;
+}
+
+/* Clock icon inside display button.
+   Icono de reloj dentro del botón de visualización. */
+.tp-display .tp-icon {
+    color: #6c757d;
+    font-size: 0.85em;
+    flex-shrink: 0;
+    margin-left: 0.25rem;
+}
+
+/* Placeholder text color.
+   Color del texto placeholder. */
+.tp-display .tp-value {
+    flex: 1;
+}
+.tp-display .tp-value.tp-placeholder {
+    color: #6c757d;
+}
+
+/* Dropdown panel — two-column grid.
+   Panel desplegable — cuadrícula de dos columnas. */
+.tp-dropdown {
+    /* Detached to <body> on open — positioned via getBoundingClientRect().
+       Anclado al <body> al abrir — posicionado via getBoundingClientRect(). */
+    position: fixed;
+    z-index: 1055;
+    display: none;
+    background-color: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.175);
+    border-radius: var(--bs-border-radius, 0.375rem);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    min-width: 140px;
+    overflow: hidden;
+}
+
+/* Dropdown visible state.
+   Estado visible del desplegable. */
+.tp-dropdown.tp-visible {
+    display: flex;
+}
+
+/* Column headers.
+   Cabeceras de columna. */
+.tp-col-header {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #6c757d;
+    text-align: center;
+    padding: 0.3rem 0;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Hour column — scrollable.
+   Columna de horas — con scroll. */
+.tp-col-hours {
+    width: 55%;
+    border-right: 1px solid #dee2e6;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Minute column — fixed two options.
+   Columna de minutos — dos opciones fijas. */
+.tp-col-minutes {
+    width: 45%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Scrollable hour list.
+   Lista de horas con scroll. */
+.tp-hours-list {
+    overflow-y: auto;
+    max-height: 180px;
+    scrollbar-width: thin;
+    scrollbar-color: #ced4da transparent;
+}
+.tp-hours-list::-webkit-scrollbar {
+    width: 4px;
+}
+.tp-hours-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.tp-hours-list::-webkit-scrollbar-thumb {
+    background-color: #ced4da;
+    border-radius: 2px;
+}
+
+/* Individual option — shared by hours and minutes.
+   Opción individual — compartida por horas y minutos. */
+.tp-option {
+    padding: 0.35rem 0.5rem;
+    text-align: center;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+    white-space: nowrap;
+}
+.tp-option:hover {
+    background-color: #e9f0ff;
+}
+.tp-option.tp-selected {
+    background-color: #0d6efd;
+    color: #fff;
+    font-weight: 600;
+}
+.tp-option.tp-selected:hover {
+    background-color: #0b5ed7;
+}
+</style>
+
+<script>
+(function () {
+    "use strict";
+
+    /* =========================================================================
+       Time Picker Widget — JS engine.
+       Motor JS del selector custom de media hora.
+       =========================================================================
+
+       Public API:
+         TimePicker.init(input)  — wraps a single input[type="time"].
+         TimePicker.initAll()    — wraps all unwrapped input[type="time"] on page.
+
+       API pública:
+         TimePicker.init(input)  — envuelve un único input[type="time"].
+         TimePicker.initAll()    — envuelve todos los input[type="time"] no procesados.
+    ========================================================================= */
+
+    /* ------------------------------------------------------------------
+       Constants / Constantes
+    ------------------------------------------------------------------ */
+    var HOURS   = Array.from({ length: 24 }, function (_, i) {
+        return i.toString().padStart(2, "0");
+    });
+    var MINUTES = ["00", "30"];
+    var ATTR_INIT = "data-tp-init";
+
+    /* ------------------------------------------------------------------
+       _pad — zero-pads a number to 2 digits.
+       _pad — rellena con cero un número hasta 2 dígitos.
+    ------------------------------------------------------------------ */
+    function _pad(n) {
+        return String(n).padStart(2, "0");
+    }
+
+    /* ------------------------------------------------------------------
+       _parseValue — parses HH:MM string into { h, m } or null.
+       _parseValue — parsea cadena HH:MM a { h, m } o null.
+    ------------------------------------------------------------------ */
+    function _parseValue(val) {
+        if (!val || typeof val !== "string") { return null; }
+        var parts = val.split(":");
+        if (parts.length < 2) { return null; }
+        var h = parseInt(parts[0], 10);
+        var m = parseInt(parts[1], 10);
+        if (isNaN(h) || isNaN(m)) { return null; }
+        /* Snap minutes to nearest allowed value (00 or 30).
+           Ajusta minutos al valor permitido más cercano (00 o 30). */
+        m = m < 15 ? 0 : m < 45 ? 30 : 0;
+        return { h: h, m: m };
+    }
+
+    /* ------------------------------------------------------------------
+       _formatDisplay — formats { h, m } for the display button.
+       _formatDisplay — formatea { h, m } para el botón de visualización.
+    ------------------------------------------------------------------ */
+    function _formatDisplay(parsed) {
+        if (!parsed) { return null; }
+        return _pad(parsed.h) + ":" + _pad(parsed.m);
+    }
+
+    /* ------------------------------------------------------------------
+       _dispatchChange — fires a native change event on an element.
+       _dispatchChange — dispara un evento change nativo sobre un elemento.
+       Required so HTMX hx-trigger="change" keeps working on hidden inputs.
+       Necesario para que HTMX hx-trigger="change" funcione sobre inputs ocultos.
+    ------------------------------------------------------------------ */
+    function _dispatchChange(el) {
+        var evt = document.createEvent("Event");
+        evt.initEvent("change", true, true);
+        el.dispatchEvent(evt);
+    }
+
+    /* ------------------------------------------------------------------
+       _closeAll — closes all open dropdowns except the given one.
+       _closeAll — cierra todos los desplegables abiertos excepto el dado.
+    ------------------------------------------------------------------ */
+    function _closeAll(exceptDropdown) {
+        var dropdowns = document.querySelectorAll(".tp-dropdown.tp-visible");
+        Array.prototype.forEach.call(dropdowns, function (dd) {
+            if (dd !== exceptDropdown) {
+                dd.classList.remove("tp-visible");
+                var btn = dd.previousElementSibling;
+                if (btn && btn.classList.contains("tp-display")) {
+                    btn.classList.remove("tp-open");
+                }
+            }
+        });
+    }
+
+    /* ------------------------------------------------------------------
+       init — wraps a single input[type="time"] with the custom widget.
+       init — envuelve un único input[type="time"] con el widget custom.
+    ------------------------------------------------------------------ */
+    function init(input) {
+        /* Skip already-initialised inputs.
+           Omitir inputs ya inicializados. */
+        if (input.getAttribute(ATTR_INIT)) { return; }
+        input.setAttribute(ATTR_INIT, "1");
+
+        /* Determine sizing class from the input's own classes.
+           Determinar clase de tamaño desde las clases del propio input. */
+        var isSm    = input.classList.contains("form-control-sm");
+        var isFlagged = input.classList.contains("field-flagged");
+
+        /* Build wrapper / Construir envoltorio. */
+        var wrapper = document.createElement("div");
+        wrapper.className = "tp-wrapper" + (isSm ? " tp-sm" : "") + (isFlagged ? " tp-flagged" : "");
+
+        /* Build display button / Construir botón de visualización. */
+        var display = document.createElement("button");
+        display.type = "button";
+        display.className = "tp-display" + (isFlagged ? " tp-flagged" : "");
+        display.setAttribute("aria-haspopup", "listbox");
+        display.setAttribute("aria-expanded", "false");
+
+        var valueSpan = document.createElement("span");
+        valueSpan.className = "tp-value";
+        var iconSpan = document.createElement("span");
+        iconSpan.className = "tp-icon";
+        iconSpan.innerHTML = "&#128336;"; /* 🕐 clock emoji fallback */
+
+        display.appendChild(valueSpan);
+        display.appendChild(iconSpan);
+
+        /* Build dropdown / Construir desplegable. */
+        var dropdown = document.createElement("div");
+        dropdown.className = "tp-dropdown";
+        dropdown.setAttribute("role", "listbox");
+
+        /* Hour column / Columna de horas. */
+        var colHours = document.createElement("div");
+        colHours.className = "tp-col-hours";
+        var headerH = document.createElement("div");
+        headerH.className = "tp-col-header";
+        headerH.textContent = "Hora";
+        var listHours = document.createElement("div");
+        listHours.className = "tp-hours-list";
+
+        HOURS.forEach(function (h) {
+            var opt = document.createElement("div");
+            opt.className = "tp-option";
+            opt.setAttribute("role", "option");
+            opt.setAttribute("data-h", h);
+            opt.textContent = h;
+            listHours.appendChild(opt);
+        });
+
+        colHours.appendChild(headerH);
+        colHours.appendChild(listHours);
+
+        /* Minute column / Columna de minutos. */
+        var colMinutes = document.createElement("div");
+        colMinutes.className = "tp-col-minutes";
+        var headerM = document.createElement("div");
+        headerM.className = "tp-col-header";
+        headerM.textContent = "Min";
+
+        colMinutes.appendChild(headerM);
+        MINUTES.forEach(function (m) {
+            var opt = document.createElement("div");
+            opt.className = "tp-option";
+            opt.setAttribute("role", "option");
+            opt.setAttribute("data-m", m);
+            opt.textContent = m;
+            colMinutes.appendChild(opt);
+        });
+
+        dropdown.appendChild(colHours);
+        dropdown.appendChild(colMinutes);
+
+        /* ------------------------------------------------------------------
+           State / Estado
+        ------------------------------------------------------------------ */
+        var state = { h: null, m: null };
+
+        /* ------------------------------------------------------------------
+           _syncFromInput — reads the hidden input value and updates the UI.
+           _syncFromInput — lee el valor del input oculto y actualiza la UI.
+        ------------------------------------------------------------------ */
+        function _syncFromInput() {
+            var parsed = _parseValue(input.value);
+            if (parsed) {
+                state.h = _pad(parsed.h);
+                state.m = _pad(parsed.m);
+            } else {
+                state.h = null;
+                state.m = null;
+            }
+            _updateDisplay();
+            _updateSelections();
+        }
+
+        /* ------------------------------------------------------------------
+           _updateDisplay — refreshes the display button text.
+           _updateDisplay — refresca el texto del botón de visualización.
+        ------------------------------------------------------------------ */
+        function _updateDisplay() {
+            if (state.h !== null && state.m !== null) {
+                valueSpan.textContent = state.h + ":" + state.m;
+                valueSpan.classList.remove("tp-placeholder");
+            } else {
+                valueSpan.textContent = "--:--";
+                valueSpan.classList.add("tp-placeholder");
+            }
+        }
+
+        /* ------------------------------------------------------------------
+           _updateSelections — highlights selected options in both columns.
+           _updateSelections — resalta las opciones seleccionadas en ambas columnas.
+        ------------------------------------------------------------------ */
+        function _updateSelections() {
+            /* Hours / Horas. */
+            Array.prototype.forEach.call(
+                listHours.querySelectorAll(".tp-option"),
+                function (opt) {
+                    if (opt.getAttribute("data-h") === state.h) {
+                        opt.classList.add("tp-selected");
+                        /* Scroll selected hour into view / Desplazar hora seleccionada a la vista. */
+                        opt.scrollIntoView({ block: "nearest" });
+                    } else {
+                        opt.classList.remove("tp-selected");
+                    }
+                }
+            );
+            /* Minutes / Minutos. */
+            Array.prototype.forEach.call(
+                colMinutes.querySelectorAll(".tp-option"),
+                function (opt) {
+                    if (opt.getAttribute("data-m") === state.m) {
+                        opt.classList.add("tp-selected");
+                    } else {
+                        opt.classList.remove("tp-selected");
+                    }
+                }
+            );
+        }
+
+        /* ------------------------------------------------------------------
+           _commit — writes state back to the hidden input and fires change.
+           _commit — escribe el estado en el input oculto y dispara change.
+        ------------------------------------------------------------------ */
+        function _commit() {
+            if (state.h !== null && state.m !== null) {
+                input.value = state.h + ":" + state.m;
+                _dispatchChange(input);
+            }
+        }
+
+        /* ------------------------------------------------------------------
+           _open / _close — toggle dropdown visibility.
+           _open / _close — alternan la visibilidad del desplegable.
+        ------------------------------------------------------------------ */
+        function _open() {
+            _closeAll(dropdown);
+            _syncFromInput();
+            /* Detach dropdown to <body> to escape table stacking context.
+               Anclar dropdown al <body> para escapar del contexto de apilado de tabla. */
+            if (dropdown.parentNode !== document.body) {
+                document.body.appendChild(dropdown);
+            }
+            /* Position dropdown below the display button using fixed coords.
+               Posicionar el desplegable bajo el botón usando coordenadas fixed. */
+            var rect = display.getBoundingClientRect();
+            dropdown.style.top  = (rect.bottom + 2) + "px";
+            dropdown.style.left = rect.left + "px";
+            dropdown.style.width = "auto";
+            dropdown.classList.add("tp-visible");
+            display.classList.add("tp-open");
+            display.setAttribute("aria-expanded", "true");
+            /* Scroll selected hour into view after opening.
+               Desplazar hora seleccionada a la vista tras abrir. */
+            var sel = listHours.querySelector(".tp-selected");
+            if (sel) { sel.scrollIntoView({ block: "center" }); }
+        }
+
+        function _close() {
+            dropdown.classList.remove("tp-visible");
+            display.classList.remove("tp-open");
+            display.setAttribute("aria-expanded", "false");
+            /* Return dropdown to wrapper after closing.
+               Devolver dropdown al wrapper tras cerrar. */
+            if (dropdown.parentNode === document.body) {
+                wrapper.appendChild(dropdown);
+            }
+        }
+
+        /* ------------------------------------------------------------------
+           Event: display button click — toggles dropdown.
+           Evento: clic en botón de visualización — alterna desplegable.
+        ------------------------------------------------------------------ */
+        display.addEventListener("click", function (e) {
+            e.stopPropagation();
+            if (dropdown.classList.contains("tp-visible")) {
+                _close();
+            } else {
+                _open();
+            }
+        });
+
+        /* ------------------------------------------------------------------
+           Event: hour option click — sets hour, keeps dropdown open.
+           Evento: clic en opción de hora — establece hora, mantiene abierto.
+        ------------------------------------------------------------------ */
+        listHours.addEventListener("click", function (e) {
+            var opt = e.target.closest(".tp-option");
+            if (!opt) { return; }
+            e.stopPropagation();
+            state.h = opt.getAttribute("data-h");
+            _updateDisplay();
+            _updateSelections();
+            /* If minute already selected, commit immediately.
+               Si el minuto ya está seleccionado, confirmar de inmediato. */
+            if (state.m !== null) { _commit(); }
+        });
+
+        /* ------------------------------------------------------------------
+           Event: minute option click — sets minute, commits and closes.
+           Evento: clic en opción de minuto — establece minuto, confirma y cierra.
+        ------------------------------------------------------------------ */
+        colMinutes.addEventListener("click", function (e) {
+            var opt = e.target.closest(".tp-option");
+            if (!opt || !opt.getAttribute("data-m")) { return; }
+            e.stopPropagation();
+            state.m = opt.getAttribute("data-m");
+            /* If hour not yet selected, default to 00.
+               Si la hora aún no está seleccionada, usar 00 por defecto. */
+            if (state.h === null) { state.h = "00"; }
+            _updateDisplay();
+            _updateSelections();
+            _commit();
+            _close();
+        });
+
+        /* ------------------------------------------------------------------
+           Event: keyboard support — Escape closes the dropdown.
+           Evento: soporte teclado — Escape cierra el desplegable.
+        ------------------------------------------------------------------ */
+        display.addEventListener("keydown", function (e) {
+            if (e.key === "Escape" || e.keyCode === 27) {
+                _close();
+                display.focus();
+            }
+        });
+
+        /* ------------------------------------------------------------------
+           Event: external click — closes dropdown when clicking outside.
+           Evento: clic externo — cierra el desplegable al hacer clic fuera.
+        ------------------------------------------------------------------ */
+        document.addEventListener("click", function (e) {
+            if (!wrapper.contains(e.target)) {
+                _close();
+            }
+        });
+
+        /* ------------------------------------------------------------------
+           Observer: watch for field-flagged class changes on the input.
+           Observador: vigilar cambios de clase field-flagged en el input.
+           Keeps the wrapper border in sync when the JS gate adds/removes it.
+           Mantiene el borde del wrapper sincronizado cuando el gate JS lo cambia.
+        ------------------------------------------------------------------ */
+        var classObserver = new MutationObserver(function (mutations) {
+            mutations.forEach(function (m) {
+                if (m.attributeName === "class") {
+                    var flagged = input.classList.contains("field-flagged");
+                    wrapper.classList.toggle("tp-flagged", flagged);
+                    display.classList.toggle("tp-flagged", flagged);
+                }
+            });
+        });
+        classObserver.observe(input, { attributes: true });
+
+        /* ------------------------------------------------------------------
+           Assemble and inject into DOM / Ensamblar e inyectar en el DOM.
+        ------------------------------------------------------------------ */
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(display);
+        wrapper.appendChild(dropdown);
+        wrapper.appendChild(input);
+
+        /* Hide the original input / Ocultar el input original. */
+        input.style.display = "none";
+        input.setAttribute("tabindex", "-1");
+
+        /* Initial sync / Sincronización inicial. */
+        _syncFromInput();
+    }
+
+    /* ------------------------------------------------------------------
+       initAll — wraps all unwrapped input[type="time"] on the page.
+       initAll — envuelve todos los input[type="time"] no procesados de la página.
+    ------------------------------------------------------------------ */
+    function initAll() {
+        var inputs = document.querySelectorAll('input[type="time"]:not([' + ATTR_INIT + '])');
+        Array.prototype.forEach.call(inputs, function (inp) {
+            init(inp);
+        });
+    }
+
+    /* ------------------------------------------------------------------
+       MutationObserver — activates widget on dynamically added inputs.
+       MutationObserver — activa el widget sobre inputs añadidos dinámicamente.
+       Covers _buildBlockRow additions in form_entry.html and HTMX swaps.
+       Cubre las adiciones de _buildBlockRow en form_entry.html y los swaps HTMX.
+    ------------------------------------------------------------------ */
+    var domObserver = new MutationObserver(function (mutations) {
+        var needsInit = false;
+        mutations.forEach(function (m) {
+            if (m.addedNodes.length) { needsInit = true; }
+        });
+        if (needsInit) { initAll(); }
+    });
+
+    domObserver.observe(document.body, { childList: true, subtree: true });
+
+    /* ------------------------------------------------------------------
+       Expose public API / Exponer API pública.
+    ------------------------------------------------------------------ */
+    window.TimePicker = { init: init, initAll: initAll };
+
+    /* ------------------------------------------------------------------
+       Bootstrap — run after DOM is ready.
+       Bootstrap — ejecutar tras la carga del DOM.
+    ------------------------------------------------------------------ */
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initAll);
+    } else {
+        initAll();
+    }
+
+}());
+</script>

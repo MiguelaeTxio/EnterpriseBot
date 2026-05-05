@@ -30,6 +30,7 @@
 ./panel/templates/panel/sections/list.html
 ./panel/templates/panel/sections/form.html
 ./panel/templates/panel/_nav_items.html
+./panel/templates/panel/_time_picker_widget.html
 ./panel/templates/panel/dashboard.html
 ./panel/templates/panel/presence/status.html
 ./panel/templates/panel/password/change.html

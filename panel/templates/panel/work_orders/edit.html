@@ -49,6 +49,31 @@
     .edit-table td {
         vertical-align: middle;
         padding: 0.4rem 0.5rem;
+        /* Required for tp-dropdown absolute positioning inside table cells.
+           Necesario para posicionamiento absoluto de tp-dropdown en celdas de tabla. */
+        position: relative;
+        overflow: visible;
+    }
+    /* Time Picker Widget integration overrides for edit table.
+       Sobreescrituras de integración del widget de hora para la tabla de edición. */
+    .edit-table .tp-wrapper {
+        min-width: 90px;
+    }
+    .edit-table .tp-display {
+        font-size: 0.82rem;
+        padding: 0.25rem 0.4rem;
+        min-height: calc(1.5em + 0.25rem + 2px);
+    }
+    .edit-table .tp-dropdown {
+        /* Ensure dropdown escapes table stacking context.
+           Asegurar que el desplegable escapa del contexto de apilado de la tabla. */
+        position: fixed;
+        z-index: 1055;
+        display: none;
+        min-width: 140px;
+    }
+    .edit-table .tp-dropdown.tp-visible {
+        display: flex;
     }
     .edit-table input[type="text"],
     .edit-table input[type="time"],
@@ -361,4 +386,8 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_scripts %}
+{% include "panel/_time_picker_widget.html" %}
 {% endblock %}

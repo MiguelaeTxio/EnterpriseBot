@@ -38,7 +38,7 @@
                     <i class="bi bi-exclamation-triangle me-1"></i>Confianza Baja
                 </span>
             {% endif %}
-            {% if fecha_incierta %}
+            {% if uncertain_date %}
             <span class="badge badge-inactive">
                 <i class="bi bi-calendar-x me-1"></i>Fecha incierta
             </span>
@@ -70,7 +70,7 @@
                             type="text"
                             id="id_fecha"
                             name="fecha"
-                            class="form-control {% if not fecha or fecha_incierta %}field-flagged{% endif %}"
+                            class="form-control {% if not fecha or uncertain_date %}field-flagged{% endif %}"
                             value="{{ fecha }}"
                             placeholder="DD/MM/AAAA"
                             required
@@ -102,9 +102,9 @@
                                     {{ entrada.machine_asset.code }} —
                                     {{ entrada.machine_asset.brand_model }}
                                 </span>
-                            {% elif entrada.maquina_raw %}
+                            {% elif entrada.machine_raw %}
                                 <span class="badge badge-inactive text-sm">
-                                    {{ entrada.maquina_raw }} — no identificado
+                                    {{ entrada.machine_raw }} — no identificado
                                 </span>
                             {% endif %}
                         </div>
@@ -118,10 +118,10 @@
                                 </label>
                                 <input
                                     type="text"
-                                    name="entrada_{{ entrada.idx }}_maquina_raw"
+                                    name="entrada_{{ entrada.idx }}_machine_raw"
                                     class="form-control asset-search
-                                           {% if 'MAQUINA' in entrada.flags or not entrada.maquina_raw %}field-flagged{% endif %}"
-                                    value="{{ entrada.maquina_raw }}"
+                                           {% if 'MAQUINA' in entrada.flags or not entrada.machine_raw %}field-flagged{% endif %}"
+                                    value="{{ entrada.machine_raw }}"
                                     placeholder="Código de máquina"
                                     autocomplete="off"
                                     data-asset-input="true"
@@ -174,12 +174,12 @@
                                     Descripción avería
                                 </label>
                                 <textarea
-                                    name="entrada_{{ entrada.idx }}_descripcion_averia"
+                                    name="entrada_{{ entrada.idx }}_fault_description"
                                     class="form-control
-                                           {% if 'DESCRIPCION' in entrada.flags or not entrada.descripcion_averia %}field-flagged{% endif %}"
+                                           {% if 'DESCRIPCION' in entrada.flags or not entrada.fault_description %}field-flagged{% endif %}"
                                     rows="3"
                                     placeholder="Descripción de la avería o tarea"
-                                >{{ entrada.descripcion_averia }}</textarea>
+                                >{{ entrada.fault_description }}</textarea>
                             </div>
 
                             {# Repair notes / Reparación #}
@@ -188,11 +188,11 @@
                                     Reparación realizada
                                 </label>
                                 <textarea
-                                    name="entrada_{{ entrada.idx }}_reparacion"
+                                    name="entrada_{{ entrada.idx }}_repair_notes"
                                     class="form-control"
                                     rows="3"
                                     placeholder="Descripción de la reparación"
-                                >{{ entrada.reparacion }}</textarea>
+                                >{{ entrada.repair_notes }}</textarea>
                             </div>
 
                         </div>
@@ -330,8 +330,8 @@
                                     <option value="{{ entrada.idx }}"
                                         {% if rep.ridx == entrada.idx %}selected{% endif %}>
                                         Bloque {{ entrada.idx }}
-                                        {% if entrada.maquina_raw %}
-                                            — {{ entrada.maquina_raw }}
+                                        {% if entrada.machine_raw %}
+                                            — {{ entrada.machine_raw }}
                                         {% endif %}
                                     </option>
                                     {% endfor %}
@@ -681,15 +681,15 @@
             var numEntradas = parseInt(_val("num_entradas"), 10) || 0;
             for (var i = 1; i <= numEntradas; i++) {
                 var blk     = "Bloque " + i;
-                var maq     = _val("entrada_" + i + "_maquina_raw");
+                var maq     = _val("entrada_" + i + "_machine_raw");
                 var hc      = _val("entrada_" + i + "_hc");
                 var hf      = _val("entrada_" + i + "_hf");
-                var desc    = _val("entrada_" + i + "_descripcion_averia");
+                var desc    = _val("entrada_" + i + "_fault_description");
 
-                _markField("entrada_" + i + "_maquina_raw", !maq);
+                _markField("entrada_" + i + "_machine_raw", !maq);
                 _markField("entrada_" + i + "_hc",  !hc);
                 _markField("entrada_" + i + "_hf",  !hf);
-                _markField("entrada_" + i + "_descripcion_averia", !desc);
+                _markField("entrada_" + i + "_fault_description", !desc);
 
                 if (!maq)  { errors.push(blk + ": código de máquina obligatorio."); }
                 if (!hc)   { errors.push(blk + ": H.C. obligatoria."); }

@@ -4920,13 +4920,13 @@ class WorkshopAssetAutocompleteView(WorkshopRequiredMixin, View):
             return JsonResponse({"error": "Sin perfil de empresa."}, status=403)
 
         q = request.GET.get("q", "").strip()
-        qs = MachineAsset.objects.filter(company=company, es_activo=True)
+        qs = MachineAsset.objects.filter(company=company, is_active=True)
 
         if q:
-            # Case-insensitive search on codigo and brand_model.
-            # Búsqueda sin distinción de mayúsculas en codigo y brand_model.
+            # Case-insensitive search on code and brand_model.
+            # Búsqueda sin distinción de mayúsculas en code y brand_model.
             qs = qs.filter(
-                django_models.Q(codigo__icontains=q) |
+                django_models.Q(code__icontains=q) |
                 django_models.Q(brand_model__icontains=q)
             )
 
@@ -5166,11 +5166,11 @@ def _parse_entry_lines_from_post(POST, company):
             # Pasada 1 — iexact directo sobre raw (autocompletado escribe codigo exacto).
             try:
                 machine_asset = MachineAsset.objects.get(
-                    codigo__iexact=machine_raw, company=company
+                    code__iexact=machine_raw, company=company
                 )
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
                 machine_asset = MachineAsset.objects.filter(
-                    codigo__iexact=machine_raw, company=company
+                    code__iexact=machine_raw, company=company
                 ).first()
 
         if machine_asset is None and machine_norm:
@@ -5178,11 +5178,11 @@ def _parse_entry_lines_from_post(POST, company):
             # Pasada 2 — código normalizado (entrada OCR / manuscrita).
             try:
                 machine_asset = MachineAsset.objects.get(
-                    codigo__iexact=machine_norm, company=company
+                    code__iexact=machine_norm, company=company
                 )
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
                 machine_asset = MachineAsset.objects.filter(
-                    codigo__iexact=machine_norm, company=company
+                    code__iexact=machine_norm, company=company
                 ).first()
 
         delta_hours = _compute_delta_hours(hc, hf)
@@ -5262,11 +5262,11 @@ def _parse_spare_parts_from_post(POST, company):
             # Pasada 1 — iexact directo sobre raw.
             try:
                 veh_asset = MachineAsset.objects.get(
-                    codigo__iexact=vehiculo_raw, company=company
+                    code__iexact=vehiculo_raw, company=company
                 )
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
                 veh_asset = MachineAsset.objects.filter(
-                    codigo__iexact=vehiculo_raw, company=company
+                    code__iexact=vehiculo_raw, company=company
                 ).first()
 
         if veh_asset is None and veh_norm:
@@ -5274,11 +5274,11 @@ def _parse_spare_parts_from_post(POST, company):
             # Pasada 2 — código normalizado.
             try:
                 veh_asset = MachineAsset.objects.get(
-                    codigo__iexact=veh_norm, company=company
+                    code__iexact=veh_norm, company=company
                 )
             except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
                 veh_asset = MachineAsset.objects.filter(
-                    codigo__iexact=veh_norm, company=company
+                    code__iexact=veh_norm, company=company
                 ).first()
 
         spare_parts_data.append({
@@ -5376,12 +5376,12 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         if not norm:
             return None
         try:
-            return MachineAsset.objects.get(codigo__iexact=norm, company=company)
+            return MachineAsset.objects.get(code__iexact=norm, company=company)
         except MachineAsset.DoesNotExist:
             return None
         except MachineAsset.MultipleObjectsReturned:
             return MachineAsset.objects.filter(
-                codigo__iexact=norm, company=company
+                code__iexact=norm, company=company
             ).first()
 
     def get(self, request, *args, **kwargs):
@@ -5445,7 +5445,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         # Active assets for the autocomplete selector.
         # Activos disponibles para el selector de autocompletado.
         assets = list(
-            MachineAsset.objects.filter(company=company, es_activo=True)
+            MachineAsset.objects.filter(company=company, is_active=True)
             .order_by("code")
             .values("code", "brand_model")
         )
@@ -5858,7 +5858,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         cu      = self._get_company_user(request)
         company = cu.company
         assets  = list(
-            MachineAsset.objects.filter(company=company, es_activo=True)
+            MachineAsset.objects.filter(company=company, is_active=True)
             .order_by("code")
             .values("code", "brand_model")
         )
@@ -6213,7 +6213,7 @@ class WorkOrderEntrySTTView(WorkshopRequiredMixin, View):
         cu      = self._get_company_user(request)
         company = cu.company
         assets  = list(
-            MachineAsset.objects.filter(company=company, es_activo=True)
+            MachineAsset.objects.filter(company=company, is_active=True)
             .order_by("code")
             .values("code", "brand_model")
         )
