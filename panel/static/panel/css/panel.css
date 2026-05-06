@@ -342,3 +342,12 @@ body {
     white-space: pre-wrap;
     font-size: .85rem;
 }
+
+/* ===========================================================================
+   Operario — Input de CdG libre (opción "Otro" en selector de bloque repuesto)
+   Operator — Free-text CdG input ("Otro" option in spare-part block selector)
+   Hito 7 / PRIMERA ACCIÓN (sesión 010)
+   =========================================================================== */
+.cg-libre-input {
+    min-width: 180px;
+}

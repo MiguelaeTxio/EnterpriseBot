@@ -177,6 +177,43 @@ class MachineAsset(models.Model):
     )
 
     # ------------------------------------------------------------------
+    # Instrumentation flags — Hito 7 / SEGUNDA ACCIÓN (sesión 010)
+    # Flags de instrumentación — Hito 7 / SEGUNDA ACCIÓN (sesión 010)
+    #
+    # Indicate which readings the operator must supply when submitting
+    # a work-order entry for this asset. Validated by rules R6/R7/R8
+    # in work_order_processor/validators.py.
+    #
+    # Indican qué lecturas debe aportar el operario al enviar un parte
+    # para este activo. Validadas por las reglas R6/R7/R8 en
+    # work_order_processor/validators.py.
+    # ------------------------------------------------------------------
+    has_odometer = models.BooleanField(
+        _("Tiene odómetro"),
+        default=False,
+        help_text=_(
+            "Si está activo, el operario debe registrar la lectura de "
+            "kilómetros (odómetro) al enviar un parte para este activo."
+        ),
+    )
+    has_engine_hours = models.BooleanField(
+        _("Tiene horómetro de motor"),
+        default=False,
+        help_text=_(
+            "Si está activo, el operario debe registrar la lectura del "
+            "horómetro de motor al enviar un parte para este activo."
+        ),
+    )
+    has_crane_hours = models.BooleanField(
+        _("Tiene horómetro de grúa"),
+        default=False,
+        help_text=_(
+            "Si está activo, el operario debe registrar la lectura del "
+            "horómetro de grúa al enviar un parte para este activo."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Status / Estado
     # ------------------------------------------------------------------
     is_active = models.BooleanField(

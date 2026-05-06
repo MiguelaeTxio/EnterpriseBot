@@ -204,6 +204,22 @@ class WorkOrder(models.Model):
     )
 
     # ------------------------------------------------------------------
+    # Cost-centre incident flag — Hito 7 / PRIMERA ACCIÓN (sesión 010)
+    # Flag de incidencia de centro de gasto — Hito 7 / PRIMERA ACCIÓN (sesión 010)
+    # ------------------------------------------------------------------
+    has_cg_incident = models.BooleanField(
+        _("Incidencia de CdG"),
+        default=False,
+        db_index=True,
+        help_text=_(
+            "El operario ha asignado un repuesto a un centro de gasto que no "
+            "existe en el catálogo de MachineAsset mediante la opción 'Otro'. "
+            "Requiere revisión por parte de un SUPERVISOR o ADMIN para crear "
+            "el centro de gasto correspondiente en la base de datos."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Duplicate detection — Hito 8 / Bloque I
     # Detección de duplicados — Hito 8 / Bloque I
     # ------------------------------------------------------------------
@@ -557,6 +573,54 @@ class WorkOrderEntryLine(models.Model):
             "Horas netas del bloque tras descontar la pausa de comida "
             "(13:30–15:00, 90 min) si el tramo la cubre. "
             "Calculado automáticamente durante el procesamiento."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Instrumentation readings — Hito 7 / SEGUNDA ACCIÓN (sesión 010)
+    # Lecturas de instrumentación — Hito 7 / SEGUNDA ACCIÓN (sesión 010)
+    #
+    # Optional readings supplied by the operator at the time of the work
+    # block. Only required when the associated MachineAsset has the
+    # corresponding flag set (has_odometer / has_engine_hours /
+    # has_crane_hours). Validated by rules R6/R7/R8 in validators.py.
+    #
+    # Lecturas opcionales aportadas por el operario en el momento del
+    # bloque de trabajo. Solo obligatorias cuando el MachineAsset asociado
+    # tiene el flag correspondiente activo (has_odometer / has_engine_hours
+    # / has_crane_hours). Validadas por las reglas R6/R7/R8 en validators.py.
+    # ------------------------------------------------------------------
+    odometer_reading = models.DecimalField(
+        _("Lectura km"),
+        max_digits=10,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Lectura del odómetro (kilómetros) en el momento del bloque "
+            "de trabajo. Obligatoria si MachineAsset.has_odometer=True."
+        ),
+    )
+    engine_hours_reading = models.DecimalField(
+        _("Lectura horómetro motor"),
+        max_digits=10,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Lectura del horómetro de motor (horas) en el momento del "
+            "bloque de trabajo. Obligatoria si MachineAsset.has_engine_hours=True."
+        ),
+    )
+    crane_hours_reading = models.DecimalField(
+        _("Lectura horómetro grúa"),
+        max_digits=10,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Lectura del horómetro de grúa (horas) en el momento del "
+            "bloque de trabajo. Obligatoria si MachineAsset.has_crane_hours=True."
         ),
     )
 

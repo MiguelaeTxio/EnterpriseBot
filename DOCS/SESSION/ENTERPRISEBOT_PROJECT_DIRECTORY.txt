@@ -95,6 +95,7 @@
 ./fleet/migrations/0002_maintenancelog_work_entry_line.py
 ./fleet/migrations/0003_rename_fields_english.py
 ./fleet/migrations/__init__.py
+./fleet/migrations/0004_alter_machineasset_options_and_more.py
 ./fleet/migrations/0001_initial.py
 ./fleet/tests.py
 ./fleet/management/commands/import_machine_catalog.py
@@ -272,9 +273,11 @@
 ./work_order_processor/migrations/0005_add_spare_part_line.py
 ./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py
 ./work_order_processor/migrations/0008_workorder_has_overlap_incident.py
+./work_order_processor/migrations/0010_workorderentryline_crane_hours_reading_and_more.py
 ./work_order_processor/migrations/0004_workorder_source_pdf_hash.py
 ./work_order_processor/migrations/__init__.py
 ./work_order_processor/migrations/0003_workorder_reviewed_workorder_reviewed_at_and_more.py
+./work_order_processor/migrations/0009_workorder_has_cg_incident.py
 ./work_order_processor/migrations/0001_initial.py
 ./work_order_processor/tasks.py
 ./work_order_processor/tests.py

@@ -236,11 +236,20 @@
                                     Bloque {{ entrada.idx }}
                                 </option>
                                 {% endfor %}
+                                {# Opción "Otro": centinela entry_idx=0 para CdG de texto libre. #}
+                                {# "Otro" option: entry_idx=0 sentinel for free-text CdG.        #}
+                                <option value="0">Otro — introducir CdG manualmente</option>
                             </select>
                             <span class="text-muted small">asignado a</span>
                             <span class="centro-gasto-label cg-label-static fst-italic text-secondary small"
                                   data-repuesto-idx="{{ rep.ridx }}">
                             </span>
+                            {# Input libre de CdG — visible solo cuando se selecciona "Otro". #}
+                            {# Free-text CdG input — visible only when "Otro" is selected.    #}
+                            <input type="text"
+                                   name="repuesto_{{ rep.ridx }}_vehiculo_raw"
+                                   class="form-control form-control-sm repuesto-cg-libre d-none mt-1 cg-libre-input"
+                                   placeholder="Código o nombre del CdG">
                         </div>
 
                         <div class="row g-3">
@@ -484,10 +493,12 @@
          * Builds and returns a DOM node for a new spare-part row with
          * the given ridx index. Mirrors the structure of the Jinja/Django
          * template rows so server-side parsing works identically.
+         * Includes the "Otro" option (entry_idx=0 sentinel) for free-text CdG.
          *
          * Construye y devuelve un nodo DOM para una nueva fila de repuesto
          * con el índice ridx dado. Replica la estructura de las filas del
          * template Django para que el parseo server-side funcione igual.
+         * Incluye la opción "Otro" (centinela entry_idx=0) para CdG libre.
          */
         var div = document.createElement("div");
         div.className = "confirm-block mb-4 pb-4 border-bottom extra-repuesto-row";
@@ -499,12 +510,18 @@
                         'class="form-select form-select-sm repuesto-entry-select w-auto" ' +
                         'data-repuesto-idx="' + ridx + '">' +
                     _buildEntryOptions() +
+                    '<option value="0">Otro — introducir CdG manualmente</option>' +
                 '</select>' +
                 '<span class="text-muted small">asignado a</span>' +
                 '<span class="centro-gasto-label cg-label-static fst-italic text-secondary small" ' +
                       'data-repuesto-idx="' + ridx + '">' +
                     'un centro de gasto seleccionado en el bloque' +
                 '</span>' +
+                '<input type="text" ' +
+                       'name="repuesto_' + ridx + '_vehiculo_raw" ' +
+                       'class="form-control form-control-sm repuesto-cg-libre d-none mt-1 w-auto" ' +
+                       'placeholder="Código o nombre del CdG" ' +
+                       'style="min-width:180px">' +
                 '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-auto btn-remove-repuesto">' +
                     '<i class="bi bi-trash"></i> Eliminar' +
                 '</button>' +
@@ -742,12 +759,58 @@
         display.value = _getMachineRawForBlockC(blockIdx);
     }
 
+    function _toggleCgLibreC(ridx) {
+        /*
+         * Shows/hides the free-text CdG input for repuesto ridx in confirm_entry.
+         * When entry_idx==0 ("Otro") the input becomes visible and the label
+         * reflects the typed value. Otherwise the input is hidden and the label
+         * reflects the machine_raw of the selected work block.
+         *
+         * Muestra/oculta el input de CdG libre para el repuesto ridx en confirm_entry.
+         * Cuando entry_idx==0 ("Otro") el input se hace visible y el label
+         * refleja el valor escrito. En caso contrario el input se oculta y el
+         * label refleja el machine_raw del bloque de trabajo seleccionado.
+         */
+        var sel      = document.querySelector('[name="repuesto_' + ridx + '_entry_idx"]');
+        var label    = document.querySelector('.centro-gasto-display[data-repuesto-idx="' + ridx + '"]');
+        var libInput = document.querySelector('[name="repuesto_' + ridx + '_vehiculo_raw"]');
+
+        var idx = parseInt(sel.value, 10);
+        if (idx === 0) {
+            // "Otro" path: reveal free-text input, update label from its value.
+            // Ruta "Otro": revelar input libre, actualizar label desde su valor.
+            if (libInput) { libInput.classList.remove("d-none"); }
+            if (label) {
+                label.value = (libInput && libInput.value.trim())
+                    ? libInput.value.trim()
+                    : "";
+            }
+        } else {
+            // Normal path: hide free-text input, sync label from block machine_raw.
+            // Ruta normal: ocultar input libre, sincronizar label desde machine_raw del bloque.
+            if (libInput) { libInput.classList.add("d-none"); }
+            _syncCentroGastoC(ridx);
+        }
+    }
+
+    // Delegate input events on .repuesto-cg-libre inputs in confirm_entry.
+    // Delegar eventos input en inputs .repuesto-cg-libre en confirm_entry.
+    document.addEventListener("input", function (e) {
+        if (e.target && e.target.classList.contains("repuesto-cg-libre")) {
+            var m = e.target.name.match(/repuesto_(\d+)_vehiculo_raw/);
+            if (mv /home/MiguelAeTxio/SWAP/views.py.prop    /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views.py) { return; }
+            var ridx     = m[1];
+            var label    = document.querySelector('.centro-gasto-display[data-repuesto-idx="' + ridx + '"]');
+            if (label) { label.value = e.target.value.trim(); }
+        }
+    });
+
     function _attachEntrySelectListenerC(sel) {
         sel.dataset.cgSyncAttached = '1';
         sel.addEventListener('change', function () {
             var ridx = sel.dataset.repuestoIdx
                 || (sel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
-            _syncCentroGastoC(ridx);
+            _toggleCgLibreC(ridx);
         });
     }
 

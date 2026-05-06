@@ -5213,33 +5213,48 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
     """
     Parses and resolves spare-part lines submitted via POST.
 
-    The vehiculo_raw and vehicle_asset fields are no longer read from POST
-    (the UI input has been removed to avoid redundancy with the associated
-    work block). Instead, they are automatically populated from the entry
-    block referenced by entry_idx inside entry_lines_data.
+    The vehiculo_raw and vehicle_asset fields are populated in two ways:
+      - Normal case (entry_idx >= 1): auto-populated from the entry block
+        referenced by entry_idx inside entry_lines_data, preserving the
+        original behaviour (UI vehicle input was removed to avoid redundancy).
+      - 'Otro' case (entry_idx == 0): the operator has chosen a free-text
+        cost centre. vehiculo_raw is read from POST field repuesto_N_vehiculo_raw
+        and a two-pass resolution against MachineAsset is attempted. If no match
+        is found, vehicle_asset is None and the cg_incident flag is set to True
+        in the returned dict so that the persistence layer can set
+        WorkOrder.has_cg_incident = True.
 
-    If entry_lines_data is None or the referenced block is not found,
-    vehiculo_raw and vehicle_asset default to empty string and None
-    respectively, preserving backwards compatibility.
+    If entry_lines_data is None or the referenced block is not found in the
+    normal case, vehiculo_raw and vehicle_asset default to empty string and
+    None respectively, preserving backwards compatibility.
 
     Returns a list of dicts ready to feed the integrity gate and the
     atomic persistence block.
     ---
     Parsea y resuelve las líneas de repuesto enviadas por POST.
 
-    Los campos vehiculo_raw y vehicle_asset ya no se leen del POST
-    (el input de UI ha sido eliminado para evitar redundancia con el bloque
-    de trabajo asociado). En su lugar se rellenan automáticamente desde el
-    bloque de entrada referenciado por entry_idx dentro de entry_lines_data.
+    Los campos vehiculo_raw y vehicle_asset se rellenan de dos formas:
+      - Caso normal (entry_idx >= 1): relleno automático desde el bloque de
+        entrada referenciado por entry_idx dentro de entry_lines_data,
+        preservando el comportamiento original (el input de vehículo de UI
+        fue eliminado para evitar redundancia).
+      - Caso 'Otro' (entry_idx == 0): el operario ha elegido un centro de
+        gasto de texto libre. vehiculo_raw se lee del campo POST
+        repuesto_N_vehiculo_raw y se intenta resolución en dos pasadas contra
+        MachineAsset. Si no hay coincidencia, vehicle_asset es None y el flag
+        cg_incident se pone a True en el dict devuelto para que la capa de
+        persistencia pueda activar WorkOrder.has_cg_incident = True.
 
-    Si entry_lines_data es None o el bloque referenciado no se encuentra,
-    vehiculo_raw y vehicle_asset toman como valor cadena vacía y None
+    Si entry_lines_data es None o el bloque referenciado no se encuentra en
+    el caso normal, vehiculo_raw y vehicle_asset toman cadena vacía y None
     respectivamente, preservando la compatibilidad hacia atrás.
 
     Devuelve una lista de dicts lista para la barrera de integridad y el
     bloque de persistencia atómica.
     """
     from decimal import Decimal, InvalidOperation
+    from fleet.models import MachineAsset as _MachineAsset
+    from work_order_processor.services import _normalise_machine_code as _norm_code
 
     num_repuestos    = int(POST.get("num_repuestos", "0") or "0")
     spare_parts_data = []
@@ -5270,15 +5285,64 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
         if origen not in ("SUPPLIER", "WAREHOUSE"):
             origen = "WAREHOUSE"
 
-        # Auto-populate vehicle from the associated work block.
-        # Rellenar vehículo automáticamente desde el bloque de trabajo asociado.
-        associated_entry = entry_map.get(entry_idx) or entry_map.get(1)
-        if associated_entry:
-            vehiculo_raw = associated_entry.get("machine_raw", "")
-            veh_asset    = associated_entry.get("machine_asset", None)
-        else:
-            vehiculo_raw = ""
+        # ------------------------------------------------------------------
+        # Resolve vehiculo_raw and vehicle_asset.
+        # Resolver vehiculo_raw y vehicle_asset.
+        #
+        # entry_idx == 0 is the sentinel for the 'Otro' free-text path:
+        # the operator typed a custom CdG not present in the block selector.
+        # entry_idx == 0 es el centinela de la ruta de texto libre 'Otro':
+        # el operario escribió un CdG personalizado no presente en el selector.
+        # ------------------------------------------------------------------
+        cg_incident = False
+
+        if entry_idx == 0:
+            # 'Otro' path: read free-text CdG from POST and attempt resolution.
+            # Ruta 'Otro': leer CdG de texto libre del POST e intentar resolución.
+            vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
             veh_asset    = None
+
+            if vehiculo_raw and company is not None:
+                # Pass 1 — direct iexact on vehiculo_raw.
+                # Pasada 1 — iexact directo sobre vehiculo_raw.
+                try:
+                    veh_asset = _MachineAsset.objects.get(
+                        code__iexact=vehiculo_raw, company=company
+                    )
+                except (_MachineAsset.DoesNotExist, _MachineAsset.MultipleObjectsReturned):
+                    veh_asset = _MachineAsset.objects.filter(
+                        code__iexact=vehiculo_raw, company=company
+                    ).first()
+
+                if veh_asset is None:
+                    # Pass 2 — normalised code.
+                    # Pasada 2 — código normalizado.
+                    norm = _norm_code(vehiculo_raw)
+                    if norm:
+                        try:
+                            veh_asset = _MachineAsset.objects.get(
+                                code__iexact=norm, company=company
+                            )
+                        except (_MachineAsset.DoesNotExist, _MachineAsset.MultipleObjectsReturned):
+                            veh_asset = _MachineAsset.objects.filter(
+                                code__iexact=norm, company=company
+                            ).first()
+
+            # If still unresolved, mark as CdG incident.
+            # Si sigue sin resolverse, marcar como incidencia de CdG.
+            if veh_asset is None:
+                cg_incident = True
+
+        else:
+            # Normal path: auto-populate from the associated work block.
+            # Ruta normal: rellenar automáticamente desde el bloque de trabajo asociado.
+            associated_entry = entry_map.get(entry_idx) or entry_map.get(1)
+            if associated_entry:
+                vehiculo_raw = associated_entry.get("machine_raw", "")
+                veh_asset    = associated_entry.get("machine_asset", None)
+            else:
+                vehiculo_raw = ""
+                veh_asset    = None
 
         spare_parts_data.append({
             "line_number":   r,
@@ -5291,6 +5355,7 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
             "supplier":      proveedor if origen == "SUPPLIER" else "",
             "flags":         [],
             "entry_idx":     entry_idx,
+            "cg_incident":   cg_incident,
         })
 
     return spare_parts_data
@@ -5808,6 +5873,18 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                         flags       = spd["flags"],
                     )
 
+            # Activate has_cg_incident if any spare part used the 'Otro' path
+            # and its cost centre could not be resolved in MachineAsset.
+            # Activar has_cg_incident si algún repuesto usó la ruta 'Otro'
+            # y su centro de gasto no pudo resolverse en MachineAsset.
+            if any(spd.get("cg_incident") for spd in spare_parts_data):
+                WorkOrder.objects.filter(pk=work_order.pk).update(has_cg_incident=True)
+                logger.warning(
+                    "# [Confirm] WorkOrder #%d marcado con has_cg_incident=True: "
+                    "al menos un repuesto tiene un CdG no resuelto en catálogo.",
+                    work_order.pk,
+                )
+
             logger.info(
                 "# [Confirm] WorkOrder #%d creado correctamente. "
                 "Entradas: %d | Repuestos: %d.",
@@ -6260,6 +6337,18 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                         supplier    = spd["supplier"],
                         flags       = spd["flags"],
                     )
+
+            # Activate has_cg_incident if any spare part used the 'Otro' path
+            # and its cost centre could not be resolved in MachineAsset.
+            # Activar has_cg_incident si algún repuesto usó la ruta 'Otro'
+            # y su centro de gasto no pudo resolverse en MachineAsset.
+            if any(spd.get("cg_incident") for spd in spare_parts_data):
+                WorkOrder.objects.filter(pk=work_order.pk).update(has_cg_incident=True)
+                logger.warning(
+                    "# [FormView] WorkOrder #%d marcado con has_cg_incident=True: "
+                    "al menos un repuesto tiene un CdG no resuelto en catálogo.",
+                    work_order.pk,
+                )
 
             logger.info(
                 "# [FormView] WorkOrder #%d creado correctamente (Via A). "

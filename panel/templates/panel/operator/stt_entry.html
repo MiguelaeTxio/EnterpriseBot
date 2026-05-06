@@ -1055,7 +1055,12 @@
     function _buildRepuesto(ridx) {
         /*
          * Creates a new spare-part row with the given index.
+         * Includes the "Otro" option (entry_idx=0 sentinel) for free-text CdG,
+         * consistent with the other operator entry paths (Form, Confirm).
+         *
          * Crea una nueva fila de repuesto con el índice indicado.
+         * Incluye la opción "Otro" (centinela entry_idx=0) para CdG de texto
+         * libre, consistente con las otras vías de entrada del operario.
          */
         var div = document.createElement("div");
         div.className = "repuesto-block mb-4 pb-4 border-top pt-4";
@@ -1063,12 +1068,22 @@
         div.innerHTML =
             '<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">' +
                 '<span class="badge bg-warning text-dark">Repuesto ' + ridx + '</span>' +
-                '<span class="text-muted small">del Bloque 1 asignado a</span>' +
+                '<span class="text-muted small">del</span>' +
+                '<select name="repuesto_' + ridx + '_entry_idx" ' +
+                        'class="form-select form-select-sm repuesto-entry-select w-auto" ' +
+                        'data-repuesto-idx="' + ridx + '">' +
+                    '<option value="1">Bloque 1</option>' +
+                    '<option value="0">Otro — introducir CdG manualmente</option>' +
+                '</select>' +
+                '<span class="text-muted small">asignado a</span>' +
                 '<span class="centro-gasto-label cg-label-static fst-italic text-secondary small" ' +
                       'data-repuesto-idx="' + ridx + '">' +
                     'un centro de gasto seleccionado en el bloque' +
                 '</span>' +
-                '<input type="hidden" name="repuesto_' + ridx + '_entry_idx" value="1">' +
+                '<input type="text" ' +
+                       'name="repuesto_' + ridx + '_vehiculo_raw" ' +
+                       'class="form-control form-control-sm repuesto-cg-libre d-none mt-1 cg-libre-input" ' +
+                       'placeholder="Código o nombre del CdG">' +
             '</div>' +
             '<div class="row g-3">' +
                 '<div class="col-12 col-md-3">' +
@@ -1223,11 +1238,72 @@
     // todos los displays Centro de Gasto sincronizados con machine_raw del bloque 1.
     // ==================================================================
 
+    function _syncCgLabelSTT(ridx) {
+        /*
+         * Updates .centro-gasto-label for repuesto ridx in STT view.
+         * If entry_idx==0 ("Otro"), shows the free-text input value.
+         * Otherwise shows block-1 machine_raw (STT has a single block).
+         *
+         * Actualiza .centro-gasto-label del repuesto ridx en la vista STT.
+         * Si entry_idx==0 ("Otro"), muestra el valor del input libre.
+         * En caso contrario muestra machine_raw del bloque 1 (STT tiene un bloque).
+         */
+        var sel      = document.querySelector('[name="repuesto_' + ridx + '_entry_idx"]');
+        var label    = document.querySelector('.centro-gasto-label[data-repuesto-idx="' + ridx + '"]');
+        var libInput = document.querySelector('[name="repuesto_' + ridx + '_vehiculo_raw"]');
+
+        var idx = sel ? parseInt(sel.value, 10) : 1;
+        if (idx === 0) {
+            // "Otro" selected: show free-text input, use its value for label.
+            // "Otro" seleccionado: mostrar input libre, usar su valor para label.
+            if (libInput) { libInput.classList.remove("d-none"); }
+            label.textContent = (libInput && libInput.value.trim())
+                ? libInput.value.trim()
+                : "introducir CdG manualmente";
+        } else {
+            // Normal: hide free-text input, sync from block-1 machine_raw.
+            // Normal: ocultar input libre, sincronizar desde machine_raw del bloque 1.
+            if (libInput) { libInput.classList.add("d-none"); }
+            var maqInput = document.querySelector('[name="entrada_1_machine_raw"]');
+            label.textContent = (maqInput && maqInput.value.trim())
+                ? maqInput.value.trim()
+                : "un centro de gasto seleccionado en el bloque";
+        }
+    }
+
+    // Delegate change/input events for 'Otro' logic in STT view.
+    // Delegar eventos change/input para la lógica 'Otro' en la vista STT.
+    document.addEventListener("change", function (e) {
+        if (e.target && e.target.classList.contains("repuesto-entry-select")) {
+            var ridx = e.target.dataset.repuestoIdx
+                || (e.target.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
+            if (ridx) { _syncCgLabelSTT(ridx); }
+        }
+    });
+
+    document.addEventListener("input", function (e) {
+        if (e.target && e.target.classList.contains("repuesto-cg-libre")) {
+            var m = e.target.name.match(/repuesto_(\d+)_vehiculo_raw/);
+            if (m) { _syncCgLabelSTT(m[1]); }
+        }
+    });
+
+    window._syncCgLabelSTT = _syncCgLabelSTT;
+
     function _syncAllCentroGastoSTT() {
         var input = document.querySelector('[name="entrada_1_machine_raw"]');
         var raw   = input ? input.value.trim() : '';
         document.querySelectorAll('.centro-gasto-label').forEach(function (label) {
-            label.textContent = raw || 'un centro de gasto seleccionado en el bloque';
+            // Only update labels not currently on the "Otro" path.
+            // Solo actualizar labels que no estén en la ruta "Otro".
+            var ridx = label.dataset.repuestoIdx;
+            var sel  = ridx
+                ? document.querySelector('[name="repuesto_' + ridx + '_entry_idx"]')
+                : null;
+            var idx  = sel ? parseInt(sel.value, 10) : 1;
+            if (idx !== 0) {
+                label.textContent = raw || 'un centro de gasto seleccionado en el bloque';
+            }
         });
     }
 
