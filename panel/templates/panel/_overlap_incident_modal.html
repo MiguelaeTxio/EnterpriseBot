@@ -1,0 +1,144 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_overlap_incident_modal.html #}
+{#                                                                                                #}
+{# Overlap incident modal partial.                                                                #}
+{# Shown automatically after a WorkOrder is saved when inter-part overlap is detected (R4).      #}
+{# The modal informs the operator which existing parts conflict with the newly saved one,         #}
+{# marks both as having incidents, and directs them to the work-order list for resolution.        #}
+{#                                                                                                #}
+{# Usage:                                                                                         #}
+{#   Include inside {% block content %} or {% block extra_scripts %} of any operator entry        #}
+{#   template. The modal auto-triggers on page load when {{ overlap_incidents }} is truthy.       #}
+{#                                                                                                #}
+{# Context variables required:                                                                    #}
+{#   overlap_incidents  — boolean, True to show the modal.                                        #}
+{#   new_work_order_pk  — PK of the newly saved WorkOrder.                                        #}
+{#   conflicting_ids    — list of PKs of the conflicting WorkOrders.                              #}
+{#   conflicting_dates  — list of work_date strings (DD/MM/YYYY) for display.                    #}
+{#                                                                                                #}
+{# Partial modal de incidencia por solapamiento.                                                  #}
+{# Se muestra automáticamente tras guardar un WorkOrder cuando se detecta solapamiento            #}
+{# entre partes (R4). Informa al operario de qué partes existentes solapan con el                #}
+{# recién guardado, ambos quedan marcados con incidencia, y se le dirige a la lista              #}
+{# de partes para resolver la discrepancia.                                                       #}
+{#                                                                                                #}
+{# Variables de contexto requeridas:                                                              #}
+{#   overlap_incidents  — booleano, True para mostrar el modal.                                   #}
+{#   new_work_order_pk  — PK del WorkOrder recién guardado.                                       #}
+{#   conflicting_ids    — lista de PKs de los WorkOrders en conflicto.                            #}
+{#   conflicting_dates  — lista de cadenas work_date (DD/MM/AAAA) para mostrar.                  #}
+
+{% if overlap_incidents %}
+<div class="modal fade"
+     id="overlapIncidentModal"
+     tabindex="-1"
+     aria-labelledby="overlapIncidentModalLabel"
+     aria-modal="true"
+     role="dialog">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+
+            {# ── Header ──────────────────────────────────────────────── #}
+            <div class="modal-header bg-warning bg-opacity-10 border-bottom border-warning">
+                <h5 class="modal-title fw-semibold text-warning-emphasis" id="overlapIncidentModalLabel">
+                    <i class="bi bi-exclamation-triangle-fill me-2 text-warning"></i>
+                    Incidencia de solapamiento horario detectada
+                </h5>
+            </div>
+
+            {# ── Body ────────────────────────────────────────────────── #}
+            <div class="modal-body p-4">
+
+                <p class="mb-3">
+                    El parte <strong>#{{ new_work_order_pk }}</strong> ha sido
+                    guardado correctamente, pero sus franjas horarias se
+                    <strong>solapan con uno o más partes existentes</strong>
+                    del mismo día y operario.
+                </p>
+
+                <p class="mb-3">
+                    <strong>Todos los partes afectados</strong> han sido marcados
+                    con una incidencia de solapamiento y aparecerán resaltados en
+                    la lista de partes para que puedas revisarlos y corregirlos.
+                </p>
+
+                {# Conflict table / Tabla de conflictos #}
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center col-2">Parte</th>
+                                <th>Fecha</th>
+                                <th class="text-center">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {# New part row / Fila del parte nuevo #}
+                            <tr class="table-warning">
+                                <td class="text-center fw-semibold">#{{ new_work_order_pk }}</td>
+                                <td>Recién guardado</td>
+                                <td class="text-center">
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>Incidencia
+                                    </span>
+                                </td>
+                            </tr>
+                            {# Conflicting parts rows / Filas de partes en conflicto #}
+                            {% for part in conflicting_parts %}
+                            <tr class="table-warning">
+                                <td class="text-center fw-semibold">#{{ part.pk }}</td>
+                                <td>{{ part.fecha }}</td>
+                                <td class="text-center">
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>Incidencia
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="alert alert-warning d-flex align-items-start gap-2 mb-0" role="alert">
+                    <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+                    <div>
+                        Accede a la <strong>lista de partes</strong> para editar
+                        los partes en conflicto y eliminar el solapamiento.
+                        Mientras exista la incidencia, ambos partes aparecerán
+                        marcados con <span class="badge bg-warning text-dark">Incidencia</span>.
+                    </div>
+                </div>
+
+            </div>
+
+            {# ── Footer ──────────────────────────────────────────────── #}
+            <div class="modal-footer border-top">
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
+                    <i class="bi bi-x-lg me-1"></i>Cerrar
+                </button>
+                <a href="/panel/work-orders/"
+                   class="btn btn-warning">
+                    <i class="bi bi-list-ul me-1"></i>Ir a la lista de partes
+                </a>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+{# Auto-trigger the modal on page load when overlap_incidents is set. #}
+{# Auto-disparar el modal al cargar la página cuando overlap_incidents está activo. #}
+<script>
+(function () {
+    "use strict";
+    document.addEventListener("DOMContentLoaded", function () {
+        var modalEl = document.getElementById("overlapIncidentModal");
+        if (modalEl && typeof bootstrap !== "undefined") {
+            var modal = new bootstrap.Modal(modalEl, { backdrop: "static", keyboard: false });
+            modal.show();
+        }
+    });
+}());
+</script>
+{% endif %}

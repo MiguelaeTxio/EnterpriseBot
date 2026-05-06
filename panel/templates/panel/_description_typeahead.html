@@ -1,0 +1,359 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_description_typeahead.html #}
+{#                                                                                               #}
+{# Reusable description typeahead partial.                                                       #}
+{# Provides text autocomplete for fault_description and repair_notes textareas in the           #}
+{# three operator entry templates: form_entry.html, stt_entry.html, confirm_entry.html.         #}
+{#                                                                                               #}
+{# Usage:                                                                                        #}
+{#   1. Add class "desc-search" and attribute data-desc-field="fault_description" (or           #}
+{#      "repair_notes") to each target textarea — both server-rendered and JS-built.            #}
+{#   2. Include this partial inside {% block extra_scripts %} of the host template.             #}
+{#   3. Call DescTypeahead.initAll() after including this partial to attach to all              #}
+{#      pre-rendered textareas. Call DescTypeahead.init(textarea) inside any JS builder         #}
+{#      function (_buildBlockRow, _buildBlock) to attach to dynamically created textareas.      #}
+{#                                                                                               #}
+{# Partial reutilizable de typeahead de descripciones.                                          #}
+{# Proporciona autocompletado de texto para los textarea fault_description y repair_notes       #}
+{# en los tres templates de entrada del operario: form_entry.html, stt_entry.html,             #}
+{# confirm_entry.html.                                                                           #}
+{#                                                                                               #}
+{# Uso:                                                                                          #}
+{#   1. Añadir clase "desc-search" y atributo data-desc-field="fault_description" (o           #}
+{#      "repair_notes") a cada textarea objetivo — tanto renderizados por el servidor           #}
+{#      como construidos por JS.                                                                 #}
+{#   2. Incluir este partial dentro de {% block extra_scripts %} del template anfitrión.        #}
+{#   3. Llamar a DescTypeahead.initAll() tras incluir el partial para asociarlo a todos los     #}
+{#      textarea pre-renderizados. Llamar a DescTypeahead.init(textarea) dentro de cualquier    #}
+{#      función constructora JS (_buildBlockRow, _buildBlock) para asociarlo a textarea         #}
+{#      creados dinámicamente.                                                                   #}
+
+<style>
+/*
+ * Description typeahead dropdown styles.
+ * Scoped under .desc-search-wrapper to avoid collisions with .asset-dropdown.
+ *
+ * Estilos del dropdown de typeahead de descripciones.
+ * Acotados bajo .desc-search-wrapper para evitar colisiones con .asset-dropdown.
+ */
+.desc-typeahead-dropdown {
+    position:         absolute;
+    top:              100%;
+    left:             0;
+    right:            0;
+    z-index:          1060;
+    background-color: #fff;
+    border:           1px solid rgba(0, 0, 0, .15);
+    border-radius:    .375rem;
+    box-shadow:       0 .25rem .5rem rgba(0, 0, 0, .1);
+    max-height:       220px;
+    overflow-y:       auto;
+    margin-top:       2px;
+}
+
+.desc-typeahead-dropdown.d-none {
+    display: none !important;
+}
+
+.desc-typeahead-item {
+    display:     block;
+    width:       100%;
+    padding:     .3rem .6rem;
+    font-size:   .85rem;
+    line-height: 1.4;
+    color:       #212529;
+    background:  transparent;
+    border:      0;
+    text-align:  left;
+    cursor:      pointer;
+    white-space: normal;
+    word-break:  break-word;
+}
+
+.desc-typeahead-item:hover,
+.desc-typeahead-item:focus {
+    background-color: #f0f4ff;
+    color:            #0d47a1;
+    outline:          none;
+}
+
+/*
+ * The wrapper must be position:relative so the dropdown anchors correctly.
+ * El wrapper debe ser position:relative para que el dropdown se ancle correctamente.
+ */
+.desc-search-wrapper {
+    position: relative;
+}
+
+/*
+ * Static label for Centro de Gasto display in spare-part row headers.
+ * Non-interactive, non-selectable informative text.
+ *
+ * Etiqueta estática para el display Centro de Gasto en encabezados de repuesto.
+ * Texto informativo no interactivo y no seleccionable.
+ */
+.cg-label-static {
+    user-select:    none;
+    pointer-events: none;
+}
+</style>
+
+<script>
+(function (global) {
+    "use strict";
+
+    /*
+     * DescTypeahead — description field autocomplete widget.
+     *
+     * Public API:
+     *   DescTypeahead.init(textarea)   — attach widget to a single textarea.
+     *   DescTypeahead.initAll()        — attach widget to all .desc-search textareas.
+     *
+     * Preconditions:
+     *   - The textarea must carry class "desc-search".
+     *   - The textarea must carry attribute data-desc-field="fault_description"
+     *     or data-desc-field="repair_notes".
+     *   - The textarea must be wrapped in a .desc-search-wrapper div (injected
+     *     automatically by init() if not already present).
+     *
+     * ---
+     *
+     * DescTypeahead — widget de autocompletado para campos de descripción.
+     *
+     * API pública:
+     *   DescTypeahead.init(textarea)   — asocia el widget a un único textarea.
+     *   DescTypeahead.initAll()        — asocia el widget a todos los textarea .desc-search.
+     *
+     * Precondiciones:
+     *   - El textarea debe llevar la clase "desc-search".
+     *   - El textarea debe llevar el atributo data-desc-field="fault_description"
+     *     o data-desc-field="repair_notes".
+     *   - El textarea debe estar envuelto en un div .desc-search-wrapper (inyectado
+     *     automáticamente por init() si no está ya presente).
+     */
+
+    var DESCRIPTIONS_URL = "{% url 'panel:operator_descriptions' %}";
+
+    /* Debounce delay in milliseconds — retraso debounce en milisegundos. */
+    var DEBOUNCE_MS  = 300;
+    /* Minimum characters before triggering a fetch — mínimo de caracteres para lanzar fetch. */
+    var MIN_CHARS    = 2;
+    /* Maximum dropdown items to show — máximo de items en el dropdown. */
+    var MAX_ITEMS    = 8;
+
+    /*
+     * Debounce helper: delays fn execution until after wait ms have elapsed
+     * since the last call.
+     *
+     * Helper debounce: retrasa la ejecución de fn hasta que transcurran wait ms
+     * desde la última llamada.
+     */
+    function debounce(fn, wait) {
+        var timer;
+        return function () {
+            var ctx  = this;
+            var args = arguments;
+            clearTimeout(timer);
+            timer = setTimeout(function () { fn.apply(ctx, args); }, wait);
+        };
+    }
+
+    /*
+     * Ensures the textarea is wrapped in a .desc-search-wrapper div.
+     * If the parent already has that class, it is reused.
+     * Returns the wrapper element.
+     *
+     * Garantiza que el textarea está envuelto en un div .desc-search-wrapper.
+     * Si el padre ya tiene esa clase, se reutiliza.
+     * Devuelve el elemento wrapper.
+     */
+    function ensureWrapper(textarea) {
+        var parent = textarea.parentElement;
+        if (parent && parent.classList.contains("desc-search-wrapper")) {
+            return parent;
+        }
+        var wrapper = document.createElement("div");
+        wrapper.className = "desc-search-wrapper";
+        parent.insertBefore(wrapper, textarea);
+        wrapper.appendChild(textarea);
+        return wrapper;
+    }
+
+    /*
+     * Creates and returns a fresh dropdown element anchored to wrapper.
+     * Any previously attached dropdown is removed first.
+     *
+     * Crea y devuelve un elemento dropdown nuevo anclado al wrapper.
+     * Cualquier dropdown previamente asociado se elimina primero.
+     */
+    function createDropdown(wrapper) {
+        var old = wrapper.querySelector(".desc-typeahead-dropdown");
+        if (old) { old.parentNode.removeChild(old); }
+        var dd = document.createElement("div");
+        dd.className = "desc-typeahead-dropdown d-none";
+        wrapper.appendChild(dd);
+        return dd;
+    }
+
+    /*
+     * Core init function — attaches the typeahead behaviour to a single textarea.
+     *
+     * Función init principal — asocia el comportamiento de typeahead a un único textarea.
+     */
+    function init(textarea) {
+        if (!textarea) { return; }
+
+        /* Skip if widget already attached — skip si el widget ya está asociado. */
+        if (textarea.dataset.descTypeaheadAttached === "1") { return; }
+        textarea.dataset.descTypeaheadAttached = "1";
+
+        var field = textarea.dataset.descField || "";
+
+        /* field must be in the server-side whitelist — el campo debe estar en la lista blanca del servidor. */
+        if (field !== "fault_description" && field !== "repair_notes") {
+            return;
+        }
+
+        var wrapper  = ensureWrapper(textarea);
+        var dropdown = createDropdown(wrapper);
+
+        var lastQuery  = "";
+        /*
+         * Guard flag: true while the user is pressing a dropdown item.
+         * Prevents blur from hiding the dropdown before pointerdown commits the
+         * selection — critical on Android/iOS where event order differs from desktop.
+         *
+         * Bandera de guardia: true mientras el usuario pulsa un item del dropdown.
+         * Evita que blur oculte el dropdown antes de que pointerdown confirme la
+         * selección — crítico en Android/iOS donde el orden de eventos difiere del escritorio.
+         */
+        var _selecting = false;
+
+        function hideDropdown() {
+            dropdown.classList.add("d-none");
+            dropdown.innerHTML = "";
+            lastQuery = "";
+        }
+
+        function showSuggestions(results) {
+            dropdown.innerHTML = "";
+            if (!results || results.length === 0) {
+                dropdown.classList.add("d-none");
+                return;
+            }
+
+            results.slice(0, MAX_ITEMS).forEach(function (text) {
+                var btn       = document.createElement("button");
+                btn.type      = "button";
+                btn.className = "desc-typeahead-item";
+                btn.textContent = text;
+
+                /*
+                 * pointerdown fires before blur on all platforms including Android Chrome.
+                 * Setting the guard here prevents blur from closing the dropdown before
+                 * the click handler commits the selection.
+                 *
+                 * pointerdown se dispara antes que blur en todas las plataformas incluido
+                 * Android Chrome. Establecer la guardia aquí evita que blur cierre el
+                 * dropdown antes de que el handler click confirme la selección.
+                 */
+                btn.addEventListener("pointerdown", function (e) {
+                    e.preventDefault();
+                    _selecting = true;
+                });
+
+                btn.addEventListener("click", function () {
+                    textarea.value = text;
+                    textarea.classList.remove("field-flagged");
+                    _selecting     = false;
+                    hideDropdown();
+                    textarea.focus();
+                    /*
+                     * Dispatch a native input event so any external listeners
+                     * (integrity gates, HTMX triggers) react to the new value.
+                     *
+                     * Disparar un evento input nativo para que cualquier listener externo
+                     * (gates de integridad, triggers HTMX) reaccione al nuevo valor.
+                     */
+                    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+                });
+
+                dropdown.appendChild(btn);
+            });
+
+            dropdown.classList.remove("d-none");
+        }
+
+        function fetchSuggestions(q) {
+            if (q === lastQuery) { return; }
+            lastQuery = q;
+
+            var url = DESCRIPTIONS_URL
+                + "?field=" + encodeURIComponent(field)
+                + "&q="     + encodeURIComponent(q);
+
+            fetch(url)
+                .then(function (r) { return r.json(); })
+                .then(function (data) { showSuggestions(data.results || []); })
+                .catch(function ()   { dropdown.classList.add("d-none"); });
+        }
+
+        var debouncedFetch = debounce(function () {
+            var q = textarea.value.trim();
+            if (q.length < MIN_CHARS) {
+                hideDropdown();
+                return;
+            }
+            fetchSuggestions(q);
+        }, DEBOUNCE_MS);
+
+        textarea.addEventListener("input", debouncedFetch);
+
+        textarea.addEventListener("blur", function () {
+            /*
+             * Only hide if the user is NOT in the middle of selecting a suggestion.
+             * Solo ocultar si el usuario NO está en proceso de seleccionar una sugerencia.
+             */
+            if (!_selecting) {
+                setTimeout(hideDropdown, 200);
+            }
+        });
+
+        textarea.addEventListener("focus", function () {
+            var q = textarea.value.trim();
+            if (q.length >= MIN_CHARS) { fetchSuggestions(q); }
+        });
+    }
+
+    /*
+     * initAll — attaches the widget to every .desc-search textarea in the document.
+     * Safe to call multiple times — skips already-attached textareas via the
+     * data-desc-typeahead-attached guard.
+     *
+     * initAll — asocia el widget a todos los textarea .desc-search del documento.
+     * Seguro para llamadas múltiples — omite los textarea ya asociados mediante
+     * la guardia data-desc-typeahead-attached.
+     */
+    function initAll() {
+        document.querySelectorAll("textarea.desc-search").forEach(init);
+    }
+
+    /* Expose public API on the global object. — Exponer la API pública en el objeto global. */
+    global.DescTypeahead = {
+        init:    init,
+        initAll: initAll,
+    };
+
+}(window));
+
+/* Auto-initialise on DOMContentLoaded if the DOM is not yet ready,
+   or immediately if it already is.
+   Auto-inicializar en DOMContentLoaded si el DOM no está listo todavía,
+   o inmediatamente si ya lo está. */
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+        DescTypeahead.initAll();
+    });
+} else {
+    DescTypeahead.initAll();
+}
+</script>

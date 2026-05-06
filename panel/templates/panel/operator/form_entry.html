@@ -109,7 +109,7 @@
                             <div class="row g-3">
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-medium">
-                                        Máquina <span class="text-danger">*</span>
+                                        Centro de Gasto <span class="text-danger">*</span>
                                     </label>
                                     <div class="position-relative">
                                         <input type="text"
@@ -154,16 +154,18 @@
                                         Descripción avería <span class="text-danger">*</span>
                                     </label>
                                     <textarea name="entrada_{{ entrada.idx }}_fault_description"
-                                              class="form-control {% if not entrada.fault_description %}field-flagged{% endif %}"
+                                              class="form-control desc-search {% if not entrada.fault_description %}field-flagged{% endif %}"
                                               rows="3"
-                                              placeholder="Descripción de la avería o tarea">{{ entrada.fault_description }}</textarea>
+                                              placeholder="Descripción de la avería o tarea"
+                                              data-desc-field="fault_description">{{ entrada.fault_description }}</textarea>
                                 </div>
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-medium">Reparación realizada</label>
                                     <textarea name="entrada_{{ entrada.idx }}_repair_notes"
-                                              class="form-control"
+                                              class="form-control desc-search"
                                               rows="3"
-                                              placeholder="Descripción de la reparación">{{ entrada.repair_notes }}</textarea>
+                                              placeholder="Descripción de la reparación"
+                                              data-desc-field="repair_notes">{{ entrada.repair_notes }}</textarea>
                                 </div>
                             </div>
                         </div>
@@ -177,7 +179,7 @@
                         <div class="row g-3">
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">
-                                    Máquina <span class="text-danger">*</span>
+                                    Centro de Gasto <span class="text-danger">*</span>
                                 </label>
                                 <div class="position-relative">
                                     <input type="text"
@@ -222,16 +224,18 @@
                                     Descripción avería <span class="text-danger">*</span>
                                 </label>
                                 <textarea name="entrada_1_fault_description"
-                                          class="form-control field-flagged"
+                                          class="form-control desc-search field-flagged"
                                           rows="3"
-                                          placeholder="Descripción de la avería o tarea"></textarea>
+                                          placeholder="Descripción de la avería o tarea"
+                                          data-desc-field="fault_description"></textarea>
                             </div>
                             <div class="col-12 col-md-6">
                                 <label class="form-label fw-medium">Reparación realizada</label>
                                 <textarea name="entrada_1_repair_notes"
-                                          class="form-control"
+                                          class="form-control desc-search"
                                           rows="3"
-                                          placeholder="Descripción de la reparación"></textarea>
+                                          placeholder="Descripción de la reparación"
+                                          data-desc-field="repair_notes"></textarea>
                             </div>
                         </div>
                     </div>
@@ -280,19 +284,7 @@
                                            value="{{ rep.referencia }}"
                                            placeholder="Ref. albarán">
                                 </div>
-                                <div class="col-12 col-md-3">
-                                    <label class="form-label fw-medium">Vehículo</label>
-                                    <div class="position-relative">
-                                        <input type="text"
-                                               name="repuesto_{{ rep.ridx }}_vehiculo_raw"
-                                               class="form-control asset-search"
-                                               value="{{ rep.vehiculo_raw }}"
-                                               placeholder="Código de máquina"
-                                               autocomplete="off">
-                                        <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
-                                    </div>
-                                    <input type="hidden" name="repuesto_{{ rep.ridx }}_flags" value="[]">
-                                </div>
+                                <input type="hidden" name="repuesto_{{ rep.ridx }}_flags" value="[]">
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-medium">
                                         Material <span class="text-danger">*</span>
@@ -543,7 +535,7 @@
             '</div>' +
             '<div class="row g-3">' +
                 '<div class="col-12 col-md-4">' +
-                    '<label class="form-label fw-medium">Maquina <span class="text-danger">*</span></label>' +
+                    '<label class="form-label fw-medium">Centro de Gasto <span class="text-danger">*</span></label>' +
                     '<div class="position-relative">' +
                         '<input type="text" name="entrada_' + idx + '_machine_raw" ' +
                                'class="form-control asset-search" ' +
@@ -567,13 +559,15 @@
                 '<div class="col-12 col-md-6">' +
                     '<label class="form-label fw-medium">Descripcion averia <span class="text-danger">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_fault_description" ' +
-                              'class="form-control" rows="3" ' +
+                              'class="form-control desc-search" rows="3" ' +
+                              'data-desc-field="fault_description" ' +
                               'placeholder="Descripcion de la averia o tarea"></textarea>' +
                 '</div>' +
                 '<div class="col-12 col-md-6">' +
                     '<label class="form-label fw-medium">Reparacion realizada</label>' +
                     '<textarea name="entrada_' + idx + '_repair_notes" ' +
-                              'class="form-control" rows="3" ' +
+                              'class="form-control desc-search" rows="3" ' +
+                              'data-desc-field="repair_notes" ' +
                               'placeholder="Descripcion de la reparacion"></textarea>' +
                 '</div>' +
             '</div>';
@@ -594,9 +588,20 @@
         var div = document.createElement("div");
         div.className = "confirm-block mb-4 pb-4 border-bottom extra-repuesto-row";
         div.innerHTML =
-            '<div class="d-flex align-items-center gap-2 mb-3">' +
+            '<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">' +
                 '<span class="badge bg-secondary">Repuesto ' + ridx + '</span>' +
-                '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-2 btn-remove-repuesto">' +
+                '<span class="text-muted small">del</span>' +
+                '<select name="repuesto_' + ridx + '_entry_idx" ' +
+                        'class="form-select form-select-sm repuesto-entry-select w-auto" ' +
+                        'data-repuesto-idx="' + ridx + '">' +
+                    opts +
+                '</select>' +
+                '<span class="text-muted small">asignado a</span>' +
+                '<span class="centro-gasto-label cg-label-static fst-italic text-secondary small" ' +
+                      'data-repuesto-idx="' + ridx + '">' +
+                    'un centro de gasto seleccionado en el bloque' +
+                '</span>' +
+                '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-auto btn-remove-repuesto">' +
                     '<i class="bi bi-trash"></i> Eliminar' +
                 '</button>' +
             '</div>' +
@@ -605,16 +610,6 @@
                     '<label class="form-label fw-medium">Referencia</label>' +
                     '<input type="text" name="repuesto_' + ridx + '_referencia" ' +
                            'class="form-control" placeholder="Ref. albaran">' +
-                '</div>' +
-                '<div class="col-12 col-md-3">' +
-                    '<label class="form-label fw-medium">Vehiculo</label>' +
-                    '<div class="position-relative">' +
-                        '<input type="text" name="repuesto_' + ridx + '_vehiculo_raw" ' +
-                               'class="form-control asset-search" ' +
-                               'placeholder="Codigo de maquina" autocomplete="off">' +
-                        '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
-                    '</div>' +
-                    '<input type="hidden" name="repuesto_' + ridx + '_flags" value="[]">' +
                 '</div>' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
@@ -638,12 +633,6 @@
                     '<input type="text" name="repuesto_' + ridx + '_proveedor" ' +
                            'class="form-control" placeholder="Nombre proveedor (si aplica)">' +
                 '</div>' +
-                '<div class="col-12 col-md-5">' +
-                    '<label class="form-label fw-medium">Bloque asociado</label>' +
-                    '<select name="repuesto_' + ridx + '_entry_idx" class="form-select">' +
-                        opts +
-                    '</select>' +
-                '</div>' +
             '</div>';
         return div;
     }
@@ -660,6 +649,11 @@
             // Asociar autocompletado al nuevo input.
             var newInput = row.querySelector(".asset-search");
             if (newInput) { attachAutocomplete(newInput); }
+            // Attach description typeahead to the two new desc-search textareas.
+            // Asociar typeahead de descripcion a los dos nuevos textarea desc-search.
+            row.querySelectorAll(".desc-search").forEach(function (ta) {
+                if (window.DescTypeahead) { DescTypeahead.init(ta); }
+            });
             // Remove handler / Manejador de eliminacion.
             var btnRemove = row.querySelector(".btn-remove-block");
             if (btnRemove) {
@@ -683,6 +677,15 @@
             // Attach autocomplete / Asociar autocompletado.
             var newInput = row.querySelector(".asset-search");
             if (newInput) { attachAutocomplete(newInput); }
+            // Attach Centro de Gasto sync to the new repuesto select.
+            // Asociar sincronización Centro de Gasto al nuevo select de repuesto.
+            var newSel = row.querySelector(".repuesto-entry-select");
+            if (newSel && window._attachEntrySelectListener) {
+                _attachEntrySelectListener(newSel);
+                var newRidx = newSel.dataset.repuestoIdx
+                    || (newSel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
+                if (newRidx && window._syncCentroGasto) { _syncCentroGasto(newRidx); }
+            }
             // Remove handler / Manejador de eliminacion.
             var btnRemove = row.querySelector(".btn-remove-repuesto");
             if (btnRemove) {
@@ -803,4 +806,6 @@
 
 {% block extra_scripts %}
 {% include "panel/_time_picker_widget.html" %}
+{% include "panel/_description_typeahead.html" %}
+{% include "panel/_overlap_incident_modal.html" %}
 {% endblock %}

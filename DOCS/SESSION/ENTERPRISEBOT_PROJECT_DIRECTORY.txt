@@ -31,6 +31,7 @@
 ./panel/templates/panel/sections/form.html
 ./panel/templates/panel/_nav_items.html
 ./panel/templates/panel/_time_picker_widget.html
+./panel/templates/panel/_overlap_incident_modal.html
 ./panel/templates/panel/dashboard.html
 ./panel/templates/panel/presence/status.html
 ./panel/templates/panel/password/change.html
@@ -56,6 +57,7 @@
 ./panel/templates/panel/work_orders/upload.html
 ./panel/templates/panel/work_orders/_entry_group_fragment.html
 ./panel/templates/panel/work_orders/_review_badge_fragment.html
+./panel/templates/panel/_description_typeahead.html
 ./panel/templates/panel/operator/form_entry.html
 ./panel/templates/panel/operator/confirm_entry.html
 ./panel/templates/panel/operator/dashboard.html
@@ -269,6 +271,7 @@
 ./work_order_processor/migrations/0002_remove_workorderentry_end_time_and_more.py
 ./work_order_processor/migrations/0005_add_spare_part_line.py
 ./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py
+./work_order_processor/migrations/0008_workorder_has_overlap_incident.py
 ./work_order_processor/migrations/0004_workorder_source_pdf_hash.py
 ./work_order_processor/migrations/__init__.py
 ./work_order_processor/migrations/0003_workorder_reviewed_workorder_reviewed_at_and_more.py
@@ -280,4 +283,5 @@
 ./work_order_processor/management/commands/backfill_pdf_hashes.py
 ./work_order_processor/management/commands/detect_duplicate_entries.py
 ./work_order_processor/management/__init__.py
+./work_order_processor/validators.py
 ./work_order_processor/services.py

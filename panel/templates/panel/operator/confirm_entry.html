@@ -114,7 +114,7 @@
                             {# Machine code / Código de máquina #}
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">
-                                    Máquina
+                                    Centro de Gasto
                                 </label>
                                 <input
                                     type="text"
@@ -175,10 +175,11 @@
                                 </label>
                                 <textarea
                                     name="entrada_{{ entrada.idx }}_fault_description"
-                                    class="form-control
+                                    class="form-control desc-search
                                            {% if 'DESCRIPCION' in entrada.flags or not entrada.fault_description %}field-flagged{% endif %}"
                                     rows="3"
                                     placeholder="Descripción de la avería o tarea"
+                                    data-desc-field="fault_description"
                                 >{{ entrada.fault_description }}</textarea>
                             </div>
 
@@ -189,9 +190,10 @@
                                 </label>
                                 <textarea
                                     name="entrada_{{ entrada.idx }}_repair_notes"
-                                    class="form-control"
+                                    class="form-control desc-search"
                                     rows="3"
                                     placeholder="Descripción de la reparación"
+                                    data-desc-field="repair_notes"
                                 >{{ entrada.repair_notes }}</textarea>
                             </div>
 
@@ -222,8 +224,23 @@
                     {% for rep in repuestos_enriched %}
                     <div class="confirm-block mb-4 pb-4
                                 {% if not forloop.last %}border-bottom{% endif %}">
-                        <div class="d-flex align-items-center gap-2 mb-3">
+                        <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
                             <span class="badge bg-secondary">Repuesto {{ rep.ridx }}</span>
+                            <span class="text-muted small">del</span>
+                            <select name="repuesto_{{ rep.ridx }}_entry_idx"
+                                    class="form-select form-select-sm repuesto-entry-select w-auto"
+                                    data-repuesto-idx="{{ rep.ridx }}">
+                                {% for entrada in entradas_enriched %}
+                                <option value="{{ entrada.idx }}"
+                                    {% if rep.ridx == entrada.idx %}selected{% endif %}>
+                                    Bloque {{ entrada.idx }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <span class="text-muted small">asignado a</span>
+                            <span class="centro-gasto-label cg-label-static fst-italic text-secondary small"
+                                  data-repuesto-idx="{{ rep.ridx }}">
+                            </span>
                         </div>
 
                         <div class="row g-3">
@@ -241,24 +258,9 @@
                                 >
                             </div>
 
-                            {# Vehicle / Vehículo #}
-                            <div class="col-12 col-md-3">
-                                <label class="form-label fw-medium">Vehículo</label>
-                                <input
-                                    type="text"
-                                    name="repuesto_{{ rep.ridx }}_vehiculo_raw"
-                                    class="form-control asset-search
-                                           {% if 'VEHICULO' in rep.flags or not rep.vehiculo_raw %}field-flagged{% endif %}"
-                                    value="{{ rep.vehiculo_raw }}"
-                                    placeholder="Código de máquina"
-                                    autocomplete="off"
-                                    data-asset-input="true"
-                                >
-                                <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
-                                <input type="hidden"
-                                       name="repuesto_{{ rep.ridx }}_flags"
-                                       value="{{ rep.flags|default:'[]' }}">
-                            </div>
+                            <input type="hidden"
+                                   name="repuesto_{{ rep.ridx }}_flags"
+                                   value="{{ rep.flags|default:'[]' }}">
 
                             {# Material #}
                             <div class="col-12 col-md-4">
@@ -315,27 +317,6 @@
                                     value="{{ rep.proveedor }}"
                                     placeholder="Nombre proveedor (si aplica)"
                                 >
-                            </div>
-
-                            {# Entry line assignment / Asignación al bloque de trabajo #}
-                            <div class="col-12 col-md-5">
-                                <label class="form-label fw-medium">
-                                    Bloque de trabajo asociado
-                                </label>
-                                <select
-                                    name="repuesto_{{ rep.ridx }}_entry_idx"
-                                    class="form-select"
-                                >
-                                    {% for entrada in entradas_enriched %}
-                                    <option value="{{ entrada.idx }}"
-                                        {% if rep.ridx == entrada.idx %}selected{% endif %}>
-                                        Bloque {{ entrada.idx }}
-                                        {% if entrada.machine_raw %}
-                                            — {{ entrada.machine_raw }}
-                                        {% endif %}
-                                    </option>
-                                    {% endfor %}
-                                </select>
                             </div>
 
                         </div>
@@ -511,9 +492,20 @@
         var div = document.createElement("div");
         div.className = "confirm-block mb-4 pb-4 border-bottom extra-repuesto-row";
         div.innerHTML =
-            '<div class="d-flex align-items-center gap-2 mb-3">' +
+            '<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">' +
                 '<span class="badge bg-secondary">Repuesto ' + ridx + '</span>' +
-                '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-2 btn-remove-repuesto">' +
+                '<span class="text-muted small">del</span>' +
+                '<select name="repuesto_' + ridx + '_entry_idx" ' +
+                        'class="form-select form-select-sm repuesto-entry-select w-auto" ' +
+                        'data-repuesto-idx="' + ridx + '">' +
+                    _buildEntryOptions() +
+                '</select>' +
+                '<span class="text-muted small">asignado a</span>' +
+                '<span class="centro-gasto-label cg-label-static fst-italic text-secondary small" ' +
+                      'data-repuesto-idx="' + ridx + '">' +
+                    'un centro de gasto seleccionado en el bloque' +
+                '</span>' +
+                '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-auto btn-remove-repuesto">' +
                     '<i class="bi bi-trash"></i> Eliminar' +
                 '</button>' +
             '</div>' +
@@ -523,17 +515,7 @@
                     '<input type="text" name="repuesto_' + ridx + '_referencia" ' +
                            'class="form-control" placeholder="Ref. albarán">' +
                 '</div>' +
-                '<div class="col-12 col-md-3">' +
-                    '<label class="form-label fw-medium">Vehículo</label>' +
-                    '<div class="position-relative">' +
-                        '<input type="text" name="repuesto_' + ridx + '_vehiculo_raw" ' +
-                               'class="form-control asset-search" ' +
-                               'placeholder="Código de máquina" autocomplete="off" ' +
-                               'data-asset-input="true">' +
-                        '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
-                    '</div>' +
-                    '<input type="hidden" name="repuesto_' + ridx + '_flags" value="[]">' +
-                '</div>' +
+                '<input type="hidden" name="repuesto_' + ridx + '_flags" value="[]">' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
                     '<input type="text" name="repuesto_' + ridx + '_material" ' +
@@ -556,12 +538,6 @@
                     '<label class="form-label fw-medium">Proveedor</label>' +
                     '<input type="text" name="repuesto_' + ridx + '_proveedor" ' +
                            'class="form-control" placeholder="Nombre proveedor (si aplica)">' +
-                '</div>' +
-                '<div class="col-12 col-md-5">' +
-                    '<label class="form-label fw-medium">Bloque de trabajo asociado</label>' +
-                    '<select name="repuesto_' + ridx + '_entry_idx" class="form-select">' +
-                        _buildEntryOptions() +
-                    '</select>' +
                 '</div>' +
             '</div>';
         return div;
@@ -606,6 +582,16 @@
             // Asociar autocompletado al nuevo input asset-search.
             var newInput = row.querySelector(".asset-search");
             if (newInput) { attachAutocomplete(newInput); }
+
+            // Attach Centro de Gasto sync to the new repuesto select.
+            // Asociar sincronización Centro de Gasto al nuevo select de repuesto.
+            var newSel = row.querySelector(".repuesto-entry-select");
+            if (newSel && window._attachEntrySelectListenerC) {
+                _attachEntrySelectListenerC(newSel);
+                var newRidx = newSel.dataset.repuestoIdx
+                    || (newSel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
+                if (newRidx && window._syncCentroGastoC) { _syncCentroGastoC(newRidx); }
+            }
 
             // Attach remove handler / Asociar manejador de eliminación.
             var btnRemove = row.querySelector(".btn-remove-repuesto");
@@ -730,6 +716,67 @@
         });
     }
 
+    // ==================================================================
+    // Centro de Gasto display sync — confirm_entry (Via C).
+    // Keeps readonly Centro de Gasto fields in sync with machine_raw of
+    // the associated work block when the block selector changes.
+    // Mantiene los campos Centro de Gasto readonly sincronizados con
+    // machine_raw del bloque asociado cuando cambia el selector de bloque.
+    // ==================================================================
+
+    function _getMachineRawForBlockC(blockIdx) {
+        var input = document.querySelector(
+            '[name="entrada_' + blockIdx + '_machine_raw"]'
+        );
+        return input ? input.value.trim() : '';
+    }
+
+    function _syncCentroGastoC(repuestoIdx) {
+        var sel = document.querySelector(
+            '[name="repuesto_' + repuestoIdx + '_entry_idx"]'
+        );
+        var display = document.querySelector(
+            '.centro-gasto-display[data-repuesto-idx="' + repuestoIdx + '"]'
+        );
+        var blockIdx = parseInt(sel.value, 10) || 1;
+        display.value = _getMachineRawForBlockC(blockIdx);
+    }
+
+    function _attachEntrySelectListenerC(sel) {
+        sel.dataset.cgSyncAttached = '1';
+        sel.addEventListener('change', function () {
+            var ridx = sel.dataset.repuestoIdx
+                || (sel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
+            _syncCentroGastoC(ridx);
+        });
+    }
+
+    document.querySelectorAll('.repuesto-entry-select').forEach(_attachEntrySelectListenerC);
+
+    document.querySelectorAll('.centro-gasto-display').forEach(function (display) {
+        var ridx = display.dataset.repuestoIdx;
+        if (ridx) { _syncCentroGastoC(ridx); }
+    });
+
+    document.addEventListener('input', function (e) {
+        var m = e.target.name.match(/^entrada_(\d+)_machine_raw$/);
+        if (mv /home/MiguelAeTxio/SWAP/confirm_entry.html.prop    /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/confirm_entry.html) { return; }
+        var changedBlockIdx = parseInt(m[1], 10);
+        document.querySelectorAll('.repuesto-entry-select').forEach(function (sel) {
+            if (parseInt(sel.value, 10) === changedBlockIdx) {
+                var ridx = sel.dataset.repuestoIdx
+                    || (sel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
+                if (ridx) { _syncCentroGastoC(ridx); }
+            }
+        });
+    });
+
+    window._attachEntrySelectListenerC = _attachEntrySelectListenerC;
+    window._syncCentroGastoC           = _syncCentroGastoC;
+
 }());
 </script>
+
+{% include "panel/_description_typeahead.html" %}
+{% include "panel/_overlap_incident_modal.html" %}
 {% endblock %}

@@ -188,6 +188,22 @@ class WorkOrder(models.Model):
     )
 
     # ------------------------------------------------------------------
+    # Overlap incident flag — Hito 7 / Validaciones
+    # Flag de incidencia por solapamiento — Hito 7 / Validaciones
+    # ------------------------------------------------------------------
+    has_overlap_incident = models.BooleanField(
+        _("Incidencia de solapamiento"),
+        default=False,
+        db_index=True,
+        help_text=_(
+            "Indica que este parte presenta solapamiento de franjas horarias "
+            "con otro parte del mismo operario y misma fecha. Se activa "
+            "automáticamente al guardar y debe resolverse editando los "
+            "partes en conflicto hasta eliminar el solapamiento."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Duplicate detection — Hito 8 / Bloque I
     # Detección de duplicados — Hito 8 / Bloque I
     # ------------------------------------------------------------------

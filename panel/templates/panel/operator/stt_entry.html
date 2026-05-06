@@ -253,16 +253,18 @@
                                         Descripción avería <span class="text-danger">*</span>
                                     </label>
                                     <textarea name="entrada_{{ entrada.idx }}_fault_description"
-                                              class="form-control {% if not entrada.fault_description %}field-flagged{% endif %}"
+                                              class="form-control desc-search {% if not entrada.fault_description %}field-flagged{% endif %}"
                                               rows="3"
-                                              placeholder="Descripción de la avería o tarea">{{ entrada.fault_description }}</textarea>
+                                              placeholder="Descripción de la avería o tarea"
+                                              data-desc-field="fault_description">{{ entrada.fault_description }}</textarea>
                                 </div>
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-medium">Reparación realizada</label>
                                     <textarea name="entrada_{{ entrada.idx }}_repair_notes"
-                                              class="form-control"
+                                              class="form-control desc-search"
                                               rows="3"
-                                              placeholder="Descripción de la reparación">{{ entrada.repair_notes }}</textarea>
+                                              placeholder="Descripción de la reparación"
+                                              data-desc-field="repair_notes">{{ entrada.repair_notes }}</textarea>
                                 </div>
                             </div>
                         </div>
@@ -276,7 +278,7 @@
                         <div class="row g-3">
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">
-                                    Máquina <span class="text-danger">*</span>
+                                    Centro de Gasto <span class="text-danger">*</span>
                                 </label>
                                 <div class="position-relative">
                                     <input type="text"
@@ -325,16 +327,18 @@
                                 </label>
                                 <textarea id="stt-field-averia-1"
                                           name="entrada_1_fault_description"
-                                          class="form-control field-flagged"
+                                          class="form-control desc-search field-flagged"
                                           rows="3"
-                                          placeholder="Descripción de la avería o tarea"></textarea>
+                                          placeholder="Descripción de la avería o tarea"
+                                          data-desc-field="fault_description"></textarea>
                             </div>
                             <div class="col-12 col-md-6">
                                 <label class="form-label fw-medium">Reparación realizada</label>
                                 <textarea name="entrada_1_repair_notes"
-                                          class="form-control"
+                                          class="form-control desc-search"
                                           rows="3"
-                                          placeholder="Descripción de la reparación"></textarea>
+                                          placeholder="Descripción de la reparación"
+                                          data-desc-field="repair_notes"></textarea>
                             </div>
                         </div>
                     </div>
@@ -368,8 +372,14 @@
                         {% for rep in repuestos_enriched %}
                         <div class="repuesto-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %}"
                              id="repuesto-{{ rep.ridx }}">
-                            <div class="d-flex align-items-center gap-2 mb-3">
+                            <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
                                 <span class="badge bg-warning text-dark">Repuesto {{ rep.ridx }}</span>
+                                <span class="text-muted small">del Bloque 1 asignado a</span>
+                                <span class="centro-gasto-label cg-label-static fst-italic text-secondary small"
+                                      data-repuesto-idx="{{ rep.ridx }}">
+                                    {{ rep.vehiculo_raw|default:"un centro de gasto seleccionado en el bloque" }}
+                                </span>
+                                <input type="hidden" name="repuesto_{{ rep.ridx }}_entry_idx" value="1">
                             </div>
                             <div class="row g-3">
                                 <div class="col-12 col-md-3">
@@ -379,18 +389,6 @@
                                            class="form-control"
                                            value="{{ rep.referencia }}"
                                            placeholder="Ref. artículo (opcional)">
-                                </div>
-                                <div class="col-12 col-md-3">
-                                    <label class="form-label fw-medium">Vehículo</label>
-                                    <div class="position-relative">
-                                        <input type="text"
-                                               name="repuesto_{{ rep.ridx }}_vehiculo_raw"
-                                               class="form-control asset-search"
-                                               value="{{ rep.vehiculo_raw }}"
-                                               placeholder="Código máquina (opcional)"
-                                               autocomplete="off">
-                                        <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
-                                    </div>
                                 </div>
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-medium">
@@ -427,9 +425,6 @@
                                            value="{{ rep.proveedor }}"
                                            placeholder="Nombre del proveedor">
                                 </div>
-                                <input type="hidden"
-                                       name="repuesto_{{ rep.ridx }}_entry_idx"
-                                       value="1">
                             </div>
                         </div>
                         {% endfor %}
@@ -1045,6 +1040,11 @@
         var addBtn   = document.getElementById("btn-add-block").parentElement;
         blockContainer.insertBefore(newBlock, addBtn);
         newBlock.querySelector(".asset-search") && _setupAutocomplete(newBlock.querySelector(".asset-search"));
+        // Attach description typeahead to the cloned desc-search textareas.
+        // Asociar typeahead de descripcion a los textarea desc-search clonados.
+        newBlock.querySelectorAll(".desc-search").forEach(function (ta) {
+            if (window.DescTypeahead) { DescTypeahead.init(ta); }
+        });
         numEntradasEl.value = numBlocks;
     });
 
@@ -1061,20 +1061,19 @@
         div.className = "repuesto-block mb-4 pb-4 border-top pt-4";
         div.id        = "repuesto-" + ridx;
         div.innerHTML =
-            '<div class="d-flex align-items-center gap-2 mb-3">' +
+            '<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">' +
                 '<span class="badge bg-warning text-dark">Repuesto ' + ridx + '</span>' +
+                '<span class="text-muted small">del Bloque 1 asignado a</span>' +
+                '<span class="centro-gasto-label cg-label-static fst-italic text-secondary small" ' +
+                      'data-repuesto-idx="' + ridx + '">' +
+                    'un centro de gasto seleccionado en el bloque' +
+                '</span>' +
+                '<input type="hidden" name="repuesto_' + ridx + '_entry_idx" value="1">' +
             '</div>' +
             '<div class="row g-3">' +
                 '<div class="col-12 col-md-3">' +
                     '<label class="form-label fw-medium">Referencia</label>' +
                     '<input type="text" name="repuesto_' + ridx + '_referencia" class="form-control" placeholder="Ref. artículo (opcional)">' +
-                '</div>' +
-                '<div class="col-12 col-md-3">' +
-                    '<label class="form-label fw-medium">Vehículo</label>' +
-                    '<div class="position-relative">' +
-                        '<input type="text" name="repuesto_' + ridx + '_vehiculo_raw" class="form-control asset-search" placeholder="Código máquina (opcional)" autocomplete="off">' +
-                        '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
-                    '</div>' +
                 '</div>' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
@@ -1095,7 +1094,6 @@
                     '<label class="form-label fw-medium">Proveedor</label>' +
                     '<input type="text" name="repuesto_' + ridx + '_proveedor" class="form-control" placeholder="Nombre del proveedor">' +
                 '</div>' +
-                '<input type="hidden" name="repuesto_' + ridx + '_entry_idx" value="1">' +
             '</div>';
         /* Toggle supplier field on origin change. / Mostrar/ocultar campo proveedor. */
         var sel = div.querySelector("select");
@@ -1114,6 +1112,9 @@
         var newRep = _buildRepuesto(numReps);
         repContainer.appendChild(newRep);
         numRepuestosEl.value = numReps;
+        // Sync Centro de Gasto display for the newly added repuesto row.
+        // Sincronizar display Centro de Gasto para la fila de repuesto recién añadida.
+        if (window._syncAllCentroGastoSTT) { _syncAllCentroGastoSTT(); }
     });
 
     /* Toggle supplier fields already rendered server-side on page load. */
@@ -1214,6 +1215,38 @@
         }
     });
 
+    // ==================================================================
+    // Centro de Gasto display sync — Via B (STT).
+    // STT only ever has one work block (block 1). Keeps all repuesto
+    // Centro de Gasto displays in sync with block-1 machine_raw.
+    // La vía STT solo tiene un bloque de trabajo (bloque 1). Mantiene
+    // todos los displays Centro de Gasto sincronizados con machine_raw del bloque 1.
+    // ==================================================================
+
+    function _syncAllCentroGastoSTT() {
+        var input = document.querySelector('[name="entrada_1_machine_raw"]');
+        var raw   = input ? input.value.trim() : '';
+        document.querySelectorAll('.centro-gasto-label').forEach(function (label) {
+            label.textContent = raw || 'un centro de gasto seleccionado en el bloque';
+        });
+    }
+
+    // Initialise on page load.
+    // Inicializar al cargar la página.
+    _syncAllCentroGastoSTT();
+
+    // Update on every keystroke in the machine_raw input.
+    // Actualizar en cada pulsación en el input machine_raw.
+    document.addEventListener('input', function (e) {
+        if (e.target && e.target.name && /^entrada_\d+_machine_raw$/.test(e.target.name)) {
+            _syncAllCentroGastoSTT();
+        }
+    });
+
+    // Expose for _buildRepuesto — initialise display for dynamically added rows.
+    // Exponer para _buildRepuesto — inicializar display en filas añadidas dinámicamente.
+    window._syncAllCentroGastoSTT = _syncAllCentroGastoSTT;
+
 }());
 </script>
 
@@ -1226,4 +1259,6 @@
 
 {% block extra_scripts %}
 {% include "panel/_time_picker_widget.html" %}
+{% include "panel/_description_typeahead.html" %}
+{% include "panel/_overlap_incident_modal.html" %}
 {% endblock %}

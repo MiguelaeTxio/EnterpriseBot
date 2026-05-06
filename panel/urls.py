@@ -65,6 +65,7 @@ from panel.views import (
     WorkOrderEntrySTTView,
     WorkOrderEntrySTTExtractView,
     MachineAssetListView,
+    WorkOrderDescriptionAutocompleteView,
     MachineAssetCreateView,
     MachineAssetUpdateView,
     MachineAssetDeactivateView,
@@ -149,6 +150,10 @@ urlpatterns = [
     path("operator/form/", WorkOrderEntryFormView.as_view(), name="operator_form"),
     path("operator/stt/",  WorkOrderEntrySTTView.as_view(),  name="operator_stt"),   # Paso 8 — Hito 7 (2026-04-30)
     path("operator/stt/extract/", WorkOrderEntrySTTExtractView.as_view(), name="operator_stt_extract"),  # Paso 8 — Hito 7 — Gemini extract
+
+    # Description typeahead autocomplete — Autocompletado de descripciones (fault_description / repair_notes).
+    # Tercer Fleco — Hito 7 (2026-05-05)
+    path("operator/descriptions/", WorkOrderDescriptionAutocompleteView.as_view(), name="operator_descriptions"),
 
     # WorkOrder management — PDFs de partes de trabajo (rol SUPERVISOR y ADMIN).
     # Paso 7 — Hito 6 (2026-04-22) | Bloque G — Hito 8 (2026-04-28)

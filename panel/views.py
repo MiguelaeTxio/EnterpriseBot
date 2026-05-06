@@ -5209,35 +5209,51 @@ def _parse_entry_lines_from_post(POST, company):
     return entry_lines_data
 
 
-def _parse_spare_parts_from_post(POST, company):
+def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
     """
     Parses and resolves spare-part lines submitted via POST.
 
-    Applies the same two-pass resolution strategy as _parse_entry_lines_from_post
-    for the vehicle asset field (vehiculo_raw).
+    The vehiculo_raw and vehicle_asset fields are no longer read from POST
+    (the UI input has been removed to avoid redundancy with the associated
+    work block). Instead, they are automatically populated from the entry
+    block referenced by entry_idx inside entry_lines_data.
+
+    If entry_lines_data is None or the referenced block is not found,
+    vehiculo_raw and vehicle_asset default to empty string and None
+    respectively, preserving backwards compatibility.
 
     Returns a list of dicts ready to feed the integrity gate and the
     atomic persistence block.
     ---
     Parsea y resuelve las líneas de repuesto enviadas por POST.
 
-    Aplica la misma estrategia de resolución en dos pasadas que
-    _parse_entry_lines_from_post para el campo de activo de vehículo (vehiculo_raw).
+    Los campos vehiculo_raw y vehicle_asset ya no se leen del POST
+    (el input de UI ha sido eliminado para evitar redundancia con el bloque
+    de trabajo asociado). En su lugar se rellenan automáticamente desde el
+    bloque de entrada referenciado por entry_idx dentro de entry_lines_data.
+
+    Si entry_lines_data es None o el bloque referenciado no se encuentra,
+    vehiculo_raw y vehicle_asset toman como valor cadena vacía y None
+    respectivamente, preservando la compatibilidad hacia atrás.
 
     Devuelve una lista de dicts lista para la barrera de integridad y el
     bloque de persistencia atómica.
     """
     from decimal import Decimal, InvalidOperation
-    from fleet.models import MachineAsset
-    from work_order_processor.services import _normalise_machine_code
 
     num_repuestos    = int(POST.get("num_repuestos", "0") or "0")
     spare_parts_data = []
 
+    # Build a lookup map from line_number to entry line data for O(1) access.
+    # Construir mapa de line_number a datos de línea de entrada para acceso O(1).
+    entry_map = {}
+    if entry_lines_data:
+        for ld in entry_lines_data:
+            entry_map[ld["line_number"]] = ld
+
     for r in range(1, num_repuestos + 1):
         pfx          = f"repuesto_{r}_"
         referencia   = POST.get(f"{pfx}referencia", "").strip()
-        vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
         material     = POST.get(f"{pfx}material", "").strip()
         unidades_str = POST.get(f"{pfx}unidades", "").strip()
         origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
@@ -5254,32 +5270,15 @@ def _parse_spare_parts_from_post(POST, company):
         if origen not in ("SUPPLIER", "WAREHOUSE"):
             origen = "WAREHOUSE"
 
-        veh_norm  = _normalise_machine_code(vehiculo_raw)
-        veh_asset = None
-
-        if vehiculo_raw:
-            # Pass 1 — direct iexact on raw.
-            # Pasada 1 — iexact directo sobre raw.
-            try:
-                veh_asset = MachineAsset.objects.get(
-                    code__iexact=vehiculo_raw, company=company
-                )
-            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
-                veh_asset = MachineAsset.objects.filter(
-                    code__iexact=vehiculo_raw, company=company
-                ).first()
-
-        if veh_asset is None and veh_norm:
-            # Pass 2 — normalised code.
-            # Pasada 2 — código normalizado.
-            try:
-                veh_asset = MachineAsset.objects.get(
-                    code__iexact=veh_norm, company=company
-                )
-            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
-                veh_asset = MachineAsset.objects.filter(
-                    code__iexact=veh_norm, company=company
-                ).first()
+        # Auto-populate vehicle from the associated work block.
+        # Rellenar vehículo automáticamente desde el bloque de trabajo asociado.
+        associated_entry = entry_map.get(entry_idx) or entry_map.get(1)
+        if associated_entry:
+            vehiculo_raw = associated_entry.get("machine_raw", "")
+            veh_asset    = associated_entry.get("machine_asset", None)
+        else:
+            vehiculo_raw = ""
+            veh_asset    = None
 
         spare_parts_data.append({
             "line_number":   r,
@@ -5523,7 +5522,9 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         # iexact sobre raw primero (autocompletado), luego normalizado.
         # ------------------------------------------------------------------
         entry_lines_data = _parse_entry_lines_from_post(POST, company)
-        spare_parts_data = _parse_spare_parts_from_post(POST, company)
+        spare_parts_data = _parse_spare_parts_from_post(
+            POST, company, entry_lines_data=entry_lines_data
+        )
 
 
         # ------------------------------------------------------------------
@@ -5650,6 +5651,63 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             context = self._get_context_base(request)
             context.update({
                 "error":               " | ".join(integrity_errors),
+                "fecha":               fecha_str,
+                "uncertain_date":      False,
+                "confidence":          POST.get("confidence", ""),
+                "entradas_enriched":   entradas_enriched_post,
+                "repuestos_enriched":  spare_enriched_post,
+                "num_entradas":        len(entry_lines_data),
+                "num_repuestos":       len(spare_parts_data),
+            })
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Intra-part validation (R1 overlap, R2 HF>HC, R3 gap).
+        # Validación intra-parte (R1 solapamiento, R2 HF>HC, R3 laguna).
+        # ------------------------------------------------------------------
+        from work_order_processor.validators import (
+            run_intra_part_validation,
+            parse_blocks_from_post,
+            validate_inter_overlap,
+            TimeBlock,
+        )
+
+        num_entradas_post = int(POST.get("num_entradas", len(entry_lines_data)))
+        _blocks = parse_blocks_from_post(POST, num_entradas_post)
+        _intra  = run_intra_part_validation(_blocks)
+
+        if not _intra.ok:
+            entradas_enriched_post = [
+                {
+                    "idx":               ld["line_number"],
+                    "machine_raw":       ld["machine_raw"],
+                    "machine_asset":     ld["machine_asset"],
+                    "fault_description": ld["fault_description"],
+                    "repair_notes":        ld["repair_notes"],
+                    "hc":    ld["hc"].strftime("%H:%M") if ld["hc"] else "",
+                    "hf":    ld["hf"].strftime("%H:%M") if ld["hf"] else "",
+                    "or_val":            ld["or_val"],
+                    "flags":             ld["flags"],
+                }
+                for ld in entry_lines_data
+            ]
+            spare_enriched_post = [
+                {
+                    "ridx":       spd["line_number"],
+                    "referencia": spd["referencia"],
+                    "vehiculo_raw": spd["vehiculo_raw"],
+                    "vehicle_asset": spd["vehicle_asset"],
+                    "material":   spd["material"],
+                    "unidades":   str(spd["quantity"]) if spd["quantity"] is not None else "",
+                    "origen":     spd["source"],
+                    "proveedor":  spd["supplier"],
+                    "flags":      spd["flags"],
+                }
+                for spd in spare_parts_data
+            ]
+            context = self._get_context_base(request)
+            context.update({
+                "error":               " | ".join(e.message for e in _intra.errors),
                 "fecha":               fecha_str,
                 "uncertain_date":      False,
                 "confidence":          POST.get("confidence", ""),
@@ -5789,6 +5847,48 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         # Clear session extraction data / Limpiar datos de extracción de sesión.
         request.session.pop("operator_upload_extraction", None)
         request.session.modified = True
+
+        # ------------------------------------------------------------------
+        # Inter-part overlap validation (R4/R5).
+        # Validación de solapamiento inter-parte (R4/R5).
+        # ------------------------------------------------------------------
+        _inter = validate_inter_overlap(
+            company_user          = cu,
+            work_date             = work_date,
+            blocks                = _blocks,
+            exclude_work_order_pk = work_order.pk,
+        )
+
+        if _inter.has_overlap:
+            # Mark the new work order and all conflicting ones as incident.
+            # Marcar el nuevo parte y todos los que solapan como con incidencia.
+            WorkOrder.objects.filter(
+                pk__in=[work_order.pk] + _inter.conflicting_ids
+            ).update(has_overlap_incident=True)
+            logger.warning(
+                "# [Confirm] Solapamiento inter-parte detectado. "
+                "WorkOrder #%d solapa con: %s.",
+                work_order.pk,
+                _inter.conflicting_ids,
+            )
+            django_messages.warning(
+                request,
+                f"Parte #{work_order.pk} guardado con incidencia de solapamiento."
+            )
+            context = self._get_context_base(request)
+            context.update({
+                "overlap_incidents": True,
+                "new_work_order_pk": work_order.pk,
+                "conflicting_parts": [
+                    {"pk": pk, "fecha": fecha}
+                    for pk, fecha in zip(
+                        _inter.conflicting_ids,
+                        _inter.conflicting_dates,
+                    )
+                ],
+                "part_saved": True,
+            })
+            return render(request, self.template_name, context)
 
         django_messages.success(
             request,
@@ -5937,7 +6037,9 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         # código normalizado (OCR / manuscrito). STTView.post() delega aquí.
         # ------------------------------------------------------------------
         entry_lines_data = _parse_entry_lines_from_post(POST, company)
-        spare_parts_data = _parse_spare_parts_from_post(POST, company)
+        spare_parts_data = _parse_spare_parts_from_post(
+            POST, company, entry_lines_data=entry_lines_data
+        )
 
         # ------------------------------------------------------------------
         # Integrity validation (sine qua non gate).
@@ -6016,6 +6118,61 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             context = self._get_context_base(request)
             context.update({
                 "error":              " | ".join(integrity_errors),
+                "fecha":              fecha_str,
+                "entradas_enriched":  entradas_post,
+                "repuestos_enriched": repuestos_post,
+                "num_entradas":       len(entry_lines_data),
+                "num_repuestos":      len(spare_parts_data),
+            })
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Intra-part validation (R1 overlap, R2 HF>HC, R3 gap).
+        # Validación intra-parte (R1 solapamiento, R2 HF>HC, R3 laguna).
+        # ------------------------------------------------------------------
+        from work_order_processor.validators import (
+            run_intra_part_validation,
+            parse_blocks_from_post,
+            validate_inter_overlap,
+            TimeBlock,
+        )
+
+        num_entradas_post = int(POST.get("num_entradas", len(entry_lines_data)))
+        _blocks = parse_blocks_from_post(POST, num_entradas_post)
+        _intra  = run_intra_part_validation(_blocks)
+
+        if not _intra.ok:
+            entradas_post = [
+                {
+                    "idx":               ld["line_number"],
+                    "machine_raw":       ld["machine_raw"],
+                    "machine_asset":     ld["machine_asset"],
+                    "fault_description": ld["fault_description"],
+                    "repair_notes":        ld["repair_notes"],
+                    "hc":  ld["hc"].strftime("%H:%M") if ld["hc"] else "",
+                    "hf":  ld["hf"].strftime("%H:%M") if ld["hf"] else "",
+                    "or_val":            ld["or_val"],
+                    "flags":             [],
+                }
+                for ld in entry_lines_data
+            ]
+            repuestos_post = [
+                {
+                    "ridx":         spd["line_number"],
+                    "referencia":   spd["referencia"],
+                    "vehiculo_raw": spd["vehiculo_raw"],
+                    "vehicle_asset": spd["vehicle_asset"],
+                    "material":     spd["material"],
+                    "unidades":     str(spd["quantity"]) if spd["quantity"] is not None else "",
+                    "origen":       spd["source"],
+                    "proveedor":    spd["supplier"],
+                    "flags":        [],
+                }
+                for spd in spare_parts_data
+            ]
+            context = self._get_context_base(request)
+            context.update({
+                "error":              " | ".join(e.message for e in _intra.errors),
                 "fecha":              fecha_str,
                 "entradas_enriched":  entradas_post,
                 "repuestos_enriched": repuestos_post,
@@ -6137,6 +6294,48 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "# [FormView] Excel no generado para WorkOrder #%d: %s.",
                 work_order.pk, exc,
             )
+
+        # ------------------------------------------------------------------
+        # Inter-part overlap validation (R4/R5).
+        # Validación de solapamiento inter-parte (R4/R5).
+        # ------------------------------------------------------------------
+        _inter = validate_inter_overlap(
+            company_user          = cu,
+            work_date             = work_date,
+            blocks                = _blocks,
+            exclude_work_order_pk = work_order.pk,
+        )
+
+        if _inter.has_overlap:
+            # Mark the new work order and all conflicting ones as incident.
+            # Marcar el nuevo parte y todos los que solapan como con incidencia.
+            WorkOrder.objects.filter(
+                pk__in=[work_order.pk] + _inter.conflicting_ids
+            ).update(has_overlap_incident=True)
+            logger.warning(
+                "# [FormView] Solapamiento inter-parte detectado. "
+                "WorkOrder #%d solapa con: %s.",
+                work_order.pk,
+                _inter.conflicting_ids,
+            )
+            django_messages.warning(
+                request,
+                f"Parte #{work_order.pk} guardado con incidencia de solapamiento."
+            )
+            context = self._get_context_base(request)
+            context.update({
+                "overlap_incidents": True,
+                "new_work_order_pk": work_order.pk,
+                "conflicting_parts": [
+                    {"pk": pk, "fecha": fecha}
+                    for pk, fecha in zip(
+                        _inter.conflicting_ids,
+                        _inter.conflicting_dates,
+                    )
+                ],
+                "part_saved": True,
+            })
+            return render(request, self.template_name, context)
 
         django_messages.success(
             request,
@@ -6965,3 +7164,96 @@ class MachineAssetDeleteView(AdminRoleRequiredMixin, View):
             "company_user": company_user,
             "company":      company,
         })
+
+
+class WorkOrderDescriptionAutocompleteView(WorkshopRequiredMixin, View):
+    """
+    Returns up to 8 unique values from WorkOrderEntryLine.fault_description
+    or WorkOrderEntryLine.repair_notes that contain the query string (case-
+    insensitive). Scoped to the authenticated user's company.
+
+    Used by the description typeahead widget (_description_typeahead.html)
+    in the three operator entry templates (form_entry, stt_entry,
+    confirm_entry).
+
+    GET /panel/operator/descriptions/?field=fault_description&q=XXX
+    GET /panel/operator/descriptions/?field=repair_notes&q=XXX
+
+    Response: {"results": ["value1", "value2", ...]}
+
+    ---
+
+    Devuelve hasta 8 valores únicos de WorkOrderEntryLine.fault_description
+    o WorkOrderEntryLine.repair_notes que contengan la cadena de búsqueda
+    (insensible a mayúsculas). Restringido a la empresa del usuario autenticado.
+
+    Utilizado por el widget de typeahead de descripciones
+    (_description_typeahead.html) en los tres templates de entrada del
+    operario (form_entry, stt_entry, confirm_entry).
+
+    GET /panel/operator/descriptions/?field=fault_description&q=XXX
+    GET /panel/operator/descriptions/?field=repair_notes&q=XXX
+
+    Respuesta: {"results": ["valor1", "valor2", ...]}
+    """
+
+    # Whitelist of allowed field names to prevent arbitrary field injection.
+    # Lista blanca de campos permitidos para evitar inyección de campo arbitrario.
+    _ALLOWED_FIELDS = {"fault_description", "repair_notes"}
+    # Minimum query length to avoid full-table scans on short strings.
+    # Longitud mínima de consulta para evitar escaneos completos con cadenas cortas.
+    _MIN_QUERY_LEN  = 2
+    # Maximum number of suggestions returned per request.
+    # Número máximo de sugerencias devueltas por petición.
+    _MAX_RESULTS    = 8
+
+    def get(self, request, *args, **kwargs):
+        """
+        Validates the `field` and `q` parameters, queries the database and
+        returns a JSON list of matching description values.
+
+        Returns {"results": []} for invalid field, missing or too-short query.
+
+        ---
+
+        Valida los parámetros `field` y `q`, consulta la base de datos y
+        devuelve una lista JSON de valores de descripción coincidentes.
+
+        Devuelve {"results": []} para campo inválido, consulta ausente o
+        demasiado corta.
+        """
+        from django.http import JsonResponse
+        from work_order_processor.models import WorkOrderEntryLine
+
+        field = request.GET.get("field", "").strip()
+        q     = request.GET.get("q",     "").strip()
+
+        # Validate field against whitelist — reject unknown fields immediately.
+        # Validar campo contra la lista blanca — rechazar campos desconocidos.
+        if field not in self._ALLOWED_FIELDS:
+            return JsonResponse({"results": []})
+
+        # Enforce minimum query length to avoid overly broad results.
+        # Aplicar longitud mínima de consulta para evitar resultados demasiado amplios.
+        if len(q) < self._MIN_QUERY_LEN:
+            return JsonResponse({"results": []})
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        # Build the icontains filter dynamically using the validated field name.
+        # Construir el filtro icontains dinámicamente usando el nombre de campo validado.
+        lookup = {field + "__icontains": q}
+
+        qs = (
+            WorkOrderEntryLine.objects
+            .filter(entry__work_order__company=company, **lookup)
+            .exclude(**{field: ""})
+            .values_list(field, flat=True)
+            .distinct()
+            .order_by(field)
+            [:self._MAX_RESULTS]
+        )
+
+        return JsonResponse({"results": list(qs)})
+
