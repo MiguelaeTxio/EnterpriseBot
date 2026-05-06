@@ -59,6 +59,7 @@ from panel.views import (
     AnalyticsProfileDeleteView,
     OperatorDashboardView,
     WorkshopAssetAutocompleteView,
+    WorkshopAssetDetailView,
     WorkOrderEntryUploadView,
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
@@ -147,6 +148,7 @@ urlpatterns = [
     path("operator/upload/", WorkOrderEntryUploadView.as_view(), name="operator_upload"),
     path("operator/confirm/", WorkOrderEntryConfirmView.as_view(), name="operator_confirm"),
     path("operator/assets/", WorkshopAssetAutocompleteView.as_view(), name="operator_assets"),
+    path("operator/assets/detail/", WorkshopAssetDetailView.as_view(), name="operator_asset_detail"),  # PASO 4.1 — Hito 7 (sesión 011)
     path("operator/form/", WorkOrderEntryFormView.as_view(), name="operator_form"),
     path("operator/stt/",  WorkOrderEntrySTTView.as_view(),  name="operator_stt"),   # Paso 8 — Hito 7 (2026-04-30)
     path("operator/stt/extract/", WorkOrderEntrySTTExtractView.as_view(), name="operator_stt_extract"),  # Paso 8 — Hito 7 — Gemini extract

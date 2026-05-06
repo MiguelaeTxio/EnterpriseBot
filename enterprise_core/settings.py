@@ -112,6 +112,8 @@ WSGI_APPLICATION = 'enterprise_core.wsgi.application'
 # 4. CONFIGURACIÓN DE BASE DE DATOS / DATABASE CONFIGURATION
 # MySQL production connection for persistent interaction logging.
 # Conexión de producción MySQL para el registro persistente de interacciones.
+SILENCED_SYSTEM_CHECKS = ["models.W036"]
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',

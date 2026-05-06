@@ -441,267 +441,120 @@ Estado: COMPLETADO PARCIAL (sesiones 006-009).
 | 007    | 2026-05-01 | Sesion 007 (ver H8 sesion 007)      | Hito pausado para trabajar H8. Ver registro de sesiones de ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md sesion 007 para detalle de cambios aplicados durante esta sesion. |
 | 008    | 2026-05-05 | Pasos 8 (fix), 9 (parcial), flecos  | PRIMERA ACCION completada: correccion atomica de identificadores renombrados en panel/views.py (code__iexact, is_active, code__icontains) y en los tres templates del operario (machine_raw, fault_description, repair_notes, uncertain_date) incluido JS gate y _buildBlockRow. Widget TimePicker custom implementado (_time_picker_widget.html): selector de dos columnas 00/30 con dropdown anclado al body, compatible HTMX. Fix WorkshopAssetAutocompleteView (code__icontains). step="1800" en todos los inputs de hora. SEGUNDA y TERCERA ACCION pendientes para sesion 009. |
 | 009    | 2026-05-06 | Flecos, validaciones, refactor UI   | Tercer Fleco completado: typeahead descripciones (WorkOrderDescriptionAutocompleteView + partial _description_typeahead.html) en tres vias. Limpieza BD: prefijos fecha en fault_description y repair_notes (9 registros cada uno). Validaciones temporales: work_order_processor/validators.py con R1-R5, campo has_overlap_incident en WorkOrder (migr. 0008), partial _overlap_incident_modal.html integrado en tres vias. Refactor UI repuestos: campo Vehiculo eliminado de formulario, relleno automatico en _parse_spare_parts_from_post() desde entry_map. Encabezado repuesto rediseniado: [Repuesto N] del [select Bloque X] asignado a [span CdG]. Label Maquina → Centro de Gasto en bloques de trabajo. CSS .cg-label-static en _description_typeahead.html. Identificados para sesion 010: has_cg_incident, dropdown CdG con Otro, horometros/odometro en WorkOrderEntryLine, flags has_odometer/has_engine_hours/has_crane_hours en MachineAsset. |
+| 011    | 2026-05-06 | SEGUNDA ACCION completa: R6/R7/R8, WorkshopAssetDetailView, UI horómetros, persistencia | Diagnostico migraciones: fleet 0004 y work_order_processor 0010 ya aplicadas en BD. makemigrations --check sin cambios. validators.py: TimeBlock ampliado con machine_asset + tres lecturas de contadores; IntraPartResult.warnings añadido; validate_odometer (R6), validate_engine_hours (R7), validate_crane_hours (R8) implementadas; run_intra_part_validation integra R6/R7/R8; parse_blocks_from_post acepta entry_lines_data. panel/views.py: WorkshopAssetDetailView (GET /panel/operator/assets/detail/) devuelve flags y referencias; _parse_entry_lines_from_post lee y devuelve los tres campos de contador via _parse_decimal(); parse_blocks_from_post enriquecido en FormView y ConfirmView con entry_lines_data=; WorkOrderEntryLine.objects.create persiste odometer_reading, engine_hours_reading, crane_hours_reading en ambas vistas; _meter_warnings propagado a django_messages. panel/urls.py: import y ruta operator_asset_detail. Tres templates (form_entry, stt_entry, confirm_entry): campos .meter-field ocultos por defecto revelados por _applyMeterFields() llamado desde click/mousedown del autocomplete via ASSET_DETAIL_URL. TERCERA ACCION pendiente para sesion 012. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (011)
+## 5. Hoja de Ruta para la Siguiente Sesion (012)
 
 ### CONTEXTO
 
-La sesion 010 completo la PRIMERA ACCION (has_cg_incident + dropdown "Otro" en
-los tres templates de operario) pero fue interrumpida durante la SEGUNDA ACCION
-por un fallo critico de migraciones en la app fleet. Los modelos fleet/models.py
-y work_order_processor/models.py YA ESTAN PARCHEADOS en disco con los nuevos
-campos. Las migraciones NO han sido aplicadas. La TERCERA ACCION no fue iniciada.
+La sesion 011 completo la SEGUNDA ACCION al completo (horómetros y odómetro
+en WorkOrderEntryLine): reglas R6/R7/R8 en validators.py, endpoint
+WorkshopAssetDetailView, UI dinámica en los tres templates de operario y
+persistencia de los campos. La TERCERA ACCION (historial de partes por
+trabajador) no fue iniciada por cierre de sesión.
 
-### ERRORES CRITICOS DE SESION 010 — OBLIGATORIO LEER ANTES DE ACTUAR
+### PRIMERA ACCION DE SESION 012 — Historial de partes y horas por trabajador
 
-1. MIGRACION MANUAL PROHIBIDA: la migr. 0009_workorder_has_cg_incident.py fue
-   generada manualmente. En esta plataforma las migraciones de modelo se generan
-   SIEMPRE con makemigrations. Solo se crean manualmente las migraciones de datos
-   puras (RunPython). Este error NO debe repetirse.
+Vista nueva: WorkOrderEntryHistoryView (WorkshopRequiredMixin, View).
+Endpoint: GET /panel/operator/history/
+URL name: operator_history
 
-2. VIOLACIONES PMA DE CAJAS: el diff se mezclo con el patcher en la misma caja
-   repetidamente y se pidio autorizacion para el diff en lugar de ejecutar el mv
-   tras el AUTORIZADO. El flujo correcto es: Caja 1 (patcher+sintaxis) → usuario
-   entrega salida → Caja 2 (diff) → usuario entrega salida + AUTORIZADO → mv
-   inmediato sin solicitar nada mas.
+Archivo: panel/views.py (PMA — insertar tras WorkOrderEntrySTTExtractView,
+antes del bloque de vistas de analytics).
 
-3. FALLO MIGRACIONES FLEET: al ejecutar makemigrations fleet work_order_processor
-   + migrate, Django fallo con: FieldDoesNotExist: MachineAsset has no field named
-   'empresa_codigo'. Causa probable: la BD tiene migraciones de fleet pendientes
-   de aplicar que referencian campos renombrados por 0003_rename_fields_english.
+Lógica de la vista:
+  cu = request.user.company_user
+  company = cu.company
 
-### PRIMERA ACCION DE SESION 011 — DIAGNOSTICO Y RESOLUCION MIGRACIONES FLEET
+  Queryset base:
+    qs = WorkOrder.objects.filter(company=company, uploaded_by=cu)
+          .prefetch_related(
+              Prefetch("entries",
+                       queryset=WorkOrderEntry.objects.prefetch_related("entry_lines"))
+          ).order_by("-id")
 
-OBLIGATORIO como primer paso antes de cualquier otra accion:
+  Para ADMIN y SUPERVISOR: si GET ?user_pk=XX, sustituir cu por ese CompanyUser
+    (verificar que pertenece a la misma company antes de filtrar).
+    users = CompanyUser.objects.filter(company=company, is_active=True).select_related("user")
 
-PASO 1 — Verificar estado real de migraciones de fleet en BD:
-  python -m dotenv run python manage.py showmigrations fleet
-  python -m dotenv run python manage.py showmigrations work_order_processor
+  Agrupacion por mes desde work_date del primer WorkOrderEntry de cada WorkOrder:
+    Para cada WorkOrder: obtener work_date = wo.entries.first().work_date
+    Clave de agrupacion: (work_date.year, work_date.month) o None si sin fecha.
+    Calcular por WorkOrder:
+      num_bloques = sum(entry.entry_lines.count() for entry in wo.entries.all())
+      horas_totales = sum(
+          line.delta_hours for entry in wo.entries.all()
+          for line in entry.entry_lines.all()
+          if line.delta_hours is not None
+      )
+    Agrupar en lista de dicts mensual, descendente por (year, month).
 
-PASO 2 — Analizar la salida. Si hay migraciones de fleet marcadas como [ ]
-  (no aplicadas), identificar cual falla y por que.
+  Label de mes: usar calendar.month_name en español o mapeo manual:
+    MESES_ES = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",
+                6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",
+                10:"Octubre",11:"Noviembre",12:"Diciembre"}
+    label = f"{MESES_ES[month]} {year}"
 
-PASO 3 — Segun el diagnostico, resolver el bloqueo. Opciones posibles:
-  a) Si la migracion 0003 no esta aplicada en BD pero el modelo ya tiene los
-     campos renombrados → la migracion puede estar desincronizada. Evaluar
-     si se puede aplicar con --fake o si requiere intervencion manual en BD.
-  b) Si el problema es otro, actuar segun el diagnostico real.
-  NO ACTUAR SIN DIAGNOSTICO COMPLETO.
+  Total de horas del mes: sum de horas_totales de todos los WorkOrder del grupo.
 
-PASO 4 — Una vez resuelto el bloqueo, ejecutar:
-  python -m dotenv run python manage.py makemigrations fleet
-  python -m dotenv run python manage.py makemigrations work_order_processor
-  python -m dotenv run python manage.py migrate
+Contexto al template:
+  {
+    "monthly_groups": [
+      {
+        "label": "Mayo 2026",
+        "total_hours": Decimal,
+        "work_orders": [
+          {
+            "pk": int,
+            "fecha": date o None,
+            "num_bloques": int,
+            "horas_totales": Decimal,
+            "reviewed": bool,
+          },
+        ]
+      },
+    ],
+    "company": company,
+    "company_user": cu,
+    "active_nav": "operator_history",
+    "own_presence": ...,
+    "users": queryset o [] (solo ADMIN/SUPERVISOR),
+    "selected_user_pk": int o None,
+  }
 
-Los campos ya estan en los modelos:
-  fleet/models.py: has_odometer, has_engine_hours, has_crane_hours
-    (insertar antes de is_active, BooleanField default=False)
-  work_order_processor/models.py: odometer_reading, engine_hours_reading,
-    crane_hours_reading (DecimalField max_digits=10 decimal_places=1
-    null=True blank=True, insertar despues de delta_hours)
+Template: panel/operator/history.html (Neonato Puro).
+  - Extiende panel/base.html.
+  - Para cada grupo mensual: card con header "Mes AAAA — X h totales (badge)".
+  - Para cada WorkOrder: fila con fecha, num_bloques, horas_totales,
+    badge "Revisado" (verde) o "Pendiente" (gris) segun reviewed.
+  - ADMIN/SUPERVISOR: <select> de usuario con onchange GET ?user_pk=XX.
+  - Sin paginacion en primera iteracion.
+  - active_nav = "operator_history".
 
-### SEGUNDA ACCION DE SESION 011 — Resto de la SEGUNDA ACCION original
+Sidebar panel/templates/panel/_nav_items.html (PMA):
+  Localizar el bloque comentado que contiene 'pendiente Hito 7' y la entrada
+  WORKSHOP bi-clock-history 'Mis partes'. Descomentar el enlace y apuntarlo a:
+    {% url 'panel:operator_history' %}
 
-Una vez aplicadas las migraciones, continuar con los pasos restantes de la
-SEGUNDA ACCION original (ver hoja de ruta sesion 010 archivada abajo):
+URL panel/urls.py (PMA):
+  - Importar WorkOrderEntryHistoryView.
+  - Añadir antes de la seccion de work-orders:
+    path("operator/history/", WorkOrderEntryHistoryView.as_view(), name="operator_history"),
 
-PASO 3 — Reglas R6/R7/R8 en validators.py (PMA):
-  R6 — odometer_reading obligatorio si machine_asset.has_odometer=True.
-       Contraste: si odometer_reading < machine_asset.mileage → error bloqueante.
-       Si salto > 1000 km → aviso no bloqueante.
-  R7 — engine_hours_reading obligatorio si has_engine_hours=True.
-       Contraste: si engine_hours_reading < machine_asset.hours → error bloqueante.
-       Si salto > 500 h → aviso no bloqueante.
-  R8 — crane_hours_reading obligatorio si has_crane_hours=True.
-       Sin lectura de referencia en BD — solo obligatoriedad.
-  Integrar en run_intra_part_validation() existente.
-
-PASO 4 — UI en los tres templates (PMA x3):
-  Mostrar campos odometer_reading, engine_hours_reading, crane_hours_reading
-  solo si el MachineAsset del bloque tiene los flags correspondientes a True.
-  La visibilidad es dinamica via JS: al seleccionar un CdG en el autocompletado
-  de assets, hacer GET al endpoint WorkshopAssetDetailView (nuevo, ver abajo)
-  para obtener los flags has_odometer, has_engine_hours, has_crane_hours.
-  Campos: input[type="number"] con step="0.1", min="0", clase .horometro-input.
-
-PASO 4.1 — Nuevo endpoint WorkshopAssetDetailView (Neonato en panel/views.py):
-  GET /panel/operator/assets/detail/?code=XX&company=auto
-  WorkshopRequiredMixin + View.
-  Devuelve JsonResponse con: has_odometer, has_engine_hours, has_crane_hours,
-  mileage, hours del activo identificado por code (iexact) y company del usuario.
-  Registrar en panel/urls.py con name='operator_asset_detail'.
-
-PASO 5 — Persistencia en _parse_entry_lines_from_post() (PMA panel/views.py):
-  Leer odometer_reading, engine_hours_reading, crane_hours_reading del POST
-  (prefijo entrada_N_). Convertir a Decimal o None. Incluirlos en el dict
-  de cada entrada. Persistirlos en WorkOrderEntryLine.objects.create().
-  Tambien persistirlos en WorkOrderLineSaveView (editor HTMX del ADMIN).
-
-### TERCERA ACCION DE SESION 011 — Historial de partes y horas por trabajador
-
-  Nueva vista: WorkOrderEntryHistoryView (WorkshopRequiredMixin).
-  Endpoint: GET /panel/operator/history/
-  URL name: operator_history
-
-  Filtro: WorkOrder.uploaded_by = CompanyUser del request.user.
-  ADMIN/SUPERVISOR: selector GET ?user_pk=XX.
-
-  Agrupacion por mes. Columnas: fecha, bloques, horas totales (sum delta_hours),
-  estado revision. Resumen mensual en badge.
-
-  Template: panel/operator/history.html (Neonato Puro).
-  Sidebar: _nav_items.html entrada WORKSHOP bi-clock-history 'Mis partes'
-    (actualmente comentada con <!-- pendiente Hito 7 -->).
-  URL: panel/urls.py.
-
-### Archivos a solicitar al inicio de sesion 011
-
-OBLIGATORIO via SFTP antes de generar ningun PMA:
-  - work_order_processor/validators.py
-  - panel/views.py
-  - panel/urls.py
-  - panel/templates/panel/_nav_items.html
-  - panel/templates/panel/operator/form_entry.html
-  - panel/templates/panel/operator/stt_entry.html
-  - panel/templates/panel/operator/confirm_entry.html
-
-### Estado de migraciones al cierre de sesion 010
-
-| App                    | Ultima migracion APLICADA en BD                        |
-|------------------------|--------------------------------------------------------|
-| fleet                  | DESCONOCIDO — verificar con showmigrations al inicio   |
-| work_order_processor   | 0009_workorder_has_cg_incident (aplicada)              |
-| ivr_config             | 0013_alter_companyuser_role                            |
-| panel                  | 0001_initial (AnalyticsProfile)                        |
-
-### PRIMERA ACCION original (010) — archivada para referencia
-
-### PRIMERA ACCION — has_cg_incident + dropdown CdG con opcion Otro
-
-PASO 1 — Nuevo campo WorkOrder.has_cg_incident (PMA models.py + PEA migr. 0009):
-  has_cg_incident = models.BooleanField(
-      _("Incidencia de CdG"),
-      default=False,
-      db_index=True,
-      help_text=_("El operario ha asignado un repuesto a un CdG que no existe
-                   en BD via la opcion Otro. Requiere revision de SUPERVISOR.")
-  )
-  Insertar despues del bloque has_overlap_incident y antes del bloque
-  de deteccion de duplicados (source_pdf_hash). Migracion: 0009_workorder_has_cg_incident.
-
-PASO 2 — Nuevo endpoint WorkOrderCentroGastoOptionsView (PMA panel/views.py):
-  GET /panel/operator/cg-options/?work_order_pk=XX (o como endpoint asincrono
-  que devuelve los CdG de los bloques ya en POST).
-  ALTERNATIVA MAS SIMPLE (preferida): el dropdown se construye completamente
-  en client-side JS leyendo los valores actuales de los inputs
-  [name="entrada_N_machine_raw"] del formulario. Sin endpoint adicional.
-  No requiere PMA en views.py.
-
-PASO 3 — Dropdown personalizado en los tres templates (PMA x3):
-  El select .repuesto-entry-select del encabezado de repuesto se sustituye
-  por un componente dropdown custom con estas opciones:
-    - Una opcion por cada bloque de trabajo del parte que tenga machine_raw
-      no vacio (leido de los inputs del formulario en tiempo real via JS).
-    - Opcion especial al final: "Otro — introducir CdG manualmente".
-  Al seleccionar un bloque existente:
-    - entry_idx = indice del bloque seleccionado.
-    - vehiculo_raw = machine_raw del bloque.
-    - El span .centro-gasto-label muestra el machine_raw del bloque.
-    - Se persiste un campo oculto: input[name="repuesto_N_entry_idx"].
-  Al seleccionar "Otro":
-    - Aparece un input text libre bajo el encabezado (o inline).
-    - El operario escribe el CdG alternativo.
-    - entry_idx = 0 como centinela.
-    - vehiculo_raw = texto libre escrito por el operario.
-    - El span .centro-gasto-label muestra el texto libre.
-    - Se persiste input[name="repuesto_N_vehiculo_raw"] con el texto libre.
-
-PASO 4 — Actualizacion _parse_spare_parts_from_post() (PMA panel/views.py):
-  Si entry_idx == 0 (caso Otro):
-    vehiculo_raw = POST.get("repuesto_N_vehiculo_raw", "").strip()
-    vehicle_asset = resolver vehiculo_raw contra MachineAsset (iexact, dos pasadas)
-    Si vehicle_asset is None: marcar flag para activar has_cg_incident en WorkOrder.
-  Tras la persistencia atomica: si algun repuesto tiene vehicle_asset=None y
-  entry_idx=0 → WorkOrder.has_cg_incident = True (save update_fields).
-
-### SEGUNDA ACCION — Horometros y odometro en WorkOrderEntryLine
-
-PASO 1 — Nuevos flags en MachineAsset (PMA fleet/models.py + migracion fleet):
-  has_odometer     = models.BooleanField(default=False, db_index=False)
-  has_engine_hours = models.BooleanField(default=False, db_index=False)
-  has_crane_hours  = models.BooleanField(default=False, db_index=False)
-  Insertar antes del campo is_active. Migracion: siguiente disponible en fleet.
-
-PASO 2 — Nuevos campos en WorkOrderEntryLine (PMA models.py + migracion 0010):
-  odometer_reading     = models.DecimalField(max_digits=10, decimal_places=1,
-                         null=True, blank=True, verbose_name=_("Lectura km"))
-  engine_hours_reading = models.DecimalField(max_digits=10, decimal_places=1,
-                         null=True, blank=True, verbose_name=_("Lectura horometro motor"))
-  crane_hours_reading  = models.DecimalField(max_digits=10, decimal_places=1,
-                         null=True, blank=True, verbose_name=_("Lectura horometro grua"))
-  Insertar despues del campo delta_hours.
-
-PASO 3 — Reglas R6/R7/R8 en validators.py (PMA):
-  R6 — odometer_reading obligatorio si machine_asset.has_odometer=True.
-       Contraste: si odometer_reading < machine_asset.mileage → error bloqueante.
-       Si salto > 1000 km → aviso no bloqueante.
-  R7 — engine_hours_reading obligatorio si has_engine_hours=True.
-       Contraste: si engine_hours_reading < machine_asset.hours → error bloqueante.
-       Si salto > 500 h → aviso no bloqueante.
-  R8 — crane_hours_reading obligatorio si has_crane_hours=True.
-       Sin lectura de referencia en BD — solo obligatoriedad.
-  Integrar en run_intra_part_validation() existente.
-
-PASO 4 — UI en los tres templates (PMA x3):
-  Mostrar campos odometer_reading, engine_hours_reading, crane_hours_reading
-  solo si el MachineAsset del bloque tiene los flags correspondientes a True.
-  La visibilidad es dinamica via JS: al seleccionar un CdG en el autocompletado
-  de assets, hacer GET al endpoint de detalle del activo para obtener los flags.
-  Campos: input[type="number"] con step="0.1", min="0".
-  Endpoint de detalle del activo: verificar si existe WorkshopAssetDetailView
-  o crear uno nuevo que devuelva has_odometer, has_engine_hours, has_crane_hours,
-  mileage, hours del activo seleccionado.
-
-PASO 5 — Persistencia en _parse_entry_lines_from_post() (PMA panel/views.py):
-  Leer odometer_reading, engine_hours_reading, crane_hours_reading del POST.
-  Incluirlos en el dict de cada entrada. Persistirlos en WorkOrderEntryLine.objects.create().
-
-### TERCERA ACCION — Historial de partes y horas por trabajador
-
-  Nueva vista: WorkOrderEntryHistoryView (WorkshopRequiredMixin).
-  Endpoint: GET /panel/operator/history/
-  URL name: operator_history
-
-  Filtro: WorkOrder.uploaded_by = CompanyUser del request.user (campo ya existe
-  segun models.py — verificar al inicio de sesion con SFTP de models.py).
-  ADMIN/SUPERVISOR: selector GET ?user_pk=XX.
-
-  Agrupacion por mes. Columnas: fecha, bloques, horas totales (sum delta_hours),
-  estado revision. Resumen mensual en badge.
-
-  Template: panel/operator/history.html (Neonato Puro).
-  Sidebar: _nav_items.html entrada WORKSHOP bi-clock-history 'Mis partes'.
-  URL: panel/urls.py.
-
-### Estado de migraciones al cierre de sesion 009
+### Estado de migraciones al cierre de sesion 011
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
-| fleet                  | 0003_rename_fields_english                             |
-| work_order_processor   | 0008_workorder_has_overlap_incident                    |
+| fleet                  | 0004_alter_machineasset_options_and_more               |
+| work_order_processor   | 0010_workorderentryline_crane_hours_reading_and_more   |
 | ivr_config             | 0013_alter_companyuser_role                            |
 | panel                  | 0001_initial (AnalyticsProfile)                        |
 
-### Archivos clave a solicitar al inicio de sesion 010
+### Archivos a solicitar al inicio de sesion 012
 
-OBLIGATORIO solicitarlos via SFTP antes de generar ningun PMA:
-  - work_order_processor/models.py
-  - fleet/models.py (verificar campo is_active, posicion de insercion flags)
-  - panel/views.py (PRIMERA y TERCERA ACCION)
-  - panel/urls.py (TERCERA ACCION)
-  - panel/templates/panel/_nav_items.html (TERCERA ACCION)
-  - panel/templates/panel/operator/form_entry.html (SEGUNDA ACCION)
-  - panel/templates/panel/operator/stt_entry.html (SEGUNDA ACCION)
-  - panel/templates/panel/operator/confirm_entry.html (SEGUNDA ACCION)
+OBLIGATORIO via SFTP antes de generar ningun PMA:
+  - panel/views.py
+  - panel/urls.py
+  - panel/templates/panel/_nav_items.html

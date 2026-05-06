@@ -5192,18 +5192,45 @@ def _parse_entry_lines_from_post(POST, company):
         except (ValueError, TypeError):
             flags = []
 
+        # ------------------------------------------------------------------
+        # Meter readings — odometer, engine hours, crane hours.
+        # Lecturas de contadores — odómetro, horómetro motor, horómetro grúa.
+        # ------------------------------------------------------------------
+        from decimal import Decimal, InvalidOperation as _InvalidOp
+
+        def _parse_decimal(raw_val):
+            """
+            Converts a POST string to Decimal or returns None on failure.
+            ---
+            Convierte una cadena POST a Decimal o devuelve None en caso de fallo.
+            """
+            v = (raw_val or "").strip().replace(",", ".")
+            if not v:
+                return None
+            try:
+                return Decimal(v)
+            except _InvalidOp:
+                return None
+
+        odometer_reading     = _parse_decimal(POST.get(f"entrada_{i}_odometer_reading", ""))
+        engine_hours_reading = _parse_decimal(POST.get(f"entrada_{i}_engine_hours_reading", ""))
+        crane_hours_reading  = _parse_decimal(POST.get(f"entrada_{i}_crane_hours_reading", ""))
+
         entry_lines_data.append({
-            "line_number":        i,
-            "machine_raw":        machine_raw,
-            "machine_norm":       machine_norm or "",
-            "machine_asset":      machine_asset,
-            "fault_description": desc_averia,
-            "repair_notes":         repair_notes,
-            "hc":                 hc,
-            "hf":                 hf,
-            "or_val":             or_val,
-            "delta_hours":        delta_hours,
-            "flags":              flags,
+            "line_number":           i,
+            "machine_raw":           machine_raw,
+            "machine_norm":          machine_norm or "",
+            "machine_asset":         machine_asset,
+            "fault_description":     desc_averia,
+            "repair_notes":          repair_notes,
+            "hc":                    hc,
+            "hf":                    hf,
+            "or_val":                or_val,
+            "delta_hours":           delta_hours,
+            "flags":                 flags,
+            "odometer_reading":      odometer_reading,
+            "engine_hours_reading":  engine_hours_reading,
+            "crane_hours_reading":   crane_hours_reading,
         })
 
     return entry_lines_data
@@ -5738,7 +5765,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         )
 
         num_entradas_post = int(POST.get("num_entradas", len(entry_lines_data)))
-        _blocks = parse_blocks_from_post(POST, num_entradas_post)
+        _blocks = parse_blocks_from_post(POST, num_entradas_post, entry_lines_data=entry_lines_data)
         _intra  = run_intra_part_validation(_blocks)
 
         if not _intra.ok:
@@ -5835,18 +5862,21 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 created_lines = {}
                 for ld in entry_lines_data:
                     line = WorkOrderEntryLine.objects.create(
-                        entry             = entry,
-                        line_number       = ld["line_number"],
-                        machine_asset     = ld["machine_asset"],
-                        machine_raw       = ld["machine_raw"],
-                        machine_norm      = ld["machine_norm"],
-                        fault_description = ld["fault_description"],
-                        repair_notes        = ld["repair_notes"],
-                        hc                = ld["hc"],
-                        hf                = ld["hf"],
-                        or_val            = ld["or_val"],
-                        delta_hours       = ld["delta_hours"],
-                        flags             = ld["flags"],
+                        entry                = entry,
+                        line_number          = ld["line_number"],
+                        machine_asset        = ld["machine_asset"],
+                        machine_raw          = ld["machine_raw"],
+                        machine_norm         = ld["machine_norm"],
+                        fault_description    = ld["fault_description"],
+                        repair_notes         = ld["repair_notes"],
+                        hc                   = ld["hc"],
+                        hf                   = ld["hf"],
+                        or_val               = ld["or_val"],
+                        delta_hours          = ld["delta_hours"],
+                        flags                = ld["flags"],
+                        odometer_reading     = ld.get("odometer_reading"),
+                        engine_hours_reading = ld.get("engine_hours_reading"),
+                        crane_hours_reading  = ld.get("crane_hours_reading"),
                     )
                     created_lines[ld["line_number"]] = line
 
@@ -6215,17 +6245,22 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         )
 
         num_entradas_post = int(POST.get("num_entradas", len(entry_lines_data)))
-        _blocks = parse_blocks_from_post(POST, num_entradas_post)
+        _blocks = parse_blocks_from_post(POST, num_entradas_post, entry_lines_data=entry_lines_data)
         _intra  = run_intra_part_validation(_blocks)
 
         if not _intra.ok:
+            # Build error message combining blocking errors and non-blocking warnings.
+            # Construir mensaje de error combinando errores bloqueantes y avisos no bloqueantes.
+            _error_msgs = [e.message for e in _intra.errors]
+            if _intra.warnings:
+                _error_msgs += [f"[AVISO] {w.message}" for w in _intra.warnings]
             entradas_post = [
                 {
                     "idx":               ld["line_number"],
                     "machine_raw":       ld["machine_raw"],
                     "machine_asset":     ld["machine_asset"],
                     "fault_description": ld["fault_description"],
-                    "repair_notes":        ld["repair_notes"],
+                    "repair_notes":      ld["repair_notes"],
                     "hc":  ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf":  ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val":            ld["or_val"],
@@ -6235,21 +6270,21 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             ]
             repuestos_post = [
                 {
-                    "ridx":         spd["line_number"],
-                    "referencia":   spd["referencia"],
-                    "vehiculo_raw": spd["vehiculo_raw"],
+                    "ridx":          spd["line_number"],
+                    "referencia":    spd["referencia"],
+                    "vehiculo_raw":  spd["vehiculo_raw"],
                     "vehicle_asset": spd["vehicle_asset"],
-                    "material":     spd["material"],
-                    "unidades":     str(spd["quantity"]) if spd["quantity"] is not None else "",
-                    "origen":       spd["source"],
-                    "proveedor":    spd["supplier"],
-                    "flags":        [],
+                    "material":      spd["material"],
+                    "unidades":      str(spd["quantity"]) if spd["quantity"] is not None else "",
+                    "origen":        spd["source"],
+                    "proveedor":     spd["supplier"],
+                    "flags":         [],
                 }
                 for spd in spare_parts_data
             ]
             context = self._get_context_base(request)
             context.update({
-                "error":              " | ".join(e.message for e in _intra.errors),
+                "error":              " | ".join(_error_msgs),
                 "fecha":              fecha_str,
                 "entradas_enriched":  entradas_post,
                 "repuestos_enriched": repuestos_post,
@@ -6257,6 +6292,10 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "num_repuestos":      len(spare_parts_data),
             })
             return render(request, self.template_name, context)
+
+        # Non-blocking warnings from R6/R7 (meter reading jumps).
+        # Avisos no bloqueantes de R6/R7 (saltos de contador).
+        _meter_warnings = [w.message for w in _intra.warnings]
 
         # ------------------------------------------------------------------
         # Atomic persistence / Persistencia atomica.
@@ -6305,18 +6344,21 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 created_lines = {}
                 for ld in entry_lines_data:
                     line = WorkOrderEntryLine.objects.create(
-                        entry              = entry,
-                        line_number        = ld["line_number"],
-                        machine_asset      = ld["machine_asset"],
-                        machine_raw        = ld["machine_raw"],
-                        machine_norm       = ld["machine_norm"],
-                        fault_description = ld["fault_description"],
+                        entry                = entry,
+                        line_number          = ld["line_number"],
+                        machine_asset        = ld["machine_asset"],
+                        machine_raw          = ld["machine_raw"],
+                        machine_norm         = ld["machine_norm"],
+                        fault_description    = ld["fault_description"],
                         repair_notes         = ld["repair_notes"],
-                        hc                 = ld["hc"],
-                        hf                 = ld["hf"],
-                        or_val             = ld["or_val"],
-                        delta_hours        = ld["delta_hours"],
-                        flags              = ld["flags"],
+                        hc                   = ld["hc"],
+                        hf                   = ld["hf"],
+                        or_val               = ld["or_val"],
+                        delta_hours          = ld["delta_hours"],
+                        flags                = ld["flags"],
+                        odometer_reading     = ld.get("odometer_reading"),
+                        engine_hours_reading = ld.get("engine_hours_reading"),
+                        crane_hours_reading  = ld.get("crane_hours_reading"),
                     )
                     created_lines[ld["line_number"]] = line
 
@@ -6426,10 +6468,16 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             })
             return render(request, self.template_name, context)
 
+        if _meter_warnings:
+            django_messages.warning(
+                request,
+                "Parte guardado con avisos de contadores: " + " | ".join(_meter_warnings),
+            )
+
         django_messages.success(
             request,
             f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
-            f"El informe Excel esta disponible en la lista de partes."
+            f"El informe Excel está disponible en la lista de partes."
         )
         return redirect("/panel/work-orders/")
 
@@ -7252,6 +7300,98 @@ class MachineAssetDeleteView(AdminRoleRequiredMixin, View):
             "assets":       qs,
             "company_user": company_user,
             "company":      company,
+        })
+
+
+class WorkshopAssetDetailView(WorkshopRequiredMixin, View):
+    """
+    JSON endpoint that returns the meter-reading flags and current reference
+    values for a single MachineAsset identified by its code, scoped to the
+    authenticated user's company.
+
+    Used by the three operator entry templates (form_entry, stt_entry,
+    confirm_entry) to reveal/hide the odometer and hourmeter input fields
+    dynamically when the operator selects a work block's Centre de Gasto.
+
+    GET /panel/operator/assets/detail/?code=XX
+        Returns HTTP 200 with JSON payload on success.
+        Returns HTTP 404 if the asset does not exist for the company.
+        Returns HTTP 400 if the `code` parameter is absent or blank.
+
+    Response schema:
+        {
+          "has_odometer":     bool,
+          "has_engine_hours": bool,
+          "has_crane_hours":  bool,
+          "mileage":          float | null,
+          "hours":            float | null
+        }
+
+    ---
+
+    Endpoint JSON que devuelve los flags de lecturas de contadores y los
+    valores de referencia actuales para un MachineAsset identificado por su
+    código, acotado a la empresa del usuario autenticado.
+
+    Usado por los tres templates de entrada del operario (form_entry,
+    stt_entry, confirm_entry) para revelar/ocultar dinámicamente los campos
+    de odómetro y horómetro cuando el operario selecciona el Centro de Gasto
+    de un bloque de trabajo.
+
+    GET /panel/operator/assets/detail/?code=XX
+        Devuelve HTTP 200 con payload JSON en caso de éxito.
+        Devuelve HTTP 404 si el activo no existe para la empresa.
+        Devuelve HTTP 400 si el parámetro `code` está ausente o en blanco.
+
+    Esquema de respuesta:
+        {
+          "has_odometer":     bool,
+          "has_engine_hours": bool,
+          "has_crane_hours":  bool,
+          "mileage":          float | null,
+          "hours":            float | null
+        }
+    """
+
+    def get(self, request, *args, **kwargs):
+        """
+        Returns meter-reading flags and reference values for the requested asset.
+        Scoped to the authenticated user's company. Returns HTTP 400 on missing
+        code and HTTP 404 if the asset does not exist for the company.
+        ---
+        Devuelve los flags de contadores y valores de referencia del activo
+        solicitado. Acotado a la empresa del usuario autenticado. Devuelve
+        HTTP 400 si falta el código y HTTP 404 si el activo no existe.
+        """
+        from django.http import JsonResponse
+        from fleet.models import MachineAsset
+
+        code = request.GET.get("code", "").strip()
+        if not code:
+            return JsonResponse(
+                {"error": "Parámetro 'code' obligatorio."},
+                status=400,
+            )
+
+        company = request.user.company_user.company
+
+        try:
+            asset = MachineAsset.objects.get(
+                code__iexact=code,
+                company=company,
+            )
+        except MachineAsset.DoesNotExist:
+            return JsonResponse(
+                {"error": f"Activo '{code}' no encontrado en catálogo."},
+                status=404,
+            )
+
+        return JsonResponse({
+            "has_odometer":     asset.has_odometer,
+            "has_engine_hours": asset.has_engine_hours,
+            "has_crane_hours":  asset.has_crane_hours,
+            "mileage":          float(asset.mileage) if asset.mileage is not None else None,
+            "hours":            float(asset.hours)   if asset.hours   is not None else None,
         })
 
 

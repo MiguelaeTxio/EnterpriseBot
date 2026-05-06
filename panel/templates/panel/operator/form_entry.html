@@ -149,6 +149,28 @@
                                            value="{{ entrada.or_val }}"
                                            placeholder="Referencia O.R. (opcional)">
                                 </div>
+                                {# ---- Lecturas de contadores (R6/R7/R8) — ocultas por defecto, JS las revela ---- #}
+                                <div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="{{ entrada.idx }}">
+                                    <label class="form-label fw-medium">Km actuales <span class="text-danger meter-required">*</span></label>
+                                    <input type="number" step="0.1" min="0"
+                                           name="entrada_{{ entrada.idx }}_odometer_reading"
+                                           class="form-control horometro-input"
+                                           placeholder="Lectura km">
+                                </div>
+                                <div class="col-12 col-md-3 meter-field meter-engine d-none" data-block-idx="{{ entrada.idx }}">
+                                    <label class="form-label fw-medium">Horómetro motor (h) <span class="text-danger meter-required">*</span></label>
+                                    <input type="number" step="0.1" min="0"
+                                           name="entrada_{{ entrada.idx }}_engine_hours_reading"
+                                           class="form-control horometro-input"
+                                           placeholder="Horas motor">
+                                </div>
+                                <div class="col-12 col-md-3 meter-field meter-crane d-none" data-block-idx="{{ entrada.idx }}">
+                                    <label class="form-label fw-medium">Horómetro grúa (h) <span class="text-danger meter-required">*</span></label>
+                                    <input type="number" step="0.1" min="0"
+                                           name="entrada_{{ entrada.idx }}_crane_hours_reading"
+                                           class="form-control horometro-input"
+                                           placeholder="Horas grúa">
+                                </div>
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-medium">
                                         Descripción avería <span class="text-danger">*</span>
@@ -218,6 +240,28 @@
                                        class="form-control"
                                        value=""
                                        placeholder="Referencia O.R. (opcional)">
+                            </div>
+                            {# ---- Lecturas de contadores bloque 1 — ocultas por defecto ---- #}
+                            <div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="1">
+                                <label class="form-label fw-medium">Km actuales <span class="text-danger meter-required">*</span></label>
+                                <input type="number" step="0.1" min="0"
+                                       name="entrada_1_odometer_reading"
+                                       class="form-control horometro-input"
+                                       placeholder="Lectura km">
+                            </div>
+                            <div class="col-12 col-md-3 meter-field meter-engine d-none" data-block-idx="1">
+                                <label class="form-label fw-medium">Horómetro motor (h) <span class="text-danger meter-required">*</span></label>
+                                <input type="number" step="0.1" min="0"
+                                       name="entrada_1_engine_hours_reading"
+                                       class="form-control horometro-input"
+                                       placeholder="Horas motor">
+                            </div>
+                            <div class="col-12 col-md-3 meter-field meter-crane d-none" data-block-idx="1">
+                                <label class="form-label fw-medium">Horómetro grúa (h) <span class="text-danger meter-required">*</span></label>
+                                <input type="number" step="0.1" min="0"
+                                       name="entrada_1_crane_hours_reading"
+                                       class="form-control horometro-input"
+                                       placeholder="Horas grúa">
                             </div>
                             <div class="col-12 col-md-6">
                                 <label class="form-label fw-medium">
@@ -389,7 +433,22 @@
 (function () {
     "use strict";
 
-    var ASSETS_URL = "{% url 'panel:operator_assets' %}";
+    var ASSETS_URL       = "{% url 'panel:operator_assets' %}";
+    var ASSET_DETAIL_URL = "{% url 'panel:operator_asset_detail' %}";
+
+    /*
+     * Reveals or hides meter-reading fields for the given block index.
+     * Revela u oculta los campos de contadores para el índice de bloque dado.
+     */
+    function _applyMeterFields(blockIdx, data) {
+        var sel    = '[data-block-idx="' + blockIdx + '"]';
+        var odoEl  = document.querySelector('.meter-odometer' + sel);
+        var engEl  = document.querySelector('.meter-engine'   + sel);
+        var craneEl = document.querySelector('.meter-crane'   + sel);
+        if (odoEl)   { odoEl.classList.toggle("d-none",   !data.has_odometer);     }
+        if (engEl)   { engEl.classList.toggle("d-none",   !data.has_engine_hours); }
+        if (craneEl) { craneEl.classList.toggle("d-none", !data.has_crane_hours);  }
+    }
 
     /*
      * Debounce helper: delays execution until after 'wait' ms have elapsed
@@ -462,6 +521,20 @@
                             _selecting  = false;
                             _hideDropdown();
                             input.focus();
+                            // Reveal/hide meter fields for this block after asset selection.
+                            // Revelar/ocultar campos de contadores del bloque tras seleccionar activo.
+                            var blockDiv = input.closest('[id^="block-"]');
+                            if (blockDiv) {
+                                var bIdx = (blockDiv.id || "").replace("block-", "");
+                                if (bIdx) {
+                                    fetch(ASSET_DETAIL_URL + "?code=" + encodeURIComponent(asset.code))
+                                        .then(function (r) { return r.json(); })
+                                        .then(function (d) { _applyMeterFields(bIdx, d); })
+                                        .catch(function () {
+                                            _applyMeterFields(bIdx, {has_odometer: false, has_engine_hours: false, has_crane_hours: false});
+                                        });
+                                }
+                            }
                         });
                         dropdown.appendChild(btn);
                     });
@@ -629,6 +702,19 @@
                     '<label class="form-label fw-medium">O.R.</label>' +
                     '<input type="text" name="entrada_' + idx + '_or_val" ' +
                            'class="form-control" placeholder="Referencia O.R. (opcional)">' +
+                '</div>' +
+                // Meter readings — ocultos por defecto, revelados por _applyMeterFields().
+                '<div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="' + idx + '">' +
+                    '<label class="form-label fw-medium">Km actuales <span class=\"text-danger meter-required\">*</span></label>' +
+                    '<input type="number" step="0.1" min="0" name="entrada_' + idx + '_odometer_reading" class="form-control horometro-input" placeholder="Lectura km">' +
+                '</div>' +
+                '<div class="col-12 col-md-3 meter-field meter-engine d-none" data-block-idx="' + idx + '">' +
+                    '<label class="form-label fw-medium">Horómetro motor (h) <span class=\"text-danger meter-required\">*</span></label>' +
+                    '<input type="number" step="0.1" min="0" name="entrada_' + idx + '_engine_hours_reading" class="form-control horometro-input" placeholder="Horas motor">' +
+                '</div>' +
+                '<div class="col-12 col-md-3 meter-field meter-crane d-none" data-block-idx="' + idx + '">' +
+                    '<label class="form-label fw-medium">Horómetro grúa (h) <span class=\"text-danger meter-required\">*</span></label>' +
+                    '<input type="number" step="0.1" min="0" name="entrada_' + idx + '_crane_hours_reading" class="form-control horometro-input" placeholder="Horas grúa">' +
                 '</div>' +
                 '<div class="col-12 col-md-6">' +
                     '<label class="form-label fw-medium">Descripcion averia <span class="text-danger">*</span></label>' +

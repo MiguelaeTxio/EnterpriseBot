@@ -46,16 +46,24 @@ class TimeBlock:
     """
     Represents a single work block with a start time (hc) and end time (hf).
     Used as the input unit for all intra-part validation rules.
+    Optional fields carry meter readings for R6/R7/R8 validation and the
+    resolved MachineAsset instance for threshold contrast.
 
     ---
 
     Representa un único bloque de trabajo con hora de inicio (hc) y hora de
     fin (hf). Se usa como unidad de entrada para todas las reglas de validación
     intra-parte.
+    Los campos opcionales transportan lecturas de contadores para la validación
+    R6/R7/R8 y la instancia MachineAsset resuelta para el contraste de umbrales.
     """
-    idx: int          # 1-based block index — índice de bloque base 1
-    hc:  time         # start time — hora de inicio
-    hf:  time         # end time   — hora de fin
+    idx: int                        # 1-based block index — índice de bloque base 1
+    hc:  time                       # start time — hora de inicio
+    hf:  time                       # end time   — hora de fin
+    machine_asset:         object   = None  # resolved MachineAsset or None — MachineAsset resuelto o None
+    odometer_reading:      object   = None  # Decimal or None — km leídos
+    engine_hours_reading:  object   = None  # Decimal or None — horas motor leídas
+    crane_hours_reading:   object   = None  # Decimal or None — horas grúa leídas
 
 
 @dataclass
@@ -85,22 +93,25 @@ class ValidationError:
 @dataclass
 class IntraPartResult:
     """
-    Result of intra-part validation (R1, R2, R3).
+    Result of intra-part validation (R1, R2, R3, R6, R7, R8).
 
     Fields:
-        ok     — True if no blocking errors were found (R1, R2, R3 all clear).
-        errors — list of ValidationError instances describing each problem.
+        ok       — True if no blocking errors were found.
+        errors   — list of blocking ValidationError instances.
+        warnings — list of non-blocking ValidationError instances (R6/R7 jump alerts).
 
     ---
 
-    Resultado de la validación intra-parte (R1, R2, R3).
+    Resultado de la validación intra-parte (R1, R2, R3, R6, R7, R8).
 
     Campos:
-        ok     — True si no se encontraron errores bloqueantes (R1, R2, R3 sin incidencias).
-        errors — lista de instancias ValidationError describiendo cada problema.
+        ok       — True si no se encontraron errores bloqueantes.
+        errors   — lista de instancias ValidationError bloqueantes.
+        warnings — lista de instancias ValidationError no bloqueantes (avisos de salto R6/R7).
     """
-    ok:     bool
-    errors: List[ValidationError] = field(default_factory=list)
+    ok:       bool
+    errors:   List[ValidationError] = field(default_factory=list)
+    warnings: List[ValidationError] = field(default_factory=list)
 
 
 @dataclass
@@ -135,6 +146,14 @@ class InterPartResult:
 # Minimum gap duration (in minutes) that triggers an R3 error.
 # Duración mínima de laguna (en minutos) que activa un error R3.
 _GAP_THRESHOLD_MINUTES = 30
+
+# R6 — Odometer jump threshold (km) above which a non-blocking warning is raised.
+# R6 — Umbral de salto de odómetro (km) por encima del cual se emite un aviso no bloqueante.
+_ODOMETER_JUMP_THRESHOLD_KM = 1000
+
+# R7 — Engine hours jump threshold (h) above which a non-blocking warning is raised.
+# R7 — Umbral de salto de horómetro motor (h) por encima del cual se emite un aviso no bloqueante.
+_ENGINE_HOURS_JUMP_THRESHOLD_H = 500
 
 
 def _to_minutes(t: time) -> int:
@@ -302,6 +321,213 @@ def validate_intra_gaps(blocks: List[TimeBlock]) -> List[ValidationError]:
 
 
 # ---------------------------------------------------------------------------
+# R6 — Odometer reading / Lectura de odómetro
+# ---------------------------------------------------------------------------
+
+def validate_odometer(blocks: List[TimeBlock]) -> tuple:
+    """
+    R6 — Validates odometer_reading for each block whose machine_asset has
+    has_odometer=True.
+
+    Blocking errors:
+      - odometer_reading is None when has_odometer is True.
+      - odometer_reading < machine_asset.mileage (reading lower than last known value).
+
+    Non-blocking warnings:
+      - Jump > _ODOMETER_JUMP_THRESHOLD_KM km vs last known mileage.
+
+    Returns (errors, warnings) as two separate lists of ValidationError.
+
+    ---
+
+    R6 — Valida odometer_reading para cada bloque cuyo machine_asset tiene
+    has_odometer=True.
+
+    Errores bloqueantes:
+      - odometer_reading es None cuando has_odometer es True.
+      - odometer_reading < machine_asset.mileage (lectura inferior al último valor conocido).
+
+    Avisos no bloqueantes:
+      - Salto > _ODOMETER_JUMP_THRESHOLD_KM km respecto al último kilometraje conocido.
+
+    Devuelve (errors, warnings) como dos listas separadas de ValidationError.
+    """
+    errors:   List[ValidationError] = []
+    warnings: List[ValidationError] = []
+
+    for b in blocks:
+        asset = b.machine_asset
+        if asset is None or not getattr(asset, "has_odometer", False):
+            continue
+
+        if b.odometer_reading is None:
+            errors.append(ValidationError(
+                rule="R6",
+                message=(
+                    f"Bloque {b.idx}: la máquina '{asset.code}' requiere lectura "
+                    f"de odómetro (km). El campo no puede estar vacío."
+                ),
+                blocks=[b.idx],
+            ))
+            continue
+
+        last_km = getattr(asset, "mileage", None)
+        if last_km is not None:
+            reading = b.odometer_reading
+            if reading < last_km:
+                errors.append(ValidationError(
+                    rule="R6",
+                    message=(
+                        f"Bloque {b.idx}: la lectura de odómetro ({reading} km) es "
+                        f"inferior al último kilometraje registrado ({last_km} km) "
+                        f"para la máquina '{asset.code}'. Verifica la lectura."
+                    ),
+                    blocks=[b.idx],
+                ))
+            elif (reading - last_km) > _ODOMETER_JUMP_THRESHOLD_KM:
+                warnings.append(ValidationError(
+                    rule="R6",
+                    message=(
+                        f"Bloque {b.idx}: salto de odómetro inusualmente alto "
+                        f"({reading - last_km} km) para la máquina '{asset.code}'. "
+                        f"Verifica que la lectura sea correcta."
+                    ),
+                    blocks=[b.idx],
+                ))
+
+    return errors, warnings
+
+
+# ---------------------------------------------------------------------------
+# R7 — Engine hours reading / Lectura de horómetro motor
+# ---------------------------------------------------------------------------
+
+def validate_engine_hours(blocks: List[TimeBlock]) -> tuple:
+    """
+    R7 — Validates engine_hours_reading for each block whose machine_asset has
+    has_engine_hours=True.
+
+    Blocking errors:
+      - engine_hours_reading is None when has_engine_hours is True.
+      - engine_hours_reading < machine_asset.hours (reading lower than last known value).
+
+    Non-blocking warnings:
+      - Jump > _ENGINE_HOURS_JUMP_THRESHOLD_H hours vs last known hours.
+
+    Returns (errors, warnings) as two separate lists of ValidationError.
+
+    ---
+
+    R7 — Valida engine_hours_reading para cada bloque cuyo machine_asset tiene
+    has_engine_hours=True.
+
+    Errores bloqueantes:
+      - engine_hours_reading es None cuando has_engine_hours es True.
+      - engine_hours_reading < machine_asset.hours (lectura inferior al último valor conocido).
+
+    Avisos no bloqueantes:
+      - Salto > _ENGINE_HOURS_JUMP_THRESHOLD_H horas respecto a las horas conocidas.
+
+    Devuelve (errors, warnings) como dos listas separadas de ValidationError.
+    """
+    errors:   List[ValidationError] = []
+    warnings: List[ValidationError] = []
+
+    for b in blocks:
+        asset = b.machine_asset
+        if asset is None or not getattr(asset, "has_engine_hours", False):
+            continue
+
+        if b.engine_hours_reading is None:
+            errors.append(ValidationError(
+                rule="R7",
+                message=(
+                    f"Bloque {b.idx}: la máquina '{asset.code}' requiere lectura "
+                    f"de horómetro de motor (h). El campo no puede estar vacío."
+                ),
+                blocks=[b.idx],
+            ))
+            continue
+
+        last_h = getattr(asset, "hours", None)
+        if last_h is not None:
+            reading = b.engine_hours_reading
+            if reading < last_h:
+                errors.append(ValidationError(
+                    rule="R7",
+                    message=(
+                        f"Bloque {b.idx}: la lectura de horómetro motor ({reading} h) es "
+                        f"inferior a las últimas horas registradas ({last_h} h) "
+                        f"para la máquina '{asset.code}'. Verifica la lectura."
+                    ),
+                    blocks=[b.idx],
+                ))
+            elif (reading - last_h) > _ENGINE_HOURS_JUMP_THRESHOLD_H:
+                warnings.append(ValidationError(
+                    rule="R7",
+                    message=(
+                        f"Bloque {b.idx}: salto de horómetro motor inusualmente alto "
+                        f"({reading - last_h} h) para la máquina '{asset.code}'. "
+                        f"Verifica que la lectura sea correcta."
+                    ),
+                    blocks=[b.idx],
+                ))
+
+    return errors, warnings
+
+
+# ---------------------------------------------------------------------------
+# R8 — Crane hours reading / Lectura de horómetro grúa
+# ---------------------------------------------------------------------------
+
+def validate_crane_hours(blocks: List[TimeBlock]) -> tuple:
+    """
+    R8 — Validates crane_hours_reading for each block whose machine_asset has
+    has_crane_hours=True.
+
+    Blocking errors:
+      - crane_hours_reading is None when has_crane_hours is True.
+
+    No threshold contrast is applied (no reference value stored in DB for crane hours).
+
+    Returns (errors, warnings) as two separate lists of ValidationError.
+    warnings is always an empty list for R8.
+
+    ---
+
+    R8 — Valida crane_hours_reading para cada bloque cuyo machine_asset tiene
+    has_crane_hours=True.
+
+    Errores bloqueantes:
+      - crane_hours_reading es None cuando has_crane_hours es True.
+
+    No se aplica contraste de umbral (no hay valor de referencia en BD para horas de grúa).
+
+    Devuelve (errors, warnings) como dos listas separadas de ValidationError.
+    warnings es siempre una lista vacía para R8.
+    """
+    errors:   List[ValidationError] = []
+    warnings: List[ValidationError] = []
+
+    for b in blocks:
+        asset = b.machine_asset
+        if asset is None or not getattr(asset, "has_crane_hours", False):
+            continue
+
+        if b.crane_hours_reading is None:
+            errors.append(ValidationError(
+                rule="R8",
+                message=(
+                    f"Bloque {b.idx}: la máquina '{asset.code}' requiere lectura "
+                    f"de horómetro de grúa (h). El campo no puede estar vacío."
+                ),
+                blocks=[b.idx],
+            ))
+
+    return errors, warnings
+
+
+# ---------------------------------------------------------------------------
 # R4 / R5 — Inter-part overlap / Solapamiento inter-parte
 # ---------------------------------------------------------------------------
 
@@ -384,21 +610,25 @@ def validate_inter_overlap(
 
 def run_intra_part_validation(blocks: List[TimeBlock]) -> IntraPartResult:
     """
-    Runs all intra-part validation rules (R2, R1, R3) in priority order and
-    returns an IntraPartResult.
+    Runs all intra-part validation rules (R2, R1, R3, R6, R7, R8) in priority
+    order and returns an IntraPartResult.
 
     R2 is checked first because an invalid HF/HC pair makes R1 and R3
-    results unreliable.
+    results unreliable. R6, R7, R8 are meter-reading rules independent of
+    time structure and are always evaluated regardless of R1/R2/R3 outcome.
 
     ---
 
-    Ejecuta todas las reglas de validación intra-parte (R2, R1, R3) en orden
-    de prioridad y devuelve un IntraPartResult.
+    Ejecuta todas las reglas de validación intra-parte (R2, R1, R3, R6, R7, R8)
+    en orden de prioridad y devuelve un IntraPartResult.
 
     R2 se comprueba primero porque un par HC/HF inválido hace que los resultados
-    de R1 y R3 sean poco fiables.
+    de R1 y R3 sean poco fiables. R6, R7, R8 son reglas de lecturas de contadores
+    independientes de la estructura temporal y se evalúan siempre con independencia
+    del resultado de R1/R2/R3.
     """
-    errors: List[ValidationError] = []
+    errors:   List[ValidationError] = []
+    warnings: List[ValidationError] = []
 
     # R2 first — unreliable intervals must be caught before overlap/gap checks.
     # R2 primero — los intervalos inválidos deben detectarse antes de las
@@ -411,14 +641,32 @@ def run_intra_part_validation(blocks: List[TimeBlock]) -> IntraPartResult:
         errors.extend(validate_intra_overlap(blocks))
         errors.extend(validate_intra_gaps(blocks))
 
-    return IntraPartResult(ok=not errors, errors=errors)
+    # R6, R7, R8 — meter readings: always evaluated, independent of time rules.
+    # R6, R7, R8 — lecturas de contadores: siempre evaluadas, independientes de reglas temporales.
+    r6_errors, r6_warnings = validate_odometer(blocks)
+    r7_errors, r7_warnings = validate_engine_hours(blocks)
+    r8_errors, r8_warnings = validate_crane_hours(blocks)
+
+    errors.extend(r6_errors)
+    errors.extend(r7_errors)
+    errors.extend(r8_errors)
+    warnings.extend(r6_warnings)
+    warnings.extend(r7_warnings)
+    warnings.extend(r8_warnings)
+
+    return IntraPartResult(ok=not errors, errors=errors, warnings=warnings)
 
 
-def parse_blocks_from_post(post_data, num_entradas: int) -> List[TimeBlock]:
+def parse_blocks_from_post(post_data, num_entradas: int, entry_lines_data: list = None) -> List[TimeBlock]:
     """
     Extracts TimeBlock instances from a Django POST QueryDict.
     Silently skips blocks where hc or hf cannot be parsed — the server-side
     gate in the view handles missing/malformed time fields independently.
+
+    When entry_lines_data is provided (list of dicts produced by
+    _parse_entry_lines_from_post), each TimeBlock is enriched with the
+    resolved machine_asset and the meter reading values (odometer_reading,
+    engine_hours_reading, crane_hours_reading) so that R6/R7/R8 can operate.
 
     ---
 
@@ -426,11 +674,39 @@ def parse_blocks_from_post(post_data, num_entradas: int) -> List[TimeBlock]:
     Omite silenciosamente los bloques donde hc o hf no pueden parsearse —
     la barrera server-side de la vista gestiona los campos de hora
     ausentes/malformados de forma independiente.
+
+    Cuando se proporciona entry_lines_data (lista de dicts producida por
+    _parse_entry_lines_from_post), cada TimeBlock se enriquece con el
+    machine_asset resuelto y los valores de lectura de contadores
+    (odometer_reading, engine_hours_reading, crane_hours_reading) para que
+    R6/R7/R8 puedan operar.
     """
     blocks: List[TimeBlock] = []
     for i in range(1, num_entradas + 1):
         hc = _parse_hhmm(post_data.get(f"entrada_{i}_hc", ""))
         hf = _parse_hhmm(post_data.get(f"entrada_{i}_hf", ""))
-        if hc is not None and hf is not None:
-            blocks.append(TimeBlock(idx=i, hc=hc, hf=hf))
+        if hc is None or hf is None:
+            continue
+
+        machine_asset        = None
+        odometer_reading     = None
+        engine_hours_reading = None
+        crane_hours_reading  = None
+
+        if entry_lines_data is not None and (i - 1) < len(entry_lines_data):
+            entry = entry_lines_data[i - 1]
+            machine_asset        = entry.get("machine_asset")
+            odometer_reading     = entry.get("odometer_reading")
+            engine_hours_reading = entry.get("engine_hours_reading")
+            crane_hours_reading  = entry.get("crane_hours_reading")
+
+        blocks.append(TimeBlock(
+            idx=i,
+            hc=hc,
+            hf=hf,
+            machine_asset=machine_asset,
+            odometer_reading=odometer_reading,
+            engine_hours_reading=engine_hours_reading,
+            crane_hours_reading=crane_hours_reading,
+        ))
     return blocks
