@@ -85,7 +85,7 @@
                 <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
                     <h6 class="mb-0 fw-semibold">
                         <i class="bi bi-wrench me-2 text-primary"></i>
-                        Bloques de trabajo
+                        Tareas
                     </h6>
                 </div>
                 <div class="card-body p-4">
@@ -95,7 +95,7 @@
                         {% for entrada in entradas_enriched %}
                         <div class="confirm-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %}" id="block-{{ entrada.idx }}">
                             <div class="d-flex align-items-center gap-2 mb-3">
-                                <span class="badge bg-dark">Bloque {{ entrada.idx }}</span>
+                                <span class="badge bg-dark">Tarea {{ entrada.idx }}</span>
                                 {% if entrada.machine_asset %}
                                     <span class="badge badge-active text-sm">
                                         {{ entrada.machine_asset.code }} — {{ entrada.machine_asset.brand_model }}
@@ -109,7 +109,7 @@
                             <div class="row g-3">
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-medium">
-                                        Centro de Gasto <span class="text-danger">*</span>
+                                        Máquina o Sección <span class="text-danger">*</span>
                                     </label>
                                     <div class="position-relative">
                                         <input type="text"
@@ -196,12 +196,12 @@
                     {# Default first block rendered on GET / Primer bloque por defecto en GET #}
                     <div class="confirm-block mb-4 pb-4" id="block-1">
                         <div class="d-flex align-items-center gap-2 mb-3">
-                            <span class="badge bg-dark">Bloque 1</span>
+                            <span class="badge bg-dark">Tarea 1</span>
                         </div>
                         <div class="row g-3">
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">
-                                    Centro de Gasto <span class="text-danger">*</span>
+                                    Máquina o Sección <span class="text-danger">*</span>
                                 </label>
                                 <div class="position-relative">
                                     <input type="text"
@@ -563,78 +563,79 @@
     }
 
     // ==================================================================
-    // 'Otro' CdG selector logic — mostrar/ocultar input de texto libre
-    // y sincronizar el span .centro-gasto-label al cambiar el select.
-    // 'Otro' CdG selector logic — show/hide free-text input and keep
-    // the .centro-gasto-label span in sync when the select changes.
+    // CdG select logic — show/hide free-text input for "Otro" and refresh
+    // all CdG selects when any machine_raw block value changes.
+    // Lógica select CdG — mostrar/ocultar input libre para "Otro" y refrescar
+    // todos los selects CdG cuando cambia cualquier machine_raw de bloque.
     // ==================================================================
 
-    function _syncCgLabelForm(ridx) {
+    function _toggleOtroForm(ridx) {
         /*
-         * Updates the .centro-gasto-label span for repuesto ridx based on
-         * the current selection of its .repuesto-entry-select.
-         * If entry_idx==0 ("Otro"), shows the value of the free-text input.
-         * Otherwise shows the machine_raw of the selected work block.
+         * Shows the free-text input when "__otro__" is selected.
+         * Hides it otherwise.
          *
-         * Actualiza el span .centro-gasto-label del repuesto ridx según la
-         * selección actual de su .repuesto-entry-select.
-         * Si entry_idx==0 ("Otro"), muestra el valor del input de texto libre.
-         * En otro caso muestra el machine_raw del bloque de trabajo seleccionado.
+         * Muestra el input libre cuando se selecciona "__otro__".
+         * Lo oculta en caso contrario.
          */
-        var sel     = document.querySelector('[name="repuesto_' + ridx + '_entry_idx"]');
-        var label   = document.querySelector('.centro-gasto-label[data-repuesto-idx="' + ridx + '"]');
-        var libInput = document.querySelector('[name="repuesto_' + ridx + '_vehiculo_raw"]');
-
-        var idx = parseInt(sel.value, 10);
-        if (idx === 0) {
-            // "Otro" selected: show free-text input, use its value for label.
-            // "Otro" seleccionado: mostrar input libre, usar su valor para label.
-            if (libInput) { libInput.classList.remove("d-none"); }
-            label.textContent = (libInput && libInput.value.trim())
-                ? libInput.value.trim()
-                : "introducir CdG manualmente";
+        var sel      = document.querySelector('[name="repuesto_' + ridx + '_vehiculo_raw"]');
+        var libInput = document.querySelector('[name="repuesto_' + ridx + '_cdg_free"]');
+        if (sel.value === "__otro__") {
+            if (libInput) { libInput.classList.remove("d-none"); libInput.focus(); }
         } else {
-            // Normal block: hide free-text input, use block machine_raw for label.
-            // Bloque normal: ocultar input libre, usar machine_raw del bloque para label.
             if (libInput) { libInput.classList.add("d-none"); }
-            var maqInput = document.querySelector('[name="entrada_' + idx + '_machine_raw"]');
-            label.textContent = (maqInput && maqInput.value.trim())
-                ? maqInput.value.trim()
-                : "un centro de gasto seleccionado en el bloque";
         }
     }
 
-    // Delegate change events on .repuesto-entry-select (handles dynamic rows).
-    // Delegar eventos change en .repuesto-entry-select (gestiona filas dinámicas).
-    document.addEventListener("change", function (e) {
-        if (e.target && e.target.classList.contains("repuesto-entry-select")) {
-            var ridx = e.target.dataset.repuestoIdx
-                || (e.target.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
-            if (ridx) { _syncCgLabelForm(ridx); }
-        }
-    });
-
-    // Delegate input events on .repuesto-cg-libre (free-text CdG input).
-    // Delegar eventos input en .repuesto-cg-libre (input de texto libre CdG).
-    document.addEventListener("input", function (e) {
-        if (e.target && e.target.classList.contains("repuesto-cg-libre")) {
-            var m = e.target.name.match(/repuesto_(\d+)_vehiculo_raw/);
-            if (m) { _syncCgLabelForm(m[1]); }
-        }
-        // Also sync all CdG labels when any machine_raw input changes.
-        // También sincronizar todos los labels CdG cuando cambia cualquier machine_raw.
-        if (e.target && e.target.name && /^entrada_\d+_machine_raw$/.test(e.target.name)) {
-            document.querySelectorAll(".repuesto-entry-select").forEach(function (sel) {
-                var ridx = sel.dataset.repuestoIdx
-                    || (sel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
-                if (ridx) { _syncCgLabelForm(ridx); }
+    function _refreshCdgSelects() {
+        /*
+         * Rebuilds the options of every .repuesto-cdg-select from the current
+         * unique non-empty machine_raw values present in the form blocks.
+         * Preserves the current selection when the value still exists.
+         * The last block machine_raw is the default for new selects.
+         *
+         * Reconstruye las opciones de cada .repuesto-cdg-select desde los
+         * valores machine_raw únicos no vacíos de los bloques del formulario.
+         * Preserva la selección actual si el valor sigue existiendo.
+         * El machine_raw del último bloque es el valor por defecto.
+         */
+        var seen = [];
+        var lastVal = "";
+        document.querySelectorAll('.confirm-block [name$="_machine_raw"]').forEach(function (inp) {
+            var v = inp.value.trim();
+            if (v && seen.indexOf(v) === -1) { seen.push(v); lastVal = v; }
+        });
+        document.querySelectorAll(".repuesto-cdg-select").forEach(function (sel) {
+            var current = sel.value;
+            sel.innerHTML = "";
+            seen.forEach(function (v) {
+                var opt = document.createElement("option");
+                opt.value       = v;
+                opt.textContent = v;
+                sel.appendChild(opt);
             });
+            var otro = document.createElement("option");
+            otro.value       = "__otro__";
+            otro.textContent = "Otro — introducir CdG manualmente";
+            if (current === "__otro__") { otro.selected = true; }
+            sel.appendChild(otro);
+        });
+    }
+
+    document.addEventListener("change", function (e) {
+        if (e.target && e.target.classList.contains("repuesto-cdg-select")) {
+            var ridx = e.target.dataset.repuestoIdx
+                || (e.target.name.match(/repuesto_(\d+)_vehiculo_raw/) || [])[1];
+            if (ridx) { _toggleOtroForm(ridx); }
         }
     });
 
-    // Expose for external callers (e.g. after adding a new repuesto row).
-    // Exponer para llamadas externas (p.ej. tras añadir una nueva fila de repuesto).
-    window._syncCgLabelForm = _syncCgLabelForm;
+    document.addEventListener("input", function (e) {
+        if (e.target && e.target.name && /^entrada_\d+_machine_raw$/.test(e.target.name)) {
+            _refreshCdgSelects();
+        }
+    });
+
+    window._refreshCdgSelects = _refreshCdgSelects;
 
     // Attach autocomplete to all pre-rendered inputs.
     // Asociar autocompletado a todos los inputs pre-renderizados.
@@ -682,7 +683,7 @@
             '</div>' +
             '<div class="row g-3">' +
                 '<div class="col-12 col-md-4">' +
-                    '<label class="form-label fw-medium">Centro de Gasto <span class="text-danger">*</span></label>' +
+                    '<label class="form-label fw-medium">Máquina o Sección <span class="text-danger">*</span></label>' +
                     '<div class="position-relative">' +
                         '<input type="text" name="entrada_' + idx + '_machine_raw" ' +
                                'class="form-control asset-search" ' +

@@ -770,6 +770,34 @@ class SparePartLine(models.Model):
     )
 
     # ------------------------------------------------------------------
+    # Unit price — Hito 7 / sesión 012
+    # Precio unitario — Hito 7 / sesión 012
+    #
+    # Optional field intentionally left blank by the operator. Populated
+    # later by a SUPERVISOR or during the supplier delivery note processing
+    # pipeline (Hito 10). Stored here to avoid a schema migration once data
+    # is already in production.
+    #
+    # Campo opcional que el operario no rellena. Lo cumplimenta posteriormente
+    # un SUPERVISOR o el pipeline de albaranes de proveedor (Hito 10).
+    # Se añade ahora para evitar una migración de esquema con datos en producción.
+    # ------------------------------------------------------------------
+    unit_price = models.DecimalField(
+        _("Precio unitario"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Precio unitario del repuesto en el momento de la imputación. "
+            "No lo rellena el operario — lo cumplimenta un SUPERVISOR o el "
+            "pipeline de albaranes de proveedor (Hito 10). "
+            "Permite calcular el coste de materiales por máquina en los "
+            "informes de analítica cruzada (Hito 9)."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Source / Procedencia
     # ------------------------------------------------------------------
     source = models.CharField(

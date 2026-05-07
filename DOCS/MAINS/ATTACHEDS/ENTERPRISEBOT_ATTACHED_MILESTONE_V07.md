@@ -420,6 +420,42 @@ Actualizacion de MachineAsset en revision del parte (Hito 12):
   Al marcar un WorkOrder como revisado, el supervisor puede confirmar la
   actualizacion de mileage/hours en MachineAsset desde las lecturas del parte.
 
+### 2.21. Campo unit_price en SparePartLine (sesion 012)
+
+Nuevo campo añadido a SparePartLine para soporte de informes de coste (H9).
+No visible ni editable por el operario. Se rellena en H10 desde albaranes
+de proveedor o manualmente por SUPERVISOR.
+
+  unit_price = DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
+Migracion: 0011_sparepartline_unit_price.
+
+### 2.22. Refactor UX operario — repuestos y etiquetas (sesion 012)
+
+Cambios aplicados en los tres templates del operario (form_entry, stt_entry,
+confirm_entry) y en _parse_spare_parts_from_post() en panel/views.py:
+
+  - Etiqueta seccion tareas: "Bloques de trabajo" → "Tareas".
+  - Etiqueta campo maquina en bloque: "Centro de Gasto" → "Maquina o Seccion".
+  - Encabezado repuesto: "Repuesto {N} del [Bloque X] asignado a {CdG}"
+    → "Repuesto {N} asignado a [select CdG]".
+  - Select CdG: lista los valores machine_raw unicos no vacios del parte
+    mas opcion "Otro — introducir CdG manualmente". Valor por defecto: ultimo
+    bloque introducido. Campo libre: name="repuesto_N_cdg_free".
+  - Eliminada la indirection entry_idx: vehiculo_raw lo entrega directamente
+    el select (name="repuesto_N_vehiculo_raw"). Si value=="__otro__", se lee
+    repuesto_N_cdg_free. Sentinel entry_idx eliminado.
+  - _parse_spare_parts_from_post(): ya no usa entry_map ni entry_lines_data
+    para resolver vehiculo_raw. Resolucion contra MachineAsset en dos pasadas
+    para todos los repuestos. Si value=="__otro__", lee cdg_free.
+  - Fix artefactos bash incrustados en form_entry.html (lineas ~3290, ~3315).
+
+PENDIENTE (bug activo al cierre de sesion 012):
+  La UI de repuestos sigue mostrando la version antigua ("del [Bloque 1]
+  asignado a...") a pesar de tener los archivos en disco correctos, collectstatic
+  ejecutado, aplicacion recargada y cache vaciada. Causa no identificada.
+  Investigar al inicio de sesion 013 antes de cualquier otra accion.
+
 ### Paso 9 — Validacion E2E de las tres vias
 Estado: COMPLETADO PARCIAL (sesiones 006-009).
 - Via A (Form): VALIDADA. Persistencia correcta, nombre sintetico legible.
@@ -442,18 +478,20 @@ Estado: COMPLETADO PARCIAL (sesiones 006-009).
 | 008    | 2026-05-05 | Pasos 8 (fix), 9 (parcial), flecos  | PRIMERA ACCION completada: correccion atomica de identificadores renombrados en panel/views.py (code__iexact, is_active, code__icontains) y en los tres templates del operario (machine_raw, fault_description, repair_notes, uncertain_date) incluido JS gate y _buildBlockRow. Widget TimePicker custom implementado (_time_picker_widget.html): selector de dos columnas 00/30 con dropdown anclado al body, compatible HTMX. Fix WorkshopAssetAutocompleteView (code__icontains). step="1800" en todos los inputs de hora. SEGUNDA y TERCERA ACCION pendientes para sesion 009. |
 | 009    | 2026-05-06 | Flecos, validaciones, refactor UI   | Tercer Fleco completado: typeahead descripciones (WorkOrderDescriptionAutocompleteView + partial _description_typeahead.html) en tres vias. Limpieza BD: prefijos fecha en fault_description y repair_notes (9 registros cada uno). Validaciones temporales: work_order_processor/validators.py con R1-R5, campo has_overlap_incident en WorkOrder (migr. 0008), partial _overlap_incident_modal.html integrado en tres vias. Refactor UI repuestos: campo Vehiculo eliminado de formulario, relleno automatico en _parse_spare_parts_from_post() desde entry_map. Encabezado repuesto rediseniado: [Repuesto N] del [select Bloque X] asignado a [span CdG]. Label Maquina → Centro de Gasto en bloques de trabajo. CSS .cg-label-static en _description_typeahead.html. Identificados para sesion 010: has_cg_incident, dropdown CdG con Otro, horometros/odometro en WorkOrderEntryLine, flags has_odometer/has_engine_hours/has_crane_hours en MachineAsset. |
 | 011    | 2026-05-06 | SEGUNDA ACCION completa: R6/R7/R8, WorkshopAssetDetailView, UI horómetros, persistencia | Diagnostico migraciones: fleet 0004 y work_order_processor 0010 ya aplicadas en BD. makemigrations --check sin cambios. validators.py: TimeBlock ampliado con machine_asset + tres lecturas de contadores; IntraPartResult.warnings añadido; validate_odometer (R6), validate_engine_hours (R7), validate_crane_hours (R8) implementadas; run_intra_part_validation integra R6/R7/R8; parse_blocks_from_post acepta entry_lines_data. panel/views.py: WorkshopAssetDetailView (GET /panel/operator/assets/detail/) devuelve flags y referencias; _parse_entry_lines_from_post lee y devuelve los tres campos de contador via _parse_decimal(); parse_blocks_from_post enriquecido en FormView y ConfirmView con entry_lines_data=; WorkOrderEntryLine.objects.create persiste odometer_reading, engine_hours_reading, crane_hours_reading en ambas vistas; _meter_warnings propagado a django_messages. panel/urls.py: import y ruta operator_asset_detail. Tres templates (form_entry, stt_entry, confirm_entry): campos .meter-field ocultos por defecto revelados por _applyMeterFields() llamado desde click/mousedown del autocomplete via ASSET_DETAIL_URL. TERCERA ACCION pendiente para sesion 012. |
+| 012    | 2026-05-07 | unit_price, refactor UX repuestos, bug UI pendiente | SparePartLine.unit_price añadido (migr. 0011). Refactor UX operario: etiquetas "Bloques de trabajo"→"Tareas", "Centro de Gasto"→"Maquina o Seccion"; encabezado repuesto rediseñado con select CdG directo (machine_raw unicos del parte + Otro); campo cdg_free para valor libre; _parse_spare_parts_from_post() refactorizado sin entry_idx. Fix artefactos bash en form_entry.html. Bug activo al cierre: UI repuestos sigue mostrando version antigua a pesar de archivos en disco correctos, collectstatic y reload ejecutados. Causa no identificada. TERCERA ACCION (historial de partes WorkOrderEntryHistoryView) pendiente. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (012)
+## 5. Hoja de Ruta para la Siguiente Sesion (013)
 
 ### CONTEXTO
 
-La sesion 011 completo la SEGUNDA ACCION al completo (horómetros y odómetro
-en WorkOrderEntryLine): reglas R6/R7/R8 en validators.py, endpoint
-WorkshopAssetDetailView, UI dinámica en los tres templates de operario y
-persistencia de los campos. La TERCERA ACCION (historial de partes por
-trabajador) no fue iniciada por cierre de sesión.
+La sesion 012 aplico dos acciones: (1) SparePartLine.unit_price + migr. 0011,
+(2) refactor UX repuestos en los tres templates y _parse_spare_parts_from_post().
+Al cierre de sesion existe un BUG ACTIVO: la UI de repuestos sigue mostrando
+la version antigua a pesar de tener los archivos en disco correctos,
+collectstatic ejecutado, aplicacion recargada y cache vaciada.
+La TERCERA ACCION (WorkOrderEntryHistoryView) no fue iniciada.
 
 ### PRIMERA ACCION DE SESION 012 — Historial de partes y horas por trabajador
 

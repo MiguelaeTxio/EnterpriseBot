@@ -87,7 +87,7 @@
                 <div class="card-header bg-white border-bottom py-3">
                     <h6 class="mb-0 fw-semibold">
                         <i class="bi bi-wrench me-2 text-primary"></i>
-                        Bloques de trabajo
+                        Tareas
                     </h6>
                 </div>
                 <div class="card-body p-4">
@@ -96,7 +96,7 @@
                     <div class="confirm-block mb-4 pb-4
                                 {% if not forloop.last %}border-bottom{% endif %}">
                         <div class="d-flex align-items-center gap-2 mb-3">
-                            <span class="badge bg-dark">Bloque {{ entrada.idx }}</span>
+                            <span class="badge bg-dark">Tarea {{ entrada.idx }}</span>
                             {% if entrada.machine_asset %}
                                 <span class="badge badge-active text-sm">
                                     {{ entrada.machine_asset.code }} —
@@ -114,7 +114,7 @@
                             {# Machine code / Código de máquina #}
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">
-                                    Centro de Gasto
+                                    Máquina o Sección
                                 </label>
                                 <input
                                     type="text"
@@ -249,28 +249,26 @@
                                 {% if not forloop.last %}border-bottom{% endif %}">
                         <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
                             <span class="badge bg-secondary">Repuesto {{ rep.ridx }}</span>
-                            <span class="text-muted small">del</span>
-                            <select name="repuesto_{{ rep.ridx }}_entry_idx"
-                                    class="form-select form-select-sm repuesto-entry-select w-auto"
+                            <span class="text-muted small">asignado a</span>
+                            {# CdG select: unique machine_raw values from current blocks + Otro. #}
+                            {# Select CdG: valores machine_raw únicos de los bloques + Otro.     #}
+                            <select name="repuesto_{{ rep.ridx }}_vehiculo_raw"
+                                    class="form-select form-select-sm repuesto-cdg-select w-auto"
                                     data-repuesto-idx="{{ rep.ridx }}">
                                 {% for entrada in entradas_enriched %}
-                                <option value="{{ entrada.idx }}"
-                                    {% if rep.ridx == entrada.idx %}selected{% endif %}>
-                                    Bloque {{ entrada.idx }}
-                                </option>
+                                    {% if entrada.machine_raw %}
+                                    <option value="{{ entrada.machine_raw }}"
+                                        {% if forloop.last %}selected{% endif %}>
+                                        {{ entrada.machine_raw }}
+                                    </option>
+                                    {% endif %}
                                 {% endfor %}
-                                {# Opción "Otro": centinela entry_idx=0 para CdG de texto libre. #}
-                                {# "Otro" option: entry_idx=0 sentinel for free-text CdG.        #}
-                                <option value="0">Otro — introducir CdG manualmente</option>
+                                <option value="__otro__">Otro — introducir CdG manualmente</option>
                             </select>
-                            <span class="text-muted small">asignado a</span>
-                            <span class="centro-gasto-label cg-label-static fst-italic text-secondary small"
-                                  data-repuesto-idx="{{ rep.ridx }}">
-                            </span>
                             {# Input libre de CdG — visible solo cuando se selecciona "Otro". #}
                             {# Free-text CdG input — visible only when "Otro" is selected.    #}
                             <input type="text"
-                                   name="repuesto_{{ rep.ridx }}_vehiculo_raw"
+                                   name="repuesto_{{ rep.ridx }}_cdg_free"
                                    class="form-control form-control-sm repuesto-cg-libre d-none mt-1 cg-libre-input"
                                    placeholder="Código o nombre del CdG">
                         </div>
@@ -558,20 +556,14 @@
         div.innerHTML =
             '<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">' +
                 '<span class="badge bg-secondary">Repuesto ' + ridx + '</span>' +
-                '<span class="text-muted small">del</span>' +
-                '<select name="repuesto_' + ridx + '_entry_idx" ' +
-                        'class="form-select form-select-sm repuesto-entry-select w-auto" ' +
-                        'data-repuesto-idx="' + ridx + '">' +
-                    _buildEntryOptions() +
-                    '<option value="0">Otro — introducir CdG manualmente</option>' +
-                '</select>' +
                 '<span class="text-muted small">asignado a</span>' +
-                '<span class="centro-gasto-label cg-label-static fst-italic text-secondary small" ' +
-                      'data-repuesto-idx="' + ridx + '">' +
-                    'un centro de gasto seleccionado en el bloque' +
-                '</span>' +
+                '<select name="repuesto_' + ridx + '_vehiculo_raw" ' +
+                        'class="form-select form-select-sm repuesto-cdg-select w-auto" ' +
+                        'data-repuesto-idx="' + ridx + '">' +
+                    _buildCdgOptions() +
+                '</select>' +
                 '<input type="text" ' +
-                       'name="repuesto_' + ridx + '_vehiculo_raw" ' +
+                       'name="repuesto_' + ridx + '_cdg_free" ' +
                        'class="form-control form-control-sm repuesto-cg-libre d-none mt-1 w-auto" ' +
                        'placeholder="Código o nombre del CdG" ' +
                        'style="min-width:180px">' +
@@ -613,24 +605,27 @@
         return div;
     }
 
-    function _buildEntryOptions() {
+    function _buildCdgOptions() {
         /*
-         * Reads existing block badges from the DOM to build <option> tags
-         * matching the work blocks currently in the form.
+         * Reads unique non-empty machine_raw values from current work blocks
+         * to build <option> tags. Default is the last value. Appends "Otro".
          *
-         * Lee los badges de bloque existentes en el DOM para construir
-         * las etiquetas <option> correspondientes a los bloques de trabajo.
+         * Lee los machine_raw únicos no vacíos de los bloques de trabajo actuales
+         * para construir las opciones. Por defecto el último. Añade "Otro" al final.
          */
-        var opts = "";
-        document.querySelectorAll(".confirm-block .badge.bg-dark").forEach(function (badge) {
-            var text  = badge.textContent.trim();
-            var match = text.match(/(\d+)/);
-            if (match) {
-                var idx = match[1];
-                opts += '<option value="' + idx + '">' + text + '</option>';
-            }
+        var seen = [];
+        var lastVal = "";
+        document.querySelectorAll('.confirm-block [name$="_machine_raw"]').forEach(function (inp) {
+            var v = inp.value.trim();
+            if (v && seen.indexOf(v) === -1) { seen.push(v); lastVal = v; }
         });
-        return opts || '<option value="1">Bloque 1</option>';
+        var opts = "";
+        seen.forEach(function (v) {
+            var sel = (v === lastVal) ? ' selected' : '';
+            opts += '<option value="' + v + '"' + sel + '>' + v + '</option>';
+        });
+        opts += '<option value="__otro__">Otro — introducir CdG manualmente</option>';
+        return opts || '<option value="__otro__">Otro — introducir CdG manualmente</option>';
     }
 
     if (btnAddRepuesto) {
@@ -653,14 +648,13 @@
             var newInput = row.querySelector(".asset-search");
             if (newInput) { attachAutocomplete(newInput); }
 
-            // Attach Centro de Gasto sync to the new repuesto select.
-            // Asociar sincronización Centro de Gasto al nuevo select de repuesto.
-            var newSel = row.querySelector(".repuesto-entry-select");
-            if (newSel && window._attachEntrySelectListenerC) {
-                _attachEntrySelectListenerC(newSel);
+            // Attach CdG toggle to the new repuesto select.
+            // Asociar toggle CdG al nuevo select de repuesto.
+            var newSel = row.querySelector(".repuesto-cdg-select");
+            if (newSel && window._toggleOtroC) {
                 var newRidx = newSel.dataset.repuestoIdx
-                    || (newSel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
-                if (newRidx && window._syncCentroGastoC) { _syncCentroGastoC(newRidx); }
+                    || (newSel.name.match(/repuesto_(\d+)_vehiculo_raw/) || [])[1];
+                if (newRidx) { _toggleOtroC(newRidx); }
             }
 
             // Attach remove handler / Asociar manejador de eliminación.
@@ -787,108 +781,71 @@
     }
 
     // ==================================================================
-    // Centro de Gasto display sync — confirm_entry (Via C).
-    // Keeps readonly Centro de Gasto fields in sync with machine_raw of
-    // the associated work block when the block selector changes.
-    // Mantiene los campos Centro de Gasto readonly sincronizados con
-    // machine_raw del bloque asociado cuando cambia el selector de bloque.
+    // CdG select logic — show/hide free-text input for "Otro" and refresh
+    // all CdG selects when any machine_raw block value changes.
+    // Lógica select CdG — mostrar/ocultar input libre para "Otro" y refrescar
+    // todos los selects CdG cuando cambia cualquier machine_raw de bloque.
     // ==================================================================
 
-    function _getMachineRawForBlockC(blockIdx) {
-        var input = document.querySelector(
-            '[name="entrada_' + blockIdx + '_machine_raw"]'
-        );
-        return input ? input.value.trim() : '';
-    }
-
-    function _syncCentroGastoC(repuestoIdx) {
-        var sel = document.querySelector(
-            '[name="repuesto_' + repuestoIdx + '_entry_idx"]'
-        );
-        var display = document.querySelector(
-            '.centro-gasto-display[data-repuesto-idx="' + repuestoIdx + '"]'
-        );
-        var blockIdx = parseInt(sel.value, 10) || 1;
-        display.value = _getMachineRawForBlockC(blockIdx);
-    }
-
-    function _toggleCgLibreC(ridx) {
+    function _toggleOtroC(ridx) {
         /*
-         * Shows/hides the free-text CdG input for repuesto ridx in confirm_entry.
-         * When entry_idx==0 ("Otro") the input becomes visible and the label
-         * reflects the typed value. Otherwise the input is hidden and the label
-         * reflects the machine_raw of the selected work block.
-         *
-         * Muestra/oculta el input de CdG libre para el repuesto ridx en confirm_entry.
-         * Cuando entry_idx==0 ("Otro") el input se hace visible y el label
-         * refleja el valor escrito. En caso contrario el input se oculta y el
-         * label refleja el machine_raw del bloque de trabajo seleccionado.
+         * Shows the free-text input when "__otro__" is selected. Hides it otherwise.
+         * Muestra el input libre cuando se selecciona "__otro__". Lo oculta en otro caso.
          */
-        var sel      = document.querySelector('[name="repuesto_' + ridx + '_entry_idx"]');
-        var label    = document.querySelector('.centro-gasto-display[data-repuesto-idx="' + ridx + '"]');
-        var libInput = document.querySelector('[name="repuesto_' + ridx + '_vehiculo_raw"]');
-
-        var idx = parseInt(sel.value, 10);
-        if (idx === 0) {
-            // "Otro" path: reveal free-text input, update label from its value.
-            // Ruta "Otro": revelar input libre, actualizar label desde su valor.
-            if (libInput) { libInput.classList.remove("d-none"); }
-            if (label) {
-                label.value = (libInput && libInput.value.trim())
-                    ? libInput.value.trim()
-                    : "";
-            }
+        var sel      = document.querySelector('[name="repuesto_' + ridx + '_vehiculo_raw"]');
+        var libInput = document.querySelector('[name="repuesto_' + ridx + '_cdg_free"]');
+        if (sel.value === "__otro__") {
+            if (libInput) { libInput.classList.remove("d-none"); libInput.focus(); }
         } else {
-            // Normal path: hide free-text input, sync label from block machine_raw.
-            // Ruta normal: ocultar input libre, sincronizar label desde machine_raw del bloque.
             if (libInput) { libInput.classList.add("d-none"); }
-            _syncCentroGastoC(ridx);
         }
     }
 
-    // Delegate input events on .repuesto-cg-libre inputs in confirm_entry.
-    // Delegar eventos input en inputs .repuesto-cg-libre en confirm_entry.
+    function _refreshCdgSelectsC() {
+        /*
+         * Rebuilds options of every .repuesto-cdg-select from unique non-empty
+         * machine_raw values in the current blocks. Preserves current selection.
+         *
+         * Reconstruye las opciones de cada .repuesto-cdg-select desde los
+         * machine_raw únicos no vacíos de los bloques actuales.
+         */
+        var seen = [];
+        var lastVal = "";
+        document.querySelectorAll('.confirm-block [name$="_machine_raw"]').forEach(function (inp) {
+            var v = inp.value.trim();
+            if (v && seen.indexOf(v) === -1) { seen.push(v); lastVal = v; }
+        });
+        document.querySelectorAll(".repuesto-cdg-select").forEach(function (sel) {
+            var current = sel.value;
+            sel.innerHTML = "";
+            seen.forEach(function (v) {
+                var opt = document.createElement("option");
+                opt.value = v; opt.textContent = v;
+                sel.appendChild(opt);
+            });
+            var otro = document.createElement("option");
+            otro.value = "__otro__"; otro.textContent = "Otro — introducir CdG manualmente";
+            if (current === "__otro__") { otro.selected = true; }
+            sel.appendChild(otro);
+        });
+    }
+
+    document.addEventListener("change", function (e) {
+        if (e.target && e.target.classList.contains("repuesto-cdg-select")) {
+            var ridx = e.target.dataset.repuestoIdx
+                || (e.target.name.match(/repuesto_(\d+)_vehiculo_raw/) || [])[1];
+            if (ridx) { _toggleOtroC(ridx); }
+        }
+    });
+
     document.addEventListener("input", function (e) {
-        if (e.target && e.target.classList.contains("repuesto-cg-libre")) {
-            var m = e.target.name.match(/repuesto_(\d+)_vehiculo_raw/);
-            if (mv /home/MiguelAeTxio/SWAP/views.py.prop    /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views.py) { return; }
-            var ridx     = m[1];
-            var label    = document.querySelector('.centro-gasto-display[data-repuesto-idx="' + ridx + '"]');
-            if (label) { label.value = e.target.value.trim(); }
+        if (e.target && e.target.name && /^entrada_\d+_machine_raw$/.test(e.target.name)) {
+            _refreshCdgSelectsC();
         }
     });
 
-    function _attachEntrySelectListenerC(sel) {
-        sel.dataset.cgSyncAttached = '1';
-        sel.addEventListener('change', function () {
-            var ridx = sel.dataset.repuestoIdx
-                || (sel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
-            _toggleCgLibreC(ridx);
-        });
-    }
-
-    document.querySelectorAll('.repuesto-entry-select').forEach(_attachEntrySelectListenerC);
-
-    document.querySelectorAll('.centro-gasto-display').forEach(function (display) {
-        var ridx = display.dataset.repuestoIdx;
-        if (ridx) { _syncCentroGastoC(ridx); }
-    });
-
-    document.addEventListener('input', function (e) {
-        var m = e.target.name.match(/^entrada_(\d+)_machine_raw$/);
-        if (mv /home/MiguelAeTxio/SWAP/confirm_entry.html.prop    /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/confirm_entry.html) { return; }
-        var changedBlockIdx = parseInt(m[1], 10);
-        document.querySelectorAll('.repuesto-entry-select').forEach(function (sel) {
-            if (parseInt(sel.value, 10) === changedBlockIdx) {
-                var ridx = sel.dataset.repuestoIdx
-                    || (sel.name.match(/repuesto_(\d+)_entry_idx/) || [])[1];
-                if (ridx) { _syncCentroGastoC(ridx); }
-            }
-        });
-    });
-
-    window._attachEntrySelectListenerC = _attachEntrySelectListenerC;
-    window._syncCentroGastoC           = _syncCentroGastoC;
+    window._toggleOtroC       = _toggleOtroC;
+    window._refreshCdgSelectsC = _refreshCdgSelectsC;
 
 }());
 </script>

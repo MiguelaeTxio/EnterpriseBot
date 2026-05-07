@@ -5240,41 +5240,32 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
     """
     Parses and resolves spare-part lines submitted via POST.
 
-    The vehiculo_raw and vehicle_asset fields are populated in two ways:
-      - Normal case (entry_idx >= 1): auto-populated from the entry block
-        referenced by entry_idx inside entry_lines_data, preserving the
-        original behaviour (UI vehicle input was removed to avoid redundancy).
-      - 'Otro' case (entry_idx == 0): the operator has chosen a free-text
-        cost centre. vehiculo_raw is read from POST field repuesto_N_vehiculo_raw
-        and a two-pass resolution against MachineAsset is attempted. If no match
-        is found, vehicle_asset is None and the cg_incident flag is set to True
-        in the returned dict so that the persistence layer can set
-        WorkOrder.has_cg_incident = True.
+    The select field for each spare part now delivers vehiculo_raw directly
+    (the CdG value chosen by the operator from the unique list of machine_raw
+    values in the current work blocks, or a free-text value when "Otro" is
+    selected). Resolution against MachineAsset is attempted in two passes for
+    every repuesto regardless of origin. If no match is found, vehicle_asset
+    is None and cg_incident is set to True so the persistence layer can set
+    WorkOrder.has_cg_incident = True.
 
-    If entry_lines_data is None or the referenced block is not found in the
-    normal case, vehiculo_raw and vehicle_asset default to empty string and
-    None respectively, preserving backwards compatibility.
+    entry_lines_data is accepted for backwards compatibility but is no longer
+    used to populate vehiculo_raw — the POST value is authoritative.
 
     Returns a list of dicts ready to feed the integrity gate and the
     atomic persistence block.
     ---
     Parsea y resuelve las líneas de repuesto enviadas por POST.
 
-    Los campos vehiculo_raw y vehicle_asset se rellenan de dos formas:
-      - Caso normal (entry_idx >= 1): relleno automático desde el bloque de
-        entrada referenciado por entry_idx dentro de entry_lines_data,
-        preservando el comportamiento original (el input de vehículo de UI
-        fue eliminado para evitar redundancia).
-      - Caso 'Otro' (entry_idx == 0): el operario ha elegido un centro de
-        gasto de texto libre. vehiculo_raw se lee del campo POST
-        repuesto_N_vehiculo_raw y se intenta resolución en dos pasadas contra
-        MachineAsset. Si no hay coincidencia, vehicle_asset es None y el flag
-        cg_incident se pone a True en el dict devuelto para que la capa de
-        persistencia pueda activar WorkOrder.has_cg_incident = True.
+    El select de cada repuesto ahora entrega vehiculo_raw directamente
+    (el valor CdG elegido por el operario de la lista única de machine_raw
+    de los bloques de trabajo actuales, o un valor de texto libre cuando se
+    selecciona "Otro"). La resolución contra MachineAsset se intenta en dos
+    pasadas para cada repuesto independientemente del origen. Si no hay
+    coincidencia, vehicle_asset es None y cg_incident se activa para que la
+    capa de persistencia pueda establecer WorkOrder.has_cg_incident = True.
 
-    Si entry_lines_data es None o el bloque referenciado no se encuentra en
-    el caso normal, vehiculo_raw y vehicle_asset toman cadena vacía y None
-    respectivamente, preservando la compatibilidad hacia atrás.
+    entry_lines_data se acepta por compatibilidad hacia atrás pero ya no se
+    usa para poblar vehiculo_raw — el valor del POST es autoritativo.
 
     Devuelve una lista de dicts lista para la barrera de integridad y el
     bloque de persistencia atómica.
@@ -5286,13 +5277,6 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
     num_repuestos    = int(POST.get("num_repuestos", "0") or "0")
     spare_parts_data = []
 
-    # Build a lookup map from line_number to entry line data for O(1) access.
-    # Construir mapa de line_number a datos de línea de entrada para acceso O(1).
-    entry_map = {}
-    if entry_lines_data:
-        for ld in entry_lines_data:
-            entry_map[ld["line_number"]] = ld
-
     for r in range(1, num_repuestos + 1):
         pfx          = f"repuesto_{r}_"
         referencia   = POST.get(f"{pfx}referencia", "").strip()
@@ -5300,7 +5284,17 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
         unidades_str = POST.get(f"{pfx}unidades", "").strip()
         origen       = POST.get(f"{pfx}origen", "WAREHOUSE").strip()
         proveedor    = POST.get(f"{pfx}proveedor", "").strip()
-        entry_idx    = int(POST.get(f"{pfx}entry_idx", "1") or "1")
+        # vehiculo_raw is delivered by the CdG select.
+        # When "__otro__" is selected, the free-text field cdg_free carries
+        # the actual value typed by the operator.
+        # vehiculo_raw lo entrega el select de CdG.
+        # Cuando se selecciona "__otro__", el campo libre cdg_free contiene
+        # el valor real introducido por el operario.
+        _cdg_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
+        if _cdg_raw == "__otro__":
+            vehiculo_raw = POST.get(f"{pfx}cdg_free", "").strip()
+        else:
+            vehiculo_raw = _cdg_raw
 
         quantity = None
         if unidades_str:
@@ -5313,63 +5307,46 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
             origen = "WAREHOUSE"
 
         # ------------------------------------------------------------------
-        # Resolve vehiculo_raw and vehicle_asset.
-        # Resolver vehiculo_raw y vehicle_asset.
+        # Resolve vehicle_asset via two-pass lookup against MachineAsset.
+        # If no match is found, flag as CdG incident for supervisor review.
         #
-        # entry_idx == 0 is the sentinel for the 'Otro' free-text path:
-        # the operator typed a custom CdG not present in the block selector.
-        # entry_idx == 0 es el centinela de la ruta de texto libre 'Otro':
-        # el operario escribió un CdG personalizado no presente en el selector.
+        # Resolver vehicle_asset mediante búsqueda en dos pasadas contra
+        # MachineAsset. Si no hay coincidencia, marcar como incidencia de
+        # CdG para revisión por SUPERVISOR.
         # ------------------------------------------------------------------
+        veh_asset   = None
         cg_incident = False
 
-        if entry_idx == 0:
-            # 'Otro' path: read free-text CdG from POST and attempt resolution.
-            # Ruta 'Otro': leer CdG de texto libre del POST e intentar resolución.
-            vehiculo_raw = POST.get(f"{pfx}vehiculo_raw", "").strip()
-            veh_asset    = None
+        if vehiculo_raw and company is not None:
+            # Pass 1 — direct iexact on vehiculo_raw.
+            # Pasada 1 — iexact directo sobre vehiculo_raw.
+            try:
+                veh_asset = _MachineAsset.objects.get(
+                    code__iexact=vehiculo_raw, company=company
+                )
+            except (_MachineAsset.DoesNotExist, _MachineAsset.MultipleObjectsReturned):
+                veh_asset = _MachineAsset.objects.filter(
+                    code__iexact=vehiculo_raw, company=company
+                ).first()
 
-            if vehiculo_raw and company is not None:
-                # Pass 1 — direct iexact on vehiculo_raw.
-                # Pasada 1 — iexact directo sobre vehiculo_raw.
-                try:
-                    veh_asset = _MachineAsset.objects.get(
-                        code__iexact=vehiculo_raw, company=company
-                    )
-                except (_MachineAsset.DoesNotExist, _MachineAsset.MultipleObjectsReturned):
-                    veh_asset = _MachineAsset.objects.filter(
-                        code__iexact=vehiculo_raw, company=company
-                    ).first()
-
-                if veh_asset is None:
-                    # Pass 2 — normalised code.
-                    # Pasada 2 — código normalizado.
-                    norm = _norm_code(vehiculo_raw)
-                    if norm:
-                        try:
-                            veh_asset = _MachineAsset.objects.get(
-                                code__iexact=norm, company=company
-                            )
-                        except (_MachineAsset.DoesNotExist, _MachineAsset.MultipleObjectsReturned):
-                            veh_asset = _MachineAsset.objects.filter(
-                                code__iexact=norm, company=company
-                            ).first()
-
-            # If still unresolved, mark as CdG incident.
-            # Si sigue sin resolverse, marcar como incidencia de CdG.
             if veh_asset is None:
-                cg_incident = True
+                # Pass 2 — normalised code.
+                # Pasada 2 — código normalizado.
+                norm = _norm_code(vehiculo_raw)
+                if norm:
+                    try:
+                        veh_asset = _MachineAsset.objects.get(
+                            code__iexact=norm, company=company
+                        )
+                    except (_MachineAsset.DoesNotExist, _MachineAsset.MultipleObjectsReturned):
+                        veh_asset = _MachineAsset.objects.filter(
+                            code__iexact=norm, company=company
+                        ).first()
 
-        else:
-            # Normal path: auto-populate from the associated work block.
-            # Ruta normal: rellenar automáticamente desde el bloque de trabajo asociado.
-            associated_entry = entry_map.get(entry_idx) or entry_map.get(1)
-            if associated_entry:
-                vehiculo_raw = associated_entry.get("machine_raw", "")
-                veh_asset    = associated_entry.get("machine_asset", None)
-            else:
-                vehiculo_raw = ""
-                veh_asset    = None
+        if veh_asset is None and vehiculo_raw:
+            # vehiculo_raw provided but not resolved — flag for supervisor.
+            # vehiculo_raw proporcionado pero sin resolver — marcar para supervisor.
+            cg_incident = True
 
         spare_parts_data.append({
             "line_number":   r,
@@ -5381,7 +5358,6 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
             "source":        origen,
             "supplier":      proveedor if origen == "SUPPLIER" else "",
             "flags":         [],
-            "entry_idx":     entry_idx,
             "cg_incident":   cg_incident,
         })
 

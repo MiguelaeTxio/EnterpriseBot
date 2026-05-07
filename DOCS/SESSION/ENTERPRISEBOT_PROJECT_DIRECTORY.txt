@@ -271,6 +271,7 @@
 ./work_order_processor/migrations/0007_rename_fields_english.py
 ./work_order_processor/migrations/0002_remove_workorderentry_end_time_and_more.py
 ./work_order_processor/migrations/0005_add_spare_part_line.py
+./work_order_processor/migrations/0011_sparepartline_unit_price.py
 ./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py
 ./work_order_processor/migrations/0008_workorder_has_overlap_incident.py
 ./work_order_processor/migrations/0010_workorderentryline_crane_hours_reading_and_more.py
