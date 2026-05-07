@@ -741,35 +741,34 @@
      * Construye un nodo DOM de fila de repuesto para el ridx dado.
      */
     function _buildRepuestoRow(ridx) {
-        var blockCount = _currentBlockCount();
-        var opts = "";
-        for (var b = 1; b <= blockCount; b++) {
-            opts += '<option value="' + b + '">Bloque ' + b + '</option>';
-        }
-        // Opción especial "Otro": entry_idx=0 como centinela para CdG libre.
-        // Special "Otro" option: entry_idx=0 as sentinel for free-text CdG.
-        opts += '<option value="0">Otro — introducir CdG manualmente</option>';
-
+        /*
+         * Builds a spare-part row DOM node for the given ridx.
+         * Structure mirrors the S012 server-rendered static HTML and stt_entry.html:
+         *   'asignado a' + select[name="repuesto_N_vehiculo_raw"] .repuesto-cdg-select
+         *   with options built from unique machine_raw values currently in the form,
+         *   plus an "Otro" option that reveals the free-text input cdg_free.
+         *
+         * Construye un nodo DOM de fila de repuesto para el ridx dado.
+         * La estructura replica el HTML estático server-rendered de S012 y stt_entry.html:
+         *   'asignado a' + select[name="repuesto_N_vehiculo_raw"] .repuesto-cdg-select
+         *   con opciones construidas desde los machine_raw únicos presentes en el formulario,
+         *   más una opción "Otro" que revela el input libre cdg_free.
+         */
         var div = document.createElement("div");
         div.className = "confirm-block mb-4 pb-4 border-bottom extra-repuesto-row";
         div.innerHTML =
             '<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">' +
                 '<span class="badge bg-secondary">Repuesto ' + ridx + '</span>' +
-                '<span class="text-muted small">del</span>' +
-                '<select name="repuesto_' + ridx + '_entry_idx" ' +
-                        'class="form-select form-select-sm repuesto-entry-select w-auto" ' +
-                        'data-repuesto-idx="' + ridx + '">' +
-                    opts +
-                '</select>' +
                 '<span class="text-muted small">asignado a</span>' +
-                '<span class="centro-gasto-label cg-label-static fst-italic text-secondary small" ' +
-                      'data-repuesto-idx="' + ridx + '">' +
-                    'un centro de gasto seleccionado en el bloque' +
-                '</span>' +
-                // Input de texto libre para CdG manual (visible solo con "Otro").
-                // Free-text input for manual CdG (visible only when "Otro" selected).
+                '<select name="repuesto_' + ridx + '_vehiculo_raw" ' +
+                        'class="form-select form-select-sm repuesto-cdg-select w-auto" ' +
+                        'data-repuesto-idx="' + ridx + '">' +
+                    _buildCdgOptions() +
+                '</select>' +
+                // Input de texto libre para CdG manual (visible solo cuando se selecciona "Otro").
+                // Free-text input for manual CdG (visible only when "Otro" is selected).
                 '<input type="text" ' +
-                       'name="repuesto_' + ridx + '_vehiculo_raw" ' +
+                       'name="repuesto_' + ridx + '_cdg_free" ' +
                        'class="form-control form-control-sm repuesto-cg-libre d-none mt-1 cg-libre-input" ' +
                        'placeholder="Código o nombre del CdG">' +
                 '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-auto btn-remove-repuesto">' +
@@ -806,6 +805,31 @@
                 '</div>' +
             '</div>';
         return div;
+    }
+
+    function _buildCdgOptions() {
+        /*
+         * Reads unique non-empty machine_raw values from current work blocks
+         * and builds <option> elements. The last value is selected by default.
+         * Appends the "Otro" option for free-text CdG entry.
+         *
+         * Lee los valores machine_raw únicos no vacíos de los bloques de trabajo
+         * actuales y construye los elementos <option>. El último valor se selecciona
+         * por defecto. Añade la opción "Otro" para entrada de CdG libre.
+         */
+        var seen    = [];
+        var lastVal = "";
+        document.querySelectorAll('.confirm-block [name$="_machine_raw"]').forEach(function (inp) {
+            var v = inp.value.trim();
+            if (v && seen.indexOf(v) === -1) { seen.push(v); lastVal = v; }
+        });
+        var opts = "";
+        seen.forEach(function (v) {
+            var sel = (v === lastVal) ? ' selected' : '';
+            opts += '<option value="' + v + '"' + sel + '>' + v + '</option>';
+        });
+        opts += '<option value="__otro__">Otro — introducir CdG manualmente</option>';
+        return opts || '<option value="__otro__">Otro — introducir CdG manualmente</option>';
     }
 
     // -- Add block handler / Manejador anadir bloque --
