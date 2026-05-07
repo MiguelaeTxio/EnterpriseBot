@@ -212,6 +212,19 @@ class MachineAsset(models.Model):
             "horómetro de grúa al enviar un parte para este activo."
         ),
     )
+    first_repair = models.BooleanField(
+        _("Primera reparación"),
+        default=True,
+        db_index=True,
+        help_text=_(
+            "True mientras el activo no ha entrado en taller ninguna vez. "
+            "En la primera reparación se permite introducir lecturas de "
+            "contador a cero para establecer la línea base y desactivar "
+            "los contadores que no apliquen. Una vez guardado el primer "
+            "parte, este flag pasa automáticamente a False y ya no se "
+            "permiten lecturas a cero."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Status / Estado

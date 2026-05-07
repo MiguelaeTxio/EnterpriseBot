@@ -1614,12 +1614,12 @@ def generate_work_order_excel(work_order_id: int) -> None:
 
             # Col D — KM (from MachineAsset catalogue snapshot)
             # Col D — KM (del snapshot del catálogo MachineAsset)
-            kms_val = line.machine_asset.kms if line.machine_asset else ""
+            kms_val = line.machine_asset.mileage if line.machine_asset else ""
             ws.cell(row=r, column=4,
                     value=kms_val).border = _make_border_thin()
 
             # Col E — HORAS VEH.
-            horas_val = line.machine_asset.horas if line.machine_asset else ""
+            horas_val = line.machine_asset.hours if line.machine_asset else ""
             ws.cell(row=r, column=5,
                     value=horas_val).border = _make_border_thin()
 

@@ -351,3 +351,33 @@ body {
 .cg-libre-input {
     min-width: 180px;
 }
+
+/* ===========================================================================
+   Modal z-index override — ensure Bootstrap modals always appear above
+   operator entry dropdowns (asset autocomplete, description typeahead).
+   Operator dropdowns use z-index ~1000; Bootstrap modal backdrop is 1040
+   and modal itself 1050 — the asset-dropdown uses position:absolute inside
+   a relatively-positioned parent which can stack above the modal overlay
+   when the modal opens while a dropdown is visible.
+
+   Override de z-index modal — garantiza que los modales Bootstrap siempre
+   aparecen por encima de los dropdowns de entrada del operario (autocompletado
+   de activos, typeahead de descripciones).
+   Hito 7 / S014
+   =========================================================================== */
+.asset-dropdown,
+.desc-typeahead-dropdown {
+    z-index: 1000;
+}
+
+/* Modal must sit above all operator entry dropdowns including
+   .desc-typeahead-dropdown (z-index: 1060 in _description_typeahead.html).
+   El modal debe estar por encima de todos los dropdowns del operario,
+   incluido .desc-typeahead-dropdown (z-index: 1060). */
+.modal-backdrop {
+    z-index: 1065 !important;
+}
+
+.modal {
+    z-index: 1070 !important;
+}

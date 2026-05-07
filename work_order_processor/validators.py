@@ -371,6 +371,11 @@ def validate_odometer(blocks: List[TimeBlock]) -> tuple:
             ))
             continue
 
+        # If first_repair=True skip BD comparison — zero is valid as baseline.
+        # Si first_repair=True saltar comparacion BD — cero es valido como base.
+        if getattr(asset, "first_repair", False):
+            continue
+
         last_km = getattr(asset, "mileage", None)
         if last_km is not None:
             reading = b.odometer_reading
@@ -447,6 +452,11 @@ def validate_engine_hours(blocks: List[TimeBlock]) -> tuple:
                 ),
                 blocks=[b.idx],
             ))
+            continue
+
+        # If first_repair=True skip BD comparison — zero is valid as baseline.
+        # Si first_repair=True saltar comparacion BD — cero es valido como base.
+        if getattr(asset, "first_repair", False):
             continue
 
         last_h = getattr(asset, "hours", None)
@@ -562,8 +572,8 @@ def validate_inter_overlap(
 
     existing_qs = (
         WorkOrder.objects
-        .filter(company_user=company_user, work_date=work_date)
-        .prefetch_related("entries")
+        .filter(uploaded_by=company_user, entries__work_date=work_date).distinct()
+        .prefetch_related("entries__lines")
     )
     if exclude_work_order_pk is not None:
         existing_qs = existing_qs.exclude(pk=exclude_work_order_pk)
@@ -579,22 +589,26 @@ def validate_inter_overlap(
     ]
 
     for wo in existing_qs:
+        # Times are stored in WorkOrderEntryLine (hc/hf), not in WorkOrderEntry.
+        # Los tiempos se almacenan en WorkOrderEntryLine (hc/hf), no en WorkOrderEntry.
         for entry in wo.entries.all():
-            if not entry.start_time or not entry.end_time:
-                continue
-            hc_ex = _to_minutes(entry.start_time)
-            hf_ex = _to_minutes(entry.end_time)
-            for hc_new, hf_new in new_intervals:
-                # Half-open interval overlap: [hc_a, hf_a) ∩ [hc_b, hf_b) ≠ ∅
-                # iff hc_a < hf_b and hc_b < hf_a.
-                if hc_new < hf_ex and hc_ex < hf_new:
-                    if wo.pk not in conflicting_ids:
-                        conflicting_ids.append(wo.pk)
-                        conflicting_dates.append(
-                            wo.work_date.strftime("%d/%m/%Y")
-                            if wo.work_date else "—"
-                        )
-                    break
+            for line in entry.lines.all():
+                if not line.hc or not line.hf:
+                    continue
+                hc_ex = _to_minutes(line.hc)
+                hf_ex = _to_minutes(line.hf)
+                for hc_new, hf_new in new_intervals:
+                    # Half-open interval overlap: [hc_a, hf_a) ∩ [hc_b, hf_b) ≠ ∅
+                    # iff hc_a < hf_b and hc_b < hf_a.
+                    if hc_new < hf_ex and hc_ex < hf_new:
+                        if wo.pk not in conflicting_ids:
+                            work_date = entry.work_date
+                            conflicting_ids.append(wo.pk)
+                            conflicting_dates.append(
+                                work_date.strftime("%d/%m/%Y")
+                                if work_date else "—"
+                            )
+                        break
 
     return InterPartResult(
         has_overlap=bool(conflicting_ids),

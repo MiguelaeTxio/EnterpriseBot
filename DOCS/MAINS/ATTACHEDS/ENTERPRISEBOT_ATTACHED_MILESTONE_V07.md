@@ -480,82 +480,24 @@ Estado: COMPLETADO PARCIAL (sesiones 006-009).
 | 011    | 2026-05-06 | SEGUNDA ACCION completa: R6/R7/R8, WorkshopAssetDetailView, UI horómetros, persistencia | Diagnostico migraciones: fleet 0004 y work_order_processor 0010 ya aplicadas en BD. makemigrations --check sin cambios. validators.py: TimeBlock ampliado con machine_asset + tres lecturas de contadores; IntraPartResult.warnings añadido; validate_odometer (R6), validate_engine_hours (R7), validate_crane_hours (R8) implementadas; run_intra_part_validation integra R6/R7/R8; parse_blocks_from_post acepta entry_lines_data. panel/views.py: WorkshopAssetDetailView (GET /panel/operator/assets/detail/) devuelve flags y referencias; _parse_entry_lines_from_post lee y devuelve los tres campos de contador via _parse_decimal(); parse_blocks_from_post enriquecido en FormView y ConfirmView con entry_lines_data=; WorkOrderEntryLine.objects.create persiste odometer_reading, engine_hours_reading, crane_hours_reading en ambas vistas; _meter_warnings propagado a django_messages. panel/urls.py: import y ruta operator_asset_detail. Tres templates (form_entry, stt_entry, confirm_entry): campos .meter-field ocultos por defecto revelados por _applyMeterFields() llamado desde click/mousedown del autocomplete via ASSET_DETAIL_URL. TERCERA ACCION pendiente para sesion 012. |
 | 012    | 2026-05-07 | unit_price, refactor UX repuestos, bug UI pendiente | SparePartLine.unit_price añadido (migr. 0011). Refactor UX operario: etiquetas "Bloques de trabajo"→"Tareas", "Centro de Gasto"→"Maquina o Seccion"; encabezado repuesto rediseñado con select CdG directo (machine_raw unicos del parte + Otro); campo cdg_free para valor libre; _parse_spare_parts_from_post() refactorizado sin entry_idx. Fix artefactos bash en form_entry.html. Bug activo al cierre: UI repuestos sigue mostrando version antigua a pesar de archivos en disco correctos, collectstatic y reload ejecutados. Causa no identificada. TERCERA ACCION (historial de partes WorkOrderEntryHistoryView) pendiente. |
 | 013    | 2026-05-07 | Diagnóstico bugs S012, fix _buildRepuestoRow, validación contadores parcial | Diagnóstico bug UI repuestos: causa raíz identificada como _buildRepuestoRow JS en form_entry.html no actualizado en S012 (generaba estructura antigua con entry_idx numérico). Corregido via PMA: _buildRepuestoRow reescrita usando _buildCdgOptions() igual que stt_entry.html y confirm_entry.html. Diagnóstico bug persistencia SparePartLine: spd["entry_idx"] eliminado en S012 pero aún accedido en ConfirmView.post() y FormView.post() — PMA preparado y autorizado (mv pendiente). Validación dinámica contadores (Gate 2b JS + _applyMeterFields con data-ref-value): completada en form_entry.html y stt_entry.html. confirm_entry.html bloqueado por fallo en construcción de OLD_A. Validación server-side Gate 2 contadores en views.py: pendiente. WorkOrderEntryHistoryView: pendiente. |
+| 014    | 2026-05-07 | Bugs críticos resueltos, E2E Via A con contadores validado | Fix validators.py: prefetch_related entries__entry_lines → entries__lines y entry.entry_lines.all() → entry.lines.all() (AttributeError 500 en POST /operator/form/). Fix confirm_entry.html: PARCHE A _applyMeterFields con escritura data-ref-value en inputs meter-field + PARCHE B Gate 2b JS corregido con if condicionales. Fix guard if (!code) { return; } en onload ASSET_DETAIL_URL en form_entry.html, confirm_entry.html y stt_entry.html (400 en /assets/detail/?code=). Fix services.py: machine_asset.kms → machine_asset.mileage y machine_asset.horas → machine_asset.hours (error generación Excel). Segunda y Tercera Acción de S013 verificadas ya aplicadas en disco. Validación E2E Via A completa con contadores activos en G12 superada. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (014)
+## 5. Hoja de Ruta para la Siguiente Sesion (015)
 
 ### CONTEXTO
 
-La sesion 013 resolvio el bug de _buildRepuestoRow en form_entry.html e inicio
-la validacion dinamica de contadores. Quedan tres frentes abiertos que deben
-completarse en S014 en este orden estricto.
+La sesion 014 resolvio todos los bugs pendientes de S013 y valido el flujo
+E2E Via A con contadores activos. La PRIMERA, SEGUNDA y TERCERA ACCION de
+S013 quedaron completadas. La CUARTA ACCION (WorkOrderEntryHistoryView) es
+la unica pendiente para S015.
 
-### PRIMERA ACCION — Completar validacion de contadores en confirm_entry.html
+ADVERTENCIA CRITICA sobre related_name: el FK WorkOrderEntryLine.entry tiene
+related_name="lines" (NO "entry_lines"). Usar siempre entry.lines.all() y
+prefetch_related("entries__lines"). El uso de "entry_lines" causa AttributeError.
 
-El PMA de confirm_entry.html fallo en S013 por construccion incorrecta del
-OLD_BLOCK de _applyMeterFields. El bloque exacto en disco NO tiene indentacion
-inicial de 4 espacios delante de "function _applyMeterFields" — la funcion
-arranca en columna 0 dentro del bloque <script>.
-
-OBLIGATORIO antes de construir el patcher: extraer el bloque exacto del
-archivo via Python repr() para verificar indentacion real:
-
-  python3 -c "
-  with open('/home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/confirm_entry.html','r') as f:
-      c = f.read()
-  idx = c.find('function _applyMeterFields')
-  print(repr(c[idx:idx+600]))
-  "
-
-El parche sobre confirm_entry.html es identico al ya aplicado en form_entry.html
-y stt_entry.html (S013):
-  PARCHE A — _applyMeterFields(): tras revelar/ocultar cada wrapper meter-field,
-    escribir data-ref-value en el input interno con mileage (odometro) o hours
-    (horometro motor y grua) recibidos de WorkshopAssetDetailView.
-  PARCHE B — Gate 2b JS submit: tras la validacion HC/HF existente, iterar sobre
-    los inputs meter-field visibles y verificar presencia + nueva >= referencia BD.
-
-El bloque OLD_B (Gate 2b) es identico al de confirm_entry.html que ya existe
-y tiene el marcador "// Check HF > HC / Verificar HF > HC." antes del cierre
-del for de bloques.
-
-### SEGUNDA ACCION — Fix persistencia SparePartLine en views.py (BUG 1)
-
-El PMA de views.py fue preparado, auditado y AUTORIZADO en S013 pero el mv
-no se ejecuto por cierre de sesion. El archivo .prop ya existe en SWAP.
-Verificar que sigue presente:
-
-  ls -la /home/MiguelAeTxio/SWAP/views.py.prop
-
-Si existe: ejecutar directamente el mv:
-  mv /home/MiguelAeTxio/SWAP/views.py.prop      /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views.py
-
-Si no existe: reconstruir el PMA. El cambio elimina spd["entry_idx"] en dos
-bloques identicos de WorkOrderEntryConfirmView.post() y WorkOrderEntryFormView.post()
-sustituyendo la linea stale por target_line = next(iter(created_lines.values()), None)
-directamente, sin el fallback condicional que ya no tiene sentido.
-
-### TERCERA ACCION — Validacion server-side Gate 2 contadores en views.py
-
-Tras la segunda accion, insertar en el Gate 2 de WorkOrderEntryFormView.post()
-y WorkOrderEntryConfirmView.post() la validacion de obligatoriedad de contadores:
-
-  Para cada ld en entry_lines_data:
-    si ld["machine_asset"] no es None:
-      asset = ld["machine_asset"]
-      blk = f"Bloque {ld['line_number']}"
-      si asset.has_odometer y ld["odometer_reading"] is None:
-        integrity_errors.append(f"{blk}: lectura de km (odometro) obligatoria para {asset.code}.")
-      si asset.has_engine_hours y ld["engine_hours_reading"] is None:
-        integrity_errors.append(f"{blk}: lectura de horometro motor obligatoria para {asset.code}.")
-      si asset.has_crane_hours y ld["crane_hours_reading"] is None:
-        integrity_errors.append(f"{blk}: lectura de horometro grua obligatoria para {asset.code}.")
-
-Insertar en ambas vistas inmediatamente despues del bloque Gate 2 existente
-(antes del for de spare_parts_data del Gate 3).
-
-### CUARTA ACCION — WorkOrderEntryHistoryView
+### PRIMERA ACCION — WorkOrderEntryHistoryView
 
 Vista nueva: WorkOrderEntryHistoryView (WorkshopRequiredMixin, View).
 Endpoint: GET /panel/operator/history/
@@ -572,7 +514,7 @@ Logica de la vista:
     qs = WorkOrder.objects.filter(company=company, uploaded_by=cu)
           .prefetch_related(
               Prefetch("entries",
-                       queryset=WorkOrderEntry.objects.prefetch_related("entry_lines"))
+                       queryset=WorkOrderEntry.objects.prefetch_related("lines"))
           ).order_by("-id")
 
   Para ADMIN y SUPERVISOR: si GET ?user_pk=XX, sustituir cu por ese CompanyUser
@@ -583,10 +525,10 @@ Logica de la vista:
     Para cada WorkOrder: obtener work_date = wo.entries.first().work_date
     Clave de agrupacion: (work_date.year, work_date.month) o None si sin fecha.
     Calcular por WorkOrder:
-      num_bloques = sum(entry.entry_lines.count() for entry in wo.entries.all())
+      num_bloques = sum(entry.lines.count() for entry in wo.entries.all())
       horas_totales = sum(
           line.delta_hours for entry in wo.entries.all()
-          for line in entry.entry_lines.all()
+          for line in entry.lines.all()
           if line.delta_hours is not None
       )
     Agrupar en lista de dicts mensual, descendente por (year, month).
@@ -642,7 +584,7 @@ URL panel/urls.py (PMA):
   - Añadir antes de la seccion de work-orders:
     path("operator/history/", WorkOrderEntryHistoryView.as_view(), name="operator_history"),
 
-### Estado de migraciones al cierre de sesion 013
+### Estado de migraciones al cierre de sesion 014
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
@@ -651,10 +593,9 @@ URL panel/urls.py (PMA):
 | ivr_config             | 0013_alter_companyuser_role                            |
 | panel                  | 0001_initial (AnalyticsProfile)                        |
 
-### Archivos a solicitar al inicio de sesion 014
+### Archivos a solicitar al inicio de sesion 015
 
 OBLIGATORIO via SFTP antes de generar ningun PMA:
-  - panel/templates/panel/operator/confirm_entry.html
   - panel/views.py
   - panel/urls.py
   - panel/templates/panel/_nav_items.html

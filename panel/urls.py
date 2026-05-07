@@ -65,6 +65,7 @@ from panel.views import (
     WorkOrderEntryFormView,
     WorkOrderEntrySTTView,
     WorkOrderEntrySTTExtractView,
+    WorkOrderEntryHistoryView,
     MachineAssetListView,
     WorkOrderDescriptionAutocompleteView,
     MachineAssetCreateView,
@@ -83,6 +84,10 @@ urlpatterns = [
 
     # Dashboard — Panel principal.
     path("", PanelDashboardView.as_view(), name="dashboard"),
+
+    # Operator history — Historial de partes del operario (rol WORKSHOP y ADMIN).
+    # Cuarta Accion — Hito 7 (2026-05-07)
+    path("operator/history/", WorkOrderEntryHistoryView.as_view(), name="operator_history"),
 
     # Operator dashboard — Selector de vía de entrada de partes (rol WORKSHOP y ADMIN).
     # Paso 2 — Hito 7 (2026-04-27)

@@ -5671,6 +5671,50 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     f"{blk}: la descripción de la avería es obligatoria."
                 )
 
+        # Gate 2b — Meter readings: mandatory counter fields per asset flags.
+        # If first_repair=True zeros are allowed (baseline setup).
+        # If first_repair=False zeros are blocked — reading must be provided.
+        # Gate 2b — Contadores: obligatorios segun flags del activo.
+        # Si first_repair=True se permiten ceros (primera toma de datos).
+        # Si first_repair=False los ceros se bloquean — debe aportarse lectura.
+        for ld in entry_lines_data:
+            if ld["machine_asset"] is not None:
+                asset = ld["machine_asset"]
+                blk   = f"Bloque {ld['line_number']}"
+                if asset.has_odometer:
+                    reading = ld.get("odometer_reading")
+                    if reading is None:
+                        integrity_errors.append(
+                            f"{blk}: lectura de km (odómetro) obligatoria para {asset.code}."
+                        )
+                    elif reading == 0 and not asset.first_repair:
+                        integrity_errors.append(
+                            f"{blk}: la lectura de km no puede ser cero para {asset.code} "
+                            f"(ya tiene partes anteriores registrados)."
+                        )
+                if asset.has_engine_hours:
+                    reading = ld.get("engine_hours_reading")
+                    if reading is None:
+                        integrity_errors.append(
+                            f"{blk}: lectura de horómetro motor obligatoria para {asset.code}."
+                        )
+                    elif reading == 0 and not asset.first_repair:
+                        integrity_errors.append(
+                            f"{blk}: la lectura de horómetro motor no puede ser cero "
+                            f"para {asset.code} (ya tiene partes anteriores registrados)."
+                        )
+                if asset.has_crane_hours:
+                    reading = ld.get("crane_hours_reading")
+                    if reading is None:
+                        integrity_errors.append(
+                            f"{blk}: lectura de horómetro grúa obligatoria para {asset.code}."
+                        )
+                    elif reading == 0 and not asset.first_repair:
+                        integrity_errors.append(
+                            f"{blk}: la lectura de horómetro grúa no puede ser cero "
+                            f"para {asset.code} (ya tiene partes anteriores registrados)."
+                        )
+
         # Gate 3 — Spare-part lines / Líneas de repuesto.
         for spd in spare_parts_data:
             rep = f"Repuesto {spd['line_number']}"
@@ -5719,6 +5763,52 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             context = self._get_context_base(request)
             context.update({
                 "error":               " | ".join(integrity_errors),
+                "fecha":               fecha_str,
+                "uncertain_date":      False,
+                "confidence":          POST.get("confidence", ""),
+                "entradas_enriched":   entradas_enriched_post,
+                "repuestos_enriched":  spare_enriched_post,
+                "num_entradas":        len(entry_lines_data),
+                "num_repuestos":       len(spare_parts_data),
+            })
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Save confirmation gate — form must have been confirmed via modal.
+        # Gate de confirmacion — el formulario debe haber pasado por modal.
+        # ------------------------------------------------------------------
+        if not POST.get("save_confirmed"):
+            entradas_enriched_post = [
+                {
+                    "idx":               ld["line_number"],
+                    "machine_raw":       ld["machine_raw"],
+                    "machine_asset":     ld["machine_asset"],
+                    "fault_description": ld["fault_description"],
+                    "repair_notes":      ld["repair_notes"],
+                    "hc":    ld["hc"].strftime("%H:%M") if ld["hc"] else "",
+                    "hf":    ld["hf"].strftime("%H:%M") if ld["hf"] else "",
+                    "or_val":            ld["or_val"],
+                    "flags":             ld["flags"],
+                }
+                for ld in entry_lines_data
+            ]
+            spare_enriched_post = [
+                {
+                    "ridx":          spd["line_number"],
+                    "referencia":    spd["referencia"],
+                    "vehiculo_raw":  spd["vehiculo_raw"],
+                    "vehicle_asset": spd["vehicle_asset"],
+                    "material":      spd["material"],
+                    "unidades":      str(spd["quantity"]) if spd["quantity"] is not None else "",
+                    "origen":        spd["source"],
+                    "proveedor":     spd["supplier"],
+                    "flags":         spd["flags"],
+                }
+                for spd in spare_parts_data
+            ]
+            context = self._get_context_base(request)
+            context.update({
+                "error":               None,
                 "fecha":               fecha_str,
                 "uncertain_date":      False,
                 "confidence":          POST.get("confidence", ""),
@@ -5859,11 +5949,11 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 # SparePartLine records linked to their entry line.
                 # Registros SparePartLine vinculados a su línea de entrada.
                 for spd in spare_parts_data:
-                    target_line = created_lines.get(spd["entry_idx"])
-                    if target_line is None:
-                        # Fallback: link to first line if index is invalid.
-                        # Fallback: vincular a la primera línea si el índice no es válido.
-                        target_line = next(iter(created_lines.values()), None)
+                    # Resolve target line: always use first created line since
+                    # entry_idx sentinel was removed in S012 refactor.
+                    # Resolver línea destino: usar siempre la primera línea creada
+                    # ya que el centinela entry_idx fue eliminado en el refactor S012.
+                    target_line = next(iter(created_lines.values()), None)
                     if target_line is None:
                         continue
 
@@ -5898,6 +5988,71 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 len(entry_lines_data),
                 len(spare_parts_data),
             )
+
+            # ----------------------------------------------------------
+            # Zero-meter deactivation — inside atomic block.
+            # Desactivacion de ceros — dentro del bloque atomico.
+            # ----------------------------------------------------------
+            import json as _json_mod
+            _zero_raw = POST.get("zero_meters_confirmed", "").strip()
+            if _zero_raw:
+                try:
+                    _zero_data = _json_mod.loads(_zero_raw)
+                    for _bIdx_str, _meter_list in _zero_data.items():
+                        try:
+                            _bIdx = int(_bIdx_str)
+                        except (ValueError, TypeError):
+                            continue
+                        _line = created_lines.get(_bIdx)
+                        if _line is None:
+                            continue
+                        _asset = _line.machine_asset
+                        _line_fields  = []
+                        _asset_fields = []
+                        for _m in _meter_list:
+                            _name = _m.get("name", "")
+                            if "odometer" in _name:
+                                _line.odometer_reading = None
+                                _line_fields.append("odometer_reading")
+                                if _asset and _asset.has_odometer:
+                                    _asset.has_odometer = False
+                                    _asset_fields.append("has_odometer")
+                            elif "engine_hours" in _name:
+                                _line.engine_hours_reading = None
+                                _line_fields.append("engine_hours_reading")
+                                if _asset and _asset.has_engine_hours:
+                                    _asset.has_engine_hours = False
+                                    _asset_fields.append("has_engine_hours")
+                            elif "crane_hours" in _name:
+                                _line.crane_hours_reading = None
+                                _line_fields.append("crane_hours_reading")
+                                if _asset and _asset.has_crane_hours:
+                                    _asset.has_crane_hours = False
+                                    _asset_fields.append("has_crane_hours")
+                        if _line_fields:
+                            _line.save(update_fields=_line_fields)
+                        if _asset and _asset_fields:
+                            _asset.save(update_fields=list(set(_asset_fields)))
+                            logger.info(
+                                "# [Confirm] MachineAsset %s: flags desactivados: %s.",
+                                _asset.code, _asset_fields,
+                            )
+                except (_json_mod.JSONDecodeError, Exception) as _ze:
+                    logger.warning(
+                        "# [Confirm] Error procesando zero_meters_confirmed: %s", _ze
+                    )
+
+            # Mark first_repair=False for all assets used in this part.
+            # Marcar first_repair=False en todos los activos usados en este parte.
+            for ld in entry_lines_data:
+                _asset = ld.get("machine_asset")
+                if _asset and _asset.first_repair:
+                    _asset.first_repair = False
+                    _asset.save(update_fields=["first_repair"])
+                    logger.info(
+                        "# [Confirm] MachineAsset %s: first_repair=False.",
+                        _asset.code,
+                    )
 
         except Exception as exc:
             logger.error(
@@ -6162,6 +6317,50 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     f"{blk}: la descripcion de la averia es obligatoria."
                 )
 
+        # Gate 2b — Meter readings: mandatory counter fields per asset flags.
+        # If first_repair=True zeros are allowed (baseline setup).
+        # If first_repair=False zeros are blocked — reading must be provided.
+        # Gate 2b — Contadores: obligatorios segun flags del activo.
+        # Si first_repair=True se permiten ceros (primera toma de datos).
+        # Si first_repair=False los ceros se bloquean.
+        for ld in entry_lines_data:
+            if ld["machine_asset"] is not None:
+                asset = ld["machine_asset"]
+                blk   = f"Bloque {ld['line_number']}"
+                if asset.has_odometer:
+                    reading = ld.get("odometer_reading")
+                    if reading is None:
+                        integrity_errors.append(
+                            f"{blk}: lectura de km (odometro) obligatoria para {asset.code}."
+                        )
+                    elif reading == 0 and not asset.first_repair:
+                        integrity_errors.append(
+                            f"{blk}: la lectura de km no puede ser cero para {asset.code} "
+                            f"(ya tiene partes anteriores registrados)."
+                        )
+                if asset.has_engine_hours:
+                    reading = ld.get("engine_hours_reading")
+                    if reading is None:
+                        integrity_errors.append(
+                            f"{blk}: lectura de horometro motor obligatoria para {asset.code}."
+                        )
+                    elif reading == 0 and not asset.first_repair:
+                        integrity_errors.append(
+                            f"{blk}: la lectura de horometro motor no puede ser cero "
+                            f"para {asset.code} (ya tiene partes anteriores registrados)."
+                        )
+                if asset.has_crane_hours:
+                    reading = ld.get("crane_hours_reading")
+                    if reading is None:
+                        integrity_errors.append(
+                            f"{blk}: lectura de horometro grua obligatoria para {asset.code}."
+                        )
+                    elif reading == 0 and not asset.first_repair:
+                        integrity_errors.append(
+                            f"{blk}: la lectura de horometro grua no puede ser cero "
+                            f"para {asset.code} (ya tiene partes anteriores registrados)."
+                        )
+
         for spd in spare_parts_data:
             rep = f"Repuesto {spd['line_number']}"
             if not spd["material"]:
@@ -6201,6 +6400,50 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             context = self._get_context_base(request)
             context.update({
                 "error":              " | ".join(integrity_errors),
+                "fecha":              fecha_str,
+                "entradas_enriched":  entradas_post,
+                "repuestos_enriched": repuestos_post,
+                "num_entradas":       len(entry_lines_data),
+                "num_repuestos":      len(spare_parts_data),
+            })
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Save confirmation gate — form must have been confirmed via modal.
+        # Gate de confirmacion — el formulario debe haber pasado por modal.
+        # ------------------------------------------------------------------
+        if not POST.get("save_confirmed"):
+            entradas_post = [
+                {
+                    "idx":               ld["line_number"],
+                    "machine_raw":       ld["machine_raw"],
+                    "machine_asset":     ld["machine_asset"],
+                    "fault_description": ld["fault_description"],
+                    "repair_notes":      ld["repair_notes"],
+                    "hc":  ld["hc"].strftime("%H:%M") if ld["hc"] else "",
+                    "hf":  ld["hf"].strftime("%H:%M") if ld["hf"] else "",
+                    "or_val":            ld["or_val"],
+                    "flags":             [],
+                }
+                for ld in entry_lines_data
+            ]
+            repuestos_post = [
+                {
+                    "ridx":          spd["line_number"],
+                    "referencia":    spd["referencia"],
+                    "vehiculo_raw":  spd["vehiculo_raw"],
+                    "vehicle_asset": spd["vehicle_asset"],
+                    "material":      spd["material"],
+                    "unidades":      str(spd["quantity"]) if spd["quantity"] is not None else "",
+                    "origen":        spd["source"],
+                    "proveedor":     spd["supplier"],
+                    "flags":         [],
+                }
+                for spd in spare_parts_data
+            ]
+            context = self._get_context_base(request)
+            context.update({
+                "error":              None,
                 "fecha":              fecha_str,
                 "entradas_enriched":  entradas_post,
                 "repuestos_enriched": repuestos_post,
@@ -6339,9 +6582,11 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     created_lines[ld["line_number"]] = line
 
                 for spd in spare_parts_data:
-                    target_line = created_lines.get(spd["entry_idx"])
-                    if target_line is None:
-                        target_line = next(iter(created_lines.values()), None)
+                    # Resolve target line: always use first created line since
+                    # entry_idx sentinel was removed in S012 refactor.
+                    # Resolver línea destino: usar siempre la primera línea creada
+                    # ya que el centinela entry_idx fue eliminado en el refactor S012.
+                    target_line = next(iter(created_lines.values()), None)
                     if target_line is None:
                         continue
                     SparePartLine.objects.create(
@@ -6375,6 +6620,71 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 len(entry_lines_data),
                 len(spare_parts_data),
             )
+
+            # ----------------------------------------------------------
+            # Zero-meter deactivation — inside atomic block.
+            # Desactivacion de ceros — dentro del bloque atomico.
+            # ----------------------------------------------------------
+            import json as _json_mod
+            _zero_raw = POST.get("zero_meters_confirmed", "").strip()
+            if _zero_raw:
+                try:
+                    _zero_data = _json_mod.loads(_zero_raw)
+                    for _bIdx_str, _meter_list in _zero_data.items():
+                        try:
+                            _bIdx = int(_bIdx_str)
+                        except (ValueError, TypeError):
+                            continue
+                        _line = created_lines.get(_bIdx)
+                        if _line is None:
+                            continue
+                        _asset = _line.machine_asset
+                        _line_fields  = []
+                        _asset_fields = []
+                        for _m in _meter_list:
+                            _name = _m.get("name", "")
+                            if "odometer" in _name:
+                                _line.odometer_reading = None
+                                _line_fields.append("odometer_reading")
+                                if _asset and _asset.has_odometer:
+                                    _asset.has_odometer = False
+                                    _asset_fields.append("has_odometer")
+                            elif "engine_hours" in _name:
+                                _line.engine_hours_reading = None
+                                _line_fields.append("engine_hours_reading")
+                                if _asset and _asset.has_engine_hours:
+                                    _asset.has_engine_hours = False
+                                    _asset_fields.append("has_engine_hours")
+                            elif "crane_hours" in _name:
+                                _line.crane_hours_reading = None
+                                _line_fields.append("crane_hours_reading")
+                                if _asset and _asset.has_crane_hours:
+                                    _asset.has_crane_hours = False
+                                    _asset_fields.append("has_crane_hours")
+                        if _line_fields:
+                            _line.save(update_fields=_line_fields)
+                        if _asset and _asset_fields:
+                            _asset.save(update_fields=list(set(_asset_fields)))
+                            logger.info(
+                                "# [FormView] MachineAsset %s: flags desactivados: %s.",
+                                _asset.code, _asset_fields,
+                            )
+                except (_json_mod.JSONDecodeError, Exception) as _ze:
+                    logger.warning(
+                        "# [FormView] Error procesando zero_meters_confirmed: %s", _ze
+                    )
+
+            # Mark first_repair=False for all assets used in this part.
+            # Marcar first_repair=False en todos los activos usados en este parte.
+            for ld in entry_lines_data:
+                _asset = ld.get("machine_asset")
+                if _asset and _asset.first_repair:
+                    _asset.first_repair = False
+                    _asset.save(update_fields=["first_repair"])
+                    logger.info(
+                        "# [FormView] MachineAsset %s: first_repair=False.",
+                        _asset.code,
+                    )
 
         except Exception as exc:
             logger.error(
@@ -6805,6 +7115,187 @@ Transcripción del operario:
                 "# [STTExtract] Error en extracción Gemini texto: %s", exc, exc_info=True
             )
             return JsonResponse(_EMPTY)
+
+
+class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
+    """
+    Displays the authenticated operator's work-order history grouped by month.
+    ADMIN and SUPERVISOR roles can view any operator's history by passing
+    ?user_pk=XX in the GET query string (scoped to the same company).
+
+    GET /panel/operator/history/
+        Optional GET param: user_pk (int) — filter by a specific CompanyUser pk.
+        Only honoured for ADMIN and SUPERVISOR roles.
+    ---
+    Muestra el historial de partes del operario autenticado agrupado por mes.
+    Los roles ADMIN y SUPERVISOR pueden ver el historial de cualquier operario
+    pasando ?user_pk=XX en la query string GET (acotado a la misma empresa).
+
+    GET /panel/operator/history/
+        Parametro GET opcional: user_pk (int) — filtrar por un CompanyUser concreto.
+        Solo se aplica para los roles ADMIN y SUPERVISOR.
+    """
+
+    template_name = "panel/operator/history.html"
+
+    # Spanish month names for group labels.
+    # Nombres de meses en castellano para las etiquetas de grupo.
+    _MESES_ES = {
+        1: "Enero",   2: "Febrero",  3: "Marzo",    4: "Abril",
+        5: "Mayo",    6: "Junio",    7: "Julio",     8: "Agosto",
+        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+    }
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def get(self, request, *args, **kwargs):
+        """
+        Builds the monthly-grouped work-order history for the target operator
+        and renders the history template.
+
+        Resolution order for the target CompanyUser:
+          1. If role is ADMIN or SUPERVISOR and ?user_pk is present and valid,
+             use that CompanyUser (must belong to same company).
+          2. Otherwise use the authenticated user's own CompanyUser.
+        ---
+        Construye el historial de partes agrupado por mes para el operario
+        objetivo y renderiza el template de historial.
+
+        Orden de resolucion del CompanyUser objetivo:
+          1. Si el rol es ADMIN o SUPERVISOR y ?user_pk esta presente y es valido,
+             usar ese CompanyUser (debe pertenecer a la misma empresa).
+          2. En caso contrario usar el CompanyUser del usuario autenticado.
+        """
+        from decimal import Decimal
+
+        cu      = request.user.company_user
+        company = cu.company
+        role    = cu.role
+
+        # Resolve target company_user from ?user_pk for ADMIN / SUPERVISOR.
+        # Resolver company_user objetivo desde ?user_pk para ADMIN / SUPERVISOR.
+        selected_user_pk = None
+        target_cu        = cu
+        users            = []
+
+        if role in ("ADMIN", "SUPERVISOR"):
+            users = (
+                CompanyUser.objects
+                .filter(company=company, is_active=True)
+                .select_related("user")
+                .order_by("user__username")
+            )
+            raw_pk = request.GET.get("user_pk", "").strip()
+            if raw_pk:
+                try:
+                    selected_user_pk = int(raw_pk)
+                    target_cu = CompanyUser.objects.get(
+                        pk=selected_user_pk, company=company
+                    )
+                except (ValueError, CompanyUser.DoesNotExist):
+                    # Invalid or foreign pk — fall back to own user silently.
+                    # pk invalido o de otra empresa — volver al usuario propio.
+                    selected_user_pk = None
+                    target_cu        = cu
+
+        # Base queryset: WorkOrders uploaded by target_cu, newest first.
+        # Queryset base: WorkOrders subidos por target_cu, mas reciente primero.
+        qs = (
+            WorkOrder.objects
+            .filter(company=company, uploaded_by=target_cu)
+            .prefetch_related(
+                Prefetch(
+                    "entries",
+                    queryset=WorkOrderEntry.objects.prefetch_related("entry_lines"),
+                )
+            )
+            .order_by("-id")
+        )
+
+        # Group by (year, month) derived from the first entry's work_date.
+        # Agrupar por (year, month) derivado de work_date del primer entry.
+        groups_dict = {}
+
+        for wo in qs:
+            entries_list = list(wo.entries.all())
+            first_entry  = entries_list[0] if entries_list else None
+            work_date    = first_entry.work_date if first_entry else None
+            key          = (work_date.year, work_date.month) if work_date else None
+
+            # Compute aggregate metrics for this WorkOrder.
+            # Calcular metricas agregadas para este WorkOrder.
+            num_bloques   = sum(
+                entry.entry_lines.count() for entry in entries_list
+            )
+            horas_totales = sum(
+                (line.delta_hours
+                 for entry in entries_list
+                 for line in entry.entry_lines.all()
+                 if line.delta_hours is not None),
+                Decimal("0"),
+            )
+
+            wo_dict = {
+                "pk":            wo.pk,
+                "fecha":         work_date,
+                "num_bloques":   num_bloques,
+                "horas_totales": horas_totales,
+                "reviewed":      wo.reviewed,
+            }
+
+            if key not in groups_dict:
+                groups_dict[key] = []
+            groups_dict[key].append(wo_dict)
+
+        # Build sorted monthly groups (descending by year/month; None last).
+        # Construir grupos mensuales ordenados (descendente por anio/mes; None al final).
+        dated_keys  = sorted(
+            [k for k in groups_dict if k is not None],
+            reverse=True,
+        )
+        undated_keys   = [k for k in groups_dict if k is None]
+        sorted_keys    = dated_keys + undated_keys
+
+        monthly_groups = []
+        for key in sorted_keys:
+            wo_list = groups_dict[key]
+            if key is not None:
+                year, month = key
+                label       = f"{self._MESES_ES[month]} {year}"
+            else:
+                label = "Sin fecha"
+
+            total_hours = sum(
+                (w["horas_totales"] for w in wo_list),
+                Decimal("0"),
+            )
+            monthly_groups.append({
+                "label":       label,
+                "total_hours": total_hours,
+                "work_orders": wo_list,
+            })
+
+        context = {
+            "monthly_groups":   monthly_groups,
+            "company":          company,
+            "company_user":     cu,
+            "own_presence":     self._get_own_presence(cu),
+            "active_nav":       "operator_history",
+            "users":            users,
+            "selected_user_pk": selected_user_pk,
+        }
+        return render(request, self.template_name, context)
 
 
 class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):
@@ -7366,6 +7857,7 @@ class WorkshopAssetDetailView(WorkshopRequiredMixin, View):
             "has_odometer":     asset.has_odometer,
             "has_engine_hours": asset.has_engine_hours,
             "has_crane_hours":  asset.has_crane_hours,
+            "first_repair":     asset.first_repair,
             "mileage":          float(asset.mileage) if asset.mileage is not None else None,
             "hours":            float(asset.hours)   if asset.hours   is not None else None,
         })

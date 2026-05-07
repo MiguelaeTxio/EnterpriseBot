@@ -1,0 +1,67 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_zero_meter_modal.html #}
+{#                                                                                          #}
+{# Partial: warning modal shown when any visible meter-reading field is submitted          #}
+{# with a value of zero. Warns the operator that confirming will permanently               #}
+{# deactivate that counter on the machine/asset (flag set to False, field to None).        #}
+{# Included via {% include %} from the three operator entry templates.                     #}
+{#                                                                                          #}
+{# Usage:                                                                                   #}
+{#   JS detects visible .meter-field inputs with value == 0 before the save confirmation  #}
+{#   modal. If any exist, this modal is shown first. The operator can either confirm       #}
+{#   (proceeds to confirmSaveModal) or go back to correct the values.                      #}
+{#                                                                                          #}
+{# Partial: modal de advertencia mostrado cuando algún campo de contador visible           #}
+{# se envía con valor cero. Advierte al operario de que confirmar desactivará ese          #}
+{# contador en la máquina de forma permanente (flag a False, campo a None).                #}
+<div class="modal fade"
+     id="zeroMeterModal"
+     tabindex="-1"
+     aria-labelledby="zeroMeterModalLabel"
+     aria-hidden="true"
+     data-bs-backdrop="static"
+     data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-semibold text-warning" id="zeroMeterModalLabel">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Contadores a cero
+                </h5>
+            </div>
+
+            <div class="modal-body pt-2">
+                <p class="mb-2">
+                    Los siguientes contadores tienen valor <strong>cero</strong>:
+                </p>
+                {# List of zero-value counters injected by JS before the modal opens. #}
+                {# Lista de contadores a cero inyectada por JS antes de abrir el modal. #}
+                <ul id="zero-meter-list" class="mb-3"></ul>
+
+                <div class="alert alert-warning d-flex align-items-start gap-2 mb-0 py-2">
+                    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+                    <div class="small">
+                        <strong>Esta acción es irreversible desde el formulario.</strong>
+                        Confirmar eliminará el seguimiento de ese contador en esta
+                        máquina o sección. Solo un administrador podrá reactivarlo
+                        desde el panel de flota.
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-0 pt-0">
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
+                    <i class="bi bi-arrow-left me-1"></i>Corregir
+                </button>
+                <button type="button"
+                        id="btn-zero-meter-confirm"
+                        class="btn btn-warning px-4">
+                    <i class="bi bi-check-lg me-1"></i>Sí, es correcto
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>

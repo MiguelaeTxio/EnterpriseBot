@@ -382,12 +382,19 @@
                 <i class="bi bi-exclamation-triangle-fill me-2"></i>
                 <span id="integrity-alert-text"></span>
             </div>
+            {# Hidden fields for modal confirmation flow. #}
+            {# Campos hidden para el flujo de confirmacion modal. #}
+            <input type="hidden" id="save-confirmed-input"       name="save_confirmed"       value="">
+            <input type="hidden" id="zero-meters-confirmed-input" name="zero_meters_confirmed" value="">
+
             <div class="d-flex gap-2 justify-content-end mb-5">
                 <a href="{% url 'panel:operator_upload' %}"
                    class="btn btn-outline-secondary">
                     <i class="bi bi-x-lg me-1"></i>Cancelar
                 </a>
-                <button type="submit" id="btn-confirm-submit" class="btn btn-dark px-4">
+                {# Button triggers modal flow instead of submitting directly. #}
+                {# El botón dispara el flujo modal en lugar de enviar directamente. #}
+                <button type="button" id="btn-confirm-submit" class="btn btn-dark px-4">
                     <i class="bi bi-check-lg me-1"></i>Confirmar y guardar
                 </button>
             </div>
@@ -416,9 +423,21 @@
         var odoEl   = document.querySelector('.meter-odometer' + sel);
         var engEl   = document.querySelector('.meter-engine'   + sel);
         var craneEl = document.querySelector('.meter-crane'    + sel);
-        if (odoEl)   { odoEl.classList.toggle("d-none",   !data.has_odometer);     }
-        if (engEl)   { engEl.classList.toggle("d-none",   !data.has_engine_hours); }
-        if (craneEl) { craneEl.classList.toggle("d-none", !data.has_crane_hours);  }
+        if (odoEl) {
+            odoEl.classList.toggle("d-none", !data.has_odometer);
+            var odoInput = odoEl.querySelector("input");
+            if (odoInput && data.mileage != null) { odoInput.dataset.refValue = data.mileage; }
+        }
+        if (engEl) {
+            engEl.classList.toggle("d-none", !data.has_engine_hours);
+            var engInput = engEl.querySelector("input");
+            if (engInput && data.hours != null) { engInput.dataset.refValue = data.hours; }
+        }
+        if (craneEl) {
+            craneEl.classList.toggle("d-none", !data.has_crane_hours);
+            var craneInput = craneEl.querySelector("input");
+            if (craneInput && data.hours != null) { craneInput.dataset.refValue = data.hours; }
+        }
     }
 
     /*
@@ -530,6 +549,28 @@
     // Attach to all asset-search inputs on the page.
     // Asociar a todos los inputs asset-search de la página.
     document.querySelectorAll(".asset-search").forEach(attachAutocomplete);
+
+    // On page load, reveal meter fields for any block that already has a
+    // machine_raw value (server re-render after validation error or Via C).
+    // Al cargar la página, revelar campos de contador para cualquier bloque
+    // que ya tenga machine_raw (re-renderizado tras error o Vía C).
+    document.querySelectorAll(".asset-search").forEach(function (input) {
+        var code = input.value.trim();
+        if (!code) { return; }
+        var blockDiv = input.closest(".confirm-block");
+        var badge = blockDiv.querySelector(".badge.bg-dark");
+        var bIdx  = badge ? (badge.textContent.trim().match(/(\d+)/) || [])[1] : null;
+        fetch(ASSET_DETAIL_URL + "?code=" + encodeURIComponent(code))
+            .then(function (r) { return r.json(); })
+            .then(function (d) { _applyMeterFields(bIdx, d); })
+            .catch(function () {
+                _applyMeterFields(bIdx, {
+                    has_odometer: false, has_engine_hours: false,
+                    has_crane_hours: false, first_repair: false,
+                    mileage: null, hours: null
+                });
+            });
+    });
 
     // ==================================================================
     // Dynamic spare-part row addition / Adición dinámica de filas de repuesto
@@ -751,6 +792,35 @@
                     _markField("entrada_" + i + "_hf", true);
                     errors.push(blk + ": H.F. debe ser posterior a H.C.");
                 }
+
+                // Gate 2b — Meter readings: visible meter-field inputs must be
+                // present and their value must be >= the BD reference stored in
+                // data-ref-value. Mirrors server-side R6/R7/R8.
+                // Gate 2b — Contadores: los inputs meter-field visibles deben
+                // estar presentes y su valor >= referencia BD en data-ref-value.
+                // Replica la validación server-side R6/R7/R8.
+                var meterWrappers = form.querySelectorAll(
+                    '.meter-field:not(.d-none)[data-block-idx="' + i + '"]'
+                );
+                meterWrappers.forEach(function (wrapper) {
+                    var mInput = wrapper.querySelector('input');
+                    var mLabel = wrapper.querySelector('label');
+                    var mName  = mInput.name || ("entrada_" + i + "_contador");
+                    var mVal   = mInput.value.trim();
+                    var mNum   = parseFloat(mVal.replace(",", "."));
+                    var mRef   = parseFloat(mInput.dataset.refValue);
+                    var mDesc  = mLabel ? mLabel.textContent.trim() : mName;
+                    if (!mVal || isNaN(mNum)) {
+                        _markField(mName, true);
+                        errors.push(blk + ": " + mDesc + " es obligatoria.");
+                    } else if (!isNaN(mRef) && mNum < mRef) {
+                        _markField(mName, true);
+                        errors.push(
+                            blk + ": " + mDesc + " (" + mNum + ") no puede ser " +
+                            "inferior a la lectura anterior en BD (" + mRef + ")."
+                        );
+                    }
+                });
             }
 
             // Gate 3 — Spare-part lines / Líneas de repuesto.
@@ -852,4 +922,157 @@
 
 {% include "panel/_description_typeahead.html" %}
 {% include "panel/_overlap_incident_modal.html" %}
+{% include "panel/_zero_meter_modal.html" %}
+{% include "panel/_confirm_save_modal.html" %}
+
+<script>
+(function () {
+    "use strict";
+
+    /*
+     * Modal save flow for confirm_entry.html (Via C).
+     * Intercepts the "Confirmar y guardar" button, runs zero-meter detection,
+     * shows the appropriate modal(s) and only submits the real form once the
+     * operator has confirmed all warnings.
+     *
+     * Flujo modal de guardado para confirm_entry.html (Via C).
+     * Intercepta el boton "Confirmar y guardar", detecta contadores a cero,
+     * muestra el modal correspondiente y solo envia el formulario real una vez
+     * que el operario ha confirmado todos los avisos.
+     */
+
+    var form              = document.getElementById("form-confirm-entry");
+    var btnTrigger        = document.getElementById("btn-confirm-submit");
+    var saveConfirmedEl   = document.getElementById("save-confirmed-input");
+    var zeroMetersEl      = document.getElementById("zero-meters-confirmed-input");
+    var summaryEl         = document.getElementById("confirm-save-summary");
+    var zeroListEl        = document.getElementById("zero-meter-list");
+    var btnZeroConfirm    = document.getElementById("btn-zero-meter-confirm");
+    var btnSaveFinal      = document.getElementById("btn-confirm-save-final");
+
+    var zeroMeterModal   = null;
+    var confirmSaveModal = null;
+    var _pendingZeroData = {};
+
+    if (typeof bootstrap !== "undefined") {
+        zeroMeterModal   = new bootstrap.Modal(document.getElementById("zeroMeterModal"));
+        confirmSaveModal = new bootstrap.Modal(document.getElementById("confirmSaveModal"));
+    }
+
+    /*
+     * Collects visible meter-field inputs with value == 0.
+     * Returns an object keyed by block idx, value is array of meter type labels.
+     * Recopila los inputs meter-field visibles con valor == 0.
+     * Devuelve un objeto con clave block idx y valor array de etiquetas de contador.
+     */
+    function _detectZeroMeters() {
+        var zeros = {};
+        document.querySelectorAll(".meter-field:not(.d-none)").forEach(function (wrapper) {
+            var input = wrapper.querySelector("input");
+            if (!input) { return; }
+            var val = parseFloat(input.value);
+            if (!isNaN(val) && val === 0) {
+                var bIdx  = wrapper.dataset.blockIdx || "?";
+                var label = (wrapper.querySelector("label") || {}).textContent || input.name;
+                if (!zeros[bIdx]) { zeros[bIdx] = []; }
+                zeros[bIdx].push({ label: label.trim(), name: input.name });
+            }
+        });
+        return zeros;
+    }
+
+    /*
+     * Builds the summary HTML injected into #confirm-save-summary.
+     * Construye el HTML del resumen inyectado en #confirm-save-summary.
+     */
+    function _buildSummary() {
+        var fecha = (form.querySelector('[name="fecha"]') || {}).value || "—";
+        var numEntradas = parseInt((form.querySelector('[name="num_entradas"]') || {}).value, 10) || 0;
+        var html = '<table class="table table-sm mb-0">';
+        html += '<tr><th class="text-muted fw-normal">Fecha</th><td>' + fecha + '</td></tr>';
+        html += '<tr><th class="text-muted fw-normal">Tareas</th><td>' + numEntradas + '</td></tr>';
+        var totalHoras = 0;
+        for (var i = 1; i <= numEntradas; i++) {
+            var hc = (form.querySelector('[name="entrada_' + i + '_hc"]') || {}).value || "";
+            var hf = (form.querySelector('[name="entrada_' + i + '_hf"]') || {}).value || "";
+            if (hc && hf) {
+                var hcParts = hc.split(":"); var hfParts = hf.split(":");
+                var delta = (parseInt(hfParts[0], 10) * 60 + parseInt(hfParts[1], 10)) -
+                            (parseInt(hcParts[0], 10) * 60 + parseInt(hcParts[1], 10));
+                if (delta > 0) { totalHoras += delta / 60; }
+            }
+        }
+        html += '<tr><th class="text-muted fw-normal">Horas estimadas</th><td>' +
+                totalHoras.toFixed(1) + ' h</td></tr>';
+        html += '</table>';
+        return html;
+    }
+
+    /*
+     * Main flow: called when the operator clicks "Confirmar y guardar".
+     * Flujo principal: llamado cuando el operario pulsa "Confirmar y guardar".
+     */
+    function _onSaveTrigger() {
+        var zeros = _detectZeroMeters();
+        if (Object.keys(zeros).length > 0) {
+            // Show zero-meter warning modal first.
+            // Mostrar primero el modal de advertencia de contadores a cero.
+            _pendingZeroData = zeros;
+            zeroListEl.innerHTML = "";
+            Object.keys(zeros).forEach(function (bIdx) {
+                zeros[bIdx].forEach(function (m) {
+                    var li = document.createElement("li");
+                    li.textContent = "Bloque " + bIdx + " — " + m.label;
+                    zeroListEl.appendChild(li);
+                });
+            });
+            if (zeroMeterModal) { zeroMeterModal.show(); }
+        } else {
+            // No zeros — go straight to confirmation modal.
+            // Sin ceros — ir directamente al modal de confirmacion.
+            _showConfirmModal();
+        }
+    }
+
+    /*
+     * Shows the confirmation summary modal.
+     * Muestra el modal de resumen de confirmacion.
+     */
+    function _showConfirmModal() {
+        if (summaryEl) { summaryEl.innerHTML = _buildSummary(); }
+        if (confirmSaveModal) { confirmSaveModal.show(); }
+    }
+
+    // Wire zero-meter confirm button.
+    // Conectar botón de confirmación de ceros.
+    if (btnZeroConfirm) {
+        btnZeroConfirm.addEventListener("click", function () {
+            // Serialise zero-meter data into the hidden input as JSON.
+            // Serializar datos de ceros en el input hidden como JSON.
+            if (zeroMetersEl) {
+                zeroMetersEl.value = JSON.stringify(_pendingZeroData);
+            }
+            if (zeroMeterModal) { zeroMeterModal.hide(); }
+            _showConfirmModal();
+        });
+    }
+
+    // Wire final save button.
+    // Conectar botón de guardado final.
+    if (btnSaveFinal) {
+        btnSaveFinal.addEventListener("click", function () {
+            if (saveConfirmedEl) { saveConfirmedEl.value = "1"; }
+            if (confirmSaveModal) { confirmSaveModal.hide(); }
+            form.submit();
+        });
+    }
+
+    // Wire main trigger button.
+    // Conectar botón principal de disparo.
+    if (btnTrigger) {
+        btnTrigger.addEventListener("click", _onSaveTrigger);
+    }
+
+}());
+</script>
 {% endblock %}
