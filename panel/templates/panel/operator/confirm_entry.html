@@ -426,17 +426,26 @@
         if (odoEl) {
             odoEl.classList.toggle("d-none", !data.has_odometer);
             var odoInput = odoEl.querySelector("input");
-            if (odoInput && data.mileage != null) { odoInput.dataset.refValue = data.mileage; }
+            if (odoInput && data.mileage != null) {
+                odoInput.dataset.refValue = data.mileage;
+                odoInput.value = data.mileage;
+            }
         }
         if (engEl) {
             engEl.classList.toggle("d-none", !data.has_engine_hours);
             var engInput = engEl.querySelector("input");
-            if (engInput && data.hours != null) { engInput.dataset.refValue = data.hours; }
+            if (engInput && data.hours != null) {
+                engInput.dataset.refValue = data.hours;
+                engInput.value = data.hours;
+            }
         }
         if (craneEl) {
             craneEl.classList.toggle("d-none", !data.has_crane_hours);
             var craneInput = craneEl.querySelector("input");
-            if (craneInput && data.hours != null) { craneInput.dataset.refValue = data.hours; }
+            if (craneInput && data.hours != null) {
+                craneInput.dataset.refValue = data.hours;
+                craneInput.value = data.hours;
+            }
         }
     }
 

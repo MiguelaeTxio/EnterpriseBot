@@ -565,6 +565,8 @@
             if (odoInput) {
                 odoInput.dataset.refValue = (data.mileage !== null && data.mileage !== undefined)
                     ? data.mileage : "";
+                odoInput.value = (data.mileage !== null && data.mileage !== undefined)
+                    ? data.mileage : "";
             }
         }
         if (engEl) {
@@ -573,6 +575,8 @@
             if (engInput) {
                 engInput.dataset.refValue = (data.hours !== null && data.hours !== undefined)
                     ? data.hours : "";
+                engInput.value = (data.hours !== null && data.hours !== undefined)
+                    ? data.hours : "";
             }
         }
         if (craneEl) {
@@ -580,6 +584,8 @@
             var craneInput = craneEl.querySelector('input');
             if (craneInput) {
                 craneInput.dataset.refValue = (data.hours !== null && data.hours !== undefined)
+                    ? data.hours : "";
+                craneInput.value = (data.hours !== null && data.hours !== undefined)
                     ? data.hours : "";
             }
         }

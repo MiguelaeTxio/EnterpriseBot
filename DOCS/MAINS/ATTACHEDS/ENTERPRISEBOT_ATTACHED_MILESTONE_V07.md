@@ -481,6 +481,7 @@ Estado: COMPLETADO PARCIAL (sesiones 006-009).
 | 012    | 2026-05-07 | unit_price, refactor UX repuestos, bug UI pendiente | SparePartLine.unit_price añadido (migr. 0011). Refactor UX operario: etiquetas "Bloques de trabajo"→"Tareas", "Centro de Gasto"→"Maquina o Seccion"; encabezado repuesto rediseñado con select CdG directo (machine_raw unicos del parte + Otro); campo cdg_free para valor libre; _parse_spare_parts_from_post() refactorizado sin entry_idx. Fix artefactos bash en form_entry.html. Bug activo al cierre: UI repuestos sigue mostrando version antigua a pesar de archivos en disco correctos, collectstatic y reload ejecutados. Causa no identificada. TERCERA ACCION (historial de partes WorkOrderEntryHistoryView) pendiente. |
 | 013    | 2026-05-07 | Diagnóstico bugs S012, fix _buildRepuestoRow, validación contadores parcial | Diagnóstico bug UI repuestos: causa raíz identificada como _buildRepuestoRow JS en form_entry.html no actualizado en S012 (generaba estructura antigua con entry_idx numérico). Corregido via PMA: _buildRepuestoRow reescrita usando _buildCdgOptions() igual que stt_entry.html y confirm_entry.html. Diagnóstico bug persistencia SparePartLine: spd["entry_idx"] eliminado en S012 pero aún accedido en ConfirmView.post() y FormView.post() — PMA preparado y autorizado (mv pendiente). Validación dinámica contadores (Gate 2b JS + _applyMeterFields con data-ref-value): completada en form_entry.html y stt_entry.html. confirm_entry.html bloqueado por fallo en construcción de OLD_A. Validación server-side Gate 2 contadores en views.py: pendiente. WorkOrderEntryHistoryView: pendiente. |
 | 014    | 2026-05-07 | Bugs críticos resueltos, E2E Via A con contadores validado | Fix validators.py: prefetch_related entries__entry_lines → entries__lines y entry.entry_lines.all() → entry.lines.all() (AttributeError 500 en POST /operator/form/). Fix confirm_entry.html: PARCHE A _applyMeterFields con escritura data-ref-value en inputs meter-field + PARCHE B Gate 2b JS corregido con if condicionales. Fix guard if (!code) { return; } en onload ASSET_DETAIL_URL en form_entry.html, confirm_entry.html y stt_entry.html (400 en /assets/detail/?code=). Fix services.py: machine_asset.kms → machine_asset.mileage y machine_asset.horas → machine_asset.hours (error generación Excel). Segunda y Tercera Acción de S013 verificadas ya aplicadas en disco. Validación E2E Via A completa con contadores activos en G12 superada. |
+| 014b   | 2026-05-08 | Fix pre-relleno de campos de contador con valor actual de BD | Corrección en _applyMeterFields() de los tres templates del operario (form_entry.html, confirm_entry.html, stt_entry.html): además de escribir data-ref-value, se escribe input.value con el valor actual de BD (mileage/hours) para que el campo aparezca pre-rellenado al operario como punto de partida visual. form_entry.html carecía además del parche completo de data-ref-value aplicado en S014. |
 
 ---
 
@@ -497,7 +498,74 @@ ADVERTENCIA CRITICA sobre related_name: el FK WorkOrderEntryLine.entry tiene
 related_name="lines" (NO "entry_lines"). Usar siempre entry.lines.all() y
 prefetch_related("entries__lines"). El uso de "entry_lines" causa AttributeError.
 
-### PRIMERA ACCION — WorkOrderEntryHistoryView
+### PRIMERA ACCION — Registro de Operarios (WORKERS)
+
+Antes de implementar WorkOrderEntryHistoryView, crear el sistema de registro
+de operarios de taller. Este sistema permite al ADMIN de cada empresa dar de
+alta a sus operarios directamente desde el panel, sin necesidad de acceso al
+admin de Django.
+
+#### Modelo de datos
+
+El operario se registra como un User de Django vinculado a un CompanyUser
+existente o nuevo. Los campos requeridos son:
+
+  Nombre completo: first_name + last_name del User Django.
+  Telefono: campo phone en CompanyUser (verificar si existe o crear).
+  DNI: campo dni en CompanyUser (nuevo campo — requiere migracion).
+  Email: campo email del User Django (opcional).
+  Contrasena: campo password del User Django.
+
+El rol del CompanyUser creado sera siempre WORKER.
+
+#### Vista y formulario
+
+Vista: WorkerCreateView (LoginRequiredMixin, AdminRequiredMixin, View).
+Endpoint: GET/POST /panel/workers/create/
+URL name: worker_create
+
+Formulario Django: WorkerCreateForm (forms.Form, no ModelForm).
+Campos:
+  - first_name (CharField, obligatorio)
+  - last_name (CharField, obligatorio)
+  - phone (CharField, obligatorio)
+  - dni (CharField, obligatorio, validar formato DNI espanol)
+  - email (EmailField, opcional)
+  - password (CharField, widget=PasswordInput, obligatorio)
+  - password_confirm (CharField, widget=PasswordInput, obligatorio)
+
+Validaciones:
+  - password == password_confirm
+  - DNI unico por empresa (no puede repetirse entre CompanyUsers de la misma company)
+  - Email unico en User Django si se proporciona
+  - Telefono obligatorio
+
+#### Login/Signing accesible desde cualquier punto de la aplicacion
+
+El enlace de login debe aparecer en el sidebar y en la barra superior
+para usuarios no autenticados. Para usuarios autenticados con rol ADMIN
+o SUPERVISOR, debe aparecer un boton o enlace "Registrar operario" en
+el sidebar bajo la seccion TALLER.
+
+#### Migracion requerida
+
+Anadir campo dni a CompanyUser:
+  dni = models.CharField(max_length=20, blank=True, default="",
+                         verbose_name="DNI / NIF")
+
+Anadir campo phone a CompanyUser si no existe (verificar primero).
+
+#### Archivos a modificar/crear
+
+  - ivr_config/models.py: PMA — anadir campo dni (y phone si no existe)
+  - ivr_config/migrations/: makemigrations ivr_config
+  - panel/forms.py: PEA o PMA — WorkerCreateForm
+  - panel/views.py: PMA — WorkerCreateView
+  - panel/urls.py: PMA — ruta worker_create
+  - panel/templates/panel/workers/: PEA — create.html (Neonato Puro)
+  - panel/templates/panel/_nav_items.html: PMA — enlace Registrar operario
+
+### SEGUNDA ACCION — WorkOrderEntryHistoryView
 
 Vista nueva: WorkOrderEntryHistoryView (WorkshopRequiredMixin, View).
 Endpoint: GET /panel/operator/history/
@@ -584,7 +652,7 @@ URL panel/urls.py (PMA):
   - Añadir antes de la seccion de work-orders:
     path("operator/history/", WorkOrderEntryHistoryView.as_view(), name="operator_history"),
 
-### Estado de migraciones al cierre de sesion 014
+### Estado de migraciones al cierre de sesion 014b
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
@@ -596,6 +664,8 @@ URL panel/urls.py (PMA):
 ### Archivos a solicitar al inicio de sesion 015
 
 OBLIGATORIO via SFTP antes de generar ningun PMA:
+  - ivr_config/models.py
+  - panel/forms.py (si existe)
   - panel/views.py
   - panel/urls.py
   - panel/templates/panel/_nav_items.html
