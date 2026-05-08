@@ -456,6 +456,41 @@ PENDIENTE (bug activo al cierre de sesion 012):
   ejecutado, aplicacion recargada y cache vaciada. Causa no identificada.
   Investigar al inicio de sesion 013 antes de cualquier otra accion.
 
+### 2.23. Auto-registro publico de operarios — WorkerSignupView (sesion 015)
+
+Nuevos campos en CompanyUser (ivr_config/models.py):
+  phone = CharField(max_length=20, blank=True, default="")
+  dni   = CharField(max_length=20, blank=True, default="")
+Migracion: 0014_companyuser_dni_companyuser_phone.
+
+Nuevo formulario WorkerSignupForm (panel/forms.py):
+  Campos: first_name, last_name, phone (opcional), dni, username,
+          password, password_confirm.
+  Validaciones: username unico en auth.User, DNI unico por empresa,
+                password == password_confirm.
+  Constructor acepta company=None para extension multiempresa futura.
+
+Nueva vista publica WorkerSignupView (panel/views.py):
+  GET/POST /panel/signup/ (name=worker_signup). Sin autenticacion requerida.
+  Resolucion de empresa: Company.objects.get(name__icontains="Alvarez") — piloto.
+  En POST valido: crea auth.User + CompanyUser(role=WORKSHOP,
+  must_change_password=False), autentica al usuario y redirige a /panel/operator/.
+
+Enlace "No tienes cuenta? Registrate!" anadido en login.html apuntando a worker_signup.
+Template panel/templates/panel/workers/signup.html creado (Neonato Puro).
+
+### 2.24. WorkOrderEntryHistoryView — fix related_name (sesion 015)
+
+Bug corregido en WorkOrderEntryHistoryView (panel/views.py):
+  entry.entry_lines → entry.lines (related_name correcto de WorkOrderEntryLine).
+Afectaba al prefetch_related y a los calculos de num_bloques y horas_totales.
+Causa: related_name="lines" definido en WorkOrderEntryLine.entry FK.
+
+Template panel/templates/panel/operator/history.html creado (Neonato Puro):
+  Agrupacion mensual descendente. Badge de horas totales por mes.
+  Selector de operario para ADMIN/SUPERVISOR via GET ?user_pk=XX.
+  Estado de revision por parte (Revisado/Pendiente).
+
 ### Paso 9 — Validacion E2E de las tres vias
 Estado: COMPLETADO PARCIAL (sesiones 006-009).
 - Via A (Form): VALIDADA. Persistencia correcta, nombre sintetico legible.
@@ -482,190 +517,165 @@ Estado: COMPLETADO PARCIAL (sesiones 006-009).
 | 013    | 2026-05-07 | Diagnóstico bugs S012, fix _buildRepuestoRow, validación contadores parcial | Diagnóstico bug UI repuestos: causa raíz identificada como _buildRepuestoRow JS en form_entry.html no actualizado en S012 (generaba estructura antigua con entry_idx numérico). Corregido via PMA: _buildRepuestoRow reescrita usando _buildCdgOptions() igual que stt_entry.html y confirm_entry.html. Diagnóstico bug persistencia SparePartLine: spd["entry_idx"] eliminado en S012 pero aún accedido en ConfirmView.post() y FormView.post() — PMA preparado y autorizado (mv pendiente). Validación dinámica contadores (Gate 2b JS + _applyMeterFields con data-ref-value): completada en form_entry.html y stt_entry.html. confirm_entry.html bloqueado por fallo en construcción de OLD_A. Validación server-side Gate 2 contadores en views.py: pendiente. WorkOrderEntryHistoryView: pendiente. |
 | 014    | 2026-05-07 | Bugs críticos resueltos, E2E Via A con contadores validado | Fix validators.py: prefetch_related entries__entry_lines → entries__lines y entry.entry_lines.all() → entry.lines.all() (AttributeError 500 en POST /operator/form/). Fix confirm_entry.html: PARCHE A _applyMeterFields con escritura data-ref-value en inputs meter-field + PARCHE B Gate 2b JS corregido con if condicionales. Fix guard if (!code) { return; } en onload ASSET_DETAIL_URL en form_entry.html, confirm_entry.html y stt_entry.html (400 en /assets/detail/?code=). Fix services.py: machine_asset.kms → machine_asset.mileage y machine_asset.horas → machine_asset.hours (error generación Excel). Segunda y Tercera Acción de S013 verificadas ya aplicadas en disco. Validación E2E Via A completa con contadores activos en G12 superada. |
 | 014b   | 2026-05-08 | Fix pre-relleno de campos de contador con valor actual de BD | Corrección en _applyMeterFields() de los tres templates del operario (form_entry.html, confirm_entry.html, stt_entry.html): además de escribir data-ref-value, se escribe input.value con el valor actual de BD (mileage/hours) para que el campo aparezca pre-rellenado al operario como punto de partida visual. form_entry.html carecía además del parche completo de data-ref-value aplicado en S014. |
+| 015    | 2026-05-08 | Auto-registro de operarios + historial + fix related_name | PRIMERA ACCION: campos phone y dni añadidos a CompanyUser (migr. 0014). WorkerSignupForm en panel/forms.py. WorkerSignupView publica (GET/POST /panel/signup/): resolucion empresa icontains Alvarez, crea auth.User + CompanyUser(WORKSHOP), autentica y redirige a /panel/operator/. Enlace registro en login.html. Template workers/signup.html creado. SEGUNDA ACCION: fix WorkOrderEntryHistoryView — entry.entry_lines → entry.lines en prefetch y calculos. Template operator/history.html creado: agrupacion mensual, badge horas, selector operario ADMIN/SUPERVISOR, badges Revisado/Pendiente. Validacion E2E superada. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (015)
+## 5. Hoja de Ruta para la Siguiente Sesion (016)
 
 ### CONTEXTO
 
-La sesion 014 resolvio todos los bugs pendientes de S013 y valido el flujo
-E2E Via A con contadores activos. La PRIMERA, SEGUNDA y TERCERA ACCION de
-S013 quedaron completadas. La CUARTA ACCION (WorkOrderEntryHistoryView) es
-la unica pendiente para S015.
+La sesion 015 completo la PRIMERA ACCION (auto-registro publico de operarios
+WorkerSignupView + campos phone/dni en CompanyUser + migracion 0014) y la
+SEGUNDA ACCION (WorkOrderEntryHistoryView con fix related_name entry_lines->lines
++ template history.html). Validacion E2E superada.
 
-ADVERTENCIA CRITICA sobre related_name: el FK WorkOrderEntryLine.entry tiene
-related_name="lines" (NO "entry_lines"). Usar siempre entry.lines.all() y
-prefetch_related("entries__lines"). El uso de "entry_lines" causa AttributeError.
+S016 abre un bloque de trabajo transversal sobre las vistas de historial y
+gestion de presencia/ausencia de operarios. Afecta a panel/views.py,
+panel/urls.py, panel/templates/panel/ y a dos nuevos modelos WorkerAbsence
+y WorkPeriod en ivr_config/models.py con sus migraciones.
 
-### PRIMERA ACCION — Registro de Operarios (WORKERS)
+ADVERTENCIA CRITICA sobre related_name (mantener siempre presente):
+el FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
+Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-Antes de implementar WorkOrderEntryHistoryView, crear el sistema de registro
-de operarios de taller. Este sistema permite al ADMIN de cada empresa dar de
-alta a sus operarios directamente desde el panel, sin necesidad de acceso al
-admin de Django.
+### PRIMERA ACCION — Eliminar bloque "Mis partes de hoy" del dashboard del operario
 
-#### Modelo de datos
+El dashboard del operario (panel/templates/panel/operator/dashboard.html)
+muestra actualmente un bloque "Mis partes de hoy" que queda obsoleto ahora
+que existe la vista de historial dedicada. Eliminarlo via PMA.
 
-El operario se registra como un User de Django vinculado a un CompanyUser
-existente o nuevo. Los campos requeridos son:
+Archivos a modificar:
+  - panel/templates/panel/operator/dashboard.html: PMA — eliminar bloque
+    "Mis partes de hoy" y cualquier logica de contexto asociada.
+  - panel/views.py: PMA — revisar OperatorDashboardView.get_context_data()
+    y eliminar el queryset de partes del dia si existe.
 
-  Nombre completo: first_name + last_name del User Django.
-  Telefono: campo phone en CompanyUser (verificar si existe o crear).
-  DNI: campo dni en CompanyUser (nuevo campo — requiere migracion).
-  Email: campo email del User Django (opcional).
-  Contrasena: campo password del User Django.
+### SEGUNDA ACCION — Nuevos modelos WorkerAbsence y WorkPeriod
 
-El rol del CompanyUser creado sera siempre WORKER.
+Nuevo modelo WorkerAbsence en ivr_config/models.py:
 
-#### Vista y formulario
+  Campos:
+    company_user   FK(CompanyUser, CASCADE, related_name="absences")
+    absence_type   CharField(max_length=30, choices=ABSENCE_CHOICES)
+    start_date     DateField()
+    end_date       DateField()
+    registered_by  FK(CompanyUser, SET_NULL, null=True, blank=True,
+                      related_name="registered_absences")
+    notes          TextField(blank=True, default="")
+    created_at     DateTimeField(auto_now_add=True)
+    updated_at     DateTimeField(auto_now=True)
 
-Vista: WorkerCreateView (LoginRequiredMixin, AdminRequiredMixin, View).
-Endpoint: GET/POST /panel/workers/create/
-URL name: worker_create
+  Choices de absence_type:
+    VACATION            = "VACATION"            # Vacaciones anuales
+    SICK_LEAVE          = "SICK_LEAVE"          # Baja medica (IT enfermedad comun)
+    WORK_ACCIDENT       = "WORK_ACCIDENT"       # Accidente laboral (IT profesional)
+    MATERNITY_PATERNITY = "MATERNITY_PATERNITY" # Maternidad/paternidad
+    BEREAVEMENT         = "BEREAVEMENT"         # Defuncion de familiar
+    PERSONAL            = "PERSONAL"            # Asuntos propios
+    OTHER               = "OTHER"               # Otros (cajon de sastre)
 
-Formulario Django: WorkerCreateForm (forms.Form, no ModelForm).
-Campos:
-  - first_name (CharField, obligatorio)
-  - last_name (CharField, obligatorio)
-  - phone (CharField, obligatorio)
-  - dni (CharField, obligatorio, validar formato DNI espanol)
-  - email (EmailField, opcional)
-  - password (CharField, widget=PasswordInput, obligatorio)
-  - password_confirm (CharField, widget=PasswordInput, obligatorio)
+  Meta: ordering=["-start_date"], verbose_name="Ausencia de operario".
 
-Validaciones:
-  - password == password_confirm
-  - DNI unico por empresa (no puede repetirse entre CompanyUsers de la misma company)
-  - Email unico en User Django si se proporciona
-  - Telefono obligatorio
+Nuevo modelo WorkPeriod en ivr_config/models.py:
 
-#### Login/Signing accesible desde cualquier punto de la aplicacion
+  Campos:
+    company_user FK(CompanyUser, CASCADE, related_name="work_periods")
+    start_date   DateField()
+    end_date     DateField(null=True, blank=True)  # null = periodo abierto
+    label        CharField(max_length=100, blank=True)  # ej. "Mayo 2026"
+    created_by   FK(CompanyUser, SET_NULL, null=True, blank=True,
+                    related_name="created_work_periods")
+    created_at   DateTimeField(auto_now_add=True)
 
-El enlace de login debe aparecer en el sidebar y en la barra superior
-para usuarios no autenticados. Para usuarios autenticados con rol ADMIN
-o SUPERVISOR, debe aparecer un boton o enlace "Registrar operario" en
-el sidebar bajo la seccion TALLER.
+  Periodo activo: end_date=None o end_date >= hoy.
+  Meta: ordering=["-start_date"], verbose_name="Periodo de trabajo".
 
-#### Migracion requerida
+Ejecutar makemigrations ivr_config tras ambos modelos.
 
-Anadir campo dni a CompanyUser:
-  dni = models.CharField(max_length=20, blank=True, default="",
-                         verbose_name="DNI / NIF")
+### TERCERA ACCION — Vista diferenciada de historial ADMIN/SUPERVISOR
 
-Anadir campo phone a CompanyUser si no existe (verificar primero).
+Nueva vista WorkOrderAdminHistoryView (SupervisorAccessMixin, View).
+Endpoint: GET /panel/work-orders/history/  (name=work_order_admin_history).
 
-#### Archivos a modificar/crear
+Si el usuario autenticado es ADMIN o SUPERVISOR, WorkOrderEntryHistoryView
+redirige automaticamente a work_order_admin_history.
 
-  - ivr_config/models.py: PMA — anadir campo dni (y phone si no existe)
-  - ivr_config/migrations/: makemigrations ivr_config
-  - panel/forms.py: PEA o PMA — WorkerCreateForm
-  - panel/views.py: PMA — WorkerCreateView
-  - panel/urls.py: PMA — ruta worker_create
-  - panel/templates/panel/workers/: PEA — create.html (Neonato Puro)
-  - panel/templates/panel/_nav_items.html: PMA — enlace Registrar operario
+Pestanas de WorkOrderAdminHistoryView:
 
-### SEGUNDA ACCION — WorkOrderEntryHistoryView
+  Pestana 1 — Pendientes:
+    Partes sin revisar (reviewed=False) de todos los operarios de la empresa.
+    Filtros: operario, fecha, maquina.
+    Acciones: marcar como revisado, editar (enlace a work_order_edit).
 
-Vista nueva: WorkOrderEntryHistoryView (WorkshopRequiredMixin, View).
-Endpoint: GET /panel/operator/history/
-URL name: operator_history
+  Pestana 2 — Revisados:
+    Partes revisados (reviewed=True). Exportacion Excel disponible SOLO aqui.
+    Exportacion individual (un parte) y por rango de fechas (multiples partes).
+    Filtros: operario, rango de fechas, maquina.
 
-Archivo: panel/views.py (PMA — insertar tras WorkOrderEntrySTTExtractView,
-antes del bloque de vistas de analytics).
+  Pestana 3 — Historico:
+    Todos los partes con filtros cruzados: operario, rango de fechas, maquina,
+    estado de revision. Vista de lectura completa.
 
-Logica de la vista:
-  cu = request.user.company_user
-  company = cu.company
+  Pestana 4 — Ausencias y partes de periodo:
+    Listado de ausencias WorkerAbsence por operario con filtro de tipo y fecha.
+    Acciones:
+      - Alta de nueva ausencia (WorkerAbsenceCreateView).
+      - Edicion y baja de ausencia existente.
+      - "Generar partes del periodo": dado un WorkerAbsence, genera un WorkOrder
+        sintetico por cada dia laborable (lunes a viernes) del rango start_date
+        a end_date. Cada parte generado:
+          source_pdf = "" (digital)
+          status = DONE
+          uploaded_by = company_user del ausente
+          generated_by = CompanyUser del supervisor que lanza la accion
+            (campo nuevo WorkOrder.generated_by FK(CompanyUser, SET_NULL,
+            null=True, blank=True, related_name="generated_work_orders"))
+          WorkOrderEntry.work_date = fecha del dia laborable
+          WorkOrderEntryLine.fault_description = absence_type display
+          WorkOrderEntryLine.delta_hours = 8 (jornada habitual por defecto)
 
-  Queryset base:
-    qs = WorkOrder.objects.filter(company=company, uploaded_by=cu)
-          .prefetch_related(
-              Prefetch("entries",
-                       queryset=WorkOrderEntry.objects.prefetch_related("lines"))
-          ).order_by("-id")
+Nuevo campo WorkOrder.generated_by:
+  generated_by = FK(CompanyUser, SET_NULL, null=True, blank=True,
+                    related_name="generated_work_orders")
+  Requiere migracion en work_order_processor.
 
-  Para ADMIN y SUPERVISOR: si GET ?user_pk=XX, sustituir cu por ese CompanyUser
-    (verificar que pertenece a la misma company antes de filtrar).
-    users = CompanyUser.objects.filter(company=company, is_active=True).select_related("user")
+### CUARTA ACCION — Vista simplificada del operario (WORKSHOP)
 
-  Agrupacion por mes desde work_date del primer WorkOrderEntry de cada WorkOrder:
-    Para cada WorkOrder: obtener work_date = wo.entries.first().work_date
-    Clave de agrupacion: (work_date.year, work_date.month) o None si sin fecha.
-    Calcular por WorkOrder:
-      num_bloques = sum(entry.lines.count() for entry in wo.entries.all())
-      horas_totales = sum(
-          line.delta_hours for entry in wo.entries.all()
-          for line in entry.lines.all()
-          if line.delta_hours is not None
-      )
-    Agrupar en lista de dicts mensual, descendente por (year, month).
+Refactor de WorkOrderEntryHistoryView para el rol WORKSHOP exclusivamente.
 
-  Label de mes:
-    MESES_ES = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",
-                6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",
-                10:"Octubre",11:"Noviembre",12:"Diciembre"}
-    label = f"{MESES_ES[month]} {year}"
+Pestanas:
 
-  Total de horas del mes: sum de horas_totales de todos los WorkOrder del grupo.
+  Pestana 1 — Periodo actual:
+    Partes del WorkPeriod activo del operario (end_date=None o end_date>=hoy).
+    Total de horas del periodo. Solo lectura.
 
-Contexto al template:
-  {
-    "monthly_groups": [
-      {
-        "label": "Mayo 2026",
-        "total_hours": Decimal,
-        "work_orders": [
-          {
-            "pk": int,
-            "fecha": date o None,
-            "num_bloques": int,
-            "horas_totales": Decimal,
-            "reviewed": bool,
-          },
-        ]
-      },
-    ],
-    "company": company,
-    "company_user": cu,
-    "active_nav": "operator_history",
-    "own_presence": ...,
-    "users": queryset o [] (solo ADMIN/SUPERVISOR),
-    "selected_user_pk": int o None,
-  }
+  Pestana 2 — Historico:
+    Partes de periodos cerrados agrupados por WorkPeriod, descendente.
+    Solo lectura.
 
-Template: panel/operator/history.html (Neonato Puro).
-  - Extiende panel/base.html.
-  - Para cada grupo mensual: card con header "Mes AAAA — X h totales (badge)".
-  - Para cada WorkOrder: fila con fecha, num_bloques, horas_totales,
-    badge "Revisado" (verde) o "Pendiente" (gris) segun reviewed.
-  - ADMIN/SUPERVISOR: <select> de usuario con onchange GET ?user_pk=XX.
-  - Sin paginacion en primera iteracion.
-  - active_nav = "operator_history".
+  Pestana 3 — Horas extra:
+    Calculo: horas trabajadas del periodo activo - (dias_laborables x 8).
+    Dias laborables = dias lunes-viernes del rango start_date a hoy (o end_date).
+    Solo visor, sin edicion.
 
-Sidebar panel/templates/panel/_nav_items.html (PMA):
-  Descomentar el bloque comentado con 'pendiente Hito 7' y apuntar href a:
-    {% url 'panel:operator_history' %}
+  Pestana 4 — Ausencias:
+    Visor de WorkerAbsence del operario autenticado. Solo lectura.
+    Muestra tipo, fechas y notas.
 
-URL panel/urls.py (PMA):
-  - Importar WorkOrderEntryHistoryView.
-  - Añadir antes de la seccion de work-orders:
-    path("operator/history/", WorkOrderEntryHistoryView.as_view(), name="operator_history"),
-
-### Estado de migraciones al cierre de sesion 014b
+### Estado de migraciones al cierre de sesion 015
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
-| fleet                  | 0004_alter_machineasset_options_and_more               |
+| fleet                  | 0005_add_first_repair_to_machineasset                  |
 | work_order_processor   | 0011_sparepartline_unit_price                          |
-| ivr_config             | 0013_alter_companyuser_role                            |
+| ivr_config             | 0014_companyuser_dni_companyuser_phone                 |
 | panel                  | 0001_initial (AnalyticsProfile)                        |
 
-### Archivos a solicitar al inicio de sesion 015
+### Archivos a solicitar al inicio de sesion 016
 
 OBLIGATORIO via SFTP antes de generar ningun PMA:
   - ivr_config/models.py
-  - panel/forms.py (si existe)
   - panel/views.py
   - panel/urls.py
-  - panel/templates/panel/_nav_items.html
+  - panel/templates/panel/operator/dashboard.html

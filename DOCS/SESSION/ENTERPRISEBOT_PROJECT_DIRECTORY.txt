@@ -26,6 +26,7 @@
 ./panel/templates/panel/fleet/_table_fragment.html
 ./panel/templates/panel/datacapturesets/list.html
 ./panel/templates/panel/datacapturesets/form.html
+./panel/templates/panel/workers/signup.html
 ./panel/templates/panel/analytics.html
 ./panel/templates/panel/sections/list.html
 ./panel/templates/panel/sections/form.html
@@ -60,6 +61,7 @@
 ./panel/templates/panel/work_orders/_entry_group_fragment.html
 ./panel/templates/panel/work_orders/_review_badge_fragment.html
 ./panel/templates/panel/_description_typeahead.html
+./panel/templates/panel/operator/history.html
 ./panel/templates/panel/operator/form_entry.html
 ./panel/templates/panel/operator/confirm_entry.html
 ./panel/templates/panel/operator/dashboard.html
@@ -247,6 +249,7 @@
 ./ivr_config/apps.py
 ./ivr_config/models.py
 ./ivr_config/migrations/0013_alter_companyuser_role.py
+./ivr_config/migrations/0014_companyuser_dni_companyuser_phone.py
 ./ivr_config/migrations/0011_section_fleet_families.py
 ./ivr_config/migrations/0008_sectioncontact_transferattempt_pendingnotification.py
 ./ivr_config/migrations/0003_callflow_notification_contact_contact_email_and_more.py

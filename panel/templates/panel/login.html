@@ -82,6 +82,15 @@
             text-align: center;
             margin-top: 1.25rem;
         }
+        /* Signup link in login footer — Enlace de registro en el pie del login */
+        .login-signup-link {
+            color: #1a1f2e;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .login-signup-link:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -160,11 +169,10 @@
                     </div>
                 </form>
 
-                <!-- No registration link: user creation is by invitation only -->
-                <!-- Sin enlace de registro: el alta de usuarios es solo por invitación -->
+                <!-- Signup link for workshop operators — Enlace de registro para operarios de taller -->
                 <p class="login-footer-note">
-                    El acceso es solo por invitación.<br>
-                    Contacta con tu administrador para solicitar acceso.
+                    ¿No tienes cuenta?
+                    <a href="{% url 'panel:worker_signup' %}" class="login-signup-link">¡Regístrate!</a>
                 </p>
 
             </div>

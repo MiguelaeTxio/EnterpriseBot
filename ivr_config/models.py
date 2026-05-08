@@ -161,6 +161,27 @@ class CompanyUser(models.Model):
             "automáticamente al crear el usuario o cuando el ADMIN fuerza un reset."
         ),
     )
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Teléfono",
+        help_text=(
+            "Número de teléfono de contacto del usuario de empresa. "
+            "Formato libre (p. ej. +34XXXXXXXXX). Opcional."
+        ),
+    )
+    dni = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="DNI / NIF",
+        help_text=(
+            "Documento Nacional de Identidad o NIF del usuario de empresa. "
+            "Se usa para identificar al operario en el registro de signup. "
+            "Debe ser único por empresa cuando se informe."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

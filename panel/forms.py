@@ -598,3 +598,139 @@ class MachineAssetForm(forms.ModelForm):
             "hours":          "Horas",
             "is_active":      "Activo",
         }
+
+
+class WorkerSignupForm(forms.Form):
+    """
+    Public self-registration form for workshop operators (WORKSHOP role).
+    The authenticated company is resolved server-side (Grupo Álvarez pilot).
+    Validates DNI uniqueness within the resolved company and password match.
+    Architecture is open for future multi-company extension by passing the
+    target company as a constructor argument.
+    ---
+    Formulario de auto-registro público para operarios de taller (rol WORKSHOP).
+    La empresa se resuelve en el servidor (piloto Grupo Álvarez).
+    Valida unicidad de DNI dentro de la empresa resuelta y coincidencia de contraseñas.
+    La arquitectura está preparada para extensión multiempresa futura pasando
+    la empresa destino como argumento del constructor.
+    """
+
+    first_name = forms.CharField(
+        max_length=150,
+        label="Nombre",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Tu nombre",
+            "autofocus": True,
+        }),
+    )
+    last_name = forms.CharField(
+        max_length=150,
+        label="Apellidos",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Tus apellidos",
+        }),
+    )
+    phone = forms.CharField(
+        max_length=20,
+        label="Teléfono",
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "+34XXXXXXXXX",
+        }),
+        help_text="Opcional. Formato libre.",
+    )
+    dni = forms.CharField(
+        max_length=20,
+        label="DNI / NIF",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "12345678A",
+        }),
+    )
+    username = forms.CharField(
+        max_length=150,
+        label="Nombre de usuario",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "nombre.apellido",
+        }),
+        help_text="Solo letras, números y los caracteres . @ + - _",
+    )
+    password = forms.CharField(
+        label="Contraseña",
+        widget=forms.PasswordInput(attrs={
+            "class": "form-control",
+            "placeholder": "Mínimo 8 caracteres",
+        }),
+    )
+    password_confirm = forms.CharField(
+        label="Confirmar contraseña",
+        widget=forms.PasswordInput(attrs={
+            "class": "form-control",
+            "placeholder": "Repite la contraseña",
+        }),
+    )
+
+    def __init__(self, *args, company=None, **kwargs):
+        """
+        Accepts an optional company instance for DNI uniqueness validation.
+        When company is None the DNI uniqueness check is skipped (safe default
+        for the pilot single-company deployment).
+        ---
+        Acepta una instancia de empresa opcional para la validación de unicidad de DNI.
+        Cuando company es None, la comprobación de unicidad de DNI se omite
+        (comportamiento seguro por defecto para el despliegue piloto de empresa única).
+        """
+        self._company = company
+        super().__init__(*args, **kwargs)
+
+    def clean_username(self):
+        """
+        Validates that the username is not already taken by another auth.User.
+        ---
+        Valida que el nombre de usuario no esté ya en uso por otro auth.User.
+        """
+        username = self.cleaned_data.get("username")
+        if User.objects.filter(username=username).exists():
+            raise ValidationError(
+                "Este nombre de usuario ya está en uso. Elige otro."
+            )
+        return username
+
+    def clean_dni(self):
+        """
+        Validates DNI uniqueness within the resolved company when available.
+        Empty DNI values bypass the uniqueness check (field is required, so
+        an empty value will already have been rejected by required validation).
+        ---
+        Valida la unicidad del DNI dentro de la empresa resuelta cuando está disponible.
+        Los valores de DNI vacíos omiten la comprobación de unicidad (el campo es
+        obligatorio, por lo que un valor vacío ya habrá sido rechazado por la
+        validación de required).
+        """
+        dni = self.cleaned_data.get("dni", "").strip()
+        if dni and self._company is not None:
+            if CompanyUser.objects.filter(
+                company=self._company, dni__iexact=dni
+            ).exists():
+                raise ValidationError(
+                    "Este DNI ya está registrado en la empresa. "
+                    "Contacta con tu administrador si crees que es un error."
+                )
+        return dni
+
+    def clean(self):
+        """
+        Cross-field validation: ensures both password fields match.
+        ---
+        Validación cruzada de campos: comprueba que ambos campos de contraseña coincidan.
+        """
+        cleaned_data     = super().clean()
+        password         = cleaned_data.get("password")
+        password_confirm = cleaned_data.get("password_confirm")
+        if password and password_confirm and password != password_confirm:
+            self.add_error("password_confirm", "Las contraseñas no coinciden.")
+        return cleaned_data

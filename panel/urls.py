@@ -12,6 +12,7 @@ from django.urls import path
 from panel.views import (
     PanelLoginView,
     PanelLogoutView,
+    WorkerSignupView,
     PanelDashboardView,
     PresenceStatusUpdateView,
     CompanyUserListView,
@@ -79,6 +80,9 @@ app_name = "panel"
 
 urlpatterns = [
     # Authentication routes — Rutas de autenticación.
+    # Worker public self-registration — Registro público de operarios de taller.
+    # Hito 7 Primera Acción (2026-05-08)
+    path("signup/", WorkerSignupView.as_view(), name="worker_signup"),
     path("login/", PanelLoginView.as_view(), name="login"),
     path("logout/", PanelLogoutView.as_view(), name="logout"),
 

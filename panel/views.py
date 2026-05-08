@@ -120,6 +120,122 @@ class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
         return context
 
 
+class WorkerSignupView(View):
+    """
+    Public self-registration view for workshop operators.
+    Resolves the target company server-side (Grupo Álvarez pilot).
+    Creates an auth.User and a CompanyUser with role=WORKSHOP on valid POST.
+    No authentication required — this view is intentionally public.
+    Architecture is prepared for multi-company extension: the company
+    resolution logic is isolated in _resolve_company() for easy replacement.
+    ---
+    Vista de auto-registro público para operarios de taller.
+    Resuelve la empresa destino en el servidor (piloto Grupo Álvarez).
+    Crea un auth.User y un CompanyUser con rol=WORKSHOP en un POST válido.
+    No requiere autenticación — esta vista es intencionalmente pública.
+    La arquitectura está preparada para extensión multiempresa: la lógica de
+    resolución de empresa está aislada en _resolve_company() para fácil sustitución.
+    """
+
+    template_name = "panel/workers/signup.html"
+
+    def _resolve_company(self):
+        """
+        Resolves the target Company for new worker registrations.
+        Current implementation: returns the Grupo Álvarez company (pilot).
+        Returns None if the company does not exist, which causes the view
+        to render an informative error page.
+        ---
+        Resuelve la Company destino para los nuevos registros de operarios.
+        Implementación actual: devuelve la empresa Grupo Álvarez (piloto).
+        Devuelve None si la empresa no existe, lo que hace que la vista
+        renderice una página de error informativa.
+        """
+        from ivr_config.models import Company
+        try:
+            return Company.objects.get(name__icontains="Álvarez")
+        except (Company.DoesNotExist, Company.MultipleObjectsReturned):
+            return None
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the signup form. Redirects to operator dashboard if already
+        authenticated to avoid re-registration.
+        ---
+        Renderiza el formulario de registro. Redirige al panel del operario
+        si ya está autenticado para evitar re-registros.
+        """
+        from panel.forms import WorkerSignupForm
+        if request.user.is_authenticated:
+            return redirect("/panel/operator/")
+        company = self._resolve_company()
+        form    = WorkerSignupForm(company=company)
+        return render(request, self.template_name, {
+            "form":    form,
+            "company": company,
+        })
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates the signup form. On success creates auth.User + CompanyUser
+        with role=WORKSHOP, logs the user in and redirects to operator dashboard.
+        On failure re-renders the form with validation errors.
+        ---
+        Valida el formulario de registro. En caso de éxito crea auth.User +
+        CompanyUser con rol=WORKSHOP, autentica al usuario y redirige al panel
+        del operario. En caso de fallo re-renderiza el formulario con errores.
+        """
+        from django.contrib.auth import login as auth_login
+        from django.contrib.auth.models import User as AuthUser
+        from panel.forms import WorkerSignupForm
+        company = self._resolve_company()
+        if company is None:
+            django_messages.error(
+                request,
+                "No es posible completar el registro en este momento. "
+                "Contacta con tu administrador.",
+            )
+            return render(request, self.template_name, {
+                "form":    WorkerSignupForm(),
+                "company": None,
+            })
+        form = WorkerSignupForm(request.POST, company=company)
+        if not form.is_valid():
+            return render(request, self.template_name, {
+                "form":    form,
+                "company": company,
+            })
+        # Create auth.User with the operator-chosen password.
+        # Crear auth.User con la contraseña elegida por el operario.
+        auth_user = AuthUser.objects.create_user(
+            username   = form.cleaned_data["username"],
+            first_name = form.cleaned_data["first_name"],
+            last_name  = form.cleaned_data["last_name"],
+            password   = form.cleaned_data["password"],
+            is_staff     = False,
+            is_superuser = False,
+        )
+        # Create CompanyUser linked to the resolved company with WORKSHOP role.
+        # Crear CompanyUser vinculado a la empresa resuelta con rol WORKSHOP.
+        CompanyUser.objects.create(
+            user                 = auth_user,
+            company              = company,
+            role                 = CompanyUser.ROLE_WORKSHOP,
+            is_active            = True,
+            must_change_password = False,
+            phone                = form.cleaned_data.get("phone", ""),
+            dni                  = form.cleaned_data.get("dni", ""),
+        )
+        # Log the new user in immediately after registration.
+        # Autenticar al nuevo usuario inmediatamente tras el registro.
+        auth_login(request, auth_user)
+        django_messages.success(
+            request,
+            f"¡Bienvenido, {auth_user.first_name}! Tu cuenta ha sido creada correctamente.",
+        )
+        return redirect("/panel/operator/")
+
+
 class CompanyUserCreateView(AdminRoleRequiredMixin, View):
     """
     Allows an ADMIN to create a new CompanyUser for their company.
@@ -7217,7 +7333,7 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
             .prefetch_related(
                 Prefetch(
                     "entries",
-                    queryset=WorkOrderEntry.objects.prefetch_related("entry_lines"),
+                    queryset=WorkOrderEntry.objects.prefetch_related("lines"),
                 )
             )
             .order_by("-id")
@@ -7236,12 +7352,12 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
             # Compute aggregate metrics for this WorkOrder.
             # Calcular metricas agregadas para este WorkOrder.
             num_bloques   = sum(
-                entry.entry_lines.count() for entry in entries_list
+                entry.lines.count() for entry in entries_list
             )
             horas_totales = sum(
                 (line.delta_hours
                  for entry in entries_list
-                 for line in entry.entry_lines.all()
+                 for line in entry.lines.all()
                  if line.delta_hours is not None),
                 Decimal("0"),
             )
