@@ -38,10 +38,15 @@ from ivr_config.models import Company, CompanyUser
 
 class WorkOrder(models.Model):
     """
-    Represents a PDF upload submitted by a company user for processing.
-    Tracks the full lifecycle: pending → processing → done / error.
-    Stores the original PDF and, once processing is complete, the generated
-    Excel report.
+    Represents a work-order record in the platform. Tracks the full lifecycle:
+    pending → processing → done / error. Stores the original PDF (if any) and,
+    once processing is complete, the generated Excel report.
+
+    Origin classification (Hito 7 / S016):
+      source = PDF_UPLOAD — created via the classic PDF upload pipeline.
+      source = DIGITAL    — created directly by a WORKSHOP operator via
+                            Form (Via A), STT (Via B) or Upload (Via C).
+      source = GENERATED  — created automatically from a WorkerAbsence range.
 
     Review workflow (Hito 8 / Bloque G):
       reviewed    — boolean flag set by a SUPERVISOR after inspecting the part.
@@ -50,10 +55,15 @@ class WorkOrder(models.Model):
 
     ---
 
-    Representa una carga de PDF enviada por un usuario de empresa para su
-    procesamiento. Registra el ciclo de vida completo: pendiente → procesando
-    → hecho / error. Almacena el PDF original y, una vez completado el
-    procesamiento, el informe Excel generado.
+    Representa un registro de parte de trabajo en la plataforma. Registra el
+    ciclo de vida completo: pendiente → procesando → hecho / error. Almacena
+    el PDF original (si lo hay) y, una vez completado, el informe Excel generado.
+
+    Clasificación de origen (Hito 7 / S016):
+      source = PDF_UPLOAD — creado via el pipeline clásico de carga de PDF.
+      source = DIGITAL    — creado directamente por un operario WORKSHOP via
+                            Form (Via A), STT (Via B) o Upload (Via C).
+      source = GENERATED  — creado automáticamente desde un rango WorkerAbsence.
 
     Flujo de revisión (Hito 8 / Bloque G):
       reviewed    — flag booleano establecido por un SUPERVISOR tras inspeccionar
@@ -72,6 +82,15 @@ class WorkOrder(models.Model):
         ERROR      = "ERROR",      _("Error")
 
     # ------------------------------------------------------------------
+    # Source choices — origin classification (Hito 7 / S016)
+    # Opciones de origen — clasificación del parte (Hito 7 / S016)
+    # ------------------------------------------------------------------
+    class Source(models.TextChoices):
+        PDF_UPLOAD = "PDF_UPLOAD", _("Subida PDF (pipeline clásico)")
+        DIGITAL    = "DIGITAL",    _("Digital (operario — Form / STT / Upload)")
+        GENERATED  = "GENERATED",  _("Generado automáticamente (ausencia)")
+
+    # ------------------------------------------------------------------
     # Relations / Relaciones
     # ------------------------------------------------------------------
     company = models.ForeignKey(
@@ -88,6 +107,23 @@ class WorkOrder(models.Model):
         related_name="work_orders",
         verbose_name=_("Subido por"),
         help_text=_("Usuario de empresa que realizó la carga del PDF."),
+    )
+
+    # ------------------------------------------------------------------
+    # Origin source field — Hito 7 / S016
+    # Campo de origen del parte — Hito 7 / S016
+    # ------------------------------------------------------------------
+    source = models.CharField(
+        _("Origen"),
+        max_length=20,
+        choices=Source.choices,
+        default=Source.PDF_UPLOAD,
+        db_index=True,
+        help_text=_(
+            "Clasificación del origen del parte: PDF_UPLOAD (pipeline clásico de "
+            "subida de PDF), DIGITAL (entrada directa del operario via Form/STT/Upload) "
+            "o GENERATED (generado automáticamente desde un registro de ausencia)."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -216,6 +252,32 @@ class WorkOrder(models.Model):
             "existe en el catálogo de MachineAsset mediante la opción 'Otro'. "
             "Requiere revisión por parte de un SUPERVISOR o ADMIN para crear "
             "el centro de gasto correspondiente en la base de datos."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Generated-by field — Hito 7 / TERCERA ACCIÓN (sesión 016)
+    # Campo generado-por — Hito 7 / TERCERA ACCIÓN (sesión 016)
+    #
+    # Tracks which SUPERVISOR or ADMIN triggered the automatic generation
+    # of synthetic WorkOrder records from a WorkerAbsence period range.
+    # Null for all manually uploaded or operator-submitted work orders.
+    #
+    # Registra qué SUPERVISOR o ADMIN disparó la generación automática de
+    # registros WorkOrder sintéticos a partir de un rango de WorkerAbsence.
+    # Nulo para todos los partes subidos manualmente o enviados por operarios.
+    # ------------------------------------------------------------------
+    generated_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="generated_work_orders",
+        verbose_name=_("Generado por"),
+        help_text=_(
+            "Supervisor o ADMIN que generó este parte sintético desde un registro "
+            "de ausencia (WorkerAbsence). Nulo en partes subidos manualmente "
+            "o enviados por el propio operario desde el panel."
         ),
     )
 
@@ -430,7 +492,7 @@ class WorkOrderEntryLine(models.Model):
     code matches a record in the fleet catalogue. It is left null if no match
     is found (generates an incidence in the Excel manifest).
 
-    delta_horas stores the net hours for this block after applying the lunch
+    delta_hours stores the net hours for this block after applying the lunch
     break deduction rule (13:30–15:00, 90 min) defined in the skill.
 
     ---
@@ -449,7 +511,7 @@ class WorkOrderEntryLine(models.Model):
     código normalizado coincide con un registro del catálogo de flota. Se deja
     nulo si no se encuentra coincidencia (genera incidencia en el manifiesto Excel).
 
-    delta_horas almacena las horas netas de este bloque tras aplicar la regla de
+    delta_hours almacena las horas netas de este bloque tras aplicar la regla de
     descuento de la pausa de comida (13:30–15:00, 90 min) definida en la skill.
     """
 

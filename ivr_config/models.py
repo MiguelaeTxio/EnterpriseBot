@@ -1467,3 +1467,185 @@ class CallDataCapture(models.Model):
             f"{self.captured_at:%Y-%m-%d %H:%M} "
             f"{notified}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 16. WORKER ABSENCE — Absence record for a workshop operator.
+#     Registro de ausencia de un operario de taller.
+# ---------------------------------------------------------------------------
+
+class WorkerAbsence(models.Model):
+    """
+    Records a declared absence period for a CompanyUser with the WORKSHOP role.
+    Each record covers a contiguous date range with a typed reason. The supervisor
+    or ADMIN registers absences manually; operators cannot create their own records.
+    The 'registered_by' field tracks which supervisor created the record for audit.
+    ---
+    Registra un periodo de ausencia declarado para un CompanyUser con rol WORKSHOP.
+    Cada registro cubre un rango de fechas contiguo con un motivo tipificado. El
+    supervisor o ADMIN registra las ausencias manualmente; los operarios no pueden
+    crear sus propios registros.
+    El campo 'registered_by' registra qué supervisor creó el registro para auditoría.
+    """
+
+    ABSENCE_VACATION            = "VACATION"
+    ABSENCE_SICK_LEAVE          = "SICK_LEAVE"
+    ABSENCE_WORK_ACCIDENT       = "WORK_ACCIDENT"
+    ABSENCE_MATERNITY_PATERNITY = "MATERNITY_PATERNITY"
+    ABSENCE_BEREAVEMENT         = "BEREAVEMENT"
+    ABSENCE_PERSONAL            = "PERSONAL"
+    ABSENCE_OTHER               = "OTHER"
+
+    ABSENCE_CHOICES = [
+        (ABSENCE_VACATION,            "Vacaciones anuales"),
+        (ABSENCE_SICK_LEAVE,          "Baja médica (IT enfermedad común)"),
+        (ABSENCE_WORK_ACCIDENT,       "Accidente laboral (IT profesional)"),
+        (ABSENCE_MATERNITY_PATERNITY, "Maternidad / Paternidad"),
+        (ABSENCE_BEREAVEMENT,         "Defunción de familiar"),
+        (ABSENCE_PERSONAL,            "Asuntos propios"),
+        (ABSENCE_OTHER,               "Otros"),
+    ]
+
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="absences",
+        verbose_name="Operario",
+        help_text="Operario de taller al que pertenece este registro de ausencia.",
+    )
+    absence_type = models.CharField(
+        max_length=30,
+        choices=ABSENCE_CHOICES,
+        verbose_name="Tipo de ausencia",
+        help_text="Categoría de la ausencia según los tipos definidos por la plataforma.",
+    )
+    start_date = models.DateField(
+        verbose_name="Fecha de inicio",
+        help_text="Primer día de la ausencia (inclusive).",
+    )
+    end_date = models.DateField(
+        verbose_name="Fecha de fin",
+        help_text="Último día de la ausencia (inclusive).",
+    )
+    registered_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="registered_absences",
+        verbose_name="Registrado por",
+        help_text=(
+            "Supervisor o ADMIN que registró esta ausencia. "
+            "Se establece automáticamente desde el usuario autenticado en el momento del alta."
+        ),
+    )
+    notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Notas",
+        help_text="Observaciones adicionales sobre la ausencia. Campo libre, opcional.",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Ausencia de operario"
+        verbose_name_plural = "Ausencias de operario"
+        ordering = ["-start_date"]
+
+    def __str__(self):
+        return (
+            f"{self.company_user.user.get_full_name() or self.company_user.user.username} — "
+            f"{self.get_absence_type_display()} "
+            f"({self.start_date:%d/%m/%Y} – {self.end_date:%d/%m/%Y})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 17. WORK PERIOD — Active employment period for a workshop operator.
+#     Periodo de trabajo activo de un operario de taller.
+# ---------------------------------------------------------------------------
+
+class WorkPeriod(models.Model):
+    """
+    Represents a contiguous employment or contract period for a CompanyUser.
+    An open period (end_date=None) is the operator's currently active period.
+    Closed periods (end_date set) represent historical intervals used for
+    grouping the operator's work-order history in the four-tab history view.
+    The 'label' field allows supervisors to assign a human-readable name to
+    each period (e.g. 'Mayo 2026', 'Verano 2026').
+    ---
+    Representa un periodo de empleo o contrato contiguo para un CompanyUser.
+    Un periodo abierto (end_date=None) es el periodo activo actual del operario.
+    Los periodos cerrados (end_date establecido) representan intervalos históricos
+    usados para agrupar el historial de partes del operario en la vista de historial
+    de cuatro pestañas.
+    El campo 'label' permite a los supervisores asignar un nombre legible a cada
+    periodo (ej. 'Mayo 2026', 'Verano 2026').
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="work_periods",
+        verbose_name="Operario",
+        help_text="Operario de taller al que pertenece este periodo de trabajo.",
+    )
+    start_date = models.DateField(
+        verbose_name="Fecha de inicio",
+        help_text="Primer día del periodo de trabajo (inclusive).",
+    )
+    end_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de fin",
+        help_text=(
+            "Último día del periodo de trabajo (inclusive). "
+            "Null indica periodo abierto — el operario está activo en este periodo."
+        ),
+    )
+    label = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Etiqueta",
+        help_text=(
+            "Nombre descriptivo opcional del periodo (p. ej. 'Mayo 2026', 'Verano 2026'). "
+            "Se muestra en el historial de partes del operario como cabecera de grupo."
+        ),
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_work_periods",
+        verbose_name="Creado por",
+        help_text=(
+            "Supervisor o ADMIN que creó este periodo. "
+            "Se establece automáticamente desde el usuario autenticado en el momento del alta."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+
+    class Meta:
+        verbose_name = "Periodo de trabajo"
+        verbose_name_plural = "Periodos de trabajo"
+        ordering = ["-start_date"]
+
+    def __str__(self):
+        end_label = self.end_date.strftime("%d/%m/%Y") if self.end_date else "activo"
+        return (
+            f"{self.company_user.user.get_full_name() or self.company_user.user.username} — "
+            f"{self.start_date:%d/%m/%Y} / {end_label}"
+            + (f" [{self.label}]" if self.label else "")
+        )

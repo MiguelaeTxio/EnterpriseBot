@@ -9,7 +9,7 @@
 {#                                                                                           #}
 {# Features:                                                                                 #}
 {#   A) Voice recording section above the form with mic button and live transcript.         #}
-{#   B) Client-side JS parser: extracts fecha, maquina_raw, hc, hf, descripcion_averia.    #}
+{#   B) Client-side JS parser: extracts fecha, machine_raw, hc, hf, fault_description.     #}
 {#   C) Compatibility warning if SpeechRecognition is unavailable (Firefox, Safari).       #}
 {#   D) Identical form structure to form_entry.html — same name= attributes.               #}
 {#   E) Client-side integrity validation mirroring server-side gate.                        #}
@@ -808,10 +808,10 @@
                 : data.fecha;
             fechaEl.classList.remove("field-flagged");
         }
-        if (maqEl    && data.maquina_raw)        { maqEl.value    = data.maquina_raw;        maqEl.classList.remove("field-flagged"); }
+        if (maqEl    && data.machine_raw)         { maqEl.value    = data.machine_raw;         maqEl.classList.remove("field-flagged"); }
         if (hcEl     && data.hc)                 { hcEl.value     = data.hc;                 hcEl.classList.remove("field-flagged"); }
         if (hfEl     && data.hf)                 { hfEl.value     = data.hf;                 hfEl.classList.remove("field-flagged"); }
-        if (averiaEl && data.descripcion_averia) { averiaEl.value = data.descripcion_averia; averiaEl.classList.remove("field-flagged"); }
+        if (averiaEl && data.fault_description)  { averiaEl.value = data.fault_description;  averiaEl.classList.remove("field-flagged"); }
 
         if (fechaEl) {
             fechaEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -823,7 +823,7 @@
     /*                                                                      */
     /* Extraction rules / Reglas de extraccion:                            */
     /*   fecha        — DD/MM/AAAA | "DD de mes de AAAA" | "el/del dia X" */
-    /*   maquina_raw  — first alphanumeric token after keyword             */
+    /*   machine_raw  — first alphanumeric token after keyword             */
     /*   hc / hf      — HH:MM | "de X a Y" | "desde X hasta Y"            */
     /*   descripcion  — remaining text after removing matched segments     */
     /* ------------------------------------------------------------------ */

@@ -2672,25 +2672,43 @@ class WorkOrderListView(SupervisorAccessMixin, View):
         # Cuatro querysets para la UI de pestañas — Hito 8 / Bloque H.
         wo_queue = (
             WorkOrder.objects
-            .filter(company=company, status__in=[
-                WorkOrder.Status.PENDING,
-                WorkOrder.Status.PROCESSING,
-            ])
+            .filter(
+                company=company,
+                source=WorkOrder.Source.PDF_UPLOAD,
+                status__in=[
+                    WorkOrder.Status.PENDING,
+                    WorkOrder.Status.PROCESSING,
+                ],
+            )
             .order_by("-upload_date")
         )
         wo_error = (
             WorkOrder.objects
-            .filter(company=company, status=WorkOrder.Status.ERROR)
+            .filter(
+                company=company,
+                source=WorkOrder.Source.PDF_UPLOAD,
+                status=WorkOrder.Status.ERROR,
+            )
             .order_by("-upload_date")
         )
         wo_pending = (
             WorkOrder.objects
-            .filter(company=company, status=WorkOrder.Status.DONE, reviewed=False)
+            .filter(
+                company=company,
+                source=WorkOrder.Source.PDF_UPLOAD,
+                status=WorkOrder.Status.DONE,
+                reviewed=False,
+            )
             .order_by("-upload_date")
         )
         wo_reviewed = (
             WorkOrder.objects
-            .filter(company=company, status=WorkOrder.Status.DONE, reviewed=True)
+            .filter(
+                company=company,
+                source=WorkOrder.Source.PDF_UPLOAD,
+                status=WorkOrder.Status.DONE,
+                reviewed=True,
+            )
             .select_related("reviewed_by__user")
             .order_by("-upload_date")
         )
@@ -3220,6 +3238,21 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
 
         groups = self._build_groups(work_order)
 
+        # Resolve back URL from optional ?from GET parameter.
+        # "taller" — comes from WorkOrderAdminHistoryView (operator parts).
+        # Default — returns to the PDF pipeline list (WorkOrderListView).
+        #
+        # Resolver URL de retorno desde el parámetro GET opcional ?from.
+        # "taller" — proviene de WorkOrderAdminHistoryView (partes de operarios).
+        # Por defecto — vuelve a la lista del pipeline PDF (WorkOrderListView).
+        from_param = request.GET.get("from", "")
+        if from_param == "taller":
+            from django.urls import reverse
+            back_url = reverse("panel:work_order_admin_history") + "?tab=pending"
+        else:
+            from django.urls import reverse
+            back_url = reverse("panel:work_order_list")
+
         return render(request, self.template_name, {
             "company":      company,
             "company_user": company_user,
@@ -3227,6 +3260,7 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
             "active_nav":   "work_orders",
             "work_order":   work_order,
             "groups":       groups,
+            "back_url":     back_url,
         })
 
     def post(self, request, pk):
@@ -4838,7 +4872,7 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
                 "entry",
                 "entry__work_order",
             )
-            .order_by("entry__work_date", "machine_asset__codigo")
+            .order_by("entry__work_date", "machine_asset__code")
         )
 
         lines = []
@@ -6020,6 +6054,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 work_order = WorkOrder(
                     company         = company,
                     uploaded_by     = cu,
+                    source          = WorkOrder.Source.DIGITAL,
                     status          = WorkOrder.Status.DONE,
                     total_pages     = 1,
                     processed_pages = 1,
@@ -6644,6 +6679,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 work_order = WorkOrder(
                     company         = company,
                     uploaded_by     = cu,
+                    source          = WorkOrder.Source.DIGITAL,
                     status          = WorkOrder.Status.DONE,
                     total_pages     = 1,
                     processed_pages = 1,
@@ -7235,27 +7271,476 @@ Transcripción del operario:
 
 class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
     """
-    Displays the authenticated operator's work-order history grouped by month.
-    ADMIN and SUPERVISOR roles can view any operator's history by passing
-    ?user_pk=XX in the GET query string (scoped to the same company).
+    Four-tab personal history view for WORKSHOP role operators.
+    ADMIN and SUPERVISOR are automatically redirected to WorkOrderAdminHistoryView.
+
+    Tabs:
+      1 — Periodo actual  : work orders within the operator's active WorkPeriod
+                            (end_date=None or end_date >= today). Total period hours.
+                            Read-only.
+      2 — Histórico       : work orders from closed WorkPeriod records, grouped
+                            by period descending. Read-only.
+      3 — Horas extra     : calculation of overtime for the active period.
+                            Formula: worked_hours - (working_days * 8).
+                            working_days = Mon–Fri count from start_date to today.
+                            Read-only viewer, no editing.
+      4 — Ausencias       : WorkerAbsence records for the authenticated operator.
+                            Read-only viewer (type, dates, notes).
 
     GET /panel/operator/history/
-        Optional GET param: user_pk (int) — filter by a specific CompanyUser pk.
-        Only honoured for ADMIN and SUPERVISOR roles.
+
     ---
-    Muestra el historial de partes del operario autenticado agrupado por mes.
-    Los roles ADMIN y SUPERVISOR pueden ver el historial de cualquier operario
-    pasando ?user_pk=XX en la query string GET (acotado a la misma empresa).
+
+    Vista de historial personal de cuatro pestanas para operarios con rol WORKSHOP.
+    ADMIN y SUPERVISOR son redirigidos automaticamente a WorkOrderAdminHistoryView.
+
+    Pestanas:
+      1 — Periodo actual  : partes del WorkPeriod activo del operario
+                            (end_date=None o end_date >= hoy). Horas totales del periodo.
+                            Solo lectura.
+      2 — Historico       : partes de WorkPeriod cerrados agrupados por periodo
+                            en orden descendente. Solo lectura.
+      3 — Horas extra     : calculo de horas extra para el periodo activo.
+                            Formula: horas_trabajadas - (dias_laborables * 8).
+                            dias_laborables = conteo lun–vie desde start_date a hoy.
+                            Solo visor, sin edicion.
+      4 — Ausencias       : registros WorkerAbsence del operario autenticado.
+                            Solo lectura (tipo, fechas, notas).
 
     GET /panel/operator/history/
-        Parametro GET opcional: user_pk (int) — filtrar por un CompanyUser concreto.
-        Solo se aplica para los roles ADMIN y SUPERVISOR.
     """
 
     template_name = "panel/operator/history.html"
 
-    # Spanish month names for group labels.
-    # Nombres de meses en castellano para las etiquetas de grupo.
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _count_working_days(self, start_date, end_date):
+        """
+        Counts Monday–Friday days (working days) in the closed interval
+        [start_date, end_date]. Both dates are inclusive.
+        Returns 0 if start_date > end_date.
+        ---
+        Cuenta los dias de lunes a viernes (dias laborables) en el intervalo
+        cerrado [start_date, end_date]. Ambas fechas son inclusivas.
+        Devuelve 0 si start_date > end_date.
+        """
+        from datetime import timedelta
+        count   = 0
+        current = start_date
+        while current <= end_date:
+            if current.weekday() < 5:   # 0=Mon … 4=Fri / 0=Lun … 4=Vie
+                count += 1
+            current += timedelta(days=1)
+        return count
+
+    def _enrich_work_orders_for_period(self, qs):
+        """
+        Converts a WorkOrder queryset into a list of enriched dicts for period
+        tab rendering. Each dict includes pk, fecha, num_bloques, horas_totales,
+        reviewed. Accumulates total hours as Decimal.
+        ---
+        Convierte un queryset de WorkOrder en una lista de dicts enriquecidos
+        para el renderizado de la pestana de periodo. Cada dict incluye pk, fecha,
+        num_bloques, horas_totales, reviewed. Acumula horas totales como Decimal.
+        """
+        from decimal import Decimal
+        result      = []
+        total_hours = Decimal("0")
+        for wo in qs:
+            entries_list  = list(wo.entries.all())
+            first_entry   = entries_list[0] if entries_list else None
+            work_date     = first_entry.work_date if first_entry else None
+            num_bloques   = sum(entry.lines.count() for entry in entries_list)
+            horas_totales = sum(
+                (line.delta_hours
+                 for entry in entries_list
+                 for line in entry.lines.all()
+                 if line.delta_hours is not None),
+                Decimal("0"),
+            )
+            total_hours += horas_totales
+            result.append({
+                "pk":            wo.pk,
+                "fecha":         work_date,
+                "num_bloques":   num_bloques,
+                "horas_totales": horas_totales,
+                "reviewed":      wo.reviewed,
+            })
+        return result, total_hours
+
+    def get(self, request, *args, **kwargs):
+        """
+        Builds the four-tab WORKSHOP history and renders the template.
+        ADMIN and SUPERVISOR are redirected immediately to the admin history view.
+        ---
+        Construye el historial de cuatro pestanas WORKSHOP y renderiza el template.
+        ADMIN y SUPERVISOR son redirigidos inmediatamente a la vista de historial
+        de administrador.
+        """
+        from decimal import Decimal
+        from datetime import date as dt_date
+        from django.urls import reverse
+        from ivr_config.models import WorkerAbsence, WorkPeriod
+
+        cu      = request.user.company_user
+        company = cu.company
+        role    = cu.role
+        today   = dt_date.today()
+
+        # ADMIN and SUPERVISOR always use the dedicated admin history view.
+        # ADMIN y SUPERVISOR siempre usan la vista de historial de administrador.
+        if role in (CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR):
+            return redirect(reverse("panel:work_order_admin_history"))
+
+        active_tab = request.GET.get("tab", "current_period")
+
+        # ------------------------------------------------------------------
+        # Base queryset helper — helper de queryset base.
+        # Scoped to DIGITAL and GENERATED sources only — PDF_UPLOAD parts
+        # belong exclusively to the SUPERVISOR/ADMIN WorkOrderListView.
+        # Restringido a origenes DIGITAL y GENERATED — los partes PDF_UPLOAD
+        # pertenecen exclusivamente a la WorkOrderListView de SUPERVISOR/ADMIN.
+        # ------------------------------------------------------------------
+        def _base_qs():
+            return (
+                WorkOrder.objects
+                .filter(
+                    company=company,
+                    uploaded_by=cu,
+                    source__in=[
+                        WorkOrder.Source.DIGITAL,
+                        WorkOrder.Source.GENERATED,
+                    ],
+                )
+                .prefetch_related(
+                    Prefetch(
+                        "entries",
+                        queryset=WorkOrderEntry.objects.prefetch_related("lines"),
+                    )
+                )
+                .order_by("entries__work_date")
+            )
+
+        # ------------------------------------------------------------------
+        # Tab 1 — Periodo actual / Current period.
+        # ------------------------------------------------------------------
+        active_period = (
+            WorkPeriod.objects
+            .filter(
+                company_user=cu,
+            )
+            .filter(
+                Q(end_date__isnull=True) | Q(end_date__gte=today)
+            )
+            .order_by("-start_date")
+            .first()
+        )
+
+        current_period_list  = []
+        current_period_hours = Decimal("0")
+
+        if active_period:
+            # Active period exists — filter to its date range.
+            # Periodo activo existente — filtrar a su rango de fechas.
+            period_qs = _base_qs().filter(
+                entries__work_date__gte=active_period.start_date,
+            )
+            if active_period.end_date:
+                period_qs = period_qs.filter(
+                    entries__work_date__lte=active_period.end_date,
+                )
+            period_qs = period_qs.distinct()
+        else:
+            # No active period configured yet — show all operator parts as
+            # a fallback so the operator is not left with an empty screen.
+            # Sin periodo activo configurado — mostrar todos los partes del
+            # operario como fallback para no dejar la pantalla vacía.
+            period_qs = _base_qs().distinct()
+
+        current_period_list, current_period_hours = (
+            self._enrich_work_orders_for_period(period_qs)
+        )
+
+        # ------------------------------------------------------------------
+        # Tab 2 — Histórico por periodos cerrados / Closed periods history.
+        # ------------------------------------------------------------------
+        closed_periods = (
+            WorkPeriod.objects
+            .filter(company_user=cu, end_date__isnull=False, end_date__lt=today)
+            .order_by("-start_date")
+        )
+
+        period_groups = []
+        for period in closed_periods:
+            pqs = _base_qs().filter(
+                entries__work_date__gte=period.start_date,
+                entries__work_date__lte=period.end_date,
+            ).distinct()
+            wo_list, period_hours = self._enrich_work_orders_for_period(pqs)
+            period_label = (
+                period.label
+                or f"{period.start_date:%d/%m/%Y} – {period.end_date:%d/%m/%Y}"
+            )
+            period_groups.append({
+                "label":       period_label,
+                "total_hours": period_hours,
+                "work_orders": wo_list,
+            })
+
+        # ------------------------------------------------------------------
+        # Tab 3 — Horas extra / Overtime calculation.
+        # ------------------------------------------------------------------
+        overtime_hours    = Decimal("0")
+        working_days_count = 0
+
+        if active_period:
+            period_end_for_calc = (
+                active_period.end_date
+                if active_period.end_date and active_period.end_date < today
+                else today
+            )
+            working_days_count = self._count_working_days(
+                active_period.start_date, period_end_for_calc
+            )
+            expected_hours = Decimal(working_days_count) * Decimal("8")
+            overtime_hours = current_period_hours - expected_hours
+
+        # ------------------------------------------------------------------
+        # Tab 4 — Ausencias del operario / Operator absences (read-only).
+        # ------------------------------------------------------------------
+        absences = (
+            WorkerAbsence.objects
+            .filter(company_user=cu)
+            .order_by("-start_date")
+        )
+
+        context = {
+            "company":               company,
+            "company_user":          cu,
+            "own_presence":          self._get_own_presence(cu),
+            "active_nav":            "operator_history",
+            "active_tab":            active_tab,
+            # Tab 1
+            "active_period":         active_period,
+            "current_period_list":   current_period_list,
+            "current_period_hours":  current_period_hours,
+            # Tab 2
+            "period_groups":         period_groups,
+            # Tab 3
+            "working_days_count":    working_days_count,
+            "overtime_hours":        overtime_hours,
+            # Tab 4
+            "absences":              absences,
+        }
+        return render(request, self.template_name, context)
+
+
+class WorkerAbsenceCreateView(SupervisorAccessMixin, View):
+    """
+    Creates a WorkerAbsence record from the absence modal in admin_history.html.
+    Receives the form POST from the modal's form action pointing to
+    'panel:worker_absence_create'. On success or failure, always redirects
+    back to the Absences tab of WorkOrderAdminHistoryView.
+
+    POST /panel/worker-absences/create/
+        Body params:
+          company_user_pk (int)  — pk of the target CompanyUser (must belong to company).
+          absence_type    (str)  — one of the WorkerAbsence.ABSENCE_* constants.
+          start_date      (str)  — ISO date YYYY-MM-DD.
+          end_date        (str)  — ISO date YYYY-MM-DD.
+          notes           (str)  — optional free text.
+
+    ---
+
+    Crea un registro WorkerAbsence desde el modal de ausencias de admin_history.html.
+    Recibe el POST del formulario del modal cuya accion apunta a
+    'panel:worker_absence_create'. En caso de exito o fallo, siempre redirige
+    de vuelta a la pestana Ausencias de WorkOrderAdminHistoryView.
+
+    POST /panel/worker-absences/create/
+        Parametros del cuerpo:
+          company_user_pk (int)  — pk del CompanyUser objetivo (debe pertenecer a empresa).
+          absence_type    (str)  — una de las constantes WorkerAbsence.ABSENCE_*.
+          start_date      (str)  — fecha ISO YYYY-MM-DD.
+          end_date        (str)  — fecha ISO YYYY-MM-DD.
+          notes           (str)  — texto libre opcional.
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates the POST data, creates the WorkerAbsence and redirects.
+        Performs server-side validation: company scope, absence_type whitelist,
+        date ordering (start_date <= end_date).
+        ---
+        Valida los datos POST, crea el WorkerAbsence y redirige.
+        Realiza validacion en el servidor: scope de empresa, lista blanca de
+        absence_type, ordenacion de fechas (start_date <= end_date).
+        """
+        from datetime import datetime
+        from django.urls import reverse
+        from ivr_config.models import WorkerAbsence
+
+        cu      = request.user.company_user
+        company = cu.company
+        ABSENCES_TAB_URL = reverse("panel:work_order_admin_history") + "?tab=absences"
+
+        # ------------------------------------------------------------------
+        # Resolve target CompanyUser — must belong to the same company.
+        # Resolver CompanyUser objetivo — debe pertenecer a la misma empresa.
+        # ------------------------------------------------------------------
+        try:
+            cu_pk       = int(request.POST.get("company_user_pk", ""))
+            target_cu   = CompanyUser.objects.get(pk=cu_pk, company=company)
+        except (ValueError, TypeError, CompanyUser.DoesNotExist):
+            django_messages.error(
+                request,
+                "Operario no encontrado o no pertenece a esta empresa.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        # ------------------------------------------------------------------
+        # Validate absence_type against model choices whitelist.
+        # Validar absence_type contra la lista blanca de opciones del modelo.
+        # ------------------------------------------------------------------
+        absence_type    = request.POST.get("absence_type", "").strip()
+        valid_types     = {k for k, _ in WorkerAbsence.ABSENCE_CHOICES}
+        if absence_type not in valid_types:
+            django_messages.error(
+                request,
+                f"Tipo de ausencia '{absence_type}' no válido.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        # ------------------------------------------------------------------
+        # Parse and validate dates.
+        # Parsear y validar fechas.
+        # ------------------------------------------------------------------
+        def _parse_iso(value):
+            """Parses YYYY-MM-DD string, returns date or None. / Parsea cadena YYYY-MM-DD."""
+            try:
+                return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+            except (ValueError, AttributeError):
+                return None
+
+        start_date = _parse_iso(request.POST.get("start_date", ""))
+        end_date   = _parse_iso(request.POST.get("end_date",   ""))
+
+        if not start_date or not end_date:
+            django_messages.error(
+                request,
+                "Las fechas de inicio y fin son obligatorias y deben tener formato YYYY-MM-DD.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        if start_date > end_date:
+            django_messages.error(
+                request,
+                "La fecha de inicio no puede ser posterior a la fecha de fin.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        notes = request.POST.get("notes", "").strip()
+
+        # ------------------------------------------------------------------
+        # Create the WorkerAbsence record.
+        # Crear el registro WorkerAbsence.
+        # ------------------------------------------------------------------
+        WorkerAbsence.objects.create(
+            company_user  = target_cu,
+            absence_type  = absence_type,
+            start_date    = start_date,
+            end_date      = end_date,
+            registered_by = cu,
+            notes         = notes,
+        )
+
+        operator_name = (
+            target_cu.user.get_full_name() or target_cu.user.username
+        )
+        django_messages.success(
+            request,
+            f"Ausencia de {operator_name} registrada correctamente "
+            f"({start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).",
+        )
+        return redirect(ABSENCES_TAB_URL)
+
+
+class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
+    """
+    Four-tab management history view for ADMIN and SUPERVISOR roles.
+    Provides a comprehensive interface for reviewing, exporting and managing
+    all operators' work orders, absences and work periods within the company.
+
+    Tabs:
+      1 — Pendientes  : unreviewed work orders for all company operators.
+                        Filters: operator, date, machine.
+                        Actions: mark as reviewed, link to edit view.
+      2 — Revisados   : reviewed work orders. Excel export available HERE ONLY
+                        (single work order or date-range multi-export).
+                        Filters: operator, date range, machine.
+      3 — Histórico   : all work orders with cross-filters (operator, date
+                        range, machine, review status). Read-only.
+      4 — Ausencias   : WorkerAbsence records per operator with type/date
+                        filters. Actions: create, edit, delete absence.
+                        Action 'Generar partes del periodo': creates synthetic
+                        WorkOrder records (one per working day Mon–Fri) for the
+                        absence range, tagged with generated_by=current user.
+
+    GET /panel/work-orders/history/
+        Optional GET params:
+          tab         (str)  — active tab: pending|reviewed|history|absences.
+                               Default: pending.
+          operator_pk (int)  — filter by CompanyUser pk (scoped to company).
+          date_from   (str)  — ISO date YYYY-MM-DD start of range.
+          date_to     (str)  — ISO date YYYY-MM-DD end of range.
+          machine     (str)  — MachineAsset.code icontains filter.
+
+    ---
+
+    Vista de historial de gestion de cuatro pestanas para roles ADMIN y SUPERVISOR.
+    Proporciona una interfaz completa para revisar, exportar y gestionar todos los
+    partes de trabajo, ausencias y periodos de trabajo de los operarios de la empresa.
+
+    Pestanas:
+      1 — Pendientes  : partes sin revisar de todos los operarios de la empresa.
+                        Filtros: operario, fecha, maquina.
+                        Acciones: marcar como revisado, enlace a vista de edicion.
+      2 — Revisados   : partes revisados. Exportacion Excel disponible SOLO AQUI
+                        (parte individual o multi-exportacion por rango de fechas).
+                        Filtros: operario, rango de fechas, maquina.
+      3 — Historico   : todos los partes con filtros cruzados (operario, rango de
+                        fechas, maquina, estado de revision). Solo lectura.
+      4 — Ausencias   : registros WorkerAbsence por operario con filtros de tipo y
+                        fecha. Acciones: alta, edicion, baja de ausencia.
+                        Accion 'Generar partes del periodo': crea registros WorkOrder
+                        sinteticos (uno por dia laborable lun–vie) para el rango de
+                        la ausencia, etiquetados con generated_by=usuario actual.
+
+    GET /panel/work-orders/history/
+        Parametros GET opcionales:
+          tab         (str)  — pestana activa: pending|reviewed|history|absences.
+                               Por defecto: pending.
+          operator_pk (int)  — filtrar por pk de CompanyUser (acotado a empresa).
+          date_from   (str)  — fecha ISO YYYY-MM-DD inicio del rango.
+          date_to     (str)  — fecha ISO YYYY-MM-DD fin del rango.
+          machine     (str)  — filtro icontains sobre MachineAsset.code.
+    """
+
+    template_name = "panel/work_orders/admin_history.html"
+
+    # Spanish month names for display labels.
+    # Nombres de mes en castellano para etiquetas de visualizacion.
     _MESES_ES = {
         1: "Enero",   2: "Febrero",  3: "Marzo",    4: "Abril",
         5: "Mayo",    6: "Junio",    7: "Julio",     8: "Agosto",
@@ -7275,61 +7760,44 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
-    def get(self, request, *args, **kwargs):
+    def _parse_date(self, value):
         """
-        Builds the monthly-grouped work-order history for the target operator
-        and renders the history template.
-
-        Resolution order for the target CompanyUser:
-          1. If role is ADMIN or SUPERVISOR and ?user_pk is present and valid,
-             use that CompanyUser (must belong to same company).
-          2. Otherwise use the authenticated user's own CompanyUser.
+        Parses an ISO date string (YYYY-MM-DD) and returns a date object,
+        or None if the value is absent or malformed.
         ---
-        Construye el historial de partes agrupado por mes para el operario
-        objetivo y renderiza el template de historial.
-
-        Orden de resolucion del CompanyUser objetivo:
-          1. Si el rol es ADMIN o SUPERVISOR y ?user_pk esta presente y es valido,
-             usar ese CompanyUser (debe pertenecer a la misma empresa).
-          2. En caso contrario usar el CompanyUser del usuario autenticado.
+        Parsea una cadena de fecha ISO (YYYY-MM-DD) y devuelve un objeto date,
+        o None si el valor esta ausente o malformado.
         """
-        from decimal import Decimal
+        from datetime import datetime
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return None
 
-        cu      = request.user.company_user
-        company = cu.company
-        role    = cu.role
-
-        # Resolve target company_user from ?user_pk for ADMIN / SUPERVISOR.
-        # Resolver company_user objetivo desde ?user_pk para ADMIN / SUPERVISOR.
-        selected_user_pk = None
-        target_cu        = cu
-        users            = []
-
-        if role in ("ADMIN", "SUPERVISOR"):
-            users = (
-                CompanyUser.objects
-                .filter(company=company, is_active=True)
-                .select_related("user")
-                .order_by("user__username")
-            )
-            raw_pk = request.GET.get("user_pk", "").strip()
-            if raw_pk:
-                try:
-                    selected_user_pk = int(raw_pk)
-                    target_cu = CompanyUser.objects.get(
-                        pk=selected_user_pk, company=company
-                    )
-                except (ValueError, CompanyUser.DoesNotExist):
-                    # Invalid or foreign pk — fall back to own user silently.
-                    # pk invalido o de otra empresa — volver al usuario propio.
-                    selected_user_pk = None
-                    target_cu        = cu
-
-        # Base queryset: WorkOrders uploaded by target_cu, newest first.
-        # Queryset base: WorkOrders subidos por target_cu, mas reciente primero.
-        qs = (
+    def _build_base_queryset(self, company):
+        """
+        Returns the base WorkOrder queryset scoped to the company, restricted
+        to DIGITAL and GENERATED sources (operator-entered parts only).
+        PDF_UPLOAD parts belong exclusively to WorkOrderListView.
+        All required related data is prefetched for the admin history tabs.
+        ---
+        Devuelve el queryset base de WorkOrder acotado a la empresa, restringido
+        a los origenes DIGITAL y GENERATED (partes introducidos por operarios).
+        Los partes PDF_UPLOAD pertenecen exclusivamente a WorkOrderListView.
+        Todos los datos relacionados se prefetchean para las pestanas del historial.
+        """
+        return (
             WorkOrder.objects
-            .filter(company=company, uploaded_by=target_cu)
+            .filter(
+                company=company,
+                source__in=[
+                    WorkOrder.Source.DIGITAL,
+                    WorkOrder.Source.GENERATED,
+                ],
+            )
+            .select_related("uploaded_by__user", "reviewed_by__user", "generated_by__user")
             .prefetch_related(
                 Prefetch(
                     "entries",
@@ -7339,21 +7807,49 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
             .order_by("-id")
         )
 
-        # Group by (year, month) derived from the first entry's work_date.
-        # Agrupar por (year, month) derivado de work_date del primer entry.
-        groups_dict = {}
-
-        for wo in qs:
-            entries_list = list(wo.entries.all())
-            first_entry  = entries_list[0] if entries_list else None
-            work_date    = first_entry.work_date if first_entry else None
-            key          = (work_date.year, work_date.month) if work_date else None
-
-            # Compute aggregate metrics for this WorkOrder.
-            # Calcular metricas agregadas para este WorkOrder.
-            num_bloques   = sum(
-                entry.lines.count() for entry in entries_list
+    def _apply_filters(self, qs, operator_pk, date_from, date_to, machine, company):
+        """
+        Applies the optional GET filters to a WorkOrder queryset.
+        operator_pk filters by uploaded_by; date_from/date_to filter by the
+        first entry's work_date; machine filters by machine_asset__code.
+        ---
+        Aplica los filtros GET opcionales a un queryset de WorkOrder.
+        operator_pk filtra por uploaded_by; date_from/date_to filtran por
+        work_date del primer entry; machine filtra por machine_asset__code.
+        """
+        if operator_pk:
+            try:
+                cu_pk = int(operator_pk)
+                qs = qs.filter(uploaded_by__pk=cu_pk, uploaded_by__company=company)
+            except (ValueError, TypeError):
+                pass
+        if date_from:
+            qs = qs.filter(entries__work_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(entries__work_date__lte=date_to)
+        if machine:
+            qs = qs.filter(
+                entries__lines__machine_asset__code__icontains=machine
             )
+        return qs.distinct()
+
+    def _enrich_work_orders(self, qs):
+        """
+        Converts a WorkOrder queryset into a list of enriched dicts suitable
+        for template rendering. Each dict includes pk, fecha, operator name,
+        num_bloques, horas_totales and reviewed flag.
+        ---
+        Convierte un queryset de WorkOrder en una lista de dicts enriquecidos
+        adecuados para renderizado en template. Cada dict incluye pk, fecha,
+        nombre del operario, num_bloques, horas_totales y flag reviewed.
+        """
+        from decimal import Decimal
+        result = []
+        for wo in qs:
+            entries_list  = list(wo.entries.all())
+            first_entry   = entries_list[0] if entries_list else None
+            work_date     = first_entry.work_date if first_entry else None
+            num_bloques   = sum(entry.lines.count() for entry in entries_list)
             horas_totales = sum(
                 (line.delta_hours
                  for entry in entries_list
@@ -7361,57 +7857,369 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
                  if line.delta_hours is not None),
                 Decimal("0"),
             )
-
-            wo_dict = {
+            operator_name = (
+                wo.uploaded_by.user.get_full_name() or wo.uploaded_by.user.username
+                if wo.uploaded_by else "Desconocido"
+            )
+            result.append({
                 "pk":            wo.pk,
                 "fecha":         work_date,
+                "operator_name": operator_name,
+                "operator_pk":   wo.uploaded_by.pk if wo.uploaded_by else None,
                 "num_bloques":   num_bloques,
                 "horas_totales": horas_totales,
                 "reviewed":      wo.reviewed,
-            }
-
-            if key not in groups_dict:
-                groups_dict[key] = []
-            groups_dict[key].append(wo_dict)
-
-        # Build sorted monthly groups (descending by year/month; None last).
-        # Construir grupos mensuales ordenados (descendente por anio/mes; None al final).
-        dated_keys  = sorted(
-            [k for k in groups_dict if k is not None],
-            reverse=True,
-        )
-        undated_keys   = [k for k in groups_dict if k is None]
-        sorted_keys    = dated_keys + undated_keys
-
-        monthly_groups = []
-        for key in sorted_keys:
-            wo_list = groups_dict[key]
-            if key is not None:
-                year, month = key
-                label       = f"{self._MESES_ES[month]} {year}"
-            else:
-                label = "Sin fecha"
-
-            total_hours = sum(
-                (w["horas_totales"] for w in wo_list),
-                Decimal("0"),
-            )
-            monthly_groups.append({
-                "label":       label,
-                "total_hours": total_hours,
-                "work_orders": wo_list,
+                "reviewed_by":   (
+                    wo.reviewed_by.user.get_full_name() or wo.reviewed_by.user.username
+                    if wo.reviewed_by else None
+                ),
+                "reviewed_at":   wo.reviewed_at,
+                "generated_by":  (
+                    wo.generated_by.user.get_full_name() or wo.generated_by.user.username
+                    if wo.generated_by else None
+                ),
+                "excel_url": wo.excel_file.url if wo.excel_file else None,
             })
+        return result
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the four-tab admin history page. Resolves GET filters,
+        builds each tab's queryset independently and passes all data to
+        the template context.
+        ---
+        Renderiza la pagina de historial de administrador de cuatro pestanas.
+        Resuelve los filtros GET, construye el queryset de cada pestana
+        de forma independiente y pasa todos los datos al contexto del template.
+        """
+        cu      = request.user.company_user
+        company = cu.company
+
+        # ------------------------------------------------------------------
+        # Resolve GET parameters / Resolver parametros GET.
+        # ------------------------------------------------------------------
+        active_tab   = request.GET.get("tab", "pending")
+        operator_pk  = request.GET.get("operator_pk", "").strip()
+        date_from    = self._parse_date(request.GET.get("date_from", ""))
+        date_to      = self._parse_date(request.GET.get("date_to", ""))
+        machine      = request.GET.get("machine", "").strip()
+
+        # ------------------------------------------------------------------
+        # Operator selector list (all active company users).
+        # Lista de selector de operarios (todos los usuarios activos de la empresa).
+        # ------------------------------------------------------------------
+        operators = (
+            CompanyUser.objects
+            .filter(
+                company=company,
+                is_active=True,
+                role=CompanyUser.ROLE_WORKSHOP,
+            )
+            .select_related("user")
+            .order_by("user__last_name", "user__first_name")
+        )
+
+        # ------------------------------------------------------------------
+        # Tab 1 — Pending (unreviewed work orders).
+        # Pestana 1 — Pendientes (partes sin revisar).
+        # ------------------------------------------------------------------
+        qs_pending = self._build_base_queryset(company).filter(reviewed=False)
+        qs_pending = self._apply_filters(
+            qs_pending, operator_pk, date_from, date_to, machine, company
+        )
+        pending_list = self._enrich_work_orders(qs_pending)
+
+        # ------------------------------------------------------------------
+        # Tab 2 — Reviewed (reviewed work orders — Excel export available).
+        # Pestana 2 — Revisados (partes revisados — exportacion Excel disponible).
+        # ------------------------------------------------------------------
+        qs_reviewed = self._build_base_queryset(company).filter(reviewed=True)
+        qs_reviewed = self._apply_filters(
+            qs_reviewed, operator_pk, date_from, date_to, machine, company
+        )
+        reviewed_list = self._enrich_work_orders(qs_reviewed)
+
+        # ------------------------------------------------------------------
+        # Tab 3 — Full history (all work orders, cross-filters).
+        # Pestana 3 — Historico completo (todos los partes, filtros cruzados).
+        # ------------------------------------------------------------------
+        qs_history = self._build_base_queryset(company).filter(reviewed=True)
+        qs_history = self._apply_filters(
+            qs_history, operator_pk, date_from, date_to, machine, company
+        )
+        history_list = self._enrich_work_orders(qs_history)
+
+        # ------------------------------------------------------------------
+        # Tab 4 — Absences (WorkerAbsence records for the company).
+        # Pestana 4 — Ausencias (registros WorkerAbsence de la empresa).
+        # ------------------------------------------------------------------
+        from ivr_config.models import WorkerAbsence
+        absence_qs = (
+            WorkerAbsence.objects
+            .filter(company_user__company=company)
+            .select_related(
+                "company_user__user",
+                "registered_by__user",
+            )
+            .order_by("-start_date")
+        )
+        # Optional operator filter on absences tab.
+        # Filtro de operario opcional en la pestana de ausencias.
+        if operator_pk:
+            try:
+                absence_qs = absence_qs.filter(company_user__pk=int(operator_pk))
+            except (ValueError, TypeError):
+                pass
+        absences_list = list(absence_qs)
 
         context = {
-            "monthly_groups":   monthly_groups,
-            "company":          company,
-            "company_user":     cu,
-            "own_presence":     self._get_own_presence(cu),
-            "active_nav":       "operator_history",
-            "users":            users,
-            "selected_user_pk": selected_user_pk,
+            "company":        company,
+            "company_user":   cu,
+            "own_presence":   self._get_own_presence(cu),
+            "active_nav":     "work_order_list",
+            "active_tab":     active_tab,
+            "operators":      operators,
+            "operator_pk":    operator_pk,
+            "date_from":      request.GET.get("date_from", ""),
+            "date_to":        request.GET.get("date_to", ""),
+            "machine":        machine,
+            "pending_list":   pending_list,
+            "reviewed_list":  reviewed_list,
+            "history_list":   history_list,
+            "absences_list":  absences_list,
         }
         return render(request, self.template_name, context)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Dispatches POST actions for the admin history view.
+
+        Supported actions:
+          generate_absence_parts — creates synthetic WorkOrders from a WorkerAbsence.
+          delete_work_order      — deletes a single WorkOrder by pk.
+          bulk_action            — applies mark_reviewed or delete to a set of PKs.
+
+        ---
+
+        Despacha las acciones POST de la vista de historial de administrador.
+
+        Acciones soportadas:
+          generate_absence_parts — crea WorkOrders sinteticos desde un WorkerAbsence.
+          delete_work_order      — elimina un WorkOrder individual por pk.
+          bulk_action            — aplica mark_reviewed o delete a un conjunto de PKs.
+        """
+        from datetime import timedelta, date as dt_date
+        from django.db import transaction
+        from ivr_config.models import WorkerAbsence
+        from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
+        from django.urls import reverse
+
+        cu      = request.user.company_user
+        company = cu.company
+        action  = request.POST.get("action", "").strip()
+
+        # ------------------------------------------------------------------
+        # Action: delete_work_order — delete a single digital/generated part.
+        # Accion: delete_work_order — eliminar un parte digital/generado individual.
+        # ------------------------------------------------------------------
+        if action == "delete_work_order":
+            active_tab = request.POST.get("active_tab", "pending")
+            try:
+                wo_pk      = int(request.POST.get("work_order_pk", ""))
+                work_order = WorkOrder.objects.get(
+                    pk=wo_pk,
+                    company=company,
+                    source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+                )
+                work_order.delete()
+                django_messages.success(request, f"Parte #{wo_pk} eliminado correctamente.")
+            except (ValueError, TypeError, WorkOrder.DoesNotExist):
+                django_messages.error(
+                    request,
+                    "Parte no encontrado o no pertenece a esta empresa.",
+                )
+            return redirect(
+                reverse("panel:work_order_admin_history") + f"?tab={active_tab}"
+            )
+
+        # ------------------------------------------------------------------
+        # Action: bulk_action — mark reviewed or delete multiple parts.
+        # Accion: bulk_action — marcar revisados o eliminar multiples partes.
+        # ------------------------------------------------------------------
+        if action == "bulk_action":
+            active_tab  = request.POST.get("active_tab", "pending")
+            bulk_op     = request.POST.get("bulk_op", "").strip()
+            raw_pks     = request.POST.getlist("selected_pks")
+
+            try:
+                pk_list = [int(p) for p in raw_pks if p.strip().isdigit()]
+            except (ValueError, TypeError):
+                pk_list = []
+
+            if not pk_list:
+                django_messages.warning(request, "No se ha seleccionado ningún parte.")
+                return redirect(
+                    reverse("panel:work_order_admin_history") + f"?tab={active_tab}"
+                )
+
+            # Scope to company + digital/generated sources only.
+            # Acotar a empresa + origenes digital/generado unicamente.
+            qs = WorkOrder.objects.filter(
+                pk__in=pk_list,
+                company=company,
+                source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+            )
+
+            if bulk_op == "mark_reviewed":
+                from django.utils.timezone import now as tz_now
+                updated = qs.filter(reviewed=False).update(
+                    reviewed    = True,
+                    reviewed_by = cu,
+                    reviewed_at = tz_now(),
+                )
+                django_messages.success(
+                    request,
+                    f"{updated} parte(s) marcado(s) como revisado(s).",
+                )
+            elif bulk_op == "delete":
+                count  = qs.count()
+                qs.delete()
+                django_messages.success(
+                    request,
+                    f"{count} parte(s) eliminado(s) correctamente.",
+                )
+            else:
+                django_messages.error(request, "Operación en bloque no reconocida.")
+
+            return redirect(
+                reverse("panel:work_order_admin_history") + f"?tab={active_tab}"
+            )
+
+        if action != "generate_absence_parts":
+            django_messages.error(request, "Acción no reconocida.")
+            return redirect(reverse("panel:work_order_admin_history") + "?tab=absences")
+
+        # Resolve WorkerAbsence — must belong to same company.
+        # Resolver WorkerAbsence — debe pertenecer a la misma empresa.
+        try:
+            absence_pk = int(request.POST.get("absence_pk", ""))
+            absence    = WorkerAbsence.objects.select_related("company_user__user").get(
+                pk=absence_pk,
+                company_user__company=company,
+            )
+        except (ValueError, TypeError, WorkerAbsence.DoesNotExist):
+            django_messages.error(
+                request,
+                "Registro de ausencia no encontrado o no pertenece a esta empresa.",
+            )
+            return redirect(reverse("panel:work_order_admin_history") + "?tab=absences")
+
+        # Enumerate working days (Mon–Fri) in the absence range.
+        # Enumerar dias laborables (lun–vie) en el rango de la ausencia.
+        current_day = absence.start_date
+        working_days = []
+        while current_day <= absence.end_date:
+            if current_day.weekday() < 5:   # 0=Mon … 4=Fri / 0=Lun … 4=Vie
+                working_days.append(current_day)
+            current_day += timedelta(days=1)
+
+        if not working_days:
+            django_messages.warning(
+                request,
+                f"El rango de la ausencia ({absence.start_date} – {absence.end_date}) "
+                f"no contiene días laborables (lunes a viernes). No se han generado partes.",
+            )
+            return redirect(reverse("panel:work_order_admin_history") + "?tab=absences")
+
+        created_count = 0
+        skipped_count = 0
+
+        try:
+            with transaction.atomic():
+                for work_day in working_days:
+                    # Skip if a WorkOrder already exists for this operator/date.
+                    # Saltar si ya existe un WorkOrder para este operario/fecha.
+                    already_exists = WorkOrder.objects.filter(
+                        company=company,
+                        uploaded_by=absence.company_user,
+                        entries__work_date=work_day,
+                    ).exists()
+                    if already_exists:
+                        skipped_count += 1
+                        continue
+
+                    # Build synthetic source_pdf name for identification.
+                    # Construir nombre sintetico de source_pdf para identificacion.
+                    synthetic_name = (
+                        f"AUSENCIA_{absence.get_absence_type_display().upper()}_"
+                        f"{work_day.strftime('%Y%m%d')}_"
+                        f"{absence.company_user.user.username.upper()}.pdf"
+                    )
+
+                    work_order = WorkOrder.objects.create(
+                        company      = company,
+                        uploaded_by  = absence.company_user,
+                        generated_by = cu,
+                        source       = WorkOrder.Source.GENERATED,
+                        status       = WorkOrder.Status.DONE,
+                    )
+                    # Assign synthetic source_pdf name without storing a real file.
+                    # Asignar nombre sintetico de source_pdf sin almacenar fichero real.
+                    work_order.source_pdf.name = synthetic_name
+                    work_order.save()
+
+                    entry = WorkOrderEntry.objects.create(
+                        work_order            = work_order,
+                        page_number           = 1,
+                        worker_name           = (
+                            absence.company_user.user.get_full_name()
+                            or absence.company_user.user.username
+                        ).upper(),
+                        work_date             = work_day,
+                        uncertain_date        = False,
+                        extraction_confidence = WorkOrderEntry.Confidence.HIGH,
+                        raw_gemini_response   = None,
+                    )
+
+                    WorkOrderEntryLine.objects.create(
+                        entry             = entry,
+                        line_number       = 1,
+                        machine_asset     = None,
+                        machine_raw       = "",
+                        machine_norm      = "",
+                        fault_description = absence.get_absence_type_display(),
+                        repair_notes      = "",
+                        hc                = None,
+                        hf                = None,
+                        or_val            = "",
+                        delta_hours       = 8,
+                        flags             = [],
+                    )
+                    created_count += 1
+
+        except Exception as exc:
+            logger.error(
+                "# [AdminHistory] Error generando partes de ausencia pk=%d: %s",
+                absence.pk, exc, exc_info=True,
+            )
+            django_messages.error(
+                request,
+                f"Error al generar los partes: {exc}. "
+                "Por favor, inténtalo de nuevo o contacta con el administrador.",
+            )
+            return redirect(reverse("panel:work_order_admin_history") + "?tab=absences")
+
+        # Build summary message for the supervisor.
+        # Construir mensaje resumen para el supervisor.
+        msg_parts = []
+        if created_count:
+            msg_parts.append(f"{created_count} parte(s) generado(s) correctamente.")
+        if skipped_count:
+            msg_parts.append(
+                f"{skipped_count} día(s) omitido(s) por existir ya un parte para esa fecha."
+            )
+        django_messages.success(request, " ".join(msg_parts))
+        return redirect(reverse("panel:work_order_admin_history") + "?tab=absences")
 
 
 class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):

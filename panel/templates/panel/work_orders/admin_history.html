@@ -1,0 +1,580 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/admin_history.html #}
+{#                                                                                                   #}
+{# Admin/Supervisor work-order history — four-tab management interface.                             #}
+{#   Tab 1 — Pendientes : unreviewed work orders, all operators.                                    #}
+{#   Tab 2 — Revisados  : reviewed work orders, Excel export available here only.                   #}
+{#   Tab 3 — Histórico  : all work orders, cross-filtered read-only view.                           #}
+{#   Tab 4 — Ausencias  : WorkerAbsence records, create/edit/delete/generate parts.                 #}
+{#                                                                                                   #}
+{# Vista de historial de gestión para ADMIN y SUPERVISOR — interfaz de cuatro pestañas.             #}
+{#   Pestaña 1 — Pendientes : partes sin revisar de todos los operarios.                            #}
+{#   Pestaña 2 — Revisados  : partes revisados, exportación Excel disponible SOLO AQUÍ.             #}
+{#   Pestaña 3 — Histórico  : todos los partes, vista de solo lectura con filtros cruzados.         #}
+{#   Pestaña 4 — Ausencias  : registros WorkerAbsence, alta/edición/baja/generación de partes.     #}
+{% extends "panel/base.html" %}
+
+{% block title %}Historial de partes — Gestión{% endblock %}
+
+{% load static %}
+
+{% block extra_scripts %}
+<script src="{% static 'panel/js/admin_history.js' %}"></script>
+{% endblock %}
+
+{% block page_title %}Historial de partes{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+
+    {# ------------------------------------------------------------------ #}
+    {# Global filter bar — Barra de filtros global                         #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-3 px-4">
+            <form method="get" class="row g-2 align-items-end">
+                {# Preserve active tab on filter submit #}
+                <input type="hidden" name="tab" value="{{ active_tab }}">
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label text-sm fw-semibold mb-1">Operario</label>
+                    <select name="operator_pk" class="form-select form-select-sm">
+                        <option value="">Todos los operarios</option>
+                        {% for op in operators %}
+                        <option value="{{ op.pk }}"
+                            {% if operator_pk|stringformat:"s" == op.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ op.user.get_full_name|default:op.user.username }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">Fecha desde</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm"
+                           value="{{ date_from }}">
+                </div>
+
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">Fecha hasta</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm"
+                           value="{{ date_to }}">
+                </div>
+
+                <div class="col-12 col-md-3 filter-machine-wrapper">
+                    <label class="form-label text-sm fw-semibold mb-1">Máquina / CdG</label>
+                    <input type="text" name="machine" id="filter-machine-input"
+                           class="form-control form-control-sm"
+                           placeholder="Código de máquina…" value="{{ machine }}"
+                           autocomplete="off">
+                    <ul id="filter-machine-dropdown"
+                        class="list-unstyled bg-white border rounded shadow-sm mb-0 filter-machine-dropdown">
+                    </ul>
+                </div>
+
+                <div class="col-12 col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm px-3 flex-grow-1">
+                        <i class="bi bi-funnel me-1"></i>Filtrar
+                    </button>
+                    <a href="{% url 'panel:work_order_admin_history' %}?tab={{ active_tab }}"
+                       class="btn btn-outline-secondary btn-sm px-2">
+                        <i class="bi bi-x-lg"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Tab navigation — Navegación de pestañas                             #}
+    {# ------------------------------------------------------------------ #}
+    <ul class="nav nav-tabs mb-0 border-bottom-0" id="adminHistoryTabs">
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'pending' %}active{% endif %} fw-semibold"
+               href="?tab=pending&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+                <i class="bi bi-clock-history me-1"></i>Pendientes
+                {% if pending_list %}
+                <span class="badge bg-warning text-dark ms-1">{{ pending_list|length }}</span>
+                {% endif %}
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'reviewed' %}active{% endif %} fw-semibold"
+               href="?tab=reviewed&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+                <i class="bi bi-check2-circle me-1"></i>Revisados
+                {% if reviewed_list %}
+                <span class="badge bg-success ms-1">{{ reviewed_list|length }}</span>
+                {% endif %}
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'history' %}active{% endif %} fw-semibold"
+               href="?tab=history&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+                <i class="bi bi-archive me-1"></i>Histórico
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'absences' %}active{% endif %} fw-semibold"
+               href="?tab=absences&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+                <i class="bi bi-calendar-x me-1"></i>Ausencias
+                {% if absences_list %}
+                <span class="badge bg-secondary ms-1">{{ absences_list|length }}</span>
+                {% endif %}
+            </a>
+        </li>
+    </ul>
+
+    {# ------------------------------------------------------------------ #}
+    {# Tab content — Contenido de pestañas                                 #}
+    {# ------------------------------------------------------------------ #}
+    <div class="tab-content-panel border border-top-0 rounded-bottom shadow-sm bg-white">
+
+        {# ============================================================== #}
+        {# TAB 1 — Pendientes                                              #}
+        {# ============================================================== #}
+        {% if active_tab == 'pending' %}
+        <div class="p-0">
+            {% if pending_list %}
+            <form method="post" id="form-bulk-pending">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk_action">
+                <input type="hidden" name="active_tab" value="pending">
+                <div class="px-4 py-2 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
+                     id="bulk-bar-pending">
+                    <span class="text-sm text-muted" id="bulk-count-pending">0 seleccionados</span>
+                    <button type="submit" name="bulk_op" value="mark_reviewed"
+                            class="btn btn-success btn-sm py-0 px-3">
+                        <i class="bi bi-check2-all me-1"></i>Marcar revisados
+                    </button>
+                    <button type="submit" name="bulk_op" value="delete"
+                            class="btn btn-danger btn-sm py-0 px-3"
+                            onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
+                        <i class="bi bi-trash me-1"></i>Eliminar
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="px-3 bulk-check-col">
+                                    <input type="checkbox" class="form-check-input bulk-check-all"
+                                           data-target="pending" title="Seleccionar todos">
+                                </th>
+                                <th class="text-sm fw-semibold">Operario</th>
+                                <th class="text-sm fw-semibold">Fecha</th>
+                                <th class="text-sm fw-semibold">Bloques</th>
+                                <th class="text-sm fw-semibold">Horas</th>
+                                <th class="text-sm fw-semibold">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for wo in pending_list %}
+                            <tr>
+                                <td class="px-3">
+                                    <input type="checkbox" name="selected_pks" value="{{ wo.pk }}"
+                                           class="form-check-input bulk-check-item" data-group="pending">
+                                </td>
+                                <td class="text-sm fw-semibold">{{ wo.operator_name }}</td>
+                                <td class="text-sm">
+                                    {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
+                                </td>
+                                <td class="text-sm">{{ wo.num_bloques }}</td>
+                                <td class="text-sm">{{ wo.horas_totales }}</td>
+                                <td class="text-sm">
+                                    <div class="d-flex gap-2">
+                                        <a href="{% url 'panel:work_order_edit' wo.pk %}?from=taller"
+                                           class="btn btn-outline-primary btn-sm py-0 px-2">
+                                            <i class="bi bi-pencil me-1"></i>Editar
+                                        </a>
+                                        <button type="button"
+                                                class="btn btn-outline-success btn-sm py-0 px-2"
+                                                hx-post="{% url 'panel:work_order_review' wo.pk %}"
+                                                hx-swap="none"
+                                                hx-on::after-request="window.location.reload()">
+                                            <i class="bi bi-check2 me-1"></i>Revisar
+                                        </button>
+                                        <button type="button"
+                                                class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-single"
+                                                data-pk="{{ wo.pk }}"
+                                                data-form="form-bulk-pending"
+                                                data-tab="pending">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+            {% else %}
+            <div class="px-4 py-5 text-center text-muted">
+                <i class="bi bi-check2-all fs-3 d-block mb-2 text-success"></i>
+                <span class="text-sm">No hay partes pendientes de revisión.</span>
+            </div>
+            {% endif %}
+        </div>
+
+        {# ============================================================== #}
+        {# TAB 2 — Revisados (Excel export available here only)            #}
+        {# ============================================================== #}
+        {% elif active_tab == 'reviewed' %}
+        <div class="p-0">
+
+            {# Export action bar — Barra de acciones de exportación #}
+            {% if reviewed_list %}
+            <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center gap-3 flex-wrap">
+                <span class="text-sm fw-semibold text-muted">
+                    <i class="bi bi-download me-1"></i>Exportar Excel:
+                </span>
+                <form method="get" action="{% url 'panel:work_order_export' %}" class="d-flex gap-2 align-items-center flex-wrap">
+                    <input type="hidden" name="export_mode" value="multi_sheet">
+                    {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
+                    {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
+                    {% if operator_pk %}<input type="hidden" name="operator_pk" value="{{ operator_pk }}">{% endif %}
+                    <button type="submit" class="btn btn-success btn-sm px-3">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Exportar selección ({{ reviewed_list|length }} partes)
+                    </button>
+                </form>
+                <span class="text-muted text-sm">— o descarga individual desde la tabla.</span>
+            </div>
+            {% endif %}
+
+            {% if reviewed_list %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="px-4 text-sm fw-semibold">Operario</th>
+                            <th class="text-sm fw-semibold">Fecha</th>
+                            <th class="text-sm fw-semibold">Bloques</th>
+                            <th class="text-sm fw-semibold">Horas</th>
+                            <th class="text-sm fw-semibold">Revisado por</th>
+                            <th class="text-sm fw-semibold">Excel</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for wo in reviewed_list %}
+                        <tr>
+                            <td class="px-4 text-sm fw-semibold">{{ wo.operator_name }}</td>
+                            <td class="text-sm">
+                                {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
+                            </td>
+                            <td class="text-sm">{{ wo.num_bloques }}</td>
+                            <td class="text-sm">{{ wo.horas_totales }}</td>
+                            <td class="text-sm text-muted">
+                                {% if wo.reviewed_by %}
+                                    {{ wo.reviewed_by }}
+                                    {% if wo.reviewed_at %}
+                                    <br><small class="text-muted">{{ wo.reviewed_at|date:"d/m/Y H:i" }}</small>
+                                    {% endif %}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-sm">
+                                {% if wo.excel_url %}
+                                <a href="{{ wo.excel_url }}"
+                                   class="btn btn-outline-success btn-sm py-0 px-2"
+                                   download>
+                                    <i class="bi bi-file-earmark-excel"></i>
+                                </a>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="px-4 py-5 text-center text-muted">
+                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                <span class="text-sm">No hay partes revisados con los filtros aplicados.</span>
+            </div>
+            {% endif %}
+        </div>
+
+        {# ============================================================== #}
+        {# TAB 3 — Histórico                                               #}
+        {# ============================================================== #}
+        {% elif active_tab == 'history' %}
+        <div class="p-0">
+            {% if history_list %}
+            <form method="post" id="form-bulk-history">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk_action">
+                <input type="hidden" name="active_tab" value="history">
+                <div class="px-4 py-2 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
+                     id="bulk-bar-history">
+                    <span class="text-sm text-muted" id="bulk-count-history">0 seleccionados</span>
+                    <button type="submit" name="bulk_op" value="mark_reviewed"
+                            class="btn btn-success btn-sm py-0 px-3">
+                        <i class="bi bi-check2-all me-1"></i>Marcar revisados
+                    </button>
+                    <button type="submit" name="bulk_op" value="delete"
+                            class="btn btn-danger btn-sm py-0 px-3"
+                            onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
+                        <i class="bi bi-trash me-1"></i>Eliminar
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="px-3 bulk-check-col">
+                                    <input type="checkbox" class="form-check-input bulk-check-all"
+                                           data-target="history" title="Seleccionar todos">
+                                </th>
+                                <th class="text-sm fw-semibold">Operario</th>
+                                <th class="text-sm fw-semibold">Fecha</th>
+                                <th class="text-sm fw-semibold">Bloques</th>
+                                <th class="text-sm fw-semibold">Horas</th>
+                                <th class="text-sm fw-semibold">Estado</th>
+                                <th class="text-sm fw-semibold">Origen</th>
+                                <th class="text-sm fw-semibold">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for wo in history_list %}
+                            <tr>
+                                <td class="px-3">
+                                    <input type="checkbox" name="selected_pks" value="{{ wo.pk }}"
+                                           class="form-check-input bulk-check-item" data-group="history">
+                                </td>
+                                <td class="text-sm fw-semibold">{{ wo.operator_name }}</td>
+                                <td class="text-sm">
+                                    {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
+                                </td>
+                                <td class="text-sm">{{ wo.num_bloques }}</td>
+                                <td class="text-sm">{{ wo.horas_totales }}</td>
+                                <td class="text-sm">
+                                    {% if wo.reviewed %}
+                                    <span class="badge bg-success">Revisado</span>
+                                    {% else %}
+                                    <span class="badge bg-warning text-dark">Pendiente</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-sm text-muted">
+                                    {% if wo.generated_by %}
+                                    <span class="badge bg-info text-dark">
+                                        <i class="bi bi-robot me-1"></i>Generado
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-light text-dark border">Manual</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-sm">
+                                    <button type="button"
+                                            class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-single"
+                                            data-pk="{{ wo.pk }}"
+                                            data-form="form-bulk-history"
+                                            data-tab="history">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+            {% else %}
+            <div class="px-4 py-5 text-center text-muted">
+                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                <span class="text-sm">No hay partes con los filtros aplicados.</span>
+            </div>
+            {% endif %}
+        </div>
+
+        {# ============================================================== #}
+        {# TAB 4 — Ausencias                                               #}
+        {# ============================================================== #}
+        {% elif active_tab == 'absences' %}
+        <div class="p-0">
+
+            {# Action bar — Barra de acciones de ausencias #}
+            <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <span class="text-sm fw-semibold text-muted">
+                    <i class="bi bi-calendar-x me-1"></i>Gestión de ausencias
+                </span>
+                <a href="#" class="btn btn-primary btn-sm px-3" data-bs-toggle="modal"
+                   data-bs-target="#modalAbsenceCreate">
+                    <i class="bi bi-plus-circle me-1"></i>Nueva ausencia
+                </a>
+            </div>
+
+            {% if absences_list %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="px-4 text-sm fw-semibold">Operario</th>
+                            <th class="text-sm fw-semibold">Tipo</th>
+                            <th class="text-sm fw-semibold">Desde</th>
+                            <th class="text-sm fw-semibold">Hasta</th>
+                            <th class="text-sm fw-semibold">Notas</th>
+                            <th class="text-sm fw-semibold">Registrado por</th>
+                            <th class="text-sm fw-semibold">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for absence in absences_list %}
+                        <tr>
+                            <td class="px-4 text-sm fw-semibold">
+                                {{ absence.company_user.user.get_full_name|default:absence.company_user.user.username }}
+                            </td>
+                            <td class="text-sm">
+                                <span class="badge bg-secondary">{{ absence.get_absence_type_display }}</span>
+                            </td>
+                            <td class="text-sm">{{ absence.start_date|date:"d/m/Y" }}</td>
+                            <td class="text-sm">{{ absence.end_date|date:"d/m/Y" }}</td>
+                            <td class="text-sm text-muted">
+                                {{ absence.notes|truncatechars:50|default:"—" }}
+                            </td>
+                            <td class="text-sm text-muted">
+                                {% if absence.registered_by %}
+                                    {{ absence.registered_by.user.get_full_name|default:absence.registered_by.user.username }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-sm">
+                                <form method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="generate_absence_parts">
+                                    <input type="hidden" name="absence_pk" value="{{ absence.pk }}">
+                                    <button type="submit"
+                                            class="btn btn-outline-primary btn-sm py-0 px-2"
+                                            title="Generar partes del periodo (días laborables)"
+                                            onclick="return confirm('¿Generar partes sintéticos para todos los días laborables de este periodo de ausencia?')">
+                                        <i class="bi bi-calendar-plus me-1"></i>Generar partes
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="px-4 py-5 text-center text-muted">
+                <i class="bi bi-calendar-check fs-3 d-block mb-2"></i>
+                <span class="text-sm">No hay ausencias registradas con los filtros aplicados.</span>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+    </div>{# /.tab-content-panel #}
+
+</div>{# /.container-fluid #}
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Alta de nueva ausencia                                      #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalAbsenceCreate" tabindex="-1"
+     aria-labelledby="modalAbsenceCreateLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalAbsenceCreateLabel">
+                    <i class="bi bi-calendar-x me-2 text-muted"></i>Nueva ausencia
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form method="post" id="formAbsenceCreate" action="{% url 'panel:worker_absence_create' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label text-sm fw-semibold">Operario</label>
+                        <select name="company_user_pk" class="form-select form-select-sm" required>
+                            <option value="">Selecciona un operario…</option>
+                            {% for op in operators %}
+                            <option value="{{ op.pk }}">
+                                {{ op.user.get_full_name|default:op.user.username }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-sm fw-semibold">Tipo de ausencia</label>
+                        <select name="absence_type" class="form-select form-select-sm" required>
+                            <option value="VACATION">Vacaciones anuales</option>
+                            <option value="SICK_LEAVE">Baja médica (IT enfermedad común)</option>
+                            <option value="WORK_ACCIDENT">Accidente laboral (IT profesional)</option>
+                            <option value="MATERNITY_PATERNITY">Maternidad / Paternidad</option>
+                            <option value="BEREAVEMENT">Defunción de familiar</option>
+                            <option value="PERSONAL">Asuntos propios</option>
+                            <option value="OTHER">Otros</option>
+                        </select>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold">Fecha de inicio</label>
+                            <input type="date" name="start_date" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold">Fecha de fin</label>
+                            <input type="date" name="end_date" class="form-control form-control-sm" required>
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label text-sm fw-semibold">Notas <span class="text-muted fw-normal">(opcional)</span></label>
+                        <textarea name="notes" class="form-control form-control-sm" rows="2"
+                                  placeholder="Observaciones adicionales…"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" form="formAbsenceCreate"
+                        class="btn btn-primary btn-sm px-4">
+                    <i class="bi bi-check2 me-1"></i>Guardar ausencia
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Tab content panel — panel de contenido de pestaña */
+    .tab-content-panel {
+        min-height: 200px;
+    }
+    /* Nav tabs connected to content panel — pestañas conectadas al panel */
+    #adminHistoryTabs .nav-link {
+        border-bottom: none;
+        color: var(--bs-secondary-color, #6c757d);
+        font-size: 0.875rem;
+    }
+    #adminHistoryTabs .nav-link.active {
+        background-color: #fff;
+        border-color: #dee2e6 #dee2e6 #fff;
+        color: var(--bs-primary, #0d6efd);
+    }
+    /* Bulk selection column width — Ancho columna selección múltiple */
+    .bulk-check-col { width: 2.5rem; }
+    /* Bulk action bar hidden by default — Barra de acciones bulk oculta por defecto */
+    .bulk-action-bar { display: none; }
+    /* Machine autocomplete wrapper — Contenedor relativo del autocompletado */
+    .filter-machine-wrapper { position: relative; }
+    /* Machine autocomplete dropdown — Desplegable de autocompletado de maquina */
+    .filter-machine-dropdown {
+        position: absolute;
+        z-index: 1050;
+        width: 100%;
+        max-height: 220px;
+        overflow-y: auto;
+        display: none;
+    }
+    /* Machine autocomplete items — Items del desplegable */
+    .filter-machine-dropdown li {
+        padding: 0.35rem 0.75rem;
+        font-size: 0.875rem;
+        cursor: pointer;
+    }
+    .filter-machine-dropdown li:hover { background-color: #f0f4ff; }
+</style>
+{% endblock %}

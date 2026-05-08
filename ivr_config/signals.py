@@ -64,7 +64,7 @@ def _build_fleet_block(section) -> str:
 
     assets = (
         MachineAsset.objects
-        .filter(familia__in=families, es_activo=True)
+        .filter(family__in=families, is_active=True)
         .order_by("family", "type_name", "code")
         .values("code", "brand_model", "type_name", "family")
     )
@@ -78,14 +78,14 @@ def _build_fleet_block(section) -> str:
     by_type: dict = defaultdict(list)
     for asset in assets:
         by_type[asset["type_name"]].append(
-            f"{asset['codigo']} ({asset['brand_model']})"
+            f"{asset['code']} ({asset['brand_model']})"
         )
 
     lines = ["MAQUINARIA DISPONIBLE EN ESTA SECCIÓN:"]
-    for tipo, codigos in by_type.items():
-        lines.append(f"  {tipo}:")
-        for cod in codigos:
-            lines.append(f"    - {cod}")
+    for asset_type, codes in by_type.items():
+        lines.append(f"  {asset_type}:")
+        for code in codes:
+            lines.append(f"    - {code}")
 
     return "\n".join(lines)
 

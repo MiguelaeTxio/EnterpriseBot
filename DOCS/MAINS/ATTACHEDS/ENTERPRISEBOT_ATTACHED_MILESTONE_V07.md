@@ -139,9 +139,9 @@ circunstancia.
 Barrera server-side en WorkOrderEntryConfirmView.post() y
 WorkOrderEntryFormView.post() (panel/views.py):
   Gate 1: fecha presente y parseable (DD/MM/AAAA o YYYY-MM-DD).
-  Gate 2: cada bloque tiene maquina_raw no vacio, machine_asset resuelto
-          en catalogo, hc y hf presentes, delta_horas positivo, y
-          descripcion_averia no vacia.
+  Gate 2: cada bloque tiene machine_raw no vacio, machine_asset resuelto
+          en catalogo, hc y hf presentes, delta_hours positivo, y
+          fault_description no vacio.
   Gate 3: cada repuesto tiene material no vacio y quantity positiva.
 
 En caso de fallo: re-renderiza el formulario con mensaje de error detallado
@@ -151,6 +151,174 @@ Barrera client-side en confirm_entry.html y form_entry.html:
   Replica las tres gates antes del submit. Marca campos con field-flagged,
   hace scroll al alert y bloquea el envio si hay errores. El servidor actua
   como segunda barrera independiente.
+
+### 2.11. Correccion identificadores Regla de Oro del Idioma (sesion 008)
+
+Los templates del operario y panel/views.py usaban los nombres de campo
+anteriores al renombrado aplicado en H8/S009. La correccion fue atomica
+y simultanea en vistas + templates.
+
+Mapa de renombrado aplicado:
+  machine_raw        → machine_raw       (WorkOrderEntryLine.machine_raw)
+  fault_description  → fault_description (WorkOrderEntryLine.fault_description)
+  repair_notes       → repair_notes      (WorkOrderEntryLine.repair_notes)
+  uncertain_date     → uncertain_date    (contexto de confirmacion)
+
+### 2.12. Widget TimePicker custom (sesion 008)
+
+Partial: panel/templates/panel/_time_picker_widget.html
+  Selector custom de dos columnas (horas 00-23 scrollable / minutos 00|30
+  fijos). Dropdown anclado al body via getBoundingClientRect(). MutationObserver
+  para inputs anadidos dinamicamente. Compatible HTMX.
+
+### 2.13. Restriccion de minutos a 00/30 con step="1800"
+
+Anadido a todos los input[type="time"] de form_entry.html, stt_entry.html
+y _line_row.html.
+
+### 2.14. Fix WorkshopAssetAutocompleteView (sesion 008)
+
+Bug: code__icontains. Corregido en panel/views.py.
+
+### 2.15. Tercer Fleco — Typeahead de descripciones (sesion 009)
+
+Endpoint GET /panel/operator/descriptions/?field=fault_description&q=XXX
+(WorkOrderDescriptionAutocompleteView). Partial _description_typeahead.html.
+Incluido en las tres vias de entrada.
+
+### 2.16. Validaciones de integridad temporal (sesion 009)
+
+work_order_processor/validators.py — R1 a R5 implementadas.
+Campo WorkOrder.has_overlap_incident. Partial _overlap_incident_modal.html.
+
+### 2.17. Refactor UI repuestos — vehicle field (sesion 009)
+
+Campo Vehiculo eliminado del formulario del operario.
+_parse_spare_parts_from_post() rellena vehiculo_raw automaticamente.
+
+### 2.18. Nuevo campo WorkOrder.has_cg_incident — PENDIENTE IMPLEMENTACION
+
+Identificado en sesion 009. Implementacion diferida.
+
+### 2.19. Dropdown CdG con opcion Otro — PENDIENTE IMPLEMENTACION
+
+Identificado en sesion 009. Implementacion diferida.
+
+### 2.20. Horómetros y odómetro en bloques de trabajo — COMPLETADO (sesiones 011-014)
+
+Campos en WorkOrderEntryLine: odometer_reading, engine_hours_reading,
+crane_hours_reading (DecimalField null=True, blank=True).
+Campos en MachineAsset: has_odometer, has_engine_hours, has_crane_hours
+(BooleanField default=False).
+Validaciones R6, R7, R8 en validators.py.
+Migracion fleet 0005, work_order_processor 0010.
+
+### 2.21. Campo unit_price en SparePartLine (sesion 012)
+
+unit_price = DecimalField(max_digits=10, decimal_places=2, null=True, blank=True).
+Migracion: 0011_sparepartline_unit_price.
+
+### 2.22. Refactor UX operario — repuestos y etiquetas (sesion 012)
+
+Etiquetas "Bloques de trabajo"→"Tareas", "Centro de Gasto"→"Maquina o Seccion".
+Encabezado repuesto rediseñado. _parse_spare_parts_from_post() sin entry_idx.
+
+### 2.23. Auto-registro publico de operarios — WorkerSignupView (sesion 015)
+
+Campos phone y dni en CompanyUser. WorkerSignupForm. WorkerSignupView publica.
+Migracion: 0014_companyuser_dni_companyuser_phone.
+
+### 2.24. WorkOrderEntryHistoryView — fix related_name (sesion 015)
+
+entry.entry_lines → entry.lines. Template history.html creado.
+
+### 2.25. Campo WorkOrder.source — segregacion de origen (sesion 016)
+
+Nuevo campo WorkOrder.source (CharField choices):
+  PDF_UPLOAD — parte procesado desde PDF escaneado (pipeline historico).
+  DIGITAL    — parte introducido manualmente por el operario (Vias A/B/C).
+  GENERATED  — parte sintetico generado automaticamente desde una ausencia.
+
+Migracion: 0013_workorder_source.
+Backfill: registros existentes clasificados (2 DIGITAL, 8 PDF_UPLOAD).
+
+Impacto en vistas:
+  WorkOrderListView — filtra source=PDF_UPLOAD (pipeline supervisor).
+  WorkOrderAdminHistoryView._build_base_queryset() — filtra source__in=[DIGITAL, GENERATED].
+  WorkOrderEntryHistoryView._base_qs() — filtra source__in=[DIGITAL, GENERATED].
+  WorkOrderEntryFormView y WorkOrderEntryConfirmView — asignan source=DIGITAL.
+  WorkOrderAdminHistoryView.post() — asigna source=GENERATED.
+
+### 2.26. Modelos WorkerAbsence y WorkPeriod (sesion 016)
+
+Nuevos modelos en ivr_config/models.py. Migracion: 0015_workerabsence_workperiod.
+
+WorkerAbsence:
+  company_user FK(CompanyUser, CASCADE, related_name="absences")
+  absence_type CharField choices: VACATION/SICK_LEAVE/WORK_ACCIDENT/
+               MATERNITY_PATERNITY/BEREAVEMENT/PERSONAL/OTHER
+  start_date DateField, end_date DateField
+  registered_by FK(CompanyUser, SET_NULL, related_name="registered_absences")
+  notes TextField(blank=True)
+  created_at/updated_at DateTimeField(auto_now_add/auto_now)
+
+WorkPeriod:
+  company_user FK(CompanyUser, CASCADE, related_name="work_periods")
+  start_date DateField, end_date DateField(null=True) — null = periodo abierto
+  label CharField(max_length=100, blank=True)
+  created_by FK(CompanyUser, SET_NULL, related_name="created_work_periods")
+  created_at DateTimeField(auto_now_add=True)
+
+### 2.27. WorkOrderAdminHistoryView y WorkerAbsenceCreateView (sesion 016)
+
+Nueva vista WorkOrderAdminHistoryView (SupervisorAccessMixin, View).
+Endpoint: GET/POST /panel/work-orders/history/ (name=work_order_admin_history).
+ADMIN y SUPERVISOR son redirigidos automaticamente desde WorkOrderEntryHistoryView.
+
+Cuatro pestanas:
+  Pendientes  — partes DIGITAL/GENERATED sin revisar. Checkboxes bulk.
+                Acciones: Editar, Revisar, Eliminar individual, Marcar revisados
+                en bloque, Eliminar en bloque.
+  Revisados   — partes revisados. Exportacion Excel disponible SOLO aqui.
+  Historico   — todos los partes revisados, filtros cruzados.
+  Ausencias   — WorkerAbsence de la empresa. Alta, generacion de partes.
+
+WorkerAbsenceCreateView (SupervisorAccessMixin, View).
+Endpoint: POST /panel/worker-absences/create/ (name=worker_absence_create).
+
+Nuevo campo WorkOrder.generated_by FK(CompanyUser, SET_NULL,
+  related_name="generated_work_orders"). Migracion: 0012_workorder_generated_by.
+
+### 2.28. Refactor WorkOrderEntryHistoryView para WORKSHOP (sesion 016)
+
+Vista exclusiva para rol WORKSHOP tras redireccion ADMIN/SUPERVISOR.
+Cuatro pestanas: Periodo actual / Historico / Horas extra / Ausencias.
+
+Fallback sin WorkPeriod activo: muestra todos los partes del operario
+(source__in=[DIGITAL, GENERATED]) cuando no hay WorkPeriod configurado.
+Esto evita pantalla vacia al inicio antes de que el supervisor configure periodos.
+
+### 2.29. JS estatico en admin_history (sesion 016)
+
+Logica JS de admin_history.html extraida a archivo estatico:
+panel/static/panel/js/admin_history.js
+Norma establecida: la logica va en las vistas, los templates solo renderizan,
+el JavaScript va en archivos estaticos.
+
+### 2.30. Auditorias Regla de Oro del Idioma (sesion 016)
+
+Correcciones aplicadas en:
+  work_order_processor/tasks.py — fecha_incierta, maquina_raw, maquina_norm,
+    descripcion_averia, reparacion, delta_horas → EN.
+  panel/views.py — machine_asset__codigo → machine_asset__code (AnalyticsDataView).
+  ivr_config/signals.py — asset['codigo'] → asset['code'], familia__in → family__in,
+    es_activo → is_active, codigos/cod/tipo → codes/code/asset_type.
+
+### Paso 9 — Validacion E2E de las tres vias
+Estado: COMPLETADO PARCIAL (sesiones 006-009).
+- Via A (Form): VALIDADA.
+- Via B (STT): PENDIENTE validacion E2E real con operario.
+- Via C (Upload): PENDIENTE validacion E2E real con operario.
 
 ---
 
@@ -173,329 +341,18 @@ Estado: COMPLETADO (2026-04-30).
 
 ### Paso 6 — Excel ampliado: hoja Repuestos en generate_work_order_excel()
 Estado: COMPLETADO (2026-04-30).
-- Hoja "Repuestos" añadida al Excel generado con columnas:
-  FECHA, BLOQUE, REFERENCIA, VEHICULO, MATERIAL, UNIDADES, ORIGEN, PROVEEDOR.
-- Datos obtenidos de SparePartLine relacionados con las WorkOrderEntryLine
-  del WorkOrder. Solo se crea cuando existe al menos un SparePartLine.
-- Implementado en work_order_processor/services.py via PMA.
 
 ### Paso 7 — Via A: formulario web estructurado (Form)
 Estado: COMPLETADO (2026-04-30).
-- WorkOrderEntryFormView implementada en panel/views.py con barrera de
-  integridad sine qua non identica a la Via C.
-- Template panel/operator/form_entry.html: formulario multi-bloque con
-  autocompletado MachineAsset, botones Anadir bloque y Anadir repuesto
-  dinamicos via JS, validacion client-side y server-side.
-- Persistencia sincrona: WorkOrder sintetico + WorkOrderEntry +
-  WorkOrderEntryLine + SparePartLine + Excel.
-- Ruta: GET/POST /panel/operator/form/ (name=operator_form).
-- Dashboard Via A activada: boton deshabilitado sustituido por enlace activo.
 
 ### Paso 8 — Via B: dictado por voz (STT)
-Estado: COMPLETADO PARCIAL (sesion 006, 2026-04-30) — pendiente validacion E2E Via B.
-- WorkOrderEntrySTTView implementada en panel/views.py. Logica POST
-  delegada completamente en WorkOrderEntryFormView.post() via MRO (refactor DRY).
-- Correccion H021 djlint (sesion 006): inline style div#stt-transcript extraido
-  a clase .stt-transcript-box en panel/static/panel/css/panel.css (PMA).
-- Motor STT reemplazado (sesion 006): Web Speech API eliminada. Sustituida por
-  MediaRecorder API (soporte universal: Chrome, Edge, Firefox, Opera, Android).
-  El audio grabado se envia al endpoint WorkOrderEntrySTTExtractView via
-  multipart/form-data. Gemini 2.5 Flash procesa el audio directamente y
-  devuelve JSON estructurado con los campos del parte. Sin dependencia de
-  transcripcion intermedia ni parser JS local (este queda como fallback offline).
-- Nuevo endpoint: POST /panel/operator/stt/extract/ (WorkOrderEntrySTTExtractView).
-  Recibe audio binario, llama a Gemini con Part.from_bytes, devuelve JSON con:
-  fecha (DD/MM/AAAA), maquina_raw, hc (HH:MM), hf (HH:MM),
-  descripcion_averia, reparacion, or_val.
-- panel/urls.py actualizado: import WorkOrderEntrySTTExtractView + ruta
-  operator/stt/extract/ (name=operator_stt_extract).
-- stt_entry.html: SECTION 0 rediseñada con botones Iniciar grabacion /
-  Detener y procesar, spinner de procesamiento y resumen de resultado.
-- Pendiente: validacion E2E Via B en sesion 007.
-
-### 2.11. Correccion identificadores Regla de Oro del Idioma (sesion 008)
-
-Los templates del operario y panel/views.py usaban los nombres de campo
-anteriores al renombrado aplicado en H8/S009. La correccion fue atomica
-y simultanea en vistas + templates.
-
-Mapa de renombrado aplicado:
-  maquina_raw        → machine_raw       (WorkOrderEntryLine.machine_raw)
-  descripcion_averia → fault_description (WorkOrderEntryLine.fault_description)
-  reparacion         → repair_notes      (WorkOrderEntryLine.repair_notes)
-  fecha_incierta     → uncertain_date    (contexto de confirmacion)
-
-Archivos corregidos:
-  - panel/views.py:
-    - _resolve_machine: codigo__iexact → code__iexact (x2)
-    - WorkOrderEntryConfirmView.get: es_activo=True → is_active=True (x4)
-    - _parse_entry_lines_from_post: codigo__iexact → code__iexact (x4)
-    - _parse_spare_parts_from_post: codigo__iexact → code__iexact (x4)
-    - WorkshopAssetAutocompleteView.get: codigo__icontains → code__icontains (x1)
-  - panel/templates/panel/operator/confirm_entry.html: todos los name=, variables
-    de contexto, condicionales fecha_incierta y JS gate.
-  - panel/templates/panel/operator/form_entry.html: idem + _buildBlockRow JS.
-  - panel/templates/panel/operator/stt_entry.html: idem.
-
-### 2.12. Widget TimePicker custom (sesion 008)
-
-El atributo step="1800" en input[type="time"] no restringe el selector
-visual del navegador (Chrome/Firefox lo ignoran visualmente). Se implemento
-un selector custom de dos columnas (horas 00-23 scrollable / minutos 00|30
-fijos) como partial Django reutilizable.
-
-Partial: panel/templates/panel/_time_picker_widget.html
-  - CSS embebido: .tp-wrapper, .tp-display, .tp-dropdown, .tp-col-hours,
-    .tp-col-minutes, .tp-option, .tp-selected, .tp-flagged.
-  - JS embebido: motor TimePicker con API publica TimePicker.init(input) /
-    TimePicker.initAll(). Oculta el input[type="time"] original (display:none)
-    y lo mantiene como campo real del formulario.
-  - Dropdown anclado al <body> via getBoundingClientRect() para escapar
-    del contexto de apilado de tablas HTMX (fix necesario para edit.html).
-  - MutationObserver: activa el widget sobre inputs anadidos dinamicamente
-    (_buildBlockRow en form_entry.html, swaps HTMX en edit.html).
-  - Dispara evento change nativo sobre el input oculto para compatibilidad
-    con hx-trigger="change" de HTMX en _line_row.html.
-  - Sincronizacion de flag field-flagged via MutationObserver sobre el input.
-
-Templates que incluyen el partial via {% block extra_scripts %}:
-  - panel/templates/panel/operator/form_entry.html
-  - panel/templates/panel/operator/stt_entry.html
-  - panel/templates/panel/work_orders/edit.html
-    (requiere reglas CSS adicionales en {% block extra_head %} para
-    integracion con .edit-table: position/overflow en td y overrides
-    de .tp-display, .tp-dropdown dentro de la tabla)
-
-### 2.13. Restriccion de minutos a 00/30 con step="1800"
-
-Anadido atributo step="1800" a todos los input[type="time"] de:
-  - panel/templates/panel/operator/form_entry.html (x6: dinamico + estatico + JS)
-  - panel/templates/panel/operator/stt_entry.html (x4: dinamico + estatico)
-  - panel/templates/panel/work_orders/_line_row.html (x2: hc + hf)
-El atributo step actua como barrera de validacion HTML5 aunque el navegador
-no lo aplique visualmente al selector nativo (cubierto por widget 2.12).
-
-### 2.14. Fix WorkshopAssetAutocompleteView (sesion 008)
-
-Bug: codigo__icontains en el filtro de busqueda (nombre anterior al renombrado
-de H8/S009). Corregido a code__icontains en panel/views.py linea ~4929.
-El autocompletado de centros de gasto en form_entry.html y stt_entry.html
-queda operativo.
-
-### 2.15. Tercer Fleco — Typeahead de descripciones (sesion 009)
-
-Implementado autocompletado de texto sobre los campos fault_description y
-repair_notes en las tres vias de entrada del operario.
-
-Nuevo endpoint: GET /panel/operator/descriptions/?field=fault_description&q=XXX
-  Vista: WorkOrderDescriptionAutocompleteView (WorkshopRequiredMixin + View).
-  Whitelist de campos: {"fault_description", "repair_notes"}.
-  Minimo de caracteres: 2. Maximo de sugerencias: 8.
-  Consulta: WorkOrderEntryLine.objects.filter(entry__work_order__company=company,
-  <field>__icontains=q).exclude(<field>="").values_list(<field>, flat=True)
-  .distinct().order_by(<field>)[:8].
-  Respuesta: JsonResponse({"results": [...]}).
-
-Nuevo partial: panel/templates/panel/_description_typeahead.html
-  API publica JS: DescTypeahead.init(textarea) / DescTypeahead.initAll().
-  Clase marcadora en textareas: "desc-search" + data-desc-field=<campo>.
-  Dropdown flotante con clase .desc-typeahead-dropdown. Guardia pointerdown
-  para compatibilidad movil. Auto-inicializacion en DOMContentLoaded.
-
-Incluido en: form_entry.html, stt_entry.html, confirm_entry.html via
-{% block extra_scripts %} / antes de {% endblock %}.
-
-Limpieza BD: 9 registros en fault_description y 9 en repair_notes tenian
-prefijo de fecha (DD/M/AA) del pipeline historico. Eliminados con ORM
-(transaction.atomic + pattern re r'^\d{1,2}/\d{1,2}/\d{2,4}\s+').
-
-### 2.16. Validaciones de integridad temporal (sesion 009)
-
-Nuevo modulo: work_order_processor/validators.py
-  Reglas implementadas:
-    R1 — Solapamiento intra-parte: dos bloques del mismo envio se solapan.
-         Barrera dura. Bloquea el guardado.
-    R2 — HF <= HC: hora de fin no posterior a hora de inicio.
-         Barrera dura. Bloquea el guardado.
-    R3 — Laguna intra-parte >= 30 min: hueco sin cubrir entre bloques consecutivos.
-         Barrera dura. Bloquea el guardado. El operario debe cubrir la laguna
-         con un bloque de AUSENCIA JUSTIFICADA o AUSENCIA NO JUSTIFICADA.
-    R4 — Solapamiento inter-parte: el nuevo parte solapa con un WorkOrder
-         existente del mismo operario y fecha. Incidencia diferida — no bloquea.
-         Ambos WorkOrders se marcan con has_overlap_incident=True.
-    R5 — Parte complementario: misma fecha, sin solapamiento. Se acepta.
-
-  API publica:
-    run_intra_part_validation(blocks: List[TimeBlock]) -> IntraPartResult
-    validate_inter_overlap(company_user, work_date, blocks, exclude_pk) -> InterPartResult
-    parse_blocks_from_post(POST, num_entradas) -> List[TimeBlock]
-
-Nuevo campo WorkOrder: has_overlap_incident BooleanField(default=False, db_index=True).
-Migracion: 0008_workorder_has_overlap_incident.
-
-Nuevo partial: panel/templates/panel/_overlap_incident_modal.html
-  Modal Bootstrap static que se auto-dispara si el contexto devuelve
-  overlap_incidents=True tras persistir. Muestra tabla de partes en conflicto
-  con sus fechas. Boton "Ir a la lista de partes".
-  Variable de contexto: conflicting_parts = [{"pk": N, "fecha": "DD/MM/YYYY"}].
-
-Integrado en: WorkOrderEntryFormView.post() y WorkOrderEntryConfirmView.post()
-  en panel/views.py. WorkOrderEntrySTTView delega en FormView.post() via MRO.
-
-### 2.17. Refactor UI repuestos — vehicle field (sesion 009)
-
-El campo Vehiculo de la seccion de repuestos (SparePartLine.vehicle/vehiculo_raw)
-se elimino del formulario del operario para evitar redundancia con el bloque
-de trabajo asociado.
-
-Nuevo comportamiento en _parse_spare_parts_from_post():
-  Firma ampliada: (POST, company, entry_lines_data=None).
-  vehiculo_raw y vehicle_asset se rellenan automaticamente desde el bloque
-  de trabajo referenciado por entry_idx usando entry_map[entry_idx]["machine_raw"]
-  y entry_map[entry_idx]["machine_asset"]. Sin consulta BD adicional.
-
-UI del encabezado de repuesto (tres vias):
-  Encabezado: [badge Repuesto N] asignado a [dropdown inline] con CdG del bloque.
-  Texto hardcodeado: "del" [select Bloque X] "asignado a" [span CdG].
-  Span .centro-gasto-label .cg-label-static: texto plano no interactivo,
-  clase CSS en _description_typeahead.html (.cg-label-static: user-select:none;
-  pointer-events:none). Se actualiza en tiempo real via JS al cambiar el select
-  del bloque o al escribir en el campo Centro de Gasto del bloque de trabajo.
-
-  form_entry.html y confirm_entry.html: select .repuesto-entry-select con
-  data-repuesto-idx en el encabezado. Logica JS: _syncCentroGasto(ridx),
-  _attachEntrySelectListener(sel), listener 'input' en machine_raw.
-  stt_entry.html: sin select (bloque siempre 1). Solo _syncAllCentroGastoSTT().
-
-Label "Maquina" → "Centro de Gasto" en los tres templates (bloques de trabajo).
-
-### 2.18. Nuevo campo WorkOrder.has_cg_incident — PENDIENTE IMPLEMENTACION
-
-Identificado en sesion 009 como necesario para el subsistema de control de
-centros de gasto. Implementacion diferida a sesion 010.
-
-Campo: has_cg_incident BooleanField(default=False, db_index=True).
-Semantica: el operario ha asignado un repuesto a un CdG via "Otro" que no
-existe en MachineAsset. El supervisor debe validar y crear el CdG en BD.
-
-### 2.19. Dropdown CdG con opcion Otro — PENDIENTE IMPLEMENTACION (sesion 010)
-
-El selector "Bloque asociado" del encabezado de repuesto sera sustituido por
-un dropdown personalizado con las siguientes opciones:
-  - Un item por cada bloque de trabajo del parte con machine_raw no vacio.
-  - Opcion especial "Otro" con input de texto libre.
-
-Comportamiento "Otro":
-  - Aparece un input text libre para que el operario escriba el CdG alternativo.
-  - El servidor intenta resolver el valor libre contra MachineAsset (iexact).
-  - Si no resuelve: vehiculo_raw = texto libre, vehicle_asset = None,
-    WorkOrder.has_cg_incident = True.
-  - entry_idx = 0 como centinela para el caso Otro.
-
-Notificacion SUPERVISOR/ADMIN al guardar un parte con has_cg_incident=True:
-  Pendiente de diseno de sistema de notificaciones (Hito 12).
-
-### 2.20. Horómetros y odómetro en bloques de trabajo — PENDIENTE IMPLEMENTACION (sesion 010)
-
-MachineAsset ya tiene fields mileage (km) y hours (lecturas actuales en BD).
-
-Nuevos campos en WorkOrderEntryLine (sesion 010):
-  odometer_reading    DecimalField(null=True, blank=True)  — lectura km al momento.
-  engine_hours_reading DecimalField(null=True, blank=True) — lectura horometro motor.
-  crane_hours_reading  DecimalField(null=True, blank=True) — lectura horometro grua.
-
-Nuevos campos en MachineAsset (sesion 010):
-  has_odometer     BooleanField(default=False) — tiene odometro.
-  has_engine_hours BooleanField(default=False) — tiene horometro de motor.
-  has_crane_hours  BooleanField(default=False) — tiene horometro de grua.
-
-Logica de validacion (sesion 010):
-  Si el MachineAsset del bloque tiene has_odometer=True, el campo
-  odometer_reading es OBLIGATORIO (R6 en validators.py).
-  Idem para has_engine_hours y has_crane_hours.
-  Contraste con lectura anterior en BD: si la lectura nueva < lectura actual
-  del activo => error bloqueante. Si salto > umbral configurable => aviso.
-
-Actualizacion de MachineAsset en revision del parte (Hito 12):
-  Al marcar un WorkOrder como revisado, el supervisor puede confirmar la
-  actualizacion de mileage/hours en MachineAsset desde las lecturas del parte.
-
-### 2.21. Campo unit_price en SparePartLine (sesion 012)
-
-Nuevo campo añadido a SparePartLine para soporte de informes de coste (H9).
-No visible ni editable por el operario. Se rellena en H10 desde albaranes
-de proveedor o manualmente por SUPERVISOR.
-
-  unit_price = DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-
-Migracion: 0011_sparepartline_unit_price.
-
-### 2.22. Refactor UX operario — repuestos y etiquetas (sesion 012)
-
-Cambios aplicados en los tres templates del operario (form_entry, stt_entry,
-confirm_entry) y en _parse_spare_parts_from_post() en panel/views.py:
-
-  - Etiqueta seccion tareas: "Bloques de trabajo" → "Tareas".
-  - Etiqueta campo maquina en bloque: "Centro de Gasto" → "Maquina o Seccion".
-  - Encabezado repuesto: "Repuesto {N} del [Bloque X] asignado a {CdG}"
-    → "Repuesto {N} asignado a [select CdG]".
-  - Select CdG: lista los valores machine_raw unicos no vacios del parte
-    mas opcion "Otro — introducir CdG manualmente". Valor por defecto: ultimo
-    bloque introducido. Campo libre: name="repuesto_N_cdg_free".
-  - Eliminada la indirection entry_idx: vehiculo_raw lo entrega directamente
-    el select (name="repuesto_N_vehiculo_raw"). Si value=="__otro__", se lee
-    repuesto_N_cdg_free. Sentinel entry_idx eliminado.
-  - _parse_spare_parts_from_post(): ya no usa entry_map ni entry_lines_data
-    para resolver vehiculo_raw. Resolucion contra MachineAsset en dos pasadas
-    para todos los repuestos. Si value=="__otro__", lee cdg_free.
-  - Fix artefactos bash incrustados en form_entry.html (lineas ~3290, ~3315).
-
-PENDIENTE (bug activo al cierre de sesion 012):
-  La UI de repuestos sigue mostrando la version antigua ("del [Bloque 1]
-  asignado a...") a pesar de tener los archivos en disco correctos, collectstatic
-  ejecutado, aplicacion recargada y cache vaciada. Causa no identificada.
-  Investigar al inicio de sesion 013 antes de cualquier otra accion.
-
-### 2.23. Auto-registro publico de operarios — WorkerSignupView (sesion 015)
-
-Nuevos campos en CompanyUser (ivr_config/models.py):
-  phone = CharField(max_length=20, blank=True, default="")
-  dni   = CharField(max_length=20, blank=True, default="")
-Migracion: 0014_companyuser_dni_companyuser_phone.
-
-Nuevo formulario WorkerSignupForm (panel/forms.py):
-  Campos: first_name, last_name, phone (opcional), dni, username,
-          password, password_confirm.
-  Validaciones: username unico en auth.User, DNI unico por empresa,
-                password == password_confirm.
-  Constructor acepta company=None para extension multiempresa futura.
-
-Nueva vista publica WorkerSignupView (panel/views.py):
-  GET/POST /panel/signup/ (name=worker_signup). Sin autenticacion requerida.
-  Resolucion de empresa: Company.objects.get(name__icontains="Alvarez") — piloto.
-  En POST valido: crea auth.User + CompanyUser(role=WORKSHOP,
-  must_change_password=False), autentica al usuario y redirige a /panel/operator/.
-
-Enlace "No tienes cuenta? Registrate!" anadido en login.html apuntando a worker_signup.
-Template panel/templates/panel/workers/signup.html creado (Neonato Puro).
-
-### 2.24. WorkOrderEntryHistoryView — fix related_name (sesion 015)
-
-Bug corregido en WorkOrderEntryHistoryView (panel/views.py):
-  entry.entry_lines → entry.lines (related_name correcto de WorkOrderEntryLine).
-Afectaba al prefetch_related y a los calculos de num_bloques y horas_totales.
-Causa: related_name="lines" definido en WorkOrderEntryLine.entry FK.
-
-Template panel/templates/panel/operator/history.html creado (Neonato Puro):
-  Agrupacion mensual descendente. Badge de horas totales por mes.
-  Selector de operario para ADMIN/SUPERVISOR via GET ?user_pk=XX.
-  Estado de revision por parte (Revisado/Pendiente).
+Estado: COMPLETADO PARCIAL (sesion 006) — pendiente validacion E2E Via B.
 
 ### Paso 9 — Validacion E2E de las tres vias
-Estado: COMPLETADO PARCIAL (sesiones 006-009).
-- Via A (Form): VALIDADA. Persistencia correcta, nombre sintetico legible.
-- Via B (STT): PENDIENTE validacion E2E real con operario.
-- Via C (Upload): PENDIENTE validacion E2E real con operario.
+Estado: EN PROGRESO.
+
+### Paso 10 — Vistas de historial y gestion de presencia/ausencia
+Estado: COMPLETADO (sesiones 015-016).
 
 ---
 
@@ -507,175 +364,191 @@ Estado: COMPLETADO PARCIAL (sesiones 006-009).
 | 002    | 2026-04-28 | Pasos 1 y 2     | Arquitectura de roles ampliada: WORKSHOP y DRIVER anadidos a CompanyUser.role. WorkshopRequiredMixin creado en panel/mixins.py. OperatorDashboardView implementada. Navegacion restringida. Template operator/dashboard.html creado. Usuario taller_test_01 validado E2E. Hito pausado para abrir H8. |
 | 003    | 2026-04-30 | Pasos 3-5 + fixes | Modelo SparePartLine creado y migrado (0005). Prompt Gemini ampliado (_EXTRACTION_PROMPT_FULL + extract_work_order_page_full). Via C implementada: WorkOrderEntryUploadView + WorkOrderEntryConfirmView + WorkshopAssetAutocompleteView + templates + CSS + pdf2image. Fix multiempresa en _resolve_machine_asset (company=). Fix HTMX _line_row.html (row_class con pk_str). Fix WorkOrderLineRestoreView para partes digitales. Fix doble form en users/form.html. Fix listado roles (badge-supervisor, badge-workshop). |
 | 004    | 2026-04-30 | Paso 6 + Paso 7 + fixes fuera HR | Diagnostico y limpieza de duplicados en BD (race condition upload). UniqueConstraint parcial + select_for_update en WorkOrderUploadView. Barrera integridad sine qua non en Vias A y C (server-side + client-side). Boton Anadir repuesto dinamico en confirm_entry.html. Hoja Repuestos en generate_work_order_excel(). WorkOrderEntryFormView implementada (Via A). form_entry.html creado (Neonato Puro). Dashboard Via A activada. |
-| 005    | 2026-04-30 | Paso 8 (parcial)                  | WorkOrderEntrySTTView implementada en panel/views.py (PMA). stt_entry.html creado (PEA): grabador Web Speech API es-ES, parser JS client-side, formulario identico a form_entry.html, validacion client-side. urls.py actualizado: import + ruta operator/stt/. Dashboard Via B activada. Pendiente H021 CSS (inline style en stt-transcript div). |
-| 006    | 2026-04-30 | Paso 8 (completado parcial) + fixes | H021 CSS corregido: .stt-transcript-box extraida a panel.css (PMA). Nombre sintetico source_pdf en Vias A/B/C (PMA views.py). Fix autocomplete mobile: pointerdown + guardia _selecting en form_entry.html y stt_entry.html. type=date para fecha y type=time para hc/hf en form_entry.html y stt_entry.html. Refactor DRY: STTView.post() delega en FormView.post() via MRO; funciones de modulo _parse_entry_lines_from_post() y _parse_spare_parts_from_post() con resolucion en dos pasadas (raw iexact primero, normalizado despues). Via A validada E2E. Motor STT reemplazado: Web Speech API → MediaRecorder + Gemini audio. Nuevo endpoint WorkOrderEntrySTTExtractView (operator/stt/extract/). Parser JS queda como fallback offline. Pendiente: validacion E2E Via B y C. |
-| 007    | 2026-05-01 | Sesion 007 (ver H8 sesion 007)      | Hito pausado para trabajar H8. Ver registro de sesiones de ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md sesion 007 para detalle de cambios aplicados durante esta sesion. |
-| 008    | 2026-05-05 | Pasos 8 (fix), 9 (parcial), flecos  | PRIMERA ACCION completada: correccion atomica de identificadores renombrados en panel/views.py (code__iexact, is_active, code__icontains) y en los tres templates del operario (machine_raw, fault_description, repair_notes, uncertain_date) incluido JS gate y _buildBlockRow. Widget TimePicker custom implementado (_time_picker_widget.html): selector de dos columnas 00/30 con dropdown anclado al body, compatible HTMX. Fix WorkshopAssetAutocompleteView (code__icontains). step="1800" en todos los inputs de hora. SEGUNDA y TERCERA ACCION pendientes para sesion 009. |
-| 009    | 2026-05-06 | Flecos, validaciones, refactor UI   | Tercer Fleco completado: typeahead descripciones (WorkOrderDescriptionAutocompleteView + partial _description_typeahead.html) en tres vias. Limpieza BD: prefijos fecha en fault_description y repair_notes (9 registros cada uno). Validaciones temporales: work_order_processor/validators.py con R1-R5, campo has_overlap_incident en WorkOrder (migr. 0008), partial _overlap_incident_modal.html integrado en tres vias. Refactor UI repuestos: campo Vehiculo eliminado de formulario, relleno automatico en _parse_spare_parts_from_post() desde entry_map. Encabezado repuesto rediseniado: [Repuesto N] del [select Bloque X] asignado a [span CdG]. Label Maquina → Centro de Gasto en bloques de trabajo. CSS .cg-label-static en _description_typeahead.html. Identificados para sesion 010: has_cg_incident, dropdown CdG con Otro, horometros/odometro en WorkOrderEntryLine, flags has_odometer/has_engine_hours/has_crane_hours en MachineAsset. |
-| 011    | 2026-05-06 | SEGUNDA ACCION completa: R6/R7/R8, WorkshopAssetDetailView, UI horómetros, persistencia | Diagnostico migraciones: fleet 0004 y work_order_processor 0010 ya aplicadas en BD. makemigrations --check sin cambios. validators.py: TimeBlock ampliado con machine_asset + tres lecturas de contadores; IntraPartResult.warnings añadido; validate_odometer (R6), validate_engine_hours (R7), validate_crane_hours (R8) implementadas; run_intra_part_validation integra R6/R7/R8; parse_blocks_from_post acepta entry_lines_data. panel/views.py: WorkshopAssetDetailView (GET /panel/operator/assets/detail/) devuelve flags y referencias; _parse_entry_lines_from_post lee y devuelve los tres campos de contador via _parse_decimal(); parse_blocks_from_post enriquecido en FormView y ConfirmView con entry_lines_data=; WorkOrderEntryLine.objects.create persiste odometer_reading, engine_hours_reading, crane_hours_reading en ambas vistas; _meter_warnings propagado a django_messages. panel/urls.py: import y ruta operator_asset_detail. Tres templates (form_entry, stt_entry, confirm_entry): campos .meter-field ocultos por defecto revelados por _applyMeterFields() llamado desde click/mousedown del autocomplete via ASSET_DETAIL_URL. TERCERA ACCION pendiente para sesion 012. |
-| 012    | 2026-05-07 | unit_price, refactor UX repuestos, bug UI pendiente | SparePartLine.unit_price añadido (migr. 0011). Refactor UX operario: etiquetas "Bloques de trabajo"→"Tareas", "Centro de Gasto"→"Maquina o Seccion"; encabezado repuesto rediseñado con select CdG directo (machine_raw unicos del parte + Otro); campo cdg_free para valor libre; _parse_spare_parts_from_post() refactorizado sin entry_idx. Fix artefactos bash en form_entry.html. Bug activo al cierre: UI repuestos sigue mostrando version antigua a pesar de archivos en disco correctos, collectstatic y reload ejecutados. Causa no identificada. TERCERA ACCION (historial de partes WorkOrderEntryHistoryView) pendiente. |
-| 013    | 2026-05-07 | Diagnóstico bugs S012, fix _buildRepuestoRow, validación contadores parcial | Diagnóstico bug UI repuestos: causa raíz identificada como _buildRepuestoRow JS en form_entry.html no actualizado en S012 (generaba estructura antigua con entry_idx numérico). Corregido via PMA: _buildRepuestoRow reescrita usando _buildCdgOptions() igual que stt_entry.html y confirm_entry.html. Diagnóstico bug persistencia SparePartLine: spd["entry_idx"] eliminado en S012 pero aún accedido en ConfirmView.post() y FormView.post() — PMA preparado y autorizado (mv pendiente). Validación dinámica contadores (Gate 2b JS + _applyMeterFields con data-ref-value): completada en form_entry.html y stt_entry.html. confirm_entry.html bloqueado por fallo en construcción de OLD_A. Validación server-side Gate 2 contadores en views.py: pendiente. WorkOrderEntryHistoryView: pendiente. |
-| 014    | 2026-05-07 | Bugs críticos resueltos, E2E Via A con contadores validado | Fix validators.py: prefetch_related entries__entry_lines → entries__lines y entry.entry_lines.all() → entry.lines.all() (AttributeError 500 en POST /operator/form/). Fix confirm_entry.html: PARCHE A _applyMeterFields con escritura data-ref-value en inputs meter-field + PARCHE B Gate 2b JS corregido con if condicionales. Fix guard if (!code) { return; } en onload ASSET_DETAIL_URL en form_entry.html, confirm_entry.html y stt_entry.html (400 en /assets/detail/?code=). Fix services.py: machine_asset.kms → machine_asset.mileage y machine_asset.horas → machine_asset.hours (error generación Excel). Segunda y Tercera Acción de S013 verificadas ya aplicadas en disco. Validación E2E Via A completa con contadores activos en G12 superada. |
-| 014b   | 2026-05-08 | Fix pre-relleno de campos de contador con valor actual de BD | Corrección en _applyMeterFields() de los tres templates del operario (form_entry.html, confirm_entry.html, stt_entry.html): además de escribir data-ref-value, se escribe input.value con el valor actual de BD (mileage/hours) para que el campo aparezca pre-rellenado al operario como punto de partida visual. form_entry.html carecía además del parche completo de data-ref-value aplicado en S014. |
-| 015    | 2026-05-08 | Auto-registro de operarios + historial + fix related_name | PRIMERA ACCION: campos phone y dni añadidos a CompanyUser (migr. 0014). WorkerSignupForm en panel/forms.py. WorkerSignupView publica (GET/POST /panel/signup/): resolucion empresa icontains Alvarez, crea auth.User + CompanyUser(WORKSHOP), autentica y redirige a /panel/operator/. Enlace registro en login.html. Template workers/signup.html creado. SEGUNDA ACCION: fix WorkOrderEntryHistoryView — entry.entry_lines → entry.lines en prefetch y calculos. Template operator/history.html creado: agrupacion mensual, badge horas, selector operario ADMIN/SUPERVISOR, badges Revisado/Pendiente. Validacion E2E superada. |
+| 005    | 2026-04-30 | Paso 8 (parcial) | WorkOrderEntrySTTView implementada en panel/views.py (PMA). stt_entry.html creado (PEA). Dashboard Via B activada. |
+| 006    | 2026-04-30 | Paso 8 (completado parcial) + fixes | H021 CSS corregido. Nombre sintetico source_pdf en Vias A/B/C. Fix autocomplete mobile. type=date/time en formularios. Refactor DRY STTView→FormView via MRO. Motor STT reemplazado: Web Speech API → MediaRecorder + Gemini audio. WorkOrderEntrySTTExtractView. Via A validada E2E. |
+| 007    | 2026-05-01 | Sesion 007 (ver H8 sesion 007) | Hito pausado para trabajar H8. |
+| 008    | 2026-05-05 | Pasos 8 (fix), 9 (parcial), flecos | PRIMERA ACCION: correccion atomica identificadores Regla de Oro del Idioma. Widget TimePicker custom. Fix WorkshopAssetAutocompleteView (code__icontains). |
+| 009    | 2026-05-06 | Flecos, validaciones, refactor UI | Typeahead descripciones. Validaciones R1-R5 en validators.py. Refactor UI repuestos: campo Vehiculo eliminado. |
+| 011    | 2026-05-06 | SEGUNDA ACCION completa: R6/R7/R8, horómetros, persistencia | Diagnostico migraciones. validators.py R6/R7/R8. WorkshopAssetDetailView. _parse_entry_lines_from_post con contadores. Tres templates con .meter-field. |
+| 012    | 2026-05-07 | unit_price, refactor UX repuestos | SparePartLine.unit_price (migr. 0011). Refactor UX etiquetas y repuestos. Bug UI repuestos activo al cierre. |
+| 013    | 2026-05-07 | Diagnostico bugs S012, fix _buildRepuestoRow | Bug UI repuestos resuelto (_buildRepuestoRow JS). Bug persistencia SparePartLine diagnosticado. Validacion dinamica contadores parcial. |
+| 014    | 2026-05-07 | Bugs criticos resueltos, E2E Via A validado | Fix validators.py (entries__lines). Fix confirm_entry.html Gate 2b. Fix guard code vacio en tres templates. Fix services.py (mileage/hours). E2E Via A con contadores superada. |
+| 014b   | 2026-05-08 | Fix pre-relleno campos contador con valor BD | _applyMeterFields() en tres templates: input.value pre-rellenado con valor actual BD. form_entry.html: parche data-ref-value completo. |
+| 015    | 2026-05-08 | Auto-registro operarios + historial + fix related_name | WorkerSignupView publica. Campos phone/dni CompanyUser (migr. 0014). Fix WorkOrderEntryHistoryView (entry_lines→lines). Template history.html creado. |
+| 016    | 2026-05-08 | Historial admin, ausencias, campo source, auditorias idioma | PRIMERA ACCION: bloque "Mis partes de hoy" eliminado del dashboard. SEGUNDA ACCION: modelos WorkerAbsence/WorkPeriod + migr. 0015. TERCERA ACCION: WorkOrderAdminHistoryView 4 pestanas + WorkOrder.generated_by (migr. 0012) + WorkOrder.source (migr. 0013) + WorkerAbsenceCreateView + panel/urls.py. CUARTA ACCION: refactor WorkOrderEntryHistoryView para WORKSHOP + fallback sin WorkPeriod. Acciones bulk (checkboxes, Marcar revisados, Eliminar individual/bloque). Fix boton Volver en editor (back_url ?from=taller). JS extraido a admin_history.js (estatico). Auditorias Regla de Oro del Idioma: tasks.py, views.py, signals.py. Fix AnalyticsDataView (machine_asset__code). Fixes signals.py (family__in, is_active, asset['code'], asset_type, codes). |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (016)
+## 5. Hoja de Ruta para la Siguiente Sesion (017)
 
 ### CONTEXTO
 
-La sesion 015 completo la PRIMERA ACCION (auto-registro publico de operarios
-WorkerSignupView + campos phone/dni en CompanyUser + migracion 0014) y la
-SEGUNDA ACCION (WorkOrderEntryHistoryView con fix related_name entry_lines->lines
-+ template history.html). Validacion E2E superada.
+La sesion 016 completo las cuatro acciones del bloque de historial y
+gestion de presencia/ausencia: modelos WorkerAbsence/WorkPeriod,
+WorkOrderAdminHistoryView con cuatro pestanas y acciones bulk,
+WorkerAbsenceCreateView, refactor WorkOrderEntryHistoryView para WORKSHOP
+con fallback sin periodo, campo WorkOrder.source para segregar pipeline PDF
+de partes digitales, y varias auditorias de la Regla de Oro del Idioma.
 
-S016 abre un bloque de trabajo transversal sobre las vistas de historial y
-gestion de presencia/ausencia de operarios. Afecta a panel/views.py,
-panel/urls.py, panel/templates/panel/ y a dos nuevos modelos WorkerAbsence
-y WorkPeriod en ivr_config/models.py con sus migraciones.
+S017 cierra los flecos abiertos de S016 y completa la gestion de periodos
+de trabajo del supervisor.
 
-ADVERTENCIA CRITICA sobre related_name (mantener siempre presente):
-el FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
-Usar siempre entry.lines.all() y prefetch_related("entries__lines").
+ADVERTENCIA CRITICA (mantener siempre presente):
+  El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
+  Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-### PRIMERA ACCION — Eliminar bloque "Mis partes de hoy" del dashboard del operario
+### PRIMERA ACCION — WorkPeriod CRUD para SUPERVISOR
 
-El dashboard del operario (panel/templates/panel/operator/dashboard.html)
-muestra actualmente un bloque "Mis partes de hoy" que queda obsoleto ahora
-que existe la vista de historial dedicada. Eliminarlo via PMA.
+El supervisor necesita una interfaz para crear, cerrar y etiquetar los
+periodos de trabajo de los operarios. Sin esta funcionalidad, el historial
+WORKSHOP siempre usa el fallback "todos los partes" del operario.
 
-Archivos a modificar:
-  - panel/templates/panel/operator/dashboard.html: PMA — eliminar bloque
-    "Mis partes de hoy" y cualquier logica de contexto asociada.
-  - panel/views.py: PMA — revisar OperatorDashboardView.get_context_data()
-    y eliminar el queryset de partes del dia si existe.
+Modelo WorkPeriod ya existe en ivr_config/models.py (migr. 0015):
+  company_user FK(CompanyUser, CASCADE, related_name="work_periods")
+  start_date   DateField()
+  end_date     DateField(null=True, blank=True)  — null = periodo abierto
+  label        CharField(max_length=100, blank=True)
+  created_by   FK(CompanyUser, SET_NULL, related_name="created_work_periods")
+  created_at   DateTimeField(auto_now_add=True)
 
-### SEGUNDA ACCION — Nuevos modelos WorkerAbsence y WorkPeriod
+Implementar en panel/views.py (PMA):
 
-Nuevo modelo WorkerAbsence en ivr_config/models.py:
+  WorkPeriodListView (SupervisorAccessMixin, View):
+    GET /panel/work-periods/ (name=work_period_list)
+    Lista todos los WorkPeriod de la empresa, agrupados por operario,
+    descendente por start_date. Muestra: operario, inicio, fin (o "Activo"),
+    etiqueta, acciones (cerrar, eliminar).
 
-  Campos:
-    company_user   FK(CompanyUser, CASCADE, related_name="absences")
-    absence_type   CharField(max_length=30, choices=ABSENCE_CHOICES)
-    start_date     DateField()
-    end_date       DateField()
-    registered_by  FK(CompanyUser, SET_NULL, null=True, blank=True,
-                      related_name="registered_absences")
-    notes          TextField(blank=True, default="")
-    created_at     DateTimeField(auto_now_add=True)
-    updated_at     DateTimeField(auto_now=True)
+  WorkPeriodCreateView (SupervisorAccessMixin, View):
+    POST /panel/work-periods/create/ (name=work_period_create)
+    Recibe: company_user_pk, start_date, label (opcional).
+    Validaciones: company_user debe ser WORKSHOP y de la misma empresa.
+    start_date no puede solapar con un periodo abierto del mismo operario.
+    Crea WorkPeriod con created_by=cu autenticado.
 
-  Choices de absence_type:
-    VACATION            = "VACATION"            # Vacaciones anuales
-    SICK_LEAVE          = "SICK_LEAVE"          # Baja medica (IT enfermedad comun)
-    WORK_ACCIDENT       = "WORK_ACCIDENT"       # Accidente laboral (IT profesional)
-    MATERNITY_PATERNITY = "MATERNITY_PATERNITY" # Maternidad/paternidad
-    BEREAVEMENT         = "BEREAVEMENT"         # Defuncion de familiar
-    PERSONAL            = "PERSONAL"            # Asuntos propios
-    OTHER               = "OTHER"               # Otros (cajon de sastre)
+  WorkPeriodCloseView (SupervisorAccessMixin, View):
+    POST /panel/work-periods/<pk>/close/ (name=work_period_close)
+    Recibe: end_date.
+    Validaciones: end_date >= start_date del periodo.
+    El periodo debe pertenecer a la empresa autenticada.
+    Cierra el periodo asignando end_date.
 
-  Meta: ordering=["-start_date"], verbose_name="Ausencia de operario".
+Integrar en admin_history.html: anadir un bloque de gestion de periodos
+en la pestana Ausencias o crear una pestana nueva "Periodos" (decision a
+tomar en sesion segun criterio de Miguel Angel).
 
-Nuevo modelo WorkPeriod en ivr_config/models.py:
+Archivos a solicitar al inicio via SFTP:
+  - panel/views.py
+  - panel/urls.py
+  - panel/templates/panel/work_orders/admin_history.html
 
-  Campos:
-    company_user FK(CompanyUser, CASCADE, related_name="work_periods")
-    start_date   DateField()
-    end_date     DateField(null=True, blank=True)  # null = periodo abierto
-    label        CharField(max_length=100, blank=True)  # ej. "Mayo 2026"
-    created_by   FK(CompanyUser, SET_NULL, null=True, blank=True,
-                    related_name="created_work_periods")
-    created_at   DateTimeField(auto_now_add=True)
+### SEGUNDA ACCION — WorkerAbsence edicion y baja
 
-  Periodo activo: end_date=None o end_date >= hoy.
-  Meta: ordering=["-start_date"], verbose_name="Periodo de trabajo".
+La pestana Ausencias de WorkOrderAdminHistoryView solo tiene el boton
+"Generar partes". Faltan las acciones de editar y dar de baja una ausencia.
 
-Ejecutar makemigrations ivr_config tras ambos modelos.
+Implementar en panel/views.py (PMA):
 
-### TERCERA ACCION — Vista diferenciada de historial ADMIN/SUPERVISOR
+  WorkerAbsenceUpdateView (SupervisorAccessMixin, View):
+    POST /panel/worker-absences/<pk>/update/ (name=worker_absence_update)
+    Recibe: absence_type, start_date, end_date, notes.
+    Validaciones: ausencia debe pertenecer a la empresa autenticada.
+    start_date <= end_date.
 
-Nueva vista WorkOrderAdminHistoryView (SupervisorAccessMixin, View).
-Endpoint: GET /panel/work-orders/history/  (name=work_order_admin_history).
+  WorkerAbsenceDeleteView (SupervisorAccessMixin, View):
+    POST /panel/worker-absences/<pk>/delete/ (name=worker_absence_delete)
+    Elimina la ausencia. Scope empresa obligatorio.
 
-Si el usuario autenticado es ADMIN o SUPERVISOR, WorkOrderEntryHistoryView
-redirige automaticamente a work_order_admin_history.
+En admin_history.html: anadir botones Editar y Eliminar en cada fila de
+la tabla de ausencias. Modal de edicion similar al modal de alta existente.
 
-Pestanas de WorkOrderAdminHistoryView:
+### TERCERA ACCION — Sidebar ADMIN/SUPERVISOR
 
-  Pestana 1 — Pendientes:
-    Partes sin revisar (reviewed=False) de todos los operarios de la empresa.
-    Filtros: operario, fecha, maquina.
-    Acciones: marcar como revisado, editar (enlace a work_order_edit).
+El item "Historial" del sidebar (panel/templates/panel/base.html) solo
+aparece en la seccion TALLER visible para WORKSHOP. Los roles ADMIN y
+SUPERVISOR no tienen acceso directo desde el sidebar a work_order_admin_history.
 
-  Pestana 2 — Revisados:
-    Partes revisados (reviewed=True). Exportacion Excel disponible SOLO aqui.
-    Exportacion individual (un parte) y por rango de fechas (multiples partes).
-    Filtros: operario, rango de fechas, maquina.
+Anadir en base.html (PMA) en la seccion ADMINISTRACION (visible para
+ADMIN/SUPERVISOR) un nuevo item:
+  <i class="bi bi-clock-history"></i> Historial
+  href: {% url 'panel:work_order_admin_history' %}
+  Activo cuando active_nav == 'work_order_admin_history'.
 
-  Pestana 3 — Historico:
-    Todos los partes con filtros cruzados: operario, rango de fechas, maquina,
-    estado de revision. Vista de lectura completa.
+Verificar que WorkOrderAdminHistoryView.get() pasa active_nav='work_order_admin_history'
+al contexto.
 
-  Pestana 4 — Ausencias y partes de periodo:
-    Listado de ausencias WorkerAbsence por operario con filtro de tipo y fecha.
-    Acciones:
-      - Alta de nueva ausencia (WorkerAbsenceCreateView).
-      - Edicion y baja de ausencia existente.
-      - "Generar partes del periodo": dado un WorkerAbsence, genera un WorkOrder
-        sintetico por cada dia laborable (lunes a viernes) del rango start_date
-        a end_date. Cada parte generado:
-          source_pdf = "" (digital)
-          status = DONE
-          uploaded_by = company_user del ausente
-          generated_by = CompanyUser del supervisor que lanza la accion
-            (campo nuevo WorkOrder.generated_by FK(CompanyUser, SET_NULL,
-            null=True, blank=True, related_name="generated_work_orders"))
-          WorkOrderEntry.work_date = fecha del dia laborable
-          WorkOrderEntryLine.fault_description = absence_type display
-          WorkOrderEntryLine.delta_hours = 8 (jornada habitual por defecto)
+Archivo a solicitar al inicio via SFTP:
+  - panel/templates/panel/base.html
 
-Nuevo campo WorkOrder.generated_by:
-  generated_by = FK(CompanyUser, SET_NULL, null=True, blank=True,
-                    related_name="generated_work_orders")
-  Requiere migracion en work_order_processor.
+### CUARTA ACCION — WorkOrderExportView adaptada para partes digitales
 
-### CUARTA ACCION — Vista simplificada del operario (WORKSHOP)
+La exportacion Excel desde la pestana Revisados de WorkOrderAdminHistoryView
+usa el mismo WorkOrderExportView que el pipeline PDF. Necesita adaptarse para
+filtrar source__in=[DIGITAL, GENERATED] y respetar el filtro operator_pk
+del contexto.
 
-Refactor de WorkOrderEntryHistoryView para el rol WORKSHOP exclusivamente.
+Verificar en panel/views.py WorkOrderExportView:
+  - Anadir filtro source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED]
+    cuando la peticion proviene de work_order_admin_history (detectar via
+    parametro GET from_admin=1 o via Referer).
+  - Alternativa mas limpia: crear WorkOrderAdminExportView separada que
+    filtre directamente source__in=[DIGITAL, GENERATED] y operator_pk.
+    Endpoint: GET /panel/work-orders/admin-export/ (name=work_order_admin_export).
+    Recibe: operator_pk (opcional), date_from, date_to, export_mode.
 
-Pestanas:
+Archivo a solicitar al inicio via SFTP:
+  - panel/views.py (zona WorkOrderExportView)
 
-  Pestana 1 — Periodo actual:
-    Partes del WorkPeriod activo del operario (end_date=None o end_date>=hoy).
-    Total de horas del periodo. Solo lectura.
+### QUINTA ACCION — Fix SRI Bootstrap (fleco tecnico)
 
-  Pestana 2 — Historico:
-    Partes de periodos cerrados agrupados por WorkPeriod, descendente.
-    Solo lectura.
+La consola del navegador muestra 9 Issues relacionados con el SRI de Bootstrap
+cargado desde cdn.jsdelivr.net. El error es:
+  "Failed to find a valid digest in the 'integrity' attribute for resource
+  'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js'"
 
-  Pestana 3 — Horas extra:
-    Calculo: horas trabajadas del periodo activo - (dias_laborables x 8).
-    Dias laborables = dias lunes-viernes del rango start_date a hoy (o end_date).
-    Solo visor, sin edicion.
+El base.html no tiene atributo integrity — el error proviene del propio CDN
+jsDelivr que aniade headers SRI en su respuesta HTTP. La solucion es cargar
+Bootstrap desde un CDN que no anada SRI headers automaticamente, o bien
+alojar los archivos de Bootstrap en staticfiles del proyecto.
 
-  Pestana 4 — Ausencias:
-    Visor de WorkerAbsence del operario autenticado. Solo lectura.
-    Muestra tipo, fechas y notas.
+Investigar al inicio de sesion: cargar Bootstrap desde unpkg.com como
+alternativa (sin SRI headers automaticos) o copiar bootstrap.min.css y
+bootstrap.bundle.min.js a panel/static/panel/vendor/.
 
-### Estado de migraciones al cierre de sesion 015
+Archivo a solicitar al inicio via SFTP:
+  - panel/templates/panel/base.html
+
+### SEXTA ACCION — I9 Partes solapados del operario
+
+El operario recibe el aviso has_overlap_incident=True en su parte pero no
+tiene ninguna accion disponible para corregirlo desde su historial
+(WorkOrderEntryHistoryView). Las opciones son:
+
+  Opcion A — Solo lectura con indicador visual:
+    En la pestana Periodo actual del historial WORKSHOP, marcar visualmente
+    los partes con has_overlap_incident=True con un badge de advertencia
+    y un tooltip explicativo. El operario sabe que hay incidencia pero no
+    puede modificarla — debe comunicarlo al supervisor.
+
+  Opcion B — Acceso a edicion limitada:
+    Permitir al operario acceder al WorkOrderEditView desde su historial
+    para corregir las horas del parte solapado.
+
+Decision a tomar en sesion segun criterio de Miguel Angel.
+
+### Estado de migraciones al cierre de sesion 016
 
 | App                    | Ultima migracion aplicada                              |
 |------------------------|--------------------------------------------------------|
 | fleet                  | 0005_add_first_repair_to_machineasset                  |
-| work_order_processor   | 0011_sparepartline_unit_price                          |
-| ivr_config             | 0014_companyuser_dni_companyuser_phone                 |
+| work_order_processor   | 0013_workorder_source                                  |
+| ivr_config             | 0015_workerabsence_workperiod                          |
 | panel                  | 0001_initial (AnalyticsProfile)                        |
 
-### Archivos a solicitar al inicio de sesion 016
+### Archivos a solicitar al inicio de sesion 017
 
 OBLIGATORIO via SFTP antes de generar ningun PMA:
-  - ivr_config/models.py
   - panel/views.py
   - panel/urls.py
-  - panel/templates/panel/operator/dashboard.html
+  - panel/templates/panel/base.html
+  - panel/templates/panel/work_orders/admin_history.html

@@ -119,11 +119,11 @@ def _infer_dates_from_context(
           a. Determine the previous known date (prev) and next known date (nxt).
           b. Enumerate all weekdays between prev+1 and nxt-1.
           c. If exactly one weekday candidate exists, assign it unambiguously
-             (fecha_incierta=False).
+             (uncertain_date=False).
           d. If multiple candidates exist, assign the first one and set
-             fecha_incierta=True (human review required).
+             uncertain_date=True (human review required).
           e. If no candidates exist (holiday gap, absence), leave as-is
-             and set fecha_incierta=True.
+             and set uncertain_date=True.
 
     Updates are persisted directly via QuerySet.update() to avoid
     triggering signals.
@@ -145,11 +145,11 @@ def _infer_dates_from_context(
           a. Determinar la fecha conocida anterior (prev) y la siguiente (nxt).
           b. Enumerar todos los días laborables entre prev+1 y nxt-1.
           c. Si existe exactamente un candidato, asignarlo sin ambigüedad
-             (fecha_incierta=False).
+             (uncertain_date=False).
           d. Si hay varios candidatos, asignar el primero y marcar
-             fecha_incierta=True (revisión humana necesaria).
+             uncertain_date=True (revisión humana necesaria).
           e. Si no hay candidatos (festivo, ausencia), dejar como está
-             y marcar fecha_incierta=True.
+             y marcar uncertain_date=True.
 
     Las actualizaciones se persisten via QuerySet.update() para no
     disparar señales.
@@ -158,7 +158,7 @@ def _infer_dates_from_context(
         WorkOrderEntry.objects
         .filter(work_order_id=work_order_id)
         .order_by("page_number")
-        .values("id", "work_date", "fecha_incierta", "page_number")
+        .values("id", "work_date", "uncertain_date", "page_number")
     )
 
     if not entries:
@@ -216,7 +216,7 @@ def _infer_dates_from_context(
     anchor_start = period_start if period_start else None
     anchor_end   = period_end   if period_end   else None
 
-    updates: list[tuple[int, date, bool]] = []  # (entry_id, new_date, fecha_incierta)
+    updates: list[tuple[int, date, bool]] = []  # (entry_id, new_date, uncertain_date)
 
     for i, entry in enumerate(entries):
         if _is_valid(known[i]):
@@ -298,9 +298,9 @@ def _infer_dates_from_context(
             # Unambiguous inference.
             # Inferencia unívoca.
             inferred        = candidates[0]
-            fecha_incierta  = False
+            uncertain_date  = False
             known[i]        = inferred
-            updates.append((entry["id"], inferred, fecha_incierta))
+            updates.append((entry["id"], inferred, uncertain_date))
             logger.info(
                 "# [Fechas] Pág. %d: fecha inferida inequívocamente → %s.",
                 entry["page_number"], inferred.isoformat(),
@@ -309,9 +309,9 @@ def _infer_dates_from_context(
             # Ambiguous: assign first candidate, flag for review.
             # Ambiguo: asignar el primer candidato, marcar para revisión.
             inferred        = candidates[0]
-            fecha_incierta  = True
+            uncertain_date  = True
             known[i]        = inferred
-            updates.append((entry["id"], inferred, fecha_incierta))
+            updates.append((entry["id"], inferred, uncertain_date))
             logger.warning(
                 "# [Fechas] Pág. %d: %d candidatos — asignado %s (incierto).",
                 entry["page_number"], len(candidates), inferred.isoformat(),
@@ -326,10 +326,10 @@ def _infer_dates_from_context(
 
     # Persist inferred dates / Persistir fechas inferidas.
     connection.close()
-    for entry_id, new_date, incierta in updates:
+    for entry_id, new_date, uncertain_date in updates:
         WorkOrderEntry.objects.filter(pk=entry_id).update(
             work_date      = new_date,
-            fecha_incierta = incierta,
+            uncertain_date = uncertain_date,
         )
 
     logger.info(
@@ -354,7 +354,7 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
          e. For each work block in extracted["entradas"]:
             - Normalise machine code (D4).
             - Resolve MachineAsset from fleet catalogue.
-            - Compute delta_horas (net hours after lunch break deduction).
+            - Compute delta_hours (net hours after lunch break deduction).
             - Persist WorkOrderEntryLine.
          f. Increment processed_pages counter.
       4. Call generate_work_order_excel() to build and persist the Excel report.
@@ -379,7 +379,7 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
          e. Por cada bloque de trabajo en extracted["entradas"]:
             - Normalizar código de máquina (D4).
             - Resolver MachineAsset del catálogo de flota.
-            - Calcular delta_horas (horas netas tras descuento pausa comida).
+            - Calcular delta_hours (horas netas tras descuento pausa comida).
             - Persistir WorkOrderEntryLine.
          f. Incrementar el contador processed_pages.
       4. Llamar a generate_work_order_excel() para construir y persistir el Excel.
@@ -470,7 +470,7 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
             connection.close()
 
             work_date      = _parse_date(extracted.get("fecha"))
-            fecha_incierta = bool(extracted.get("fecha_incierta", False))
+            uncertain_date = bool(extracted.get("fecha_incierta", False))
             confidence     = _coerce_confidence(extracted.get("extraction_confidence"))
             entradas       = extracted.get("entradas") or []
 
@@ -483,7 +483,7 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                     defaults    = {
                         "worker_name":           worker_name,
                         "work_date":             work_date,
-                        "fecha_incierta":        fecha_incierta,
+                        "uncertain_date":        uncertain_date,
                         "raw_gemini_response":   extracted,
                         "extraction_confidence": confidence,
                     },
@@ -492,9 +492,9 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                 # e) Persist one WorkOrderEntryLine per work block.
                 # e) Persistir un WorkOrderEntryLine por bloque de trabajo.
                 for line_idx, bloque in enumerate(entradas, start=1):
-                    maquina_raw  = (bloque.get("maquina_raw") or "").strip()
-                    maquina_norm = _normalise_machine_code(maquina_raw)
-                    machine_asset = _resolve_machine_asset(maquina_norm)
+                    machine_raw  = (bloque.get("maquina_raw") or "").strip()
+                    machine_norm = _normalise_machine_code(machine_raw)
+                    machine_asset = _resolve_machine_asset(machine_norm)
 
                     hc = _parse_time(bloque.get("hc"))
                     hf = _parse_time(bloque.get("hf"))
@@ -509,16 +509,16 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                         line_number = line_idx,
                         defaults    = {
                             "machine_asset":     machine_asset,
-                            "maquina_raw":       maquina_raw,
-                            "maquina_norm":      maquina_norm,
-                            "descripcion_averia": (
+                            "machine_raw":       machine_raw,
+                            "machine_norm":      machine_norm,
+                            "fault_description": (
                                 bloque.get("descripcion_averia") or ""
                             ),
-                            "reparacion":        (bloque.get("reparacion") or ""),
+                            "repair_notes":      (bloque.get("reparacion") or ""),
                             "hc":                hc,
                             "hf":                hf,
                             "or_val":            (bloque.get("or_val") or ""),
-                            "delta_horas":       delta,
+                            "delta_hours":       delta,
                             "flags":             flags,
                         },
                     )
@@ -528,8 +528,8 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                         "(asset=%s) | %s–%s | Δ=%s h",
                         page_number_one,
                         line_idx,
-                        maquina_raw,
-                        maquina_norm,
+                        machine_raw,
+                        machine_norm,
                         machine_asset.code if machine_asset else "NO RESUELTO",
                         hc.strftime("%H:%M") if hc else "--",
                         hf.strftime("%H:%M") if hf else "--",

@@ -67,6 +67,8 @@ from panel.views import (
     WorkOrderEntrySTTView,
     WorkOrderEntrySTTExtractView,
     WorkOrderEntryHistoryView,
+    WorkOrderAdminHistoryView,
+    WorkerAbsenceCreateView,
     MachineAssetListView,
     WorkOrderDescriptionAutocompleteView,
     MachineAssetCreateView,
@@ -92,6 +94,14 @@ urlpatterns = [
     # Operator history — Historial de partes del operario (rol WORKSHOP y ADMIN).
     # Cuarta Accion — Hito 7 (2026-05-07)
     path("operator/history/", WorkOrderEntryHistoryView.as_view(), name="operator_history"),
+
+    # Admin history — Vista de historial de gestion para ADMIN y SUPERVISOR.
+    # Tercera Accion — Hito 7 (2026-05-08)
+    path("work-orders/history/", WorkOrderAdminHistoryView.as_view(), name="work_order_admin_history"),
+
+    # Worker absence create — Alta de ausencia de operario desde admin history (rol SUPERVISOR y ADMIN).
+    # Cuarta Accion — Hito 7 (2026-05-08)
+    path("worker-absences/create/", WorkerAbsenceCreateView.as_view(), name="worker_absence_create"),
 
     # Operator dashboard — Selector de vía de entrada de partes (rol WORKSHOP y ADMIN).
     # Paso 2 — Hito 7 (2026-04-27)
