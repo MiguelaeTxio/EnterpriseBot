@@ -121,6 +121,12 @@
                 {% endif %}
             </a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'periods' %}active{% endif %} fw-semibold"
+               href="?tab=periods&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+                <i class="bi bi-calendar-range me-1"></i>Períodos
+            </a>
+        </li>
     </ul>
 
     {# ------------------------------------------------------------------ #}
@@ -437,17 +443,45 @@
                                 {% else %}—{% endif %}
                             </td>
                             <td class="text-sm">
-                                <form method="post" class="d-inline">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="generate_absence_parts">
-                                    <input type="hidden" name="absence_pk" value="{{ absence.pk }}">
-                                    <button type="submit"
-                                            class="btn btn-outline-primary btn-sm py-0 px-2"
-                                            title="Generar partes del periodo (días laborables)"
-                                            onclick="return confirm('¿Generar partes sintéticos para todos los días laborables de este periodo de ausencia?')">
-                                        <i class="bi bi-calendar-plus me-1"></i>Generar partes
+                                <div class="d-flex gap-1 flex-wrap">
+                                    {# Generar partes — generate synthetic work orders for absence range #}
+                                    <form method="post" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="generate_absence_parts">
+                                        <input type="hidden" name="absence_pk" value="{{ absence.pk }}">
+                                        <button type="submit"
+                                                class="btn btn-outline-primary btn-sm py-0 px-2"
+                                                title="Generar partes del periodo (días laborables)"
+                                                onclick="return confirm('¿Generar partes sintéticos para todos los días laborables de este periodo de ausencia?')">
+                                            <i class="bi bi-calendar-plus me-1"></i>Generar partes
+                                        </button>
+                                    </form>
+                                    {# Editar ausencia — open edit modal pre-filled with absence data #}
+                                    <button type="button"
+                                            class="btn btn-outline-secondary btn-sm py-0 px-2"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#modalAbsenceEdit"
+                                            data-update-url="{% url 'panel:worker_absence_update' absence.pk %}"
+                                            data-absence-type="{{ absence.absence_type }}"
+                                            data-start-date="{{ absence.start_date|date:'Y-m-d' }}"
+                                            data-end-date="{{ absence.end_date|date:'Y-m-d' }}"
+                                            data-notes="{{ absence.notes|escapejs }}"
+                                            title="Editar ausencia">
+                                        <i class="bi bi-pencil"></i>
                                     </button>
-                                </form>
+                                    {# Eliminar ausencia — POST delete with confirmation #}
+                                    <form method="post"
+                                          action="{% url 'panel:worker_absence_delete' absence.pk %}"
+                                          class="d-inline"
+                                          onsubmit="return confirm('¿Eliminar esta ausencia? Esta acción no se puede deshacer.')">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                                class="btn btn-outline-danger btn-sm py-0 px-2"
+                                                title="Eliminar ausencia">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -460,6 +494,96 @@
                 <span class="text-sm">No hay ausencias registradas con los filtros aplicados.</span>
             </div>
             {% endif %}
+        </div>
+
+        {# ============================================================== #}
+        {# TAB 5 — Períodos de trabajo                                     #}
+        {# ============================================================== #}
+        {% elif active_tab == 'periods' %}
+        <div class="p-0">
+
+            {# Action bar — Barra de acciones de períodos #}
+            <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <span class="text-sm fw-semibold text-muted">
+                    <i class="bi bi-calendar-range me-1"></i>Gestión de períodos de trabajo
+                </span>
+                <a href="#" class="btn btn-primary btn-sm px-3"
+                   data-bs-toggle="modal"
+                   data-bs-target="#modalWorkPeriodCreate">
+                    <i class="bi bi-plus-circle me-1"></i>Nuevo periodo
+                </a>
+            </div>
+
+            {% if period_operator_groups %}
+                {% for group in period_operator_groups %}
+                <div class="px-4 pt-4 pb-2">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-person-fill text-muted"></i>
+                        <span class="fw-semibold text-sm">
+                            {{ group.operator.user.get_full_name|default:group.operator.user.username }}
+                        </span>
+                        {% if group.has_open %}
+                        <span class="badge bg-success ms-1">Periodo abierto</span>
+                        {% endif %}
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0 border rounded">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-sm fw-semibold px-3">Inicio</th>
+                                    <th class="text-sm fw-semibold">Fin</th>
+                                    <th class="text-sm fw-semibold">Etiqueta</th>
+                                    <th class="text-sm fw-semibold">Creado por</th>
+                                    <th class="text-sm fw-semibold">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for period in group.periods %}
+                                <tr>
+                                    <td class="text-sm px-3">{{ period.start_date|date:"d/m/Y" }}</td>
+                                    <td class="text-sm">
+                                        {% if period.end_date %}
+                                            {{ period.end_date|date:"d/m/Y" }}
+                                        {% else %}
+                                            <span class="badge bg-success">Activo</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-sm text-muted">
+                                        {{ period.label|default:"—" }}
+                                    </td>
+                                    <td class="text-sm text-muted">
+                                        {% if period.created_by %}
+                                            {{ period.created_by.user.get_full_name|default:period.created_by.user.username }}
+                                        {% else %}—{% endif %}
+                                    </td>
+                                    <td class="text-sm">
+                                        {% if not period.end_date %}
+                                        <button type="button"
+                                                class="btn btn-outline-success btn-sm py-0 px-2 btn-close-period"
+                                                data-period-pk="{{ period.pk }}"
+                                                data-operator-name="{{ group.operator.user.get_full_name|default:group.operator.user.username }}"
+                                                data-close-url="{% url 'panel:work_period_close' period.pk %}"
+                                                title="Cerrar periodo">
+                                            <i class="bi bi-calendar-check me-1"></i>Cerrar
+                                        </button>
+                                        {% else %}
+                                        <span class="text-muted text-sm">Cerrado</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="px-4 py-5 text-center text-muted">
+                <i class="bi bi-calendar-range fs-3 d-block mb-2"></i>
+                <span class="text-sm">No hay períodos de trabajo registrados.</span>
+            </div>
+            {% endif %}
+
         </div>
         {% endif %}
 
@@ -535,6 +659,161 @@
     </div>
 </div>
 
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Crear nuevo periodo de trabajo                              #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalWorkPeriodCreate" tabindex="-1"
+     aria-labelledby="modalWorkPeriodCreateLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalWorkPeriodCreateLabel">
+                    <i class="bi bi-calendar-plus me-2 text-muted"></i>Nuevo periodo de trabajo
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form method="post" id="formWorkPeriodCreate"
+                      action="{% url 'panel:work_period_create' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label text-sm fw-semibold">Operario</label>
+                        <select name="company_user_pk" class="form-select form-select-sm" required>
+                            <option value="">Selecciona un operario…</option>
+                            {% for op in operators %}
+                            <option value="{{ op.pk }}">
+                                {{ op.user.get_full_name|default:op.user.username }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-sm fw-semibold">Fecha de inicio</label>
+                        <input type="date" name="start_date"
+                               class="form-control form-control-sm" required>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label text-sm fw-semibold">
+                            Etiqueta <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        <input type="text" name="label"
+                               class="form-control form-control-sm"
+                               placeholder="Ej: Contrato temporal verano 2026">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" form="formWorkPeriodCreate"
+                        class="btn btn-primary btn-sm px-4">
+                    <i class="bi bi-check2 me-1"></i>Crear periodo
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Cerrar periodo de trabajo                                   #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalWorkPeriodClose" tabindex="-1"
+     aria-labelledby="modalWorkPeriodCloseLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalWorkPeriodCloseLabel">
+                    <i class="bi bi-calendar-check me-2 text-muted"></i>Cerrar periodo de trabajo
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-sm text-muted mb-3" id="modalWorkPeriodCloseOperator"></p>
+                <form method="post" id="formWorkPeriodClose" action="">
+                    {% csrf_token %}
+                    <div class="mb-0">
+                        <label class="form-label text-sm fw-semibold">Fecha de fin</label>
+                        <input type="date" name="end_date"
+                               class="form-control form-control-sm" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" form="formWorkPeriodClose"
+                        class="btn btn-success btn-sm px-4">
+                    <i class="bi bi-check2 me-1"></i>Cerrar periodo
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Editar ausencia existente                                   #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalAbsenceEdit" tabindex="-1"
+     aria-labelledby="modalAbsenceEditLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalAbsenceEditLabel">
+                    <i class="bi bi-pencil me-2 text-muted"></i>Editar ausencia
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form method="post" id="formAbsenceEdit" action="">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label text-sm fw-semibold">Tipo de ausencia</label>
+                        <select name="absence_type" id="editAbsenceType"
+                                class="form-select form-select-sm" required>
+                            <option value="VACATION">Vacaciones anuales</option>
+                            <option value="SICK_LEAVE">Baja médica (IT enfermedad común)</option>
+                            <option value="WORK_ACCIDENT">Accidente laboral (IT profesional)</option>
+                            <option value="MATERNITY_PATERNITY">Maternidad / Paternidad</option>
+                            <option value="BEREAVEMENT">Defunción de familiar</option>
+                            <option value="PERSONAL">Asuntos propios</option>
+                            <option value="OTHER">Otros</option>
+                        </select>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold">Fecha de inicio</label>
+                            <input type="date" name="start_date" id="editAbsenceStartDate"
+                                   class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold">Fecha de fin</label>
+                            <input type="date" name="end_date" id="editAbsenceEndDate"
+                                   class="form-control form-control-sm" required>
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label text-sm fw-semibold">
+                            Notas <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        <textarea name="notes" id="editAbsenceNotes"
+                                  class="form-control form-control-sm" rows="2"
+                                  placeholder="Observaciones adicionales…"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" form="formAbsenceEdit"
+                        class="btn btn-primary btn-sm px-4">
+                    <i class="bi bi-check2 me-1"></i>Guardar cambios
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_head %}
@@ -577,4 +856,53 @@
     }
     .filter-machine-dropdown li:hover { background-color: #f0f4ff; }
 </style>
+<script>
+/* Initialise WorkPeriodClose modal — rellenar action y nombre de operario.
+   Inicializar modal de cierre de periodo — rellenar action y nombre de operario. */
+(function () {
+    "use strict";
+    document.addEventListener("DOMContentLoaded", function () {
+        var modalEl = document.getElementById("modalWorkPeriodClose");
+        if (!modalEl) { return; }
+        modalEl.addEventListener("show.bs.modal", function (event) {
+            var btn          = event.relatedTarget;
+            var closeUrl     = btn.getAttribute("data-close-url");
+            var operatorName = btn.getAttribute("data-operator-name");
+            var form         = document.getElementById("formWorkPeriodClose");
+            var label        = document.getElementById("modalWorkPeriodCloseOperator");
+            if (form)  { form.setAttribute("action", closeUrl); }
+            if (label) { label.textContent = "Operario: " + operatorName; }
+        });
+    });
+}());
+</script>
+<script>
+/* Initialise AbsenceEdit modal — populate form fields from data attributes.
+   Inicializar modal de edición de ausencia — rellenar campos desde atributos data. */
+(function () {
+    "use strict";
+    document.addEventListener("DOMContentLoaded", function () {
+        var modalEl = document.getElementById("modalAbsenceEdit");
+        if (!modalEl) { return; }
+        modalEl.addEventListener("show.bs.modal", function (event) {
+            var btn        = event.relatedTarget;
+            var updateUrl  = btn.getAttribute("data-update-url");
+            var absType    = btn.getAttribute("data-absence-type");
+            var startDate  = btn.getAttribute("data-start-date");
+            var endDate    = btn.getAttribute("data-end-date");
+            var notes      = btn.getAttribute("data-notes");
+            var form       = document.getElementById("formAbsenceEdit");
+            var selType    = document.getElementById("editAbsenceType");
+            var inpStart   = document.getElementById("editAbsenceStartDate");
+            var inpEnd     = document.getElementById("editAbsenceEndDate");
+            var taNotes    = document.getElementById("editAbsenceNotes");
+            if (form)     { form.setAttribute("action", updateUrl); }
+            if (selType)  { selType.value  = absType;    }
+            if (inpStart) { inpStart.value = startDate;  }
+            if (inpEnd)   { inpEnd.value   = endDate;    }
+            if (taNotes)  { taNotes.value  = notes || ""; }
+        });
+    });
+}());
+</script>
 {% endblock %}

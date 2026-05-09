@@ -143,6 +143,7 @@
                             <th class="text-center">Tareas</th>
                             <th class="text-center">Horas</th>
                             <th class="text-center">Estado</th>
+                            <th class="text-center">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -160,6 +161,21 @@
                                 <span class="badge rounded-pill bg-success"><i class="bi bi-check-circle me-1"></i>Revisado</span>
                                 {% else %}
                                 <span class="badge rounded-pill bg-light text-secondary border"><i class="bi bi-hourglass-split me-1"></i>Pendiente</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if wo.has_overlap_incident %}
+                                {# Overlap incident — the operator can edit the part to correct hours.  #}
+                                {# Incidencia de solapamiento — el operario puede editar el parte para  #}
+                                {# corregir las horas.                                                  #}
+                                <a href="{% url 'panel:work_order_edit' wo.pk %}?back_url={% url 'panel:operator_history' %}%3Ftab%3Dcurrent_period"
+                                   class="btn btn-warning btn-sm py-0 px-2 d-inline-flex align-items-center gap-1"
+                                   title="Este parte tiene horas solapadas con otro parte. Edítalo para corregirlas.">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                    <span class="d-none d-sm-inline">Corregir solapamiento</span>
+                                </a>
+                                {% else %}
+                                <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
                         </tr>

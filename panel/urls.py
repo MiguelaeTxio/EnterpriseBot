@@ -76,6 +76,12 @@ from panel.views import (
     MachineAssetDeactivateView,
     MachineAssetReactivateView,
     MachineAssetDeleteView,
+    WorkerAbsenceUpdateView,
+    WorkerAbsenceDeleteView,
+    WorkOrderAdminExportView,
+    WorkPeriodListView,
+    WorkPeriodCreateView,
+    WorkPeriodCloseView,
 )
 
 app_name = "panel"
@@ -95,13 +101,14 @@ urlpatterns = [
     # Cuarta Accion — Hito 7 (2026-05-07)
     path("operator/history/", WorkOrderEntryHistoryView.as_view(), name="operator_history"),
 
-    # Admin history — Vista de historial de gestion para ADMIN y SUPERVISOR.
-    # Tercera Accion — Hito 7 (2026-05-08)
-    path("work-orders/history/", WorkOrderAdminHistoryView.as_view(), name="work_order_admin_history"),
-
     # Worker absence create — Alta de ausencia de operario desde admin history (rol SUPERVISOR y ADMIN).
     # Cuarta Accion — Hito 7 (2026-05-08)
     path("worker-absences/create/", WorkerAbsenceCreateView.as_view(), name="worker_absence_create"),
+
+    # WorkerAbsence update and delete — Edición y baja de ausencias (rol SUPERVISOR y ADMIN).
+    # 2ª Acción — Hito 7 Sesión 017 (2026-05-08)
+    path("worker-absences/<int:pk>/update/", WorkerAbsenceUpdateView.as_view(), name="worker_absence_update"),
+    path("worker-absences/<int:pk>/delete/", WorkerAbsenceDeleteView.as_view(), name="worker_absence_delete"),
 
     # Operator dashboard — Selector de vía de entrada de partes (rol WORKSHOP y ADMIN).
     # Paso 2 — Hito 7 (2026-04-27)
@@ -225,6 +232,20 @@ urlpatterns = [
     # WorkOrder Excel export — Concatenación de Excels de partes seleccionados (rol SUPERVISOR y ADMIN).
     # Paso 6/8 — Hito 8 (2026-04-28)
     path("work-orders/export/", WorkOrderExportView.as_view(), name="work_order_export"),
+
+    # WorkOrder admin export — Exportación Excel de partes digitales/generados (rol SUPERVISOR y ADMIN).
+    # 4ª Acción — Hito 7 Sesión 017 (2026-05-08)
+    path("work-orders/admin-export/", WorkOrderAdminExportView.as_view(), name="work_order_admin_export"),
+
+    # WorkOrder admin history — Historial de gestión para ADMIN y SUPERVISOR (cuatro pestañas).
+    # 1ª Acción — Hito 7 Sesión 016 (2026-05-08)
+    path("work-orders/history/", WorkOrderAdminHistoryView.as_view(), name="work_order_admin_history"),
+
+    # Work period management — CRUD de periodos de trabajo para SUPERVISOR y ADMIN.
+    # 1ª Acción — Hito 7 Sesión 017 (2026-05-08)
+    path("work-periods/", WorkPeriodListView.as_view(), name="work_period_list"),
+    path("work-periods/create/", WorkPeriodCreateView.as_view(), name="work_period_create"),
+    path("work-periods/<int:pk>/close/", WorkPeriodCloseView.as_view(), name="work_period_close"),
 
     # Analytics — Panel de analítica con gráficos Plotly (rol ADMIN).
     # Subtarea 9.6 — Hito 6 (2026-04-27)

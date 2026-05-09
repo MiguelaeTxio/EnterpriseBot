@@ -193,6 +193,13 @@
         </a>
     </li>
 
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
+           href="{% url 'panel:work_order_admin_history' %}">
+            <i class="bi bi-clock-history"></i>Historial
+        </a>
+    </li>
+
     {% endif %}
 
     {# ------------------------------------------------------------------ #}

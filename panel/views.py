@@ -7371,11 +7371,12 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
             )
             total_hours += horas_totales
             result.append({
-                "pk":            wo.pk,
-                "fecha":         work_date,
-                "num_bloques":   num_bloques,
-                "horas_totales": horas_totales,
-                "reviewed":      wo.reviewed,
+                "pk":                  wo.pk,
+                "fecha":               work_date,
+                "num_bloques":         num_bloques,
+                "horas_totales":       horas_totales,
+                "reviewed":            wo.reviewed,
+                "has_overlap_incident": wo.has_overlap_incident,
             })
         return result, total_hours
 
@@ -7672,6 +7673,193 @@ class WorkerAbsenceCreateView(SupervisorAccessMixin, View):
             request,
             f"Ausencia de {operator_name} registrada correctamente "
             f"({start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).",
+        )
+        return redirect(ABSENCES_TAB_URL)
+
+
+class WorkerAbsenceUpdateView(SupervisorAccessMixin, View):
+    """
+    Updates an existing WorkerAbsence record from the absence modal in
+    admin_history.html. Receives the form POST from the edit modal.
+    On success or failure, always redirects back to the Absences tab of
+    WorkOrderAdminHistoryView.
+
+    POST /panel/worker-absences/<pk>/update/
+        Body params:
+          absence_type (str) — one of the WorkerAbsence.ABSENCE_* constants.
+          start_date   (str) — ISO date YYYY-MM-DD.
+          end_date     (str) — ISO date YYYY-MM-DD.
+          notes        (str) — optional free text.
+    ---
+    Actualiza un registro WorkerAbsence existente desde el modal de edición
+    de admin_history.html. Recibe el POST del formulario del modal de edición.
+    En caso de éxito o fallo, siempre redirige a la pestaña Ausencias de
+    WorkOrderAdminHistoryView.
+
+    POST /panel/worker-absences/<pk>/update/
+        Parámetros del cuerpo:
+          absence_type (str) — una de las constantes WorkerAbsence.ABSENCE_*.
+          start_date   (str) — fecha ISO YYYY-MM-DD.
+          end_date     (str) — fecha ISO YYYY-MM-DD.
+          notes        (str) — texto libre opcional.
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Validates the POST data, updates the WorkerAbsence and redirects.
+        Performs server-side validation: company scope, absence_type whitelist,
+        date ordering (start_date <= end_date).
+        ---
+        Valida los datos POST, actualiza el WorkerAbsence y redirige.
+        Realiza validacion en servidor: scope de empresa, lista blanca de
+        absence_type, ordenacion de fechas (start_date <= end_date).
+        """
+        from datetime import datetime
+        from django.urls import reverse
+        from ivr_config.models import WorkerAbsence
+
+        cu      = request.user.company_user
+        company = cu.company
+        ABSENCES_TAB_URL = reverse("panel:work_order_admin_history") + "?tab=absences"
+
+        # ------------------------------------------------------------------
+        # Resolve WorkerAbsence — must belong to the same company.
+        # Resolver WorkerAbsence — debe pertenecer a la misma empresa.
+        # ------------------------------------------------------------------
+        try:
+            absence = WorkerAbsence.objects.get(
+                pk=pk,
+                company_user__company=company,
+            )
+        except WorkerAbsence.DoesNotExist:
+            django_messages.error(
+                request,
+                "Ausencia no encontrada o no pertenece a esta empresa.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        # ------------------------------------------------------------------
+        # Validate absence_type against model choices whitelist.
+        # Validar absence_type contra la lista blanca de opciones del modelo.
+        # ------------------------------------------------------------------
+        absence_type = request.POST.get("absence_type", "").strip()
+        valid_types  = {k for k, _ in WorkerAbsence.ABSENCE_CHOICES}
+        if absence_type not in valid_types:
+            django_messages.error(
+                request,
+                f"Tipo de ausencia '{absence_type}' no válido.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        # ------------------------------------------------------------------
+        # Parse and validate dates.
+        # Parsear y validar fechas.
+        # ------------------------------------------------------------------
+        def _parse_iso(value):
+            """Parses YYYY-MM-DD string, returns date or None. / Parsea cadena YYYY-MM-DD."""
+            try:
+                return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+            except (ValueError, AttributeError):
+                return None
+
+        start_date = _parse_iso(request.POST.get("start_date", ""))
+        end_date   = _parse_iso(request.POST.get("end_date",   ""))
+
+        if not start_date or not end_date:
+            django_messages.error(
+                request,
+                "Las fechas de inicio y fin son obligatorias y deben tener formato YYYY-MM-DD.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        if start_date > end_date:
+            django_messages.error(
+                request,
+                "La fecha de inicio no puede ser posterior a la fecha de fin.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        notes = request.POST.get("notes", "").strip()
+
+        # ------------------------------------------------------------------
+        # Update the WorkerAbsence record.
+        # Actualizar el registro WorkerAbsence.
+        # ------------------------------------------------------------------
+        absence.absence_type = absence_type
+        absence.start_date   = start_date
+        absence.end_date     = end_date
+        absence.notes        = notes
+        absence.save(update_fields=["absence_type", "start_date", "end_date", "notes"])
+
+        operator_name = (
+            absence.company_user.user.get_full_name()
+            or absence.company_user.user.username
+        )
+        django_messages.success(
+            request,
+            f"Ausencia de {operator_name} actualizada correctamente "
+            f"({start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).",
+        )
+        return redirect(ABSENCES_TAB_URL)
+
+
+class WorkerAbsenceDeleteView(SupervisorAccessMixin, View):
+    """
+    Deletes a WorkerAbsence record scoped to the authenticated user's company.
+    On success or failure, always redirects back to the Absences tab of
+    WorkOrderAdminHistoryView.
+
+    POST /panel/worker-absences/<pk>/delete/
+    ---
+    Elimina un registro WorkerAbsence acotado a la empresa del usuario
+    autenticado. En caso de éxito o fallo, siempre redirige a la pestaña
+    Ausencias de WorkOrderAdminHistoryView.
+
+    POST /panel/worker-absences/<pk>/delete/
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Resolves the WorkerAbsence by pk scoped to the company, deletes it
+        and redirects back to the Absences tab.
+        ---
+        Resuelve el WorkerAbsence por pk acotado a la empresa, lo elimina
+        y redirige de vuelta a la pestaña Ausencias.
+        """
+        from django.urls import reverse
+        from ivr_config.models import WorkerAbsence
+
+        cu      = request.user.company_user
+        company = cu.company
+        ABSENCES_TAB_URL = reverse("panel:work_order_admin_history") + "?tab=absences"
+
+        # ------------------------------------------------------------------
+        # Resolve WorkerAbsence — must belong to the same company.
+        # Resolver WorkerAbsence — debe pertenecer a la misma empresa.
+        # ------------------------------------------------------------------
+        try:
+            absence = WorkerAbsence.objects.select_related(
+                "company_user__user"
+            ).get(
+                pk=pk,
+                company_user__company=company,
+            )
+        except WorkerAbsence.DoesNotExist:
+            django_messages.error(
+                request,
+                "Ausencia no encontrada o no pertenece a esta empresa.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        operator_name = (
+            absence.company_user.user.get_full_name()
+            or absence.company_user.user.username
+        )
+        absence.delete()
+
+        django_messages.success(
+            request,
+            f"Ausencia de {operator_name} eliminada correctamente.",
         )
         return redirect(ABSENCES_TAB_URL)
 
@@ -7973,20 +8161,20 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         absences_list = list(absence_qs)
 
         context = {
-            "company":        company,
-            "company_user":   cu,
-            "own_presence":   self._get_own_presence(cu),
-            "active_nav":     "work_order_list",
-            "active_tab":     active_tab,
-            "operators":      operators,
-            "operator_pk":    operator_pk,
-            "date_from":      request.GET.get("date_from", ""),
-            "date_to":        request.GET.get("date_to", ""),
-            "machine":        machine,
-            "pending_list":   pending_list,
-            "reviewed_list":  reviewed_list,
-            "history_list":   history_list,
-            "absences_list":  absences_list,
+            "company":      cu.company,
+            "company_user": cu,
+            "own_presence": self._get_own_presence(cu),
+            "active_nav":   "work_order_admin_history",
+            "active_tab":   active_tab,
+            "operators":    operators,
+            "operator_pk":  operator_pk,
+            "date_from":    request.GET.get("date_from", ""),
+            "date_to":      request.GET.get("date_to", ""),
+            "machine":      machine,
+            "pending_list": pending_list,
+            "reviewed_list": reviewed_list,
+            "history_list": history_list,
+            "absences_list": absences_list,
         }
         return render(request, self.template_name, context)
 
@@ -8220,6 +8408,592 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             )
         django_messages.success(request, " ".join(msg_parts))
         return redirect(reverse("panel:work_order_admin_history") + "?tab=absences")
+
+
+class WorkPeriodListView(SupervisorAccessMixin, View):
+    """
+    Lists all WorkPeriod records for the authenticated user's company,
+    grouped by operator and ordered descending by start_date.
+    Renders the full work_period_list.html page on GET.
+
+    GET /panel/work-periods/
+    ---
+    Lista todos los registros WorkPeriod de la empresa del usuario autenticado,
+    agrupados por operario y ordenados descendentemente por start_date.
+    Renderiza la página completa work_period_list.html en GET.
+
+    GET /panel/work-periods/
+    """
+
+    template_name = "panel/work_orders/work_period_list.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def get(self, request, *args, **kwargs):
+        """
+        Builds the context with all WorkPeriod records grouped by operator
+        and renders the work_period_list template.
+        ---
+        Construye el contexto con todos los registros WorkPeriod agrupados
+        por operario y renderiza el template work_period_list.
+        """
+        from ivr_config.models import WorkPeriod
+
+        cu      = request.user.company_user
+        company = cu.company
+
+        operators = (
+            CompanyUser.objects
+            .filter(company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP)
+            .select_related("user")
+            .order_by("user__last_name", "user__first_name")
+        )
+
+        operator_groups = []
+        for operator in operators:
+            periods = (
+                WorkPeriod.objects
+                .filter(company_user=operator)
+                .select_related("created_by__user")
+                .order_by("-start_date")
+            )
+            operator_groups.append({
+                "operator":    operator,
+                "periods":     list(periods),
+                "has_open":    any(p.end_date is None for p in periods),
+            })
+
+        context = {
+            "company":          company,
+            "company_user":     cu,
+            "own_presence":     self._get_own_presence(cu),
+            "active_nav":       "work_period_list",
+            "operator_groups":  operator_groups,
+            "operators":        operators,
+        }
+        return render(request, self.template_name, context)
+
+
+class WorkPeriodCreateView(SupervisorAccessMixin, View):
+    """
+    Creates a new WorkPeriod for a WORKSHOP operator belonging to the
+    authenticated supervisor's company.
+    Validates: role WORKSHOP, same company, no open period overlap.
+    On success or failure, redirects to work_period_list.
+
+    POST /panel/work-periods/create/
+    ---
+    Crea un nuevo WorkPeriod para un operario WORKSHOP de la empresa.
+    Valida: rol WORKSHOP, misma empresa, sin periodo abierto solapado.
+    En éxito o fallo, redirige a work_period_list.
+
+    POST /panel/work-periods/create/
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates POST data, creates WorkPeriod and redirects.
+        ---
+        Valida datos POST, crea WorkPeriod y redirige.
+        """
+        from datetime import datetime
+        from django.urls import reverse
+        from ivr_config.models import WorkPeriod
+
+        cu       = request.user.company_user
+        company  = cu.company
+        LIST_URL = reverse("panel:work_period_list")
+
+        try:
+            cu_pk     = int(request.POST.get("company_user_pk", ""))
+            target_cu = CompanyUser.objects.get(
+                pk=cu_pk, company=company, role=CompanyUser.ROLE_WORKSHOP,
+            )
+        except (ValueError, TypeError, CompanyUser.DoesNotExist):
+            django_messages.error(request, "Operario no encontrado, no pertenece a esta empresa o no tiene rol Taller.")
+            return redirect(LIST_URL)
+
+        raw_start = request.POST.get("start_date", "").strip()
+        try:
+            start_date = datetime.strptime(raw_start, "%Y-%m-%d").date()
+        except (ValueError, AttributeError):
+            django_messages.error(request, "La fecha de inicio es obligatoria y debe tener formato YYYY-MM-DD.")
+            return redirect(LIST_URL)
+
+        if WorkPeriod.objects.filter(company_user=target_cu, end_date__isnull=True).exists():
+            operator_name = target_cu.user.get_full_name() or target_cu.user.username
+            django_messages.error(request, f"El operario {operator_name} ya tiene un periodo abierto. Ciérralo antes de crear uno nuevo.")
+            return redirect(LIST_URL)
+
+        WorkPeriod.objects.create(
+            company_user = target_cu,
+            start_date   = start_date,
+            end_date     = None,
+            label        = request.POST.get("label", "").strip(),
+            created_by   = cu,
+        )
+        operator_name = target_cu.user.get_full_name() or target_cu.user.username
+        django_messages.success(request, f"Periodo de trabajo creado para {operator_name} (inicio: {start_date:%d/%m/%Y}).")
+        return redirect(LIST_URL)
+
+
+class WorkPeriodCloseView(SupervisorAccessMixin, View):
+    """
+    Closes an open WorkPeriod by assigning its end_date.
+    Validates: company scope, open period, end_date >= start_date.
+    On success or failure, redirects to work_period_list.
+
+    POST /panel/work-periods/<pk>/close/
+    ---
+    Cierra un WorkPeriod abierto asignando end_date.
+    Valida: scope empresa, periodo abierto, end_date >= start_date.
+    En éxito o fallo, redirige a work_period_list.
+
+    POST /panel/work-periods/<pk>/close/
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Validates end_date, closes WorkPeriod and redirects.
+        ---
+        Valida end_date, cierra WorkPeriod y redirige.
+        """
+        from datetime import datetime
+        from django.urls import reverse
+        from ivr_config.models import WorkPeriod
+
+        cu       = request.user.company_user
+        company  = cu.company
+        LIST_URL = reverse("panel:work_period_list")
+
+        try:
+            period = WorkPeriod.objects.select_related("company_user__user").get(
+                pk=pk, company_user__company=company,
+            )
+        except WorkPeriod.DoesNotExist:
+            django_messages.error(request, "Periodo de trabajo no encontrado o no pertenece a esta empresa.")
+            return redirect(LIST_URL)
+
+        if period.end_date is not None:
+            django_messages.error(request, "Este periodo ya está cerrado y no puede modificarse.")
+            return redirect(LIST_URL)
+
+        raw_end = request.POST.get("end_date", "").strip()
+        try:
+            end_date = datetime.strptime(raw_end, "%Y-%m-%d").date()
+        except (ValueError, AttributeError):
+            django_messages.error(request, "La fecha de fin es obligatoria y debe tener formato YYYY-MM-DD.")
+            return redirect(LIST_URL)
+
+        if end_date < period.start_date:
+            django_messages.error(request, f"La fecha de fin ({end_date:%d/%m/%Y}) no puede ser anterior a la fecha de inicio ({period.start_date:%d/%m/%Y}).")
+            return redirect(LIST_URL)
+
+        period.end_date = end_date
+        period.save(update_fields=["end_date"])
+        operator_name = period.company_user.user.get_full_name() or period.company_user.user.username
+        django_messages.success(request, f"Periodo de {operator_name} cerrado correctamente ({period.start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).")
+        return redirect(LIST_URL)
+
+
+class WorkOrderAdminExportView(SupervisorAccessMixin, View):
+    """
+    Excel export endpoint scoped exclusively to digital and generated work
+    orders (WorkOrder.Source.DIGITAL and WorkOrder.Source.GENERATED).
+    Designed for use from WorkOrderAdminHistoryView tab Revisados.
+
+    Supports two export modes via the POST field export_mode:
+
+      single_sheet — One flat sheet with all WorkOrderEntryLine records from
+        the selected WorkOrders, grouped by operator name then work date.
+        A dark-blue separator row bearing the operator name is inserted before
+        each new operator block. Data is read directly from the DB.
+
+      multi_sheet  — One sheet per distinct operator (worker_name derived from
+        uploaded_by CompanyUser). Each sheet is built from the individual Excel
+        stored in WorkOrder.excel_file (regenerated on-the-fly if missing).
+        Sheet title truncated to 31 characters (Excel limit).
+
+    Optional POST filter operator_pk restricts the export to a single operator.
+
+    POST /panel/work-orders/admin-export/
+         Body params:
+           pks         (list[int]) — WorkOrder primary keys to export.
+           export_mode (str)       — single_sheet | multi_sheet.
+           operator_pk (int)       — optional operator filter.
+
+    Returns HttpResponse with Content-Disposition attachment (xlsx).
+    Returns HTTP 400 on invalid pks or unknown export_mode.
+    ---
+    Endpoint de exportación Excel exclusivo para partes digitales y generados
+    (WorkOrder.Source.DIGITAL y WorkOrder.Source.GENERATED).
+    Diseñado para su uso desde la pestaña Revisados de WorkOrderAdminHistoryView.
+
+    Soporta dos modos de exportación via el campo POST export_mode:
+
+      single_sheet — Una hoja plana con todos los WorkOrderEntryLine de los
+        WorkOrders seleccionados, agrupados por nombre de operario y fecha.
+        Una fila separadora azul oscuro con el nombre del operario se inserta
+        antes de cada nuevo bloque de operario. Los datos se leen de la BD.
+
+      multi_sheet  — Una hoja por operario distinto (worker_name derivado del
+        CompanyUser uploaded_by). Cada hoja se construye desde el Excel
+        individual almacenado en WorkOrder.excel_file (regenerado si falta).
+        Título de hoja truncado a 31 caracteres (límite de Excel).
+
+    El filtro POST opcional operator_pk restringe la exportación a un operario.
+
+    POST /panel/work-orders/admin-export/
+         Parámetros del cuerpo:
+           pks         (list[int]) — claves primarias de WorkOrder a exportar.
+           export_mode (str)       — single_sheet | multi_sheet.
+           operator_pk (int)       — filtro de operario opcional.
+
+    Devuelve HttpResponse con Content-Disposition attachment (xlsx).
+    Devuelve HTTP 400 ante pks inválidos o export_mode desconocido.
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Builds the admin export Excel file from the selected WorkOrder pks,
+        restricted to DIGITAL and GENERATED sources only.
+        Supports single_sheet and multi_sheet export modes.
+        ---
+        Construye el Excel de exportación admin desde los pks de WorkOrder
+        seleccionados, restringido a orígenes DIGITAL y GENERATED únicamente.
+        Soporta los modos de exportación single_sheet y multi_sheet.
+        """
+        import io
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.models import WorkOrderEntry, WorkOrderEntryLine
+        from work_order_processor.services import (
+            generate_work_order_excel as _gen_excel,
+        )
+
+        cu      = request.user.company_user
+        company = cu.company
+
+        # ------------------------------------------------------------------
+        # Validate export_mode.
+        # Validar export_mode.
+        # ------------------------------------------------------------------
+        export_mode = request.POST.get("export_mode", "single_sheet").strip()
+        if export_mode not in ("single_sheet", "multi_sheet"):
+            return HttpResponseBadRequest(
+                f"# [ADMIN EXPORT] Modo de exportación desconocido: {export_mode!r}."
+            )
+
+        # ------------------------------------------------------------------
+        # Collect and validate requested pks.
+        # Recopilar y validar los pks solicitados.
+        # ------------------------------------------------------------------
+        raw_pks = request.POST.getlist("pks")
+        try:
+            pk_list = [int(pk) for pk in raw_pks if pk]
+        except (ValueError, TypeError):
+            return HttpResponseBadRequest("# [ADMIN EXPORT] Parámetros pks inválidos.")
+
+        if not pk_list:
+            return HttpResponseBadRequest(
+                "# [ADMIN EXPORT] No se han seleccionado partes para exportar."
+            )
+
+        # ------------------------------------------------------------------
+        # Resolve optional operator filter.
+        # Resolver filtro de operario opcional.
+        # ------------------------------------------------------------------
+        operator_pk_raw = request.POST.get("operator_pk", "").strip()
+        operator_filter = None
+        if operator_pk_raw:
+            try:
+                operator_filter = int(operator_pk_raw)
+            except (ValueError, TypeError):
+                operator_filter = None
+
+        # ------------------------------------------------------------------
+        # Retrieve DONE + reviewed DIGITAL/GENERATED WorkOrders for company.
+        # Obtener partes DONE + revisados DIGITAL/GENERATED de la empresa.
+        # ------------------------------------------------------------------
+        qs = WorkOrder.objects.filter(
+            pk__in=pk_list,
+            company=company,
+            status=WorkOrder.Status.DONE,
+            reviewed=True,
+            source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+        ).order_by("pk")
+
+        if operator_filter:
+            qs = qs.filter(uploaded_by__pk=operator_filter)
+
+        work_orders = list(qs)
+
+        if not work_orders:
+            return HttpResponseBadRequest(
+                "# [ADMIN EXPORT] Ninguno de los partes seleccionados es digital/generado, "
+                "está revisado y en estado DONE."
+            )
+
+        # ------------------------------------------------------------------
+        # Helper — derive operator name from WorkOrder.uploaded_by.
+        # Auxiliar — derivar nombre del operario desde WorkOrder.uploaded_by.
+        # ------------------------------------------------------------------
+        def _get_operator_name(wo):
+            """
+            Returns the full name of the operator who submitted the work order,
+            or a fallback label if uploaded_by is not set.
+            ---
+            Devuelve el nombre completo del operario que envió el parte,
+            o una etiqueta de reserva si uploaded_by no está establecido.
+            """
+            if wo.uploaded_by:
+                return (
+                    wo.uploaded_by.user.get_full_name()
+                    or wo.uploaded_by.user.username
+                )
+            return f"Operario #{wo.pk}"
+
+        # ------------------------------------------------------------------
+        # Helper — copy one openpyxl sheet into a destination workbook.
+        # Auxiliar — copiar una hoja openpyxl en un libro destino.
+        # ------------------------------------------------------------------
+        def _copy_sheet(src_sheet, dest_wb, title):
+            """
+            Copies src_sheet (cells, styles, column widths, row heights) into
+            a new sheet named title in dest_wb.
+            ---
+            Copia src_sheet (celdas, estilos, anchos de columna, alturas de
+            fila) en una nueva hoja llamada title en dest_wb.
+            """
+            dest_sheet = dest_wb.create_sheet(title=title[:31])
+            for row in src_sheet.iter_rows():
+                for cell in row:
+                    dest_cell = dest_sheet.cell(
+                        row=cell.row, column=cell.column, value=cell.value
+                    )
+                    if cell.has_style:
+                        dest_cell.font          = cell.font.copy()
+                        dest_cell.fill          = cell.fill.copy()
+                        dest_cell.alignment     = cell.alignment.copy()
+                        dest_cell.border        = cell.border.copy()
+                        dest_cell.number_format = cell.number_format
+            for col_letter, col_dim in src_sheet.column_dimensions.items():
+                dest_sheet.column_dimensions[col_letter].width = col_dim.width
+            for row_num, row_dim in src_sheet.row_dimensions.items():
+                dest_sheet.row_dimensions[row_num].height = row_dim.height
+            return dest_sheet
+
+        # ==================================================================
+        # MODE: single_sheet
+        # Reads WorkOrderEntryLine records directly from the DB.
+        # Groups by operator name (asc) then work_date (asc).
+        # Inserts a dark-blue separator row before each new operator block.
+        # ==================================================================
+        # MODO: single_sheet
+        # Lee WorkOrderEntryLine directamente de la BD.
+        # Agrupa por nombre de operario (asc) y work_date (asc).
+        # Inserta fila separadora azul oscuro antes de cada nuevo operario.
+        # ==================================================================
+        if export_mode == "single_sheet":
+
+            wo_map = {wo.pk: wo for wo in work_orders}
+
+            rows = (
+                WorkOrderEntryLine.objects
+                .filter(entry__work_order__pk__in=list(wo_map.keys()))
+                .select_related(
+                    "entry__work_order",
+                    "entry",
+                    "machine_asset",
+                )
+                .order_by(
+                    "entry__work_order__uploaded_by__user__last_name",
+                    "entry__work_order__uploaded_by__user__first_name",
+                    "entry__work_date",
+                    "entry__work_order__pk",
+                    "line_number",
+                )
+            )
+
+            wb   = openpyxl.Workbook()
+            ws   = wb.active
+            ws.title = "Partes digitales"
+
+            # Header row style — Estilo de fila de encabezado.
+            header_fill = PatternFill("solid", fgColor="1F3864")
+            header_font = Font(bold=True, color="FFFFFF", size=10)
+            headers = [
+                "Operario", "Fecha", "Máquina / CdG",
+                "Descripción avería", "Notas reparación",
+                "H. inicio", "H. fin", "Δ Horas",
+            ]
+            for col_idx, h in enumerate(headers, start=1):
+                cell            = ws.cell(row=1, column=col_idx, value=h)
+                cell.fill       = header_fill
+                cell.font       = header_font
+                cell.alignment  = Alignment(horizontal="center", vertical="center")
+
+            # Separator row style — Estilo de fila separadora de operario.
+            sep_fill = PatternFill("solid", fgColor="2F5496")
+            sep_font = Font(bold=True, color="FFFFFF", size=10)
+
+            current_row      = 2
+            current_operator = None
+
+            for line in rows:
+                wo            = line.entry.work_order
+                operator_name = _get_operator_name(wo)
+                work_date     = line.entry.work_date
+
+                # Insert separator row when operator changes.
+                # Insertar fila separadora cuando cambia el operario.
+                if operator_name != current_operator:
+                    current_operator = operator_name
+                    sep_cell = ws.cell(
+                        row=current_row, column=1, value=operator_name
+                    )
+                    sep_cell.fill      = sep_fill
+                    sep_cell.font      = sep_font
+                    sep_cell.alignment = Alignment(vertical="center")
+                    ws.merge_cells(
+                        start_row=current_row, start_column=1,
+                        end_row=current_row,   end_column=len(headers),
+                    )
+                    current_row += 1
+
+                ws.cell(row=current_row, column=1, value=operator_name)
+                ws.cell(row=current_row, column=2,
+                        value=work_date.strftime("%d/%m/%Y") if work_date else "")
+                ws.cell(row=current_row, column=3,
+                        value=line.machine_asset.code if line.machine_asset else line.machine_raw or "")
+                ws.cell(row=current_row, column=4, value=line.fault_description or "")
+                ws.cell(row=current_row, column=5, value=line.repair_notes or "")
+                ws.cell(row=current_row, column=6,
+                        value=line.hc.strftime("%H:%M") if line.hc else "")
+                ws.cell(row=current_row, column=7,
+                        value=line.hf.strftime("%H:%M") if line.hf else "")
+                ws.cell(row=current_row, column=8,
+                        value=float(line.delta_hours) if line.delta_hours is not None else "")
+                current_row += 1
+
+            # Auto-fit column widths — Ajuste automático de anchos de columna.
+            for col in ws.columns:
+                max_len = max(
+                    (len(str(cell.value)) for cell in col if cell.value),
+                    default=10,
+                )
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 60)
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+
+            filename = f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            response = HttpResponse(
+                buf.read(),
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            return response
+
+        # ==================================================================
+        # MODE: multi_sheet
+        # One sheet per distinct operator derived from uploaded_by.
+        # Copies the first sheet of each WorkOrder.excel_file.
+        # Regenerates the Excel on-the-fly if the file is missing.
+        # ==================================================================
+        # MODO: multi_sheet
+        # Una hoja por operario distinto derivado de uploaded_by.
+        # Copia la primera hoja de cada WorkOrder.excel_file.
+        # Regenera el Excel al vuelo si el archivo falta.
+        # ==================================================================
+        dest_wb = openpyxl.Workbook()
+        dest_wb.remove(dest_wb.active)   # remove default blank sheet / eliminar hoja vacía por defecto
+
+        # Group work orders by operator name.
+        # Agrupar partes por nombre de operario.
+        from collections import defaultdict
+        operator_groups = defaultdict(list)
+        for wo in work_orders:
+            operator_groups[_get_operator_name(wo)].append(wo)
+
+        for operator_name, wo_list in sorted(operator_groups.items()):
+            sheet_title = operator_name[:31]
+            sheet_added = False
+
+            for wo in wo_list:
+                # Regenerate Excel if missing.
+                # Regenerar Excel si falta.
+                if not wo.excel_file or not wo.excel_file.name:
+                    try:
+                        _gen_excel(wo.pk)
+                        wo.refresh_from_db(fields=["excel_file"])
+                    except Exception:
+                        logger.warning(
+                            "# [AdminExport] No se pudo regenerar Excel para WorkOrder #%d.",
+                            wo.pk,
+                        )
+                        continue
+
+                try:
+                    src_wb     = openpyxl.load_workbook(wo.excel_file.path)
+                    src_sheet  = src_wb.worksheets[0]
+                    if not sheet_added:
+                        _copy_sheet(src_sheet, dest_wb, sheet_title)
+                        sheet_added = True
+                    else:
+                        # Append rows of subsequent WOs to the existing sheet.
+                        # Añadir filas de WOs posteriores a la hoja existente.
+                        dest_sheet = dest_wb[sheet_title]
+                        start_row  = dest_sheet.max_row + 1
+                        for row in src_sheet.iter_rows(min_row=2):
+                            for cell in row:
+                                dest_cell = dest_sheet.cell(
+                                    row=start_row + cell.row - 2,
+                                    column=cell.column,
+                                    value=cell.value,
+                                )
+                                if cell.has_style:
+                                    dest_cell.font      = cell.font.copy()
+                                    dest_cell.fill      = cell.fill.copy()
+                                    dest_cell.alignment = cell.alignment.copy()
+                except Exception as exc:
+                    logger.warning(
+                        "# [AdminExport] Error procesando Excel WorkOrder #%d: %s",
+                        wo.pk, exc,
+                    )
+                    continue
+
+        if not dest_wb.worksheets:
+            return HttpResponseBadRequest(
+                "# [ADMIN EXPORT] No se pudo generar ninguna hoja Excel. "
+                "Verifica que los partes seleccionados tienen Excel generado."
+            )
+
+        buf = io.BytesIO()
+        dest_wb.save(buf)
+        buf.seek(0)
+
+        filename = f"partes_digitales_multi_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        response = HttpResponse(
+            buf.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):

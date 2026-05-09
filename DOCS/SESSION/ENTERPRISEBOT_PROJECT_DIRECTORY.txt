@@ -59,6 +59,7 @@
 ./panel/templates/panel/work_orders/_queue_actions.html
 ./panel/templates/panel/work_orders/_status_fragment.html
 ./panel/templates/panel/work_orders/upload.html
+./panel/templates/panel/work_orders/work_period_list.html
 ./panel/templates/panel/work_orders/_entry_group_fragment.html
 ./panel/templates/panel/work_orders/_review_badge_fragment.html
 ./panel/templates/panel/_description_typeahead.html
@@ -70,6 +71,8 @@
 ./panel/templates/panel/operator/stt_entry.html
 ./panel/static/panel/js/admin_history.js
 ./panel/static/panel/css/panel.css
+./panel/static/panel/vendor/bootstrap.min.css
+./panel/static/panel/vendor/bootstrap.bundle.min.js
 ./panel/__init__.py
 ./panel/views.py
 ./panel/middleware.py
@@ -118,6 +121,8 @@
 ./enterprise_core/wsgi.py
 ./static/panel/js/admin_history.js
 ./static/panel/css/panel.css
+./static/panel/vendor/bootstrap.min.css
+./static/panel/vendor/bootstrap.bundle.min.js
 ./static/admin/js/inlines.js
 ./static/admin/js/theme.js
 ./static/admin/js/cancel.js
