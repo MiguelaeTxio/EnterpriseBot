@@ -66,6 +66,7 @@ from panel.views import (
     WorkOrderEntryFormView,
     WorkOrderEntrySTTView,
     WorkOrderEntrySTTExtractView,
+    WorkOrderEntryMergeView,
     WorkOrderEntryHistoryView,
     WorkOrderAdminHistoryView,
     WorkerAbsenceCreateView,
@@ -178,6 +179,10 @@ urlpatterns = [
     path("operator/form/", WorkOrderEntryFormView.as_view(), name="operator_form"),
     path("operator/stt/",  WorkOrderEntrySTTView.as_view(),  name="operator_stt"),   # Paso 8 — Hito 7 (2026-04-30)
     path("operator/stt/extract/", WorkOrderEntrySTTExtractView.as_view(), name="operator_stt_extract"),  # Paso 8 — Hito 7 — Gemini extract
+
+    # Operator merge — Resolucion de conflicto de parte duplicado (rol WORKSHOP y ADMIN).
+    # Primera Accion — Hito 7 Sesion 018 (2026-05-11)
+    path("operator/merge/<int:entry_pk>/", WorkOrderEntryMergeView.as_view(), name="operator_merge"),
 
     # Description typeahead autocomplete — Autocompletado de descripciones (fault_description / repair_notes).
     # Tercer Fleco — Hito 7 (2026-05-05)

@@ -1,0 +1,548 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/merge_entry.html #}
+{% extends "panel/base.html" %}
+{% load i18n %}
+
+{% block extra_css %}
+<style>
+  /* merge_entry — estilos extraídos de atributos inline para cumplir H021. */
+  /* merge_entry — styles extracted from inline attributes to comply with H021. */
+  .merge-icon-box     { width: 48px; height: 48px; }
+  .merge-time-input   { min-width: 90px; }
+</style>
+{% endblock %}
+
+{% block title %}Resolver conflicto de parte — {{ work_date|default:"Fecha desconocida" }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  {# ------------------------------------------------------------------ #}
+  {# Cabecera de página                                                   #}
+  {# ------------------------------------------------------------------ #}
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <div class="bg-warning rounded-3 p-2 d-flex align-items-center justify-content-center merge-icon-box">
+      <i class="bi bi-arrow-left-right fs-4 text-dark"></i>
+    </div>
+    <div>
+      <h1 class="h4 fw-bold mb-0">Conflicto de parte</h1>
+      <p class="text-muted small mb-0">
+        Ya existe un parte sin revisar para el
+        <strong>{{ work_date|default:"fecha desconocida" }}</strong>.
+        Elige cómo resolver el conflicto.
+      </p>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  {# Alerta de error de merge (solapamiento detectado en POST)            #}
+  {# ------------------------------------------------------------------ #}
+  {% if merge_error %}
+  <div class="alert alert-danger d-flex align-items-start gap-2 mb-4" role="alert">
+    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+    <div>{{ merge_error }}</div>
+  </div>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  {# Alerta de solapamientos detectados                                   #}
+  {# ------------------------------------------------------------------ #}
+  {% if has_conflicts %}
+  <div class="alert alert-warning d-flex align-items-start gap-2 mb-4" role="alert" id="overlap-alert">
+    <i class="bi bi-clock-history flex-shrink-0 mt-1"></i>
+    <div>
+      <strong>Solapamientos horarios detectados.</strong>
+      Las líneas marcadas en rojo presentan conflictos de horario con el parte existente.
+      Edita los campos <em>H.C.</em> / <em>H.F.</em> para resolverlos antes de fusionar.
+      <ul class="mb-0 mt-1 small" id="conflict-list">
+        {% for idx_e, idx_n, hc_e, hf_e, hc_n, hf_n in conflicts %}
+        <li>
+          Línea existente <strong>#{{ idx_e }}</strong>
+          ({{ hc_e }}–{{ hf_e }}) solapa con línea nueva
+          <strong>#{{ idx_n }}</strong> ({{ hc_n }}–{{ hf_n }}).
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  {# Grid principal: parte existente (izq) | parte nuevo (der)           #}
+  {# ------------------------------------------------------------------ #}
+  <form method="post" id="merge-form">
+    {% csrf_token %}
+
+    <div class="row g-4 mb-4">
+
+      {# ---- Columna izquierda: parte existente ---- #}
+      <div class="col-12 col-xl-6">
+        <div class="card h-100 border-0 shadow-sm">
+          <div class="card-header bg-secondary bg-opacity-10 border-0 py-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-secondary">Existente</span>
+              <span class="fw-semibold">
+                Parte #{{ existing_entry.work_order.pk }}
+                — {{ existing_entry.work_date|default:"Sin fecha" }}
+              </span>
+            </div>
+            <p class="text-muted small mb-0 mt-1">
+              {{ existing_lines|length }} bloque{{ existing_lines|length|pluralize }} registrado{{ existing_lines|length|pluralize }}.
+            </p>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th class="ps-3">#</th>
+                    <th>Máquina</th>
+                    <th>H.C.</th>
+                    <th>H.F.</th>
+                    <th>Δ h</th>
+                    <th class="pe-3">Avería</th>
+                  </tr>
+                </thead>
+                <tbody id="existing-lines-body">
+                  {% for line in existing_lines %}
+                  <tr class="existing-line-row" data-idx="{{ forloop.counter }}">
+                    <td class="ps-3 text-muted small">{{ forloop.counter }}</td>
+                    <td>
+                      <span class="fw-mono small">
+                        {% if line.machine_asset %}{{ line.machine_asset.code }}{% else %}{{ line.machine_raw|default:"—" }}{% endif %}
+                      </span>
+                    </td>
+                    <td>
+                      <input type="time"
+                             class="form-control form-control-sm hc-input existing-hc merge-time-input"
+                             name="existing_line_{{ forloop.counter }}_hc"
+                             value="{{ line.hc|time:'H:i'|default:'' }}"
+                             data-line-idx="{{ forloop.counter }}"
+                             data-side="existing">
+                    </td>
+                    <td>
+                      <input type="time"
+                             class="form-control form-control-sm hf-input existing-hf merge-time-input"
+                             name="existing_line_{{ forloop.counter }}_hf"
+                             value="{{ line.hf|time:'H:i'|default:'' }}"
+                             data-line-idx="{{ forloop.counter }}"
+                             data-side="existing">
+                    </td>
+                    <td>
+                      <span class="badge bg-light text-dark delta-badge" id="delta-existing-{{ forloop.counter }}">
+                        {% if line.delta_hours %}{{ line.delta_hours }}h{% else %}—{% endif %}
+                      </span>
+                    </td>
+                    <td class="pe-3 text-truncate" style="max-width:180px;"
+                        title="{{ line.fault_description }}">
+                      <span class="small">{{ line.fault_description|default:"—"|truncatechars:40 }}</span>
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr>
+                    <td colspan="6" class="text-center text-muted py-3 small">
+                      Sin bloques registrados.
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ---- Columna derecha: parte nuevo (pendiente) ---- #}
+      <div class="col-12 col-xl-6">
+        <div class="card h-100 border-0 shadow-sm border-warning merge-card-new">
+          <div class="card-header bg-warning bg-opacity-10 border-0 py-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-warning text-dark">Nuevo</span>
+              <span class="fw-semibold">Parte entrante — {{ work_date|default:"Sin fecha" }}</span>
+            </div>
+            <p class="text-muted small mb-0 mt-1">
+              {{ new_lines|length }} bloque{{ new_lines|length|pluralize }} pendiente{{ new_lines|length|pluralize }} de guardar.
+            </p>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th class="ps-3">#</th>
+                    <th>Máquina</th>
+                    <th>H.C.</th>
+                    <th>H.F.</th>
+                    <th>Δ h</th>
+                    <th class="pe-3">Avería</th>
+                  </tr>
+                </thead>
+                <tbody id="new-lines-body">
+                  {% for line in new_lines %}
+                  <tr class="new-line-row" data-idx="{{ forloop.counter }}">
+                    <td class="ps-3 text-muted small">{{ forloop.counter }}</td>
+                    <td>
+                      <span class="fw-mono small">
+                        {{ line.machine_raw|default:"—" }}
+                      </span>
+                    </td>
+                    <td>
+                      <input type="time"
+                             class="form-control form-control-sm hc-input new-hc merge-time-input"
+                             name="new_line_{{ forloop.counter }}_hc"
+                             value="{{ line.hc|default:'' }}"
+                             data-line-idx="{{ forloop.counter }}"
+                             data-side="new">
+                    </td>
+                    <td>
+                      <input type="time"
+                             class="form-control form-control-sm hf-input new-hf merge-time-input"
+                             name="new_line_{{ forloop.counter }}_hf"
+                             value="{{ line.hf|default:'' }}"
+                             data-line-idx="{{ forloop.counter }}"
+                             data-side="new">
+                    </td>
+                    <td>
+                      <span class="badge bg-light text-dark delta-badge" id="delta-new-{{ forloop.counter }}">
+                        {% if line.delta_hours %}{{ line.delta_hours }}h{% else %}—{% endif %}
+                      </span>
+                    </td>
+                    <td class="pe-3 text-truncate" style="max-width:180px;"
+                        title="{{ line.fault_description }}">
+                      <span class="small">{{ line.fault_description|default:"—"|truncatechars:40 }}</span>
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr>
+                    <td colspan="6" class="text-center text-muted py-3 small">
+                      Sin bloques pendientes.
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>{# /row #}
+
+    {# ------------------------------------------------------------------ #}
+    {# Panel de acciones                                                    #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3">¿Cómo deseas resolver el conflicto?</h6>
+
+        <div class="row g-3">
+
+          {# --- Opción 1: Descartar nuevo --- #}
+          <div class="col-12 col-md-4">
+            <div class="border rounded-3 p-3 h-100 d-flex flex-column justify-content-between action-card"
+                 id="card-discard-new">
+              <div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <i class="bi bi-x-circle text-secondary fs-5"></i>
+                  <span class="fw-semibold">Descartar nuevo</span>
+                </div>
+                <p class="text-muted small mb-3">
+                  Conserva el parte existente tal como está.
+                  Los datos recién introducidos se descartan.
+                </p>
+              </div>
+              <button type="submit"
+                      name="merge_action"
+                      value="discard_new"
+                      class="btn btn-outline-secondary btn-sm w-100"
+                      onclick="return confirmAction('¿Descartar el parte nuevo y conservar el existente?')">
+                <i class="bi bi-x-circle me-1"></i> Descartar nuevo
+              </button>
+            </div>
+          </div>
+
+          {# --- Opción 2: Sustituir existente --- #}
+          <div class="col-12 col-md-4">
+            <div class="border rounded-3 p-3 h-100 d-flex flex-column justify-content-between action-card"
+                 id="card-discard-existing">
+              <div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <i class="bi bi-arrow-repeat text-danger fs-5"></i>
+                  <span class="fw-semibold">Sustituir existente</span>
+                </div>
+                <p class="text-muted small mb-3">
+                  Elimina el parte existente y lo reemplaza por el nuevo.
+                  Esta acción no se puede deshacer.
+                </p>
+              </div>
+              <button type="submit"
+                      name="merge_action"
+                      value="discard_existing"
+                      class="btn btn-outline-danger btn-sm w-100"
+                      onclick="return confirmAction('¿Eliminar el parte existente y crear uno nuevo? Esta acción no se puede deshacer.')">
+                <i class="bi bi-arrow-repeat me-1"></i> Sustituir existente
+              </button>
+            </div>
+          </div>
+
+          {# --- Opción 3: Fusionar --- #}
+          <div class="col-12 col-md-4">
+            <div class="border rounded-3 p-3 h-100 d-flex flex-column justify-content-between action-card"
+                 id="card-merge">
+              <div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <i class="bi bi-intersect text-success fs-5"></i>
+                  <span class="fw-semibold">Fusionar partes</span>
+                </div>
+                <p class="text-muted small mb-3">
+                  Añade los bloques nuevos al parte existente.
+                  Solo disponible si no hay solapamientos horarios.
+                </p>
+              </div>
+              <button type="submit"
+                      name="merge_action"
+                      value="merge"
+                      class="btn btn-success btn-sm w-100"
+                      id="btn-merge"
+                      {% if has_conflicts %}disabled title="Resuelve los solapamientos para fusionar"{% endif %}>
+                <i class="bi bi-intersect me-1"></i> Fusionar
+              </button>
+            </div>
+          </div>
+
+        </div>{# /row acciones #}
+      </div>
+    </div>{# /card acciones #}
+
+  </form>
+</div>{# /container #}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* =========================================================
+   merge_entry.html — Recálculo de Δ horas y detección de
+   solapamientos en tiempo real.
+   merge_entry.html — Real-time delta hours recalculation
+   and overlap detection.
+   ========================================================= */
+
+(function () {
+  "use strict";
+
+  /* ----------------------------------------------------------
+     Helpers
+     ---------------------------------------------------------- */
+
+  /**
+   * Parses HH:MM string to minutes since midnight.
+   * Returns null if invalid.
+   * ---
+   * Parsea cadena HH:MM a minutos desde medianoche.
+   * Devuelve null si es inválido.
+   */
+  function toMinutes(hhmm) {
+    if (!hhmm || !hhmm.includes(":")) return null;
+    const parts = hhmm.split(":");
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  }
+
+  /**
+   * Returns delta hours string from two HH:MM strings, or "—".
+   * ---
+   * Devuelve la cadena de horas delta desde dos cadenas HH:MM, o "—".
+   */
+  function calcDelta(hc, hf) {
+    const start = toMinutes(hc);
+    const end   = toMinutes(hf);
+    if (start === null || end === null || end <= start) return "—";
+    const diff = (end - start) / 60;
+    return diff.toFixed(2) + "h";
+  }
+
+  /* ----------------------------------------------------------
+     Recoge el estado actual de todas las líneas de ambas tablas
+     como arrays de {hc, hf} en minutos.
+     Collects current state of all lines from both tables
+     as arrays of {hc, hf} in minutes.
+     ---------------------------------------------------------- */
+  function collectLines(side) {
+    const selector = `input[data-side="${side}"]`;
+    const inputs   = document.querySelectorAll(selector);
+    const lines    = {};
+
+    inputs.forEach(function (inp) {
+      const idx  = inp.getAttribute("data-line-idx");
+      if (!lines[idx]) lines[idx] = {};
+      if (inp.classList.contains("hc-input")) lines[idx].hc = inp.value;
+      if (inp.classList.contains("hf-input")) lines[idx].hf = inp.value;
+    });
+
+    return Object.values(lines);
+  }
+
+  /* ----------------------------------------------------------
+     Detecta solapamientos entre líneas existentes y nuevas.
+     Returns array of {idxE, idxN} conflict pairs (1-based).
+     ---
+     Detecta solapamientos entre líneas existentes y nuevas.
+     Devuelve array de pares de conflicto {idxE, idxN} (base 1).
+     ---------------------------------------------------------- */
+  function detectOverlaps(existingLines, newLines) {
+    const conflicts = [];
+
+    existingLines.forEach(function (eL, eIdx) {
+      const hcE = toMinutes(eL.hc);
+      const hfE = toMinutes(eL.hf);
+      if (hcE === null || hfE === null) return;
+
+      newLines.forEach(function (nL, nIdx) {
+        const hcN = toMinutes(nL.hc);
+        const hfN = toMinutes(nL.hf);
+        if (hcN === null || hfN === null) return;
+
+        // Open-interval overlap: hcE < hfN AND hcN < hfE.
+        // Solapamiento intervalo abierto: hcE < hfN AND hcN < hfE.
+        if (hcE < hfN && hcN < hfE) {
+          conflicts.push({ idxE: eIdx + 1, idxN: nIdx + 1 });
+        }
+      });
+    });
+
+    return conflicts;
+  }
+
+  /* ----------------------------------------------------------
+     Actualiza el DOM según los solapamientos detectados.
+     Updates the DOM according to detected overlaps.
+     ---------------------------------------------------------- */
+  function updateOverlapUI(conflicts) {
+    // Reset all row highlighting.
+    // Resetear el resaltado de todas las filas.
+    document.querySelectorAll(".existing-line-row, .new-line-row").forEach(function (row) {
+      row.classList.remove("table-danger");
+    });
+
+    // Reset all input borders.
+    // Resetear los bordes de todos los inputs.
+    document.querySelectorAll(".hc-input, .hf-input").forEach(function (inp) {
+      inp.classList.remove("is-invalid");
+    });
+
+    if (conflicts.length === 0) {
+      // No conflicts — enable merge button, hide alert.
+      // Sin conflictos — habilitar botón merge, ocultar alerta.
+      const btnMerge = document.getElementById("btn-merge");
+      if (btnMerge) {
+        btnMerge.disabled = false;
+        btnMerge.removeAttribute("title");
+      }
+      const alert = document.getElementById("overlap-alert");
+      if (alert) alert.classList.add("d-none");
+      return;
+    }
+
+    // Highlight conflicting rows and inputs.
+    // Resaltar filas e inputs conflictivos.
+    conflicts.forEach(function (c) {
+      const eRow = document.querySelector(`.existing-line-row[data-idx="${c.idxE}"]`);
+      const nRow = document.querySelector(`.new-line-row[data-idx="${c.idxN}"]`);
+      if (eRow) eRow.classList.add("table-danger");
+      if (nRow) nRow.classList.add("table-danger");
+
+      // Mark hc/hf inputs as invalid.
+      // Marcar inputs hc/hf como inválidos.
+      document.querySelectorAll(
+        `input[data-side="existing"][data-line-idx="${c.idxE}"]`
+      ).forEach(function (i) { i.classList.add("is-invalid"); });
+
+      document.querySelectorAll(
+        `input[data-side="new"][data-line-idx="${c.idxN}"]`
+      ).forEach(function (i) { i.classList.add("is-invalid"); });
+    });
+
+    // Disable merge button when conflicts exist.
+    // Deshabilitar el botón merge cuando existen conflictos.
+    const btnMerge = document.getElementById("btn-merge");
+    if (btnMerge) {
+      btnMerge.disabled = true;
+      btnMerge.setAttribute("title", "Resuelve los solapamientos para fusionar");
+    }
+
+    // Show overlap alert.
+    // Mostrar alerta de solapamiento.
+    const alert = document.getElementById("overlap-alert");
+    if (alert) alert.classList.remove("d-none");
+  }
+
+  /* ----------------------------------------------------------
+     Recalcula los badges de Δ horas para una línea concreta.
+     Recalculates delta hours badge for a specific line.
+     ---------------------------------------------------------- */
+  function updateDeltaBadge(side, idx, hc, hf) {
+    const badge = document.getElementById(`delta-${side}-${idx}`);
+    if (!badge) return;
+    badge.textContent = calcDelta(hc, hf);
+  }
+
+  /* ----------------------------------------------------------
+     Handler principal: dispara en cada cambio de input.
+     Main handler: fires on every input change.
+     ---------------------------------------------------------- */
+  function onTimeInputChange(evt) {
+    const inp  = evt.target;
+    const side = inp.getAttribute("data-side");
+    const idx  = inp.getAttribute("data-line-idx");
+
+    // Find sibling hc/hf for this line to update delta.
+    // Encontrar hc/hf hermano de esta línea para actualizar delta.
+    const siblingHc = document.querySelector(
+      `.hc-input[data-side="${side}"][data-line-idx="${idx}"]`
+    );
+    const siblingHf = document.querySelector(
+      `.hf-input[data-side="${side}"][data-line-idx="${idx}"]`
+    );
+
+    if (siblingHc && siblingHf) {
+      updateDeltaBadge(side, idx, siblingHc.value, siblingHf.value);
+    }
+
+    // Full overlap recalculation.
+    // Recálculo completo de solapamientos.
+    const existingLines = collectLines("existing");
+    const newLines      = collectLines("new");
+    const conflicts     = detectOverlaps(existingLines, newLines);
+    updateOverlapUI(conflicts);
+  }
+
+  /* ----------------------------------------------------------
+     Inicialización: adjuntar listeners a todos los inputs.
+     Initialisation: attach listeners to all inputs.
+     ---------------------------------------------------------- */
+  document.querySelectorAll(".hc-input, .hf-input").forEach(function (inp) {
+    inp.addEventListener("change", onTimeInputChange);
+    inp.addEventListener("input",  onTimeInputChange);
+  });
+
+  // Run overlap detection on page load to reflect server-side state.
+  // Ejecutar detección de solapamientos al cargar para reflejar estado del servidor.
+  (function initialCheck() {
+    const existingLines = collectLines("existing");
+    const newLines      = collectLines("new");
+    const conflicts     = detectOverlaps(existingLines, newLines);
+    updateOverlapUI(conflicts);
+  })();
+
+}());
+
+/* -----------------------------------------------------------------
+   Confirmación antes de acciones destructivas.
+   Confirmation before destructive actions.
+   ----------------------------------------------------------------- */
+function confirmAction(message) {
+  return window.confirm(message);
+}
+</script>
+{% endblock %}

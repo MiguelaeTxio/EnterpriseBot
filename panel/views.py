@@ -5716,6 +5716,61 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         POST    = request.POST
 
         # ------------------------------------------------------------------
+        # Gate 0 — One work order per operator per date (merge flow).
+        # Gate 0 — Un parte por operario por fecha (flujo de merge).
+        #
+        # Before any INSERT, check whether the operator already has an
+        # unreviewed digital or generated work order for the submitted date.
+        # If so, serialise the incoming lines into the session and redirect
+        # to WorkOrderEntryMergeView for conflict resolution.
+        #
+        # Antes de cualquier INSERT, comprueba si el operario ya tiene un
+        # parte digital o generado sin revisar para la fecha enviada. Si es
+        # asi, serializa las lineas entrantes en la sesion y redirige a
+        # WorkOrderEntryMergeView para resolver el conflicto.
+        # ------------------------------------------------------------------
+        _gate0_fecha_str = POST.get("fecha", "").strip()
+        _gate0_work_date = None
+        if _gate0_fecha_str:
+            from datetime import datetime as _dt0
+            for _fmt0 in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    _gate0_work_date = _dt0.strptime(_gate0_fecha_str, _fmt0).date()
+                    break
+                except ValueError:
+                    continue
+
+        if _gate0_work_date is not None:
+            from django.urls import reverse as _rev0
+            _existing_entry0 = WorkOrderEntry.objects.filter(
+                work_order__company=company,
+                work_order__uploaded_by=cu,
+                work_order__source__in=[
+                    WorkOrder.Source.DIGITAL,
+                    WorkOrder.Source.GENERATED,
+                ],
+                work_order__reviewed=False,
+                work_date=_gate0_work_date,
+            ).select_related("work_order").first()
+
+            if _existing_entry0 is not None:
+                # Unreviewed duplicate — serialise and redirect to merge view.
+                # Duplicado sin revisar — serializar y redirigir a merge view.
+                _gate0_lines = _parse_entry_lines_from_post(POST, company)
+                _gate0_spare = _parse_spare_parts_from_post(
+                    POST, company, entry_lines_data=_gate0_lines
+                )
+                request.session["pending_merge_lines"] = _serialize_pending_lines(
+                    _gate0_lines, _gate0_spare, _gate0_work_date
+                )
+                return redirect(
+                    _rev0(
+                        "panel:operator_merge",
+                        kwargs={"entry_pk": _existing_entry0.pk},
+                    )
+                )
+
+        # ------------------------------------------------------------------
         # Parse and validate the work date.
         # Parsear y validar la fecha del parte.
         # ------------------------------------------------------------------
@@ -7864,7 +7919,625 @@ class WorkerAbsenceDeleteView(SupervisorAccessMixin, View):
         return redirect(ABSENCES_TAB_URL)
 
 
+# ---------------------------------------------------------------------------
+# Module-level helpers for the merge flow (S018).
+# Helpers de modulo para el flujo de merge (S018).
+# ---------------------------------------------------------------------------
+
+
+def _serialize_pending_lines(parsed_lines, parsed_repuestos, parsed_date):
+    """
+    Serialises the incoming form lines and spare parts into a JSON-safe
+    list of dicts suitable for storage in the Django session.
+
+    Each line dict contains:
+        machine_raw, machine_asset_pk, fault_description, repair_notes,
+        hc ("HH:MM"|null), hf ("HH:MM"|null), delta_hours (str|null),
+        odometer_reading (str|null), engine_hours_reading (str|null),
+        crane_hours_reading (str|null),
+        repuestos: [{material, reference, quantity, source,
+                     supplier, unit_price}]
+
+    The date is stored as an ISO string so the merge view can
+    reconstruct it.
+    ---
+    Serializa las lineas del formulario entrante y los repuestos en una
+    lista de dicts JSON-safe apta para su almacenamiento en la sesion.
+
+    La fecha se almacena como cadena ISO para que la vista de merge
+    pueda reconstruirla.
+    """
+    serialized = []
+    for ld in parsed_lines:
+        hc_val = ld["hc"].strftime("%H:%M") if ld["hc"] else None
+        hf_val = ld["hf"].strftime("%H:%M") if ld["hf"] else None
+
+        # Collect spare parts for this batch (entry_idx removed in S012).
+        # Recopilar repuestos del lote (entry_idx eliminado en S012).
+        line_repuestos = []
+        for spd in parsed_repuestos:
+            unit_price_val = str(spd["unit_price"]) if spd.get("unit_price") is not None else None
+            line_repuestos.append({
+                "material":   spd["material"],
+                "reference":  spd["referencia"],
+                "quantity":   str(spd["quantity"]) if spd["quantity"] is not None else None,
+                "source":     spd["source"],
+                "supplier":   spd["supplier"],
+                "unit_price": unit_price_val,
+            })
+
+        serialized.append({
+            "machine_raw":           ld["machine_raw"],
+            "machine_asset_pk":      ld["machine_asset"].pk if ld["machine_asset"] else None,
+            "fault_description":     ld["fault_description"],
+            "repair_notes":          ld["repair_notes"],
+            "hc":                    hc_val,
+            "hf":                    hf_val,
+            "delta_hours":           str(ld["delta_hours"]) if ld["delta_hours"] is not None else None,
+            "odometer_reading":      str(ld["odometer_reading"]) if ld.get("odometer_reading") is not None else None,
+            "engine_hours_reading":  str(ld["engine_hours_reading"]) if ld.get("engine_hours_reading") is not None else None,
+            "crane_hours_reading":   str(ld["crane_hours_reading"]) if ld.get("crane_hours_reading") is not None else None,
+            "repuestos":             line_repuestos,
+        })
+
+    return {
+        "lines":     serialized,
+        "work_date": parsed_date.isoformat() if parsed_date else None,
+    }
+
+
+def _detect_overlaps(existing_lines, new_lines):
+    """
+    Detects time overlaps between existing WorkOrderEntryLine records
+    and a list of new line dicts from the session pending_merge_lines.
+
+    Overlap condition (open intervals): hc_e < hf_n AND hc_n < hf_e.
+    Lines with null hc or hf are silently ignored.
+
+    Returns a list of tuples:
+        (idx_e, idx_n, hc_e_str, hf_e_str, hc_n_str, hf_n_str)
+    where idx_e is 1-based into existing_lines and idx_n is 1-based
+    into new_lines.
+    ---
+    Detecta solapamientos temporales entre WorkOrderEntryLine existentes
+    y la lista de dicts de lineas nuevas del payload pending_merge_lines.
+
+    Condicion (intervalos abiertos): hc_e < hf_n AND hc_n < hf_e.
+    Las lineas con hc o hf nulos se ignoran.
+
+    Devuelve lista de tuplas:
+        (idx_e, idx_n, hc_e_str, hf_e_str, hc_n_str, hf_n_str)
+    """
+    from datetime import datetime as _dt_ov
+
+    def _t(val):
+        """
+        Parses HH:MM string to time, returns None on failure.
+        ---
+        Parsea cadena HH:MM a time, devuelve None en fallo.
+        """
+        if val is None:
+            return None
+        try:
+            return _dt_ov.strptime(str(val).strip(), "%H:%M").time()
+        except ValueError:
+            return None
+
+    conflicts = []
+    for idx_e, existing_line in enumerate(existing_lines, start=1):
+        hc_e = existing_line.hc
+        hf_e = existing_line.hf
+        if hc_e is None or hf_e is None:
+            continue
+        for idx_n, new_line in enumerate(new_lines, start=1):
+            hc_n = _t(new_line.get("hc"))
+            hf_n = _t(new_line.get("hf"))
+            if hc_n is None or hf_n is None:
+                continue
+            # Open-interval overlap: hc_e < hf_n AND hc_n < hf_e.
+            # Solapamiento intervalo abierto: hc_e < hf_n AND hc_n < hf_e.
+            if hc_e < hf_n and hc_n < hf_e:
+                conflicts.append((
+                    idx_e,
+                    idx_n,
+                    hc_e.strftime("%H:%M"),
+                    hf_e.strftime("%H:%M"),
+                    hc_n.strftime("%H:%M"),
+                    hf_n.strftime("%H:%M"),
+                ))
+    return conflicts
+
+
+class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
+    """
+    Merge view for resolving conflicts when an operator tries to submit
+    a new work order on a date that already has an unreviewed digital or
+    generated entry. Presents existing and incoming lines side by side
+    so the operator can choose one of three actions:
+
+      discard_new      — keep existing entry, discard incoming lines.
+      discard_existing — delete existing WorkOrder (CASCADE) and create
+                         a new one from the pending session lines.
+      merge            — append incoming lines to the existing entry.
+                         Only available when no time overlaps exist.
+
+    The operator may edit hc/hf before choosing an action.
+    Client-side JS recalculates overlaps in real time; the server
+    revalidates on every merge POST.
+
+    GET  /panel/operator/merge/<int:entry_pk>/
+    POST /panel/operator/merge/<int:entry_pk>/
+         merge_action: discard_new | discard_existing | merge
+
+    Accessible to WORKSHOP and ADMIN roles (WorkshopRequiredMixin).
+    ---
+    Vista de merge para resolver conflictos cuando un operario envia
+    un parte en una fecha con entrada digital sin revisar preexistente.
+
+    GET  /panel/operator/merge/<int:entry_pk>/
+    POST /panel/operator/merge/<int:entry_pk>/
+         merge_action: discard_new | discard_existing | merge
+
+    Accesible para roles WORKSHOP y ADMIN (WorkshopRequiredMixin).
+    """
+
+    template_name = "panel/operator/merge_entry.html"
+
+    # ------------------------------------------------------------------
+    # Private helpers / Helpers privados
+    # ------------------------------------------------------------------
+
+    def _get_pending(self, request):
+        """
+        Returns the pending_merge_lines dict from the session, or None.
+        ---
+        Devuelve el dict pending_merge_lines de la sesion, o None.
+        """
+        return request.session.get("pending_merge_lines")
+
+    def _clear_pending(self, request):
+        """
+        Removes pending_merge_lines from the session.
+        ---
+        Elimina pending_merge_lines de la sesion.
+        """
+        request.session.pop("pending_merge_lines", None)
+        request.session.modified = True
+
+    def _resolve_entry(self, entry_pk, company, cu):
+        """
+        Retrieves the WorkOrderEntry by pk, scoped to operator company
+        and user. Returns None if not found or inaccessible.
+        ---
+        Recupera el WorkOrderEntry por pk, acotado a empresa y usuario
+        del operario. Devuelve None si no existe o no es accesible.
+        """
+        try:
+            return WorkOrderEntry.objects.select_related("work_order").get(
+                pk=entry_pk,
+                work_order__company=company,
+                work_order__uploaded_by=cu,
+                work_order__source__in=[
+                    WorkOrder.Source.DIGITAL,
+                    WorkOrder.Source.GENERATED,
+                ],
+                work_order__reviewed=False,
+            )
+        except WorkOrderEntry.DoesNotExist:
+            return None
+
+    def _parse_time_str(self, val):
+        """
+        Parses HH:MM string to datetime.time, returns None on failure.
+        ---
+        Parsea cadena HH:MM a datetime.time, devuelve None en fallo.
+        """
+        from datetime import time as _time
+        if not val:
+            return None
+        try:
+            parts = str(val).strip().split(":")
+            return _time(int(parts[0]), int(parts[1]))
+        except (ValueError, IndexError):
+            return None
+
+    def _to_decimal(self, val):
+        """
+        Converts str/int/float to Decimal, returns None on failure.
+        ---
+        Convierte str/int/float a Decimal, devuelve None en fallo.
+        """
+        from decimal import Decimal, InvalidOperation
+        if val is None:
+            return None
+        try:
+            return Decimal(str(val))
+        except InvalidOperation:
+            return None
+
+    def _parse_edited_hc_hf(self, POST, prefix, count):
+        """
+        Parses operator-edited hc/hf from POST for a set of lines
+        identified by prefix and count (1-based).
+        Returns a list of dicts: [{hc: HH:MM|None, hf: HH:MM|None}].
+        ---
+        Parsea hc/hf editados del POST para un conjunto de lineas
+        identificadas por prefix y count (base 1).
+        """
+        result = []
+        for i in range(1, count + 1):
+            hc_raw = POST.get(f"{prefix}{i}_hc", "").strip() or None
+            hf_raw = POST.get(f"{prefix}{i}_hf", "").strip() or None
+            result.append({"hc": hc_raw, "hf": hf_raw})
+        return result
+
+    def _build_context(self, company, cu, existing_entry, existing_lines,
+                       new_lines, work_date_iso, conflicts, merge_error=None):
+        """
+        Builds the template context dict for the merge view.
+        ---
+        Construye el dict de contexto del template para la vista de merge.
+        """
+        return {
+            "company":        company,
+            "company_user":   cu,
+            "active_nav":     "operator_dashboard",
+            "existing_entry": existing_entry,
+            "existing_lines": existing_lines,
+            "new_lines":      new_lines,
+            "work_date":      work_date_iso,
+            "conflicts":      conflicts,
+            "has_conflicts":  bool(conflicts),
+            "merge_error":    merge_error,
+        }
+
+    def _create_lines_from_session(self, new_lines, edited_new,
+                                   target_entry, start_line_number, company):
+        """
+        Creates WorkOrderEntryLine and SparePartLine records from the
+        session pending data inside an already-open atomic block.
+        edited_new may provide operator-corrected hc/hf values.
+        ---
+        Crea WorkOrderEntryLine y SparePartLine desde los datos pendientes
+        de la sesion dentro de un bloque atomico ya abierto.
+        edited_new puede aportar hc/hf corregidos por el operario.
+        """
+        from fleet.models import MachineAsset
+        from work_order_processor.models import SparePartLine
+        from work_order_processor.services import (
+            _normalise_machine_code,
+            _compute_delta_hours,
+        )
+
+        for idx, line_data in enumerate(new_lines):
+            edits  = edited_new[idx] if idx < len(edited_new) else {}
+            hc_str = edits.get("hc") or line_data.get("hc")
+            hf_str = edits.get("hf") or line_data.get("hf")
+            hc_val = self._parse_time_str(hc_str)
+            hf_val = self._parse_time_str(hf_str)
+            delta  = _compute_delta_hours(hc_val, hf_val)
+
+            # Resolve MachineAsset from pk stored in session.
+            # Resolver MachineAsset desde pk almacenado en sesion.
+            asset = None
+            _asset_pk = line_data.get("machine_asset_pk")
+            if _asset_pk is not None:
+                try:
+                    asset = MachineAsset.objects.get(
+                        pk=_asset_pk, company=company
+                    )
+                except MachineAsset.DoesNotExist:
+                    pass
+
+            machine_raw  = line_data.get("machine_raw", "")
+            machine_norm = _normalise_machine_code(machine_raw)
+
+            new_line = WorkOrderEntryLine.objects.create(
+                entry                = target_entry,
+                line_number          = start_line_number + idx,
+                machine_asset        = asset,
+                machine_raw          = machine_raw,
+                machine_norm         = machine_norm or "",
+                fault_description    = line_data.get("fault_description", ""),
+                repair_notes         = line_data.get("repair_notes", ""),
+                hc                   = hc_val,
+                hf                   = hf_val,
+                or_val               = "",
+                delta_hours          = delta,
+                flags                = [],
+                odometer_reading     = self._to_decimal(line_data.get("odometer_reading")),
+                engine_hours_reading = self._to_decimal(line_data.get("engine_hours_reading")),
+                crane_hours_reading  = self._to_decimal(line_data.get("crane_hours_reading")),
+            )
+
+            # SparePartLine records for this line.
+            # Registros SparePartLine para esta linea.
+            for rep_idx, rep in enumerate(line_data.get("repuestos", []), start=1):
+                SparePartLine.objects.create(
+                    entry_line  = new_line,
+                    line_number = rep_idx,
+                    reference   = rep.get("reference", ""),
+                    vehicle     = None,
+                    material    = rep.get("material", ""),
+                    quantity    = self._to_decimal(rep.get("quantity")),
+                    source      = rep.get("source", "WAREHOUSE"),
+                    supplier    = rep.get("supplier", ""),
+                    flags       = [],
+                )
+
+    # ------------------------------------------------------------------
+    # Views / Vistas
+    # ------------------------------------------------------------------
+
+    def get(self, request, entry_pk, *args, **kwargs):
+        """
+        Renders the merge resolution page. Detects initial overlaps.
+        Redirects to operator history with an error if session data is
+        missing or the entry is inaccessible.
+        ---
+        Renderiza la pagina de resolucion de merge. Detecta solapamientos
+        iniciales. Redirige al historial si faltan datos o el entry no
+        es accesible.
+        """
+        from django.urls import reverse
+
+        cu      = request.user.company_user
+        company = cu.company
+
+        pending = self._get_pending(request)
+        if not pending:
+            django_messages.error(
+                request,
+                "No hay datos de parte pendiente en sesion. "
+                "El formulario ha expirado o fue enviado ya.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        existing_entry = self._resolve_entry(entry_pk, company, cu)
+        if existing_entry is None:
+            self._clear_pending(request)
+            django_messages.error(
+                request,
+                "El parte existente no se ha encontrado o no es accesible.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        existing_lines = list(existing_entry.lines.order_by("line_number"))
+        new_lines      = pending.get("lines", [])
+        work_date_iso  = pending.get("work_date")
+
+        conflicts = _detect_overlaps(existing_lines, new_lines)
+
+        context = self._build_context(
+            company, cu, existing_entry, existing_lines,
+            new_lines, work_date_iso, conflicts,
+        )
+        return render(request, self.template_name, context)
+
+    def post(self, request, entry_pk, *args, **kwargs):
+        """
+        Processes the merge action chosen by the operator.
+
+        discard_new      — Clears the session and redirects to history.
+        discard_existing — Deletes the existing WorkOrder (CASCADE) and
+                           creates a new one from the pending session data.
+        merge            — Re-validates overlaps with edited hc/hf values.
+                           Appends new lines to existing entry if no conflicts.
+        ---
+        Procesa la accion de merge elegida por el operario.
+
+        discard_new      — Limpia sesion y redirige al historial.
+        discard_existing — Elimina WorkOrder existente y crea nuevo desde sesion.
+        merge            — Revalida solapamientos con hc/hf editados. Anade
+                           lineas al entry existente si no hay conflictos.
+        """
+        from datetime import datetime as _dtp
+        from django.db import transaction
+        from django.urls import reverse
+        from work_order_processor.services import generate_work_order_excel
+
+        cu      = request.user.company_user
+        company = cu.company
+
+        pending = self._get_pending(request)
+        if not pending:
+            django_messages.error(
+                request,
+                "No hay datos de parte pendiente en sesion. "
+                "El formulario ha expirado o fue enviado ya.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        existing_entry = self._resolve_entry(entry_pk, company, cu)
+        if existing_entry is None:
+            self._clear_pending(request)
+            django_messages.error(
+                request,
+                "El parte existente no se ha encontrado o no es accesible.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        merge_action   = request.POST.get("merge_action", "").strip()
+        existing_lines = list(existing_entry.lines.order_by("line_number"))
+        new_lines      = pending.get("lines", [])
+        work_date_iso  = pending.get("work_date")
+
+        # ------------------------------------------------------------------
+        # Action: discard_new
+        # ------------------------------------------------------------------
+        if merge_action == "discard_new":
+            self._clear_pending(request)
+            django_messages.success(
+                request,
+                "Parte nuevo descartado. Se conserva el parte existente.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        # ------------------------------------------------------------------
+        # Action: discard_existing
+        # ------------------------------------------------------------------
+        if merge_action == "discard_existing":
+            work_date = None
+            if work_date_iso:
+                try:
+                    work_date = _dtp.strptime(work_date_iso, "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+
+            try:
+                with transaction.atomic():
+                    # CASCADE deletes existing entry and all its lines.
+                    # CASCADE elimina el entry existente y todas sus lineas.
+                    existing_entry.work_order.delete()
+
+                    worker_name = (
+                        cu.user.get_full_name() or cu.user.username
+                    ).upper()
+                    date_tag = (
+                        work_date.strftime("%d-%m-%Y") if work_date else "SIN-FECHA"
+                    )
+                    synthetic_name = f"{worker_name}_{date_tag}.pdf"
+
+                    new_wo = WorkOrder(
+                        company         = company,
+                        uploaded_by     = cu,
+                        source          = WorkOrder.Source.DIGITAL,
+                        status          = WorkOrder.Status.DONE,
+                        total_pages     = 1,
+                        processed_pages = 1,
+                        reviewed        = False,
+                    )
+                    new_wo.source_pdf.name = synthetic_name
+                    new_wo.save()
+
+                    new_entry = WorkOrderEntry.objects.create(
+                        work_order            = new_wo,
+                        page_number           = 1,
+                        worker_name           = worker_name,
+                        work_date             = work_date,
+                        uncertain_date        = False,
+                        extraction_confidence = WorkOrderEntry.Confidence.HIGH,
+                        raw_gemini_response   = None,
+                    )
+
+                    # Create lines from session data (no edited hc/hf here).
+                    # Crear lineas desde datos de sesion (sin edicion hc/hf).
+                    self._create_lines_from_session(
+                        new_lines, [], new_entry, 1, company
+                    )
+
+            except Exception as exc:
+                logger.error(
+                    "# [MergeView] Error en discard_existing: %s", exc, exc_info=True
+                )
+                django_messages.error(
+                    request,
+                    f"Error al procesar el merge: {exc}. Intentalo de nuevo.",
+                )
+                return redirect(reverse("panel:operator_history"))
+
+            self._clear_pending(request)
+            try:
+                generate_work_order_excel(new_wo.pk)
+            except Exception as exc:
+                logger.warning(
+                    "# [MergeView] Excel no generado para WorkOrder #%d: %s",
+                    new_wo.pk, exc,
+                )
+            django_messages.success(
+                request,
+                "Parte existente sustituido correctamente. "
+                "El nuevo parte ha sido registrado.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        # ------------------------------------------------------------------
+        # Action: merge
+        # ------------------------------------------------------------------
+        if merge_action == "merge":
+            edited_existing = self._parse_edited_hc_hf(
+                request.POST, "existing_line_", len(existing_lines)
+            )
+            edited_new = self._parse_edited_hc_hf(
+                request.POST, "new_line_", len(new_lines)
+            )
+
+            # Build in-memory copies with edited hc/hf for overlap detection.
+            # Construir copias en memoria con hc/hf editados para deteccion.
+            class _LineCopy:
+                pass
+
+            existing_copies = []
+            for line, edits in zip(existing_lines, edited_existing):
+                copy    = _LineCopy()
+                copy.hc = self._parse_time_str(edits["hc"]) if edits["hc"] else line.hc
+                copy.hf = self._parse_time_str(edits["hf"]) if edits["hf"] else line.hf
+                existing_copies.append(copy)
+
+            new_copies = []
+            for nd, edits in zip(new_lines, edited_new):
+                new_copies.append({
+                    "hc": edits["hc"] if edits["hc"] else nd.get("hc"),
+                    "hf": edits["hf"] if edits["hf"] else nd.get("hf"),
+                })
+
+            conflicts = _detect_overlaps(existing_copies, new_copies)
+
+            if conflicts:
+                context = self._build_context(
+                    company, cu, existing_entry, existing_lines,
+                    new_lines, work_date_iso, conflicts,
+                    merge_error=(
+                        "No es posible fusionar: existen solapamientos horarios. "
+                        "Edita los horarios para resolver los conflictos."
+                    ),
+                )
+                return render(request, self.template_name, context)
+
+            # No conflicts — append new lines to existing entry atomically.
+            # Sin conflictos — anadir lineas al entry existente de forma atomica.
+            try:
+                with transaction.atomic():
+                    start_number = existing_entry.lines.count() + 1
+                    self._create_lines_from_session(
+                        new_lines, edited_new, existing_entry, start_number, company
+                    )
+            except Exception as exc:
+                logger.error(
+                    "# [MergeView] Error en merge: %s", exc, exc_info=True
+                )
+                django_messages.error(
+                    request,
+                    f"Error al fusionar el parte: {exc}. Intentalo de nuevo.",
+                )
+                return redirect(reverse("panel:operator_history"))
+
+            self._clear_pending(request)
+            try:
+                generate_work_order_excel(existing_entry.work_order.pk)
+            except Exception as exc:
+                logger.warning(
+                    "# [MergeView] Excel no regenerado para WorkOrder #%d: %s",
+                    existing_entry.work_order.pk, exc,
+                )
+            django_messages.success(
+                request,
+                f"Parte fusionado correctamente. Tareas anadidas al parte del "
+                f"{work_date_iso or 'fecha desconocida'}.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        # Unknown merge_action — redirect with warning.
+        # merge_action desconocido — redirigir con aviso.
+        django_messages.warning(
+            request,
+            "Accion de merge no reconocida. No se ha realizado ningun cambio.",
+        )
+        return redirect(reverse("panel:operator_history"))
+
+
 class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
+
     """
     Four-tab management history view for ADMIN and SUPERVISOR roles.
     Provides a comprehensive interface for reviewing, exporting and managing

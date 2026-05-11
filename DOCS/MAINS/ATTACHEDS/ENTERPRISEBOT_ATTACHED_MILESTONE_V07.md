@@ -334,6 +334,36 @@ Partes revisados (reviewed=True): bloqueados para merge sin excepcion.
 
 #### Excel por periodo — rediseno (pendiente sesion posterior)
 
+### 2.36. Flujo de merge implementado — S018
+
+Gate 0 insertado en WorkOrderEntryConfirmView.post() antes de cualquier
+INSERT. Detecta WorkOrderEntry preexistente no revisado para la misma
+fecha y operario. En caso de conflicto serializa las lineas entrantes en
+request.session["pending_merge_lines"] y redirige a WorkOrderEntryMergeView.
+
+Helpers de modulo anadidos a panel/views.py:
+  _serialize_pending_lines(parsed_lines, parsed_repuestos, parsed_date)
+    Produce dict JSON-safe almacenable en sesion Django.
+  _detect_overlaps(existing_lines, new_lines)
+    Condicion: hc_e < hf_n AND hc_n < hf_e (intervalos abiertos).
+    Devuelve lista de tuplas (idx_e, idx_n, hc_e, hf_e, hc_n, hf_n).
+
+WorkOrderEntryMergeView (WorkshopRequiredMixin, View) anadida a panel/views.py.
+Tres acciones POST: discard_new, discard_existing, merge.
+El operario puede editar hc/hf antes de elegir accion; JS recalcula
+solapamientos en tiempo real sin recargar pagina.
+
+Template: panel/templates/panel/operator/merge_entry.html (PEA, 0 errores djlint).
+Ruta: operator/merge/<int:entry_pk>/ (name=operator_merge) en panel/urls.py.
+
+BUG PENDIENTE (detectado en S018, resolucion en S019):
+  En WorkOrderAdminHistoryView, pestana Revisados, no existe boton para
+  desmarcar la revision de un parte. WorkOrderMarkReviewedView.post() ya
+  implementa el toggle (reviewed=True → False), pero el template
+  admin_history.html no expone dicho boton en la pestana Revisados.
+  Correccion: anadir boton HTMX hx-post al template admin_history.html
+  en la fila de cada parte revisado (pestana Revisados).
+
 La generacion de Excel pasa a ser responsabilidad del supervisor al
 cerrar un WorkPeriod. Se implementa en sesion posterior.
 
@@ -395,158 +425,73 @@ Estado: COMPLETADO (sesiones 015-017).
 | 015    | 2026-05-08 | Auto-registro + historial | WorkerSignupView publica. Campos phone/dni (migr. 0014). Fix WorkOrderEntryHistoryView (entry.lines). Template history.html. |
 | 016    | 2026-05-08 | Historial admin completo | Modelos WorkerAbsence/WorkPeriod (migr. 0015). WorkOrderAdminHistoryView 5 pestanas. WorkOrder.generated_by (migr. 0012). WorkOrder.source (migr. 0013). WorkerAbsenceCreateView. Refactor WorkOrderEntryHistoryView WORKSHOP. Acciones bulk. JS → admin_history.js estatico. Auditorias idioma: tasks.py, views.py, signals.py. |
 | 017    | 2026-05-08 | Fix NameError + validacion CRUD + Bootstrap local + diseno merge | Fix NameError period_operator_groups (PMA). WorkPeriod CRUD validado. Modal modalAbsenceEdit + botones Editar/Eliminar ausencias (PMA). Bootstrap 5.3.3 migrado a staticfiles locales. Diseno completo flujo merge documentado en seccion 2.35. |
+| 018    | 2026-05-11 | Flujo merge completo | Gate 0 en WorkOrderEntryConfirmView.post(). Helpers _serialize_pending_lines y _detect_overlaps. WorkOrderEntryMergeView (discard_new / discard_existing / merge). Template merge_entry.html (0 errores djlint). Ruta operator_merge en urls.py. Bug detectado: boton demarcar ausente en pestana Revisados de admin_history.html. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S018)
+## 5. Hoja de Ruta para la Siguiente Sesion (S019)
 
 ### CONTEXTO
 
-S017 resolvio los flecos de S016, valido el CRUD de periodos, completo
-la edicion y baja de ausencias, migro Bootstrap a staticfiles locales y
-definio el rediseno conceptual critico: un parte por operario por fecha
-con flujo de merge supervisado por el operario.
+S018 implemento el flujo de merge completo: Gate 0 en
+WorkOrderEntryConfirmView.post(), helpers _serialize_pending_lines y
+_detect_overlaps, WorkOrderEntryMergeView con tres acciones, template
+merge_entry.html y ruta operator_merge.
 
-S018 implementa el flujo de merge completo.
+Al cierre de S018 se detecto un bug en WorkOrderAdminHistoryView:
+la pestana Revisados no expone boton para desmarcar la revision de un
+parte. WorkOrderMarkReviewedView ya implementa el toggle reviewed, pero
+el template admin_history.html no lo usa en esa pestana.
+
+S019 corrige ese bug y continua con la validacion E2E del flujo de merge.
 
 ADVERTENCIA CRITICA — mantener siempre presente:
   El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
   Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-### PRIMERA ACCION — Gate 0 en WorkOrderEntryConfirmView
+### PRIMERA ACCION — Bug: boton demarcar en pestana Revisados
 
-Modificar WorkOrderEntryConfirmView.post() en panel/views.py (PMA).
-Insertar Gate 0 antes de cualquier INSERT en BD:
+Archivo afectado: panel/templates/panel/work_orders/admin_history.html (PMA).
 
-  existing_entry = WorkOrderEntry.objects.filter(
-      work_order__company=company,
-      work_order__uploaded_by=cu,
-      work_order__source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
-      work_order__reviewed=False,
-      work_date=parsed_date,
-  ).select_related("work_order").first()
+Problema:
+  La pestana Revisados muestra los partes con reviewed=True pero no tiene
+  boton para invocar WorkOrderMarkReviewedView (toggle reviewed).
+  WorkOrderMarkReviewedView.post() ya implementa la logica de desmarcado:
+    if wo.reviewed:
+        wo.reviewed = False; wo.reviewed_by = None; wo.reviewed_at = None
+  El endpoint existe: POST /panel/work-orders/<pk>/review/ (name=work_order_review).
+  Solo falta el boton en el template.
 
-  if existing_entry:
-      if existing_entry.work_order.reviewed:
-          messages.error(request,
-              "Este parte ya ha sido revisado por el supervisor y no puede "
-              "modificarse. Contacta con tu supervisor para resolver el conflicto."
-          )
-          return redirect(reverse("panel:operator_history"))
+Solucion:
+  En la fila de cada parte de la tabla de Revisados, anadir boton HTMX:
+    <button
+      hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
+      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+      hx-target="#review-badge-{{ wo.pk }}"
+      hx-swap="outerHTML"
+      class="btn btn-sm btn-outline-warning"
+      title="Desmarcar revision">
+      <i class="bi bi-x-circle"></i> Desmarcar
+    </button>
 
-      request.session["pending_merge_lines"] = _serialize_pending_lines(
-          parsed_lines, parsed_repuestos, parsed_date
-      )
-      return redirect(
-          reverse("panel:operator_merge", kwargs={"entry_pk": existing_entry.pk})
-      )
-
-Funcion auxiliar _serialize_pending_lines(parsed_lines, parsed_repuestos, parsed_date):
-  Serializa los datos del formulario como lista de dicts JSON-safe.
-  Estructura de cada dict de linea:
-    machine_raw, machine_asset_pk (int|null), fault_description,
-    repair_notes, hc ("HH:MM"|null), hf ("HH:MM"|null),
-    delta_hours (str decimal|null), odometer_reading (str|null),
-    engine_hours_reading (str|null), crane_hours_reading (str|null),
-    repuestos: [{material, reference, quantity, source, supplier, unit_price}]
+  El fragment _review_badge_fragment.html ya existe y sirve la respuesta HTMX.
+  El boton debe estar dentro del contexto del bucle de la tabla de Revisados.
 
 Archivos a solicitar al inicio via SFTP:
-  panel/views.py
+  panel/templates/panel/work_orders/admin_history.html
 
-### SEGUNDA ACCION — WorkOrderEntryMergeView
+### SEGUNDA ACCION — Validacion E2E flujo de merge
 
-Nueva vista WorkOrderEntryMergeView (WorkshopRequiredMixin, View) en
-panel/views.py (PMA — anadir al final del bloque de vistas de operario,
-antes de WorkOrderAdminHistoryView).
+Validar manualmente con el usuario operario:
+  1. Operario envia parte para una fecha con parte existente sin revisar.
+     → Gate 0 activa redireccion a merge_entry.html.
+  2. Operario elige "Descartar nuevo" → parte existente se conserva.
+  3. Operario elige "Sustituir existente" → parte antiguo eliminado, nuevo creado.
+  4. Operario elige "Fusionar" sin solapamientos → lineas añadidas al existente.
+  5. Operario elige "Fusionar" con solapamientos → boton deshabilitado, errores.
+  6. Supervisor desmarca un parte revisado desde pestana Revisados (PRIMERA ACCION).
 
-  GET /panel/operator/merge/<int:entry_pk>/
-    - Recuperar existing_entry por pk acotado a empresa y operario.
-    - Recuperar pending_merge_lines de request.session.
-    - Si sesion vacia → redirect operator_history con error.
-    - Calcular solapamientos con _detect_overlaps().
-    - Renderizar merge_entry.html.
-
-  POST /panel/operator/merge/<int:entry_pk>/
-    merge_action = POST["merge_action"]
-
-    "discard_new":
-      Limpiar request.session["pending_merge_lines"].
-      Redirect operator_history: "Parte nuevo descartado. Se conserva el parte existente."
-
-    "discard_existing":
-      transaction.atomic():
-        existing_entry.work_order.delete()  # CASCADE elimina entry y lines.
-        Crear nuevo WorkOrder + WorkOrderEntry + WorkOrderEntryLine
-        desde pending_merge_lines (mismo flujo INSERT normal).
-      Limpiar sesion. Redirect operator_history con mensaje exito.
-
-    "merge":
-      Revalidar solapamientos server-side con hc/hf editados del POST.
-      Si solapamientos → re-renderizar merge_entry.html con errores.
-      Si no → transaction.atomic():
-        Para cada linea en pending_merge_lines:
-          WorkOrderEntryLine.objects.create(
-              entry=existing_entry,
-              line_number=existing_entry.lines.count() + idx + 1,
-              ... todos los campos ...
-          )
-          Para cada repuesto en linea["repuestos"]:
-            SparePartLine.objects.create(entry_line=nueva_linea, ...)
-      Limpiar sesion.
-      Redirect operator_history:
-        "Parte fusionado correctamente. Tareas anadidas al parte del {fecha}."
-
-Funcion auxiliar _detect_overlaps(existing_lines, new_lines):
-  Input: lista de dicts con hc/hf (existentes) + lista de dicts con hc/hf (nuevos).
-  Output: lista de tuplas (idx_e, idx_n, hc_e, hf_e, hc_n, hf_n).
-  Logica: solapamiento = hc_e < hf_n AND hc_n < hf_e (intervalos abiertos).
-  Ignorar entradas con hc o hf nulos.
-
-Edicion de horarios en pantalla de merge:
-  El operario puede modificar hc/hf de cualquier linea antes de elegir accion.
-  Las lineas editadas se reenvian via POST junto con merge_action.
-  MergeView.post() re-parsea los horarios editados y revalida solapamientos.
-
-### TERCERA ACCION — Template merge_entry.html (Neonato Puro — PEA)
-
-Nuevo template: panel/templates/panel/operator/merge_entry.html
-
-Estructura visual:
-  Cabecera: "Conflicto de fecha — Ya existe un parte para el {fecha}"
-  Alert warning con descripcion del conflicto.
-  Grid Bootstrap col-md-6 / col-md-6:
-    Columna izquierda — "Parte existente":
-      Tabla de lineas existentes con inputs editables hc/hf.
-      Lineas solapadas: clase CSS "table-danger".
-    Columna derecha — "Parte nuevo":
-      Tabla de lineas nuevas con inputs editables hc/hf.
-      Lineas solapadas: clase CSS "table-danger".
-  Panel inferior — solapamientos detectados (si los hay):
-    Lista de conflictos:
-    "Tarea {n} (existente) {hc_e}–{hf_e} solapa con Tarea {m} (nueva) {hc_n}–{hf_n}"
-  Barra de acciones:
-    Boton "Descartar parte nuevo"     — siempre activo, btn-outline-secondary.
-    Boton "Descartar parte existente" — siempre activo, btn-outline-danger.
-    Boton "Fusionar ambos"            — activo solo sin solapamientos, btn-success.
-  JS client-side:
-    Recalculo de solapamientos en tiempo real al editar hc/hf.
-    Actualiza lista de conflictos y estado boton Fusionar sin recargar pagina.
-
-### CUARTA ACCION — Ruta en panel/urls.py (PMA)
-
-Anadir en panel/urls.py en el bloque de rutas de operario:
-  path(
-      "operator/merge/<int:entry_pk>/",
-      WorkOrderEntryMergeView.as_view(),
-      name="operator_merge",
-  ),
-
-Anadir WorkOrderEntryMergeView al bloque de imports de panel/urls.py.
-
-Archivos a solicitar al inicio via SFTP:
-  panel/urls.py
-
-### Estado de migraciones al cierre de S017
+### Estado de migraciones al cierre de S018
 
 | App                  | Ultima migracion aplicada                         |
 |----------------------|---------------------------------------------------|
@@ -555,8 +500,7 @@ Archivos a solicitar al inicio via SFTP:
 | ivr_config           | 0015_workerabsence_workperiod                     |
 | panel                | 0001_initial (AnalyticsProfile)                   |
 
-### Archivos a solicitar al inicio de S018 via SFTP
+### Archivos a solicitar al inicio de S019 via SFTP
 
 OBLIGATORIO antes de generar ningun PMA:
-  panel/views.py
-  panel/urls.py
+  panel/templates/panel/work_orders/admin_history.html

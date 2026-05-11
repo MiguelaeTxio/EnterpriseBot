@@ -64,6 +64,7 @@
 ./panel/templates/panel/work_orders/_review_badge_fragment.html
 ./panel/templates/panel/_description_typeahead.html
 ./panel/templates/panel/operator/history.html
+./panel/templates/panel/operator/merge_entry.html
 ./panel/templates/panel/operator/form_entry.html
 ./panel/templates/panel/operator/confirm_entry.html
 ./panel/templates/panel/operator/dashboard.html
