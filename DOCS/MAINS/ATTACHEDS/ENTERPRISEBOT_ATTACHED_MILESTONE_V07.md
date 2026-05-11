@@ -45,7 +45,8 @@ de confirmacion es el unico punto de persistencia en BD.
 Estado: COMPLETADO (sesion 004).
 
 #### Via B — STT (Speech-to-Text via Web Speech API)
-Estado: COMPLETADO PARCIAL (sesion 006) — pendiente validacion E2E real con operario.
+Estado: PENDIENTE REDISENO (S021) — arquitectura de dictado global descartada.
+Ver seccion 2.37 para el nuevo diseno aprobado.
 
 #### Via C — Upload (foto/PDF manuscrito con Gemini Vision)
 Estado: COMPLETADO (sesion 003).
@@ -356,16 +357,122 @@ solapamientos en tiempo real sin recargar pagina.
 Template: panel/templates/panel/operator/merge_entry.html (PEA, 0 errores djlint).
 Ruta: operator/merge/<int:entry_pk>/ (name=operator_merge) en panel/urls.py.
 
-BUG PENDIENTE (detectado en S018, resolucion en S019):
-  En WorkOrderAdminHistoryView, pestana Revisados, no existe boton para
-  desmarcar la revision de un parte. WorkOrderMarkReviewedView.post() ya
-  implementa el toggle (reviewed=True → False), pero el template
-  admin_history.html no expone dicho boton en la pestana Revisados.
-  Correccion: anadir boton HTMX hx-post al template admin_history.html
-  en la fila de cada parte revisado (pestana Revisados).
+Bug resuelto en S019: boton Desmarcar anadido a la pestana Revisados
+de admin_history.html con hx-post apuntando a work_order_review,
+hx-target a #review-badge-{{ wo.pk }} y hx-swap outerHTML.
 
 La generacion de Excel pasa a ser responsabilidad del supervisor al
-cerrar un WorkPeriod. Se implementa en sesion posterior.
+cerrar un WorkPeriod. Se implementa en S023.
+
+### 2.37. Rediseno Via B — Dialogo progresivo con TTS nativo (S021)
+
+DECISION DE DISENO aprobada en S019.
+
+El enfoque anterior de dictado global del parte completo en un unico
+bloque de audio es fragil: un error de reconocimiento en cualquier punto
+invalida todo el dictado. Se reemplaza por un dialogo progresivo campo
+a campo usando speechSynthesis nativo del navegador (coste cero,
+sin dependencias externas, Chrome/Edge).
+
+Flujo aprobado:
+  1. El sistema sintetiza en voz la pregunta para cada campo.
+     Ejemplo: "Diga la fecha por favor."
+  2. El operario pulsa el boton de micro y dicta la respuesta.
+  3. Web Speech API transcribe la respuesta.
+  4. El sistema valida el campo 1:1 antes de avanzar al siguiente.
+  5. Si la validacion falla, el sistema repite la pregunta con
+     indicacion del error.
+  6. Flujo de tareas: el sistema pregunta campo a campo para cada
+     WorkOrderEntryLine (maquina, HC, HF, averia, notas).
+  7. Al completar una tarea: "Desea anadir otra tarea?"
+     Si el operario dice "Si" → nueva tarea.
+     Si dice "No" → convergencia al formulario de Via A.
+  8. El resultado prerellena form_entry.html como punto de convergencia.
+     WorkOrderEntrySTTExtractView queda obsoleta y se retira.
+
+Archivos afectados: panel/views.py (WorkOrderEntrySTTView refactor),
+panel/templates/panel/operator/stt_entry.html (rediseno completo).
+
+### 2.38. Gate 0 en WorkOrderEntryFormView.post() — S019
+
+El Gate 0 (un parte por operario por fecha) solo existia en
+WorkOrderEntryConfirmView.post() (Via C). Se detecto en S019 que
+WorkOrderEntryFormView.post() (Via A) no lo tenia, permitiendo
+duplicados al usar el formulario web.
+Correccion: bloque Gate 0 identico anadido en WorkOrderEntryFormView.post()
+inmediatamente antes del parseo de lineas.
+
+### 2.39. Barrera de fecha minima — _get_min_allowed_date() — S019
+
+Helper de modulo _get_min_allowed_date(cu) anadido a panel/views.py.
+Regla: work_date > fecha del ultimo WorkOrderEntry con reviewed=True
+del mismo operario. Si no hay partes revisados, sin restriccion.
+
+Barrera server-side insertada en:
+  WorkOrderEntryFormView.post() — antes del Gate 0.
+  WorkOrderEntryConfirmView.post() — dentro del bloque if _gate0_work_date.
+
+Barrera client-side:
+  form_entry.html y stt_entry.html: atributo min="{{ min_date }}" en
+  el input type=date.
+  confirm_entry.html: atributo data-min-date y texto de ayuda (type=text,
+  no admite min nativo).
+
+min_date se pasa al contexto desde get() de FormView y ConfirmView.
+
+### 2.40. Fix JS merge_entry.html — habilitacion boton Fusionar — S019
+
+Bug: al editar los inputs HC/HF en merge_entry.html, el boton Fusionar
+no se habilitaba aunque los solapamientos quedaran resueltos.
+Causa: el TimePicker custom escribe input.value directamente via JS
+sin disparar eventos nativos change/input.
+Correccion: anadido listener blur + MutationObserver sobre atributo
+value + polling de 300ms como fallback. Los tres mecanismos garantizan
+que onTimeInputChange dispara independientemente del metodo de edicion.
+
+### 2.41. Horas extra sin periodo activo — WorkOrderEntryHistoryView — S019
+
+Tab 3 (Horas extra) mostraba bloqueo cuando no habia periodo activo.
+Nuevo calculo con prioridad de cuatro casos:
+  Caso 1: periodo activo → start=period.start_date, fin=hoy.
+  Caso 2: sin activo, hay periodos cerrados → start=ultimo_cerrado.end_date+1.
+  Caso 3: sin periodos → start=primer WorkOrderEntry del operario.
+  Caso 4: sin partes → ceros, mensaje informativo.
+Variable overtime_period_label anadida al contexto para mostrar el
+rango calculado en el banner informativo del template.
+Template history.html actualizado: el bloqueo {% if active_period %}
+sustituido por {% if working_days_count or overtime_worked_hours %}.
+
+### 2.42. Edicion de partes no revisados desde Mi historial — S019
+
+El operario puede editar sus partes digitales no revisados desde la
+pestana Periodo actual de history.html.
+
+Implementacion:
+  Nueva ruta: operator/form/<int:wo_pk>/edit/ (name=operator_form_edit)
+  en panel/urls.py apuntando a WorkOrderEntryFormView.
+
+  WorkOrderEntryFormView.get() ampliado con modo edicion:
+    Si wo_pk en kwargs: carga el WorkOrder, verifica uploaded_by=cu y
+    reviewed=False, prerellena entradas_enriched y repuestos_enriched
+    desde los modelos existentes, pasa edit_mode=True y edit_wo_pk al
+    contexto.
+
+  WorkOrderEntryFormView.post() ampliado:
+    Si edit_wo_pk en POST: elimina el WorkOrder original (CASCADE)
+    antes del INSERT atomico del nuevo.
+
+  form_entry.html: input oculto <input type=hidden name=edit_wo_pk>
+  renderizado solo cuando edit_mode=True.
+
+  history.html: boton Editar en columna Acciones (Tab 1) apunta a
+  operator_form_edit con wo.pk. Visible solo si not wo.reviewed.
+
+### 2.43. Campo source en dict enriquecido de _enrich_work_orders_for_period — S019
+
+Anadido "source": wo.source al dict devuelto por
+_enrich_work_orders_for_period(). Necesario para que history.html
+pueda discriminar partes digitales de PDF en la columna Acciones.
 
 ---
 
@@ -393,7 +500,7 @@ Estado: COMPLETADO (2026-04-30).
 Estado: COMPLETADO (2026-04-30).
 
 ### Paso 8 — Via B: dictado por voz (STT)
-Estado: COMPLETADO PARCIAL (sesion 006) — pendiente validacion E2E.
+Estado: PENDIENTE REDISENO (S021) — ver seccion 2.37.
 
 ### Paso 9 — Validacion E2E de las tres vias
 Estado: EN PROGRESO.
@@ -426,72 +533,80 @@ Estado: COMPLETADO (sesiones 015-017).
 | 016    | 2026-05-08 | Historial admin completo | Modelos WorkerAbsence/WorkPeriod (migr. 0015). WorkOrderAdminHistoryView 5 pestanas. WorkOrder.generated_by (migr. 0012). WorkOrder.source (migr. 0013). WorkerAbsenceCreateView. Refactor WorkOrderEntryHistoryView WORKSHOP. Acciones bulk. JS → admin_history.js estatico. Auditorias idioma: tasks.py, views.py, signals.py. |
 | 017    | 2026-05-08 | Fix NameError + validacion CRUD + Bootstrap local + diseno merge | Fix NameError period_operator_groups (PMA). WorkPeriod CRUD validado. Modal modalAbsenceEdit + botones Editar/Eliminar ausencias (PMA). Bootstrap 5.3.3 migrado a staticfiles locales. Diseno completo flujo merge documentado en seccion 2.35. |
 | 018    | 2026-05-11 | Flujo merge completo | Gate 0 en WorkOrderEntryConfirmView.post(). Helpers _serialize_pending_lines y _detect_overlaps. WorkOrderEntryMergeView (discard_new / discard_existing / merge). Template merge_entry.html (0 errores djlint). Ruta operator_merge en urls.py. Bug detectado: boton demarcar ausente en pestana Revisados de admin_history.html. |
+| 019    | 2026-05-11 | Bugs + mejoras UX + barrera fecha | Boton Desmarcar en pestana Revisados (admin_history.html). Gate 0 anadido a Via A (WorkOrderEntryFormView.post()). Fix JS merge_entry.html (MutationObserver + polling). Barrera fecha minima _get_min_allowed_date() server-side + client-side tres templates. Horas extra sin periodo activo (Tab 3 history.html). Edicion partes no revisados desde Mi historial (operator_form_edit). Diseno Via B dialogo progresivo TTS aprobado. Hoja de ruta S020-S023 definida. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S019)
+## 5. Hoja de Ruta para la Siguiente Sesion (S020)
 
 ### CONTEXTO
 
-S018 implemento el flujo de merge completo: Gate 0 en
-WorkOrderEntryConfirmView.post(), helpers _serialize_pending_lines y
-_detect_overlaps, WorkOrderEntryMergeView con tres acciones, template
-merge_entry.html y ruta operator_merge.
+S019 resolvio los siguientes bugs e implemento las siguientes mejoras:
+  - Boton Desmarcar en pestana Revisados de admin_history.html.
+  - Gate 0 anadido a WorkOrderEntryFormView.post() (Via A).
+  - Fix JS merge_entry.html: MutationObserver + polling para habilitacion
+    del boton Fusionar al corregir horarios.
+  - Barrera de fecha minima _get_min_allowed_date() server-side y client-side.
+  - Horas extra sin periodo activo: calculo por cuatro casos en Tab 3.
+  - Edicion de partes no revisados desde Mi historial (operator_form_edit).
 
-Al cierre de S018 se detecto un bug en WorkOrderAdminHistoryView:
-la pestana Revisados no expone boton para desmarcar la revision de un
-parte. WorkOrderMarkReviewedView ya implementa el toggle reviewed, pero
-el template admin_history.html no lo usa en esa pestana.
-
-S019 corrige ese bug y continua con la validacion E2E del flujo de merge.
+S020 completa la validacion E2E de todas las funcionalidades implementadas
+en S018 y S019, y valida el funcionamiento de la Via C.
 
 ADVERTENCIA CRITICA — mantener siempre presente:
   El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
   Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-### PRIMERA ACCION — Bug: boton demarcar en pestana Revisados
+### PRIMERA ACCION — Validacion E2E flujo de merge completo
 
-Archivo afectado: panel/templates/panel/work_orders/admin_history.html (PMA).
-
-Problema:
-  La pestana Revisados muestra los partes con reviewed=True pero no tiene
-  boton para invocar WorkOrderMarkReviewedView (toggle reviewed).
-  WorkOrderMarkReviewedView.post() ya implementa la logica de desmarcado:
-    if wo.reviewed:
-        wo.reviewed = False; wo.reviewed_by = None; wo.reviewed_at = None
-  El endpoint existe: POST /panel/work-orders/<pk>/review/ (name=work_order_review).
-  Solo falta el boton en el template.
-
-Solucion:
-  En la fila de cada parte de la tabla de Revisados, anadir boton HTMX:
-    <button
-      hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
-      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-      hx-target="#review-badge-{{ wo.pk }}"
-      hx-swap="outerHTML"
-      class="btn btn-sm btn-outline-warning"
-      title="Desmarcar revision">
-      <i class="bi bi-x-circle"></i> Desmarcar
-    </button>
-
-  El fragment _review_badge_fragment.html ya existe y sirve la respuesta HTMX.
-  El boton debe estar dentro del contexto del bucle de la tabla de Revisados.
-
-Archivos a solicitar al inicio via SFTP:
-  panel/templates/panel/work_orders/admin_history.html
-
-### SEGUNDA ACCION — Validacion E2E flujo de merge
-
-Validar manualmente con el usuario operario:
-  1. Operario envia parte para una fecha con parte existente sin revisar.
+Validar manualmente los seis escenarios con el usuario operario:
+  1. Operario envia parte para una fecha sin parte existente → flujo normal,
+     parte creado correctamente.
+  2. Operario envia segundo parte para misma fecha (parte existente sin revisar)
      → Gate 0 activa redireccion a merge_entry.html.
-  2. Operario elige "Descartar nuevo" → parte existente se conserva.
-  3. Operario elige "Sustituir existente" → parte antiguo eliminado, nuevo creado.
-  4. Operario elige "Fusionar" sin solapamientos → lineas añadidas al existente.
-  5. Operario elige "Fusionar" con solapamientos → boton deshabilitado, errores.
-  6. Supervisor desmarca un parte revisado desde pestana Revisados (PRIMERA ACCION).
+  3. Operario elige Descartar nuevo → parte existente se conserva, nuevo descartado.
+  4. Operario elige Sustituir existente → parte antiguo eliminado (CASCADE),
+     nuevo creado correctamente.
+  5. Operario elige Fusionar sin solapamientos → WorkOrderEntryLines del nuevo
+     anadidas al WorkOrderEntry existente. WorkOrder nuevo no creado.
+  6. Operario elige Fusionar con solapamientos → boton Fusionar deshabilitado,
+     alerta visible, errores por linea. Al corregir HC/HF el boton se habilita.
+  7. Supervisor desmarca un parte revisado desde pestana Revisados de
+     admin_history.html → parte vuelve a Pendientes.
 
-### Estado de migraciones al cierre de S018
+### SEGUNDA ACCION — Validacion E2E edicion desde Mi historial
+
+  1. Operario pulsa Editar en un parte pendiente desde Tab 1 (Periodo actual).
+     → Redirige a /panel/operator/form/<wo_pk>/edit/.
+     → Formulario prerelleno con todos los datos del parte original.
+  2. Operario modifica datos y guarda.
+     → WorkOrder original eliminado (CASCADE). Nuevo WorkOrder creado.
+     → Operario regresa a Mi historial con el parte actualizado.
+  3. Verificar que partes revisados NO muestran boton Editar.
+
+### TERCERA ACCION — Validacion E2E barrera fecha minima
+
+  1. Con al menos un parte revisado en BD para el operario de prueba:
+     → El input de fecha en form_entry.html tiene min=fecha_minima.
+     → Intentar enviar un parte con fecha anterior a la minima (forzando
+       via POST directo si el selector nativo lo bloquea).
+     → El server-side devuelve error claro con la fecha minima permitida.
+  2. Verificar el mismo comportamiento en confirm_entry.html (Via C).
+
+### CUARTA ACCION — Validacion E2E Via C (Upload + Gemini Vision)
+
+  1. Subir foto o PDF de parte manuscrito desde /panel/operator/upload/.
+  2. Verificar extraccion correcta de campos en confirm_entry.html.
+  3. Verificar que las validaciones son identicas a Via A:
+     Gate 1 (fecha), Gate 2 (maquina/HC/HF/averia), Gate 3 (repuestos).
+  4. Verificar que si hay campos ilegibles el operario puede corregirlos
+     en el formulario de confirmacion antes de guardar.
+  5. Verificar que si la fecha del parte es anterior a la fecha minima,
+     el server-side rechaza el INSERT con mensaje claro.
+  6. Verificar que si existe parte previo para la misma fecha (Gate 0),
+     la Via C redirige correctamente a merge_entry.html.
+
+### Estado de migraciones al cierre de S019
 
 | App                  | Ultima migracion aplicada                         |
 |----------------------|---------------------------------------------------|
@@ -500,7 +615,25 @@ Validar manualmente con el usuario operario:
 | ivr_config           | 0015_workerabsence_workperiod                     |
 | panel                | 0001_initial (AnalyticsProfile)                   |
 
-### Archivos a solicitar al inicio de S019 via SFTP
+### Archivos a solicitar al inicio de S020 via SFTP
 
-OBLIGATORIO antes de generar ningun PMA:
-  panel/templates/panel/work_orders/admin_history.html
+No hay PMA planificado al inicio de S020. La sesion comienza con
+validacion E2E directa en el navegador con el usuario operario.
+Si durante la validacion se detectan bugs, solicitar los archivos
+afectados en ese momento.
+
+### Hoja de ruta de sesiones futuras (S021-S023)
+
+S021 — Rediseno Via B: dialogo progresivo con TTS nativo.
+  Ver seccion 2.37 para el diseno completo aprobado.
+  Archivos afectados: panel/views.py (WorkOrderEntrySTTView refactor),
+  panel/templates/panel/operator/stt_entry.html (rediseno completo).
+  WorkOrderEntrySTTExtractView queda obsoleta y se retira.
+
+S022 — Diferidos: has_cg_incident + Dropdown CdG Otro.
+  WorkOrder.has_cg_incident BooleanField + migracion.
+  Dropdown CdG con opcion Otro + free-text, resolucion contra MachineAsset.
+
+S023 — Excel por periodo.
+  Al cerrar un WorkPeriod, generacion del Excel consolidado del periodo.
+  Integracion en WorkPeriodCloseView.

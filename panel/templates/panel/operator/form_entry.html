@@ -50,6 +50,11 @@
             {# Hidden counters updated by JS / Contadores ocultos actualizados por JS #}
             <input type="hidden" name="num_entradas"  id="num-entradas-input"  value="{{ num_entradas }}">
             <input type="hidden" name="num_repuestos" id="num-repuestos-input" value="{{ num_repuestos }}">
+            {# Edit mode: transmit original WorkOrder pk so POST deletes it before creating new. #}
+            {# Modo edicion: transmitir pk del WorkOrder original para que el POST lo elimine.   #}
+            {% if edit_mode %}
+            <input type="hidden" name="edit_wo_pk" value="{{ edit_wo_pk }}">
+            {% endif %}
 
             {# ================================================================ #}
             {# SECTION 1 — Work date / Fecha del parte                         #}
@@ -72,8 +77,15 @@
                             name="fecha"
                             class="form-control {% if not fecha %}field-flagged{% endif %}"
                             value="{{ fecha }}"
+                            {% if min_date %}min="{{ min_date }}"{% endif %}
                             autocomplete="off"
                         >
+                        {% if min_date %}
+                        <div class="form-text text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Fecha mínima permitida: <strong>{{ min_date }}</strong>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>

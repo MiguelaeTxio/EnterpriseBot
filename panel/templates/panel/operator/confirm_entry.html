@@ -73,9 +73,17 @@
                             class="form-control {% if not fecha or uncertain_date %}field-flagged{% endif %}"
                             value="{{ fecha }}"
                             placeholder="DD/MM/AAAA"
+                            {% if min_date %}data-min-date="{{ min_date }}"{% endif %}
                             required
                         >
-                        <div class="form-text">Formato: DD/MM/AAAA</div>
+                        <div class="form-text">
+                            Formato: DD/MM/AAAA
+                            {% if min_date %}
+                            &nbsp;—&nbsp;
+                            <i class="bi bi-info-circle me-1"></i>
+                            Fecha mínima permitida: <strong>{{ min_date }}</strong>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>

@@ -164,19 +164,34 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                {% if wo.has_overlap_incident %}
-                                {# Overlap incident — the operator can edit the part to correct hours.  #}
-                                {# Incidencia de solapamiento — el operario puede editar el parte para  #}
-                                {# corregir las horas.                                                  #}
-                                <a href="{% url 'panel:work_order_edit' wo.pk %}?back_url={% url 'panel:operator_history' %}%3Ftab%3Dcurrent_period"
-                                   class="btn btn-warning btn-sm py-0 px-2 d-inline-flex align-items-center gap-1"
-                                   title="Este parte tiene horas solapadas con otro parte. Edítalo para corregirlas.">
-                                    <i class="bi bi-exclamation-triangle-fill"></i>
-                                    <span class="d-none d-sm-inline">Corregir solapamiento</span>
-                                </a>
-                                {% else %}
-                                <span class="text-muted">—</span>
-                                {% endif %}
+                                <div class="d-flex justify-content-center align-items-center gap-1 flex-wrap">
+                                    {% if not wo.reviewed %}
+                                    {# Edit button — routes to the operator's own form edit view.       #}
+                                    {# Botón editar — redirige a la vista de edición propia del         #}
+                                    {# operario (operator_form_edit), no a la vista de administrador.   #}
+                                    <a href="{% url 'panel:operator_form_edit' wo_pk=wo.pk %}"
+                                       class="btn btn-outline-primary btn-sm py-0 px-2 d-inline-flex align-items-center gap-1"
+                                       title="Editar este parte">
+                                        <i class="bi bi-pencil"></i>
+                                        <span class="d-none d-sm-inline">Editar</span>
+                                    </a>
+                                    {% endif %}
+                                    {% if wo.has_overlap_incident %}
+                                    {# Overlap incident warning badge — shown alongside edit button     #}
+                                    {# when the part has time overlaps requiring correction.            #}
+                                    {# Badge de aviso de solapamiento — se muestra junto al botón       #}
+                                    {# editar cuando el parte tiene solapamientos que corregir.         #}
+                                    <a href="{% url 'panel:work_order_edit' wo.pk %}?back_url={% url 'panel:operator_history' %}%3Ftab%3Dcurrent_period"
+                                       class="btn btn-warning btn-sm py-0 px-2 d-inline-flex align-items-center gap-1"
+                                       title="Este parte tiene horas solapadas con otro parte. Edítalo para corregirlas.">
+                                        <i class="bi bi-exclamation-triangle-fill"></i>
+                                        <span class="d-none d-sm-inline">Solapamiento</span>
+                                    </a>
+                                    {% endif %}
+                                    {% if wo.reviewed and not wo.has_overlap_incident %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -268,7 +283,16 @@
         {# ============================================================== #}
         {% elif active_tab == 'overtime' %}
         <div class="px-4 py-4">
-            {% if active_period %}
+            {% if working_days_count or overtime_worked_hours %}
+
+            {# Period context banner — Banner de contexto del periodo de cálculo #}
+            {% if overtime_period_label %}
+            <div class="alert alert-info d-flex align-items-center gap-2 mb-4 py-2" role="alert">
+                <i class="bi bi-info-circle-fill flex-shrink-0"></i>
+                <span class="text-sm">{{ overtime_period_label }}</span>
+            </div>
+            {% endif %}
+
             <div class="row g-4 justify-content-center">
 
                 {# Card: Horas trabajadas / Worked hours #}
@@ -279,8 +303,8 @@
                                 <i class="bi bi-clock fs-3 text-primary"></i>
                             </div>
                             <h6 class="fw-semibold text-muted mb-1">Horas trabajadas</h6>
-                            <p class="fs-3 fw-bold mb-0">{{ current_period_hours|floatformat:1 }} h</p>
-                            <small class="text-muted">en el periodo activo</small>
+                            <p class="fs-3 fw-bold mb-0">{{ overtime_worked_hours|floatformat:1 }} h</p>
+                            <small class="text-muted">en el rango calculado</small>
                         </div>
                     </div>
                 </div>
@@ -294,7 +318,7 @@
                             </div>
                             <h6 class="fw-semibold text-muted mb-1">Días laborables</h6>
                             <p class="fs-3 fw-bold mb-0">{{ working_days_count }}</p>
-                            <small class="text-muted">lun–vie desde inicio del periodo</small>
+                            <small class="text-muted">lun–vie en el rango calculado</small>
                         </div>
                     </div>
                 </div>
@@ -322,17 +346,18 @@
             {# Calculation note — Nota de cálculo #}
             <div class="mt-4 p-3 bg-light rounded text-sm text-muted border">
                 <i class="bi bi-info-circle me-2"></i>
-                Cálculo: <strong>{{ current_period_hours|floatformat:1 }} h trabajadas</strong>
+                Cálculo: <strong>{{ overtime_worked_hours|floatformat:1 }} h trabajadas</strong>
                 − (<strong>{{ working_days_count }} días laborables</strong> × 8 h/día) =
                 <strong>{% if overtime_hours > 0 %}+{% endif %}{{ overtime_hours|floatformat:1 }} h</strong>.
-                Los días laborables se cuentan de lunes a viernes desde el inicio del periodo activo hasta hoy.
+                Los días laborables se cuentan de lunes a viernes en el rango indicado.
             </div>
             {% else %}
+            {# No parts registered at all — Sin partes registrados en absoluto #}
             <div class="py-5 text-center text-muted">
                 <i class="bi bi-calendar-plus fs-3 d-block mb-2"></i>
-                <span class="text-sm">No tienes ningún periodo de trabajo activo asignado.</span>
+                <span class="text-sm">Todavía no tienes partes registrados.</span>
                 <br>
-                <small>El cálculo de horas extra requiere un periodo activo.</small>
+                <small>Las horas extra se calcularán en cuanto registres tu primer parte.</small>
             </div>
             {% endif %}
         </div>

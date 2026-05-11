@@ -257,6 +257,7 @@
                             <th class="text-sm fw-semibold">Horas</th>
                             <th class="text-sm fw-semibold">Revisado por</th>
                             <th class="text-sm fw-semibold">Excel</th>
+                            <th class="text-sm fw-semibold">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -286,6 +287,18 @@
                                 {% else %}
                                 <span class="text-muted">—</span>
                                 {% endif %}
+                            </td>
+                            {# Desmarcar revisión — toggle reviewed via HTMX, target review-badge fragment #}
+                            <td id="review-badge-{{ wo.pk }}" class="text-sm">
+                                <button
+                                    hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
+                                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                                    hx-target="#review-badge-{{ wo.pk }}"
+                                    hx-swap="outerHTML"
+                                    class="btn btn-sm btn-outline-warning"
+                                    title="Desmarcar revisión">
+                                    <i class="bi bi-x-circle"></i> Desmarcar
+                                </button>
                             </td>
                         </tr>
                         {% endfor %}

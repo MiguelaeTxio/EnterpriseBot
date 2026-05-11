@@ -5667,6 +5667,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             .values("code", "brand_model")
         )
 
+        _min_date_get = _get_min_allowed_date(cu)
         context = self._get_context_base(request)
         context.update({
             "extraction":          extraction,
@@ -5678,6 +5679,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             "assets":              assets,
             "num_entradas":        len(entradas_enriched),
             "num_repuestos":       len(repuestos_enriched),
+            "min_date":            _min_date_get.isoformat() if _min_date_get else "",
         })
         return render(request, self.template_name, context)
 
@@ -5741,6 +5743,34 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     continue
 
         if _gate0_work_date is not None:
+            # Min-date gate — reject dates on or before the last reviewed entry.
+            # Barrera de fecha minima — rechazar fechas sobre o anteriores al
+            # ultimo parte revisado del operario.
+            _min_date_c = _get_min_allowed_date(cu)
+            if _min_date_c is not None and _gate0_work_date < _min_date_c:
+                from datetime import timedelta as _td_c
+                _last_rev_c = _min_date_c - _td_c(days=1)
+                context = self._get_context_base(request)
+                context.update({
+                    "error": (
+                        f"No puedes introducir un parte con fecha "
+                        f"{_gate0_work_date.strftime('%d/%m/%Y')}. "
+                        f"El ultimo parte revisado es del "
+                        f"{_last_rev_c.strftime('%d/%m/%Y')} y ya ha sido auditado. "
+                        f"La fecha minima permitida es "
+                        f"{_min_date_c.strftime('%d/%m/%Y')}."
+                    ),
+                    "fecha":              _gate0_fecha_str,
+                    "uncertain_date":     False,
+                    "confidence":         "",
+                    "entradas_enriched":  [],
+                    "repuestos_enriched": [],
+                    "num_entradas":       0,
+                    "num_repuestos":      0,
+                    "min_date":           _min_date_c.isoformat(),
+                })
+                return render(request, self.template_name, context)
+
             from django.urls import reverse as _rev0
             _existing_entry0 = WorkOrderEntry.objects.filter(
                 work_order__company=company,
@@ -6415,15 +6445,111 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
 
     def get(self, request, *args, **kwargs):
         """
-        Renders the empty structured form with one default work block.
+        Renders the work-order entry form.
+        In edit mode (wo_pk present in URL kwargs): loads the existing
+        unreviewed digital WorkOrder belonging to the operator, pre-fills
+        all fields and passes edit_mode=True to the template so the POST
+        handler knows to delete the original before creating the new one.
+        In create mode: renders an empty form with one default block.
+        Passes min_date to the template for client-side date enforcement.
         ---
-        Renderiza el formulario vacio con un bloque de trabajo por defecto.
+        Renderiza el formulario de entrada de partes.
+        En modo edicion (wo_pk en URL kwargs): carga el WorkOrder digital
+        sin revisar del operario, prerellena todos los campos y pasa
+        edit_mode=True al template para que el POST elimine el original
+        antes de crear el nuevo. En modo creacion: formulario vacio.
+        Pasa min_date para validacion de fecha en el lado cliente.
         """
+        from work_order_processor.models import WorkOrder as _WO_E, SparePartLine as _SPL_E
+        cu       = self._get_company_user(request)
+        company  = cu.company
+        min_date = _get_min_allowed_date(cu)
+        wo_pk    = kwargs.get("wo_pk")
+
+        if wo_pk is not None:
+            # Edit mode — load existing unreviewed digital WorkOrder.
+            # Modo edicion — cargar WorkOrder digital sin revisar existente.
+            try:
+                wo_edit = _WO_E.objects.get(
+                    pk=wo_pk,
+                    company=company,
+                    uploaded_by=cu,
+                    reviewed=False,
+                    source__in=[
+                        _WO_E.Source.DIGITAL,
+                        _WO_E.Source.GENERATED,
+                    ],
+                )
+            except _WO_E.DoesNotExist:
+                django_messages.error(
+                    request,
+                    "El parte no existe, ya ha sido revisado o no te pertenece.",
+                )
+                return redirect("/panel/operator/history/")
+
+            # Build enriched entry lines from the existing WorkOrder.
+            # Construir lineas enriquecidas desde el WorkOrder existente.
+            entries = list(wo_edit.entries.prefetch_related("lines").all())
+            first_entry  = entries[0] if entries else None
+            fecha_str    = (
+                first_entry.work_date.strftime("%Y-%m-%d")
+                if first_entry and first_entry.work_date else ""
+            )
+            entradas_enriched = []
+            repuestos_enriched = []
+            ridx = 1
+            for entry in entries:
+                for line in entry.lines.order_by("line_number"):
+                    entradas_enriched.append({
+                        "idx":               len(entradas_enriched) + 1,
+                        "machine_raw":       line.machine_raw or "",
+                        "machine_asset":     line.machine_asset,
+                        "fault_description": line.fault_description or "",
+                        "repair_notes":      line.repair_notes or "",
+                        "hc":  line.hc.strftime("%H:%M") if line.hc else "",
+                        "hf":  line.hf.strftime("%H:%M") if line.hf else "",
+                        "or_val":            line.or_val or "",
+                        "flags":             line.flags or [],
+                        "odometer_reading":     float(line.odometer_reading) if line.odometer_reading is not None else "",
+                        "engine_hours_reading": float(line.engine_hours_reading) if line.engine_hours_reading is not None else "",
+                        "crane_hours_reading":  float(line.crane_hours_reading) if line.crane_hours_reading is not None else "",
+                    })
+                    for spare in _SPL_E.objects.filter(entry_line=line).order_by("line_number"):
+                        repuestos_enriched.append({
+                            "ridx":         ridx,
+                            "referencia":   spare.reference or "",
+                            "vehiculo_raw": "",
+                            "vehicle_asset": spare.vehicle,
+                            "material":     spare.material or "",
+                            "unidades":     str(spare.quantity) if spare.quantity is not None else "",
+                            "origen":       spare.source or "WAREHOUSE",
+                            "proveedor":    spare.supplier or "",
+                            "unit_price":   str(spare.unit_price) if spare.unit_price is not None else "",
+                            "flags":        spare.flags or [],
+                        })
+                        ridx += 1
+
+            context = self._get_context_base(request)
+            context.update({
+                "edit_mode":         True,
+                "edit_wo_pk":        wo_pk,
+                "num_entradas":      len(entradas_enriched) or 1,
+                "num_repuestos":     len(repuestos_enriched),
+                "fecha":             fecha_str,
+                "entradas_enriched": entradas_enriched,
+                "repuestos_enriched": repuestos_enriched,
+                "min_date":          min_date.isoformat() if min_date else "",
+            })
+            return render(request, self.template_name, context)
+
+        # Create mode — empty form.
+        # Modo creacion — formulario vacio.
         context = self._get_context_base(request)
         context.update({
             "num_entradas":  1,
             "num_repuestos": 0,
             "fecha":         "",
+            "min_date":      min_date.isoformat() if min_date else "",
         })
         return render(request, self.template_name, context)
 
@@ -6469,6 +6595,81 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     break
                 except ValueError:
                     continue
+
+        # ------------------------------------------------------------------
+        # Min-date gate — work_date must be strictly after the last reviewed
+        # entry for this operator (work_date > last_reviewed_date).
+        # Barrera de fecha minima — work_date debe ser estrictamente posterior
+        # al ultimo parte revisado del operario.
+        # ------------------------------------------------------------------
+        if work_date is not None:
+            _min_date = _get_min_allowed_date(cu)
+            if _min_date is not None and work_date < _min_date:
+                from datetime import timedelta as _td_fd
+                _last_rev = _min_date - _td_fd(days=1)
+                context = self._get_context_base(request)
+                context.update({
+                    "error": (
+                        f"No puedes introducir un parte con fecha "
+                        f"{work_date.strftime('%d/%m/%Y')}. "
+                        f"El ultimo parte revisado es del "
+                        f"{_last_rev.strftime('%d/%m/%Y')} y ya ha sido auditado. "
+                        f"La fecha minima permitida es "
+                        f"{_min_date.strftime('%d/%m/%Y')}."
+                    ),
+                    "fecha":              fecha_str,
+                    "entradas_enriched":  [],
+                    "repuestos_enriched": [],
+                    "num_entradas":       1,
+                    "num_repuestos":      0,
+                    "min_date":           _min_date.isoformat(),
+                })
+                return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Gate 0 — One work order per operator per date (merge flow).
+        # Gate 0 — Un parte por operario por fecha (flujo de merge).
+        #
+        # Before any INSERT, check whether the operator already has an
+        # unreviewed digital or generated work order for the submitted date.
+        # If so, serialise the incoming lines into the session and redirect
+        # to WorkOrderEntryMergeView for conflict resolution.
+        #
+        # Antes de cualquier INSERT, comprueba si el operario ya tiene un
+        # parte digital o generado sin revisar para la fecha enviada. Si es
+        # asi, serializa las lineas entrantes en la sesion y redirige a
+        # WorkOrderEntryMergeView para resolver el conflicto.
+        # ------------------------------------------------------------------
+        if work_date is not None:
+            from django.urls import reverse as _rev0
+            from work_order_processor.models import WorkOrder as _WO0, WorkOrderEntry as _WOE0
+            _existing_entry0 = _WOE0.objects.filter(
+                work_order__company=company,
+                work_order__uploaded_by=cu,
+                work_order__source__in=[
+                    _WO0.Source.DIGITAL,
+                    _WO0.Source.GENERATED,
+                ],
+                work_order__reviewed=False,
+                work_date=work_date,
+            ).select_related("work_order").first()
+
+            if _existing_entry0 is not None:
+                # Unreviewed duplicate — parse lines, serialise and redirect to merge view.
+                # Duplicado sin revisar — parsear lineas, serializar y redirigir a merge view.
+                _gate0_lines = _parse_entry_lines_from_post(POST, company)
+                _gate0_spare = _parse_spare_parts_from_post(
+                    POST, company, entry_lines_data=_gate0_lines
+                )
+                request.session["pending_merge_lines"] = _serialize_pending_lines(
+                    _gate0_lines, _gate0_spare, work_date
+                )
+                return redirect(
+                    _rev0(
+                        "panel:operator_merge",
+                        kwargs={"entry_pk": _existing_entry0.pk},
+                    )
+                )
 
         # ------------------------------------------------------------------
         # Parse and resolve entry lines and spare parts from POST.
@@ -6725,6 +6926,27 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         # ------------------------------------------------------------------
         # Atomic persistence / Persistencia atomica.
         # ------------------------------------------------------------------
+        # Edit mode — delete original WorkOrder before creating the new one.
+        # Modo edicion — eliminar WorkOrder original antes de crear el nuevo.
+        edit_wo_pk = POST.get("edit_wo_pk", "").strip()
+        if edit_wo_pk:
+            try:
+                _wo_orig = WorkOrder.objects.get(
+                    pk=int(edit_wo_pk),
+                    company=company,
+                    uploaded_by=cu,
+                    reviewed=False,
+                    source__in=[
+                        WorkOrder.Source.DIGITAL,
+                        WorkOrder.Source.GENERATED,
+                    ],
+                )
+                _wo_orig.delete()
+            except (WorkOrder.DoesNotExist, ValueError):
+                # Original already deleted or pk tampered — proceed normally.
+                # Original ya eliminado o pk manipulado — continuar normalmente.
+                pass
+
         try:
             with transaction.atomic():
                 worker_name = (
@@ -7432,6 +7654,7 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
                 "horas_totales":       horas_totales,
                 "reviewed":            wo.reviewed,
                 "has_overlap_incident": wo.has_overlap_incident,
+                "source":              wo.source,
             })
         return result, total_hours
 
@@ -7984,6 +8207,34 @@ def _serialize_pending_lines(parsed_lines, parsed_repuestos, parsed_date):
         "lines":     serialized,
         "work_date": parsed_date.isoformat() if parsed_date else None,
     }
+
+
+def _get_min_allowed_date(cu):
+    # Returns the minimum work_date allowed for the given CompanyUser.
+    # Rule: the day AFTER the most recent reviewed WorkOrderEntry for
+    # this operator. If no reviewed entry exists, returns None.
+    # Enforces: work_date > last_reviewed_date.
+    # ---
+    # Devuelve la fecha de trabajo minima permitida para el CompanyUser.
+    # Regla: el dia SIGUIENTE al WorkOrderEntry revisado mas reciente.
+    # Si no existe ninguno, devuelve None (sin restriccion).
+    # Impone: work_date > last_reviewed_date.
+    from datetime import timedelta
+    from work_order_processor.models import WorkOrderEntry
+    last_reviewed = (
+        WorkOrderEntry.objects
+        .filter(
+            work_order__company=cu.company,
+            work_order__uploaded_by=cu,
+            work_order__reviewed=True,
+        )
+        .order_by("-work_date")
+        .values_list("work_date", flat=True)
+        .first()
+    )
+    if last_reviewed is None:
+        return None
+    return last_reviewed + timedelta(days=1)
 
 
 def _detect_overlaps(existing_lines, new_lines):

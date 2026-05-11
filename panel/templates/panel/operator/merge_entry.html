@@ -521,10 +521,54 @@
      Inicialización: adjuntar listeners a todos los inputs.
      Initialisation: attach listeners to all inputs.
      ---------------------------------------------------------- */
+  /* Attach listeners: change + input + blur cover native picker, keyboard
+     and the custom TimePicker widget (which writes value directly via JS
+     without firing native events, but does trigger focusout/blur).
+     ---
+     Adjuntar listeners: change + input + blur cubren el selector nativo,
+     teclado y el widget TimePicker custom (que escribe value directamente
+     via JS sin disparar eventos nativos, pero sí dispara focusout/blur). */
   document.querySelectorAll(".hc-input, .hf-input").forEach(function (inp) {
     inp.addEventListener("change", onTimeInputChange);
     inp.addEventListener("input",  onTimeInputChange);
+    inp.addEventListener("blur",   onTimeInputChange);
   });
+
+  /* MutationObserver as safety net: catches value changes written directly
+     by the custom TimePicker widget that bypass all DOM events entirely.
+     ---
+     MutationObserver como red de seguridad: captura cambios de value
+     escritos directamente por el widget TimePicker custom que eluden
+     todos los eventos DOM por completo. */
+  (function attachValueObserver() {
+    var timeInputs = document.querySelectorAll(".hc-input, .hf-input");
+    timeInputs.forEach(function (inp) {
+      var lastVal = inp.value;
+      var observer = new MutationObserver(function () {
+        if (inp.value !== lastVal) {
+          lastVal = inp.value;
+          onTimeInputChange({ target: inp });
+        }
+      });
+      observer.observe(inp, { attributes: true, attributeFilter: ["value"] });
+    });
+
+    /* Polling fallback at 300 ms intervals for frameworks that write
+       value as a property (not attribute) without triggering any event.
+       ---
+       Fallback de polling cada 300 ms para frameworks que escriben value
+       como propiedad (no atributo) sin disparar ningun evento. */
+    var pollValues = {};
+    timeInputs.forEach(function (inp) { pollValues[inp.name] = inp.value; });
+    setInterval(function () {
+      timeInputs.forEach(function (inp) {
+        if (inp.value !== pollValues[inp.name]) {
+          pollValues[inp.name] = inp.value;
+          onTimeInputChange({ target: inp });
+        }
+      });
+    }, 300);
+  }());
 
   // Run overlap detection on page load to reflect server-side state.
   // Ejecutar detección de solapamientos al cargar para reflejar estado del servidor.

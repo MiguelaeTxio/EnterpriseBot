@@ -171,8 +171,15 @@
                             name="fecha"
                             class="form-control {% if not fecha %}field-flagged{% endif %}"
                             value="{{ fecha }}"
+                            {% if min_date %}min="{{ min_date }}"{% endif %}
                             autocomplete="off"
                         >
+                        {% if min_date %}
+                        <div class="form-text text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Fecha mínima permitida: <strong>{{ min_date }}</strong>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
