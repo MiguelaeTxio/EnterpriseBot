@@ -113,6 +113,7 @@
                     </td>
                     <td>
                       <input type="time"
+                             step="1800"
                              class="form-control form-control-sm hc-input existing-hc merge-time-input"
                              name="existing_line_{{ forloop.counter }}_hc"
                              value="{{ line.hc|time:'H:i'|default:'' }}"
@@ -121,6 +122,7 @@
                     </td>
                     <td>
                       <input type="time"
+                             step="1800"
                              class="form-control form-control-sm hf-input existing-hf merge-time-input"
                              name="existing_line_{{ forloop.counter }}_hf"
                              value="{{ line.hf|time:'H:i'|default:'' }}"
@@ -187,6 +189,7 @@
                     </td>
                     <td>
                       <input type="time"
+                             step="1800"
                              class="form-control form-control-sm hc-input new-hc merge-time-input"
                              name="new_line_{{ forloop.counter }}_hc"
                              value="{{ line.hc|default:'' }}"
@@ -195,6 +198,7 @@
                     </td>
                     <td>
                       <input type="time"
+                             step="1800"
                              class="form-control form-control-sm hf-input new-hf merge-time-input"
                              name="new_line_{{ forloop.counter }}_hf"
                              value="{{ line.hf|default:'' }}"
@@ -317,7 +321,8 @@
 </div>{# /container #}
 {% endblock %}
 
-{% block extra_js %}
+{% block extra_scripts %}
+{% include "panel/_time_picker_widget.html" %}
 <script>
 /* =========================================================
    merge_entry.html — Recálculo de Δ horas y detección de
@@ -437,6 +442,7 @@
       const btnMerge = document.getElementById("btn-merge");
       if (btnMerge) {
         btnMerge.disabled = false;
+        btnMerge.removeAttribute("disabled");
         btnMerge.removeAttribute("title");
       }
       const alert = document.getElementById("overlap-alert");

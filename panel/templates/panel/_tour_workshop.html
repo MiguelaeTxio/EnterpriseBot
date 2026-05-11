@@ -1,0 +1,118 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_tour_workshop.html  #}
+{# Workshop Tour Engine — central tour manager for all WORKSHOP operator views.          #}
+{# Motor de tours WORKSHOP — gestor central de tours para todas las vistas del operario. #}
+<script>
+(function () {
+    "use strict";
+
+    var LS_PREFIX   = "eb_tour_";
+    var _registry   = {};
+    var _activeTour = null;
+    var _driverInst = null;
+
+    function _getDriver() {
+        if (_driverInst) { return _driverInst; }
+        if (!window.driver || !window.driver.js) {
+            console.warn("# [EbTour] Driver.js no esta disponible todavia.");
+            return null;
+        }
+        _driverInst = window.driver.js.driver({
+            showProgress: true,
+            animate:      true,
+            overlayColor: "rgba(0,0,0,0.55)",
+            stagePadding: 6,
+            allowClose:   true,
+            nextBtnText:  "Siguiente",
+            prevBtnText:  "Anterior",
+            doneBtnText:  "Entendido",
+            progressText: "Paso {{current}} de {{total}}",
+            onDestroyed:  function () { _driverInst = null; },
+        });
+        return _driverInst;
+    }
+
+    window.EbTour = {
+
+        /*
+         * Registers a named tour with its Driver.js step array.
+         * The last registered tour becomes the active tour for this page.
+         * ---
+         * Registra un tour con nombre y su array de pasos de Driver.js.
+         * El ultimo tour registrado se convierte en el tour activo de la pagina.
+         */
+        register: function (name, steps) {
+            _registry[name] = steps;
+            _activeTour     = name;
+        },
+
+        /*
+         * Starts the named tour unconditionally (or the active tour if no
+         * name is given). Used by the help button.
+         * ---
+         * Inicia el tour por nombre incondicionalmente (o el tour activo si
+         * no se pasa nombre). Usado por el boton de ayuda.
+         */
+        start: function (name) {
+            var tourName = name || _activeTour;
+            if (!tourName || !_registry[tourName]) {
+                console.warn("# [EbTour] Tour no encontrado: " + tourName);
+                return;
+            }
+            var d = _getDriver();
+            if (!d) { return; }
+            d.setSteps(_registry[tourName]);
+            d.drive();
+        },
+
+        /*
+         * Starts the tour only if the operator has not seen it yet.
+         * Marks it as seen before driving to avoid re-triggering on reload.
+         * ---
+         * Inicia el tour solo si el operario no lo ha visto aun.
+         * Lo marca como visto antes de iniciar para evitar re-lanzarlo al recargar.
+         */
+        startIfNew: function (name) {
+            var tourName = name || _activeTour;
+            if (!tourName) { return; }
+            var key = LS_PREFIX + tourName;
+            try {
+                if (localStorage.getItem(key)) { return; }
+                localStorage.setItem(key, "1");
+            } catch (e) { /* localStorage no disponible — mostrar igualmente */ }
+            this.start(tourName);
+        },
+
+        /*
+         * Clears the localStorage seen-flag for a specific tour.
+         * ---
+         * Borra el flag de visto en localStorage para un tour especifico.
+         */
+        reset: function (name) {
+            try { localStorage.removeItem(LS_PREFIX + (name || _activeTour)); }
+            catch (e) { /* ignorar */ }
+        },
+
+        /*
+         * Clears all EbTour localStorage flags.
+         * ---
+         * Borra todos los flags de localStorage de EbTour.
+         */
+        resetAll: function () {
+            try {
+                Object.keys(localStorage).forEach(function (k) {
+                    if (k.indexOf(LS_PREFIX) === 0) { localStorage.removeItem(k); }
+                });
+            } catch (e) { /* ignorar */ }
+        },
+    };
+
+    document.addEventListener("DOMContentLoaded", function () {
+        var btn = document.getElementById("btn-tour-help");
+        if (!btn) { return; }
+        btn.addEventListener("click", function () {
+            window.EbTour.start();
+        });
+    });
+
+}());
+</script>

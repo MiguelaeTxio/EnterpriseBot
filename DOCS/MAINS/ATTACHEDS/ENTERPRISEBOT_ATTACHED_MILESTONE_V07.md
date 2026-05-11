@@ -534,79 +534,148 @@ Estado: COMPLETADO (sesiones 015-017).
 | 017    | 2026-05-08 | Fix NameError + validacion CRUD + Bootstrap local + diseno merge | Fix NameError period_operator_groups (PMA). WorkPeriod CRUD validado. Modal modalAbsenceEdit + botones Editar/Eliminar ausencias (PMA). Bootstrap 5.3.3 migrado a staticfiles locales. Diseno completo flujo merge documentado en seccion 2.35. |
 | 018    | 2026-05-11 | Flujo merge completo | Gate 0 en WorkOrderEntryConfirmView.post(). Helpers _serialize_pending_lines y _detect_overlaps. WorkOrderEntryMergeView (discard_new / discard_existing / merge). Template merge_entry.html (0 errores djlint). Ruta operator_merge en urls.py. Bug detectado: boton demarcar ausente en pestana Revisados de admin_history.html. |
 | 019    | 2026-05-11 | Bugs + mejoras UX + barrera fecha | Boton Desmarcar en pestana Revisados (admin_history.html). Gate 0 anadido a Via A (WorkOrderEntryFormView.post()). Fix JS merge_entry.html (MutationObserver + polling). Barrera fecha minima _get_min_allowed_date() server-side + client-side tres templates. Horas extra sin periodo activo (Tab 3 history.html). Edicion partes no revisados desde Mi historial (operator_form_edit). Diseno Via B dialogo progresivo TTS aprobado. Hoja de ruta S020-S023 definida. |
+| 020    | 2026-05-11 | Validacion E2E + bugs merge + tour guiado | Validacion E2E flujos merge (7 escenarios superados), edicion desde historial, barrera fecha minima y Via C. Bugs resueltos: btn Fusionar no se habilitaba (removeAttribute disabled + bloque extra_scripts), TimePicker sin restriccion 30min en merge_entry.html (include _time_picker_widget + step=1800), edicion desde historial activaba Gate 0 sobre el original (pre-eliminacion antes de Gate 0 en WorkOrderEntryFormView.post()). Sistema de visita guiada Driver.js implementado en todas las vistas WORKSHOP: _tour_driver_cdn.html, _tour_workshop.html (motor EbTour), boton Ayuda en base.html, tours en dashboard/form/stt/upload/confirm/history. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S020)
+## 5. Hoja de Ruta para la Siguiente Sesion (S021)
 
 ### CONTEXTO
 
-S019 resolvio los siguientes bugs e implemento las siguientes mejoras:
-  - Boton Desmarcar en pestana Revisados de admin_history.html.
-  - Gate 0 anadido a WorkOrderEntryFormView.post() (Via A).
-  - Fix JS merge_entry.html: MutationObserver + polling para habilitacion
-    del boton Fusionar al corregir horarios.
-  - Barrera de fecha minima _get_min_allowed_date() server-side y client-side.
-  - Horas extra sin periodo activo: calculo por cuatro casos en Tab 3.
-  - Edicion de partes no revisados desde Mi historial (operator_form_edit).
-
-S020 completa la validacion E2E de todas las funcionalidades implementadas
-en S018 y S019, y valida el funcionamiento de la Via C.
+S020 resolvio los siguientes bugs e implemento las siguientes mejoras:
+  - Validacion E2E completa: 7 escenarios de merge superados, edicion desde
+    historial, barrera fecha minima y Via C validadas.
+  - Bug: boton Fusionar no se habilitaba al resolver solapamientos en
+    merge_entry.html. Causa: atributo HTML disabled estatico renderizado por
+    Django no eliminado por disabled=false JS. Correccion: removeAttribute
+    ("disabled") en updateOverlapUI + bloque extra_scripts duplicado eliminado.
+  - Bug: TimePicker mostraba minutos libres en merge_entry.html.
+    Correccion: include _time_picker_widget.html en bloque extra_scripts
+    correcto (estaba en extra_js — bloque inexistente en base.html) + step=1800.
+  - Bug: editar parte desde Mi historial activaba Gate 0 sobre el propio
+    original. Correccion: pre-eliminacion del WorkOrder original antes de
+    ejecutar Gate 0 en WorkOrderEntryFormView.post() mediante bloque
+    _edit_wo_pk_pre independiente.
+  - Sistema de visita guiada Driver.js implementado: _tour_driver_cdn.html
+    (CDN jsDelivr v1.3.6), _tour_workshop.html (motor EbTour con API publica
+    register/start/startIfNew/reset/resetAll), boton Ayuda en base.html
+    condicionado a roles WORKSHOP/ADMIN, tours en las seis vistas del operario.
 
 ADVERTENCIA CRITICA — mantener siempre presente:
   El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
   Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-### PRIMERA ACCION — Validacion E2E flujo de merge completo
+### PRIMERA ACCION — Tour guiado: correccion posicionamiento Driver.js
 
-Validar manualmente los seis escenarios con el usuario operario:
-  1. Operario envia parte para una fecha sin parte existente → flujo normal,
-     parte creado correctamente.
-  2. Operario envia segundo parte para misma fecha (parte existente sin revisar)
-     → Gate 0 activa redireccion a merge_entry.html.
-  3. Operario elige Descartar nuevo → parte existente se conserva, nuevo descartado.
-  4. Operario elige Sustituir existente → parte antiguo eliminado (CASCADE),
-     nuevo creado correctamente.
-  5. Operario elige Fusionar sin solapamientos → WorkOrderEntryLines del nuevo
-     anadidas al WorkOrderEntry existente. WorkOrder nuevo no creado.
-  6. Operario elige Fusionar con solapamientos → boton Fusionar deshabilitado,
-     alerta visible, errores por linea. Al corregir HC/HF el boton se habilita.
-  7. Supervisor desmarca un parte revisado desde pestana Revisados de
-     admin_history.html → parte vuelve a Pendientes.
+  El popover del ultimo paso del tour (elemento fuera del viewport visible)
+  aparece desposicionado respecto al elemento anclado. Causa: layout con
+  sidebar fixed y overflow en el contenedor principal interfiere con el
+  calculo de coordenadas de Driver.js.
+  Solucion propuesta por Alejandro: pendiente de especificar al inicio de S021.
+  Archivos afectados: panel/templates/panel/_tour_workshop.html (configuracion
+  driver) y/o CSS especifico para .driver-popover.
 
-### SEGUNDA ACCION — Validacion E2E edicion desde Mi historial
+### SEGUNDA ACCION — TimePicker: admitir entrada por teclado
 
-  1. Operario pulsa Editar en un parte pendiente desde Tab 1 (Periodo actual).
-     → Redirige a /panel/operator/form/<wo_pk>/edit/.
-     → Formulario prerelleno con todos los datos del parte original.
-  2. Operario modifica datos y guarda.
-     → WorkOrder original eliminado (CASCADE). Nuevo WorkOrder creado.
-     → Operario regresa a Mi historial con el parte actualizado.
-  3. Verificar que partes revisados NO muestran boton Editar.
+  El widget _time_picker_widget.html solo admite seleccion via desplegable.
+  El operario debe poder escribir la hora directamente con el teclado.
+  Implementacion: el input oculto debe hacerse visible y editable cuando el
+  operario pulsa una tecla numerica sobre el tp-display, o anadir un input
+  de texto sincronizado con el widget que actue como via alternativa de entrada.
+  El widget debe seguir controlando que los minutos sean 00 o 30.
+  Archivos afectados: panel/templates/panel/_time_picker_widget.html.
 
-### TERCERA ACCION — Validacion E2E barrera fecha minima
+### TERCERA ACCION — Logica de jornada laboral y validaciones temporales
 
-  1. Con al menos un parte revisado en BD para el operario de prueba:
-     → El input de fecha en form_entry.html tiene min=fecha_minima.
-     → Intentar enviar un parte con fecha anterior a la minima (forzando
-       via POST directo si el selector nativo lo bloquea).
-     → El server-side devuelve error claro con la fecha minima permitida.
-  2. Verificar el mismo comportamiento en confirm_entry.html (Via C).
+  Conjunto de reglas de negocio a implementar en validators.py y panel/views.py:
 
-### CUARTA ACCION — Validacion E2E Via C (Upload + Gemini Vision)
+  Regla A — Hora de comida tolerada:
+    Si en la jornada falta exactamente 1 hora en la franja 13:00-15:30
+    (es decir, existe un hueco de 60 minutos dentro de ese rango) Y el
+    resto de la jornada suma >= 8h, el parte debe poder guardarse sin error.
+    El hueco de comida NO cuenta como horas trabajadas.
+    Implementar en run_intra_part_validation como regla no bloqueante o
+    en _gate_jornada() como excepcion explicita.
 
-  1. Subir foto o PDF de parte manuscrito desde /panel/operator/upload/.
-  2. Verificar extraccion correcta de campos en confirm_entry.html.
-  3. Verificar que las validaciones son identicas a Via A:
-     Gate 1 (fecha), Gate 2 (maquina/HC/HF/averia), Gate 3 (repuestos).
-  4. Verificar que si hay campos ilegibles el operario puede corregirlos
-     en el formulario de confirmacion antes de guardar.
-  5. Verificar que si la fecha del parte es anterior a la fecha minima,
-     el server-side rechaza el INSERT con mensaje claro.
-  6. Verificar que si existe parte previo para la misma fecha (Gate 0),
-     la Via C redirige correctamente a merge_entry.html.
+  Regla B — Bloques fuera de orden temporal:
+    Los bloques de trabajo NO tienen que enviarse en orden cronologico.
+    La validacion de solapamiento (R1) debe comparar todos los pares
+    (i, j) independientemente del orden de insercion. Actualmente ya
+    funciona asi en detectOverlaps JS, pero verificar que run_intra_part_
+    validation en validators.py tampoco asume orden.
+    Si asume orden, corregirlo para que ordene los bloques por HC antes
+    de validar solapamientos.
 
-### Estado de migraciones al cierre de S019
+  Regla C — Cobertura minima de jornada (8h):
+    Al guardar un parte, la suma de horas de todos los bloques de trabajo
+    debe ser >= 8h, O bien el operario debe tener una ausencia justificada
+    o injustificada registrada para esa fecha (WorkerAbsence con
+    start_date <= work_date <= end_date).
+    Si no se cumple ninguna de las dos condiciones, el server-side debe
+    devolver un error claro indicando las horas que faltan para completar
+    la jornada.
+    Implementar como Gate adicional en WorkOrderEntryFormView.post() y
+    WorkOrderEntryConfirmView.post() tras las validaciones existentes.
+    NO bloquear si existe WorkerAbsence para esa fecha del operario.
+
+  Archivos afectados: work_order_processor/validators.py, panel/views.py.
+
+### CUARTA ACCION — Bugs en vista de historial admin (WorkOrderAdminHistoryView)
+
+  Bug A — Error al exportar seleccion:
+    El boton "Exportar seleccion" en la vista de historial admin produce
+    un error. Diagnosticar inspeccionando panel/views.py (WorkOrderAdminHistoryView
+    y WorkOrderExportView) y admin_history.html. Solicitar ambos archivos
+    al inicio de S021 si el bug no se resuelve en el diagnostico inicial.
+
+  Bug B — Filtro de maquinaria debe ser desplegable dinamico:
+    En los filtros del historial admin, el campo de maquinaria es un input
+    de texto libre. Debe ser un <select> poblado dinamicamente con los codigos
+    de MachineAsset presentes en los WorkOrderEntryLine de los partes que
+    cumplen el filtro actual (operario + periodo). Al cambiar el filtro de
+    operario o periodo, el desplegable de maquinaria debe actualizarse.
+    Implementar via endpoint AJAX GET /panel/work-orders/machines/?operator=X
+    &period=Y → {"results": ["G12", "A44", ...]} y JS que pueble el select.
+    Archivos afectados: panel/views.py (nuevo endpoint), admin_history.html,
+    panel/static/panel/js/admin_history.js.
+
+### QUINTA ACCION — Bugs en historial del operario (WorkOrderEntryHistoryView)
+
+  Bug A — Partes revisados no aparecen en Mi historial (Tab 1 Periodo actual):
+    Tab 1 muestra solo partes no revisados del periodo activo. Debe mostrar
+    TODOS los partes del periodo activo (revisados y no revisados).
+    Revisar el queryset de Tab 1 en WorkOrderEntryHistoryView.get() en
+    panel/views.py. El filtro reviewed=False debe eliminarse de Tab 1.
+
+  Bug B — Historico no muestra partes revisados:
+    Tab 2 (Historico) tampoco muestra partes revisados agrupados por periodo
+    cerrado. Revisar el queryset correspondiente en WorkOrderEntryHistoryView.
+    El filtro reviewed=False debe eliminarse de Tab 2 tambien.
+
+  Bug C — Periodo Actual muestra partes ya revisados mezclados:
+    Tab 1 muestra partes revisados que no deberian estar en Periodo Actual
+    (deberian estar solo en Historico una vez revisados). Revisar la logica
+    de asignacion de partes a pestanas: Tab 1 debe mostrar solo partes del
+    WorkPeriod activo (revisados y no revisados); Tab 2 los de periodos cerrados.
+
+  Archivos afectados: panel/views.py (WorkOrderEntryHistoryView.get()),
+  panel/templates/panel/operator/history.html.
+
+### SEXTA ACCION — Preservacion de datos en formulario al dar error
+
+  Al producirse un error de validacion server-side en WorkOrderEntryFormView
+  y WorkOrderEntryConfirmView, el formulario debe:
+    1. Re-renderizarse con TODOS los datos introducidos por el operario
+       (ya implementado parcialmente — verificar que funciona en todos
+       los campos incluyendo repuestos y contadores).
+    2. Marcar en rojo (field-flagged) EXCLUSIVAMENTE los campos que han
+       producido error, no todos los campos vacios.
+  Revisar el bloque de re-render en WorkOrderEntryFormView.post() y
+  WorkOrderEntryConfirmView.post() y comparar contra los errores devueltos.
+  Archivos afectados: panel/views.py, panel/templates/panel/operator/
+  form_entry.html, panel/templates/panel/operator/confirm_entry.html.
+
+### Estado de migraciones al cierre de S020
 
 | App                  | Ultima migracion aplicada                         |
 |----------------------|---------------------------------------------------|
@@ -615,25 +684,27 @@ Validar manualmente los seis escenarios con el usuario operario:
 | ivr_config           | 0015_workerabsence_workperiod                     |
 | panel                | 0001_initial (AnalyticsProfile)                   |
 
-### Archivos a solicitar al inicio de S020 via SFTP
+### Archivos a solicitar al inicio de S021 via SFTP
 
-No hay PMA planificado al inicio de S020. La sesion comienza con
-validacion E2E directa en el navegador con el usuario operario.
-Si durante la validacion se detectan bugs, solicitar los archivos
-afectados en ese momento.
+  panel/views.py — para diagnostico bugs historial admin y operario,
+  exportacion y Gate jornada.
+  panel/static/panel/js/admin_history.js — para bug exportacion y filtro
+  maquinaria dinamico.
+  panel/templates/panel/operator/history.html — para bugs Tab 1/2.
+  panel/templates/panel/_time_picker_widget.html — para entrada por teclado.
 
-### Hoja de ruta de sesiones futuras (S021-S023)
+### Hoja de ruta de sesiones futuras (S022-S024)
 
-S021 — Rediseno Via B: dialogo progresivo con TTS nativo.
+S022 — Rediseno Via B: dialogo progresivo con TTS nativo.
   Ver seccion 2.37 para el diseno completo aprobado.
   Archivos afectados: panel/views.py (WorkOrderEntrySTTView refactor),
   panel/templates/panel/operator/stt_entry.html (rediseno completo).
   WorkOrderEntrySTTExtractView queda obsoleta y se retira.
 
-S022 — Diferidos: has_cg_incident + Dropdown CdG Otro.
+S023 — Diferidos: has_cg_incident + Dropdown CdG Otro.
   WorkOrder.has_cg_incident BooleanField + migracion.
   Dropdown CdG con opcion Otro + free-text, resolucion contra MachineAsset.
 
-S023 — Excel por periodo.
+S024 — Excel por periodo.
   Al cerrar un WorkPeriod, generacion del Excel consolidado del periodo.
   Integracion en WorkPeriodCloseView.

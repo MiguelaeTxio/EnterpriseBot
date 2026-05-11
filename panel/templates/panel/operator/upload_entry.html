@@ -144,3 +144,52 @@
 }());
 </script>
 {% endblock %}
+
+{% block extra_scripts %}
+{{ block.super }}
+<script>
+/*
+ * Tour steps for upload_entry.html (Via C — photo or PDF upload).
+ * Pasos del tour para upload_entry.html (Via C — subida de foto o PDF).
+ */
+document.addEventListener("DOMContentLoaded", function () {
+    if (!window.EbTour) { return; }
+
+    window.EbTour.register("upload_entry", [
+        {
+            popover: {
+                title:       "Subir foto o PDF",
+                description: "Desde aqui puedes subir una foto o PDF de tu parte manuscrito. "
+                             + "Gemini Vision extraera los datos automaticamente para que los revises.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#work_order_file",
+            popover: {
+                title:       "Seleccionar archivo",
+                description: "Pulsa aqui para seleccionar una foto (JPG, PNG) o un PDF. "
+                             + "Asegurate de que la imagen sea nitida y este bien iluminada "
+                             + "para que la extraccion sea mas precisa.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element:  "#btn-submit",
+            popover: {
+                title:       "Procesar con IA",
+                description: "Una vez seleccionado el archivo, pulsa aqui para enviarlo a Gemini Vision. "
+                             + "El procesamiento puede tardar unos segundos. "
+                             + "A continuacion se mostrara un formulario para que revises los datos extraidos.",
+                side:        "top",
+                align:       "end",
+            },
+        },
+    ]);
+
+    window.EbTour.startIfNew("upload_entry");
+});
+</script>
+{% endblock %}

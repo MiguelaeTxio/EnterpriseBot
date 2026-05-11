@@ -1093,3 +1093,63 @@
 }());
 </script>
 {% endblock %}
+
+{% block extra_scripts %}
+{{ block.super }}
+<script>
+/*
+ * Tour steps for confirm_entry.html (Via C — confirmation form after Gemini extraction).
+ * Pasos del tour para confirm_entry.html (Via C — formulario de confirmacion tras extraccion Gemini).
+ */
+document.addEventListener("DOMContentLoaded", function () {
+    if (!window.EbTour) { return; }
+
+    window.EbTour.register("confirm_entry", [
+        {
+            popover: {
+                title:       "Revision del parte extraido",
+                description: "Gemini ha extraido los datos de tu parte manuscrito. "
+                             + "Revisa cada campo y corrige lo que sea necesario "
+                             + "antes de confirmar el guardado.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#id_fecha",
+            popover: {
+                title:       "Fecha del parte",
+                description: "Verifica que la fecha extraida es correcta. "
+                             + "El formato debe ser DD/MM/AAAA. "
+                             + "Si aparece resaltada en rojo, la fecha no pudo leerse con certeza.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element:  ".confirm-block",
+            popover: {
+                title:       "Bloques de tarea",
+                description: "Revisa maquina, hora de inicio (H.C.), hora de fin (H.F.) "
+                             + "y descripcion de averia. Los campos en rojo requieren tu atencion. "
+                             + "Puedes editarlos directamente antes de guardar.",
+                side:        "top",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#btn-confirm-submit",
+            popover: {
+                title:       "Confirmar y guardar",
+                description: "Cuando todos los campos sean correctos, pulsa aqui para guardar el parte. "
+                             + "El sistema validara los datos antes de registrarlos definitivamente.",
+                side:        "top",
+                align:       "end",
+            },
+        },
+    ]);
+
+    window.EbTour.startIfNew("confirm_entry");
+});
+</script>
+{% endblock %}

@@ -17,6 +17,9 @@
     <!-- Meta tag CSRF — consumido por el evento configRequest de HTMX -->
     <meta name="csrf-token" content="{{ csrf_token }}">
     {% block extra_head %}{% endblock %}
+    {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
+    {% include "panel/_tour_driver_cdn.html" %}
+    {% endif %}
 </head>
 <body>
 
@@ -140,6 +143,17 @@
                 <span class="text-muted text-sm d-none d-sm-inline">
                     <i class="bi bi-person-circle me-1"></i>{{ request.user.get_full_name|default:request.user.username }}
                 </span>
+                {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
+                <!-- Tour help button — visible only for WORKSHOP and ADMIN roles -->
+                <!-- Boton de ayuda del tour — visible solo para roles WORKSHOP y ADMIN -->
+                <button type="button"
+                        id="btn-tour-help"
+                        class="btn btn-outline-primary btn-sm d-none d-sm-inline-flex align-items-center gap-1"
+                        title="Visita guiada de esta pantalla">
+                    <i class="bi bi-question-circle"></i>
+                    <span class="d-none d-md-inline">Ayuda</span>
+                </button>
+                {% endif %}
             </div>
         </div>
 
@@ -195,5 +209,8 @@
     }());
     </script>
     {% block extra_scripts %}{% endblock %}
+    {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
+    {% include "panel/_tour_workshop.html" %}
+    {% endif %}
 </body>
 </html>

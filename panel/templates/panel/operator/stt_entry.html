@@ -1469,6 +1469,64 @@
 {% endblock %}
 
 {% block extra_scripts %}
+{{ block.super }}
+<script>
+/*
+ * Tour steps for stt_entry.html (Via B — speech-to-text dictation).
+ * Pasos del tour para stt_entry.html (Via B — dictado por voz).
+ */
+document.addEventListener("DOMContentLoaded", function () {
+    if (!window.EbTour) { return; }
+
+    window.EbTour.register("stt_entry", [
+        {
+            popover: {
+                title:       "Dictado por voz",
+                description: "Dicta tu parte en voz alta y el sistema transcribira "
+                             + "y rellenara el formulario automaticamente. "
+                             + "Requiere Chrome o Edge con microfono habilitado.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#stt-recorder-card",
+            popover: {
+                title:       "Panel de grabacion",
+                description: "Desde aqui controlas la grabacion. "
+                             + "Ejemplo de dictado: \"Parte del once de mayo de 2026. "
+                             + "Maquina A44. De ocho a catorce. Averia en el sistema hidraulico.\"",
+                side:        "bottom",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#stt-btn-start",
+            popover: {
+                title:       "Iniciar grabacion",
+                description: "Pulsa aqui y habla con claridad. "
+                             + "Puedes pausar y reanudar tantas veces como necesites "
+                             + "sin perder lo dictado anteriormente.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element:  "#stt-btn-send",
+            popover: {
+                title:       "Enviar a IA",
+                description: "Cuando termines de dictar, pulsa aqui para que Gemini "
+                             + "extraiga los datos y rellene el formulario automaticamente. "
+                             + "Revisa el resultado antes de guardar.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+
+    window.EbTour.startIfNew("stt_entry");
+});
+</script>
 {% include "panel/_time_picker_widget.html" %}
 {% include "panel/_description_typeahead.html" %}
 {% include "panel/_overlap_incident_modal.html" %}

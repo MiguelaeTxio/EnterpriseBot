@@ -405,3 +405,41 @@
 
 </div>{# /.container-fluid #}
 {% endblock %}
+
+{% block extra_scripts %}
+<script>
+/*
+ * Tour steps for history.html (operator personal history — four tabs).
+ * Pasos del tour para history.html (historial personal del operario — cuatro pestanas).
+ */
+document.addEventListener("DOMContentLoaded", function () {
+    if (!window.EbTour) { return; }
+
+    window.EbTour.register("history", [
+        {
+            popover: {
+                title:       "Mi historial",
+                description: "Aqui puedes consultar todos tus partes registrados, "
+                             + "ver tus horas trabajadas y tus ausencias.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#historyTabs",
+            popover: {
+                title:       "Pestanas de navegacion",
+                description: "Periodo actual muestra los partes del periodo activo. "
+                             + "Historico agrupa los partes por periodos cerrados. "
+                             + "Horas extra calcula las horas sobre la jornada estandar. "
+                             + "Ausencias muestra tus ausencias registradas.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+    ]);
+
+    window.EbTour.startIfNew("history");
+});
+</script>
+{% endblock %}

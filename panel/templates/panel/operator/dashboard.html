@@ -40,7 +40,7 @@
     <div class="row g-3 mb-5">
 
         {# Vía A — Form #}
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-4" id="tour-via-form">
             <div class="card h-100 border-0 shadow-sm">
                 <div class="card-body d-flex flex-column align-items-start p-4">
                     <div class="rounded-3 p-3 mb-3 stat-bg-green">
@@ -60,7 +60,7 @@
         </div>
 
         {# Vía B — STT #}
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-4" id="tour-via-stt">
             <div class="card h-100 border-0 shadow-sm">
                 <div class="card-body d-flex flex-column align-items-start p-4">
                     <div class="rounded-3 p-3 mb-3 stat-bg-blue">
@@ -80,7 +80,7 @@
         </div>
 
         {# Vía C — Upload #}
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-4" id="tour-via-upload">
             <div class="card h-100 border-0 shadow-sm">
                 <div class="card-body d-flex flex-column align-items-start p-4">
                     <div class="rounded-3 p-3 mb-3 stat-bg-yellow">
@@ -103,4 +103,59 @@
     </div>
 
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+/*
+ * Tour steps for the operator dashboard (Via selector).
+ * Pasos del tour para el dashboard del operario (selector de vias).
+ */
+document.addEventListener("DOMContentLoaded", function () {
+
+    window.EbTour.register("dashboard", [
+        {
+            popover: {
+                title:       "Bienvenido al panel del operario",
+                description: "Desde aqui introduces tus partes de trabajo diarios. " +
+                             "Elige la via que mejor se adapte a tu situacion en cada momento.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#tour-via-form",
+            popover: {
+                title:       "Via A — Formulario",
+                description: "Rellena el parte campo a campo directamente en pantalla. " +
+                             "Es la via mas rapida y precisa. Sin conexion a internet adicional ni esperas.",
+                side:        "bottom",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#tour-via-stt",
+            popover: {
+                title:       "Via B — Dictado por voz",
+                description: "Dicta el parte en voz alta. El sistema transcribe y rellena el formulario " +
+                             "automaticamente. Requiere Chrome o Edge. Ideal si tienes las manos ocupadas.",
+                side:        "bottom",
+                align:       "center",
+            },
+        },
+        {
+            element:  "#tour-via-upload",
+            popover: {
+                title:       "Via C — Foto o PDF",
+                description: "Sube una foto o PDF de tu parte manuscrito en papel. " +
+                             "Gemini Vision extrae los datos y te los muestra para que los revises antes de guardar.",
+                side:        "bottom",
+                align:       "center",
+            },
+        },
+    ]);
+
+    window.EbTour.startIfNew("dashboard");
+});
+</script>
 {% endblock %}

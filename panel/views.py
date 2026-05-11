@@ -6627,6 +6627,33 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 return render(request, self.template_name, context)
 
         # ------------------------------------------------------------------
+        # Edit mode pre-deletion — in edit mode the original WorkOrder must
+        # be deleted BEFORE Gate 0 runs, so Gate 0 does not find it as a
+        # conflicting duplicate for the same date.
+        # Eliminación previa en modo edición — en modo edición el WorkOrder
+        # original debe eliminarse ANTES de que Gate 0 se ejecute, para que
+        # Gate 0 no lo encuentre como duplicado conflictivo de la misma fecha.
+        # ------------------------------------------------------------------
+        _edit_wo_pk_pre = POST.get("edit_wo_pk", "").strip()
+        if _edit_wo_pk_pre:
+            try:
+                _wo_orig_pre = WorkOrder.objects.get(
+                    pk=int(_edit_wo_pk_pre),
+                    company=company,
+                    uploaded_by=cu,
+                    reviewed=False,
+                    source__in=[
+                        WorkOrder.Source.DIGITAL,
+                        WorkOrder.Source.GENERATED,
+                    ],
+                )
+                _wo_orig_pre.delete()
+            except (WorkOrder.DoesNotExist, ValueError):
+                # Original already deleted or pk tampered — proceed normally.
+                # Original ya eliminado o pk manipulado — continuar normalmente.
+                pass
+
+        # ------------------------------------------------------------------
         # Gate 0 — One work order per operator per date (merge flow).
         # Gate 0 — Un parte por operario por fecha (flujo de merge).
         #

@@ -33,6 +33,7 @@
 ./panel/templates/panel/_nav_items.html
 ./panel/templates/panel/_time_picker_widget.html
 ./panel/templates/panel/_overlap_incident_modal.html
+./panel/templates/panel/_tour_workshop.html
 ./panel/templates/panel/dashboard.html
 ./panel/templates/panel/presence/status.html
 ./panel/templates/panel/password/change.html
@@ -63,6 +64,7 @@
 ./panel/templates/panel/work_orders/_entry_group_fragment.html
 ./panel/templates/panel/work_orders/_review_badge_fragment.html
 ./panel/templates/panel/_description_typeahead.html
+./panel/templates/panel/_tour_driver_cdn.html
 ./panel/templates/panel/operator/history.html
 ./panel/templates/panel/operator/merge_entry.html
 ./panel/templates/panel/operator/form_entry.html
