@@ -90,19 +90,49 @@
 
         function showDropdown(items) {
             dropdown.innerHTML = "";
-            if (!items.length) { dropdown.style.display = "none"; return; }
+            if (!items.length) {
+                dropdown.style.display = "none";
+                /* Return dropdown to its original parent when hiding.
+                   Devolver el dropdown a su padre original al ocultar. */
+                if (dropdown.parentNode === document.body) {
+                    var wrapper = input.closest(".filter-machine-wrapper");
+                    if (wrapper) { wrapper.appendChild(dropdown); }
+                }
+                return;
+            }
             items.forEach(function (code) {
                 var li        = document.createElement("li");
                 li.textContent = code;
                 li.addEventListener("mousedown", function (e) {
                     e.preventDefault();
-                    input.value            = code;
+                    input.value = code;
                     dropdown.style.display = "none";
+                    /* Return dropdown to wrapper on selection.
+                       Devolver dropdown al wrapper al seleccionar. */
+                    if (dropdown.parentNode === document.body) {
+                        var wrapper = input.closest(".filter-machine-wrapper");
+                        if (wrapper) { wrapper.appendChild(dropdown); }
+                    }
                 });
                 dropdown.appendChild(li);
             });
-            _active                = -1;
-            dropdown.style.display = "block";
+            _active = -1;
+
+            /* Detach dropdown to <body> to escape any overflow:hidden ancestor.
+               Desanclar el dropdown al <body> para escapar de cualquier
+               ancestro con overflow:hidden. */
+            if (dropdown.parentNode !== document.body) {
+                document.body.appendChild(dropdown);
+            }
+
+            /* Position dropdown below the input using fixed coords.
+               Posicionar el dropdown bajo el input con coordenadas fixed. */
+            var rect                = input.getBoundingClientRect();
+            dropdown.style.position = "fixed";
+            dropdown.style.top      = (rect.bottom + 2) + "px";
+            dropdown.style.left     = rect.left + "px";
+            dropdown.style.width    = rect.width + "px";
+            dropdown.style.display  = "block";
         }
 
         function fetchSuggestions(q) {

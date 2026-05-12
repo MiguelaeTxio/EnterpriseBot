@@ -472,7 +472,100 @@ Implementacion:
 
 Anadido "source": wo.source al dict devuelto por
 _enrich_work_orders_for_period(). Necesario para que history.html
-pueda discriminar partes digitales de PDF en la columna Acciones.
+npueda discriminar partes digitales de PDF en la columna Acciones.
+
+### 2.44. Eliminacion Via B — Abandono definitivo (S022)
+
+La Via B (dictado por voz via STT) queda eliminada definitivamente del flujo
+de entrada del operario. Motivo: baja funcionalidad practica y nula mejora
+real respecto a las Vias A y C.
+
+Acciones ejecutadas:
+  - Boton Via B eliminado del template panel/templates/panel/operator/dashboard.html.
+  - WorkOrderEntrySTTView y WorkOrderEntrySTTExtractView retiradas de panel/views.py
+    y panel/urls.py.
+  - Template panel/templates/panel/operator/stt_entry.html eliminado.
+  - La Via C se mantiene con validacion reforzada: el parte no se persiste si
+    Gemini Vision no puede leer con certeza todos los campos obligatorios.
+
+### 2.45. Tipologia de Averias — Arquitectura aprobada (S022)
+
+Decision de diseno tomada en S022. La clasificacion automatica de averias
+se integrara en este hito como cierre final del mismo.
+
+#### Modelo de datos
+
+Dos nuevos campos en WorkOrderEntryLine (work_order_processor/models.py):
+  fault_category    — CharField(max_length=40, choices=FaultCategory.choices, blank=True, default="")
+  fault_subcategory — CharField(max_length=60, choices=FaultSubcategory.choices, blank=True, default="")
+
+Clases de choices definidas como TextChoices en el mismo modulo.
+
+#### Taxonomia de grupos y subgrupos
+
+Grupos (8):
+  ENGINE_TRANSMISSION        — Motor y transmision
+  HYDRAULIC                  — Sistema hidraulico
+  ELECTRICAL_ELECTRONIC      — Electrico y electronico
+  BRAKES_STEERING_SUSPENSION — Frenos, direccion y suspension
+  TYRES_RUNNING_GEAR         — Neumaticos y rodadura
+  LIFTING_STRUCTURE          — Estructura y sistemas de elevacion
+  BODYWORK_CHASSIS           — Carroceria y chasis
+  OTHER                      — Otras averias
+
+Subgrupos por grupo (~30 totales):
+  ENGINE_TRANSMISSION:        ET_ENGINE, ET_TRANSMISSION, ET_PTO, ET_COOLING, ET_FUEL
+  HYDRAULIC:                  HY_PUMP, HY_CYLINDERS, HY_VALVES, HY_OIL, HY_CENTRAL
+  ELECTRICAL_ELECTRONIC:      EE_WIRING, EE_SENSORS, EE_CONTROLS, EE_LIGHTS, EE_BATTERY
+  BRAKES_STEERING_SUSPENSION: BSS_BRAKES, BSS_STEERING, BSS_SUSPENSION
+  TYRES_RUNNING_GEAR:         TRG_TYRES, TRG_AXLES, TRG_TRACKS
+  LIFTING_STRUCTURE:          LS_BOOM, LS_HOOK_PULLEYS, LS_CABLE, LS_ROTATION,
+                              LS_STABILIZERS, LS_MAST, LS_PLATFORM,
+                              LS_FIFTH_WHEEL, LS_CHASSIS_TRAILER
+  BODYWORK_CHASSIS:           BC_BODYWORK, BC_CHASSIS
+  OTHER:                      OT_OTHER
+
+#### Clasificacion automatica — arquitectura Celery
+
+Helper classify_fault(fault_description: str, repair_notes: str) -> dict
+en work_order_processor/services.py:
+  - Llama a Gemini Flash (_GEMINI_MODEL, Vertex AI).
+  - response_mime_type application/json, response_schema con dos campos enum.
+  - thinking_budget=0, temperature=0.0, max_output_tokens=64.
+  - Devuelve {"fault_category": str, "fault_subcategory": str}.
+  - En caso de error devuelve {"fault_category": "", "fault_subcategory": ""}.
+
+Tarea Celery classify_fault_line(entry_line_pk: int) en tasks.py:
+  - @shared_task(bind=True, max_retries=0)
+  - Recupera WorkOrderEntryLine por pk. Si no existe, return silencioso.
+  - Llama a classify_fault(line.fault_description, line.repair_notes).
+  - Persiste via .objects.filter(pk=pk).update(fault_category=..., fault_subcategory=...).
+
+Encolado con prioridad maxima tras cada INSERT:
+  classify_fault_line.apply_async(args=[line.pk], queue="high_priority")
+Puntos de encolado:
+  WorkOrderEntryFormView.post() — Via A
+  WorkOrderEntryConfirmView.post() — Via C
+  WorkOrderEntryMergeView.post() — flujo merge
+  process_work_order_pdf (tasks.py) — pipeline PDF
+
+#### Backfill de historicos
+
+Comando: work_order_processor/management/commands/classify_entry_lines.py
+  - Itera WorkOrderEntryLine.objects.filter(fault_category="") en batches de 50.
+  - Llama a classify_fault() sincronamente. Persiste los dos campos.
+  - Imprime progreso. Idempotente.
+
+#### Clasificacion en pipeline PDF
+
+Actualizar _EXTRACTION_PROMPT en services.py para incluir fault_category
+y fault_subcategory en el JSON de respuesta. Persistencia en el propio
+pipeline (tasks.py), no via Celery (el pipeline ya es asincrono).
+
+#### Solo para analitica y filtrado
+
+Los campos fault_category y fault_subcategory son exclusivamente para
+analitica y filtrado. No se muestran al operario en ningun formulario ni vista.
 
 ---
 
@@ -500,7 +593,7 @@ Estado: COMPLETADO (2026-04-30).
 Estado: COMPLETADO (2026-04-30).
 
 ### Paso 8 — Via B: dictado por voz (STT)
-Estado: PENDIENTE REDISENO (S021) — ver seccion 2.37.
+Estado: ABANDONADO (S022) — eliminada definitivamente. Ver seccion 2.44.
 
 ### Paso 9 — Validacion E2E de las tres vias
 Estado: EN PROGRESO.
@@ -536,10 +629,11 @@ Estado: COMPLETADO (sesiones 015-017).
 | 019    | 2026-05-11 | Bugs + mejoras UX + barrera fecha | Boton Desmarcar en pestana Revisados (admin_history.html). Gate 0 anadido a Via A (WorkOrderEntryFormView.post()). Fix JS merge_entry.html (MutationObserver + polling). Barrera fecha minima _get_min_allowed_date() server-side + client-side tres templates. Horas extra sin periodo activo (Tab 3 history.html). Edicion partes no revisados desde Mi historial (operator_form_edit). Diseno Via B dialogo progresivo TTS aprobado. Hoja de ruta S020-S023 definida. |
 | 020    | 2026-05-11 | Validacion E2E + bugs merge + tour guiado | Validacion E2E flujos merge (7 escenarios superados), edicion desde historial, barrera fecha minima y Via C. Bugs resueltos: btn Fusionar no se habilitaba (removeAttribute disabled + bloque extra_scripts), TimePicker sin restriccion 30min en merge_entry.html (include _time_picker_widget + step=1800), edicion desde historial activaba Gate 0 sobre el original (pre-eliminacion antes de Gate 0 en WorkOrderEntryFormView.post()). Sistema de visita guiada Driver.js implementado en todas las vistas WORKSHOP: _tour_driver_cdn.html, _tour_workshop.html (motor EbTour), boton Ayuda en base.html, tours en dashboard/form/stt/upload/confirm/history. |
 | 021    | 2026-05-12 | Bugs S021 + Reglas jornada + Exportacion admin | PRIMERA ACCION: corrección posicionamiento popover Driver.js (onHighlightStarted + scrollIntoView). SEGUNDA ACCION: entrada por teclado en TimePicker (_openTextEntry + overlay input texto). TERCERA ACCION: Regla B ya correcta; Regla A (excepcion comida 60min 13:00-15:30) en validators.py; Regla C (cobertura minima 8h con excepcion WorkerAbsence) en views.py. CUARTA ACCION Bug A: formulario exportacion admin_history.html corregido (POST + work_order_admin_export + pks explicitos). CUARTA ACCION Bug B: nuevo endpoint WorkOrderMachineFilterView + ruta urls.py + admin_history.js apunta al nuevo endpoint. QUINTA ACCION: overtime_worked_hours anadido al contexto de WorkOrderEntryHistoryView. Incidencia: TimePicker entrada teclado no operativa en produccion; desplegable dinamico maquina no visible en UI. |
+| 022    | 2026-05-12 | S022 completo — pendientes S021 + incidencias + tipologia | PRIMERA ACCION: _time_picker_widget.html corregido. SEGUNDA ACCION: admin_history.js showDropdown desanclado al body; WorkOrderMachineFilterView duplicada eliminada; parametro q anadido con filtro icontains. TERCERA ACCION: textos botones historial admin (Editar / Revisar, Marcar revisado). CUARTA ACCION: modal Nuevo periodo rediseñado — selector operario eliminado, end_date opcional, pre-relleno automatico. WorkPeriodCreateView.post() actualizado. QUINTA ACCION: titulo modal ausencia cambiado a Ausencia. DECISION VINCULANTE: periodo global para todos los operarios. Via B abandonada definitivamente. Arquitectura tipologia aprobada: 8 grupos + 30 subgrupos, Celery high_priority, fault_category/fault_subcategory en WorkOrderEntryLine, solo analitica. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S021)
+## 5. Hoja de Ruta para la Siguiente Sesion (S022)
 
 ### CONTEXTO
 
@@ -696,58 +790,82 @@ ADVERTENCIA CRITICA — mantener siempre presente:
 
 ### Hoja de ruta de sesiones futuras (S022-S026)
 
-S022 — Pendientes S021 (PRIORITARIO):
+S023 — PRIORITARIO: Tipologia de Averias + Eliminacion Via B (cierre final H7)
 
-  PRIMERA ACCION — TimePicker: entrada por teclado no operativa en produccion.
-    La implementacion de S021 (_openTextEntry) no funciona. Solicitar
-    _time_picker_widget.html al inicio de S022 via SFTP y diagnosticar por que
-    el overlay input no se activa al pulsar tecla numerica sobre tp-display.
-    Archivo afectado: panel/templates/panel/_time_picker_widget.html.
+  CONTEXTO:
+    S022 completado. Via B abandonada. Arquitectura de tipologia aprobada
+    y documentada en seccion 2.45. S023 implementa exactamente lo definido
+    en 2.45 sin desviaciones.
 
-  SEGUNDA ACCION — Desplegable dinamico maquina/CdG en historial admin:
-    El input #filter-machine-input sigue siendo texto libre sin desplegable.
-    El endpoint WorkOrderMachineFilterView existe y el JS apunta a el, pero
-    el desplegable #filter-machine-dropdown no aparece visualmente.
-    Diagnosticar inspeccionando admin_history.js y admin_history.html:
-    verificar que el elemento #filter-machine-dropdown existe en el HTML
-    con la clase filter-machine-dropdown y que el CSS lo posiciona correctamente.
-    Archivos afectados: panel/static/panel/js/admin_history.js,
-    panel/templates/panel/work_orders/admin_history.html.
+  PRIMERA ACCION — Eliminacion Via B del dashboard del operario:
+    Solicitar al inicio de S023 via SFTP:
+      panel/views.py
+      panel/urls.py
+      panel/templates/panel/operator/dashboard.html
+    Eliminar boton Via B de dashboard.html.
+    Retirar WorkOrderEntrySTTView y WorkOrderEntrySTTExtractView de views.py y urls.py.
+    Eliminar panel/templates/panel/operator/stt_entry.html.
 
-  TERCERA ACCION — Textos botones historial admin:
-    Tab Pendientes: boton "Editar" → "Editar / Revisar"; boton "Revisar" → "Marcar revisado".
-    Archivo afectado: panel/templates/panel/work_orders/admin_history.html.
+  SEGUNDA ACCION — Modelo de datos en work_order_processor/models.py:
+    Solicitar al inicio de S023 via SFTP:
+      work_order_processor/models.py
+    Anadir clase FaultCategory(models.TextChoices) con los 8 grupos.
+    Anadir clase FaultSubcategory(models.TextChoices) con los ~30 subgrupos.
+    Valores exactos de choices definidos en seccion 2.45.
+    Anadir a WorkOrderEntryLine:
+      fault_category    = models.CharField(max_length=40, choices=FaultCategory.choices, blank=True, default="")
+      fault_subcategory = models.CharField(max_length=60, choices=FaultSubcategory.choices, blank=True, default="")
+    Generar y aplicar migracion:
+      python -m dotenv run python manage.py makemigrations work_order_processor
+      python -m dotenv run python manage.py migrate
 
-  CUARTA ACCION — Periodos: logica dinamica de pre-relleno de fechas.
-    El modal "Nuevo periodo" debe pre-rellenar las fechas de inicio y fin
-    basandose en el periodo anterior del mismo operario + 1 mes exacto.
-    Ejemplo: periodo anterior 05/04 al 04/05 → nuevo periodo pre-relleno
-    05/05 al 04/06, modificable por el supervisor antes de confirmar.
-    Si no existe periodo anterior, sin pre-relleno (comportamiento actual).
-    Implementacion: JavaScript en admin_history.html que lee las fechas
-    del ultimo periodo cerrado del operario seleccionado y las inyecta
-    en los inputs del modal modalWorkPeriodCreate al abrirse.
-    Archivo afectado: panel/templates/panel/work_orders/admin_history.html.
+  TERCERA ACCION — Helper classify_fault en services.py:
+    Solicitar al inicio de S023 via SFTP:
+      work_order_processor/services.py
+    Anadir funcion classify_fault(fault_description: str, repair_notes: str) -> dict.
+    Llama a Gemini Flash (_GEMINI_MODEL, Vertex AI) con response_schema de dos
+    campos enum: fault_category y fault_subcategory.
+    thinking_budget=0, temperature=0.0, max_output_tokens=64.
+    En caso de error devuelve {"fault_category": "", "fault_subcategory": ""}.
+    Prompt: describe los 8 grupos y sus subgrupos, instruye a devolver codigos exactos.
 
-  QUINTA ACCION — Ausencias: clarificacion conceptual y modal.
-    Los tipos de ausencia actuales (VACATION, SICK_LEAVE, WORK_ACCIDENT,
-    MATERNITY_PATERNITY, BEREAVEMENT, PERSONAL, OTHER) son correctos pero
-    el modal dice "Nueva ausencia" como titulo — mantenerlo simplemente
-    como "Ausencia" (sin "Nueva"). El boton de apertura del modal tambien
-    debe decir "Nueva ausencia" en el action bar — esto es correcto.
-    Solo cambiar el titulo del modal de "Nueva ausencia" a "Ausencia".
-    Archivo afectado: panel/templates/panel/work_orders/admin_history.html.
+  CUARTA ACCION — Tarea Celery classify_fault_line en tasks.py:
+    Solicitar al inicio de S023 via SFTP:
+      work_order_processor/tasks.py
+    Anadir:
+      @shared_task(bind=True, max_retries=0)
+      def classify_fault_line(self, entry_line_pk: int) -> None
+    Recupera WorkOrderEntryLine por pk. Si no existe, return silencioso.
+    Llama a classify_fault(line.fault_description, line.repair_notes).
+    Persiste via .objects.filter(pk=pk).update(fault_category=..., fault_subcategory=...).
 
-S023 — Rediseno Via B: dialogo progresivo con TTS nativo.
-  Ver seccion 2.37 para el diseno completo aprobado.
-  Archivos afectados: panel/views.py (WorkOrderEntrySTTView refactor),
-  panel/templates/panel/operator/stt_entry.html (rediseno completo).
-  WorkOrderEntrySTTExtractView queda obsoleta y se retira.
+  QUINTA ACCION — Encolado tras INSERT en views.py:
+    En los tres puntos de insercion de WorkOrderEntryLine en panel/views.py:
+      WorkOrderEntryFormView.post() — Via A
+      WorkOrderEntryConfirmView.post() — Via C
+      WorkOrderEntryMergeView.post() — flujo merge
+    Tras cada WorkOrderEntryLine.objects.create():
+      from work_order_processor.tasks import classify_fault_line
+      classify_fault_line.apply_async(args=[line.pk], queue="high_priority")
+    En tasks.py (process_work_order_pdf): mismo encolado tras cada linea creada.
+
+  SEXTA ACCION — Comando classify_entry_lines:
+    Crear work_order_processor/management/commands/classify_entry_lines.py.
+    Itera WorkOrderEntryLine.objects.filter(fault_category="") en batches de 50.
+    Llama a classify_fault() sincronamente. Persiste los dos campos.
+    Imprime progreso. Idempotente.
+
+  SEPTIMA ACCION — Actualizacion _EXTRACTION_PROMPT en services.py:
+    Anadir fault_category y fault_subcategory al JSON de respuesta del prompt PDF.
+    Actualizar el parseo del resultado en el pipeline PDF para persistir los dos
+    campos en WorkOrderEntryLine. Para el pipeline PDF la clasificacion se hace
+    en el propio prompt, no via Celery (el pipeline ya es asincrono).
 
 S024 — Diferidos: has_cg_incident + Dropdown CdG Otro.
-  WorkOrder.has_cg_incident BooleanField + migracion.
-  Dropdown CdG con opcion Otro + free-text, resolucion contra MachineAsset.
+  Diferido hasta Hito 12 (Gestion de Centros de Gasto).
+  No implementar hasta que el modelo CdG este maduro.
 
 S025 — Excel por periodo.
   Al cerrar un WorkPeriod, generacion del Excel consolidado del periodo.
   Integracion en WorkPeriodCloseView.
+

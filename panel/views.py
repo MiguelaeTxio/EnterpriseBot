@@ -9235,21 +9235,49 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
                 pass
         absences_list = list(absence_qs)
 
+        # ------------------------------------------------------------------
+        # Suggested period start — last closed period end_date + 1 day.
+        # Inicio sugerido de periodo — end_date del ultimo periodo cerrado + 1 dia.
+        # ------------------------------------------------------------------
+        from ivr_config.models import WorkPeriod
+        from datetime import timedelta as _td
+        last_closed = (
+            WorkPeriod.objects
+            .filter(
+                company_user__company=company,
+                end_date__isnull=False,
+            )
+            .order_by("-end_date")
+            .values_list("end_date", "start_date")
+            .first()
+        )
+        if last_closed:
+            _last_end              = last_closed[0]
+            _last_start            = last_closed[1]
+            _period_len            = _last_end - _last_start
+            suggested_period_start = (_last_end + _td(days=1)).strftime("%Y-%m-%d")
+            suggested_period_end   = (_last_end + _td(days=1) + _period_len).strftime("%Y-%m-%d")
+        else:
+            suggested_period_start = ""
+            suggested_period_end   = ""
+
         context = {
-            "company":      cu.company,
-            "company_user": cu,
-            "own_presence": self._get_own_presence(cu),
-            "active_nav":   "work_order_admin_history",
-            "active_tab":   active_tab,
-            "operators":    operators,
-            "operator_pk":  operator_pk,
-            "date_from":    request.GET.get("date_from", ""),
-            "date_to":      request.GET.get("date_to", ""),
-            "machine":      machine,
-            "pending_list": pending_list,
-            "reviewed_list": reviewed_list,
-            "history_list": history_list,
-            "absences_list": absences_list,
+            "company":                cu.company,
+            "company_user":           cu,
+            "own_presence":           self._get_own_presence(cu),
+            "active_nav":             "work_order_admin_history",
+            "active_tab":             active_tab,
+            "operators":              operators,
+            "operator_pk":            operator_pk,
+            "date_from":              request.GET.get("date_from", ""),
+            "date_to":                request.GET.get("date_to", ""),
+            "machine":                machine,
+            "pending_list":           pending_list,
+            "reviewed_list":          reviewed_list,
+            "history_list":           history_list,
+            "absences_list":          absences_list,
+            "suggested_period_start": suggested_period_start,
+            "suggested_period_end":   suggested_period_end,
         }
         return render(request, self.template_name, context)
 
@@ -9562,15 +9590,22 @@ class WorkPeriodListView(SupervisorAccessMixin, View):
 
 class WorkPeriodCreateView(SupervisorAccessMixin, View):
     """
-    Creates a new WorkPeriod for a WORKSHOP operator belonging to the
-    authenticated supervisor's company.
-    Validates: role WORKSHOP, same company, no open period overlap.
+    Creates a new global WorkPeriod for ALL active WORKSHOP operators
+    belonging to the authenticated supervisor's company.
+    The work period is company-wide: the same start_date and label are
+    applied to every active WORKSHOP operator in a single operation.
+    Operators that already have an open period are skipped individually
+    and reported back to the user via a warning message.
     On success or failure, redirects to work_period_list.
 
     POST /panel/work-periods/create/
     ---
-    Crea un nuevo WorkPeriod para un operario WORKSHOP de la empresa.
-    Valida: rol WORKSHOP, misma empresa, sin periodo abierto solapado.
+    Crea un nuevo WorkPeriod global para TODOS los operarios WORKSHOP
+    activos de la empresa del supervisor autenticado.
+    El periodo de trabajo es de ámbito empresarial: la misma start_date
+    y etiqueta se aplican a todos los operarios WORKSHOP activos.
+    Los operarios que ya tienen un periodo abierto se omiten individualmente
+    y se notifican al usuario mediante un mensaje de aviso.
     En éxito o fallo, redirige a work_period_list.
 
     POST /panel/work-periods/create/
@@ -9578,9 +9613,15 @@ class WorkPeriodCreateView(SupervisorAccessMixin, View):
 
     def post(self, request, *args, **kwargs):
         """
-        Validates POST data, creates WorkPeriod and redirects.
+        Validates POST data, creates a WorkPeriod for every active WORKSHOP
+        operator in the company and redirects to work_period_list.
+        Operators with an already-open period are skipped individually and
+        reported back via a warning django message.
         ---
-        Valida datos POST, crea WorkPeriod y redirige.
+        Valida los datos POST, crea un WorkPeriod para cada operario WORKSHOP
+        activo de la empresa y redirige a work_period_list.
+        Los operarios con un periodo ya abierto se omiten individualmente y
+        se notifican al usuario mediante un mensaje de aviso de Django.
         """
         from datetime import datetime
         from django.urls import reverse
@@ -9590,36 +9631,97 @@ class WorkPeriodCreateView(SupervisorAccessMixin, View):
         company  = cu.company
         LIST_URL = reverse("panel:work_period_list")
 
-        try:
-            cu_pk     = int(request.POST.get("company_user_pk", ""))
-            target_cu = CompanyUser.objects.get(
-                pk=cu_pk, company=company, role=CompanyUser.ROLE_WORKSHOP,
-            )
-        except (ValueError, TypeError, CompanyUser.DoesNotExist):
-            django_messages.error(request, "Operario no encontrado, no pertenece a esta empresa o no tiene rol Taller.")
-            return redirect(LIST_URL)
-
+        # Parse and validate start_date from POST.
+        # Parsear y validar start_date del POST.
         raw_start = request.POST.get("start_date", "").strip()
         try:
             start_date = datetime.strptime(raw_start, "%Y-%m-%d").date()
         except (ValueError, AttributeError):
-            django_messages.error(request, "La fecha de inicio es obligatoria y debe tener formato YYYY-MM-DD.")
+            django_messages.error(
+                request,
+                "La fecha de inicio es obligatoria y debe tener formato YYYY-MM-DD.",
+            )
             return redirect(LIST_URL)
 
-        if WorkPeriod.objects.filter(company_user=target_cu, end_date__isnull=True).exists():
-            operator_name = target_cu.user.get_full_name() or target_cu.user.username
-            django_messages.error(request, f"El operario {operator_name} ya tiene un periodo abierto. Ciérralo antes de crear uno nuevo.")
-            return redirect(LIST_URL)
+        label = request.POST.get("label", "").strip()
 
-        WorkPeriod.objects.create(
-            company_user = target_cu,
-            start_date   = start_date,
-            end_date     = None,
-            label        = request.POST.get("label", "").strip(),
-            created_by   = cu,
+        # Parse optional end_date — if provided, applied to all created periods.
+        # Parsear end_date opcional — si se proporciona, se aplica a todos los periodos creados.
+        raw_end = request.POST.get("end_date", "").strip()
+        end_date_parsed = None
+        if raw_end:
+            try:
+                end_date_parsed = datetime.strptime(raw_end, "%Y-%m-%d").date()
+                if end_date_parsed < start_date:
+                    django_messages.error(
+                        request,
+                        "La fecha de fin no puede ser anterior a la fecha de inicio.",
+                    )
+                    return redirect(LIST_URL)
+            except (ValueError, AttributeError):
+                end_date_parsed = None
+
+        # Retrieve all active WORKSHOP operators for the company.
+        # Obtener todos los operarios WORKSHOP activos de la empresa.
+        workshop_operators = list(
+            CompanyUser.objects
+            .filter(company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP)
+            .select_related("user")
+            .order_by("user__last_name", "user__first_name")
         )
-        operator_name = target_cu.user.get_full_name() or target_cu.user.username
-        django_messages.success(request, f"Periodo de trabajo creado para {operator_name} (inicio: {start_date:%d/%m/%Y}).")
+
+        if not workshop_operators:
+            django_messages.error(
+                request,
+                "No hay operarios de taller activos en la empresa. No se ha creado ningún periodo.",
+            )
+            return redirect(LIST_URL)
+
+        # Iterate operators: skip those with an already-open period.
+        # Iterar operarios: omitir los que ya tienen un periodo abierto.
+        created_count = 0
+        skipped_names = []
+
+        for operator in workshop_operators:
+            if WorkPeriod.objects.filter(
+                company_user=operator, end_date__isnull=True
+            ).exists():
+                skipped_names.append(
+                    operator.user.get_full_name() or operator.user.username
+                )
+                continue
+
+            WorkPeriod.objects.create(
+                company_user = operator,
+                start_date   = start_date,
+                end_date     = end_date_parsed,
+                label        = label,
+                created_by   = cu,
+            )
+            created_count += 1
+
+        # Build feedback messages for the user.
+        # Construir mensajes de respuesta para el usuario.
+        if created_count > 0:
+            django_messages.success(
+                request,
+                f"Periodo de trabajo creado para {created_count} operario"
+                f"{'s' if created_count != 1 else ''} "
+                f"(inicio: {start_date:%d/%m/%Y}).",
+            )
+        else:
+            django_messages.warning(
+                request,
+                "No se ha creado ningún periodo: todos los operarios tienen ya un periodo abierto.",
+            )
+
+        if skipped_names:
+            skipped_list = ", ".join(skipped_names)
+            django_messages.warning(
+                request,
+                f"Operarios omitidos por tener periodo abierto: {skipped_list}.",
+            )
+
         return redirect(LIST_URL)
 
 
@@ -10683,6 +10785,7 @@ class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
         operator_pk   = request.GET.get("operator_pk", "").strip()
         date_from_raw = request.GET.get("date_from", "").strip()
         date_to_raw   = request.GET.get("date_to",   "").strip()
+        q_raw         = request.GET.get("q",         "").strip()
 
         def _parse_iso(val):
             """Parses YYYY-MM-DD string, returns date or None.
@@ -10727,106 +10830,9 @@ class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
         if date_to:
             qs = qs.filter(entry__work_date__lte=date_to)
 
-        codes = (
-            qs
-            .values_list("machine_asset__code", flat=True)
-            .distinct()
-            .order_by("machine_asset__code")
-        )
-
-        return JsonResponse({"results": list(codes)})
-
-
-class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
-    """
-    JSON endpoint returning distinct MachineAsset codes present in the
-    WorkOrderEntryLine records of DIGITAL/GENERATED WorkOrders for the
-    authenticated company, optionally filtered by operator and date range.
-    Used by the admin history machine autocomplete (Bug B fix).
-
-    GET /panel/work-orders/machines/
-        Optional GET params:
-          operator_pk (int)  — filter by uploaded_by CompanyUser pk.
-          date_from   (str)  — ISO date YYYY-MM-DD start of range.
-          date_to     (str)  — ISO date YYYY-MM-DD end of range.
-        Returns: {"results": ["G12", "A44", ...]}
-
-    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
-
-    ---
-
-    Endpoint JSON que devuelve los códigos de MachineAsset distintos presentes
-    en los WorkOrderEntryLine de los WorkOrders DIGITAL/GENERATED de la empresa
-    autenticada, con filtro opcional por operario y rango de fechas.
-    Usado por el autocompletado de máquina de admin_history (corrección Bug B).
-
-    GET /panel/work-orders/machines/
-        Parámetros GET opcionales:
-          operator_pk (int)  — filtrar por pk de CompanyUser uploaded_by.
-          date_from   (str)  — fecha ISO YYYY-MM-DD inicio del rango.
-          date_to     (str)  — fecha ISO YYYY-MM-DD fin del rango.
-        Devuelve: {"results": ["G12", "A44", ...]}
-
-    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
-    """
-
-    def get(self, request, *args, **kwargs):
-        """
-        Returns distinct MachineAsset codes present in the filtered WorkOrders.
-        ---
-        Devuelve los códigos de MachineAsset distintos en los WorkOrders filtrados.
-        """
-        from django.http import JsonResponse
-        from datetime import datetime as _dt_mf
-        from work_order_processor.models import WorkOrderEntryLine
-
-        company       = request.user.company_user.company
-        operator_pk   = request.GET.get("operator_pk", "").strip()
-        date_from_raw = request.GET.get("date_from", "").strip()
-        date_to_raw   = request.GET.get("date_to",   "").strip()
-
-        def _parse_iso(val):
-            """Parses YYYY-MM-DD string, returns date or None.
-            --- Parsea cadena YYYY-MM-DD, devuelve date o None."""
-            if not val:
-                return None
-            try:
-                return _dt_mf.strptime(val, "%Y-%m-%d").date()
-            except ValueError:
-                return None
-
-        date_from = _parse_iso(date_from_raw)
-        date_to   = _parse_iso(date_to_raw)
-
-        # Base queryset — scoped to DIGITAL/GENERATED sources for the company.
-        # Queryset base — acotado a orígenes DIGITAL/GENERATED de la empresa.
-        qs = (
-            WorkOrderEntryLine.objects
-            .filter(
-                entry__work_order__company=company,
-                entry__work_order__source__in=[
-                    WorkOrder.Source.DIGITAL,
-                    WorkOrder.Source.GENERATED,
-                ],
-                machine_asset__isnull=False,
-            )
-        )
-
-        # Optional operator filter / Filtro de operario opcional.
-        if operator_pk:
-            try:
-                qs = qs.filter(
-                    entry__work_order__uploaded_by__pk=int(operator_pk),
-                    entry__work_order__uploaded_by__company=company,
-                )
-            except (ValueError, TypeError):
-                pass
-
-        # Optional date range filter / Filtro de rango de fechas opcional.
-        if date_from:
-            qs = qs.filter(entry__work_date__gte=date_from)
-        if date_to:
-            qs = qs.filter(entry__work_date__lte=date_to)
+        # Optional machine code icontains filter / Filtro icontains de codigo de maquina.
+        if q_raw:
+            qs = qs.filter(machine_asset__code__icontains=q_raw)
 
         codes = (
             qs
@@ -10836,6 +10842,7 @@ class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
         )
 
         return JsonResponse({"results": list(codes)})
+
 
 
 class WorkOrderDescriptionAutocompleteView(WorkshopRequiredMixin, View):

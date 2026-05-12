@@ -90,23 +90,62 @@
 
         function showDropdown(items) {
             dropdown.innerHTML = "";
-            if (!items.length) { dropdown.style.display = "none"; return; }
+            if (!items.length) {
+                dropdown.style.display = "none";
+                /* Return dropdown to its original parent when hiding.
+                   Devolver el dropdown a su padre original al ocultar. */
+                if (dropdown.parentNode === document.body) {
+                    var wrapper = input.closest(".filter-machine-wrapper");
+                    if (wrapper) { wrapper.appendChild(dropdown); }
+                }
+                return;
+            }
             items.forEach(function (code) {
                 var li        = document.createElement("li");
                 li.textContent = code;
                 li.addEventListener("mousedown", function (e) {
                     e.preventDefault();
-                    input.value            = code;
+                    input.value = code;
                     dropdown.style.display = "none";
+                    /* Return dropdown to wrapper on selection.
+                       Devolver dropdown al wrapper al seleccionar. */
+                    if (dropdown.parentNode === document.body) {
+                        var wrapper = input.closest(".filter-machine-wrapper");
+                        if (wrapper) { wrapper.appendChild(dropdown); }
+                    }
                 });
                 dropdown.appendChild(li);
             });
-            _active                = -1;
-            dropdown.style.display = "block";
+            _active = -1;
+
+            /* Detach dropdown to <body> to escape any overflow:hidden ancestor.
+               Desanclar el dropdown al <body> para escapar de cualquier
+               ancestro con overflow:hidden. */
+            if (dropdown.parentNode !== document.body) {
+                document.body.appendChild(dropdown);
+            }
+
+            /* Position dropdown below the input using fixed coords.
+               Posicionar el dropdown bajo el input con coordenadas fixed. */
+            var rect                = input.getBoundingClientRect();
+            dropdown.style.position = "fixed";
+            dropdown.style.top      = (rect.bottom + 2) + "px";
+            dropdown.style.left     = rect.left + "px";
+            dropdown.style.width    = rect.width + "px";
+            dropdown.style.display  = "block";
         }
 
         function fetchSuggestions(q) {
-            fetch("/panel/operator/assets/?q=" + encodeURIComponent(q))
+            /* Build URL with current operator/date filters for scoped results.
+               Construir URL con filtros actuales de operario/fecha para resultados acotados. */
+            var params = new URLSearchParams({ q: q });
+            var opInput   = document.querySelector("[name='operator_pk']");
+            var dateFrom  = document.querySelector("[name='date_from']");
+            var dateTo    = document.querySelector("[name='date_to']");
+            if (opInput  && opInput.value)  { params.set("operator_pk", opInput.value); }
+            if (dateFrom && dateFrom.value) { params.set("date_from",   dateFrom.value); }
+            if (dateTo   && dateTo.value)   { params.set("date_to",     dateTo.value); }
+            fetch("/panel/work-orders/machines/?" + params.toString())
                 .then(function (r) { return r.json(); })
                 .then(function (data) { showDropdown(data.results || []); })
                 .catch(function () { dropdown.style.display = "none"; });

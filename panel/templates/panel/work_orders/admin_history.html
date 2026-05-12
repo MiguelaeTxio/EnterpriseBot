@@ -51,12 +51,14 @@
                 <div class="col-12 col-md-2">
                     <label class="form-label text-sm fw-semibold mb-1">Fecha desde</label>
                     <input type="date" name="date_from" class="form-control form-control-sm"
+                           placeholder="Cualquier fecha"
                            value="{{ date_from }}">
                 </div>
 
                 <div class="col-12 col-md-2">
                     <label class="form-label text-sm fw-semibold mb-1">Fecha hasta</label>
                     <input type="date" name="date_to" class="form-control form-control-sm"
+                           placeholder="Cualquier fecha"
                            value="{{ date_to }}">
                 </div>
 
@@ -189,14 +191,14 @@
                                     <div class="d-flex gap-2">
                                         <a href="{% url 'panel:work_order_edit' wo.pk %}?from=taller"
                                            class="btn btn-outline-primary btn-sm py-0 px-2">
-                                            <i class="bi bi-pencil me-1"></i>Editar
+                                            <i class="bi bi-pencil me-1"></i>Editar / Revisar
                                         </a>
                                         <button type="button"
                                                 class="btn btn-outline-success btn-sm py-0 px-2"
                                                 hx-post="{% url 'panel:work_order_review' wo.pk %}"
                                                 hx-swap="none"
                                                 hx-on::after-request="window.location.reload()">
-                                            <i class="bi bi-check2 me-1"></i>Revisar
+                                            <i class="bi bi-check2 me-1"></i>Marcar revisado
                                         </button>
                                         <button type="button"
                                                 class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-single"
@@ -528,7 +530,9 @@
                 </span>
                 <a href="#" class="btn btn-primary btn-sm px-3"
                    data-bs-toggle="modal"
-                   data-bs-target="#modalWorkPeriodCreate">
+                   data-bs-target="#modalWorkPeriodCreate"
+                   data-suggested-start="{{ suggested_period_start }}"
+                   data-suggested-end="{{ suggested_period_end }}">
                     <i class="bi bi-plus-circle me-1"></i>Nuevo periodo
                 </a>
             </div>
@@ -619,7 +623,7 @@
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-bottom py-3">
                 <h6 class="modal-title fw-semibold" id="modalAbsenceCreateLabel">
-                    <i class="bi bi-calendar-x me-2 text-muted"></i>Nueva ausencia
+                    <i class="bi bi-calendar-x me-2 text-muted"></i>Ausencia
                 </h6>
                 <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
             </div>
@@ -696,21 +700,23 @@
                 <form method="post" id="formWorkPeriodCreate"
                       action="{% url 'panel:work_period_create' %}">
                     {% csrf_token %}
-                    <div class="mb-3">
-                        <label class="form-label text-sm fw-semibold">Operario</label>
-                        <select name="company_user_pk" class="form-select form-select-sm" required>
-                            <option value="">Selecciona un operario…</option>
-                            {% for op in operators %}
-                            <option value="{{ op.pk }}">
-                                {{ op.user.get_full_name|default:op.user.username }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label text-sm fw-semibold">Fecha de inicio</label>
-                        <input type="date" name="start_date"
-                               class="form-control form-control-sm" required>
+                    <p class="text-sm text-muted mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        El periodo se creará para <strong>todos los operarios activos</strong> de la empresa.
+                    </p>
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold">Fecha de inicio</label>
+                            <input type="date" name="start_date" id="wpStartDate"
+                                   class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold">
+                                Fecha de fin <span class="text-muted fw-normal">(opcional)</span>
+                            </label>
+                            <input type="date" name="end_date" id="wpEndDate"
+                                   class="form-control form-control-sm">
+                        </div>
                     </div>
                     <div class="mb-0">
                         <label class="form-label text-sm fw-semibold">
@@ -875,6 +881,28 @@
     }
     .filter-machine-dropdown li:hover { background-color: #f0f4ff; }
 </style>
+<script>
+/* Initialise WorkPeriodCreate modal — pre-fill dates from suggested values.
+   Inicializar modal de creacion de periodo — pre-rellenar fechas desde valores sugeridos. */
+(function () {
+    "use strict";
+    document.addEventListener("DOMContentLoaded", function () {
+        var modalEl = document.getElementById("modalWorkPeriodCreate");
+        if (!modalEl) { return; }
+        modalEl.addEventListener("show.bs.modal", function (event) {
+            var btn      = event.relatedTarget;
+            var sugStart = btn ? btn.getAttribute("data-suggested-start") : "";
+            var sugEnd   = btn ? btn.getAttribute("data-suggested-end")   : "";
+            var inpStart = document.getElementById("wpStartDate");
+            var inpEnd   = document.getElementById("wpEndDate");
+            /* Only pre-fill if suggested values are present — clear otherwise.
+               Pre-rellenar solo si hay valores sugeridos — limpiar en caso contrario. */
+            if (inpStart) { inpStart.value = sugStart || ""; }
+            if (inpEnd)   { inpEnd.value   = sugEnd   || ""; }
+        });
+    });
+}());
+</script>
 <script>
 /* Initialise WorkPeriodClose modal — rellenar action y nombre de operario.
    Inicializar modal de cierre de periodo — rellenar action y nombre de operario. */

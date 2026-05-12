@@ -525,13 +525,112 @@
         });
 
         /* ------------------------------------------------------------------
-           Event: keyboard support — Escape closes the dropdown.
-           Evento: soporte teclado — Escape cierra el desplegable.
+           Text entry overlay — allows direct keyboard input of HH:MM.
+           Overlay de entrada de texto — permite entrada directa HH:MM por teclado.
+           Activated when the operator presses a digit or ':' on the display button.
+           Se activa cuando el operario pulsa un dígito o ':' sobre el botón display.
+        ------------------------------------------------------------------ */
+        function _openTextEntry(seedChar) {
+            /* Remove any existing overlay before creating a new one.
+               Eliminar cualquier overlay existente antes de crear uno nuevo. */
+            var existing = wrapper.querySelector(".tp-text-overlay");
+            if (existing) { existing.remove(); }
+
+            /* Build overlay input / Construir input overlay. */
+            var overlay = document.createElement("input");
+            overlay.type        = "text";
+            overlay.inputMode   = "numeric";
+            overlay.placeholder = "HH:MM";
+            overlay.className   = "tp-text-overlay form-control form-control-sm";
+            overlay.style.cssText = (
+                "position:absolute;top:0;left:0;width:100%;height:100%;" +
+                "z-index:10;border-radius:inherit;padding:0 0.4rem;" +
+                "font-size:inherit;box-sizing:border-box;"
+            );
+
+            /* Pre-fill with the key that triggered entry.
+               Pre-rellenar con la tecla que disparó la entrada. */
+            if (seedChar !== null) {
+                overlay.value = seedChar;
+            }
+
+            wrapper.style.position = "relative";
+            wrapper.appendChild(overlay);
+            overlay.focus();
+
+            /* Place cursor at end of pre-filled value.
+               Colocar el cursor al final del valor pre-rellenado. */
+            var len = overlay.value.length;
+            overlay.setSelectionRange(len, len);
+
+            /* Commit on Enter or blur / Confirmar con Enter o blur. */
+            function _commitOverlay() {
+                var raw = overlay.value.trim();
+                overlay.remove();
+
+                /* Validate and parse HH:MM — coerce minutes to 00 or 30.
+                   Validar y parsear HH:MM — forzar minutos a 00 o 30. */
+                var match = raw.match(/^(\d{1,2})[:\s]?(\d{0,2})$/);
+
+                var hh = parseInt(match[1], 10);
+                var mm = match[2] !== "" ? parseInt(match[2], 10) : 0;
+
+                if (isNaN(hh) || hh < 0 || hh > 23) { display.focus(); return; }
+                if (isNaN(mm) || mm < 0 || mm > 59)  { display.focus(); return; }
+
+                /* Round minutes to nearest allowed value (00 or 30).
+                   Redondear minutos al valor permitido más cercano (00 o 30). */
+                mm = mm < 15 ? 0 : mm < 45 ? 30 : 0;
+                var nextHh = mm === 0 && match[2] !== "" && parseInt(match[2], 10) >= 45
+                    ? hh + 1 : hh;
+                if (nextHh > 23) { nextHh = 23; mm = 30; }
+
+                state.h = String(nextHh).padStart(2, "0");
+                state.m = String(mm).padStart(2, "0");
+                _updateDisplay();
+                _updateSelections();
+                _commit();
+                display.focus();
+            }
+
+            overlay.addEventListener("keydown", function (e) {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    _commitOverlay();
+                } else if (e.key === "Escape") {
+                    overlay.remove();
+                    display.focus();
+                }
+            });
+
+            overlay.addEventListener("blur", function () {
+                /* Small timeout to allow Enter keydown to fire first.
+                   Pequeño timeout para que el keydown de Enter dispare primero. */
+                setTimeout(function () {
+                    if (wrapper.querySelector(".tp-text-overlay")) {
+                        _commitOverlay();
+                    }
+                }, 150);
+            });
+        }
+
+        /* ------------------------------------------------------------------
+           Event: keyboard support — digits and ':' open text entry overlay;
+           Escape closes the dropdown.
+           Evento: soporte teclado — dígitos y ':' abren overlay de texto;
+           Escape cierra el desplegable.
         ------------------------------------------------------------------ */
         display.addEventListener("keydown", function (e) {
             if (e.key === "Escape" || e.keyCode === 27) {
                 _close();
                 display.focus();
+                return;
+            }
+            /* Open text entry overlay on digit or colon press.
+               Abrir overlay de entrada de texto al pulsar dígito o dos puntos. */
+            if (/^\d$/.test(e.key) || e.key === ":") {
+                e.preventDefault();
+                _openTextEntry(e.key);
             }
         });
 
