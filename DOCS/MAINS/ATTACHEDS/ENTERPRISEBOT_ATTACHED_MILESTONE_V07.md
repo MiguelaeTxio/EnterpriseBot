@@ -535,6 +535,7 @@ Estado: COMPLETADO (sesiones 015-017).
 | 018    | 2026-05-11 | Flujo merge completo | Gate 0 en WorkOrderEntryConfirmView.post(). Helpers _serialize_pending_lines y _detect_overlaps. WorkOrderEntryMergeView (discard_new / discard_existing / merge). Template merge_entry.html (0 errores djlint). Ruta operator_merge en urls.py. Bug detectado: boton demarcar ausente en pestana Revisados de admin_history.html. |
 | 019    | 2026-05-11 | Bugs + mejoras UX + barrera fecha | Boton Desmarcar en pestana Revisados (admin_history.html). Gate 0 anadido a Via A (WorkOrderEntryFormView.post()). Fix JS merge_entry.html (MutationObserver + polling). Barrera fecha minima _get_min_allowed_date() server-side + client-side tres templates. Horas extra sin periodo activo (Tab 3 history.html). Edicion partes no revisados desde Mi historial (operator_form_edit). Diseno Via B dialogo progresivo TTS aprobado. Hoja de ruta S020-S023 definida. |
 | 020    | 2026-05-11 | Validacion E2E + bugs merge + tour guiado | Validacion E2E flujos merge (7 escenarios superados), edicion desde historial, barrera fecha minima y Via C. Bugs resueltos: btn Fusionar no se habilitaba (removeAttribute disabled + bloque extra_scripts), TimePicker sin restriccion 30min en merge_entry.html (include _time_picker_widget + step=1800), edicion desde historial activaba Gate 0 sobre el original (pre-eliminacion antes de Gate 0 en WorkOrderEntryFormView.post()). Sistema de visita guiada Driver.js implementado en todas las vistas WORKSHOP: _tour_driver_cdn.html, _tour_workshop.html (motor EbTour), boton Ayuda en base.html, tours en dashboard/form/stt/upload/confirm/history. |
+| 021    | 2026-05-12 | Bugs S021 + Reglas jornada + Exportacion admin | PRIMERA ACCION: corrección posicionamiento popover Driver.js (onHighlightStarted + scrollIntoView). SEGUNDA ACCION: entrada por teclado en TimePicker (_openTextEntry + overlay input texto). TERCERA ACCION: Regla B ya correcta; Regla A (excepcion comida 60min 13:00-15:30) en validators.py; Regla C (cobertura minima 8h con excepcion WorkerAbsence) en views.py. CUARTA ACCION Bug A: formulario exportacion admin_history.html corregido (POST + work_order_admin_export + pks explicitos). CUARTA ACCION Bug B: nuevo endpoint WorkOrderMachineFilterView + ruta urls.py + admin_history.js apunta al nuevo endpoint. QUINTA ACCION: overtime_worked_hours anadido al contexto de WorkOrderEntryHistoryView. Incidencia: TimePicker entrada teclado no operativa en produccion; desplegable dinamico maquina no visible en UI. |
 
 ---
 
@@ -693,18 +694,60 @@ ADVERTENCIA CRITICA — mantener siempre presente:
   panel/templates/panel/operator/history.html — para bugs Tab 1/2.
   panel/templates/panel/_time_picker_widget.html — para entrada por teclado.
 
-### Hoja de ruta de sesiones futuras (S022-S024)
+### Hoja de ruta de sesiones futuras (S022-S026)
 
-S022 — Rediseno Via B: dialogo progresivo con TTS nativo.
+S022 — Pendientes S021 (PRIORITARIO):
+
+  PRIMERA ACCION — TimePicker: entrada por teclado no operativa en produccion.
+    La implementacion de S021 (_openTextEntry) no funciona. Solicitar
+    _time_picker_widget.html al inicio de S022 via SFTP y diagnosticar por que
+    el overlay input no se activa al pulsar tecla numerica sobre tp-display.
+    Archivo afectado: panel/templates/panel/_time_picker_widget.html.
+
+  SEGUNDA ACCION — Desplegable dinamico maquina/CdG en historial admin:
+    El input #filter-machine-input sigue siendo texto libre sin desplegable.
+    El endpoint WorkOrderMachineFilterView existe y el JS apunta a el, pero
+    el desplegable #filter-machine-dropdown no aparece visualmente.
+    Diagnosticar inspeccionando admin_history.js y admin_history.html:
+    verificar que el elemento #filter-machine-dropdown existe en el HTML
+    con la clase filter-machine-dropdown y que el CSS lo posiciona correctamente.
+    Archivos afectados: panel/static/panel/js/admin_history.js,
+    panel/templates/panel/work_orders/admin_history.html.
+
+  TERCERA ACCION — Textos botones historial admin:
+    Tab Pendientes: boton "Editar" → "Editar / Revisar"; boton "Revisar" → "Marcar revisado".
+    Archivo afectado: panel/templates/panel/work_orders/admin_history.html.
+
+  CUARTA ACCION — Periodos: logica dinamica de pre-relleno de fechas.
+    El modal "Nuevo periodo" debe pre-rellenar las fechas de inicio y fin
+    basandose en el periodo anterior del mismo operario + 1 mes exacto.
+    Ejemplo: periodo anterior 05/04 al 04/05 → nuevo periodo pre-relleno
+    05/05 al 04/06, modificable por el supervisor antes de confirmar.
+    Si no existe periodo anterior, sin pre-relleno (comportamiento actual).
+    Implementacion: JavaScript en admin_history.html que lee las fechas
+    del ultimo periodo cerrado del operario seleccionado y las inyecta
+    en los inputs del modal modalWorkPeriodCreate al abrirse.
+    Archivo afectado: panel/templates/panel/work_orders/admin_history.html.
+
+  QUINTA ACCION — Ausencias: clarificacion conceptual y modal.
+    Los tipos de ausencia actuales (VACATION, SICK_LEAVE, WORK_ACCIDENT,
+    MATERNITY_PATERNITY, BEREAVEMENT, PERSONAL, OTHER) son correctos pero
+    el modal dice "Nueva ausencia" como titulo — mantenerlo simplemente
+    como "Ausencia" (sin "Nueva"). El boton de apertura del modal tambien
+    debe decir "Nueva ausencia" en el action bar — esto es correcto.
+    Solo cambiar el titulo del modal de "Nueva ausencia" a "Ausencia".
+    Archivo afectado: panel/templates/panel/work_orders/admin_history.html.
+
+S023 — Rediseno Via B: dialogo progresivo con TTS nativo.
   Ver seccion 2.37 para el diseno completo aprobado.
   Archivos afectados: panel/views.py (WorkOrderEntrySTTView refactor),
   panel/templates/panel/operator/stt_entry.html (rediseno completo).
   WorkOrderEntrySTTExtractView queda obsoleta y se retira.
 
-S023 — Diferidos: has_cg_incident + Dropdown CdG Otro.
+S024 — Diferidos: has_cg_incident + Dropdown CdG Otro.
   WorkOrder.has_cg_incident BooleanField + migracion.
   Dropdown CdG con opcion Otro + free-text, resolucion contra MachineAsset.
 
-S024 — Excel por periodo.
+S025 — Excel por periodo.
   Al cerrar un WorkPeriod, generacion del Excel consolidado del periodo.
   Integracion en WorkPeriodCloseView.

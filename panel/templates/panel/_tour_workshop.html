@@ -27,6 +27,20 @@
             doneBtnText:  "Entendido",
             progressText: "Paso {{current}} de {{total}}",
             onDestroyed:  function () { _driverInst = null; },
+            onHighlightStarted: function (element) {
+                /* Scroll the anchored element into view BEFORE Driver.js
+                   computes the popover coordinates. This prevents misalignment
+                   when the element is outside the visible viewport due to the
+                   fixed sidebar and overflow restrictions on the main container.
+                   ---
+                   Desplazar el elemento anclado a la vista ANTES de que Driver.js
+                   calcule las coordenadas del popover. Evita el desposicionamiento
+                   cuando el elemento está fuera del viewport visible por el sidebar
+                   fixed y las restricciones de overflow del contenedor principal. */
+                if (element && element.scrollIntoView) {
+                    element.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+                }
+            },
         });
         return _driverInst;
     }

@@ -83,6 +83,7 @@ from panel.views import (
     WorkPeriodListView,
     WorkPeriodCreateView,
     WorkPeriodCloseView,
+    WorkOrderMachineFilterView,
 )
 
 app_name = "panel"
@@ -231,6 +232,9 @@ urlpatterns = [
 
     # WorkOrder duplicate search — Búsqueda HTMX de duplicados (rol SUPERVISOR y ADMIN).
     # Paso 13 — Hito 8 (2026-04-29)
+    path("work-orders/machines/",
+         WorkOrderMachineFilterView.as_view(),
+         name="work_order_machine_filter"),
     path("work-orders/duplicates/search/", WorkOrderDuplicateSearchView.as_view(), name="work_order_duplicates_search"),
 
     # WorkOrder duplicate delete — Eliminación HTMX de duplicado concreto (rol ADMIN).

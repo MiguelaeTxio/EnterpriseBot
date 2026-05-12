@@ -106,7 +106,16 @@
         }
 
         function fetchSuggestions(q) {
-            fetch("/panel/operator/assets/?q=" + encodeURIComponent(q))
+            /* Build URL with current operator/date filters for scoped results.
+               Construir URL con filtros actuales de operario/fecha para resultados acotados. */
+            var params = new URLSearchParams({ q: q });
+            var opInput   = document.querySelector("[name='operator_pk']");
+            var dateFrom  = document.querySelector("[name='date_from']");
+            var dateTo    = document.querySelector("[name='date_to']");
+            if (opInput  && opInput.value)  { params.set("operator_pk", opInput.value); }
+            if (dateFrom && dateFrom.value) { params.set("date_from",   dateFrom.value); }
+            if (dateTo   && dateTo.value)   { params.set("date_to",     dateTo.value); }
+            fetch("/panel/work-orders/machines/?" + params.toString())
                 .then(function (r) { return r.json(); })
                 .then(function (data) { showDropdown(data.results || []); })
                 .catch(function () { dropdown.style.display = "none"; });

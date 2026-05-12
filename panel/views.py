@@ -6318,6 +6318,54 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             # Non-fatal: the work order is persisted; Excel can be regenerated.
             # No fatal: el parte está persistido; el Excel puede regenerarse.
 
+        # ------------------------------------------------------------------
+        # Regla C — Minimum shift coverage (8h) gate.
+        # Regla C — Gate de cobertura mínima de jornada (8h).
+        #
+        # The total delta_hours across all work blocks must sum to >= 8h,
+        # OR the operator must have an active WorkerAbsence for work_date.
+        # If neither condition is met, the part is rejected with a clear error.
+        #
+        # La suma de delta_hours de todos los bloques debe ser >= 8h,
+        # O el operario debe tener una WorkerAbsence activa para work_date.
+        # Si no se cumple ninguna condición, el parte se rechaza con error claro.
+        # ------------------------------------------------------------------
+        if work_date is not None:
+            from decimal import Decimal as _Dec_C2
+            from ivr_config.models import WorkerAbsence as _WA_C2
+            _total_hours_c2 = sum(
+                (ld["delta_hours"] for ld in _parsed_lines if ld.get("delta_hours") is not None),
+                _Dec_C2("0"),
+            )
+            _has_absence_c2 = _WA_C2.objects.filter(
+                company_user=cu,
+                start_date__lte=work_date,
+                end_date__gte=work_date,
+            ).exists()
+            if _total_hours_c2 < _Dec_C2("8") and not _has_absence_c2:
+                _missing_c2 = _Dec_C2("8") - _total_hours_c2
+                context = self._get_context_base(request)
+                extraction = request.session.get("operator_upload_extraction", {})
+                context.update({
+                    "error": (
+                        f"La jornada del parte suma {_total_hours_c2} h, "
+                        f"pero se requieren al menos 8 h. "
+                        f"Faltan {_missing_c2} h para completar la jornada. "
+                        f"Añade los bloques de trabajo que faltan o registra "
+                        f"una ausencia justificada para esta fecha."
+                    ),
+                    "extraction":          extraction,
+                    "fecha":               POST.get("fecha", ""),
+                    "uncertain_date":      False,
+                    "confidence":          "",
+                    "entradas_enriched":   [],
+                    "repuestos_enriched":  [],
+                    "num_entradas":        0,
+                    "num_repuestos":       0,
+                    "min_date":            _get_min_allowed_date(cu).isoformat() if _get_min_allowed_date(cu) else "",
+                })
+                return render(request, self.template_name, context)
+
         # Clear session extraction data / Limpiar datos de extracción de sesión.
         request.session.pop("operator_upload_extraction", None)
         request.session.modified = True
@@ -6949,6 +6997,78 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         # Non-blocking warnings from R6/R7 (meter reading jumps).
         # Avisos no bloqueantes de R6/R7 (saltos de contador).
         _meter_warnings = [w.message for w in _intra.warnings]
+
+        # ------------------------------------------------------------------
+        # Regla C — Minimum shift coverage (8h) gate.
+        # Regla C — Gate de cobertura mínima de jornada (8h).
+        #
+        # The total delta_hours across all work blocks must sum to >= 8h,
+        # OR the operator must have an active WorkerAbsence for work_date.
+        # If neither condition is met, the part is rejected with a clear error.
+        #
+        # La suma de delta_hours de todos los bloques debe ser >= 8h,
+        # O el operario debe tener una WorkerAbsence activa para work_date.
+        # Si no se cumple ninguna condición, el parte se rechaza con error claro.
+        # ------------------------------------------------------------------
+        if work_date is not None:
+            from decimal import Decimal as _Dec_C
+            from ivr_config.models import WorkerAbsence as _WA_C
+            _total_hours_c = sum(
+                (ld["delta_hours"] for ld in entry_lines_data if ld["delta_hours"] is not None),
+                _Dec_C("0"),
+            )
+            _has_absence_c = _WA_C.objects.filter(
+                company_user=cu,
+                start_date__lte=work_date,
+                end_date__gte=work_date,
+            ).exists()
+            if _total_hours_c < _Dec_C("8") and not _has_absence_c:
+                _missing_c = _Dec_C("8") - _total_hours_c
+                entradas_post_c = [
+                    {
+                        "idx":               ld["line_number"],
+                        "machine_raw":       ld["machine_raw"],
+                        "machine_asset":     ld["machine_asset"],
+                        "fault_description": ld["fault_description"],
+                        "repair_notes":      ld["repair_notes"],
+                        "hc":  ld["hc"].strftime("%H:%M") if ld["hc"] else "",
+                        "hf":  ld["hf"].strftime("%H:%M") if ld["hf"] else "",
+                        "or_val":            ld["or_val"],
+                        "flags":             [],
+                    }
+                    for ld in entry_lines_data
+                ]
+                repuestos_post_c = [
+                    {
+                        "ridx":          spd["line_number"],
+                        "referencia":    spd["referencia"],
+                        "vehiculo_raw":  spd["vehiculo_raw"],
+                        "vehicle_asset": spd["vehicle_asset"],
+                        "material":      spd["material"],
+                        "unidades":      str(spd["quantity"]) if spd["quantity"] is not None else "",
+                        "origen":        spd["source"],
+                        "proveedor":     spd["supplier"],
+                        "flags":         [],
+                    }
+                    for spd in spare_parts_data
+                ]
+                context = self._get_context_base(request)
+                context.update({
+                    "error": (
+                        f"La jornada del parte suma {_total_hours_c} h, "
+                        f"pero se requieren al menos 8 h. "
+                        f"Faltan {_missing_c} h para completar la jornada. "
+                        f"Añade los bloques de trabajo que faltan o registra "
+                        f"una ausencia justificada para esta fecha."
+                    ),
+                    "fecha":              fecha_str,
+                    "entradas_enriched":  entradas_post_c,
+                    "repuestos_enriched": repuestos_post_c,
+                    "num_entradas":       len(entry_lines_data),
+                    "num_repuestos":      len(spare_parts_data),
+                    "min_date":           _get_min_allowed_date(cu).isoformat() if _get_min_allowed_date(cu) else "",
+                })
+                return render(request, self.template_name, context)
 
         # ------------------------------------------------------------------
         # Atomic persistence / Persistencia atomica.
@@ -7843,9 +7963,13 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
             "current_period_hours":  current_period_hours,
             # Tab 2
             "period_groups":         period_groups,
-            # Tab 3
+            # Tab 3 — overtime_worked_hours is the raw sum used in the template
+            # formula display; overtime_hours is the net surplus/deficit.
+            # Tab 3 — overtime_worked_hours es la suma bruta usada en el template;
+            # overtime_hours es el superávit/déficit neto.
             "working_days_count":    working_days_count,
             "overtime_hours":        overtime_hours,
+            "overtime_worked_hours": current_period_hours,
             # Tab 4
             "absences":              absences,
         }
@@ -10510,6 +10634,208 @@ class WorkshopAssetDetailView(WorkshopRequiredMixin, View):
             "mileage":          float(asset.mileage) if asset.mileage is not None else None,
             "hours":            float(asset.hours)   if asset.hours   is not None else None,
         })
+
+
+class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
+    """
+    JSON endpoint returning distinct MachineAsset codes present in the
+    WorkOrderEntryLine records of DIGITAL/GENERATED WorkOrders for the
+    authenticated company, optionally filtered by operator and date range.
+    Used by the admin history machine autocomplete (Bug B fix).
+
+    GET /panel/work-orders/machines/
+        Optional GET params:
+          operator_pk (int)  — filter by uploaded_by CompanyUser pk.
+          date_from   (str)  — ISO date YYYY-MM-DD start of range.
+          date_to     (str)  — ISO date YYYY-MM-DD end of range.
+        Returns: {"results": ["G12", "A44", ...]}
+
+    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
+
+    ---
+
+    Endpoint JSON que devuelve los códigos de MachineAsset distintos presentes
+    en los WorkOrderEntryLine de los WorkOrders DIGITAL/GENERATED de la empresa
+    autenticada, con filtro opcional por operario y rango de fechas.
+    Usado por el autocompletado de máquina de admin_history (corrección Bug B).
+
+    GET /panel/work-orders/machines/
+        Parámetros GET opcionales:
+          operator_pk (int)  — filtrar por pk de CompanyUser uploaded_by.
+          date_from   (str)  — fecha ISO YYYY-MM-DD inicio del rango.
+          date_to     (str)  — fecha ISO YYYY-MM-DD fin del rango.
+        Devuelve: {"results": ["G12", "A44", ...]}
+
+    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
+    """
+
+    def get(self, request, *args, **kwargs):
+        """
+        Returns distinct MachineAsset codes present in the filtered WorkOrders.
+        ---
+        Devuelve los códigos de MachineAsset distintos en los WorkOrders filtrados.
+        """
+        from django.http import JsonResponse
+        from datetime import datetime as _dt_mf
+        from work_order_processor.models import WorkOrderEntryLine
+
+        company       = request.user.company_user.company
+        operator_pk   = request.GET.get("operator_pk", "").strip()
+        date_from_raw = request.GET.get("date_from", "").strip()
+        date_to_raw   = request.GET.get("date_to",   "").strip()
+
+        def _parse_iso(val):
+            """Parses YYYY-MM-DD string, returns date or None.
+            --- Parsea cadena YYYY-MM-DD, devuelve date o None."""
+            if not val:
+                return None
+            try:
+                return _dt_mf.strptime(val, "%Y-%m-%d").date()
+            except ValueError:
+                return None
+
+        date_from = _parse_iso(date_from_raw)
+        date_to   = _parse_iso(date_to_raw)
+
+        # Base queryset — scoped to DIGITAL/GENERATED sources for the company.
+        # Queryset base — acotado a orígenes DIGITAL/GENERATED de la empresa.
+        qs = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                entry__work_order__source__in=[
+                    WorkOrder.Source.DIGITAL,
+                    WorkOrder.Source.GENERATED,
+                ],
+                machine_asset__isnull=False,
+            )
+        )
+
+        # Optional operator filter / Filtro de operario opcional.
+        if operator_pk:
+            try:
+                qs = qs.filter(
+                    entry__work_order__uploaded_by__pk=int(operator_pk),
+                    entry__work_order__uploaded_by__company=company,
+                )
+            except (ValueError, TypeError):
+                pass
+
+        # Optional date range filter / Filtro de rango de fechas opcional.
+        if date_from:
+            qs = qs.filter(entry__work_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(entry__work_date__lte=date_to)
+
+        codes = (
+            qs
+            .values_list("machine_asset__code", flat=True)
+            .distinct()
+            .order_by("machine_asset__code")
+        )
+
+        return JsonResponse({"results": list(codes)})
+
+
+class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
+    """
+    JSON endpoint returning distinct MachineAsset codes present in the
+    WorkOrderEntryLine records of DIGITAL/GENERATED WorkOrders for the
+    authenticated company, optionally filtered by operator and date range.
+    Used by the admin history machine autocomplete (Bug B fix).
+
+    GET /panel/work-orders/machines/
+        Optional GET params:
+          operator_pk (int)  — filter by uploaded_by CompanyUser pk.
+          date_from   (str)  — ISO date YYYY-MM-DD start of range.
+          date_to     (str)  — ISO date YYYY-MM-DD end of range.
+        Returns: {"results": ["G12", "A44", ...]}
+
+    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
+
+    ---
+
+    Endpoint JSON que devuelve los códigos de MachineAsset distintos presentes
+    en los WorkOrderEntryLine de los WorkOrders DIGITAL/GENERATED de la empresa
+    autenticada, con filtro opcional por operario y rango de fechas.
+    Usado por el autocompletado de máquina de admin_history (corrección Bug B).
+
+    GET /panel/work-orders/machines/
+        Parámetros GET opcionales:
+          operator_pk (int)  — filtrar por pk de CompanyUser uploaded_by.
+          date_from   (str)  — fecha ISO YYYY-MM-DD inicio del rango.
+          date_to     (str)  — fecha ISO YYYY-MM-DD fin del rango.
+        Devuelve: {"results": ["G12", "A44", ...]}
+
+    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
+    """
+
+    def get(self, request, *args, **kwargs):
+        """
+        Returns distinct MachineAsset codes present in the filtered WorkOrders.
+        ---
+        Devuelve los códigos de MachineAsset distintos en los WorkOrders filtrados.
+        """
+        from django.http import JsonResponse
+        from datetime import datetime as _dt_mf
+        from work_order_processor.models import WorkOrderEntryLine
+
+        company       = request.user.company_user.company
+        operator_pk   = request.GET.get("operator_pk", "").strip()
+        date_from_raw = request.GET.get("date_from", "").strip()
+        date_to_raw   = request.GET.get("date_to",   "").strip()
+
+        def _parse_iso(val):
+            """Parses YYYY-MM-DD string, returns date or None.
+            --- Parsea cadena YYYY-MM-DD, devuelve date o None."""
+            if not val:
+                return None
+            try:
+                return _dt_mf.strptime(val, "%Y-%m-%d").date()
+            except ValueError:
+                return None
+
+        date_from = _parse_iso(date_from_raw)
+        date_to   = _parse_iso(date_to_raw)
+
+        # Base queryset — scoped to DIGITAL/GENERATED sources for the company.
+        # Queryset base — acotado a orígenes DIGITAL/GENERATED de la empresa.
+        qs = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                entry__work_order__source__in=[
+                    WorkOrder.Source.DIGITAL,
+                    WorkOrder.Source.GENERATED,
+                ],
+                machine_asset__isnull=False,
+            )
+        )
+
+        # Optional operator filter / Filtro de operario opcional.
+        if operator_pk:
+            try:
+                qs = qs.filter(
+                    entry__work_order__uploaded_by__pk=int(operator_pk),
+                    entry__work_order__uploaded_by__company=company,
+                )
+            except (ValueError, TypeError):
+                pass
+
+        # Optional date range filter / Filtro de rango de fechas opcional.
+        if date_from:
+            qs = qs.filter(entry__work_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(entry__work_date__lte=date_to)
+
+        codes = (
+            qs
+            .values_list("machine_asset__code", flat=True)
+            .distinct()
+            .order_by("machine_asset__code")
+        )
+
+        return JsonResponse({"results": list(codes)})
 
 
 class WorkOrderDescriptionAutocompleteView(WorkshopRequiredMixin, View):
