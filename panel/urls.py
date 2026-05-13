@@ -64,8 +64,6 @@ from panel.views import (
     WorkOrderEntryUploadView,
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
-    WorkOrderEntrySTTView,
-    WorkOrderEntrySTTExtractView,
     WorkOrderEntryMergeView,
     WorkOrderEntryHistoryView,
     WorkOrderAdminHistoryView,
@@ -181,8 +179,6 @@ urlpatterns = [
     # Operator form edit — Edición de parte digital no revisado desde Mi historial.
     # S019 — Hito 7 (2026-05-11)
     path("operator/form/<int:wo_pk>/edit/", WorkOrderEntryFormView.as_view(), name="operator_form_edit"),
-    path("operator/stt/",  WorkOrderEntrySTTView.as_view(),  name="operator_stt"),   # Paso 8 — Hito 7 (2026-04-30)
-    path("operator/stt/extract/", WorkOrderEntrySTTExtractView.as_view(), name="operator_stt_extract"),  # Paso 8 — Hito 7 — Gemini extract
 
     # Operator merge — Resolucion de conflicto de parte duplicado (rol WORKSHOP y ADMIN).
     # Primera Accion — Hito 7 Sesion 018 (2026-05-11)

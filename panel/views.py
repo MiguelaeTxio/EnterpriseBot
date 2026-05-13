@@ -21,6 +21,9 @@ Incorporaciones Hito 8 / Bloque G:
   WorkOrderUploadView       — mixin cambiado a SupervisorAccessMixin.
   WorkOrderExportView       — mixin cambiado a SupervisorAccessMixin; soporte del
                               parámetro export_mode para single_sheet / multi_sheet (H4).
+
+Hito 7 / S023:
+  WorkOrderEntrySTTView y WorkOrderEntrySTTExtractView eliminadas (Vía B abandonada).
 """
 
 from django.contrib.auth import update_session_auth_hash
@@ -63,7 +66,8 @@ from ivr_config.models import (
 )
 from whatsapp.models import WhatsAppTemplate, WhatsAppSession
 from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
-from work_order_processor.tasks import process_work_order_pdf
+from work_order_processor.services import find_cached_classification
+from work_order_processor.tasks import classify_fault_line, process_work_order_pdf
 from fleet.models import MachineAsset
 import logging
 import plotly.graph_objects as go
@@ -75,15 +79,15 @@ logger = logging.getLogger(__name__)
 class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
     """
     Landing view for CompanyUsers with the WORKSHOP role.
-    Displays a selector with the three work-order entry paths:
-    Form (structured web form), STT (speech-to-text dictation) and
-    Upload (photo or PDF with Gemini Vision extraction).
+    Displays a selector with the two remaining work-order entry paths:
+    Form (structured web form) and Upload (photo or PDF with Gemini Vision
+    extraction). Via B (STT) was removed in Hito 7 / S023.
     Accessible to WORKSHOP and ADMIN roles (WorkshopRequiredMixin).
     ---
     Vista de aterrizaje para CompanyUsers con rol WORKSHOP.
-    Muestra un selector con las tres vías de entrada de partes:
-    Form (formulario web estructurado), STT (dictado por voz) y
-    Upload (foto o PDF con extracción Gemini Vision).
+    Muestra un selector con las dos vías de entrada de partes disponibles:
+    Form (formulario web estructurado) y Upload (foto o PDF con extracción
+    Gemini Vision). La Vía B (STT) fue eliminada en Hito 7 / S023.
     Accesible para los roles WORKSHOP y ADMIN (WorkshopRequiredMixin).
     """
 
@@ -5236,12 +5240,12 @@ class WorkOrderEntryUploadView(WorkshopRequiredMixin, View):
 
 
 # ---------------------------------------------------------------------------
-# Module-level helpers shared by WorkOrderEntryFormView (and WorkOrderEntrySTTView
-# via delegation). Centralise POST parsing and two-pass asset resolution so
+# Module-level helpers shared by WorkOrderEntryFormView.
+# Centralise POST parsing and two-pass asset resolution so
 # that no view duplicates this logic.
 #
-# Helpers de módulo compartidos por WorkOrderEntryFormView (y WorkOrderEntrySTTView
-# mediante delegación). Centralizan el parseo del POST y la resolución de activos
+# Helpers de módulo compartidos por WorkOrderEntryFormView.
+# Centralizan el parseo del POST y la resolución de activos
 # en dos pasadas para que ninguna vista duplique esta lógica.
 # ---------------------------------------------------------------------------
 
@@ -6161,7 +6165,9 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 )
 
                 # WorkOrderEntryLine records / Registros WorkOrderEntryLine.
-                created_lines = {}
+                created_lines    = {}
+                created_line_pks = []  # Collected for classify_fault_line enqueue (post-atomic).
+                                       # Recogidos para el encolado de classify_fault_line (post-atomic).
                 for ld in entry_lines_data:
                     line = WorkOrderEntryLine.objects.create(
                         entry                = entry,
@@ -6181,6 +6187,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                         crane_hours_reading  = ld.get("crane_hours_reading"),
                     )
                     created_lines[ld["line_number"]] = line
+                    created_line_pks.append(line.pk)
 
                 # SparePartLine records linked to their entry line.
                 # Registros SparePartLine vinculados a su línea de entrada.
@@ -6300,6 +6307,45 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 "Por favor, inténtalo de nuevo o contacta con el administrador."
             )
             return render(request, self.template_name, context)
+
+        # Classify fault for each persisted line (post-atomic — records are
+        # guaranteed committed). Pre-lookup within the same company: if an
+        # identical (fault_description, repair_notes) pair is already classified,
+        # copy the result directly; otherwise enqueue classify_fault_line.
+        #
+        # Clasificar avería por cada línea persistida (post-atomic — registros
+        # garantizados commiteados). Pre-consulta dentro de la misma empresa: si
+        # ya existe un par (fault_description, repair_notes) idéntico clasificado,
+        # copiar el resultado directamente; si no, encolar classify_fault_line.
+        for _lpk in created_line_pks:
+            _line_obj = WorkOrderEntryLine.objects.filter(pk=_lpk).first()
+            if _line_obj is None:
+                continue
+            _cached = find_cached_classification(
+                fault_description=_line_obj.fault_description,
+                repair_notes=_line_obj.repair_notes,
+                company=company,
+            )
+            if _cached:
+                WorkOrderEntryLine.objects.filter(pk=_lpk).update(
+                    fault_category=_cached[0],
+                    fault_subcategory=_cached[1],
+                )
+                logger.info(
+                    "# [Confirm] Clasificación copiada desde caché para "
+                    "WorkOrderEntryLine pk=%d: category=%s subcategory=%s.",
+                    _lpk, _cached[0], _cached[1],
+                )
+            else:
+                classify_fault_line.apply_async(
+                    args=[_lpk],
+                    queue="work_orders",
+                )
+                logger.info(
+                    "# [Confirm] classify_fault_line encolada para "
+                    "WorkOrderEntryLine pk=%d.",
+                    _lpk,
+                )
 
         # ------------------------------------------------------------------
         # Synchronous Excel generation / Generación síncrona de Excel.
@@ -7136,7 +7182,9 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     raw_gemini_response   = None,
                 )
 
-                created_lines = {}
+                created_lines    = {}
+                created_line_pks = []  # Collected for classify_fault_line enqueue (post-atomic).
+                                       # Recogidos para el encolado de classify_fault_line (post-atomic).
                 for ld in entry_lines_data:
                     line = WorkOrderEntryLine.objects.create(
                         entry                = entry,
@@ -7156,6 +7204,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                         crane_hours_reading  = ld.get("crane_hours_reading"),
                     )
                     created_lines[ld["line_number"]] = line
+                    created_line_pks.append(line.pk)
 
                 for spd in spare_parts_data:
                     # Resolve target line: always use first created line since
@@ -7273,6 +7322,45 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             )
             return render(request, self.template_name, context)
 
+        # Classify fault for each persisted line (post-atomic — records are
+        # guaranteed committed). Pre-lookup within the same company: if an
+        # identical (fault_description, repair_notes) pair is already classified,
+        # copy the result directly; otherwise enqueue classify_fault_line.
+        #
+        # Clasificar avería por cada línea persistida (post-atomic — registros
+        # garantizados commiteados). Pre-consulta dentro de la misma empresa: si
+        # ya existe un par (fault_description, repair_notes) idéntico clasificado,
+        # copiar el resultado directamente; si no, encolar classify_fault_line.
+        for _lpk in created_line_pks:
+            _line_obj = WorkOrderEntryLine.objects.filter(pk=_lpk).first()
+            if _line_obj is None:
+                continue
+            _cached = find_cached_classification(
+                fault_description=_line_obj.fault_description,
+                repair_notes=_line_obj.repair_notes,
+                company=company,
+            )
+            if _cached:
+                WorkOrderEntryLine.objects.filter(pk=_lpk).update(
+                    fault_category=_cached[0],
+                    fault_subcategory=_cached[1],
+                )
+                logger.info(
+                    "# [FormView] Clasificación copiada desde caché para "
+                    "WorkOrderEntryLine pk=%d: category=%s subcategory=%s.",
+                    _lpk, _cached[0], _cached[1],
+                )
+            else:
+                classify_fault_line.apply_async(
+                    args=[_lpk],
+                    queue="work_orders",
+                )
+                logger.info(
+                    "# [FormView] classify_fault_line encolada para "
+                    "WorkOrderEntryLine pk=%d.",
+                    _lpk,
+                )
+
         # ------------------------------------------------------------------
         # Synchronous Excel generation / Generacion sincrona de Excel.
         # ------------------------------------------------------------------
@@ -7342,355 +7430,6 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             f"El informe Excel está disponible en la lista de partes."
         )
         return redirect("/panel/work-orders/")
-
-
-class WorkOrderEntrySTTView(WorkshopRequiredMixin, View):
-    """
-    Speech-to-text dictation entry path for work orders (Via B).
-    Allows WORKSHOP and ADMIN users to dictate a daily work-order part using
-    the browser-native Web Speech API (Chrome/Edge). The recognised text is
-    parsed client-side by a JavaScript parser that pre-fills the standard
-    form fields. The operator reviews and corrects the pre-filled form before
-    submitting. On POST, applies exactly the same integrity gate and atomic
-    persistence logic as WorkOrderEntryFormView.
-
-    GET  /panel/operator/stt/
-         Renders the dictation template with an empty, pre-fillable form.
-         No server-side processing is performed on GET.
-    POST /panel/operator/stt/
-         Reuses WorkOrderEntryFormView.post() logic verbatim:
-           - Parses fecha, entry lines and spare-part lines from POST.
-           - Applies the three-gate integrity barrier (sine qua non).
-           - On success, atomically persists WorkOrder + WorkOrderEntry +
-             N x WorkOrderEntryLine + M x SparePartLine and generates Excel.
-           - On failure, re-renders stt_entry.html with error context,
-             preserving all data already entered by the operator.
-    ---
-    Vía de entrada por dictado de voz para partes de trabajo (Vía B).
-    Permite a usuarios WORKSHOP y ADMIN dictar un parte diario usando la
-    Web Speech API nativa del navegador (Chrome/Edge). El texto reconocido
-    es parseado en cliente por un parser JavaScript que pre-rellena los
-    campos estándar del formulario. El operario revisa y corrige antes de
-    enviar. En POST aplica exactamente la misma barrera de integridad y
-    lógica de persistencia atómica que WorkOrderEntryFormView.
-
-    GET  /panel/operator/stt/
-         Renderiza el template de dictado con un formulario vacío y pre-rellenable.
-         No se realiza ningún procesamiento server-side en GET.
-    POST /panel/operator/stt/
-         Reutiliza verbatim la lógica de WorkOrderEntryFormView.post():
-           - Parsea fecha, bloques de entrada y repuestos del POST.
-           - Aplica la barrera de integridad de tres gates (sine qua non).
-           - En caso de éxito, persiste atómicamente WorkOrder + WorkOrderEntry +
-             N x WorkOrderEntryLine + M x SparePartLine y genera el Excel.
-           - En caso de fallo, re-renderiza stt_entry.html con contexto de error,
-             preservando todos los datos introducidos por el operario.
-    """
-
-    template_name = "panel/operator/stt_entry.html"
-
-    def _get_company_user(self, request):
-        """
-        Returns the CompanyUser for the authenticated request user.
-        ---
-        Devuelve el CompanyUser del usuario autenticado en la solicitud.
-        """
-        return request.user.company_user
-
-    def _get_context_base(self, request):
-        """
-        Returns the base template context with company and navigation data.
-        Also provides the list of active MachineAsset records for autocomplete.
-        Identical to WorkOrderEntryFormView._get_context_base().
-        ---
-        Devuelve el contexto base con empresa y datos de navegación.
-        También proporciona la lista de MachineAsset activos para autocompletado.
-        Idéntico a WorkOrderEntryFormView._get_context_base().
-        """
-        from fleet.models import MachineAsset
-        cu      = self._get_company_user(request)
-        company = cu.company
-        assets  = list(
-            MachineAsset.objects.filter(company=company, is_active=True)
-            .order_by("code")
-            .values("code", "brand_model")
-        )
-        return {
-            "company":      company,
-            "company_user": cu,
-            "active_nav":   "operator_dashboard",
-            "assets":       assets,
-        }
-
-    def get(self, request, *args, **kwargs):
-        """
-        Renders the STT dictation template with an empty pre-fillable form.
-        One default work block is included server-side; the JS parser may
-        populate it after the operator completes the dictation.
-        ---
-        Renderiza el template de dictado STT con un formulario vacío y
-        pre-rellenable. Un bloque de trabajo por defecto se incluye desde
-        el servidor; el parser JS puede poblarlo tras el dictado del operario.
-        """
-        context = self._get_context_base(request)
-        context.update({
-            "num_entradas":  1,
-            "num_repuestos": 0,
-            "fecha":         "",
-        })
-        return render(request, self.template_name, context)
-
-    def post(self, request, *args, **kwargs):
-        """
-        Delegates entirely to WorkOrderEntryFormView.post(), which contains
-        the canonical implementation of the three-gate integrity barrier and
-        atomic persistence block shared by both Via A (Form) and Via B (STT).
-        The only behavioural difference between the two views is the template
-        rendered on validation failure — WorkOrderEntryFormView uses
-        form_entry.html while this view uses stt_entry.html. That difference
-        is handled transparently because both views define self.template_name
-        and the FormView.post() renders via self.template_name.
-
-        Since STTView inherits WorkshopRequiredMixin and defines its own
-        _get_company_user() and _get_context_base() — identical to FormView —
-        the delegation is safe: FormView.post() calls self._get_company_user()
-        and self._get_context_base(), which resolve to STTView's own methods
-        via normal MRO, so the correct template and context are used throughout.
-        ---
-        Delega completamente en WorkOrderEntryFormView.post(), que contiene la
-        implementación canónica de la barrera de integridad de tres gates y el
-        bloque de persistencia atómica compartidos por la Vía A (Form) y la
-        Vía B (STT). La única diferencia de comportamiento entre ambas vistas
-        es el template renderizado en fallo de validación — WorkOrderEntryFormView
-        usa form_entry.html mientras esta vista usa stt_entry.html. Esa diferencia
-        se gestiona de forma transparente porque ambas vistas definen
-        self.template_name y FormView.post() renderiza mediante self.template_name.
-
-        Como STTView hereda WorkshopRequiredMixin y define sus propios métodos
-        _get_company_user() y _get_context_base() — idénticos a los de FormView —
-        la delegación es segura: FormView.post() llama a self._get_company_user()
-        y self._get_context_base(), que resuelven a los métodos propios de STTView
-        vía MRO normal, por lo que el template y contexto correctos se usan en
-        todo momento.
-        """
-        return WorkOrderEntryFormView.post(self, request, *args, **kwargs)
-
-
-class WorkOrderEntrySTTExtractView(WorkshopRequiredMixin, View):
-    """
-    JSON endpoint that receives a raw speech-to-text transcript and uses
-    Gemini Flash (text-only, Vertex AI) to extract structured work-order
-    fields from natural-language Spanish input.
-
-    POST /panel/operator/stt/extract/
-         Body (JSON): {"transcript": "<text>"}
-         Response (JSON):
-           {
-             "fecha":              "DD/MM/AAAA" | "",
-             "machine_raw":        "<code>" | "",
-             "hc":                 "HH:MM" | "",
-             "hf":                 "HH:MM" | "",
-             "fault_description": "<text>" | "",
-             "repair_notes":         "<text>" | "",
-             "or_val":             "<text>" | ""
-           }
-         On extraction failure returns the same schema with all empty strings
-         so the client can still render the form for manual correction.
-    ---
-    Endpoint JSON que recibe una transcripción de dictado por voz y utiliza
-    Gemini Flash (solo texto, Vertex AI) para extraer campos estructurados
-    de un parte de trabajo desde entrada en español coloquial.
-
-    POST /panel/operator/stt/extract/
-         Cuerpo (JSON): {"transcript": "<texto>"}
-         Respuesta (JSON): misma estructura que arriba.
-         En caso de fallo devuelve el mismo esquema con cadenas vacías para
-         que el cliente pueda renderizar el formulario para corrección manual.
-    """
-
-    # Extraction prompt for natural-language Spanish work-order dictation.
-    # Prompt de extracción para dictado de parte de trabajo en español coloquial.
-    _STT_EXTRACT_PROMPT = """Eres un asistente especializado en extraer datos de partes de trabajo dictados
-por voz en español coloquial por operarios de taller de maquinaria industrial.
-
-El operario puede usar lenguaje informal, números hablados (ocho, catorce, veinte),
-meses en letra o número, abreviaturas y frases coloquiales. Tu tarea es interpretar
-el texto con máxima tolerancia y extraer los siguientes campos:
-
-- fecha: fecha del parte en formato DD/MM/AAAA. Acepta "veinte del cuatro de 2026",
-  "20/4/2026", "20 de abril de 2026", "el dia 3 de mayo de 2026", etc.
-  Si no puedes determinarla con certeza, devuelve cadena vacía.
-- machine_raw: código alfanumérico de la máquina. Puede aparecer como "A-44",
-  "A44", "vehículo A 44", "maquina JD5090R", etc. Devuelve solo el código,
-  sin la keyword. Si el reconocedor de voz separa letras y números con espacio
-  (ej: "a 44"), reconstruye el código sin espacio ("A44").
-- hc: hora de inicio en formato HH:MM. Acepta "de 8 a 14", "hora de inicio 8",
-  "desde las ocho", "8:00", etc. Si no puedes determinarla, devuelve cadena vacía.
-- hf: hora de fin en formato HH:MM. Mismas variantes que hc.
-- fault_description: descripción de la avería o tarea. Texto limpio en español,
-  sin keywords ni relleno (elimina frases como "descripción de la avería",
-  "parte de repair_noteses", "orden de reparación", "ahora", etc.).
-- repair_notes: descripción de la reparación realizada. Texto limpio. Si no se
-  menciona explícitamente, devuelve cadena vacía.
-- or_val: referencia de la orden de reparación (O.R.). Puede ser un nombre propio,
-  número o código. Si no se menciona, devuelve cadena vacía.
-
-REGLAS OBLIGATORIAS:
-1. Responde ÚNICAMENTE con un objeto JSON válido. Sin texto adicional, sin bloques
-   de código markdown, sin explicaciones.
-2. Todos los campos son obligatorios en la respuesta. Si no puedes extraer un valor,
-   usa cadena vacía "".
-3. Las horas siempre en formato HH:MM con ceros a la izquierda (08:00, 14:00).
-4. La fecha siempre en formato DD/MM/AAAA con ceros a la izquierda (20/04/2026).
-5. machine_raw siempre en MAYÚSCULAS.
-
-Formato de respuesta exacto:
-{
-  "fecha": "",
-  "machine_raw": "",
-  "hc": "",
-  "hf": "",
-  "fault_description": "",
-  "repair_notes": "",
-  "or_val": ""
-}
-
-Transcripción del operario:
-"""
-
-    def post(self, request, *args, **kwargs):
-        """
-        Receives a plain-text Spanish transcript from the browser's Web Speech
-        API via a JSON body {"transcript": "<text>"}, sends it to Gemini 2.5
-        Flash (text-only, Vertex AI) and returns a structured JSON with the
-        extracted work-order fields.
-
-        This is intentionally text-in / JSON-out: the browser transcribes the
-        audio natively (free, no server round-trip for audio bytes) and only
-        the resulting text string reaches the server. Gemini handles all the
-        semantic extraction — date parsing, machine code normalisation, time
-        range detection, fault description cleanup — with far higher accuracy
-        than a client-side JS parser.
-
-        POST /panel/operator/stt/extract/
-             Body (JSON): {"transcript": "<texto dictado por el operario>"}
-             Response (JSON):
-               {
-                 "fecha":              "DD/MM/AAAA" | "",
-                 "machine_raw":        "<codigo>" | "",
-                 "hc":                 "HH:MM" | "",
-                 "hf":                 "HH:MM" | "",
-                 "fault_description": "<texto>" | "",
-                 "repair_notes":         "<texto>" | "",
-                 "or_val":             "<texto>" | ""
-               }
-             On any failure returns the same schema with all empty strings so
-             the client can still render the form for manual correction.
-        ---
-        Recibe una transcripción de texto plano en español desde la Web Speech
-        API del navegador vía cuerpo JSON {"transcript": "<texto>"}, la envía a
-        Gemini 2.5 Flash (solo texto, Vertex AI) y devuelve un JSON estructurado
-        con los campos del parte de trabajo extraídos.
-
-        El diseño es texto-entrada / JSON-salida: el navegador transcribe el
-        audio de forma nativa (gratuita, sin envío de bytes de audio al servidor)
-        y solo la cadena de texto resultante llega al servidor. Gemini gestiona
-        toda la extracción semántica — parsing de fechas, normalización de códigos
-        de máquina, detección de rangos horarios, limpieza de descripción de avería
-        — con una precisión muy superior a la de un parser JS en cliente.
-
-        En cualquier fallo devuelve el mismo esquema con cadenas vacías para
-        que el cliente pueda renderizar el formulario para corrección manual.
-        """
-        import json as _json
-        import re as _re
-        from django.http import JsonResponse
-        from work_order_processor.services import _get_gemini_client, _GEMINI_MODEL
-        from google.genai.types import GenerateContentConfig, HttpOptions, ThinkingConfig
-
-        _EMPTY = {
-            "fecha": "", "machine_raw": "", "hc": "", "hf": "",
-            "fault_description": "", "repair_notes": "", "or_val": "",
-        }
-
-        # JSON schema for structured output — guarantees field presence and types.
-        # Esquema JSON para salida estructurada — garantiza presencia y tipo de campos.
-        _RESPONSE_SCHEMA = {
-            "type": "object",
-            "properties": {
-                "fecha":              {"type": "string"},
-                "machine_raw":        {"type": "string"},
-                "hc":                 {"type": "string"},
-                "hf":                 {"type": "string"},
-                "fault_description": {"type": "string"},
-                "repair_notes":         {"type": "string"},
-                "or_val":             {"type": "string"},
-            },
-            "required": [
-                "fecha", "machine_raw", "hc", "hf",
-                "fault_description", "repair_notes", "or_val",
-            ],
-        }
-
-        # Parse JSON body — reject requests without a non-empty transcript.
-        # Parsear cuerpo JSON — rechazar peticiones sin transcripción no vacía.
-        try:
-            body       = _json.loads(request.body)
-            transcript = (body.get("transcript") or "").strip()
-        except (_json.JSONDecodeError, AttributeError):
-            return JsonResponse({"error": "Cuerpo JSON inválido."}, status=400)
-
-        if not transcript:
-            return JsonResponse({"error": "La transcripción está vacía."}, status=400)
-
-        logger.info(
-            "# [STTExtract] Transcripción recibida (%d chars): %s…",
-            len(transcript),
-            transcript[:120],
-        )
-
-        try:
-            client = _get_gemini_client()
-
-            response = client.models.generate_content(
-                model    = _GEMINI_MODEL,
-                contents = [self._STT_EXTRACT_PROMPT + transcript],
-                config   = GenerateContentConfig(
-                    http_options       = HttpOptions(timeout=30_000),
-                    response_mime_type = "application/json",
-                    response_schema    = _RESPONSE_SCHEMA,
-                    thinking_config    = ThinkingConfig(thinking_budget=0),
-                    temperature        = 0.0,
-                    max_output_tokens  = 512,
-                ),
-            )
-
-            # response_mime_type + response_schema guarantee pure structured JSON
-            # without markdown fences and with all fields present.
-            # thinking_budget=0 disables thinking for this simple extraction task,
-            # preventing thinking tokens from consuming the output token budget.
-            #
-            # response_mime_type + response_schema garantizan JSON estructurado puro
-            # sin bloques markdown y con todos los campos presentes.
-            # thinking_budget=0 desactiva el thinking para esta tarea simple de
-            # extracción, evitando que los tokens de pensamiento consuman el budget.
-            raw_text  = response.text.strip()
-            extracted = _json.loads(raw_text)
-            result    = {k: str(extracted.get(k, "") or "").strip() for k in _EMPTY}
-
-            logger.info(
-                "# [STTExtract] Extracción Gemini completada. "
-                "maquina=%s | fecha=%s | hc=%s | hf=%s.",
-                result["machine_raw"], result["fecha"],
-                result["hc"], result["hf"],
-            )
-            return JsonResponse(result)
-
-        except Exception as exc:
-            logger.error(
-                "# [STTExtract] Error en extracción Gemini texto: %s", exc, exc_info=True
-            )
-            return JsonResponse(_EMPTY)
 
 
 class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
@@ -8839,6 +8578,39 @@ class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
                 return redirect(reverse("panel:operator_history"))
 
             self._clear_pending(request)
+
+            # Classify fault for each new line (post-atomic).
+            # Pre-lookup within the same company before enqueuing.
+            # Clasificar avería para cada línea nueva (post-atomic).
+            # Pre-consulta dentro de la misma empresa antes de encolar.
+            for _line in new_entry.lines.all():
+                _cached = find_cached_classification(
+                    fault_description=_line.fault_description,
+                    repair_notes=_line.repair_notes,
+                    company=company,
+                )
+                if _cached:
+                    WorkOrderEntryLine.objects.filter(pk=_line.pk).update(
+                        fault_category=_cached[0],
+                        fault_subcategory=_cached[1],
+                    )
+                    logger.info(
+                        "# [MergeView/discard_existing] Clasificación copiada "
+                        "desde caché para WorkOrderEntryLine pk=%d: "
+                        "category=%s subcategory=%s.",
+                        _line.pk, _cached[0], _cached[1],
+                    )
+                else:
+                    classify_fault_line.apply_async(
+                        args=[_line.pk],
+                        queue="work_orders",
+                    )
+                    logger.info(
+                        "# [MergeView/discard_existing] classify_fault_line "
+                        "encolada para WorkOrderEntryLine pk=%d.",
+                        _line.pk,
+                    )
+
             try:
                 generate_work_order_excel(new_wo.pk)
             except Exception as exc:
@@ -8915,6 +8687,43 @@ class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
                 return redirect(reverse("panel:operator_history"))
 
             self._clear_pending(request)
+
+            # Classify fault for the newly appended lines only — the existing
+            # lines were already classified when first created. Pre-lookup
+            # within the same company before enqueuing.
+            # Clasificar avería solo para las líneas recién añadidas — las
+            # existentes ya fueron clasificadas al crearse. Pre-consulta dentro
+            # de la misma empresa antes de encolar.
+            _total_lines  = existing_entry.lines.count()
+            _new_start_nr = _total_lines - len(new_lines) + 1
+            for _line in existing_entry.lines.filter(line_number__gte=_new_start_nr):
+                _cached = find_cached_classification(
+                    fault_description=_line.fault_description,
+                    repair_notes=_line.repair_notes,
+                    company=company,
+                )
+                if _cached:
+                    WorkOrderEntryLine.objects.filter(pk=_line.pk).update(
+                        fault_category=_cached[0],
+                        fault_subcategory=_cached[1],
+                    )
+                    logger.info(
+                        "# [MergeView/merge] Clasificación copiada desde caché "
+                        "para WorkOrderEntryLine pk=%d: "
+                        "category=%s subcategory=%s.",
+                        _line.pk, _cached[0], _cached[1],
+                    )
+                else:
+                    classify_fault_line.apply_async(
+                        args=[_line.pk],
+                        queue="work_orders",
+                    )
+                    logger.info(
+                        "# [MergeView/merge] classify_fault_line encolada "
+                        "para WorkOrderEntryLine pk=%d.",
+                        _line.pk,
+                    )
+
             try:
                 generate_work_order_excel(existing_entry.work_order.pk)
             except Exception as exc:

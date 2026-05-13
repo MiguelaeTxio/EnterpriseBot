@@ -71,7 +71,6 @@
 ./panel/templates/panel/operator/confirm_entry.html
 ./panel/templates/panel/operator/dashboard.html
 ./panel/templates/panel/operator/upload_entry.html
-./panel/templates/panel/operator/stt_entry.html
 ./panel/static/panel/js/admin_history.js
 ./panel/static/panel/css/panel.css
 ./panel/static/panel/vendor/bootstrap.min.css
@@ -292,6 +291,7 @@
 ./work_order_processor/migrations/0012_workorder_generated_by.py
 ./work_order_processor/migrations/0005_add_spare_part_line.py
 ./work_order_processor/migrations/0011_sparepartline_unit_price.py
+./work_order_processor/migrations/0014_workorderentryline_fault_category_and_more.py
 ./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py
 ./work_order_processor/migrations/0008_workorder_has_overlap_incident.py
 ./work_order_processor/migrations/0010_workorderentryline_crane_hours_reading_and_more.py

@@ -1,17 +1,17 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/dashboard.html #}
 {#                                                                                          #}
 {# Operator dashboard — landing view for WORKSHOP role users.                               #}
-{# Displays a three-card selector for the work-order entry path:                           #}
+{# Displays a two-card selector for the work-order entry path:                             #}
 {#   - Vía A: Form   — structured web form (zero AI cost).                                 #}
-{#   - Vía B: STT    — speech-to-text dictation via Web Speech API (zero AI cost).         #}
 {#   - Vía C: Upload — photo or PDF processed by Gemini Vision.                            #}
+{# Via B (STT) removed in Hito 7 / S023.                                                   #}
 {# Also shows a read-only log of the operator's own work orders submitted today.           #}
 {#                                                                                          #}
 {# Dashboard de operario — vista de aterrizaje para usuarios con rol WORKSHOP.             #}
-{# Muestra un selector de tres tarjetas para la vía de entrada del parte:                  #}
+{# Muestra un selector de dos tarjetas para la vía de entrada del parte:                   #}
 {#   - Vía A: Form   — formulario web estructurado (coste IA cero).                        #}
-{#   - Vía B: STT    — dictado por voz mediante Web Speech API (coste IA cero).            #}
 {#   - Vía C: Upload — foto o PDF procesado por Gemini Vision.                             #}
+{# Vía B (STT) eliminada en Hito 7 / S023.                                                 #}
 {# También muestra un registro de solo lectura de los partes del operario del día.         #}
 {% extends "panel/base.html" %}
 
@@ -54,26 +54,6 @@
                     <a href="{% url 'panel:operator_form' %}"
                        class="btn btn-success btn-sm px-3">
                         <i class="bi bi-arrow-right-circle me-1"></i>Usar formulario
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        {# Vía B — STT #}
-        <div class="col-12 col-md-4" id="tour-via-stt">
-            <div class="card h-100 border-0 shadow-sm">
-                <div class="card-body d-flex flex-column align-items-start p-4">
-                    <div class="rounded-3 p-3 mb-3 stat-bg-blue">
-                        <i class="bi bi-mic-fill fs-3 text-primary"></i>
-                    </div>
-                    <h5 class="fw-semibold mb-1">Dictado por voz</h5>
-                    <p class="text-muted text-sm flex-grow-1 mb-3">
-                        Dicta tu parte en voz alta. El sistema transcribe y pre-rellena
-                        los campos automáticamente. Requiere Chrome o Edge.
-                    </p>
-                    <a href="{% url 'panel:operator_stt' %}"
-                       class="btn btn-primary btn-sm px-3">
-                        <i class="bi bi-arrow-right-circle me-1"></i>Usar dictado
                     </a>
                 </div>
             </div>
@@ -129,16 +109,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 title:       "Via A — Formulario",
                 description: "Rellena el parte campo a campo directamente en pantalla. " +
                              "Es la via mas rapida y precisa. Sin conexion a internet adicional ni esperas.",
-                side:        "bottom",
-                align:       "center",
-            },
-        },
-        {
-            element:  "#tour-via-stt",
-            popover: {
-                title:       "Via B — Dictado por voz",
-                description: "Dicta el parte en voz alta. El sistema transcribe y rellena el formulario " +
-                             "automaticamente. Requiere Chrome o Edge. Ideal si tienes las manos ocupadas.",
                 side:        "bottom",
                 align:       "center",
             },

@@ -12,6 +12,13 @@ Defines three models that form the complete work-order processing pipeline:
                        Carries the actual work data: machine, description,
                        repair notes, start/end times and the resolved MachineAsset FK.
 
+Two auxiliary TextChoices classes are also defined at module level:
+
+  FaultCategory    — 8 top-level fault groups for automatic classification
+                     (Hito 7 / S023).
+  FaultSubcategory — ~30 fault subgroups, one subset per FaultCategory
+                     (Hito 7 / S023).
+
 ---
 
 Modelos de la aplicación work_order_processor.
@@ -27,6 +34,13 @@ Define tres modelos que forman el pipeline completo de procesamiento de partes:
                        (hasta 4 por página). Contiene los datos reales del trabajo:
                        máquina, descripción, notas de reparación, horas de inicio/fin
                        y el FK resuelto a MachineAsset.
+
+También se definen dos clases TextChoices a nivel de módulo:
+
+  FaultCategory    — 8 grupos principales de avería para clasificación automática
+                     (Hito 7 / S023).
+  FaultSubcategory — ~30 subgrupos de avería, un subconjunto por FaultCategory
+                     (Hito 7 / S023).
 """
 
 from django.db import models
@@ -34,6 +48,124 @@ from django.utils.translation import gettext_lazy as _
 
 from fleet.models import MachineAsset
 from ivr_config.models import Company, CompanyUser
+
+
+# ---------------------------------------------------------------------------
+# FaultCategory — top-level fault groups for automatic classification
+# FaultCategory — grupos principales de avería para clasificación automática
+# ---------------------------------------------------------------------------
+
+class FaultCategory(models.TextChoices):
+    """
+    Top-level fault groups used for automatic classification of work-order
+    entry lines via Gemini Flash (classify_fault task). Stored in
+    WorkOrderEntryLine.fault_category. Used exclusively for analytics and
+    filtering — never shown to the operator in any form or view.
+
+    ---
+
+    Grupos principales de avería para la clasificación automática de líneas
+    de parte vía Gemini Flash (tarea classify_fault). Se almacena en
+    WorkOrderEntryLine.fault_category. Exclusivamente para analítica y
+    filtrado — nunca se muestra al operario en ningún formulario ni vista.
+    """
+
+    ENGINE_TRANSMISSION        = "ENGINE_TRANSMISSION",        _("Motor y transmisión")
+    HYDRAULIC                  = "HYDRAULIC",                  _("Sistema hidráulico")
+    ELECTRICAL_ELECTRONIC      = "ELECTRICAL_ELECTRONIC",      _("Eléctrico y electrónico")
+    BRAKES_STEERING_SUSPENSION = "BRAKES_STEERING_SUSPENSION", _("Frenos, dirección y suspensión")
+    TYRES_RUNNING_GEAR         = "TYRES_RUNNING_GEAR",         _("Neumáticos y rodadura")
+    LIFTING_STRUCTURE          = "LIFTING_STRUCTURE",          _("Estructura y sistemas de elevación")
+    BODYWORK_CHASSIS           = "BODYWORK_CHASSIS",           _("Carrocería y chasis")
+    OTHER                      = "OTHER",                      _("Otras averías")
+
+
+# ---------------------------------------------------------------------------
+# FaultSubcategory — fault subgroups for fine-grained classification
+# FaultSubcategory — subgrupos de avería para clasificación detallada
+# ---------------------------------------------------------------------------
+
+class FaultSubcategory(models.TextChoices):
+    """
+    Fine-grained fault subgroups grouped under FaultCategory. Stored in
+    WorkOrderEntryLine.fault_subcategory. Used exclusively for analytics
+    and filtering — never shown to the operator in any form or view.
+
+    Subgroup prefixes map to their parent FaultCategory:
+      ET_  → ENGINE_TRANSMISSION
+      HY_  → HYDRAULIC
+      EE_  → ELECTRICAL_ELECTRONIC
+      BSS_ → BRAKES_STEERING_SUSPENSION
+      TRG_ → TYRES_RUNNING_GEAR
+      LS_  → LIFTING_STRUCTURE
+      BC_  → BODYWORK_CHASSIS
+      OT_  → OTHER
+
+    ---
+
+    Subgrupos detallados de avería agrupados bajo FaultCategory. Se almacena en
+    WorkOrderEntryLine.fault_subcategory. Exclusivamente para analítica y
+    filtrado — nunca se muestra al operario en ningún formulario ni vista.
+
+    Los prefijos de subgrupo se corresponden con su FaultCategory padre:
+      ET_  → ENGINE_TRANSMISSION
+      HY_  → HYDRAULIC
+      EE_  → ELECTRICAL_ELECTRONIC
+      BSS_ → BRAKES_STEERING_SUSPENSION
+      TRG_ → TYRES_RUNNING_GEAR
+      LS_  → LIFTING_STRUCTURE
+      BC_  → BODYWORK_CHASSIS
+      OT_  → OTHER
+    """
+
+    # ENGINE_TRANSMISSION subgroups / Subgrupos de Motor y transmisión
+    ET_ENGINE      = "ET_ENGINE",      _("Motor")
+    ET_TRANSMISSION = "ET_TRANSMISSION", _("Transmisión")
+    ET_PTO         = "ET_PTO",         _("Toma de fuerza (PTO)")
+    ET_COOLING     = "ET_COOLING",     _("Sistema de refrigeración")
+    ET_FUEL        = "ET_FUEL",        _("Sistema de combustible")
+
+    # HYDRAULIC subgroups / Subgrupos de Sistema hidráulico
+    HY_PUMP        = "HY_PUMP",        _("Bomba hidráulica")
+    HY_CYLINDERS   = "HY_CYLINDERS",   _("Cilindros hidráulicos")
+    HY_VALVES      = "HY_VALVES",      _("Válvulas hidráulicas")
+    HY_OIL         = "HY_OIL",        _("Aceite y circuito hidráulico")
+    HY_CENTRAL     = "HY_CENTRAL",     _("Central hidráulica")
+
+    # ELECTRICAL_ELECTRONIC subgroups / Subgrupos de Eléctrico y electrónico
+    EE_WIRING      = "EE_WIRING",      _("Cableado y conectores")
+    EE_SENSORS     = "EE_SENSORS",     _("Sensores y sondas")
+    EE_CONTROLS    = "EE_CONTROLS",    _("Mandos y controles")
+    EE_LIGHTS      = "EE_LIGHTS",      _("Iluminación")
+    EE_BATTERY     = "EE_BATTERY",     _("Batería y sistema de carga")
+
+    # BRAKES_STEERING_SUSPENSION subgroups / Subgrupos de Frenos, dirección y suspensión
+    BSS_BRAKES     = "BSS_BRAKES",     _("Frenos")
+    BSS_STEERING   = "BSS_STEERING",   _("Dirección")
+    BSS_SUSPENSION = "BSS_SUSPENSION", _("Suspensión")
+
+    # TYRES_RUNNING_GEAR subgroups / Subgrupos de Neumáticos y rodadura
+    TRG_TYRES      = "TRG_TYRES",      _("Neumáticos")
+    TRG_AXLES      = "TRG_AXLES",      _("Ejes y transmisión de rueda")
+    TRG_TRACKS     = "TRG_TRACKS",     _("Cadenas y rodadura oruga")
+
+    # LIFTING_STRUCTURE subgroups / Subgrupos de Estructura y sistemas de elevación
+    LS_BOOM        = "LS_BOOM",        _("Pluma y brazo")
+    LS_HOOK_PULLEYS = "LS_HOOK_PULLEYS", _("Gancho y poleas")
+    LS_CABLE       = "LS_CABLE",       _("Cable de elevación")
+    LS_ROTATION    = "LS_ROTATION",    _("Sistema de rotación")
+    LS_STABILIZERS = "LS_STABILIZERS", _("Estabilizadores y apoyos")
+    LS_MAST        = "LS_MAST",        _("Mástil y horquillas")
+    LS_PLATFORM    = "LS_PLATFORM",    _("Plataforma elevadora")
+    LS_FIFTH_WHEEL = "LS_FIFTH_WHEEL", _("Quinta rueda")
+    LS_CHASSIS_TRAILER = "LS_CHASSIS_TRAILER", _("Chasis de semirremolque")
+
+    # BODYWORK_CHASSIS subgroups / Subgrupos de Carrocería y chasis
+    BC_BODYWORK    = "BC_BODYWORK",    _("Carrocería")
+    BC_CHASSIS     = "BC_CHASSIS",     _("Chasis estructural")
+
+    # OTHER subgroups / Subgrupos de Otras averías
+    OT_OTHER       = "OT_OTHER",       _("Otra avería no clasificada")
 
 
 class WorkOrder(models.Model):
@@ -697,6 +829,45 @@ class WorkOrderEntryLine(models.Model):
             "Lista de campos con lectura incierta en este bloque. "
             "Valores posibles: 'H.C.', 'H.F.', 'DESCRIPCION', 'MAQUINA'. "
             "Se usa para generar el Manifiesto de Incidencias en el Excel."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Fault classification — Hito 7 / S023
+    # Clasificación de avería — Hito 7 / S023
+    #
+    # Populated automatically after INSERT by the Celery task
+    # classify_fault_line (high_priority queue). Never filled by the
+    # operator. Used exclusively for analytics and filtering.
+    #
+    # Poblados automáticamente tras el INSERT por la tarea Celery
+    # classify_fault_line (cola high_priority). Nunca los rellena el
+    # operario. Exclusivamente para analítica y filtrado.
+    # ------------------------------------------------------------------
+    fault_category = models.CharField(
+        _("Categoría de avería"),
+        max_length=40,
+        choices=FaultCategory.choices,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text=_(
+            "Grupo principal de avería asignado automáticamente por Gemini Flash "
+            "tras el guardado del bloque. No lo rellena el operario. "
+            "Vacío hasta que la tarea Celery classify_fault_line lo procese."
+        ),
+    )
+    fault_subcategory = models.CharField(
+        _("Subcategoría de avería"),
+        max_length=60,
+        choices=FaultSubcategory.choices,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text=_(
+            "Subgrupo detallado de avería asignado automáticamente por Gemini Flash "
+            "tras el guardado del bloque. No lo rellena el operario. "
+            "Vacío hasta que la tarea Celery classify_fault_line lo procese."
         ),
     )
 

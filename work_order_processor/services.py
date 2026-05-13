@@ -2,18 +2,27 @@
 
 """
 Business logic services for the work_order_processor application.
-Contains two primary services:
+Contains three primary services:
   - extract_work_order_page(): sends a rasterized PDF page to Gemini Vision
     and returns a structured multi-block dict (up to 4 work blocks per page).
   - generate_work_order_excel(): builds an Excel report conforming to the
     partes-trabajo skill v1.2 specification: 17 columns, configuration area
     (rows 1-3), colour-coded REVISION HORARIO, LEYENDA sheet and MANIFIESTO
     DE INCIDENCIAS block at the foot of the data sheet.
+  - classify_fault(): sends fault_description + repair_notes of a single
+    WorkOrderEntryLine to Gemini Flash (text-only, Vertex AI) and returns a
+    (FaultCategory, FaultSubcategory) tuple. Called exclusively by the Celery
+    task classify_fault_line (Hito 7 / S023).
+  - find_cached_classification(): looks up an existing classified
+    WorkOrderEntryLine within the same company whose fault_description and
+    repair_notes match exactly. Returns a (category, subcategory) tuple if
+    found, or None if no match exists. Used as a pre-enqueue gate to avoid
+    unnecessary Gemini calls for repeated fault descriptions (Hito 7 / S023).
 
 ---
 
 Servicios de lógica de negocio para la aplicación work_order_processor.
-Contiene dos servicios principales:
+Contiene cuatro servicios principales:
   - extract_work_order_page(): envía una página del PDF rasterizada a Gemini
     Vision y devuelve un dict multi-bloque estructurado (hasta 4 bloques de
     trabajo por página).
@@ -21,6 +30,16 @@ Contiene dos servicios principales:
     especificación de la skill partes-trabajo v1.2: 17 columnas, área de
     configuración (filas 1-3), REVISIÓN HORARIO con código de colores, hoja
     LEYENDA y bloque MANIFIESTO DE INCIDENCIAS al pie de la hoja de datos.
+  - classify_fault(): envía fault_description + repair_notes de una sola
+    WorkOrderEntryLine a Gemini Flash (solo texto, Vertex AI) y devuelve una
+    tupla (FaultCategory, FaultSubcategory). Llamado exclusivamente por la
+    tarea Celery classify_fault_line (Hito 7 / S023).
+  - find_cached_classification(): busca una WorkOrderEntryLine ya clasificada
+    dentro de la misma empresa cuya fault_description y repair_notes coincidan
+    exactamente. Devuelve una tupla (categoría, subcategoría) si encuentra
+    coincidencia, o None si no existe. Se usa como gate previo al encolado
+    para evitar llamadas innecesarias a Gemini en averías repetidas
+    (Hito 7 / S023).
 """
 
 import io
@@ -66,10 +85,10 @@ from openpyxl.utils import get_column_letter
 from django.core.files.base import ContentFile
 from django.utils import timezone
 from google import genai
-from google.genai.types import GenerateContentConfig, HttpOptions, Part
+from google.genai.types import GenerateContentConfig, HttpOptions, Part, ThinkingConfig
 
 from fleet.models import MachineAsset
-from .models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
+from .models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine, FaultCategory, FaultSubcategory
 
 logger = logging.getLogger(__name__)
 
@@ -2130,3 +2149,266 @@ def generate_work_order_excel(work_order_id: int) -> None:
         work_order.error_log = f"Error en generación de Excel: {exc}"
         work_order.save(update_fields=["status", "error_log"])
         raise
+
+
+# ---------------------------------------------------------------------------
+# classify_fault — automatic fault classification via Gemini Flash (text-only)
+# classify_fault — clasificación automática de avería vía Gemini Flash (solo texto)
+# ---------------------------------------------------------------------------
+
+# Response schema for classify_fault — guarantees both fields are always present
+# in the JSON output. Values must be valid FaultCategory / FaultSubcategory codes.
+#
+# Esquema de respuesta para classify_fault — garantiza que ambos campos estén
+# siempre presentes en el JSON de salida. Los valores deben ser códigos válidos
+# de FaultCategory / FaultSubcategory.
+_CLASSIFY_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "fault_category":    {"type": "string"},
+        "fault_subcategory": {"type": "string"},
+    },
+    "required": ["fault_category", "fault_subcategory"],
+}
+
+# Classification prompt — built once at module level to avoid repeated string
+# construction. Embeds the full taxonomy so Gemini can pick the exact codes.
+#
+# Prompt de clasificación — construido una vez a nivel de módulo para evitar
+# construcción repetida de cadenas. Embebe la taxonomía completa para que
+# Gemini pueda elegir los códigos exactos.
+_CLASSIFY_PROMPT = """Eres un sistema de clasificación automática de averías en maquinaria industrial
+pesada (grúas, carretillas elevadoras, equipos de obra, camiones).
+
+Se te proporciona la descripción de una avería y las notas de reparación de un
+parte de trabajo de taller. Tu tarea es asignar el par de códigos más preciso
+de la taxonomía siguiente.
+
+TAXONOMÍA — Categorías principales (fault_category):
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible
+  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
+  ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
+  BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
+  TYRES_RUNNING_GEAR         — Neumáticos, ejes, cadenas y rodadura oruga
+  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, estabilizadores,
+                               mástil/horquillas, plataforma, quinta rueda, chasis semirremolque
+  BODYWORK_CHASSIS           — Carrocería, chasis estructural
+  OTHER                      — Cualquier avería que no encaje en los grupos anteriores
+
+TAXONOMÍA — Subcategorías (fault_subcategory):
+  ET_ENGINE | ET_TRANSMISSION | ET_PTO | ET_COOLING | ET_FUEL
+  HY_PUMP | HY_CYLINDERS | HY_VALVES | HY_OIL | HY_CENTRAL
+  EE_WIRING | EE_SENSORS | EE_CONTROLS | EE_LIGHTS | EE_BATTERY
+  BSS_BRAKES | BSS_STEERING | BSS_SUSPENSION
+  TRG_TYRES | TRG_AXLES | TRG_TRACKS
+  LS_BOOM | LS_HOOK_PULLEYS | LS_CABLE | LS_ROTATION | LS_STABILIZERS |
+  LS_MAST | LS_PLATFORM | LS_FIFTH_WHEEL | LS_CHASSIS_TRAILER
+  BC_BODYWORK | BC_CHASSIS
+  OT_OTHER
+
+REGLAS OBLIGATORIAS:
+1. Responde ÚNICAMENTE con un objeto JSON válido. Sin texto adicional, sin
+   bloques de código markdown, sin explicaciones.
+2. Los dos campos son obligatorios. Usa exactamente los códigos de la taxonomía.
+3. La subcategoría debe pertenecer a la categoría elegida (mismos prefijos).
+4. Si la información es insuficiente o no encaja, usa OTHER / OT_OTHER.
+
+Formato de respuesta exacto:
+{
+  "fault_category": "<CODIGO_CATEGORIA>",
+  "fault_subcategory": "<CODIGO_SUBCATEGORIA>"
+}
+
+Descripción de la avería: {fault_description}
+Notas de reparación: {repair_notes}
+"""
+
+# Valid code sets — used for post-extraction validation.
+# Conjuntos de códigos válidos — usados para validación post-extracción.
+_VALID_CATEGORIES    = {c.value for c in FaultCategory}
+_VALID_SUBCATEGORIES = {s.value for s in FaultSubcategory}
+
+
+def classify_fault(
+    fault_description: str,
+    repair_notes: str,
+) -> tuple[str, str]:
+    """
+    Sends fault_description and repair_notes to Gemini Flash (text-only,
+    Vertex AI) and returns a (fault_category, fault_subcategory) tuple
+    whose values are guaranteed to be valid FaultCategory / FaultSubcategory
+    codes. On any error or invalid response, falls back to ("", "").
+
+    Uses thinking_budget=0 and temperature=0.0 for deterministic, fast
+    classification. max_output_tokens=64 is sufficient for the two-field JSON.
+    A single attempt is made — retries are delegated to the Celery task layer
+    (classify_fault_line). The 429-retry loop (3 attempts, 60 s wait) defined
+    in the Celery task layer handles Vertex AI contention (Key Learning).
+
+    ---
+
+    Envía fault_description y repair_notes a Gemini Flash (solo texto,
+    Vertex AI) y devuelve una tupla (fault_category, fault_subcategory)
+    cuyos valores están garantizados como códigos válidos de FaultCategory /
+    FaultSubcategory. Ante cualquier error o respuesta inválida, retorna ("", "").
+
+    Usa thinking_budget=0 y temperature=0.0 para clasificación determinista
+    y rápida. max_output_tokens=64 es suficiente para el JSON de dos campos.
+    Se realiza un único intento — los reintentos se delegan a la capa de tarea
+    Celery (classify_fault_line). El bucle de reintento por 429 (3 intentos,
+    espera 60 s) definido en la capa Celery gestiona la contención de Vertex AI
+    (Key Learning).
+    """
+    prompt = _CLASSIFY_PROMPT.format(
+        fault_description=fault_description or "(sin descripción)",
+        repair_notes=repair_notes or "(sin notas)",
+    )
+
+    try:
+        client = _get_gemini_client()
+
+        response = client.models.generate_content(
+            model    = _GEMINI_MODEL,
+            contents = [prompt],
+            config   = GenerateContentConfig(
+                http_options       = HttpOptions(timeout=30_000),
+                response_mime_type = "application/json",
+                response_schema    = _CLASSIFY_RESPONSE_SCHEMA,
+                thinking_config    = ThinkingConfig(thinking_budget=0),
+                temperature        = 0.0,
+                max_output_tokens  = 64,
+            ),
+        )
+
+        raw      = response.text.strip()
+        parsed   = json.loads(raw)
+        category = str(parsed.get("fault_category", "")).strip()
+        subcat   = str(parsed.get("fault_subcategory", "")).strip()
+
+        # Validate that both codes belong to the taxonomy.
+        # Validar que ambos códigos pertenecen a la taxonomía.
+        if category not in _VALID_CATEGORIES or subcat not in _VALID_SUBCATEGORIES:
+            logger.warning(
+                "# [classify_fault] Códigos fuera de taxonomía devueltos por Gemini: "
+                "category=%r subcategory=%r. Se usará fallback vacío.",
+                category,
+                subcat,
+            )
+            return "", ""
+
+        logger.info(
+            "# [classify_fault] Clasificación completada: category=%s subcategory=%s.",
+            category,
+            subcat,
+        )
+        return category, subcat
+
+    except Exception as exc:
+        logger.error(
+            "# [classify_fault] Error en clasificación Gemini: %s",
+            exc,
+            exc_info=True,
+        )
+        return "", ""
+
+
+# ---------------------------------------------------------------------------
+# find_cached_classification — exact-match lookup within the same company
+# find_cached_classification — búsqueda por coincidencia exacta en la misma empresa
+# ---------------------------------------------------------------------------
+
+def find_cached_classification(
+    fault_description: str,
+    repair_notes: str,
+    company,
+) -> tuple[str, str] | None:
+    """
+    Looks up an already-classified WorkOrderEntryLine belonging to the same
+    company whose fault_description and repair_notes match the provided values
+    exactly (case-insensitive, leading/trailing whitespace stripped).
+
+    Returns a (fault_category, fault_subcategory) tuple if a match with a
+    non-empty fault_category is found, or None otherwise.
+
+    This function is called as a pre-enqueue gate in the three WorkOrderEntryLine
+    INSERT points (WorkOrderEntryConfirmView, WorkOrderEntryFormView,
+    WorkOrderEntryMergeView). When a match is found the classification is copied
+    directly, avoiding a Gemini Flash inference call. When no match is found,
+    the caller enqueues classify_fault_line for asynchronous classification.
+
+    Scope is deliberately limited to the same company: fault taxonomy varies
+    significantly across companies (e.g. crane repairs vs. assembly work vs.
+    administrative tasks), so cross-company matches would produce incorrect
+    classifications.
+
+    ---
+
+    Busca una WorkOrderEntryLine ya clasificada de la misma empresa cuya
+    fault_description y repair_notes coincidan exactamente con los valores
+    proporcionados (sin distinción de mayúsculas, espacios iniciales/finales
+    eliminados).
+
+    Devuelve una tupla (fault_category, fault_subcategory) si existe una
+    coincidencia con fault_category no vacío, o None en caso contrario.
+
+    Esta función se invoca como gate previo al encolado en los tres puntos de
+    INSERT de WorkOrderEntryLine (WorkOrderEntryConfirmView,
+    WorkOrderEntryFormView, WorkOrderEntryMergeView). Cuando se encuentra
+    coincidencia, la clasificación se copia directamente, evitando una llamada
+    de inferencia a Gemini Flash. Cuando no hay coincidencia, el llamador
+    encola classify_fault_line para clasificación asíncrona.
+
+    El scope se limita deliberadamente a la misma empresa: la taxonomía de
+    averías varía significativamente entre empresas (p.ej. reparaciones de
+    grúa vs. trabajos de montaje vs. tareas administrativas), por lo que las
+    coincidencias entre empresas producirían clasificaciones incorrectas.
+    """
+    # Normalise inputs — strip and lower for case-insensitive exact match.
+    # Normalizar entradas — strip y lower para coincidencia exacta sin case.
+    norm_description = (fault_description or "").strip().lower()
+    norm_notes       = (repair_notes or "").strip().lower()
+
+    try:
+        match = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                fault_category__gt="",  # non-empty — already classified
+            )
+            .extra(
+                where=[
+                    "LOWER(TRIM(fault_description)) = %s",
+                    "LOWER(TRIM(repair_notes)) = %s",
+                ],
+                params=[norm_description, norm_notes],
+            )
+            .values("fault_category", "fault_subcategory")
+            .first()
+        )
+
+        if match:
+            logger.info(
+                "# [find_cached_classification] Coincidencia encontrada: "
+                "category=%s subcategory=%s.",
+                match["fault_category"],
+                match["fault_subcategory"],
+            )
+            return match["fault_category"], match["fault_subcategory"]
+
+        logger.debug(
+            "# [find_cached_classification] Sin coincidencia para "
+            "description=%r notes=%r. Se encolará classify_fault_line.",
+            norm_description[:80],
+            norm_notes[:80],
+        )
+        return None
+
+    except Exception as exc:
+        logger.error(
+            "# [find_cached_classification] Error en lookup de caché: %s",
+            exc,
+            exc_info=True,
+        )
+        # On any DB error, fall through to Celery classification.
+        # Ante cualquier error de BD, dejar pasar al encolado Celery.
+        return None

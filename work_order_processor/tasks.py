@@ -2,19 +2,29 @@
 
 """
 Celery tasks for the work_order_processor application.
-Defines the primary background task that orchestrates the full PDF processing
-pipeline: page rasterisation via PyMuPDF, Gemini Vision multi-block extraction
-per page, WorkOrderEntry + WorkOrderEntryLine persistence, machine catalogue
-resolution and final Excel report generation.
+Defines two background tasks:
+  - process_work_order_pdf(): orchestrates the full PDF processing pipeline:
+    page rasterisation via PyMuPDF, Gemini Vision multi-block extraction per
+    page, WorkOrderEntry + WorkOrderEntryLine persistence, machine catalogue
+    resolution and final Excel report generation.
+  - classify_fault_line(): receives a WorkOrderEntryLine pk, calls
+    classify_fault() from services.py and persists the returned
+    (fault_category, fault_subcategory) pair. Enqueued automatically after
+    every WorkOrderEntryLine INSERT (Hito 7 / S023).
 
 ---
 
 Tareas Celery para la aplicación work_order_processor.
-Define la tarea de fondo principal que orquesta el pipeline completo de
-procesamiento de PDF: rasterización de páginas con PyMuPDF, extracción
-multi-bloque Gemini Vision por página, persistencia de WorkOrderEntry +
-WorkOrderEntryLine, resolución del catálogo de maquinaria y generación final
-del informe Excel.
+Define dos tareas de fondo:
+  - process_work_order_pdf(): orquesta el pipeline completo de procesamiento
+    de PDF: rasterización de páginas con PyMuPDF, extracción multi-bloque
+    Gemini Vision por página, persistencia de WorkOrderEntry +
+    WorkOrderEntryLine, resolución del catálogo de maquinaria y generación
+    final del informe Excel.
+  - classify_fault_line(): recibe el pk de una WorkOrderEntryLine, llama a
+    classify_fault() de services.py y persiste el par devuelto
+    (fault_category, fault_subcategory). Se encola automáticamente tras cada
+    INSERT de WorkOrderEntryLine (Hito 7 / S023).
 """
 
 import logging
@@ -37,6 +47,7 @@ from .services import (
     _parse_time,
     _resolve_machine_asset,
     _worker_name_from_pdf_path,
+    classify_fault,
     extract_work_order_page,
     generate_work_order_excel,
 )
@@ -729,3 +740,142 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
         # Re-raise so Celery retry logic can engage.
         # Relanzar para que la lógica de reintentos de Celery actúe.
         raise self.retry(exc=exc)
+
+
+# ---------------------------------------------------------------------------
+# classify_fault_line — automatic fault classification for a single entry line
+# classify_fault_line — clasificación automática de avería para una línea
+# ---------------------------------------------------------------------------
+
+@app.task(
+    base=DjangoTask,
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    queue="work_orders",
+)
+def classify_fault_line(self, entry_line_pk: int) -> None:
+    """
+    Celery task: classifies the fault described in a WorkOrderEntryLine and
+    persists the result into fault_category and fault_subcategory fields.
+
+    Flow:
+      1. Load WorkOrderEntryLine by pk. Abort silently if it no longer exists
+         (the record may have been deleted between enqueue and execution).
+      2. Skip if both fault_category and fault_subcategory are already set
+         (idempotency guard — safe for backfill retries).
+      3. Call classify_fault(fault_description, repair_notes) from services.py.
+         This performs a single Gemini Flash inference and returns a
+         (category, subcategory) tuple, or ("", "") on any error.
+      4. If the returned category is non-empty, persist both fields via
+         update_fields (minimal write, no full-model save).
+      5. On Vertex AI 429 (ResourceExhausted): wait 60 s and retry up to
+         max_retries times (Key Learning — server-side contention pattern).
+      6. On any other unrecoverable exception: log and do not retry (fault
+         classification is best-effort; a failed classification must never
+         block or re-queue indefinitely).
+
+    ---
+
+    Tarea Celery: clasifica la avería descrita en una WorkOrderEntryLine y
+    persiste el resultado en los campos fault_category y fault_subcategory.
+
+    Flujo:
+      1. Cargar WorkOrderEntryLine por pk. Abortar silenciosamente si ya no
+         existe (el registro puede haber sido eliminado entre el encolado y
+         la ejecución).
+      2. Omitir si fault_category y fault_subcategory ya están rellenos
+         (guardia de idempotencia — segura para reintentos de backfill).
+      3. Llamar a classify_fault(fault_description, repair_notes) de
+         services.py. Realiza una única inferencia de Gemini Flash y devuelve
+         una tupla (categoría, subcategoría), o ("", "") ante cualquier error.
+      4. Si la categoría devuelta no está vacía, persistir ambos campos vía
+         update_fields (escritura mínima, sin save() completo del modelo).
+      5. Ante 429 de Vertex AI (ResourceExhausted): esperar 60 s y reintentar
+         hasta max_retries veces (Key Learning — patrón de contención en servidor).
+      6. Ante cualquier otra excepción irrecuperable: registrar y no reintentar
+         (la clasificación de averías es best-effort; un fallo no debe bloquear
+         ni encolar indefinidamente).
+    """
+    logger.info(
+        "# [classify_fault_line] Iniciada para WorkOrderEntryLine pk=%d.",
+        entry_line_pk,
+    )
+
+    # Step 1 — Load the entry line.
+    # Paso 1 — Cargar la línea de parte.
+    try:
+        line = WorkOrderEntryLine.objects.get(pk=entry_line_pk)
+    except WorkOrderEntryLine.DoesNotExist:
+        logger.warning(
+            "# [classify_fault_line] WorkOrderEntryLine pk=%d no encontrada — "
+            "puede haber sido eliminada antes de la ejecución de la tarea. "
+            "Tarea abortada.",
+            entry_line_pk,
+        )
+        return
+
+    # Step 2 — Idempotency guard.
+    # Paso 2 — Guardia de idempotencia.
+    if line.fault_category and line.fault_subcategory:
+        logger.info(
+            "# [classify_fault_line] pk=%d ya clasificada "
+            "(category=%s subcategory=%s). Nada que hacer.",
+            entry_line_pk,
+            line.fault_category,
+            line.fault_subcategory,
+        )
+        return
+
+    try:
+        # Step 3 — Call classify_fault().
+        # Paso 3 — Llamar a classify_fault().
+        category, subcategory = classify_fault(
+            fault_description=line.fault_description or "",
+            repair_notes=line.repair_notes or "",
+        )
+
+        # Step 4 — Persist if classification succeeded.
+        # Paso 4 — Persistir si la clasificación tuvo éxito.
+        if category:
+            line.fault_category    = category
+            line.fault_subcategory = subcategory
+            line.save(update_fields=["fault_category", "fault_subcategory"])
+            logger.info(
+                "# [classify_fault_line] pk=%d clasificada: "
+                "category=%s subcategory=%s.",
+                entry_line_pk,
+                category,
+                subcategory,
+            )
+        else:
+            logger.warning(
+                "# [classify_fault_line] pk=%d: classify_fault devolvió "
+                "categoría vacía. Los campos quedan sin rellenar.",
+                entry_line_pk,
+            )
+
+    except Exception as exc:
+        exc_str = str(exc)
+
+        # Step 5 — Retry on Vertex AI 429 (ResourceExhausted).
+        # Paso 5 — Reintentar ante 429 de Vertex AI (ResourceExhausted).
+        if "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str:
+            logger.warning(
+                "# [classify_fault_line] pk=%d: Vertex AI 429 detectado "
+                "(intento %d/%d). Reintentando en 60 s.",
+                entry_line_pk,
+                self.request.retries + 1,
+                self.max_retries,
+            )
+            raise self.retry(exc=exc, countdown=60)
+
+        # Step 6 — Log and do not retry for any other error.
+        # Paso 6 — Registrar sin reintentar ante cualquier otro error.
+        logger.error(
+            "# [classify_fault_line] pk=%d: error irrecuperable en "
+            "clasificación: %s. Los campos quedan sin rellenar.",
+            entry_line_pk,
+            exc,
+            exc_info=True,
+        )
