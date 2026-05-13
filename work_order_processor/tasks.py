@@ -515,6 +515,30 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                     if not isinstance(flags, list):
                         flags = []
 
+                    # Extract fault classification fields from the Gemini response dict.
+                    # These fields are now included in _EXTRACTION_PROMPT (SEGUNDA ACCION S024).
+                    # If absent or empty (older PDFs / fallback), default to empty string.
+                    #
+                    # Extraer campos de clasificación de averías del dict de respuesta Gemini.
+                    # Estos campos se incluyen ahora en _EXTRACTION_PROMPT (SEGUNDA ACCION S024).
+                    # Si están ausentes o vacíos (PDFs anteriores / fallback), usar cadena vacía.
+                    _fault_cat    = (bloque.get("fault_category")    or "").strip()
+                    _fault_subcat = (bloque.get("fault_subcategory") or "").strip()
+
+                    # Validate against the taxonomy — reject codes outside the known sets
+                    # to prevent stale or hallucinated values from reaching the database.
+                    # Validar contra la taxonomía — rechazar códigos fuera de los conjuntos
+                    # conocidos para evitar que valores obsoletos o alucinados lleguen a BD.
+                    from work_order_processor.services import (
+                        _VALID_CATEGORIES,
+                        _VALID_SUBCATEGORIES,
+                    )
+                    if _fault_cat not in _VALID_CATEGORIES:
+                        _fault_cat    = ""
+                        _fault_subcat = ""
+                    elif _fault_subcat not in _VALID_SUBCATEGORIES:
+                        _fault_subcat = ""
+
                     WorkOrderEntryLine.objects.update_or_create(
                         entry       = entry,
                         line_number = line_idx,
@@ -531,6 +555,8 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                             "or_val":            (bloque.get("or_val") or ""),
                             "delta_hours":       delta,
                             "flags":             flags,
+                            "fault_category":    _fault_cat,
+                            "fault_subcategory": _fault_subcat,
                         },
                     )
 

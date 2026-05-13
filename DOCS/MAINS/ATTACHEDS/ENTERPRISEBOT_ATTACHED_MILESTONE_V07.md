@@ -565,20 +565,25 @@ Puntos implementados:
   WorkOrderEntryConfirmView.post() — Via C
   WorkOrderEntryMergeView.post() — discard_existing y merge
 
-#### Backfill de historicos (PENDIENTE — PRIMERA ACCION S024)
+#### Backfill de historicos (COMPLETADO — S024)
 
 Comando: work_order_processor/management/commands/classify_entry_lines.py
   - Itera WorkOrderEntryLine.objects.filter(fault_category="") en batches.
   - Llama a find_cached_classification() primero; si no: classify_fault().
   - Persiste los dos campos. Imprime progreso. Idempotente.
-  - Estado: PENDIENTE de implementacion.
+  - Ejecucion real S024: 390 lineas procesadas, 75 por cache, 315 por Gemini,
+    0 omitidas, 0 errores.
+  - Estado: COMPLETADO (S024).
 
-#### Clasificacion en pipeline PDF (PENDIENTE — SEGUNDA ACCION S024)
+#### Clasificacion en pipeline PDF (COMPLETADO — S024)
 
-Actualizar _EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL en services.py para
+Actualizados _EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL en services.py para
 incluir fault_category y fault_subcategory en el JSON de respuesta. Persistencia
-en el propio pipeline (tasks.py), no via Celery.
-  - Estado: PENDIENTE de implementacion.
+en el propio pipeline (tasks.py) via defaults del update_or_create, con validacion
+contra taxonomia antes de persistir. Correccion adicional: llaves literales del
+bloque JSON de _CLASSIFY_PROMPT escapadas ({{ }}) para evitar KeyError en
+_CLASSIFY_PROMPT.format().
+  - Estado: COMPLETADO (S024).
 
 #### Solo para analitica y filtrado
 
@@ -649,14 +654,68 @@ Estado: COMPLETADO (sesiones 015-017).
 | 021    | 2026-05-12 | Bugs S021 + Reglas jornada + Exportacion admin | PRIMERA ACCION: corrección posicionamiento popover Driver.js (onHighlightStarted + scrollIntoView). SEGUNDA ACCION: entrada por teclado en TimePicker (_openTextEntry + overlay input texto). TERCERA ACCION: Regla B ya correcta; Regla A (excepcion comida 60min 13:00-15:30) en validators.py; Regla C (cobertura minima 8h con excepcion WorkerAbsence) en views.py. CUARTA ACCION Bug A: formulario exportacion admin_history.html corregido (POST + work_order_admin_export + pks explicitos). CUARTA ACCION Bug B: nuevo endpoint WorkOrderMachineFilterView + ruta urls.py + admin_history.js apunta al nuevo endpoint. QUINTA ACCION: overtime_worked_hours anadido al contexto de WorkOrderEntryHistoryView. Incidencia: TimePicker entrada teclado no operativa en produccion; desplegable dinamico maquina no visible en UI. |
 | 022    | 2026-05-12 | S022 completo — pendientes S021 + incidencias + tipologia | PRIMERA ACCION: _time_picker_widget.html corregido. SEGUNDA ACCION: admin_history.js showDropdown desanclado al body; WorkOrderMachineFilterView duplicada eliminada; parametro q anadido con filtro icontains. TERCERA ACCION: textos botones historial admin (Editar / Revisar, Marcar revisado). CUARTA ACCION: modal Nuevo periodo rediseñado — selector operario eliminado, end_date opcional, pre-relleno automatico. WorkPeriodCreateView.post() actualizado. QUINTA ACCION: titulo modal ausencia cambiado a Ausencia. DECISION VINCULANTE: periodo global para todos los operarios. Via B abandonada definitivamente. Arquitectura tipologia aprobada: 8 grupos + 30 subgrupos, Celery high_priority, fault_category/fault_subcategory en WorkOrderEntryLine, solo analitica. |
 | 023    | 2026-05-13 | Tipologia de Averias — Implementacion parcial (acciones 1-5) | PRIMERA ACCION: Via B eliminada — WorkOrderEntrySTTView, WorkOrderEntrySTTExtractView, rutas STT, boton dashboard, stt_entry.html. SEGUNDA ACCION: FaultCategory y FaultSubcategory (8 grupos, 30 subgrupos) en models.py. Campos fault_category/fault_subcategory en WorkOrderEntryLine. Migracion 0014 aplicada. TERCERA ACCION: classify_fault() en services.py (Gemini Flash, response_schema, thinking_budget=0, validacion taxonomia). CUARTA ACCION: classify_fault_line() en tasks.py (retry 429 countdown=60s, idempotencia, best-effort). QUINTA ACCION: find_cached_classification() en services.py + encolado con gate en tres puntos INSERT de views.py (Via A, Via C, MergeView). Skill pea-pma corregida: AUTORIZADO va directo al mv. Pendientes: PRIMERA ACCION S024 (classify_entry_lines) y SEGUNDA ACCION S024 (_EXTRACTION_PROMPT pipeline PDF). |
+| 024    | 2026-05-13 | Tipologia de Averias — Backfill + pipeline PDF (acciones 1-2) | PRIMERA ACCION: neonato classify_entry_lines.py (PEA). Comando de backfill con --batch-size y --dry-run, progreso cada 10 lineas, consulta cache antes de Gemini. Bugs resueltos durante diagnostico: KeyError en _CLASSIFY_PROMPT.format() por llaves literales no escapadas ({{ }}) en bloque JSON de ejemplo — corregido via PMP. Ejecucion real: 390 lineas, 75 cache, 315 Gemini, 0 errores. SEGUNDA ACCION: PMA sobre services.py (_EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL ampliados con fault_category/fault_subcategory y taxonomia completa embebida). PMA sobre tasks.py (defaults update_or_create ampliado con _fault_cat/_fault_subcat, validacion contra _VALID_CATEGORIES/_VALID_SUBCATEGORIES, import interno en bloque de persistencia). |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S022)
+## 5. Hoja de Ruta para la Siguiente Sesion (S025)
 
 ### CONTEXTO
 
-S020 resolvio los siguientes bugs e implemento las siguientes mejoras:
+S024 completo las dos acciones pendientes de la Tipologia de Averias:
+  - PRIMERA ACCION: comando classify_entry_lines.py creado y ejecutado.
+    390 lineas historicas clasificadas (75 por cache, 315 por Gemini, 0 errores).
+    Bug corregido durante diagnostico: KeyError en _CLASSIFY_PROMPT.format()
+    por llaves literales { } no escapadas en el bloque JSON de ejemplo del prompt.
+    Correccion: {{ }} via PMP en services.py.
+  - SEGUNDA ACCION: _EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL ampliados
+    con fault_category/fault_subcategory y taxonomia completa embebida.
+    tasks.py actualizado para persistir ambos campos en el pipeline PDF.
+
+ADVERTENCIA CRITICA — mantener siempre presente:
+  El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
+  Usar siempre entry.lines.all() y prefetch_related("entries__lines").
+
+### PRIMERA ACCION — Excel consolidado al cerrar WorkPeriod
+
+  Al ejecutar WorkPeriodCloseView.post(), tras marcar el periodo como cerrado,
+  generar automaticamente el Excel consolidado de todos los WorkOrder del periodo.
+
+  Solicitar al inicio de S025 via SFTP:
+    panel/views.py — WorkPeriodCloseView.post() completo.
+    ivr_config/models.py — modelo WorkPeriod completo.
+    work_order_processor/services.py — generate_work_order_excel() completo.
+
+  Logica a implementar en WorkPeriodCloseView.post() tras el cierre del periodo:
+    1. Obtener todos los WorkOrder del periodo:
+         work_orders = WorkOrder.objects.filter(
+             company=company,
+             uploaded_by__in=period_operators,   # todos los operarios del periodo
+             work_date__gte=period.start_date,
+             work_date__lte=period.end_date,
+             source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+             reviewed=True,
+         )
+       Nota: "period_operators" se refiere a todos los CompanyUser con WorkOrderEntry
+       cuya work_date este dentro del rango del periodo. Verificar en views.py como
+       se construye actualmente el queryset de operarios del periodo.
+    2. Por cada WorkOrder en work_orders:
+         generate_work_order_excel(work_order.pk)
+       La funcion ya existe en services.py y genera el Excel persistiendolo en
+       work_order.excel_file. No requiere modificacion.
+    3. Mostrar en el template (work_period_list.html o admin_history.html pestana
+       Periodos) un indicador de cuantos Excels se han generado al cerrar.
+
+  Consideraciones:
+    - generate_work_order_excel() es sincrona. Si hay muchos WorkOrder en el
+      periodo, evaluar si conviene encolarla via Celery (tarea existente
+      process_work_order_pdf no aplica — crear nueva tarea si es necesario).
+    - El Excel existente de cada WorkOrder (generado al crear el parte digital)
+      debe sobreescribirse con el consolidado del periodo si ya existe.
+    - Solo generar Excels de partes revisados (reviewed=True).
+
+  Archivos afectados: panel/views.py (WorkPeriodCloseView.post()),
+  panel/templates/panel/work_orders/work_period_list.html o admin_history.html.
   - Validacion E2E completa: 7 escenarios de merge superados, edicion desde
     historial, barrera fecha minima y Via C validadas.
   - Bug: boton Fusionar no se habilitaba al resolver solapamientos en
@@ -869,7 +928,7 @@ ADVERTENCIA CRITICA — mantener siempre presente:
     extract_work_order_page() y pasarlos al create(). Si el campo no viene
     en el dict o esta vacio, dejar en "".
 
-### Estado de migraciones al cierre de S023
+### Estado de migraciones al cierre de S024
 
 | App                  | Ultima migracion aplicada                                          |
 |----------------------|--------------------------------------------------------------------|
@@ -878,18 +937,13 @@ ADVERTENCIA CRITICA — mantener siempre presente:
 | ivr_config           | 0015_workerabsence_workperiod                                      |
 | panel                | 0001_initial (AnalyticsProfile)                                    |
 
-### Archivos a solicitar al inicio de S024 via SFTP
+### Archivos a solicitar al inicio de S025 via SFTP
 
-  work_order_processor/services.py — para SEGUNDA ACCION (_EXTRACTION_PROMPT).
-  work_order_processor/tasks.py — para SEGUNDA ACCION (persistencia pipeline PDF).
-  Verificar existencia de work_order_processor/management/commands/ en
-  PROJECT_DIRECTORY antes de crear el comando (PRIMERA ACCION).
+  panel/views.py — WorkPeriodCloseView (PRIMERA ACCION).
+  ivr_config/models.py — modelo WorkPeriod (PRIMERA ACCION).
+  work_order_processor/services.py — generate_work_order_excel() (PRIMERA ACCION).
 
 ### Hoja de ruta de sesiones futuras
-
-S025 — Excel por periodo.
-  Al cerrar un WorkPeriod, generacion del Excel consolidado del periodo.
-  Integracion en WorkPeriodCloseView.
 
 S026 — Diferidos: has_cg_incident + Dropdown CdG Otro.
   Diferido hasta Hito 12 (Gestion de Centros de Gasto).

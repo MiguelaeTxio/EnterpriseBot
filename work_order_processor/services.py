@@ -273,10 +273,41 @@ Formato de respuesta (claves exactas):
       "hc": "<HH:MM o null>",
       "hf": "<HH:MM o null>",
       "or_val": "<referencia O.R. o null>",
-      "flags": ["CAMPO1", "CAMPO2"]
+      "flags": ["CAMPO1", "CAMPO2"],
+      "fault_category": "<CODIGO_CATEGORIA o null>",
+      "fault_subcategory": "<CODIGO_SUBCATEGORIA o null>"
     }
   ]
 }
+
+TAXONOMÍA DE AVERÍAS — usa estos códigos exactos en fault_category y fault_subcategory:
+
+Categorías (fault_category):
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible
+  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
+  ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
+  BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
+  TYRES_RUNNING_GEAR         — Neumáticos, ejes, cadenas y rodadura oruga
+  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, estabilizadores,
+                               mástil/horquillas, plataforma, quinta rueda, chasis semirremolque
+  BODYWORK_CHASSIS           — Carrocería, chasis estructural
+  OTHER                      — Cualquier avería que no encaje en los grupos anteriores
+
+Subcategorías (fault_subcategory):
+  ET_ENGINE | ET_TRANSMISSION | ET_PTO | ET_COOLING | ET_FUEL
+  HY_PUMP | HY_CYLINDERS | HY_VALVES | HY_OIL | HY_CENTRAL
+  EE_WIRING | EE_SENSORS | EE_CONTROLS | EE_LIGHTS | EE_BATTERY
+  BSS_BRAKES | BSS_STEERING | BSS_SUSPENSION
+  TRG_TYRES | TRG_AXLES | TRG_TRACKS
+  LS_BOOM | LS_HOOK_PULLEYS | LS_CABLE | LS_ROTATION | LS_STABILIZERS |
+  LS_MAST | LS_PLATFORM | LS_FIFTH_WHEEL | LS_CHASSIS_TRAILER
+  BC_BODYWORK | BC_CHASSIS
+  OT_OTHER
+
+Regla: la subcategoría debe pertenecer a la categoría elegida (mismos prefijos).
+Si la información es insuficiente o no encaja en ningún grupo, usa OTHER / OT_OTHER.
+Si el campo fault_description y repair_notes son ambos nulos o ilegibles, usa null
+en ambos campos de clasificación.
 """
 
 
@@ -569,7 +600,9 @@ Formato de respuesta (claves exactas):
       "hc": "<HH:MM o null>",
       "hf": "<HH:MM o null>",
       "or_val": "<referencia O.R. o null>",
-      "flags": ["CAMPO1", "CAMPO2"]
+      "flags": ["CAMPO1", "CAMPO2"],
+      "fault_category": "<CODIGO_CATEGORIA o null>",
+      "fault_subcategory": "<CODIGO_SUBCATEGORIA o null>"
     }
   ],
   "repuestos": [
@@ -584,6 +617,35 @@ Formato de respuesta (claves exactas):
     }
   ]
 }
+
+TAXONOMÍA DE AVERÍAS — usa estos códigos exactos en fault_category y fault_subcategory:
+
+Categorías (fault_category):
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible
+  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
+  ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
+  BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
+  TYRES_RUNNING_GEAR         — Neumáticos, ejes, cadenas y rodadura oruga
+  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, estabilizadores,
+                               mástil/horquillas, plataforma, quinta rueda, chasis semirremolque
+  BODYWORK_CHASSIS           — Carrocería, chasis estructural
+  OTHER                      — Cualquier avería que no encaje en los grupos anteriores
+
+Subcategorías (fault_subcategory):
+  ET_ENGINE | ET_TRANSMISSION | ET_PTO | ET_COOLING | ET_FUEL
+  HY_PUMP | HY_CYLINDERS | HY_VALVES | HY_OIL | HY_CENTRAL
+  EE_WIRING | EE_SENSORS | EE_CONTROLS | EE_LIGHTS | EE_BATTERY
+  BSS_BRAKES | BSS_STEERING | BSS_SUSPENSION
+  TRG_TYRES | TRG_AXLES | TRG_TRACKS
+  LS_BOOM | LS_HOOK_PULLEYS | LS_CABLE | LS_ROTATION | LS_STABILIZERS |
+  LS_MAST | LS_PLATFORM | LS_FIFTH_WHEEL | LS_CHASSIS_TRAILER
+  BC_BODYWORK | BC_CHASSIS
+  OT_OTHER
+
+Regla: la subcategoría debe pertenecer a la categoría elegida (mismos prefijos).
+Si la información es insuficiente o no encaja en ningún grupo, usa OTHER / OT_OTHER.
+Si el campo fault_description y repair_notes son ambos nulos o ilegibles, usa null
+en ambos campos de clasificación.
 """
 
 
@@ -2214,10 +2276,10 @@ REGLAS OBLIGATORIAS:
 4. Si la información es insuficiente o no encaja, usa OTHER / OT_OTHER.
 
 Formato de respuesta exacto:
-{
+{{
   "fault_category": "<CODIGO_CATEGORIA>",
   "fault_subcategory": "<CODIGO_SUBCATEGORIA>"
-}
+}}
 
 Descripción de la avería: {fault_description}
 Notas de reparación: {repair_notes}
