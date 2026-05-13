@@ -24,11 +24,20 @@
             </h6>
             <small class="text-muted">Gestión de períodos activos y cerrados por operario.</small>
         </div>
-        <a href="#" class="btn btn-primary btn-sm px-3"
-           data-bs-toggle="modal"
-           data-bs-target="#modalWorkPeriodCreate">
-            <i class="bi bi-plus-circle me-1"></i>Nuevo periodo
-        </a>
+        <div class="d-flex gap-2">
+            <a href="#" class="btn btn-primary btn-sm px-3"
+               data-bs-toggle="modal"
+               data-bs-target="#modalWorkPeriodCreate">
+                <i class="bi bi-plus-circle me-1"></i>Nuevo periodo
+            </a>
+            {% if has_open_periods %}
+            <button type="button" class="btn btn-outline-success btn-sm px-3"
+                    data-bs-toggle="modal"
+                    data-bs-target="#modalWorkPeriodClose">
+                <i class="bi bi-calendar-check me-1"></i>Cerrar periodo activo
+            </button>
+            {% endif %}
+        </div>
     </div>
 
     {# ------------------------------------------------------------------ #}
@@ -141,20 +150,18 @@
                       action="{% url 'panel:work_period_create' %}">
                     {% csrf_token %}
                     <div class="mb-3">
-                        <label class="form-label text-sm fw-semibold">Operario</label>
-                        <select name="company_user_pk" class="form-select form-select-sm" required>
-                            <option value="">Selecciona un operario…</option>
-                            {% for op in operators %}
-                            <option value="{{ op.pk }}">
-                                {{ op.user.get_full_name|default:op.user.username }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
                         <label class="form-label text-sm fw-semibold">Fecha de inicio</label>
                         <input type="date" name="start_date"
+                               value="{{ suggested_start }}"
                                class="form-control form-control-sm" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-sm fw-semibold">
+                            Fecha de fin <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        <input type="date" name="end_date"
+                               value="{{ suggested_end }}"
+                               class="form-control form-control-sm">
                     </div>
                     <div class="mb-0">
                         <label class="form-label text-sm fw-semibold">
@@ -192,8 +199,12 @@
                 <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
-                <p class="text-sm text-muted mb-3" id="modalWorkPeriodCloseOperator"></p>
-                <form method="post" id="formWorkPeriodClose" action="">
+                <p class="text-sm text-muted mb-3">
+                    Esta acción cerrará el periodo activo de TODOS los operarios y marcará
+                    todos sus partes como revisados. No se puede deshacer.
+                </p>
+                <form method="post" id="formWorkPeriodClose"
+                      action="{% url 'panel:work_period_close' %}">
                     {% csrf_token %}
                     <div class="mb-0">
                         <label class="form-label text-sm fw-semibold">Fecha de fin</label>
@@ -214,25 +225,3 @@
     </div>
 </div>
 
-{% block extra_head %}
-<script>
-/* Initialise WorkPeriodClose modal — populate action URL and operator name.
-   Inicializar modal de cierre de periodo — rellenar action URL y nombre de operario. */
-(function () {
-    "use strict";
-    document.addEventListener("DOMContentLoaded", function () {
-        var modalEl = document.getElementById("modalWorkPeriodClose");
-        if (!modalEl) { return; }
-        modalEl.addEventListener("show.bs.modal", function (event) {
-            var btn          = event.relatedTarget;
-            var closeUrl     = btn.getAttribute("data-close-url");
-            var operatorName = btn.getAttribute("data-operator-name");
-            var form         = document.getElementById("formWorkPeriodClose");
-            var label        = document.getElementById("modalWorkPeriodCloseOperator");
-            if (form)  { form.setAttribute("action", closeUrl); }
-            if (label) { label.textContent = "Operario: " + operatorName; }
-        });
-    });
-}());
-</script>
-{% endblock %}

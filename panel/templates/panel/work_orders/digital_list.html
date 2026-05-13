@@ -1,0 +1,458 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/digital_list.html #}
+{#                                                                                                  #}
+{# Supervisor/Admin view — list of digital work orders (source DIGITAL + GENERATED).               #}
+{# Three tabs: pending review / reviewed / error. Filters by operator and period.                  #}
+{# Excel download exclusively in the Reviewed tab (Directriz Alejandro).                           #}
+{#                                                                                                  #}
+{# Vista Supervisor/Admin — listado de partes digitales (origen DIGITAL + GENERATED).              #}
+{# Tres pestañas: pendiente revisión / revisados / error. Filtros por operario y periodo.          #}
+{# Descarga Excel exclusivamente en la pestaña Revisados (Directriz Alejandro).                    #}
+{% extends "panel/base.html" %}
+
+{% block title %}Partes Digitales{% endblock %}
+
+{% block page_title %}Partes Digitales{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+
+    {# ------------------------------------------------------------------ #}
+    {# Page header — Cabecera de página                                    #}
+    {# ------------------------------------------------------------------ #}
+    <div class="d-flex align-items-center justify-content-between px-4 pt-4 pb-3">
+        <div>
+            <h6 class="fw-semibold mb-0">
+                <i class="bi bi-pencil-square me-2 text-muted"></i>Partes Digitales
+            </h6>
+            <small class="text-muted">{{ company.name }}</small>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Filters — Filtros por operario y periodo                            #}
+    {# ------------------------------------------------------------------ #}
+    <div class="px-4 pb-3 d-flex align-items-center gap-3 flex-wrap">
+        <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="formFilters">
+            <select name="operator_pk" class="form-select form-select-sm"
+                    onchange="document.getElementById('formFilters').submit();">
+                <option value="">Todos los operarios</option>
+                {% for op in operators %}
+                <option value="{{ op.pk }}"
+                    {% if request.GET.operator_pk == op.pk|stringformat:"s" %}selected{% endif %}>
+                    {{ op.user.get_full_name|default:op.user.username }}
+                </option>
+                {% endfor %}
+            </select>
+            <select name="period_pk" class="form-select form-select-sm"
+                    onchange="document.getElementById('formFilters').submit();">
+                <option value="">Todos los periodos</option>
+                {% for period in periods %}
+                <option value="{{ period.pk }}"
+                    {% if request.GET.period_pk == period.pk|stringformat:"s" %}selected{% endif %}>
+                    {{ period.start_date|date:"d/m/Y" }}
+                    {% if period.end_date %} – {{ period.end_date|date:"d/m/Y" }}{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Tabs — Pestañas de navegación                                       #}
+    {# ------------------------------------------------------------------ #}
+    <div class="px-4">
+        <ul class="nav nav-tabs border-bottom" id="digitalTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link text-sm" id="tab-pending" data-bs-toggle="tab"
+                        data-bs-target="#pane-pending" type="button" role="tab"
+                        aria-controls="pane-pending" aria-selected="false">
+                    Pendiente revisión
+                    {% if wo_pending %}
+                    <span class="badge bg-warning text-dark ms-1">{{ wo_pending|length }}</span>
+                    {% endif %}
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link text-sm" id="tab-reviewed" data-bs-toggle="tab"
+                        data-bs-target="#pane-reviewed" type="button" role="tab"
+                        aria-controls="pane-reviewed" aria-selected="false">
+                    Revisados
+                    {% if wo_reviewed %}
+                    <span class="badge bg-success ms-1">{{ wo_reviewed|length }}</span>
+                    {% endif %}
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link text-sm" id="tab-error" data-bs-toggle="tab"
+                        data-bs-target="#pane-error" type="button" role="tab"
+                        aria-controls="pane-error" aria-selected="false">
+                    Error
+                    {% if wo_error %}
+                    <span class="badge bg-danger ms-1">{{ wo_error|length }}</span>
+                    {% endif %}
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Tab panes — Contenido de cada pestaña                               #}
+    {# ------------------------------------------------------------------ #}
+    <div class="tab-content px-4 pt-3" id="digitalTabsContent">
+
+        {# ---- Tab: Pendiente revisión ---- #}
+        <div class="tab-pane fade" id="pane-pending" role="tabpanel" aria-labelledby="tab-pending">
+            {% if wo_pending %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-sm fw-semibold px-3">Operario</th>
+                            <th class="text-sm fw-semibold">Fecha del parte</th>
+                            <th class="text-sm fw-semibold">Fecha de carga</th>
+                            <th class="text-sm fw-semibold">Revisión</th>
+                            <th class="text-sm fw-semibold">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for wo in wo_pending %}
+                        <tr>
+                            <td class="text-sm px-3">
+                                {% if wo.uploaded_by %}
+                                    {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-sm">
+                                {% with entry=wo.entries.first %}
+                                    {% if entry %}{{ entry.work_date|date:"d/m/Y" }}{% else %}—{% endif %}
+                                {% endwith %}
+                            </td>
+                            <td class="text-sm text-muted">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                            <td class="text-sm">
+                                <span class="badge bg-warning text-dark"
+                                      hx-get="{% url 'panel:work_order_review_badge' wo.pk %}"
+                                      hx-trigger="load"
+                                      hx-swap="outerHTML">
+                                    Pendiente
+                                </span>
+                            </td>
+                            <td class="text-sm">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary btn-sm py-0 px-2 dropdown-toggle"
+                                            type="button" data-bs-toggle="dropdown">
+                                        Acciones
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                        <li>
+                                            <a class="dropdown-item text-sm"
+                                               href="{% url 'panel:work_order_edit' wo.pk %}">
+                                                <i class="bi bi-pencil me-2"></i>Editar
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="py-4 text-center text-muted text-sm">
+                <i class="bi bi-check2-circle fs-4 d-block mb-2"></i>
+                No hay partes digitales pendientes de revisión.
+            </div>
+            {% endif %}
+        </div>
+
+        {# ---- Tab: Revisados ---- #}
+        <div class="tab-pane fade" id="pane-reviewed" role="tabpanel" aria-labelledby="tab-reviewed">
+
+            {# Cabecera de tab con botón descargar selección — Directriz Alejandro #}
+            <div class="d-flex justify-content-end mb-2">
+                <form method="get" action="{% url 'panel:work_order_admin_export' %}"
+                      id="formExportSelection">
+                    <button type="submit" class="btn btn-outline-success btn-sm px-3"
+                            id="btnDownloadSelection" disabled>
+                        <i class="bi bi-file-earmark-excel me-1"></i>Descargar selección
+                    </button>
+                </form>
+            </div>
+
+            {% if wo_reviewed %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-sm fw-semibold px-3 align-middle">
+                                <input type="checkbox" id="chkSelectAll" class="form-check-input">
+                            </th>
+                            <th class="text-sm fw-semibold">Operario</th>
+                            <th class="text-sm fw-semibold">Fecha del parte</th>
+                            <th class="text-sm fw-semibold">Fecha de carga</th>
+                            <th class="text-sm fw-semibold">Revisión</th>
+                            <th class="text-sm fw-semibold">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for wo in wo_reviewed %}
+                        <tr>
+                            <td class="text-sm px-3">
+                                <input type="checkbox" name="pks" value="{{ wo.pk }}"
+                                       form="formExportSelection"
+                                       class="form-check-input chk-wo">
+                            </td>
+                            <td class="text-sm">
+                                {% if wo.uploaded_by %}
+                                    {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-sm">
+                                {% with entry=wo.entries.first %}
+                                    {% if entry %}{{ entry.work_date|date:"d/m/Y" }}{% else %}—{% endif %}
+                                {% endwith %}
+                            </td>
+                            <td class="text-sm text-muted">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                            <td class="text-sm">
+                                <span class="badge bg-success">Revisado</span>
+                            </td>
+                            <td class="text-sm">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary btn-sm py-0 px-2 dropdown-toggle"
+                                            type="button" data-bs-toggle="dropdown">
+                                        Acciones
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                        <li>
+                                            <a class="dropdown-item text-sm"
+                                               href="{% url 'panel:work_order_edit' wo.pk %}">
+                                                <i class="bi bi-pencil me-2"></i>Editar
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item text-sm"
+                                               href="{% url 'panel:work_order_export' wo.pk %}">
+                                                <i class="bi bi-file-earmark-excel me-2"></i>Descargar Excel
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="py-4 text-center text-muted text-sm">
+                <i class="bi bi-calendar-x fs-4 d-block mb-2"></i>
+                No hay partes digitales revisados.
+            </div>
+            {% endif %}
+        </div>
+
+        {# ---- Tab: Error ---- #}
+        <div class="tab-pane fade" id="pane-error" role="tabpanel" aria-labelledby="tab-error">
+            {% if wo_error %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-sm fw-semibold px-3">Operario</th>
+                            <th class="text-sm fw-semibold">Fecha de carga</th>
+                            <th class="text-sm fw-semibold">Log</th>
+                            <th class="text-sm fw-semibold">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for wo in wo_error %}
+                        <tr>
+                            <td class="text-sm px-3">
+                                {% if wo.uploaded_by %}
+                                    {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-sm text-muted">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                            <td class="text-sm text-muted text-truncate">
+                                {{ wo.error_log|default:"—"|truncatechars:80 }}
+                            </td>
+                            <td class="text-sm">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary btn-sm py-0 px-2 dropdown-toggle"
+                                            type="button" data-bs-toggle="dropdown">
+                                        Acciones
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                        <li>
+                                            <button type="button"
+                                                    class="dropdown-item text-sm btn-view-log"
+                                                    data-log="{{ wo.error_log|default:'' }}"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#incidenceModal">
+                                                <i class="bi bi-eye me-2"></i>Ver log
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button type="button"
+                                                    class="dropdown-item text-sm text-danger btn-delete-wo"
+                                                    data-pk="{{ wo.pk }}"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#deleteModal">
+                                                <i class="bi bi-trash me-2"></i>Eliminar
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="py-4 text-center text-muted text-sm">
+                <i class="bi bi-check-circle fs-4 d-block mb-2"></i>
+                No hay partes digitales con error.
+            </div>
+            {% endif %}
+        </div>
+
+    </div>{# /tab-content #}
+
+</div>
+{% endblock %}
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Ver log de incidencia                                       #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="incidenceModal" tabindex="-1"
+     aria-labelledby="incidenceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="incidenceModalLabel">
+                    <i class="bi bi-exclamation-triangle me-2 text-warning"></i>Log de error
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <pre class="text-sm text-muted mb-0" id="incidenceModalBody"
+                     style="white-space:pre-wrap;word-break:break-word;"></pre>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Confirmar eliminación                                       #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="deleteModal" tabindex="-1"
+     aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="deleteModalLabel">
+                    <i class="bi bi-trash me-2 text-danger"></i>Eliminar parte digital
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-sm text-muted mb-0">
+                    ¿Seguro que deseas eliminar este parte? Esta acción no se puede deshacer.
+                </p>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" id="formDeleteWo" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-sm px-4">
+                        <i class="bi bi-trash me-1"></i>Eliminar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_scripts %}
+<script>
+/* digital_list.html — Tab activation, select-all checkbox, download button state,
+   incidence modal population, delete modal population.
+   ---
+   digital_list.html — Activación de pestaña, checkbox seleccionar todos, estado
+   botón descarga, relleno modal incidencia, relleno modal eliminación. */
+(function () {
+    "use strict";
+
+    document.addEventListener("DOMContentLoaded", function () {
+
+        /* ---- Tab activation by default_tab context variable
+               Activación de pestaña por variable de contexto default_tab ---- */
+        var defaultTab = "{{ default_tab|default:'pending' }}";
+        var tabId = "tab-" + defaultTab;
+        var tabEl = document.getElementById(tabId);
+        if (tabEl) {
+            var bsTab = new bootstrap.Tab(tabEl);
+            bsTab.show();
+        }
+
+        /* ---- Select-all checkbox in Reviewed tab
+               Checkbox seleccionar todos en pestaña Revisados ---- */
+        var chkAll = document.getElementById("chkSelectAll");
+        var btnDownload = document.getElementById("btnDownloadSelection");
+
+        function updateDownloadBtn() {
+            var checked = document.querySelectorAll(".chk-wo:checked");
+            if (btnDownload) {
+                btnDownload.disabled = checked.length === 0;
+            }
+        }
+
+        if (chkAll) {
+            chkAll.addEventListener("change", function () {
+                document.querySelectorAll(".chk-wo").forEach(function (chk) {
+                    chk.checked = chkAll.checked;
+                });
+                updateDownloadBtn();
+            });
+        }
+
+        document.querySelectorAll(".chk-wo").forEach(function (chk) {
+            chk.addEventListener("change", updateDownloadBtn);
+        });
+
+        /* ---- Incidence modal — populate log content
+               Modal incidencia — rellenar contenido del log ---- */
+        var incidenceModal = document.getElementById("incidenceModal");
+        if (incidenceModal) {
+            incidenceModal.addEventListener("show.bs.modal", function (event) {
+                var btn  = event.relatedTarget;
+                var log  = btn ? btn.getAttribute("data-log") : "";
+                var body = document.getElementById("incidenceModalBody");
+                if (body) { body.textContent = log || "Sin información de error."; }
+            });
+        }
+
+        /* ---- Delete modal — set form action
+               Modal eliminación — asignar action del formulario ---- */
+        var deleteModal = document.getElementById("deleteModal");
+        if (deleteModal) {
+            deleteModal.addEventListener("show.bs.modal", function (event) {
+                var btn  = event.relatedTarget;
+                var pk   = btn ? btn.getAttribute("data-pk") : "";
+                var form = document.getElementById("formDeleteWo");
+                if (form && pk) {
+                    form.setAttribute("action", "/panel/work-orders/" + pk + "/delete/");
+                }
+            });
+        }
+
+    });
+}());
+</script>
+{% endblock %}

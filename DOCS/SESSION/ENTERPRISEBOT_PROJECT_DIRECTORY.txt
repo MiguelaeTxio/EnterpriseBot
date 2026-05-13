@@ -63,6 +63,7 @@
 ./panel/templates/panel/work_orders/work_period_list.html
 ./panel/templates/panel/work_orders/_entry_group_fragment.html
 ./panel/templates/panel/work_orders/_review_badge_fragment.html
+./panel/templates/panel/work_orders/digital_list.html
 ./panel/templates/panel/_description_typeahead.html
 ./panel/templates/panel/_tour_driver_cdn.html
 ./panel/templates/panel/operator/history.html
