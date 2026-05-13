@@ -655,198 +655,310 @@ Estado: COMPLETADO (sesiones 015-017).
 | 022    | 2026-05-12 | S022 completo — pendientes S021 + incidencias + tipologia | PRIMERA ACCION: _time_picker_widget.html corregido. SEGUNDA ACCION: admin_history.js showDropdown desanclado al body; WorkOrderMachineFilterView duplicada eliminada; parametro q anadido con filtro icontains. TERCERA ACCION: textos botones historial admin (Editar / Revisar, Marcar revisado). CUARTA ACCION: modal Nuevo periodo rediseñado — selector operario eliminado, end_date opcional, pre-relleno automatico. WorkPeriodCreateView.post() actualizado. QUINTA ACCION: titulo modal ausencia cambiado a Ausencia. DECISION VINCULANTE: periodo global para todos los operarios. Via B abandonada definitivamente. Arquitectura tipologia aprobada: 8 grupos + 30 subgrupos, Celery high_priority, fault_category/fault_subcategory en WorkOrderEntryLine, solo analitica. |
 | 023    | 2026-05-13 | Tipologia de Averias — Implementacion parcial (acciones 1-5) | PRIMERA ACCION: Via B eliminada — WorkOrderEntrySTTView, WorkOrderEntrySTTExtractView, rutas STT, boton dashboard, stt_entry.html. SEGUNDA ACCION: FaultCategory y FaultSubcategory (8 grupos, 30 subgrupos) en models.py. Campos fault_category/fault_subcategory en WorkOrderEntryLine. Migracion 0014 aplicada. TERCERA ACCION: classify_fault() en services.py (Gemini Flash, response_schema, thinking_budget=0, validacion taxonomia). CUARTA ACCION: classify_fault_line() en tasks.py (retry 429 countdown=60s, idempotencia, best-effort). QUINTA ACCION: find_cached_classification() en services.py + encolado con gate en tres puntos INSERT de views.py (Via A, Via C, MergeView). Skill pea-pma corregida: AUTORIZADO va directo al mv. Pendientes: PRIMERA ACCION S024 (classify_entry_lines) y SEGUNDA ACCION S024 (_EXTRACTION_PROMPT pipeline PDF). |
 | 024    | 2026-05-13 | Tipologia de Averias — Backfill + pipeline PDF (acciones 1-2) | PRIMERA ACCION: neonato classify_entry_lines.py (PEA). Comando de backfill con --batch-size y --dry-run, progreso cada 10 lineas, consulta cache antes de Gemini. Bugs resueltos durante diagnostico: KeyError en _CLASSIFY_PROMPT.format() por llaves literales no escapadas ({{ }}) en bloque JSON de ejemplo — corregido via PMP. Ejecucion real: 390 lineas, 75 cache, 315 Gemini, 0 errores. SEGUNDA ACCION: PMA sobre services.py (_EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL ampliados con fault_category/fault_subcategory y taxonomia completa embebida). PMA sobre tasks.py (defaults update_or_create ampliado con _fault_cat/_fault_subcat, validacion contra _VALID_CATEGORIES/_VALID_SUBCATEGORIES, import interno en bloque de persistencia). |
+| 025    | 2026-05-13 | Excel consolidado al cerrar WorkPeriod + vista digital — Diseno completo | Sesion de diseno y analisis. Sin implementacion de codigo. TLA extensa: periodo global empresa (21-20), cierre global de todos los WorkPeriod abiertos, Opcion A (reviewed=True en bloque al cerrar), dos vistas separadas PDF vs Digital, control de acceso por rol y estado periodo, persistencia del periodo por defecto. Diseno tecnico completo de 6 bloques aprobado. Archivos inspeccionados: panel/views.py, ivr_config/models.py, work_order_processor/services.py, tasks.py, work_period_list.html, work_orders/list.html, panel/urls.py. Implementacion diferida a S026. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S025)
+## 5. Hoja de Ruta para la Siguiente Sesion (S026)
 
 ### CONTEXTO
 
-S024 completo las dos acciones pendientes de la Tipologia de Averias:
-  - PRIMERA ACCION: comando classify_entry_lines.py creado y ejecutado.
-    390 lineas historicas clasificadas (75 por cache, 315 por Gemini, 0 errores).
-    Bug corregido durante diagnostico: KeyError en _CLASSIFY_PROMPT.format()
-    por llaves literales { } no escapadas en el bloque JSON de ejemplo del prompt.
-    Correccion: {{ }} via PMP en services.py.
-  - SEGUNDA ACCION: _EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL ampliados
-    con fault_category/fault_subcategory y taxonomia completa embebida.
-    tasks.py actualizado para persistir ambos campos en el pipeline PDF.
+S025 fue una sesion de diseno y analisis sin implementacion de codigo.
+TLA extensa sobre el sistema de periodos y Excel digital. Decisiones vinculantes:
+
+  - El periodo es GLOBAL para toda la empresa: un unico WorkPeriod por operario
+    creado en bloque por WorkPeriodCreateView (ya implementado correctamente).
+  - El CIERRE del periodo tambien es GLOBAL: WorkPeriodCloseView debe cerrar
+    TODOS los WorkPeriod abiertos de la empresa, no solo el del pk recibido.
+    La URL actual work-periods/<int:pk>/close/ pasa a ser work-periods/close/
+    (sin pk). La vista deriva los periodos a cerrar por company del usuario.
+  - Al cerrar el periodo: Opcion A confirmada — todos los WorkOrder del periodo
+    con source IN (DIGITAL, GENERATED) se marcan reviewed=True en bloque.
+    El supervisor puede desmarcar individualmente desde la vista admin history.
+  - Excels por Celery: nueva tarea generate_period_excel encolada por cada
+    WorkOrder al cerrar el periodo (un Excel por WorkOrder por operario).
+  - Dos vistas separadas mutuamente excluyentes: PDF (source=PDF_UPLOAD) y
+    Digital (source IN DIGITAL, GENERATED). Misma arquitectura visual.
+  - Periodo por defecto persistente: suggested_start/end derivados del ultimo
+    periodo creado en la empresa. Fallback Gruas Alvarez: dia 21 del mes actual
+    al 20 del siguiente. Logica en WorkPeriodListView.get().
+  - Bloqueo de edicion del operario: ya implementado via reviewed=True +
+    barrera _get_min_allowed_date(). No se necesita mecanismo adicional.
 
 ADVERTENCIA CRITICA — mantener siempre presente:
   El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
   Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-### PRIMERA ACCION — Excel consolidado al cerrar WorkPeriod
+### ORDEN DE IMPLEMENTACION (estricto)
 
-  Al ejecutar WorkPeriodCloseView.post(), tras marcar el periodo como cerrado,
-  generar automaticamente el Excel consolidado de todos los WorkOrder del periodo.
+  Paso 1 — tasks.py: nueva tarea generate_period_excel (PMA).
+  Paso 2 — panel/views.py: tres modificaciones en un unico PMA:
+    2a. WorkPeriodCloseView.post() — refactor completo (cierre global).
+    2b. WorkPeriodListView.get() — suggested_start/end al contexto.
+    2c. Nueva DigitalWorkOrderListView al final del bloque de vistas de partes.
+  Paso 3 — panel/urls.py: URL work_period_close sin pk + ruta digital_list (PMA).
+  Paso 4 — work_period_list.html: modal cierre global + pre-relleno fechas (PMA).
+  Paso 5 — digital_list.html: neonato puro (PEA).
 
-  Solicitar al inicio de S025 via SFTP:
-    panel/views.py — WorkPeriodCloseView.post() completo.
-    ivr_config/models.py — modelo WorkPeriod completo.
-    work_order_processor/services.py — generate_work_order_excel() completo.
+### PASO 1 — Nueva tarea Celery generate_period_excel (work_order_processor/tasks.py)
 
-  Logica a implementar en WorkPeriodCloseView.post() tras el cierre del periodo:
-    1. Obtener todos los WorkOrder del periodo:
-         work_orders = WorkOrder.objects.filter(
-             company=company,
-             uploaded_by__in=period_operators,   # todos los operarios del periodo
-             work_date__gte=period.start_date,
-             work_date__lte=period.end_date,
-             source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
-             reviewed=True,
+  Posicion en el archivo: inmediatamente despues de classify_fault_line,
+  al final del modulo.
+
+  Importaciones adicionales necesarias al bloque de imports del modulo:
+    from .services import generate_work_order_excel
+    (ya importada — verificar que esta en el bloque import del modulo al inicio)
+
+  Decorador y firma:
+    @app.task(base=DjangoTask, bind=True, max_retries=3,
+              default_retry_delay=60, queue="work_orders")
+    def generate_period_excel(self, work_order_id: int) -> None:
+
+  Logica completa:
+    1. Guardia de idempotencia: si WorkOrder.excel_file ya tiene valor Y
+       WorkOrder.status == WorkOrder.Status.DONE, return silencioso con log INFO.
+    2. Llamar a generate_work_order_excel(work_order_id).
+    3. En exception: si "429" o "RESOURCE_EXHAUSTED" en str(exc), raise
+       self.retry(exc=exc, countdown=60).
+    4. Cualquier otro error irrecuperable: log ERROR sin reintentar.
+
+  Docstring bilingue completo obligatorio.
+
+### PASO 2a — WorkPeriodCloseView.post() — refactor (panel/views.py)
+
+  La URL pierde el <int:pk> — la vista ya NO recibe pk. El cierre es por company.
+
+  Logica nueva completa de post():
+    1. Imports locales: datetime, date, reverse, now (django.utils.timezone),
+       WorkPeriod, WorkOrder, SparePartLine (no necesario — solo WorkOrder).
+    2. cu = request.user.company_user; company = cu.company.
+    3. LIST_URL = reverse("panel:work_period_list").
+    4. Verificar que existe al menos un WorkPeriod abierto en la empresa:
+         open_periods = WorkPeriod.objects.filter(
+             company_user__company=company, end_date__isnull=True
          )
-       Nota: "period_operators" se refiere a todos los CompanyUser con WorkOrderEntry
-       cuya work_date este dentro del rango del periodo. Verificar en views.py como
-       se construye actualmente el queryset de operarios del periodo.
-    2. Por cada WorkOrder en work_orders:
-         generate_work_order_excel(work_order.pk)
-       La funcion ya existe en services.py y genera el Excel persistiendolo en
-       work_order.excel_file. No requiere modificacion.
-    3. Mostrar en el template (work_period_list.html o admin_history.html pestana
-       Periodos) un indicador de cuantos Excels se han generado al cerrar.
+       Si open_periods no existe: error + redirect.
+    5. Parsear end_date del POST (formato YYYY-MM-DD). Si invalido: error + redirect.
+    6. Derivar start_date del periodo a cerrar: tomar el start_date minimo de
+       todos los WorkPeriod abiertos de la empresa (pueden tener start_dates
+       distintas si se crearon en momentos diferentes, pero en el modelo global
+       todos deberan coincidir — usar .aggregate(Min("start_date"))).
+    7. Validar end_date >= start_date minimo. Si no: error + redirect.
+    8. Cerrar todos los WorkPeriod abiertos de la empresa en bloque:
+         open_periods.update(end_date=end_date)
+       Capturar el count() ANTES del update() para el mensaje de exito.
+    9. Obtener todos los WorkOrder del periodo a marcar revisados:
+         work_orders_qs = WorkOrder.objects.filter(
+             company=company,
+             source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+             reviewed=False,
+         ).filter(
+             entries__work_date__gte=period_start,
+             entries__work_date__lte=end_date,
+         ).distinct()
+       NOTA: period_start = start_date minimo obtenido en paso 6.
+    10. Marcar reviewed=True en bloque:
+          from django.utils.timezone import now as tz_now
+          reviewed_count = work_orders_qs.count()
+          work_orders_qs.update(reviewed=True, reviewed_at=tz_now())
+    11. Encolar generate_period_excel por cada WorkOrder revisado:
+          from work_order_processor.tasks import generate_period_excel
+          pks = list(work_orders_qs.values_list("pk", flat=True))
+          NOTA: el .values_list debe ejecutarse ANTES del .update() anterior.
+          Reordenar: primero capturar pks, luego update, luego encolar.
+          for pk_val in pks:
+              generate_period_excel.apply_async(
+                  args=[pk_val], queue="work_orders"
+              )
+    12. Mensaje de exito con contadores:
+          f"{closed_count} periodo(s) cerrado(s). {reviewed_count} parte(s)
+          marcado(s) como revisados. {len(pks)} Excel(es) encolado(s)."
+    13. Redirect a LIST_URL.
 
-  Consideraciones:
-    - generate_work_order_excel() es sincrona. Si hay muchos WorkOrder en el
-      periodo, evaluar si conviene encolarla via Celery (tarea existente
-      process_work_order_pdf no aplica — crear nueva tarea si es necesario).
-    - El Excel existente de cada WorkOrder (generado al crear el parte digital)
-      debe sobreescribirse con el consolidado del periodo si ya existe.
-    - Solo generar Excels de partes revisados (reviewed=True).
+  Docstring bilingue completo del metodo post() actualizado.
 
-  Archivos afectados: panel/views.py (WorkPeriodCloseView.post()),
-  panel/templates/panel/work_orders/work_period_list.html o admin_history.html.
-  - Validacion E2E completa: 7 escenarios de merge superados, edicion desde
-    historial, barrera fecha minima y Via C validadas.
-  - Bug: boton Fusionar no se habilitaba al resolver solapamientos en
-    merge_entry.html. Causa: atributo HTML disabled estatico renderizado por
-    Django no eliminado por disabled=false JS. Correccion: removeAttribute
-    ("disabled") en updateOverlapUI + bloque extra_scripts duplicado eliminado.
-  - Bug: TimePicker mostraba minutos libres en merge_entry.html.
-    Correccion: include _time_picker_widget.html en bloque extra_scripts
-    correcto (estaba en extra_js — bloque inexistente en base.html) + step=1800.
-  - Bug: editar parte desde Mi historial activaba Gate 0 sobre el propio
-    original. Correccion: pre-eliminacion del WorkOrder original antes de
-    ejecutar Gate 0 en WorkOrderEntryFormView.post() mediante bloque
-    _edit_wo_pk_pre independiente.
-  - Sistema de visita guiada Driver.js implementado: _tour_driver_cdn.html
-    (CDN jsDelivr v1.3.6), _tour_workshop.html (motor EbTour con API publica
-    register/start/startIfNew/reset/resetAll), boton Ayuda en base.html
-    condicionado a roles WORKSHOP/ADMIN, tours en las seis vistas del operario.
+### PASO 2b — WorkPeriodListView.get() — suggested dates (panel/views.py)
 
-ADVERTENCIA CRITICA — mantener siempre presente:
-  El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
-  Usar siempre entry.lines.all() y prefetch_related("entries__lines").
+  Anadir al contexto dos variables: suggested_start y suggested_end
+  (strings en formato YYYY-MM-DD para el atributo value de los inputs date).
 
-### PRIMERA ACCION — Tour guiado: correccion posicionamiento Driver.js
+  Logica de calculo (anadir al final de get(), antes del return render()):
+    from datetime import date, timedelta
+    from django.db.models import Max
 
-  El popover del ultimo paso del tour (elemento fuera del viewport visible)
-  aparece desposicionado respecto al elemento anclado. Causa: layout con
-  sidebar fixed y overflow en el contenedor principal interfiere con el
-  calculo de coordenadas de Driver.js.
-  Solucion propuesta por Alejandro: pendiente de especificar al inicio de S021.
-  Archivos afectados: panel/templates/panel/_tour_workshop.html (configuracion
-  driver) y/o CSS especifico para .driver-popover.
+    last_closed = WorkPeriod.objects.filter(
+        company_user__company=company,
+        end_date__isnull=False,
+    ).order_by("-end_date").first()
 
-### SEGUNDA ACCION — TimePicker: admitir entrada por teclado
+    if last_closed and last_closed.end_date:
+        duration_days = (last_closed.end_date - last_closed.start_date).days + 1
+        suggested_start = last_closed.end_date + timedelta(days=1)
+        suggested_end   = suggested_start + timedelta(days=duration_days - 1)
+    else:
+        # Fallback Gruas Alvarez: dia 21 del mes actual al 20 del siguiente.
+        today = date.today()
+        if today.day >= 21:
+            suggested_start = today.replace(day=21)
+            # mes siguiente dia 20
+            first_of_next = (today.replace(day=1) + timedelta(days=32))
+            suggested_end = first_of_next.replace(day=20)
+        else:
+            # aun no hemos llegado al 21 — usar el 21 del mes anterior al 20 actual
+            first_of_this = today.replace(day=1)
+            prev_month_end = first_of_this - timedelta(days=1)
+            suggested_start = prev_month_end.replace(day=21)
+            suggested_end   = today.replace(day=20)
 
-  El widget _time_picker_widget.html solo admite seleccion via desplegable.
-  El operario debe poder escribir la hora directamente con el teclado.
-  Implementacion: el input oculto debe hacerse visible y editable cuando el
-  operario pulsa una tecla numerica sobre el tp-display, o anadir un input
-  de texto sincronizado con el widget que actue como via alternativa de entrada.
-  El widget debe seguir controlando que los minutos sean 00 o 30.
-  Archivos afectados: panel/templates/panel/_time_picker_widget.html.
+    context["suggested_start"] = suggested_start.strftime("%Y-%m-%d")
+    context["suggested_end"]   = suggested_end.strftime("%Y-%m-%d")
 
-### TERCERA ACCION — Logica de jornada laboral y validaciones temporales
+  Anadir tambien al contexto: "has_open_periods": open_periods_exist (bool),
+  para que el template muestre u oculte el boton global de cierre.
+    open_periods_exist = WorkPeriod.objects.filter(
+        company_user__company=company, end_date__isnull=True
+    ).exists()
+    context["has_open_periods"] = open_periods_exist
 
-  Conjunto de reglas de negocio a implementar en validators.py y panel/views.py:
+### PASO 2c — Nueva vista DigitalWorkOrderListView (panel/views.py)
 
-  Regla A — Hora de comida tolerada:
-    Si en la jornada falta exactamente 1 hora en la franja 13:00-15:30
-    (es decir, existe un hueco de 60 minutos dentro de ese rango) Y el
-    resto de la jornada suma >= 8h, el parte debe poder guardarse sin error.
-    El hueco de comida NO cuenta como horas trabajadas.
-    Implementar en run_intra_part_validation como regla no bloqueante o
-    en _gate_jornada() como excepcion explicita.
+  Posicion: tras WorkOrderListView, antes de WorkOrderUploadView.
 
-  Regla B — Bloques fuera de orden temporal:
-    Los bloques de trabajo NO tienen que enviarse en orden cronologico.
-    La validacion de solapamiento (R1) debe comparar todos los pares
-    (i, j) independientemente del orden de insercion. Actualmente ya
-    funciona asi en detectOverlaps JS, pero verificar que run_intra_part_
-    validation en validators.py tampoco asume orden.
-    Si asume orden, corregirlo para que ordene los bloques por HC antes
-    de validar solapamientos.
+  Clase: DigitalWorkOrderListView(SupervisorAccessMixin, View)
+  Template: "panel/work_orders/digital_list.html"
 
-  Regla C — Cobertura minima de jornada (8h):
-    Al guardar un parte, la suma de horas de todos los bloques de trabajo
-    debe ser >= 8h, O bien el operario debe tener una ausencia justificada
-    o injustificada registrada para esa fecha (WorkerAbsence con
-    start_date <= work_date <= end_date).
-    Si no se cumple ninguna de las dos condiciones, el server-side debe
-    devolver un error claro indicando las horas que faltan para completar
-    la jornada.
-    Implementar como Gate adicional en WorkOrderEntryFormView.post() y
-    WorkOrderEntryConfirmView.post() tras las validaciones existentes.
-    NO bloquear si existe WorkerAbsence para esa fecha del operario.
+  Metodo get():
+    cu = request.user.company_user; company = cu.company.
+    Tres querysets filtrando source__in=[WorkOrder.Source.DIGITAL,
+    WorkOrder.Source.GENERATED] y scoped a company:
+      wo_pending  — status=DONE, reviewed=False, orden: -upload_date
+      wo_reviewed — status=DONE, reviewed=True,  orden: -upload_date
+      wo_error    — status=ERROR, orden: -upload_date
+    Adicionalmente: lista de operarios WORKSHOP activos para filtro:
+      operators = CompanyUser.objects.filter(
+          company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP
+      ).select_related("user").order_by("user__last_name", "user__first_name")
+    Filtros opcionales GET: operator_pk (int) y period_pk (int) para
+    restringir los querysets.
+    Contexto: company, company_user, own_presence, active_nav="digital_list",
+    wo_pending, wo_reviewed, wo_error, operators, default_tab (default "pending"
+    si wo_pending, si no "reviewed").
 
-  Archivos afectados: work_order_processor/validators.py, panel/views.py.
+  Docstring bilingue completo.
 
-### CUARTA ACCION — Bugs en vista de historial admin (WorkOrderAdminHistoryView)
+### PASO 3 — panel/urls.py (PMA)
 
-  Bug A — Error al exportar seleccion:
-    El boton "Exportar seleccion" en la vista de historial admin produce
-    un error. Diagnosticar inspeccionando panel/views.py (WorkOrderAdminHistoryView
-    y WorkOrderExportView) y admin_history.html. Solicitar ambos archivos
-    al inicio de S021 si el bug no se resuelve en el diagnostico inicial.
+  Cambio 1: sustituir la ruta de work_period_close:
+    OLD: path("work-periods/<int:pk>/close/", WorkPeriodCloseView.as_view(), name="work_period_close"),
+    NEW: path("work-periods/close/", WorkPeriodCloseView.as_view(), name="work_period_close"),
 
-  Bug B — Filtro de maquinaria debe ser desplegable dinamico:
-    En los filtros del historial admin, el campo de maquinaria es un input
-    de texto libre. Debe ser un <select> poblado dinamicamente con los codigos
-    de MachineAsset presentes en los WorkOrderEntryLine de los partes que
-    cumplen el filtro actual (operario + periodo). Al cambiar el filtro de
-    operario o periodo, el desplegable de maquinaria debe actualizarse.
-    Implementar via endpoint AJAX GET /panel/work-orders/machines/?operator=X
-    &period=Y → {"results": ["G12", "A44", ...]} y JS que pueble el select.
-    Archivos afectados: panel/views.py (nuevo endpoint), admin_history.html,
-    panel/static/panel/js/admin_history.js.
+  Cambio 2: anadir import de DigitalWorkOrderListView al bloque de imports.
 
-### QUINTA ACCION — Bugs en historial del operario (WorkOrderEntryHistoryView)
+  Cambio 3: anadir ruta nueva tras work_order_list:
+    path("work-orders/digital/", DigitalWorkOrderListView.as_view(), name="digital_work_order_list"),
 
-  Bug A — Partes revisados no aparecen en Mi historial (Tab 1 Periodo actual):
-    Tab 1 muestra solo partes no revisados del periodo activo. Debe mostrar
-    TODOS los partes del periodo activo (revisados y no revisados).
-    Revisar el queryset de Tab 1 en WorkOrderEntryHistoryView.get() en
-    panel/views.py. El filtro reviewed=False debe eliminarse de Tab 1.
+  Comentario de la nueva ruta:
+    # Digital work-order list — Partes digitales (DIGITAL + GENERATED) para SUPERVISOR y ADMIN.
+    # PRIMERA ACCION — Hito 7 Sesion 026 (2026-05-13)
 
-  Bug B — Historico no muestra partes revisados:
-    Tab 2 (Historico) tampoco muestra partes revisados agrupados por periodo
-    cerrado. Revisar el queryset correspondiente en WorkOrderEntryHistoryView.
-    El filtro reviewed=False debe eliminarse de Tab 2 tambien.
+### PASO 4 — work_period_list.html (PMA)
 
-  Bug C — Periodo Actual muestra partes ya revisados mezclados:
-    Tab 1 muestra partes revisados que no deberian estar en Periodo Actual
-    (deberian estar solo en Historico una vez revisados). Revisar la logica
-    de asignacion de partes a pestanas: Tab 1 debe mostrar solo partes del
-    WorkPeriod activo (revisados y no revisados); Tab 2 los de periodos cerrados.
+  Cambios necesarios:
 
-  Archivos afectados: panel/views.py (WorkOrderEntryHistoryView.get()),
-  panel/templates/panel/operator/history.html.
+  A) Boton "Nuevo periodo": añadir value="{{ suggested_start }}" al input
+     start_date y value="{{ suggested_end }}" al input end_date del modal
+     modalWorkPeriodCreate. El campo end_date debe añadirse al modal si no
+     existe (actualmente el modal no tiene campo end_date — verificar en
+     el archivo en produccion antes de construir el patcher).
+     Eliminar el campo <select name="company_user_pk"> del modal — el periodo
+     es global, no por operario individual.
 
-### SEXTA ACCION — Preservacion de datos en formulario al dar error
+  B) Boton "Cerrar periodo global": sustituir el boton "Cerrar" individual
+     por fila de operario por UN UNICO boton en la cabecera de pagina:
+       <button type="button" ... data-bs-target="#modalWorkPeriodClose">
+           Cerrar periodo activo
+       </button>
+     Visible solo si has_open_periods es True.
 
-  Al producirse un error de validacion server-side en WorkOrderEntryFormView
-  y WorkOrderEntryConfirmView, el formulario debe:
-    1. Re-renderizarse con TODOS los datos introducidos por el operario
-       (ya implementado parcialmente — verificar que funciona en todos
-       los campos incluyendo repuestos y contadores).
-    2. Marcar en rojo (field-flagged) EXCLUSIVAMENTE los campos que han
-       producido error, no todos los campos vacios.
-  Revisar el bloque de re-render en WorkOrderEntryFormView.post() y
-  WorkOrderEntryConfirmView.post() y comparar contra los errores devueltos.
-  Archivos afectados: panel/views.py, panel/templates/panel/operator/
-  form_entry.html, panel/templates/panel/operator/confirm_entry.html.
+  C) Modal modalWorkPeriodClose: actualizar el texto descriptivo:
+     "Esta accion cerrara el periodo activo de TODOS los operarios y marcara
+     todos sus partes como revisados. Esta accion no se puede deshacer."
+     Actualizar el form action:
+       action="{% url 'panel:work_period_close' %}"  (sin pk)
+     Eliminar el JS que inyectaba la URL y el nombre de operario dinamicamente
+     (ya no aplica — la URL es fija).
+
+  D) Columna "Acciones" de cada fila de periodo: eliminar el boton "Cerrar"
+     individual de cada fila. Sustituir por indicador de estado solamente
+     (Activo / Cerrado), que ya existe como badge.
+
+  ADVERTENCIA: construir el patcher SIEMPRE desde el contenido exacto del
+  archivo en produccion — ya inspeccionado y disponible en memoria de sesion.
+
+### PASO 5 — digital_list.html (PEA — neonato puro)
+
+  Verificar en PROJECT_DIRECTORY que NO existe:
+    panel/templates/panel/work_orders/digital_list.html
+  (Confirmado ausente en el manifiesto cargado en S025.)
+
+  Estructura del template (misma base que list.html pero sin PDF):
+    - extends "panel/base.html"
+    - block page_title: "Partes Digitales"
+    - Cabecera: titulo "Partes Digitales" + subtitulo company.name.
+      Sin boton "Subir PDF". Con boton "Descargar seleccion" (solo en tab Revisados).
+    - Tres pestanas: Pendiente revision / Revisados / Error.
+    - Tab Pendiente revision: tabla con columnas Operario / Fecha del parte /
+      Fecha de carga / Revision (badge HTMX) / Acciones (dropdown: Editar).
+      Sin columna de nombre PDF. Sin boton de busqueda de duplicados.
+    - Tab Revisados: misma tabla + checkbox por fila + boton descarga Excel
+      individual en dropdown + boton "Descargar seleccion" en cabecera de tab.
+      La descarga individual apunta a work_order_export con pk del WorkOrder.
+      DIRECTRIZ ALEJANDRO: descarga Excel EXCLUSIVAMENTE en tab Revisados.
+    - Tab Error: tabla con columnas Operario / Fecha de carga / Log / Acciones.
+    - Modales reutilizados: incidenceModal (ver log) y deleteModal (borrar).
+    - Filtros en cabecera: desplegable operario (operators del contexto) y
+      periodo (WorkPeriod cerrados de la empresa) — GET params operator_pk
+      y period_pk. Ambos opcionales.
+    - JS minimo: activacion tab por defecto segun default_tab del contexto,
+      checkbox "seleccionar todos" en tab Revisados, activacion boton
+      descargar seleccion al marcar/desmarcar checkboxes.
+    - Sin HTMX de polling de estado (partes digitales no tienen pipeline async).
+    - Sin boton buscar duplicados (no aplica a partes digitales).
+
+### Estado de migraciones al cierre de S025
+
+| App                  | Ultima migracion aplicada                                          |
+|----------------------|--------------------------------------------------------------------|
+| fleet                | 0005_add_first_repair_to_machineasset                              |
+| work_order_processor | 0014_workorderentryline_fault_category_and_more                    |
+| ivr_config           | 0015_workerabsence_workperiod                                      |
+| panel                | 0001_initial (AnalyticsProfile)                                    |
+
+### Archivos a solicitar al inicio de S026 via SFTP
+
+  No se necesitan archivos adicionales al inicio de S026 — todos los archivos
+  a modificar ya fueron inspeccionados en S025 y estan disponibles en memoria.
+  El inicio de S026 puede arrancar directamente con el Paso 1 (tasks.py PMA)
+  sin necesidad de descarga previa.
+
+  EXCEPCION: si han pasado mas de 24h entre S025 y S026, solicitar de nuevo:
+    work_order_processor/tasks.py
+    panel/views.py
+    panel/urls.py
+    panel/templates/panel/work_orders/work_period_list.html
+  para garantizar que no hay cambios intermedios en produccion.
+
+### Hoja de ruta de sesiones futuras
+
+S027 y siguientes — diferidos pendientes de S021/S022:
+  - Regla A comida (validators.py), Regla C cobertura minima (views.py).
+  - Bugs historial operario (WorkOrderEntryHistoryView Tabs 1 y 2).
+  - Preservacion datos formulario al dar error (form_entry + confirm_entry).
+  - Bug exportar seleccion admin history (WorkOrderAdminExportView).
+
+S028 — Diferidos originales:
+  has_cg_incident + Dropdown CdG Otro.
+  Diferido hasta Hito 12 (Gestion de Centros de Gasto).
 
 ## 5. Hoja de Ruta para la Siguiente Sesion (S024)
 
