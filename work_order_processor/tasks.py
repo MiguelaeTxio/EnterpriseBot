@@ -905,3 +905,117 @@ def classify_fault_line(self, entry_line_pk: int) -> None:
             exc,
             exc_info=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# generate_period_excel — synchronous Excel generation for a single WorkOrder
+# generate_period_excel — generación síncrona de Excel para un WorkOrder
+# ---------------------------------------------------------------------------
+
+@app.task(
+    base=DjangoTask,
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    queue="work_orders",
+)
+def generate_period_excel(self, work_order_id: int) -> None:
+    """
+    Celery task: generates and persists the Excel report for a single WorkOrder
+    belonging to a work period that has just been closed globally.
+
+    Enqueued once per WorkOrder by WorkPeriodCloseView.post() after marking
+    all digital/generated work orders of the period as reviewed=True in bulk.
+
+    Flow:
+      1. Idempotency guard: if WorkOrder.excel_file already has a value AND
+         WorkOrder.status == DONE, abort silently — the Excel is already there.
+      2. Call generate_work_order_excel(work_order_id) from services.py.
+         This service builds the openpyxl workbook, saves it to the FileField
+         and transitions the WorkOrder status to DONE.
+      3. On Vertex AI 429 (ResourceExhausted): wait 60 s and retry up to
+         max_retries times (Key Learning — server-side contention pattern).
+      4. On any other unrecoverable error: log ERROR without retrying.
+
+    ---
+
+    Tarea Celery: genera y persiste el informe Excel de un único WorkOrder
+    perteneciente a un periodo de trabajo que acaba de cerrarse globalmente.
+
+    Encolada una vez por WorkOrder desde WorkPeriodCloseView.post() tras
+    marcar en bloque como reviewed=True todos los partes digitales/generados
+    del periodo.
+
+    Flujo:
+      1. Guardia de idempotencia: si WorkOrder.excel_file ya tiene valor Y
+         WorkOrder.status == DONE, abortar silenciosamente — el Excel ya existe.
+      2. Llamar a generate_work_order_excel(work_order_id) de services.py.
+         Este servicio construye el libro openpyxl, lo guarda en el FileField
+         y transiciona el estado del WorkOrder a DONE.
+      3. Ante 429 de Vertex AI (ResourceExhausted): esperar 60 s y reintentar
+         hasta max_retries veces (Key Learning — patrón de contención en servidor).
+      4. Ante cualquier otro error irrecuperable: registrar ERROR sin reintentar.
+    """
+    logger.info(
+        "# [generate_period_excel] Iniciada para WorkOrder #%d.",
+        work_order_id,
+    )
+
+    # Step 1 — Idempotency guard.
+    # Paso 1 — Guardia de idempotencia.
+    try:
+        work_order = WorkOrder.objects.get(pk=work_order_id)
+    except WorkOrder.DoesNotExist:
+        logger.warning(
+            "# [generate_period_excel] WorkOrder #%d no encontrado en BD. "
+            "Tarea abortada.",
+            work_order_id,
+        )
+        return
+
+    if work_order.excel_file and work_order.status == WorkOrder.Status.DONE:
+        logger.info(
+            "# [generate_period_excel] WorkOrder #%d ya tiene Excel generado "
+            "y estado DONE. Tarea omitida (idempotencia).",
+            work_order_id,
+        )
+        return
+
+    # Step 2 — Generate Excel report.
+    # Paso 2 — Generar informe Excel.
+    try:
+        logger.info(
+            "# [generate_period_excel] Generando Excel para WorkOrder #%d.",
+            work_order_id,
+        )
+        generate_work_order_excel(work_order_id)
+        logger.info(
+            "# [generate_period_excel] Excel generado correctamente "
+            "para WorkOrder #%d.",
+            work_order_id,
+        )
+
+    except Exception as exc:
+        exc_str = str(exc)
+
+        # Step 3 — Retry on Vertex AI 429 (ResourceExhausted).
+        # Paso 3 — Reintentar ante 429 de Vertex AI (ResourceExhausted).
+        if "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str:
+            logger.warning(
+                "# [generate_period_excel] WorkOrder #%d: Vertex AI 429 "
+                "detectado (intento %d/%d). Reintentando en 60 s.",
+                work_order_id,
+                self.request.retries + 1,
+                self.max_retries,
+            )
+            raise self.retry(exc=exc, countdown=60)
+
+        # Step 4 — Log and do not retry for any other error.
+        # Paso 4 — Registrar sin reintentar ante cualquier otro error.
+        logger.error(
+            "# [generate_period_excel] WorkOrder #%d: error irrecuperable "
+            "en generación de Excel: %s.",
+            work_order_id,
+            exc,
+            exc_info=True,
+        )

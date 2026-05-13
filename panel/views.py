@@ -67,7 +67,7 @@ from ivr_config.models import (
 from whatsapp.models import WhatsAppTemplate, WhatsAppSession
 from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 from work_order_processor.services import find_cached_classification
-from work_order_processor.tasks import classify_fault_line, process_work_order_pdf
+from work_order_processor.tasks import classify_fault_line, generate_period_excel, process_work_order_pdf
 from fleet.models import MachineAsset
 import logging
 import plotly.graph_objects as go
@@ -2734,6 +2734,170 @@ class WorkOrderListView(SupervisorAccessMixin, View):
             "wo_reviewed":  wo_reviewed,
             "default_tab":  default_tab,
         })
+
+
+# ---------------------------------------------------------------------------
+# DIGITAL WORK ORDER LIST VIEW — Partes digitales (DIGITAL + GENERATED).
+# Vista de partes digitales para SUPERVISOR y ADMIN.
+# PRIMERA ACCION — Hito 7 Sesion 026 (2026-05-13)
+# ---------------------------------------------------------------------------
+
+class DigitalWorkOrderListView(SupervisorAccessMixin, View):
+    """
+    Lists WorkOrder records with source IN (DIGITAL, GENERATED) for the
+    authenticated user's company, split into three querysets for the
+    tabbed UI:
+      wo_pending  — status=DONE, reviewed=False (pending supervisor sign-off).
+      wo_reviewed — status=DONE, reviewed=True  (Excel download available).
+      wo_error    — status=ERROR.
+
+    Supports optional GET filters:
+      operator_pk — restrict to a specific CompanyUser (WORKSHOP role).
+      period_pk   — restrict to work orders whose entries fall within a
+                    specific WorkPeriod date range.
+
+    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
+    ---
+    Lista los registros WorkOrder con source IN (DIGITAL, GENERATED) de la
+    empresa del usuario autenticado, divididos en tres querysets para la
+    UI de pestañas:
+      wo_pending  — status=DONE, reviewed=False (pendiente de validación).
+      wo_reviewed — status=DONE, reviewed=True  (descarga Excel disponible).
+      wo_error    — status=ERROR.
+
+    Soporta filtros GET opcionales:
+      operator_pk — restringir a un CompanyUser concreto (rol WORKSHOP).
+      period_pk   — restringir a partes cuyas entradas caen dentro del rango
+                    de fechas de un WorkPeriod concreto.
+
+    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
+    """
+
+    template_name = "panel/work_orders/digital_list.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def get(self, request, *args, **kwargs):
+        """
+        Builds the three querysets (pending / reviewed / error) scoped to
+        DIGITAL and GENERATED sources and renders digital_list.html.
+        Optional GET filters operator_pk and period_pk are applied when present.
+        The default active tab is "pending" if wo_pending has results;
+        otherwise "reviewed".
+
+        ---
+
+        Construye los tres querysets (pendiente / revisados / error) acotados
+        a orígenes DIGITAL y GENERATED y renderiza digital_list.html.
+        Los filtros GET opcionales operator_pk y period_pk se aplican cuando
+        están presentes. La pestaña activa por defecto es "pending" si
+        wo_pending tiene resultados; en caso contrario "reviewed".
+        """
+        from ivr_config.models import WorkPeriod
+
+        cu      = request.user.company_user
+        company = cu.company
+
+        # ------------------------------------------------------------------
+        # Optional GET filters — operator_pk and period_pk.
+        # Filtros GET opcionales — operator_pk y period_pk.
+        # ------------------------------------------------------------------
+        try:
+            operator_pk = int(request.GET.get("operator_pk", ""))
+        except (ValueError, TypeError):
+            operator_pk = None
+
+        try:
+            period_pk = int(request.GET.get("period_pk", ""))
+        except (ValueError, TypeError):
+            period_pk = None
+
+        # Resolve period date range when period_pk is provided.
+        # Resolver rango de fechas del periodo cuando se proporciona period_pk.
+        period_start = None
+        period_end   = None
+        if period_pk:
+            try:
+                wp           = WorkPeriod.objects.get(pk=period_pk, company_user__company=company)
+                period_start = wp.start_date
+                period_end   = wp.end_date
+            except WorkPeriod.DoesNotExist:
+                period_pk = None
+
+        # Base queryset scoped to DIGITAL and GENERATED sources.
+        # Queryset base acotado a orígenes DIGITAL y GENERATED.
+        _digital_sources = [WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED]
+        _base = WorkOrder.objects.filter(
+            company=company,
+            source__in=_digital_sources,
+        )
+
+        # Apply optional operator filter.
+        # Aplicar filtro de operario opcional.
+        if operator_pk:
+            _base = _base.filter(uploaded_by__pk=operator_pk)
+
+        # Apply optional period date range filter via entries.
+        # Aplicar filtro de rango de fechas de periodo vía entries.
+        if period_start:
+            _base = _base.filter(entries__work_date__gte=period_start).distinct()
+        if period_end:
+            _base = _base.filter(entries__work_date__lte=period_end).distinct()
+
+        # Three querysets for the tabbed UI.
+        # Tres querysets para la UI de pestañas.
+        wo_pending  = _base.filter(status=WorkOrder.Status.DONE,  reviewed=False).order_by("-upload_date")
+        wo_reviewed = _base.filter(status=WorkOrder.Status.DONE,  reviewed=True).select_related("uploaded_by__user").order_by("-upload_date")
+        wo_error    = _base.filter(status=WorkOrder.Status.ERROR).order_by("-upload_date")
+
+        # Default active tab: "pending" if there are unreviewed parts; else "reviewed".
+        # Pestaña activa por defecto: "pending" si hay partes sin revisar; si no, "reviewed".
+        default_tab = "pending" if wo_pending.exists() else "reviewed"
+
+        # Operators list for filter dropdown — active WORKSHOP users of the company.
+        # Lista de operarios para el filtro desplegable — WORKSHOP activos de la empresa.
+        operators = (
+            CompanyUser.objects
+            .filter(company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP)
+            .select_related("user")
+            .order_by("user__last_name", "user__first_name")
+        )
+
+        # Closed WorkPeriods for filter dropdown.
+        # WorkPeriods cerrados para el desplegable de filtro.
+        periods = (
+            WorkPeriod.objects
+            .filter(company_user__company=company, end_date__isnull=False)
+            .order_by("-end_date")
+            .distinct()
+        )
+
+        context = {
+            "company":      company,
+            "company_user": cu,
+            "own_presence": self._get_own_presence(cu),
+            "active_nav":   "digital_list",
+            "wo_pending":   wo_pending,
+            "wo_reviewed":  wo_reviewed,
+            "wo_error":     wo_error,
+            "default_tab":  default_tab,
+            "operators":    operators,
+            "periods":      periods,
+            "operator_pk":  operator_pk,
+            "period_pk":    period_pk,
+        }
+        return render(request, self.template_name, context)
 
 
 class WorkOrderUploadView(SupervisorAccessMixin, View):
@@ -9386,13 +9550,61 @@ class WorkPeriodListView(SupervisorAccessMixin, View):
                 "has_open":    any(p.end_date is None for p in periods),
             })
 
+        # ------------------------------------------------------------------
+        # Suggested period dates — derived from last closed period.
+        # Fallback: Grúas Álvarez pattern (day 21 of current month to day 20
+        # of next month) when no closed period exists.
+        #
+        # Fechas sugeridas de periodo — derivadas del último periodo cerrado.
+        # Fallback: patrón Grúas Álvarez (día 21 del mes actual al 20 del
+        # siguiente) cuando no existe ningún periodo cerrado.
+        # ------------------------------------------------------------------
+        from datetime import date as _dt_date, timedelta as _td
+        last_closed = (
+            WorkPeriod.objects
+            .filter(
+                company_user__company=company,
+                end_date__isnull=False,
+            )
+            .order_by("-end_date")
+            .first()
+        )
+
+        if last_closed and last_closed.end_date:
+            _duration_days  = (last_closed.end_date - last_closed.start_date).days + 1
+            _suggested_start = last_closed.end_date + _td(days=1)
+            _suggested_end   = _suggested_start + _td(days=_duration_days - 1)
+        else:
+            # Fallback Grúas Álvarez: day 21 of current month to day 20 of next.
+            # Fallback Grúas Álvarez: día 21 del mes actual al 20 del siguiente.
+            _today = _dt_date.today()
+            if _today.day >= 21:
+                _suggested_start = _today.replace(day=21)
+                _first_of_next   = (_today.replace(day=1) + _td(days=32)).replace(day=1)
+                _suggested_end   = _first_of_next.replace(day=20)
+            else:
+                _first_of_this   = _today.replace(day=1)
+                _prev_month_end  = _first_of_this - _td(days=1)
+                _suggested_start = _prev_month_end.replace(day=21)
+                _suggested_end   = _today.replace(day=20)
+
+        # Open periods exist guard — controls global close button visibility.
+        # Guardia de periodos abiertos — controla visibilidad del botón de cierre global.
+        open_periods_exist = WorkPeriod.objects.filter(
+            company_user__company=company,
+            end_date__isnull=True,
+        ).exists()
+
         context = {
-            "company":          company,
-            "company_user":     cu,
-            "own_presence":     self._get_own_presence(cu),
-            "active_nav":       "work_period_list",
-            "operator_groups":  operator_groups,
-            "operators":        operators,
+            "company":           company,
+            "company_user":      cu,
+            "own_presence":      self._get_own_presence(cu),
+            "active_nav":        "work_period_list",
+            "operator_groups":   operator_groups,
+            "operators":         operators,
+            "suggested_start":   _suggested_start.strftime("%Y-%m-%d"),
+            "suggested_end":     _suggested_end.strftime("%Y-%m-%d"),
+            "has_open_periods":  open_periods_exist,
         }
         return render(request, self.template_name, context)
 
@@ -9536,60 +9748,187 @@ class WorkPeriodCreateView(SupervisorAccessMixin, View):
 
 class WorkPeriodCloseView(SupervisorAccessMixin, View):
     """
-    Closes an open WorkPeriod by assigning its end_date.
-    Validates: company scope, open period, end_date >= start_date.
+    Globally closes ALL open WorkPeriod records for the authenticated user's
+    company in a single operation. No pk is received — the periods to close
+    are derived from company scope.
+
+    On successful close:
+      - All open WorkPeriod records for the company are closed in bulk
+        (end_date set to the submitted value).
+      - All DIGITAL and GENERATED WorkOrder records whose entries fall within
+        the closed period are marked reviewed=True in bulk.
+      - One generate_period_excel Celery task is enqueued per reviewed WorkOrder.
+
     On success or failure, redirects to work_period_list.
 
-    POST /panel/work-periods/<pk>/close/
+    POST /panel/work-periods/close/
     ---
-    Cierra un WorkPeriod abierto asignando end_date.
-    Valida: scope empresa, periodo abierto, end_date >= start_date.
+    Cierra GLOBALMENTE todos los WorkPeriod abiertos de la empresa del usuario
+    autenticado en una única operación. No recibe pk — los periodos a cerrar se
+    derivan del scope de la empresa.
+
+    Al cerrar correctamente:
+      - Todos los WorkPeriod abiertos de la empresa se cierran en bloque
+        (end_date asignado al valor enviado).
+      - Todos los WorkOrder DIGITAL y GENERATED cuyas entradas caen dentro del
+        periodo cerrado se marcan reviewed=True en bloque.
+      - Se encola una tarea Celery generate_period_excel por cada WorkOrder revisado.
+
     En éxito o fallo, redirige a work_period_list.
 
-    POST /panel/work-periods/<pk>/close/
+    POST /panel/work-periods/close/
     """
 
-    def post(self, request, pk, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         """
-        Validates end_date, closes WorkPeriod and redirects.
+        Validates end_date, closes all open WorkPeriod records for the company
+        in bulk, marks the period's digital/generated WorkOrders as reviewed and
+        enqueues Excel generation per WorkOrder. Redirects to work_period_list.
+
+        Steps:
+          1. Verify at least one open WorkPeriod exists for the company.
+          2. Parse end_date from POST (YYYY-MM-DD format required).
+          3. Derive period_start as the minimum start_date across all open periods.
+          4. Validate end_date >= period_start.
+          5. Capture pks of WorkOrders to review BEFORE the bulk update.
+          6. Mark those WorkOrders reviewed=True in bulk.
+          7. Close all open WorkPeriod records in bulk (end_date = end_date).
+          8. Enqueue generate_period_excel for each reviewed WorkOrder pk.
+          9. Redirect with descriptive success message.
+
         ---
-        Valida end_date, cierra WorkPeriod y redirige.
+
+        Valida end_date, cierra en bloque todos los WorkPeriod abiertos de la
+        empresa, marca como revisados los WorkOrder digitales/generados del periodo
+        y encola la generación de Excel por WorkOrder. Redirige a work_period_list.
+
+        Pasos:
+          1. Verificar que existe al menos un WorkPeriod abierto para la empresa.
+          2. Parsear end_date del POST (formato YYYY-MM-DD obligatorio).
+          3. Derivar period_start como la start_date mínima de todos los periodos abiertos.
+          4. Validar end_date >= period_start.
+          5. Capturar los pks de WorkOrder a revisar ANTES del bulk update.
+          6. Marcar esos WorkOrder reviewed=True en bloque.
+          7. Cerrar todos los WorkPeriod abiertos en bloque (end_date = end_date).
+          8. Encolar generate_period_excel por cada pk de WorkOrder revisado.
+          9. Redirigir con mensaje de éxito descriptivo.
         """
         from datetime import datetime
+        from django.db.models import Min
         from django.urls import reverse
+        from django.utils.timezone import now as tz_now
         from ivr_config.models import WorkPeriod
+        from work_order_processor.tasks import generate_period_excel
 
         cu       = request.user.company_user
         company  = cu.company
         LIST_URL = reverse("panel:work_period_list")
 
-        try:
-            period = WorkPeriod.objects.select_related("company_user__user").get(
-                pk=pk, company_user__company=company,
+        # ------------------------------------------------------------------
+        # Step 1 — Verify open periods exist for this company.
+        # Paso 1 — Verificar que existen periodos abiertos para la empresa.
+        # ------------------------------------------------------------------
+        open_periods = WorkPeriod.objects.filter(
+            company_user__company=company,
+            end_date__isnull=True,
+        )
+        if not open_periods.exists():
+            django_messages.error(
+                request,
+                "No hay ningún periodo activo abierto en esta empresa.",
             )
-        except WorkPeriod.DoesNotExist:
-            django_messages.error(request, "Periodo de trabajo no encontrado o no pertenece a esta empresa.")
             return redirect(LIST_URL)
 
-        if period.end_date is not None:
-            django_messages.error(request, "Este periodo ya está cerrado y no puede modificarse.")
-            return redirect(LIST_URL)
-
+        # ------------------------------------------------------------------
+        # Step 2 — Parse end_date from POST.
+        # Paso 2 — Parsear end_date del POST.
+        # ------------------------------------------------------------------
         raw_end = request.POST.get("end_date", "").strip()
         try:
             end_date = datetime.strptime(raw_end, "%Y-%m-%d").date()
         except (ValueError, AttributeError):
-            django_messages.error(request, "La fecha de fin es obligatoria y debe tener formato YYYY-MM-DD.")
+            django_messages.error(
+                request,
+                "La fecha de fin es obligatoria y debe tener formato YYYY-MM-DD.",
+            )
             return redirect(LIST_URL)
 
-        if end_date < period.start_date:
-            django_messages.error(request, f"La fecha de fin ({end_date:%d/%m/%Y}) no puede ser anterior a la fecha de inicio ({period.start_date:%d/%m/%Y}).")
+        # ------------------------------------------------------------------
+        # Step 3 — Derive period_start (minimum start_date of open periods).
+        # Paso 3 — Derivar period_start (start_date mínima de periodos abiertos).
+        # ------------------------------------------------------------------
+        agg = open_periods.aggregate(min_start=Min("start_date"))
+        period_start = agg["min_start"]
+
+        # ------------------------------------------------------------------
+        # Step 4 — Validate end_date >= period_start.
+        # Paso 4 — Validar end_date >= period_start.
+        # ------------------------------------------------------------------
+        if period_start and end_date < period_start:
+            django_messages.error(
+                request,
+                f"La fecha de fin ({end_date:%d/%m/%Y}) no puede ser anterior "
+                f"a la fecha de inicio del periodo ({period_start:%d/%m/%Y}).",
+            )
             return redirect(LIST_URL)
 
-        period.end_date = end_date
-        period.save(update_fields=["end_date"])
-        operator_name = period.company_user.user.get_full_name() or period.company_user.user.username
-        django_messages.success(request, f"Periodo de {operator_name} cerrado correctamente ({period.start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).")
+        # ------------------------------------------------------------------
+        # Step 5 — Capture WorkOrder pks to review BEFORE the bulk update.
+        # The .values_list must run before .update() so the queryset is
+        # evaluated against the current state of the database.
+        # Paso 5 — Capturar pks de WorkOrder a revisar ANTES del bulk update.
+        # El .values_list debe ejecutarse antes de .update() para que el
+        # queryset se evalúe contra el estado actual de la base de datos.
+        # ------------------------------------------------------------------
+        work_orders_qs = WorkOrder.objects.filter(
+            company=company,
+            source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+            reviewed=False,
+        ).filter(
+            entries__work_date__gte=period_start,
+            entries__work_date__lte=end_date,
+        ).distinct()
+
+        pks = list(work_orders_qs.values_list("pk", flat=True))
+        reviewed_count = len(pks)
+
+        # ------------------------------------------------------------------
+        # Step 6 — Mark WorkOrders reviewed=True in bulk.
+        # Paso 6 — Marcar WorkOrders reviewed=True en bloque.
+        # ------------------------------------------------------------------
+        if pks:
+            WorkOrder.objects.filter(pk__in=pks).update(
+                reviewed    = True,
+                reviewed_at = tz_now(),
+            )
+
+        # ------------------------------------------------------------------
+        # Step 7 — Close all open WorkPeriod records in bulk.
+        # Paso 7 — Cerrar todos los WorkPeriod abiertos en bloque.
+        # ------------------------------------------------------------------
+        closed_count = open_periods.count()
+        open_periods.update(end_date=end_date)
+
+        # ------------------------------------------------------------------
+        # Step 8 — Enqueue generate_period_excel per reviewed WorkOrder.
+        # Paso 8 — Encolar generate_period_excel por WorkOrder revisado.
+        # ------------------------------------------------------------------
+        for pk_val in pks:
+            generate_period_excel.apply_async(
+                args=[pk_val],
+                queue="work_orders",
+            )
+
+        # ------------------------------------------------------------------
+        # Step 9 — Redirect with descriptive success message.
+        # Paso 9 — Redirigir con mensaje de éxito descriptivo.
+        # ------------------------------------------------------------------
+        django_messages.success(
+            request,
+            f"{closed_count} periodo(s) cerrado(s). "
+            f"{reviewed_count} parte(s) marcado(s) como revisados. "
+            f"{len(pks)} Excel(es) encolado(s).",
+        )
         return redirect(LIST_URL)
 
 

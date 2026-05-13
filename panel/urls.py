@@ -82,6 +82,7 @@ from panel.views import (
     WorkPeriodCreateView,
     WorkPeriodCloseView,
     WorkOrderMachineFilterView,
+    DigitalWorkOrderListView,
 )
 
 app_name = "panel"
@@ -191,6 +192,9 @@ urlpatterns = [
     # WorkOrder management — PDFs de partes de trabajo (rol SUPERVISOR y ADMIN).
     # Paso 7 — Hito 6 (2026-04-22) | Bloque G — Hito 8 (2026-04-28)
     path("work-orders/", WorkOrderListView.as_view(), name="work_order_list"),
+    # Digital work-order list — Partes digitales (DIGITAL + GENERATED) para SUPERVISOR y ADMIN.
+    # PRIMERA ACCION — Hito 7 Sesion 026 (2026-05-13)
+    path("work-orders/digital/", DigitalWorkOrderListView.as_view(), name="digital_work_order_list"),
     path("work-orders/upload/", WorkOrderUploadView.as_view(), name="work_order_upload"),
     path("work-orders/<int:pk>/edit/", WorkOrderEditView.as_view(), name="work_order_edit"),
 
@@ -253,7 +257,7 @@ urlpatterns = [
     # 1ª Acción — Hito 7 Sesión 017 (2026-05-08)
     path("work-periods/", WorkPeriodListView.as_view(), name="work_period_list"),
     path("work-periods/create/", WorkPeriodCreateView.as_view(), name="work_period_create"),
-    path("work-periods/<int:pk>/close/", WorkPeriodCloseView.as_view(), name="work_period_close"),
+    path("work-periods/close/", WorkPeriodCloseView.as_view(), name="work_period_close"),
 
     # Analytics — Panel de analítica con gráficos Plotly (rol ADMIN).
     # Subtarea 9.6 — Hito 6 (2026-04-27)

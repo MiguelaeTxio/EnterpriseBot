@@ -656,34 +656,25 @@ Estado: COMPLETADO (sesiones 015-017).
 | 023    | 2026-05-13 | Tipologia de Averias — Implementacion parcial (acciones 1-5) | PRIMERA ACCION: Via B eliminada — WorkOrderEntrySTTView, WorkOrderEntrySTTExtractView, rutas STT, boton dashboard, stt_entry.html. SEGUNDA ACCION: FaultCategory y FaultSubcategory (8 grupos, 30 subgrupos) en models.py. Campos fault_category/fault_subcategory en WorkOrderEntryLine. Migracion 0014 aplicada. TERCERA ACCION: classify_fault() en services.py (Gemini Flash, response_schema, thinking_budget=0, validacion taxonomia). CUARTA ACCION: classify_fault_line() en tasks.py (retry 429 countdown=60s, idempotencia, best-effort). QUINTA ACCION: find_cached_classification() en services.py + encolado con gate en tres puntos INSERT de views.py (Via A, Via C, MergeView). Skill pea-pma corregida: AUTORIZADO va directo al mv. Pendientes: PRIMERA ACCION S024 (classify_entry_lines) y SEGUNDA ACCION S024 (_EXTRACTION_PROMPT pipeline PDF). |
 | 024    | 2026-05-13 | Tipologia de Averias — Backfill + pipeline PDF (acciones 1-2) | PRIMERA ACCION: neonato classify_entry_lines.py (PEA). Comando de backfill con --batch-size y --dry-run, progreso cada 10 lineas, consulta cache antes de Gemini. Bugs resueltos durante diagnostico: KeyError en _CLASSIFY_PROMPT.format() por llaves literales no escapadas ({{ }}) en bloque JSON de ejemplo — corregido via PMP. Ejecucion real: 390 lineas, 75 cache, 315 Gemini, 0 errores. SEGUNDA ACCION: PMA sobre services.py (_EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL ampliados con fault_category/fault_subcategory y taxonomia completa embebida). PMA sobre tasks.py (defaults update_or_create ampliado con _fault_cat/_fault_subcat, validacion contra _VALID_CATEGORIES/_VALID_SUBCATEGORIES, import interno en bloque de persistencia). |
 | 025    | 2026-05-13 | Excel consolidado al cerrar WorkPeriod + vista digital — Diseno completo | Sesion de diseno y analisis. Sin implementacion de codigo. TLA extensa: periodo global empresa (21-20), cierre global de todos los WorkPeriod abiertos, Opcion A (reviewed=True en bloque al cerrar), dos vistas separadas PDF vs Digital, control de acceso por rol y estado periodo, persistencia del periodo por defecto. Diseno tecnico completo de 6 bloques aprobado. Archivos inspeccionados: panel/views.py, ivr_config/models.py, work_order_processor/services.py, tasks.py, work_period_list.html, work_orders/list.html, panel/urls.py. Implementacion diferida a S026. |
+| 026    | 2026-05-13 | Excel por periodo + Vista Partes Digitales — Implementacion parcial (Pasos 1-3) | VERIFICACION: generate_period_excel ya implementada en tasks.py (S024) — Paso 1 completado sin intervencion. PASO 2 (PMA panel/views.py): WorkPeriodCloseView refactorizada a cierre global por company (sin pk), marcado reviewed=True en bloque, encolado generate_period_excel por WorkOrder. WorkPeriodListView.get() ampliado con suggested_start/suggested_end (logica periodo anterior + fallback Gruas Alvarez dia 21-20) y has_open_periods. Nueva DigitalWorkOrderListView insertada (tres querysets DIGITAL+GENERATED, filtros operator_pk/period_pk, contexto completo). Import generate_period_excel anadido al bloque de tasks. PASO 3 (PMA panel/urls.py): import DigitalWorkOrderListView, URL work_period_close sin pk, ruta work-orders/digital/. Error en primer intento (OLD_BLOCK construido desde concatenado en lugar del archivo real SFTP). Corregido tras nueva descarga. Pendientes: Paso 4 (work_period_list.html PMA) y Paso 5 (digital_list.html PEA). Incidencia de sesion: limpieza completa de memoria de interfaz de Claude (todas las entradas eliminadas) — el sistema de sesiones es la unica fuente de contexto. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S026)
+## 5. Hoja de Ruta para la Siguiente Sesion (S027)
 
 ### CONTEXTO
 
-S025 fue una sesion de diseno y analisis sin implementacion de codigo.
-TLA extensa sobre el sistema de periodos y Excel digital. Decisiones vinculantes:
+S026 implemento los Pasos 1, 2 y 3 del diseno aprobado en S025.
 
-  - El periodo es GLOBAL para toda la empresa: un unico WorkPeriod por operario
-    creado en bloque por WorkPeriodCreateView (ya implementado correctamente).
-  - El CIERRE del periodo tambien es GLOBAL: WorkPeriodCloseView debe cerrar
-    TODOS los WorkPeriod abiertos de la empresa, no solo el del pk recibido.
-    La URL actual work-periods/<int:pk>/close/ pasa a ser work-periods/close/
-    (sin pk). La vista deriva los periodos a cerrar por company del usuario.
-  - Al cerrar el periodo: Opcion A confirmada — todos los WorkOrder del periodo
-    con source IN (DIGITAL, GENERATED) se marcan reviewed=True en bloque.
-    El supervisor puede desmarcar individualmente desde la vista admin history.
-  - Excels por Celery: nueva tarea generate_period_excel encolada por cada
-    WorkOrder al cerrar el periodo (un Excel por WorkOrder por operario).
-  - Dos vistas separadas mutuamente excluyentes: PDF (source=PDF_UPLOAD) y
-    Digital (source IN DIGITAL, GENERATED). Misma arquitectura visual.
-  - Periodo por defecto persistente: suggested_start/end derivados del ultimo
-    periodo creado en la empresa. Fallback Gruas Alvarez: dia 21 del mes actual
-    al 20 del siguiente. Logica en WorkPeriodListView.get().
-  - Bloqueo de edicion del operario: ya implementado via reviewed=True +
-    barrera _get_min_allowed_date(). No se necesita mecanismo adicional.
+  - Paso 1 (tasks.py): generate_period_excel ya estaba implementada desde S024.
+    Sin intervencion necesaria.
+  - Paso 2 (panel/views.py PMA): WorkPeriodCloseView refactorizada a cierre
+    global sin pk. WorkPeriodListView.get() ampliado con suggested_start/end y
+    has_open_periods. DigitalWorkOrderListView creada e insertada.
+  - Paso 3 (panel/urls.py PMA): URL work_period_close sin pk, ruta
+    work-orders/digital/, import DigitalWorkOrderListView.
+
+  Pendientes de S027: Paso 4 (work_period_list.html) y Paso 5 (digital_list.html).
 
 ADVERTENCIA CRITICA — mantener siempre presente:
   El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
@@ -691,38 +682,107 @@ ADVERTENCIA CRITICA — mantener siempre presente:
 
 ### ORDEN DE IMPLEMENTACION (estricto)
 
-  Paso 1 — tasks.py: nueva tarea generate_period_excel (PMA).
-  Paso 2 — panel/views.py: tres modificaciones en un unico PMA:
-    2a. WorkPeriodCloseView.post() — refactor completo (cierre global).
-    2b. WorkPeriodListView.get() — suggested_start/end al contexto.
-    2c. Nueva DigitalWorkOrderListView al final del bloque de vistas de partes.
-  Paso 3 — panel/urls.py: URL work_period_close sin pk + ruta digital_list (PMA).
-  Paso 4 — work_period_list.html: modal cierre global + pre-relleno fechas (PMA).
-  Paso 5 — digital_list.html: neonato puro (PEA).
+  Paso 4 — work_period_list.html (PMA): modal cierre global + pre-relleno fechas.
+  Paso 5 — digital_list.html (PEA): neonato puro.
 
-### PASO 1 — Nueva tarea Celery generate_period_excel (work_order_processor/tasks.py)
+### PASO 4 — work_period_list.html (PMA)
 
-  Posicion en el archivo: inmediatamente despues de classify_fault_line,
-  al final del modulo.
+  Archivo: panel/templates/panel/work_orders/work_period_list.html
+  Solicitar via SFTP al inicio de S027 para construir OLD_BLOCKs exactos.
 
-  Importaciones adicionales necesarias al bloque de imports del modulo:
-    from .services import generate_work_order_excel
-    (ya importada — verificar que esta en el bloque import del modulo al inicio)
+  Cuatro cambios en un unico patcher secuencial:
 
-  Decorador y firma:
-    @app.task(base=DjangoTask, bind=True, max_retries=3,
-              default_retry_delay=60, queue="work_orders")
-    def generate_period_excel(self, work_order_id: int) -> None:
+  A) Modal modalWorkPeriodCreate — tres subacciones:
+     - Eliminar el campo <select name="company_user_pk"> completo (selector
+       de operario individual). El periodo es global, no por operario.
+     - Anadir campo end_date al modal (actualmente ausente — verificar en
+       el archivo real antes de construir el patcher):
+         <div class="mb-3">
+           <label class="form-label text-sm fw-semibold">
+             Fecha de fin <span class="text-muted fw-normal">(opcional)</span>
+           </label>
+           <input type="date" name="end_date"
+                  value="{{ suggested_end }}"
+                  class="form-control form-control-sm">
+         </div>
+     - Anadir value="{{ suggested_start }}" al input start_date existente.
 
-  Logica completa:
-    1. Guardia de idempotencia: si WorkOrder.excel_file ya tiene valor Y
-       WorkOrder.status == WorkOrder.Status.DONE, return silencioso con log INFO.
-    2. Llamar a generate_work_order_excel(work_order_id).
-    3. En exception: si "429" o "RESOURCE_EXHAUSTED" en str(exc), raise
-       self.retry(exc=exc, countdown=60).
-    4. Cualquier otro error irrecuperable: log ERROR sin reintentar.
+  B) Boton de cierre global en cabecera de pagina — anadir tras el boton
+     "Nuevo periodo" (visible SOLO si has_open_periods es True):
+       {% if has_open_periods %}
+       <button type="button" class="btn btn-outline-success btn-sm px-3 ms-2"
+               data-bs-toggle="modal"
+               data-bs-target="#modalWorkPeriodClose">
+           <i class="bi bi-calendar-check me-1"></i>Cerrar periodo activo
+       </button>
+       {% endif %}
 
-  Docstring bilingue completo obligatorio.
+  C) Modal modalWorkPeriodClose — tres subacciones:
+     - Eliminar el parrafo <p id="modalWorkPeriodCloseOperator"> (ya no
+       aplica — el cierre es global, no por operario).
+     - Actualizar el texto descriptivo del modal body:
+         "Esta accion cerrara el periodo activo de TODOS los operarios y
+         marcara todos sus partes como revisados. No se puede deshacer."
+     - Actualizar el form action a URL fija sin JS dinamico:
+         action="{% url 'panel:work_period_close' %}"
+     - Eliminar el bloque <script> completo del extra_head que inyectaba
+       la URL y el nombre de operario dinamicamente via show.bs.modal.
+
+  D) Columna Acciones de cada fila de periodo — eliminar el boton "Cerrar"
+     individual (btn-close-period) de cada fila. Sustituir la celda <td>
+     de Acciones por un indicador de estado unicamente:
+       {% if not period.end_date %}
+       <span class="badge bg-success">Activo</span>
+       {% else %}
+       <span class="text-muted text-sm">Cerrado</span>
+       {% endif %}
+
+  ADVERTENCIA: construir TODOS los OLD_BLOCKs desde el contenido exacto
+  del archivo descargado via SFTP al inicio de S027.
+
+### PASO 5 — digital_list.html (PEA — neonato puro)
+
+  Verificar en PROJECT_DIRECTORY que NO existe:
+    panel/templates/panel/work_orders/digital_list.html
+  (Confirmado ausente en el manifiesto cargado en S025/S026.)
+
+  Estructura del template (misma base que list.html pero sin PDF):
+    - extends "panel/base.html"
+    - block page_title: "Partes Digitales"
+    - Cabecera: titulo "Partes Digitales" + subtitulo company.name.
+      Sin boton "Subir PDF". Con boton "Descargar seleccion" (solo en tab Revisados).
+    - Tres pestanas: Pendiente revision / Revisados / Error.
+    - Tab Pendiente revision: tabla con columnas Operario / Fecha del parte /
+      Fecha de carga / Revision (badge HTMX) / Acciones (dropdown: Editar).
+      Sin columna de nombre PDF. Sin boton de busqueda de duplicados.
+    - Tab Revisados: misma tabla + checkbox por fila + boton descarga Excel
+      individual en dropdown + boton "Descargar seleccion" en cabecera de tab.
+      La descarga individual apunta a work_order_export con pk del WorkOrder.
+      DIRECTRIZ ALEJANDRO: descarga Excel EXCLUSIVAMENTE en tab Revisados.
+    - Tab Error: tabla con columnas Operario / Fecha de carga / Log / Acciones.
+    - Modales reutilizados: incidenceModal (ver log) y deleteModal (borrar).
+    - Filtros en cabecera: desplegable operario (operators del contexto) y
+      periodo (periods del contexto, WorkPeriods cerrados) — GET params
+      operator_pk y period_pk. Ambos opcionales.
+    - JS minimo: activacion tab por defecto segun default_tab del contexto,
+      checkbox "seleccionar todos" en tab Revisados, activacion boton
+      descargar seleccion al marcar/desmarcar checkboxes.
+    - Sin HTMX de polling de estado (partes digitales no tienen pipeline async).
+    - Sin boton buscar duplicados (no aplica a partes digitales).
+
+### Estado de migraciones al cierre de S026
+
+| App                  | Ultima migracion aplicada                                          |
+|----------------------|--------------------------------------------------------------------|
+| fleet                | 0005_add_first_repair_to_machineasset                              |
+| work_order_processor | 0014_workorderentryline_fault_category_and_more                    |
+| ivr_config           | 0015_workerabsence_workperiod                                      |
+| panel                | 0001_initial (AnalyticsProfile)                                    |
+
+### Archivos a solicitar al inicio de S027 via SFTP
+
+  panel/templates/panel/work_orders/work_period_list.html
+  (unico archivo necesario — views.py y urls.py ya actualizados en S026).
 
 ### PASO 2a — WorkPeriodCloseView.post() — refactor (panel/views.py)
 
@@ -936,17 +996,11 @@ ADVERTENCIA CRITICA — mantener siempre presente:
 
 ### Archivos a solicitar al inicio de S026 via SFTP
 
-  No se necesitan archivos adicionales al inicio de S026 — todos los archivos
-  a modificar ya fueron inspeccionados en S025 y estan disponibles en memoria.
-  El inicio de S026 puede arrancar directamente con el Paso 1 (tasks.py PMA)
-  sin necesidad de descarga previa.
-
-  EXCEPCION: si han pasado mas de 24h entre S025 y S026, solicitar de nuevo:
+  Solicitar siempre al inicio de sesion via SFTP:
     work_order_processor/tasks.py
     panel/views.py
     panel/urls.py
     panel/templates/panel/work_orders/work_period_list.html
-  para garantizar que no hay cambios intermedios en produccion.
 
 ### Hoja de ruta de sesiones futuras
 
