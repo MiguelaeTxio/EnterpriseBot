@@ -4,11 +4,21 @@ Management command: seed_absence_categories
 Preloads the standard AbsenceCategory catalogue for a given Company.
 Idempotent: uses get_or_create keyed on (company, code) so repeated
 runs are safe and do not produce duplicates.
+
+Categories are split into two groups:
+  JUSTIFIABLE   — absences that can be backed by official documentation.
+  UNJUSTIFIABLE — absences with no supporting documentation (requires_note=True).
+
 ---
+
 Comando de gestión: seed_absence_categories
 Precarga el catálogo estándar de AbsenceCategory para una Company dada.
 Idempotente: usa get_or_create con clave (company, code) para que
 ejecuciones repetidas sean seguras y no produzcan duplicados.
+
+Las categorías se dividen en dos grupos:
+  JUSTIFICABLES   — ausencias que pueden respaldarse con documentación oficial.
+  INJUSTIFICABLES — ausencias sin documentación de respaldo (requires_note=True).
 """
 
 from django.core.management.base import BaseCommand, CommandError
@@ -19,54 +29,76 @@ from django.core.management.base import BaseCommand, CommandError
 # ---------------------------------------------------------------------------
 # Each dict maps to the AbsenceCategory model fields.
 # Cada dict se corresponde con los campos del modelo AbsenceCategory.
+#
+# JUSTIFIABLE group (is_justified=True, requires_note=False):
+#   Absences that can be backed by an official document issued by a third
+#   party (medical centre, HR department, mutual insurance, administration).
+#
+# UNJUSTIFIABLE group (is_justified=False, requires_note=True):
+#   Any absence without a supporting document. The operator must provide
+#   a free-text note explaining the reason.
+#
+# Grupo JUSTIFICABLE (is_justified=True, requires_note=False):
+#   Ausencias que pueden respaldarse con un documento oficial emitido por
+#   un tercero (centro médico, RRHH, mutua, administración).
+#
+# Grupo INJUSTIFICABLE (is_justified=False, requires_note=True):
+#   Cualquier ausencia sin documento de respaldo. El operario debe
+#   proporcionar una nota de texto libre explicando el motivo.
 # ---------------------------------------------------------------------------
 
 _STANDARD_CATEGORIES = [
+    # ------------------------------------------------------------------
+    # JUSTIFIABLE / JUSTIFICABLES
+    # ------------------------------------------------------------------
     {
-        "code":          "MEDICAL",
-        "label":         "Médico",
+        "code":          "MEDICAL_APPOINTMENT",
+        "label":         "Cita médica",
         "requires_note": False,
         "is_justified":  True,
         "order":         0,
+    },
+    {
+        "code":          "MEDICAL_CHECKUP",
+        "label":         "Reconocimiento médico",
+        "requires_note": False,
+        "is_justified":  True,
+        "order":         1,
     },
     {
         "code":          "PERSONAL_MATTERS",
         "label":         "Asuntos propios",
         "requires_note": False,
         "is_justified":  True,
-        "order":         1,
-    },
-    {
-        "code":          "VEHICLE_BREAKDOWN",
-        "label":         "Avería del vehículo",
-        "requires_note": True,
-        "is_justified":  False,
         "order":         2,
     },
     {
         "code":          "SICK_LEAVE",
-        "label":         "Baja médica",
+        "label":         "Enfermedad común",
         "requires_note": False,
         "is_justified":  True,
         "order":         3,
     },
     {
-        "code":          "DAY_OFF",
-        "label":         "Día libre",
+        "code":          "WORK_ACCIDENT",
+        "label":         "Accidente de trabajo",
         "requires_note": False,
         "is_justified":  True,
         "order":         4,
     },
     {
-        "code":          "UNJUSTIFIED",
-        "label":         "Falta sin justificante",
-        "requires_note": True,
-        "is_justified":  False,
+        "code":          "VACATION",
+        "label":         "Vacaciones",
+        "requires_note": False,
+        "is_justified":  True,
         "order":         5,
     },
+    # ------------------------------------------------------------------
+    # UNJUSTIFIABLE / INJUSTIFICABLES
+    # ------------------------------------------------------------------
     {
         "code":          "OTHER",
-        "label":         "Otro motivo",
+        "label":         "Otros",
         "requires_note": True,
         "is_justified":  False,
         "order":         6,

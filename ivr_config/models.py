@@ -1668,14 +1668,35 @@ class WorkPeriod(models.Model):
 # ---------------------------------------------------------------------------
 # 18. WORKDAY SCHEDULE — Reference workday timetable for a company.
 #     Horario de jornada de referencia para una empresa.
+#
+#     Season-aware split-shift model:
+#       WINTER: split shift — morning tract + afternoon tract.
+#       SUMMER: intensive shift — morning tract only (is_intensive=True).
+#     The midday window between end_time_morning and start_time_afternoon
+#     is excluded from GAP detection (mandatory lunch break).
+#
+#     Modelo de turno partido por temporada:
+#       INVIERNO: turno partido — tramo de mañana + tramo de tarde.
+#       VERANO: jornada intensiva — solo tramo de mañana (is_intensive=True).
+#     La ventana de mediodía entre end_time_morning y start_time_afternoon
+#     se excluye de la detección de GAP (pausa de comida obligatoria).
 # ---------------------------------------------------------------------------
 
 class WorkdaySchedule(models.Model):
     """
     Defines a named workday timetable for a Company. A company can have
     multiple schedules to cover the different shift profiles of its workforce
-    (e.g. "Mecánicos 07:00–15:00", "Chóferes grúa 06:00–14:00",
-    "Administración 09:00–17:00").
+    (e.g. "Mecánicos invierno 07:00–14:00 / 15:00–18:00",
+          "Mecánicos verano 07:00–15:00 [intensiva]").
+
+    Season-aware split-shift model:
+      - season=WINTER: split shift with morning and afternoon tracts.
+        Gate 4 validates both tracts. The midday window between
+        end_time_morning and start_time_afternoon is excluded from GAP
+        detection (it is the mandatory lunch break).
+      - season=SUMMER / is_intensive=True: morning tract only.
+        Gate 4 validates only start_time_morning / end_time_morning.
+        Afternoon fields are null and ignored.
 
     Each CompanyUser with the WORKSHOP role can be assigned a specific schedule
     via the CompanyUser.workday_schedule FK. Gate 4 resolves the schedule to
@@ -1692,8 +1713,17 @@ class WorkdaySchedule(models.Model):
 
     Define un horario de jornada con nombre para una Company. Una empresa puede
     tener múltiples horarios para cubrir los distintos perfiles de turno de su
-    plantilla (p. ej. "Mecánicos 07:00–15:00", "Chóferes grúa 06:00–14:00",
-    "Administración 09:00–17:00").
+    plantilla (p. ej. "Mecánicos invierno 07:00–14:00 / 15:00–18:00",
+                      "Mecánicos verano 07:00–15:00 [intensiva]").
+
+    Modelo de turno partido por temporada:
+      - season=WINTER: turno partido con tramo de mañana y tramo de tarde.
+        Gate 4 valida ambos tramos. La ventana de mediodía entre
+        end_time_morning y start_time_afternoon se excluye de la detección
+        de GAP (pausa de comida obligatoria).
+      - season=SUMMER / is_intensive=True: solo tramo de mañana.
+        Gate 4 valida únicamente start_time_morning / end_time_morning.
+        Los campos de tarde son nulos e ignorados.
 
     Cada CompanyUser con rol WORKSHOP puede tener asignado un horario concreto
     mediante la FK CompanyUser.workday_schedule. Gate 4 resuelve el horario
@@ -1706,6 +1736,15 @@ class WorkdaySchedule(models.Model):
     se impone en el override de save(): establecer is_default=True en un registro
     limpia automáticamente is_default en todos los demás horarios de la empresa.
     """
+
+    class Season(models.TextChoices):
+        """
+        Season choices for the workday schedule timetable.
+        ---
+        Opciones de temporada para el horario de jornada.
+        """
+        WINTER = "WINTER", "Invierno"
+        SUMMER = "SUMMER", "Verano"
 
     company = models.ForeignKey(
         Company,
@@ -1724,20 +1763,71 @@ class WorkdaySchedule(models.Model):
             "Visible en el panel del supervisor al asignar horarios a operarios."
         ),
     )
-    start_time = models.TimeField(
-        verbose_name="Hora de entrada",
+    season = models.CharField(
+        max_length=10,
+        choices=Season.choices,
+        default=Season.WINTER,
+        verbose_name="Temporada",
         help_text=(
-            "Hora de inicio ordinaria de la jornada laboral. "
+            "Temporada a la que aplica este horario. "
+            "INVIERNO: turno partido con tramo de mañana y tarde. "
+            "VERANO: jornada intensiva (solo mañana si is_intensive=True)."
+        ),
+    )
+    # ------------------------------------------------------------------
+    # Morning tract / Tramo de mañana (obligatorio siempre)
+    # ------------------------------------------------------------------
+    start_time_morning = models.TimeField(
+        verbose_name="Entrada mañana",
+        default="07:00",
+        help_text=(
+            "Hora de inicio del tramo de mañana. "
             "Los partes cuyo primer bloque comience después de esta hora más "
             "el margen de tolerancia generarán un aviso de inicio tardío."
         ),
     )
-    end_time = models.TimeField(
-        verbose_name="Hora de salida",
+    end_time_morning = models.TimeField(
+        verbose_name="Salida mañana",
+        default="15:00",
         help_text=(
-            "Hora de fin ordinaria de la jornada laboral. "
-            "Los partes cuyo último bloque termine antes de esta hora menos "
-            "el margen de tolerancia generarán un aviso de cierre anticipado."
+            "Hora de fin del tramo de mañana. "
+            "En jornada intensiva (is_intensive=True) es también la hora de "
+            "salida final de la jornada completa."
+        ),
+    )
+    # ------------------------------------------------------------------
+    # Afternoon tract / Tramo de tarde (null cuando is_intensive=True)
+    # ------------------------------------------------------------------
+    start_time_afternoon = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Entrada tarde",
+        help_text=(
+            "Hora de inicio del tramo de tarde. "
+            "Dejar en blanco para jornada intensiva (is_intensive=True). "
+            "La ventana entre la salida de mañana y esta hora se trata como "
+            "pausa de mediodía y no genera aviso de laguna en Gate 4."
+        ),
+    )
+    end_time_afternoon = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Salida tarde",
+        help_text=(
+            "Hora de fin del tramo de tarde y de la jornada completa. "
+            "Dejar en blanco para jornada intensiva (is_intensive=True)."
+        ),
+    )
+    # ------------------------------------------------------------------
+    # Shift type / Tipo de turno
+    # ------------------------------------------------------------------
+    is_intensive = models.BooleanField(
+        default=False,
+        verbose_name="Jornada intensiva",
+        help_text=(
+            "Si está activo, este horario corresponde a jornada intensiva: "
+            "Gate 4 solo valida el tramo de mañana y los campos de tarde "
+            "quedan ignorados. Típico en temporada de verano."
         ),
     )
     tolerance_minutes = models.PositiveSmallIntegerField(
@@ -1745,7 +1835,7 @@ class WorkdaySchedule(models.Model):
         verbose_name="Tolerancia (minutos)",
         help_text=(
             "Margen de tolerancia en minutos aplicado tanto al inicio como al "
-            "fin de la jornada antes de registrar un aviso. Por defecto: 15 min."
+            "fin de cada tramo antes de registrar un aviso. Por defecto: 15 min."
         ),
     )
     is_default = models.BooleanField(
@@ -1772,16 +1862,59 @@ class WorkdaySchedule(models.Model):
         verbose_name_plural = "Horarios de jornada"
         ordering = ["company__name", "label"]
 
+    def clean(self):
+        """
+        Validates afternoon tract consistency with is_intensive flag.
+        If is_intensive=True, clears afternoon fields silently.
+        If is_intensive=False, both afternoon fields are required and
+        start_time_afternoon must be after end_time_morning.
+        ---
+        Valida la coherencia del tramo de tarde con el flag is_intensive.
+        Si is_intensive=True, limpia los campos de tarde silenciosamente.
+        Si is_intensive=False, ambos campos de tarde son obligatorios y
+        start_time_afternoon debe ser posterior a end_time_morning.
+        """
+        from django.core.exceptions import ValidationError
+
+        if self.is_intensive:
+            # Intensive shift — clear afternoon fields silently.
+            # Jornada intensiva — limpiar campos de tarde silenciosamente.
+            self.start_time_afternoon = None
+            self.end_time_afternoon   = None
+        else:
+            if not self.start_time_afternoon or not self.end_time_afternoon:
+                raise ValidationError(
+                    "Los campos de entrada y salida de tarde son obligatorios "
+                    "para jornada partida (jornada intensiva desactivada)."
+                )
+            if (
+                self.end_time_morning
+                and self.start_time_afternoon
+                and self.start_time_afternoon <= self.end_time_morning
+            ):
+                raise ValidationError(
+                    "La hora de entrada de tarde debe ser posterior a la hora "
+                    "de salida de mañana."
+                )
+            if (
+                self.start_time_afternoon
+                and self.end_time_afternoon
+                and self.end_time_afternoon <= self.start_time_afternoon
+            ):
+                raise ValidationError(
+                    "La hora de salida de tarde debe ser posterior a la hora "
+                    "de entrada de tarde."
+                )
+
     def save(self, *args, **kwargs):
         """
-        Enforces the single-default invariant: if this schedule is being saved
-        with is_default=True, all other schedules of the same company are
-        updated to is_default=False before this record is written.
+        Runs clean() to enforce afternoon tract consistency, then enforces
+        the single-default invariant across the company's schedules.
         ---
-        Impone el invariante de único-por-defecto: si este horario se guarda con
-        is_default=True, todos los demás horarios de la misma empresa se actualizan
-        a is_default=False antes de escribir este registro.
+        Ejecuta clean() para imponer la coherencia del tramo de tarde, luego
+        impone el invariante de único-por-defecto entre los horarios de la empresa.
         """
+        self.clean()
         if self.is_default:
             WorkdaySchedule.objects.filter(
                 company=self.company,
@@ -1790,11 +1923,28 @@ class WorkdaySchedule(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        default_marker = " [por defecto]" if self.is_default else ""
+        """
+        Returns a human-readable string combining company, label, season,
+        morning tract and afternoon tract (if present).
+        ---
+        Devuelve una cadena legible combinando empresa, etiqueta, temporada,
+        tramo de mañana y tramo de tarde (si existe).
+        """
+        default_marker   = " [por defecto]" if self.is_default else ""
+        intensive_marker = " [intensiva]"   if self.is_intensive else ""
+        season_label     = self.get_season_display()
+        morning = (
+            f"{self.start_time_morning:%H:%M}–{self.end_time_morning:%H:%M}"
+            if self.start_time_morning and self.end_time_morning else "?–?"
+        )
+        if not self.is_intensive and self.start_time_afternoon and self.end_time_afternoon:
+            afternoon = f" / {self.start_time_afternoon:%H:%M}–{self.end_time_afternoon:%H:%M}"
+        else:
+            afternoon = ""
         return (
-            f"{self.company.name} — {self.label} "
-            f"{self.start_time:%H:%M}–{self.end_time:%H:%M} "
-            f"(±{self.tolerance_minutes} min){default_marker}"
+            f"{self.company.name} — {self.label} [{season_label}] "
+            f"{morning}{afternoon} "
+            f"(±{self.tolerance_minutes} min){intensive_marker}{default_marker}"
         )
 
 

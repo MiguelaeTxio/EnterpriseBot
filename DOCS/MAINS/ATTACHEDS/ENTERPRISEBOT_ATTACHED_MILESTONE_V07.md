@@ -842,114 +842,138 @@ Estado: COMPLETADO (sesiones 015-017).
 | 025    | 2026-05-13 | Excel consolidado al cerrar WorkPeriod + vista digital — Diseno completo | Sesion de diseno y analisis. Sin implementacion de codigo. TLA extensa: periodo global empresa (21-20), cierre global de todos los WorkPeriod abiertos, Opcion A (reviewed=True en bloque al cerrar), dos vistas separadas PDF vs Digital, control de acceso por rol y estado periodo, persistencia del periodo por defecto. Diseno tecnico completo de 6 bloques aprobado. Archivos inspeccionados: panel/views.py, ivr_config/models.py, work_order_processor/services.py, tasks.py, work_period_list.html, work_orders/list.html, panel/urls.py. Implementacion diferida a S026. |
 | 026    | 2026-05-13 | Excel por periodo + Vista Partes Digitales — Implementacion parcial (Pasos 1-3) | VERIFICACION: generate_period_excel ya implementada en tasks.py (S024) — Paso 1 completado sin intervencion. PASO 2 (PMA panel/views.py): WorkPeriodCloseView refactorizada a cierre global por company (sin pk), marcado reviewed=True en bloque, encolado generate_period_excel por WorkOrder. WorkPeriodListView.get() ampliado con suggested_start/suggested_end (logica periodo anterior + fallback Gruas Alvarez dia 21-20) y has_open_periods. Nueva DigitalWorkOrderListView insertada (tres querysets DIGITAL+GENERATED, filtros operator_pk/period_pk, contexto completo). Import generate_period_excel anadido al bloque de tasks. PASO 3 (PMA panel/urls.py): import DigitalWorkOrderListView, URL work_period_close sin pk, ruta work-orders/digital/. Error en primer intento (OLD_BLOCK construido desde concatenado en lugar del archivo real SFTP). Corregido tras nueva descarga. Pendientes: Paso 4 (work_period_list.html PMA) y Paso 5 (digital_list.html PEA). Incidencia de sesion: limpieza completa de memoria de interfaz de Claude (todas las entradas eliminadas) — el sistema de sesiones es la unica fuente de contexto. |
 | 029    | 2026-05-14 | Sistema de Validacion de Jornada Completa — Implementacion integra (Pasos A-J) | AUDITORIA PREVIA S029: Puntos 1-3 resueltos (exportacion admin history, preservacion datos formulario, historial operario Tabs 1-2). Regla A (comida) y Regla C (cobertura minima) ya implementadas. DECISION DE DISENO S029: WorkdaySchedule refactorizado de OneToOneField a ForeignKey multiperfile con label + is_default + FK workday_schedule en CompanyUser — soporta multiples perfiles de turno por empresa (mecanicos, choferes grua, administracion, etc.). PASO A: migraciones ivr_config 0016/0017 + work_order_processor 0017 aplicadas. PASO B: helper _detect_workday_gaps() insertado en panel/views.py. PASO C: Gate 4 en tres puntos INSERT (FormView/ConfirmView/MergeView) — persiste borrador PENDING_GAPS + WorkdayGap + sesion + redirect. PASO D: WorkdayGapResolutionView con resumen cronologico de jornada (entry_lines) para contexto del operario. PASO E: ruta operator_gap_resolution en panel/urls.py. PASO F: template gap_resolution.html con linea de tiempo de bloques e indicadores de laguna. PASO G: WorkdayScheduleView + AbsenceCategoryListView/Create/Update/Toggle en views.py + urls.py. PASO H: templates workday/schedule_form.html + workday/absence_category_list.html (0 errores djlint). PASO I: comando seed_absence_categories (idempotente, --company-pk). PASO J: seccion "Incidencias de jornada" en edit.html + contexto workday_gaps en WorkOrderEditView. Puntos diferidos a S030: Via C unificar parseo con pipeline PDF; Via C captura directa camara (capture=environment); asignacion WorkdaySchedule a operarios desde panel; seed en produccion; validacion E2E Gate 4. |
+| 030    | 2026-05-14 | Seed ausencias, Sidebar jornada, WorkdaySchedule turno partido, WorkdayGap LUNCH_BREAK | SEGUNDA ACCION completada: seed_absence_categories refactorizado (taxonomia Grupo Alvarez — 6 justificables + 1 injustificable). Categorias erroneas eliminadas y 7 nuevas creadas en produccion. Sidebar _nav_items.html: nueva seccion "Configuracion de jornada" con entradas Horarios de jornada y Categorias de ausencia (ADMIN+SUPERVISOR). SEXTA ACCION — Modelo WorkdaySchedule refactorizado a turno partido por temporada: season (WINTER/SUMMER), is_intensive, start_time_morning, end_time_morning, start_time_afternoon (null), end_time_afternoon (null), clean()/save() con invariantes. Migracion ivr_config 0018_workdayschedule_season_split_times aplicada. WorkdayGap.GapType ampliado con LUNCH_BREAK + campos lunch_had (BooleanField null) y lunch_time (TimeField null). Migracion work_order_processor 0018_workdaygap_lunch_break aplicada. _detect_workday_gaps() refactorizado: compatibilidad backward con start_time/end_time, soporte turno partido (LATE_START/EARLY_END/GAP/LUNCH_BREAK), ventana de mediodía excluida de GAP. WorkdayScheduleView.post() actualizado: parseo de todos los campos nuevos + validacion tramo tarde. WorkdayGapResolutionView.post() actualizado: ruta diferenciada LUNCH_BREAK (lunch_had + lunch_time + note). schedule_form.html reescrito (PEA): tabla con columnas Temporada/Manana/Tarde, formulario con season/is_intensive/tramos, modal edicion, JS toggle tramo tarde. gap_resolution.html PMA: badge LUNCH_BREAK, tarjeta diferenciada con radio Si/No + hora opcional + nota obligatoria si No, script JS ampliado. PENDIENTE al cierre: gap_resolution.html patcher 2/2 no aplicado (bloque extra_head sin ancla correcta tras patcher 1). Primera Accion (E2E Gate 4), Tercera Accion (asignacion WorkdaySchedule operarios), Cuarta Accion (capture=environment), Quinta Accion (unificar parseo Via C) todas pendientes de S031. |
 | 028    | 2026-05-14 | Incidencia critica pipeline PDF + UX carga PDFs + Acciones en lote | BLOQUE 1 — Incidencia critica: diagnostico completo del pipeline PDF_UPLOAD. Causa raiz: tres claves JSON obsoletas en tasks.py (maquina_raw, descripcion_averia, reparacion) que vaciaban machine_raw/fault_description/repair_notes en todos los partes procesados desde S011. PMP tasks.py: tres sustituciones atomicas restaurando claves a machine_raw/fault_description/repair_notes. Segunda causa: source_pdf borrado por Celery tras procesamiento sin persistir el nombre — PMA models.py: campo source_pdf_name (CharField max_length=255, blank, default='') + pdf_display_name actualizado con prioridad source_pdf_name > source_pdf > fallback. PMA views.py: source_pdf_name=incoming_name en WorkOrderUploadView.create(). PEA migracion 0016_workorder_source_pdf_name aplicada. Script backfill SWAP: 18 registros actualizados (8 CASO A desde source_pdf, 10 CASO B desde worker_name). BLOQUE 2 — UX carga PDFs: PEA upload.html reescritura completa — selector modo individual/lote, modal de progreso XHR con btn-close manual (evita conflicto doble instancia Bootstrap), log de resultados por fichero en lote (encolado/omitido duplicado/error de red), nota pie para sobrescritura individual. PMA _status_fragment.html: barra Celery con fase A indeterminada (total_pages==0) y fase B determinada (widthratio processed_pages/total_pages). BLOQUE 3 — Acciones en lote list.html: PEA list.html reescritura — checkboxes por fila + select-all + barra de acciones en las 4 pestanas (En cola: Eliminar; Error: Eliminar; Pendiente revision: Marcar revisados + Eliminar; Revisados: Desmarcar revision + Eliminar). PMA views.py: metodo post en WorkOrderListView con bulk_op mark_reviewed/unmark_reviewed/delete, scoped a company PDF_UPLOAD. Estado migraciones al cierre: work_order_processor 0016_workorder_source_pdf_name, ivr_config 0015_workerabsence_workperiod. |
 | 027    | 2026-05-13 | Excel por periodo + Vista Partes Digitales — Pasos 4 y 5 + Diseno Validacion Jornada | PASO 4 (PMA work_period_list.html): cuatro cambios aplicados — boton Nuevo periodo envuelto en div flex con boton Cerrar periodo activo global (condicional has_open_periods), modal modalWorkPeriodCreate sin selector operario + campo end_date anadido con pre-relleno suggested_end + start_date con suggested_start, modal modalWorkPeriodClose con texto global y action fija sin JS dinamico, celda Acciones sustituida por indicador de estado badge/texto. Bloque script extra_head eliminado via fichero Python intermedio (heredoc con OLD_BLOCK multilinea). PASO 5 (PEA digital_list.html): neonato puro creado — tres pestanas Pendiente/Revisados/Error, filtros operator_pk/period_pk, descarga Excel exclusivamente en tab Revisados (Directriz Alejandro), modales incidenceModal y deleteModal, JS minimo activacion tab + checkbox seleccionar todos + boton descarga. Cuatro avisos H021 estilos inline resueltos via sed. DISENO: Sistema de Validacion de Jornada Completa aprobado — WorkdaySchedule, AbsenceCategory, WorkdayGap, Gate 4, WorkdayGapResolutionView, vistas supervisor, comando seed. Implementacion diferida a S028. Incidencia: tres errores PMA por OLD_BLOCKs construidos desde memoria en lugar del archivo real SFTP — diagnostico y correccion del proceso documentados. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S030)
+## 5. Hoja de Ruta para la Siguiente Sesion (S031)
 
 ### CONTEXTO
 
-S029 implemento integro el Sistema de Validacion de Jornada Completa (Pasos A-J),
-incluyendo la decision de diseno de refactorizar WorkdaySchedule a modelo
-multiperfile (ForeignKey con label + is_default). Los puntos diferidos de S029
-que no cabieron en la sesion forman la hoja de ruta de S030.
+S030 implemento la SEXTA ACCION completa: refactor WorkdaySchedule a modelo
+de turno partido por temporada (season/is_intensive/tramos manana+tarde),
+nuevo WorkdayGap.GapType LUNCH_BREAK con campos lunch_had y lunch_time,
+refactor de _detect_workday_gaps() con soporte split-shift y exclusion de
+ventana de mediodía, actualizacion de WorkdayScheduleView.post() y
+WorkdayGapResolutionView.post(), reescritura de schedule_form.html y
+PMA parcial de gap_resolution.html (patcher 1 aplicado, patcher 2 pendiente).
+Seed de categorias de ausencia completado con taxonomia Grupo Alvarez correcta.
+Sidebar _nav_items.html con nueva seccion Configuracion de jornada.
 
 ADVERTENCIA CRITICA — mantener siempre presente:
   El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
   Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
+ADVERTENCIA CRITICA BACKWARD COMPATIBILITY:
+  _detect_workday_gaps() usa getattr con fallback para start_time/end_time
+  (campos eliminados) → start_time_morning/end_time_morning. Esto es correcto
+  ya que no existen registros con los campos antiguos en BD.
+
 ### ORDEN DE IMPLEMENTACION (estricto)
 
-  PRIMERA ACCION  — Validacion E2E de Gate 4 en produccion.
-  SEGUNDA ACCION  — Seed de categorias de ausencia en produccion.
+  PRIMERA ACCION  — gap_resolution.html: completar patcher 2/2 (script JS + style).
+  SEGUNDA ACCION  — Validacion E2E de Gate 4 en produccion.
   TERCERA ACCION  — Asignacion de WorkdaySchedule a operarios desde el panel.
-  CUARTA ACCION   — Via C: captura directa desde camara.
+  CUARTA ACCION   — Via C: captura directa desde camara (capture=environment).
   QUINTA ACCION   — Via C: unificar parseo con pipeline PDF.
 
-### PRIMERA ACCION — Validacion E2E de Gate 4 en produccion
+### PRIMERA ACCION — gap_resolution.html: completar patcher 2/2
 
-  Verificar el flujo completo Gate 4 con un parte real del operario:
-    1. Configurar un WorkdaySchedule para la empresa via /panel/workday-schedule/.
-    2. Registrar un parte con una laguna horaria deliberada (sin cubrir un intervalo).
-    3. Verificar que Gate 4 detecta la laguna y redirige a gap_resolution.html.
-    4. Verificar que el resumen de jornada (bloques HC-HF) se muestra correctamente.
-    5. Seleccionar una AbsenceCategory y guardar.
-    6. Verificar que el parte queda como DONE y aparece en el historial del operario.
-    7. Verificar que la seccion "Incidencias de jornada" aparece en edit.html
-       cuando el supervisor abre el parte.
+  El patcher 1/2 de S030 modifico correctamente las cards de gaps anadiendo
+  la tarjeta diferenciada LUNCH_BREAK. El patcher 2/2 (style + script JS)
+  no pudo aplicarse porque el OLD_BLOCK del bloque extra_head no coincidio
+  con el contenido real del archivo tras el patcher 1.
 
-  Si la empresa no tiene AbsenceCategory configuradas: ejecutar primero
-  la SEGUNDA ACCION (seed).
+  Accion: descargar gap_resolution.html real del servidor, leer el bloque
+  extra_head EXACTO tal como quedo tras el patcher 1, construir el OLD_BLOCK
+  desde ese contenido y aplicar el patcher.
 
-### SEGUNDA ACCION — Seed de categorias de ausencia en produccion
+  El NEW_BLOCK del script JS ya esta definido en S030 — incluye:
+    - Style: hover para .card:has(.lunch-had-radio), transitions para
+      .lunch-note-wrapper y .lunch-time-wrapper, clase .lunch-time-input.
+    - toggleNoteField() usando classList.add/remove("d-none") en lugar de
+      wrapper.style.display (elimina avisos H021 djlint).
+    - toggleLunchFields(): radio yes → muestra lunch_time_wrapper, oculta
+      lunch_note_wrapper; radio no → oculta lunch_time_wrapper, muestra
+      lunch_note_wrapper, nota obligatoria.
+    - Validacion LUNCH_BREAK en submit: lunchGroups dict, al menos un radio
+      marcado por gap pk.
 
-  Ejecutar el comando seed_absence_categories para la empresa piloto:
+  Solicitar al inicio de S031 via SFTP:
+    panel/templates/panel/operator/gap_resolution.html
 
-    python -m dotenv run python manage.py seed_absence_categories --company-pk <pk>
+### SEGUNDA ACCION — Validacion E2E de Gate 4 en produccion
 
-  Obtener el pk de la empresa desde la shell Django o el admin:
-    python -m dotenv run python manage.py shell -c
-    "from ivr_config.models import Company; print(list(Company.objects.values('pk','name')))"
+  Prerequisitos:
+    1. Crear WorkdaySchedule via /panel/workday-schedule/ (nueva UI con
+       season/is_intensive/tramos disponible desde S030).
+       Ejemplo: Mecanicos Invierno, 07:00-14:00 / 15:00-18:00, tolerancia 15 min.
+    2. Verificar que seed de AbsenceCategory esta correcto (completado en S030).
 
-  El comando es idempotente — seguro ejecutar multiples veces.
+  Flujo de validacion:
+    1. Crear WorkdaySchedule is_default=True para Grupo Alvarez.
+    2. Con usuario WORKSHOP registrar un parte con laguna deliberada.
+    3. Verificar redireccion a gap_resolution.html con gaps detectados.
+    4. Para gap tipo GAP/LATE_START/EARLY_END: seleccionar AbsenceCategory y guardar.
+    5. Para gap tipo LUNCH_BREAK (turno partido): responder radio Si/No y guardar.
+    6. Verificar que el parte queda DONE en historial del operario.
+    7. Verificar que la seccion "Incidencias de jornada" aparece en edit.html.
 
 ### TERCERA ACCION — Asignacion de WorkdaySchedule a operarios desde el panel
 
-  Actualmente WorkdaySchedule se asigna a CompanyUser via FK workday_schedule,
-  pero no existe interfaz en el panel para que el supervisor haga esta asignacion.
-  Hay que anadirla en la vista de gestion de usuarios.
-
   Implementacion:
-    PMA panel/views.py — CompanyUserUpdateView.post(): guardar workday_schedule
-    desde POST (workday_schedule_pk, SET_NULL si vacio).
-    PMA panel/templates/panel/users/form.html — anadir selector de WorkdaySchedule
-    (dropdown con los horarios activos de la empresa, opcion "Sin asignar").
-    El contexto de CompanyUserUpdateView debe incluir la lista de WorkdaySchedule
-    de la empresa para popular el dropdown.
+    PMA panel/views.py — CompanyUserUpdateView:
+      - get_context_data(): anadir workday_schedules (WorkdaySchedule.objects
+        .filter(company=company).order_by("label")) al contexto.
+      - post(): leer workday_schedule_pk del POST. Si vacio o "0": SET_NULL.
+        Si pk valido: WorkdaySchedule.objects.get(pk=pk, company=company)
+        y asignar a self.object.workday_schedule. save(update_fields=
+        ["role","is_active","workday_schedule"]) junto con los campos existentes.
+    PMA panel/templates/panel/users/form.html — anadir selector WorkdaySchedule:
+      <select name="workday_schedule_pk"> con option "Sin asignar" (value="")
+      y options para cada sched en workday_schedules, marcando selected si
+      object.workday_schedule_id == sched.pk.
 
-  Solicitar al inicio de S030 via SFTP:
+  Solicitar al inicio de S031 via SFTP:
     panel/views.py
     panel/templates/panel/users/form.html
 
 ### CUARTA ACCION — Via C: captura directa desde camara
 
-  Anadircapture="environment" al input de archivo en upload_entry.html para
-  forzar apertura de camara trasera en movil en lugar de galeria.
+  PMP quirurgico sobre upload_entry.html:
+    Anadir capture="environment" al input type="file" id="work_order_file".
+    OLD: accept="image/*,.pdf"
+    NEW: accept="image/*,.pdf" capture="environment"
 
-  Implementacion: PMP quirurgico sobre el atributo del input type="file".
-
-  Solicitar al inicio de S030 via SFTP:
+  Solicitar al inicio de S031 via SFTP:
     panel/templates/panel/operator/upload_entry.html
 
 ### QUINTA ACCION — Via C: unificar parseo con pipeline PDF
 
-  Actualmente WorkOrderEntryUploadView usa su propia logica de parseo del JSON
-  de Gemini Vision que puede divergir del pipeline historico (tasks.py). Hay
-  que unificar para evitar los mismos bugs morfologicos (O/0, L/1, t/7) ya
-  corregidos en el pipeline PDF.
+  Analisis previo: comparar logica de parseo de WorkOrderEntryUploadView
+  y WorkOrderEntryConfirmView en panel/views.py con _parse_work_order_from_gemini()
+  en tasks.py. Identificar divergencias en claves JSON, normalizacion morfologica
+  (O/0, L/1, t/7) y validacion de campos.
 
-  Analisis previo requerido: comparar _parse_work_order_from_gemini() en
-  tasks.py con la logica de extraccion en panel/views.py (WorkOrderEntryUploadView
-  y WorkOrderEntryConfirmView) para identificar divergencias exactas.
-
-  Solicitar al inicio de S030 via SFTP:
+  Solicitar al inicio de S031 via SFTP:
     panel/views.py
     work_order_processor/tasks.py
     work_order_processor/services.py
 
-### Estado de migraciones al cierre de S029
+### Estado de migraciones al cierre de S030
 
 | App                  | Ultima migracion aplicada                                          |
 |----------------------|--------------------------------------------------------------------|
 | fleet                | 0005_add_first_repair_to_machineasset                              |
-| work_order_processor | 0017_workdaygap_pending_gaps                                       |
-| ivr_config           | 0017_workdayschedule_refactor_multiprofile                         |
+| work_order_processor | 0018_workdaygap_lunch_break                                        |
+| ivr_config           | 0018_workdayschedule_season_split_times                            |
 | panel                | 0001_initial (AnalyticsProfile)                                    |
 
-### Archivos a solicitar al inicio de S030 via SFTP
+### Archivos a solicitar al inicio de S031 via SFTP
 
+  panel/templates/panel/operator/gap_resolution.html
   panel/views.py
   panel/templates/panel/users/form.html
   panel/templates/panel/operator/upload_entry.html

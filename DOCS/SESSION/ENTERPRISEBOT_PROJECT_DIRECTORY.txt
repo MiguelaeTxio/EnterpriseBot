@@ -263,6 +263,7 @@
 ./ivr_config/apps.py
 ./ivr_config/models.py
 ./ivr_config/migrations/0017_workdayschedule_refactor_multiprofile.py
+./ivr_config/migrations/0018_workdayschedule_season_split_times.py
 ./ivr_config/migrations/0013_alter_companyuser_role.py
 ./ivr_config/migrations/0014_companyuser_dni_companyuser_phone.py
 ./ivr_config/migrations/0011_section_fleet_families.py
@@ -298,6 +299,7 @@
 ./work_order_processor/migrations/0005_add_spare_part_line.py
 ./work_order_processor/migrations/0011_sparepartline_unit_price.py
 ./work_order_processor/migrations/0014_workorderentryline_fault_category_and_more.py
+./work_order_processor/migrations/0018_workdaygap_lunch_break.py
 ./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py
 ./work_order_processor/migrations/0008_workorder_has_overlap_incident.py
 ./work_order_processor/migrations/0017_workdaygap_pending_gaps.py

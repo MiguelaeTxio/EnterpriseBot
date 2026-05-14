@@ -8601,11 +8601,19 @@ def _detect_workday_gaps(entry_lines, schedule, work_date):
     Detects workday gaps and deviations in a set of parsed entry lines
     against a WorkdaySchedule reference timetable.
 
+    Supports both intensive (single morning tract) and split-shift schedules
+    (morning + afternoon tracts). The midday window in split-shift mode is
+    classified as LUNCH_BREAK — not a blocking GAP — to allow the operator
+    to justify it with a simplified lunch confirmation dialog.
+
     Checks performed (all require schedule to be non-None):
-      LATE_START — first block starts after schedule.start_time + tolerance.
-      EARLY_END  — last block ends before schedule.end_time - tolerance.
-      GAP        — uncovered interval >= tolerance_minutes between consecutive
-                   blocks (after sorting by hc ascending).
+      LATE_START   — first block starts after start_time_morning + tolerance.
+      EARLY_END    — last block ends before effective end_time - tolerance.
+                     Intensive: end_time_morning. Split: end_time_afternoon.
+      LUNCH_BREAK  — split-shift only: midday window between end_time_morning
+                     and start_time_afternoon not covered by work blocks.
+      GAP          — uncovered interval >= tolerance_minutes between consecutive
+                     blocks, excluding the lunch window in split-shift mode.
 
     Lines with null hc or hf are silently ignored in all checks.
 
@@ -8620,21 +8628,34 @@ def _detect_workday_gaps(entry_lines, schedule, work_date):
 
     Returns:
         list[dict] — one dict per detected gap/deviation, each with keys:
-            gap_type        (str)  — "GAP" | "LATE_START" | "EARLY_END"
-            gap_start       (time) — start of the uncovered interval.
-            gap_end         (time) — end of the uncovered interval.
-            duration_minutes (int) — duration in minutes.
+            gap_type         (str)  — "GAP" | "LATE_START" | "EARLY_END"
+                                      | "LUNCH_BREAK"
+            gap_start        (time) — start of the uncovered interval.
+            gap_end          (time) — end of the uncovered interval.
+            duration_minutes (int)  — duration in minutes.
 
     ---
 
     Detecta lagunas y desviaciones de jornada en un conjunto de líneas de
     entrada parseadas contra un horario de referencia WorkdaySchedule.
 
+    Soporta jornada intensiva (solo tramo de mañana) y turno partido
+    (tramo de mañana + tarde). La ventana de mediodía en turno partido se
+    clasifica como LUNCH_BREAK — no como GAP bloqueante — para permitir al
+    operario justificarla con un diálogo simplificado de confirmación de comida.
+
     Comprobaciones realizadas (todas requieren schedule no nulo):
-      LATE_START — el primer bloque comienza después de start_time + tolerancia.
-      EARLY_END  — el último bloque termina antes de end_time - tolerancia.
-      GAP        — intervalo sin cubrir >= tolerance_minutes entre bloques
-                   consecutivos (ordenados por hc ascendente).
+      LATE_START   — el primer bloque comienza después de start_time_morning
+                     + tolerancia.
+      EARLY_END    — el último bloque termina antes de la hora de salida
+                     efectiva - tolerancia. Intensiva: end_time_morning.
+                     Partida: end_time_afternoon.
+      LUNCH_BREAK  — solo turno partido: ventana de mediodía entre
+                     end_time_morning y start_time_afternoon no cubierta
+                     por bloques de trabajo.
+      GAP          — intervalo sin cubrir >= tolerance_minutes entre bloques
+                     consecutivos, excluyendo la ventana de comida en turno
+                     partido.
 
     Las líneas con hc o hf nulos se ignoran silenciosamente en todas las
     comprobaciones.
@@ -8651,11 +8672,12 @@ def _detect_workday_gaps(entry_lines, schedule, work_date):
     Retorna:
         list[dict] — un dict por laguna/desviación detectada, con claves:
             gap_type         (str)  — "GAP" | "LATE_START" | "EARLY_END"
+                                      | "LUNCH_BREAK"
             gap_start        (time) — inicio del intervalo sin cubrir.
             gap_end          (time) — fin del intervalo sin cubrir.
             duration_minutes (int)  — duración en minutos.
     """
-    from datetime import datetime as _dt_gaps, time as _time_gaps, timedelta as _td_gaps
+    from datetime import datetime as _dt_gaps, time as _time_gaps
 
     # Gate disabled — no schedule configured for this operator/company.
     # Gate desactivado — no hay horario configurado para este operario/empresa.
@@ -8687,19 +8709,36 @@ def _detect_workday_gaps(entry_lines, schedule, work_date):
         """
         return t.hour * 60 + t.minute
 
-    def _time_from_mins(total_mins):
-        """
-        Converts total minutes since midnight back to a time object.
-        Clamps to 23:59 if overflow.
-        ---
-        Convierte minutos totales desde medianoche de vuelta a un objeto time.
-        Limita a 23:59 si hay desbordamiento.
-        """
-        total_mins = min(total_mins, 23 * 60 + 59)
-        return _time_gaps(total_mins // 60, total_mins % 60)
+    # ------------------------------------------------------------------
+    # Resolve schedule fields — support both old (start_time / end_time)
+    # and new (start_time_morning / end_time_morning / is_intensive)
+    # field names so that schedules created before the split-shift refactor
+    # continue to work without errors.
+    #
+    # Resolver campos del horario — compatibilidad con los nombres de campo
+    # anteriores (start_time / end_time) y los nuevos (start_time_morning /
+    # end_time_morning / is_intensive) para que los horarios creados antes
+    # del refactor de turno partido sigan funcionando sin errores.
+    # ------------------------------------------------------------------
+    start_morning = getattr(schedule, "start_time_morning", None) or getattr(schedule, "start_time", None)
+    end_morning   = getattr(schedule, "end_time_morning",   None) or getattr(schedule, "end_time",   None)
+    is_intensive  = getattr(schedule, "is_intensive", True)
+    start_afternoon = None if is_intensive else getattr(schedule, "start_time_afternoon", None)
+    end_afternoon   = None if is_intensive else getattr(schedule, "end_time_afternoon",   None)
 
+    if start_morning is None or end_morning is None:
+        # Incomplete schedule — Gate 4 disabled.
+        # Horario incompleto — Gate 4 desactivado.
+        return []
+
+    # Effective end of the workday for EARLY_END check.
+    # Fin efectivo de la jornada para la comprobación EARLY_END.
+    effective_end = end_afternoon if (not is_intensive and end_afternoon) else end_morning
+
+    # ------------------------------------------------------------------
     # Build list of valid (hc, hf) pairs, sorted by hc ascending.
     # Construir lista de pares (hc, hf) válidos, ordenados por hc ascendente.
+    # ------------------------------------------------------------------
     valid_blocks = []
     for ld in entry_lines:
         hc = _to_t(ld.get("hc"))
@@ -8716,52 +8755,91 @@ def _detect_workday_gaps(entry_lines, schedule, work_date):
     tol  = schedule.tolerance_minutes
 
     # ------------------------------------------------------------------
-    # LATE_START — first block starts after start_time + tolerance.
-    # LATE_START — el primer bloque empieza después de start_time + tolerancia.
+    # LATE_START — first block starts after start_morning + tolerance.
+    # LATE_START — el primer bloque empieza después de start_morning + tol.
     # ------------------------------------------------------------------
-    first_hc      = valid_blocks[0][0]
-    schedule_start_mins = _mins(schedule.start_time) + tol
-    if _mins(first_hc) > schedule_start_mins:
-        gap_start = schedule.start_time
-        gap_end   = first_hc
+    first_hc = valid_blocks[0][0]
+    if _mins(first_hc) > _mins(start_morning) + tol:
         gaps.append({
             "gap_type":         "LATE_START",
-            "gap_start":        gap_start,
-            "gap_end":          gap_end,
-            "duration_minutes": _mins(gap_end) - _mins(gap_start),
+            "gap_start":        start_morning,
+            "gap_end":          first_hc,
+            "duration_minutes": _mins(first_hc) - _mins(start_morning),
         })
 
     # ------------------------------------------------------------------
-    # EARLY_END — last block ends before end_time - tolerance.
-    # EARLY_END — el último bloque termina antes de end_time - tolerancia.
+    # EARLY_END — last block ends before effective_end - tolerance.
+    # EARLY_END — el último bloque termina antes de effective_end - tol.
     # ------------------------------------------------------------------
-    last_hf             = valid_blocks[-1][1]
-    schedule_end_mins   = _mins(schedule.end_time) - tol
-    if _mins(last_hf) < schedule_end_mins:
-        gap_start = last_hf
-        gap_end   = schedule.end_time
+    last_hf = valid_blocks[-1][1]
+    if _mins(last_hf) < _mins(effective_end) - tol:
         gaps.append({
             "gap_type":         "EARLY_END",
-            "gap_start":        gap_start,
-            "gap_end":          gap_end,
-            "duration_minutes": _mins(gap_end) - _mins(gap_start),
+            "gap_start":        last_hf,
+            "gap_end":          effective_end,
+            "duration_minutes": _mins(effective_end) - _mins(last_hf),
         })
 
     # ------------------------------------------------------------------
-    # GAP — uncovered interval >= tolerance between consecutive blocks.
-    # GAP — intervalo sin cubrir >= tolerancia entre bloques consecutivos.
+    # LUNCH_BREAK — split-shift only.
+    # The midday window [end_morning, start_afternoon] is a LUNCH_BREAK
+    # if no work block covers it. Blocks that overlap this window
+    # (operator worked through lunch) suppress the LUNCH_BREAK gap.
+    #
+    # LUNCH_BREAK — solo turno partido.
+    # La ventana de mediodía [end_morning, start_afternoon] genera un
+    # LUNCH_BREAK si ningún bloque la cubre. Los bloques que solapan esta
+    # ventana (operario trabajó durante la comida) suprimen el LUNCH_BREAK.
+    # ------------------------------------------------------------------
+    if not is_intensive and start_afternoon and end_morning:
+        lunch_start_m = _mins(end_morning)
+        lunch_end_m   = _mins(start_afternoon)
+        # A block covers the lunch window if it overlaps [end_morning, start_afternoon].
+        # Un bloque cubre la ventana de comida si solapa [end_morning, start_afternoon].
+        lunch_covered = any(
+            _mins(hf) > lunch_start_m and _mins(hc) < lunch_end_m
+            for hc, hf in valid_blocks
+        )
+        if not lunch_covered:
+            gaps.append({
+                "gap_type":         "LUNCH_BREAK",
+                "gap_start":        end_morning,
+                "gap_end":          start_afternoon,
+                "duration_minutes": lunch_end_m - lunch_start_m,
+            })
+
+    # ------------------------------------------------------------------
+    # GAP — uncovered interval >= tolerance between consecutive blocks,
+    #        excluding the lunch window in split-shift mode.
+    # GAP — intervalo sin cubrir >= tolerancia entre bloques consecutivos,
+    #        excluyendo la ventana de comida en turno partido.
     # ------------------------------------------------------------------
     for i in range(len(valid_blocks) - 1):
         hf_curr  = valid_blocks[i][1]
         hc_next  = valid_blocks[i + 1][0]
         gap_mins = _mins(hc_next) - _mins(hf_curr)
-        if gap_mins >= tol:
-            gaps.append({
-                "gap_type":         "GAP",
-                "gap_start":        hf_curr,
-                "gap_end":          hc_next,
-                "duration_minutes": gap_mins,
-            })
+
+        if gap_mins < tol:
+            continue
+
+        # In split-shift mode: skip if this gap falls entirely within the
+        # lunch window — it is already reported as LUNCH_BREAK above.
+        # En turno partido: omitir si el gap cae íntegramente dentro de la
+        # ventana de comida — ya se ha reportado como LUNCH_BREAK arriba.
+        if not is_intensive and start_afternoon and end_morning:
+            lunch_start_m = _mins(end_morning)
+            lunch_end_m   = _mins(start_afternoon)
+            gap_start_m   = _mins(hf_curr)
+            gap_end_m     = _mins(hc_next)
+            if gap_start_m >= lunch_start_m and gap_end_m <= lunch_end_m:
+                continue
+
+        gaps.append({
+            "gap_type":         "GAP",
+            "gap_start":        hf_curr,
+            "gap_end":          hc_next,
+            "duration_minutes": gap_mins,
+        })
 
     return gaps
 
@@ -9700,7 +9778,16 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
 
         # ------------------------------------------------------------------
         # Validate and resolve each pending gap.
+        # Each gap follows its own resolution path depending on gap_type:
+        #   GAP / LATE_START / EARLY_END → absence_category required.
+        #   LUNCH_BREAK                  → lunch_had (True/False) required.
+        #                                  note required when lunch_had=False.
+        #
         # Validar y resolver cada gap pendiente.
+        # Cada gap sigue su propio camino de resolución según gap_type:
+        #   GAP / LATE_START / EARLY_END → absence_category obligatoria.
+        #   LUNCH_BREAK                  → lunch_had (True/False) obligatorio.
+        #                                  note obligatoria cuando lunch_had=False.
         # ------------------------------------------------------------------
         gaps = list(
             WorkdayGap.objects.filter(
@@ -9709,41 +9796,90 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
         )
 
         validation_errors = []
-        resolutions = []
+        resolutions = []  # list of (gap, resolution_dict)
 
         for gap in gaps:
-            field_cat  = f"gap_{gap.pk}_category"
-            field_note = f"gap_{gap.pk}_note"
+            label_gap = f"Laguna {gap.gap_start:%H:%M}–{gap.gap_end:%H:%M}"
 
-            cat_pk_raw = request.POST.get(field_cat, "").strip()
-            note_val   = request.POST.get(field_note, "").strip()
+            if gap.gap_type == WorkdayGap.GapType.LUNCH_BREAK:
+                # ----------------------------------------------------------
+                # LUNCH_BREAK resolution path.
+                # Ruta de resolución para LUNCH_BREAK.
+                # ----------------------------------------------------------
+                lunch_had_raw = request.POST.get(f"gap_{gap.pk}_lunch_had", "").strip()
+                note_val      = request.POST.get(f"gap_{gap.pk}_note", "").strip()
+                lunch_time_raw = request.POST.get(f"gap_{gap.pk}_lunch_time", "").strip()
 
-            if not cat_pk_raw:
-                validation_errors.append(
-                    f"Laguna {gap.gap_start:%H:%M}–{gap.gap_end:%H:%M}: "
-                    f"debes seleccionar un motivo de ausencia."
-                )
-                continue
+                if lunch_had_raw not in ("yes", "no"):
+                    validation_errors.append(
+                        f"{label_gap}: debes indicar si has parado a comer."
+                    )
+                    continue
 
-            try:
-                absence_cat = AbsenceCategory.objects.get(
-                    pk=int(cat_pk_raw), company=company, is_active=True
-                )
-            except (AbsenceCategory.DoesNotExist, ValueError, TypeError):
-                validation_errors.append(
-                    f"Laguna {gap.gap_start:%H:%M}–{gap.gap_end:%H:%M}: "
-                    f"la categoría seleccionada no es válida."
-                )
-                continue
+                lunch_had = lunch_had_raw == "yes"
 
-            if absence_cat.requires_note and not note_val:
-                validation_errors.append(
-                    f"Laguna {gap.gap_start:%H:%M}–{gap.gap_end:%H:%M}: "
-                    f"la categoría '{absence_cat.label}' requiere una nota explicativa."
-                )
-                continue
+                if not lunch_had and not note_val:
+                    validation_errors.append(
+                        f"{label_gap}: si no has parado a comer, debes indicar el motivo."
+                    )
+                    continue
 
-            resolutions.append((gap, absence_cat, note_val))
+                # Parse optional lunch time.
+                # Parsear hora de comida opcional.
+                lunch_time = None
+                if lunch_had and lunch_time_raw:
+                    from datetime import datetime as _dt_lt
+                    try:
+                        lunch_time = _dt_lt.strptime(lunch_time_raw, "%H:%M").time()
+                    except ValueError:
+                        lunch_time = None
+
+                resolutions.append((gap, {
+                    "type":       "lunch",
+                    "lunch_had":  lunch_had,
+                    "lunch_time": lunch_time,
+                    "note":       note_val,
+                }))
+
+            else:
+                # ----------------------------------------------------------
+                # Standard gap resolution path (GAP / LATE_START / EARLY_END).
+                # Ruta de resolución estándar (GAP / LATE_START / EARLY_END).
+                # ----------------------------------------------------------
+                field_cat  = f"gap_{gap.pk}_category"
+                field_note = f"gap_{gap.pk}_note"
+
+                cat_pk_raw = request.POST.get(field_cat, "").strip()
+                note_val   = request.POST.get(field_note, "").strip()
+
+                if not cat_pk_raw:
+                    validation_errors.append(
+                        f"{label_gap}: debes seleccionar un motivo de ausencia."
+                    )
+                    continue
+
+                try:
+                    absence_cat = AbsenceCategory.objects.get(
+                        pk=int(cat_pk_raw), company=company, is_active=True
+                    )
+                except (AbsenceCategory.DoesNotExist, ValueError, TypeError):
+                    validation_errors.append(
+                        f"{label_gap}: la categoría seleccionada no es válida."
+                    )
+                    continue
+
+                if absence_cat.requires_note and not note_val:
+                    validation_errors.append(
+                        f"{label_gap}: la categoría '{absence_cat.label}' "
+                        f"requiere una nota explicativa."
+                    )
+                    continue
+
+                resolutions.append((gap, {
+                    "type":         "standard",
+                    "absence_cat":  absence_cat,
+                    "note":         note_val,
+                }))
 
         if validation_errors:
             # Re-render the form with errors — gaps remain unresolved.
@@ -9761,6 +9897,7 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
                 "gaps":               gaps,
                 "absence_categories": absence_categories,
                 "work_date":          first_entry.work_date if first_entry else None,
+                "entry_lines":        list(first_entry.lines.order_by("hc")) if first_entry else [],
                 "errors":             validation_errors,
             }
             return render(request, self.template_name, context)
@@ -9771,11 +9908,18 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
         # ------------------------------------------------------------------
         try:
             with transaction.atomic():
-                for gap, absence_cat, note_val in resolutions:
-                    gap.absence_category = absence_cat
-                    gap.note             = note_val
-                    gap.resolved         = True
-                    gap.save(update_fields=["absence_category", "note", "resolved"])
+                for gap, res in resolutions:
+                    if res["type"] == "lunch":
+                        gap.lunch_had  = res["lunch_had"]
+                        gap.lunch_time = res["lunch_time"]
+                        gap.note       = res["note"]
+                        gap.resolved   = True
+                        gap.save(update_fields=["lunch_had", "lunch_time", "note", "resolved"])
+                    else:
+                        gap.absence_category = res["absence_cat"]
+                        gap.note             = res["note"]
+                        gap.resolved         = True
+                        gap.save(update_fields=["absence_category", "note", "resolved"])
 
                 draft.status = WorkOrder.Status.DONE
                 draft.save(update_fields=["status"])
@@ -9999,23 +10143,55 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         # Shared field parsing for create and update.
         # Parseo de campos compartido para create y update.
         # ------------------------------------------------------------------
-        label_val      = request.POST.get("label", "").strip()
-        start_val      = request.POST.get("start_time", "").strip()
-        end_val        = request.POST.get("end_time", "").strip()
-        tol_val        = request.POST.get("tolerance_minutes", "15").strip()
-        is_default_val = bool(request.POST.get("is_default"))
+        from ivr_config.models import WorkdaySchedule as _WDS_choices
+
+        label_val           = request.POST.get("label", "").strip()
+        season_val          = request.POST.get("season", _WDS_choices.Season.WINTER).strip()
+        is_intensive_val    = bool(request.POST.get("is_intensive"))
+        start_morning_val   = request.POST.get("start_time_morning", "").strip()
+        end_morning_val     = request.POST.get("end_time_morning",   "").strip()
+        start_afternoon_val = request.POST.get("start_time_afternoon", "").strip()
+        end_afternoon_val   = request.POST.get("end_time_afternoon",   "").strip()
+        tol_val             = request.POST.get("tolerance_minutes", "15").strip()
+        is_default_val      = bool(request.POST.get("is_default"))
 
         errors = []
         if not label_val:
             errors.append("El nombre del horario es obligatorio.")
-        start_time = self._parse_time(start_val)
-        if start_time is None:
-            errors.append("La hora de entrada debe tener formato HH:MM.")
-        end_time = self._parse_time(end_val)
-        if end_time is None:
-            errors.append("La hora de salida debe tener formato HH:MM.")
-        if start_time and end_time and end_time <= start_time:
-            errors.append("La hora de salida debe ser posterior a la de entrada.")
+
+        if season_val not in dict(_WDS_choices.Season.choices):
+            errors.append("La temporada seleccionada no es válida.")
+            season_val = _WDS_choices.Season.WINTER
+
+        start_morning = self._parse_time(start_morning_val)
+        if start_morning is None:
+            errors.append("La hora de entrada de mañana debe tener formato HH:MM.")
+
+        end_morning = self._parse_time(end_morning_val)
+        if end_morning is None:
+            errors.append("La hora de salida de mañana debe tener formato HH:MM.")
+
+        if start_morning and end_morning and end_morning <= start_morning:
+            errors.append("La hora de salida de mañana debe ser posterior a la de entrada.")
+
+        # Afternoon tract — only required when not intensive.
+        # Tramo de tarde — solo obligatorio cuando no es jornada intensiva.
+        start_afternoon = None
+        end_afternoon   = None
+        if not is_intensive_val:
+            start_afternoon = self._parse_time(start_afternoon_val)
+            end_afternoon   = self._parse_time(end_afternoon_val)
+            if start_afternoon is None:
+                errors.append("La hora de entrada de tarde es obligatoria para jornada partida.")
+            if end_afternoon is None:
+                errors.append("La hora de salida de tarde es obligatoria para jornada partida.")
+            if start_afternoon and end_morning and start_afternoon <= end_morning:
+                errors.append(
+                    "La hora de entrada de tarde debe ser posterior a la de salida de mañana."
+                )
+            if start_afternoon and end_afternoon and end_afternoon <= start_afternoon:
+                errors.append("La hora de salida de tarde debe ser posterior a la de entrada.")
+
         try:
             tolerance = int(tol_val)
             if tolerance < 0:
@@ -10039,11 +10215,15 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
             try:
                 pk    = int(request.POST.get("schedule_pk", ""))
                 sched = WorkdaySchedule.objects.get(pk=pk, company=company)
-                sched.label             = label_val
-                sched.start_time        = start_time
-                sched.end_time          = end_time
-                sched.tolerance_minutes = tolerance
-                sched.is_default        = is_default_val
+                sched.label                = label_val
+                sched.season               = season_val
+                sched.is_intensive         = is_intensive_val
+                sched.start_time_morning   = start_morning
+                sched.end_time_morning     = end_morning
+                sched.start_time_afternoon = start_afternoon
+                sched.end_time_afternoon   = end_afternoon
+                sched.tolerance_minutes    = tolerance
+                sched.is_default           = is_default_val
                 sched.save()
                 django_messages.success(
                     request,
@@ -10061,12 +10241,16 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         # Acción: create (por defecto)
         # ------------------------------------------------------------------
         WorkdaySchedule.objects.create(
-            company         = company,
-            label           = label_val,
-            start_time      = start_time,
-            end_time        = end_time,
-            tolerance_minutes = tolerance,
-            is_default      = is_default_val,
+            company              = company,
+            label                = label_val,
+            season               = season_val,
+            is_intensive         = is_intensive_val,
+            start_time_morning   = start_morning,
+            end_time_morning     = end_morning,
+            start_time_afternoon = start_afternoon,
+            end_time_afternoon   = end_afternoon,
+            tolerance_minutes    = tolerance,
+            is_default           = is_default_val,
         )
         django_messages.success(
             request,

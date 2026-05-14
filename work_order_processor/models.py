@@ -1138,35 +1138,59 @@ class WorkdayGap(models.Model):
     """
     Records each gap or workday deviation detected by Gate 4 in a digital
     work order. One record per detected gap/deviation per work order.
-    Each record must be resolved (absence_category assigned, note provided
-    if required) before the work order can be promoted from PENDING_GAPS
-    to DONE.
+    Each record must be resolved before the work order can be promoted from
+    PENDING_GAPS to DONE.
 
     Gap types:
-      GAP        — uncovered time between two consecutive work blocks.
-      LATE_START — first block starts later than schedule + tolerance.
-      EARLY_END  — last block ends earlier than schedule - tolerance.
+      GAP         — uncovered time between two consecutive work blocks.
+      LATE_START  — first block starts later than schedule + tolerance.
+      EARLY_END   — last block ends earlier than schedule - tolerance.
+      LUNCH_BREAK — midday window between morning and afternoon tracts
+                    (split shift only). Resolved via a simplified lunch
+                    confirmation: did the operator stop for lunch? If yes,
+                    the gap is resolved; if no, a free-text note is required
+                    explaining why (e.g. "urgencia en obra").
+
+    Resolution rules per gap type:
+      GAP / LATE_START / EARLY_END → absence_category required.
+                                     note required if category.requires_note=True.
+      LUNCH_BREAK                  → lunch_had (True/False) required.
+                                     lunch_time (optional).
+                                     note required when lunch_had=False.
 
     ---
 
     Registra cada laguna o desviación de jornada detectada por Gate 4 en un
     parte digital. Un registro por laguna/desviación detectada por parte.
-    Cada registro debe resolverse (AbsenceCategory asignada, nota si se
-    requiere) antes de que el parte pueda pasar de PENDING_GAPS a DONE.
+    Cada registro debe resolverse antes de que el parte pueda pasar de
+    PENDING_GAPS a DONE.
 
     Tipos de gap:
-      GAP        — tiempo sin cubrir entre dos bloques de trabajo consecutivos.
-      LATE_START — el primer bloque empieza más tarde que el horario + tolerancia.
-      EARLY_END  — el último bloque termina antes que el horario - tolerancia.
+      GAP         — tiempo sin cubrir entre dos bloques de trabajo consecutivos.
+      LATE_START  — el primer bloque empieza más tarde que el horario + tolerancia.
+      EARLY_END   — el último bloque termina antes que el horario - tolerancia.
+      LUNCH_BREAK — ventana de mediodía entre el tramo de mañana y el de tarde
+                    (solo turno partido). Se resuelve con una confirmación simplificada
+                    de comida: ¿ha parado el operario a comer? Si sí, el gap queda
+                    resuelto; si no, se requiere nota libre explicando el motivo
+                    (p. ej. "urgencia en obra").
+
+    Reglas de resolución por tipo:
+      GAP / LATE_START / EARLY_END → absence_category obligatoria.
+                                     note obligatoria si category.requires_note=True.
+      LUNCH_BREAK                  → lunch_had (True/False) obligatorio.
+                                     lunch_time (opcional).
+                                     note obligatoria cuando lunch_had=False.
     """
 
     # ------------------------------------------------------------------
     # Gap type choices / Opciones de tipo de laguna
     # ------------------------------------------------------------------
     class GapType(models.TextChoices):
-        GAP        = "GAP",        _("Laguna entre bloques")
-        LATE_START = "LATE_START", _("Inicio tardío")
-        EARLY_END  = "EARLY_END",  _("Cierre anticipado")
+        GAP          = "GAP",          _("Laguna entre bloques")
+        LATE_START   = "LATE_START",   _("Inicio tardío")
+        EARLY_END    = "EARLY_END",    _("Cierre anticipado")
+        LUNCH_BREAK  = "LUNCH_BREAK",  _("Pausa de mediodía")
 
     # ------------------------------------------------------------------
     # Relation / Relación
@@ -1208,7 +1232,7 @@ class WorkdayGap(models.Model):
     )
 
     # ------------------------------------------------------------------
-    # Resolution / Resolución
+    # Resolution — standard gaps / Resolución — gaps estándar
     # ------------------------------------------------------------------
     absence_category = models.ForeignKey(
         "ivr_config.AbsenceCategory",
@@ -1219,7 +1243,8 @@ class WorkdayGap(models.Model):
         verbose_name=_("Categoría de ausencia"),
         help_text=_(
             "Categoría de ausencia seleccionada por el operario para justificar "
-            "esta laguna. Obligatoria para marcar el gap como resuelto."
+            "esta laguna. Obligatoria para gaps de tipo GAP, LATE_START y EARLY_END. "
+            "No aplica para LUNCH_BREAK."
         ),
     )
     note = models.TextField(
@@ -1228,16 +1253,42 @@ class WorkdayGap(models.Model):
         default="",
         help_text=_(
             "Nota libre del operario para justificar la laguna. "
-            "Obligatoria cuando AbsenceCategory.requires_note=True."
+            "Obligatoria cuando AbsenceCategory.requires_note=True (gaps estándar) "
+            "o cuando lunch_had=False (LUNCH_BREAK)."
         ),
     )
     resolved = models.BooleanField(
         _("Resuelto"),
         default=False,
         help_text=_(
-            "True cuando el operario ha asignado una AbsenceCategory y "
-            "proporcionado nota si era requerida. Gate 4 requiere que todos "
-            "los gaps de un WorkOrder estén resueltos antes de promoverlo a DONE."
+            "True cuando el operario ha completado la resolución del gap según "
+            "las reglas de su tipo. Gate 4 requiere que todos los gaps de un "
+            "WorkOrder estén resueltos antes de promoverlo a DONE."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Resolution — lunch break / Resolución — pausa de mediodía
+    # ------------------------------------------------------------------
+    lunch_had = models.BooleanField(
+        _("¿Ha comido?"),
+        null=True,
+        blank=True,
+        default=None,
+        help_text=_(
+            "Solo para gaps de tipo LUNCH_BREAK. "
+            "True: el operario paró a comer (gap resuelto sin nota). "
+            "False: el operario no paró a comer — nota libre obligatoria. "
+            "None: no aplica (gap de tipo distinto a LUNCH_BREAK)."
+        ),
+    )
+    lunch_time = models.TimeField(
+        _("Hora de comida"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Solo para gaps de tipo LUNCH_BREAK cuando lunch_had=True. "
+            "Hora aproximada a la que el operario paró a comer. Opcional."
         ),
     )
 

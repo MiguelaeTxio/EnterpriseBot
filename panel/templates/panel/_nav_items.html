@@ -30,6 +30,8 @@
 {#   "users"              → Usuarios                         (ADMIN, SUPERVISOR)    #}
 {#   "analytics"          → Gráficas                         (ADMIN)               #}
 {#   "reports"            → Informes                         (ADMIN) — pendiente H9 #}
+{#   "workday_schedule"   → Horarios de jornada              (ADMIN, SUPERVISOR)    #}
+{#   "absence_categories" → Categorías de ausencia           (ADMIN, SUPERVISOR)    #}
 {# ================================================================================ #}
 
 <ul class="nav flex-column mt-2">
@@ -197,6 +199,29 @@
         <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
            href="{% url 'panel:work_order_admin_history' %}">
             <i class="bi bi-clock-history"></i>Historial
+        </a>
+    </li>
+
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Configuración de jornada — ADMIN y SUPERVISOR              #}
+    {# Section: Workday configuration — ADMIN and SUPERVISOR              #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+    <li><div class="sidebar-section-label">Configuración de jornada</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'workday_schedule' %}active{% endif %}"
+           href="{% url 'panel:workday_schedule' %}">
+            <i class="bi bi-calendar-week"></i>Horarios de jornada
+        </a>
+    </li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'absence_categories' %}active{% endif %}"
+           href="{% url 'panel:absence_category_list' %}">
+            <i class="bi bi-journal-x"></i>Categorías de ausencia
         </a>
     </li>
 

@@ -3,10 +3,14 @@
 {# Workday schedule management page — SUPERVISOR and ADMIN roles.                              #}
 {#   Lists all WorkdaySchedule records for the company and provides a creation form.           #}
 {#   Each existing schedule can be edited or deleted inline.                                    #}
+{#   Supports season-aware split-shift model: WINTER (split) and SUMMER (intensive).           #}
+{#   Afternoon tract fields are shown/hidden by JS based on is_intensive checkbox.             #}
 {#                                                                                              #}
 {# Página de gestión de horarios de jornada — roles SUPERVISOR y ADMIN.                        #}
 {#   Lista todos los registros WorkdaySchedule de la empresa y ofrece un formulario de alta.   #}
 {#   Cada horario existente puede editarse o eliminarse desde la misma página.                  #}
+{#   Soporta modelo de turno partido por temporada: INVIERNO (partido) y VERANO (intensivo).   #}
+{#   Los campos del tramo de tarde se muestran/ocultan por JS según el checkbox is_intensive.  #}
 {% extends "panel/base.html" %}
 
 {% block title %}Horarios de jornada{% endblock %}
@@ -54,8 +58,9 @@
                 <thead class="table-light">
                     <tr>
                         <th class="px-4 text-sm fw-semibold">Nombre</th>
-                        <th class="text-sm fw-semibold">Entrada</th>
-                        <th class="text-sm fw-semibold">Salida</th>
+                        <th class="text-sm fw-semibold">Temporada</th>
+                        <th class="text-sm fw-semibold">Mañana</th>
+                        <th class="text-sm fw-semibold">Tarde</th>
                         <th class="text-sm fw-semibold">Tolerancia</th>
                         <th class="text-sm fw-semibold">Por defecto</th>
                         <th class="text-sm fw-semibold">Operarios</th>
@@ -66,8 +71,34 @@
                     {% for sched in schedules %}
                     <tr>
                         <td class="px-4 text-sm fw-semibold">{{ sched.label }}</td>
-                        <td class="text-sm">{{ sched.start_time|time:"H:i" }}</td>
-                        <td class="text-sm">{{ sched.end_time|time:"H:i" }}</td>
+                        <td class="text-sm">
+                            {% if sched.season == "SUMMER" %}
+                            <span class="badge bg-warning text-dark">
+                                <i class="bi bi-sun me-1"></i>Verano
+                            </span>
+                            {% else %}
+                            <span class="badge bg-info text-dark">
+                                <i class="bi bi-snow me-1"></i>Invierno
+                            </span>
+                            {% endif %}
+                            {% if sched.is_intensive %}
+                            <span class="badge bg-secondary ms-1">Intensiva</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-sm">
+                            {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}
+                        </td>
+                        <td class="text-sm">
+                            {% if sched.is_intensive %}
+                            <span class="text-muted">—</span>
+                            {% else %}
+                                {% if sched.start_time_afternoon and sched.end_time_afternoon %}
+                                {{ sched.start_time_afternoon|time:"H:i" }}–{{ sched.end_time_afternoon|time:"H:i" }}
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            {% endif %}
+                        </td>
                         <td class="text-sm">{{ sched.tolerance_minutes }} min</td>
                         <td class="text-sm">
                             {% if sched.is_default %}
@@ -87,8 +118,12 @@
                                         data-bs-target="#modalEditSchedule"
                                         data-pk="{{ sched.pk }}"
                                         data-label="{{ sched.label|escapejs }}"
-                                        data-start="{{ sched.start_time|time:'H:i' }}"
-                                        data-end="{{ sched.end_time|time:'H:i' }}"
+                                        data-season="{{ sched.season }}"
+                                        data-is-intensive="{{ sched.is_intensive|yesno:'true,false' }}"
+                                        data-start-morning="{{ sched.start_time_morning|time:'H:i' }}"
+                                        data-end-morning="{{ sched.end_time_morning|time:'H:i' }}"
+                                        data-start-afternoon="{{ sched.start_time_afternoon|time:'H:i'|default:'' }}"
+                                        data-end-afternoon="{{ sched.end_time_afternoon|time:'H:i'|default:'' }}"
                                         data-tolerance="{{ sched.tolerance_minutes }}"
                                         data-is-default="{{ sched.is_default|yesno:'true,false' }}"
                                         title="Editar horario">
@@ -135,34 +170,36 @@
                 {% csrf_token %}
                 <input type="hidden" name="action" value="create">
                 <div class="row g-3">
-                    <div class="col-12 col-md-6">
+
+                    {# Nombre — Name #}
+                    <div class="col-12 col-md-5">
                         <label class="form-label text-sm fw-semibold mb-1">
                             Nombre <span class="text-danger">*</span>
                         </label>
                         <input type="text" name="label"
                                class="form-control form-control-sm"
-                               placeholder="Ej: Mecánicos, Chóferes de grúa…"
+                               placeholder="Ej: Mecánicos invierno, Chóferes verano…"
                                value="{{ post_data.label|default:'' }}"
                                required>
                     </div>
-                    <div class="col-6 col-md-2">
+
+                    {# Temporada — Season #}
+                    <div class="col-6 col-md-3">
                         <label class="form-label text-sm fw-semibold mb-1">
-                            Entrada <span class="text-danger">*</span>
+                            Temporada <span class="text-danger">*</span>
                         </label>
-                        <input type="time" name="start_time"
-                               class="form-control form-control-sm"
-                               value="{{ post_data.start_time|default:'' }}"
-                               required>
+                        <select name="season" id="createSeason"
+                                class="form-select form-select-sm">
+                            <option value="WINTER" {% if post_data.season == "WINTER" or not post_data.season %}selected{% endif %}>
+                                Invierno
+                            </option>
+                            <option value="SUMMER" {% if post_data.season == "SUMMER" %}selected{% endif %}>
+                                Verano
+                            </option>
+                        </select>
                     </div>
-                    <div class="col-6 col-md-2">
-                        <label class="form-label text-sm fw-semibold mb-1">
-                            Salida <span class="text-danger">*</span>
-                        </label>
-                        <input type="time" name="end_time"
-                               class="form-control form-control-sm"
-                               value="{{ post_data.end_time|default:'' }}"
-                               required>
-                    </div>
+
+                    {# Tolerancia — Tolerance #}
                     <div class="col-6 col-md-2">
                         <label class="form-label text-sm fw-semibold mb-1">Tolerancia (min)</label>
                         <input type="number" name="tolerance_minutes"
@@ -170,6 +207,78 @@
                                min="0" max="60"
                                value="{{ post_data.tolerance_minutes|default:'15' }}">
                     </div>
+
+                    {# Jornada intensiva — Intensive shift flag #}
+                    <div class="col-12 col-md-2 d-flex align-items-end pb-1">
+                        <div class="form-check mb-0">
+                            <input class="form-check-input schedule-intensive-check"
+                                   type="checkbox"
+                                   name="is_intensive"
+                                   id="createIsIntensive"
+                                   data-target="create"
+                                   {% if post_data.is_intensive %}checked{% endif %}>
+                            <label class="form-check-label text-sm" for="createIsIntensive">
+                                Jornada intensiva
+                            </label>
+                        </div>
+                    </div>
+
+                    {# Tramo mañana — Morning tract #}
+                    <div class="col-12">
+                        <div class="text-sm fw-semibold text-muted mb-2">
+                            <i class="bi bi-sunrise me-1"></i>Tramo de mañana
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6 col-md-2">
+                                <label class="form-label text-sm mb-1">
+                                    Entrada <span class="text-danger">*</span>
+                                </label>
+                                <input type="time" name="start_time_morning"
+                                       class="form-control form-control-sm"
+                                       value="{{ post_data.start_time_morning|default:'' }}"
+                                       required>
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label class="form-label text-sm mb-1">
+                                    Salida <span class="text-danger">*</span>
+                                </label>
+                                <input type="time" name="end_time_morning"
+                                       class="form-control form-control-sm"
+                                       value="{{ post_data.end_time_morning|default:'' }}"
+                                       required>
+                            </div>
+                        </div>
+                    </div>
+
+                    {# Tramo tarde — Afternoon tract (hidden when intensive) #}
+                    <div class="col-12 create-afternoon-tract"
+                         {% if post_data.is_intensive %}style="display:none"{% endif %}>
+                        <div class="text-sm fw-semibold text-muted mb-2">
+                            <i class="bi bi-sunset me-1"></i>Tramo de tarde
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6 col-md-2">
+                                <label class="form-label text-sm mb-1">
+                                    Entrada <span class="text-danger">*</span>
+                                </label>
+                                <input type="time" name="start_time_afternoon"
+                                       id="createStartAfternoon"
+                                       class="form-control form-control-sm"
+                                       value="{{ post_data.start_time_afternoon|default:'' }}">
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label class="form-label text-sm mb-1">
+                                    Salida <span class="text-danger">*</span>
+                                </label>
+                                <input type="time" name="end_time_afternoon"
+                                       id="createEndAfternoon"
+                                       class="form-control form-control-sm"
+                                       value="{{ post_data.end_time_afternoon|default:'' }}">
+                            </div>
+                        </div>
+                    </div>
+
+                    {# Por defecto + submit #}
                     <div class="col-12 d-flex align-items-center gap-3 flex-wrap">
                         <div class="form-check mb-0">
                             <input class="form-check-input" type="checkbox"
@@ -183,6 +292,7 @@
                             <i class="bi bi-plus-circle me-1"></i>Crear horario
                         </button>
                     </div>
+
                 </div>
             </form>
         </div>
@@ -196,7 +306,7 @@
 {# ------------------------------------------------------------------ #}
 <div class="modal fade" id="modalEditSchedule" tabindex="-1"
      aria-labelledby="modalEditScheduleLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-bottom py-3">
                 <h6 class="modal-title fw-semibold" id="modalEditScheduleLabel">
@@ -210,32 +320,96 @@
                     <input type="hidden" name="action" value="update">
                     <input type="hidden" name="schedule_pk" id="editSchedulePk">
                     <div class="row g-3">
-                        <div class="col-12">
+
+                        {# Nombre — Name #}
+                        <div class="col-12 col-md-5">
                             <label class="form-label text-sm fw-semibold mb-1">
                                 Nombre <span class="text-danger">*</span>
                             </label>
                             <input type="text" name="label" id="editLabel"
                                    class="form-control form-control-sm" required>
                         </div>
-                        <div class="col-6">
+
+                        {# Temporada — Season #}
+                        <div class="col-6 col-md-3">
                             <label class="form-label text-sm fw-semibold mb-1">
-                                Entrada <span class="text-danger">*</span>
+                                Temporada <span class="text-danger">*</span>
                             </label>
-                            <input type="time" name="start_time" id="editStartTime"
-                                   class="form-control form-control-sm" required>
+                            <select name="season" id="editSeason"
+                                    class="form-select form-select-sm">
+                                <option value="WINTER">Invierno</option>
+                                <option value="SUMMER">Verano</option>
+                            </select>
                         </div>
-                        <div class="col-6">
-                            <label class="form-label text-sm fw-semibold mb-1">
-                                Salida <span class="text-danger">*</span>
-                            </label>
-                            <input type="time" name="end_time" id="editEndTime"
-                                   class="form-control form-control-sm" required>
-                        </div>
-                        <div class="col-6">
+
+                        {# Tolerancia — Tolerance #}
+                        <div class="col-6 col-md-2">
                             <label class="form-label text-sm fw-semibold mb-1">Tolerancia (min)</label>
                             <input type="number" name="tolerance_minutes" id="editTolerance"
                                    class="form-control form-control-sm" min="0" max="60">
                         </div>
+
+                        {# Jornada intensiva — Intensive shift flag #}
+                        <div class="col-12 col-md-2 d-flex align-items-end pb-1">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input schedule-intensive-check"
+                                       type="checkbox"
+                                       name="is_intensive"
+                                       id="editIsIntensive"
+                                       data-target="edit">
+                                <label class="form-check-label text-sm" for="editIsIntensive">
+                                    Jornada intensiva
+                                </label>
+                            </div>
+                        </div>
+
+                        {# Tramo mañana — Morning tract #}
+                        <div class="col-12">
+                            <div class="text-sm fw-semibold text-muted mb-2">
+                                <i class="bi bi-sunrise me-1"></i>Tramo de mañana
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label text-sm mb-1">
+                                        Entrada <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="time" name="start_time_morning" id="editStartMorning"
+                                           class="form-control form-control-sm" required>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label text-sm mb-1">
+                                        Salida <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="time" name="end_time_morning" id="editEndMorning"
+                                           class="form-control form-control-sm" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        {# Tramo tarde — Afternoon tract (hidden when intensive) #}
+                        <div class="col-12 edit-afternoon-tract">
+                            <div class="text-sm fw-semibold text-muted mb-2">
+                                <i class="bi bi-sunset me-1"></i>Tramo de tarde
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label text-sm mb-1">
+                                        Entrada <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="time" name="start_time_afternoon" id="editStartAfternoon"
+                                           class="form-control form-control-sm">
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label text-sm mb-1">
+                                        Salida <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="time" name="end_time_afternoon" id="editEndAfternoon"
+                                           class="form-control form-control-sm">
+                                </div>
+                            </div>
+                        </div>
+
+                        {# Por defecto — Default flag #}
                         <div class="col-12">
                             <div class="form-check mb-0">
                                 <input class="form-check-input" type="checkbox"
@@ -245,6 +419,7 @@
                                 </label>
                             </div>
                         </div>
+
                     </div>
                 </form>
             </div>
@@ -265,26 +440,91 @@
 <style>
     /* Workday management container max-width
        Anchura máxima del contenedor de gestión de jornada */
-    .workday-container { max-width: 860px; }
+    .workday-container { max-width: 960px; }
 </style>
 <script>
-/* Populate edit modal with schedule data from data attributes.
-   Rellena el modal de edición con datos del horario desde atributos data. */
+/*
+ * schedule_form.js (inline)
+ * Manages show/hide of the afternoon tract fields based on the
+ * is_intensive checkbox state. Applies to both the create form
+ * and the edit modal independently.
+ *
+ * Gestiona la visibilidad del tramo de tarde según el estado del
+ * checkbox is_intensive. Se aplica al formulario de creación y al
+ * modal de edición de forma independiente.
+ */
 (function () {
     "use strict";
+
+    /**
+     * Toggles the afternoon tract section visibility for a given context
+     * (create or edit) based on the is_intensive checkbox state.
+     * When intensive: hides afternoon tract and clears its inputs.
+     * When not intensive: shows afternoon tract.
+     * ---
+     * Alterna la visibilidad del tramo de tarde para un contexto dado
+     * (create o edit) según el estado del checkbox is_intensive.
+     * Intensiva: oculta el tramo de tarde y limpia sus inputs.
+     * No intensiva: muestra el tramo de tarde.
+     */
+    function toggleAfternoon(checkEl) {
+        var target    = checkEl.getAttribute("data-target");
+        var tractEl   = document.querySelector("." + target + "-afternoon-tract");
+        var isIntensive = checkEl.checked;
+
+        if (!tractEl) { return; }
+
+        if (isIntensive) {
+            tractEl.style.display = "none";
+            tractEl.querySelectorAll("input[type='time']").forEach(function (inp) {
+                inp.value    = "";
+                inp.required = false;
+            });
+        } else {
+            tractEl.style.display = "";
+            tractEl.querySelectorAll("input[type='time']").forEach(function (inp) {
+                inp.required = true;
+            });
+        }
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
+
+        /* Initialise all intensive checkboxes on page load.
+           Inicializar todos los checkboxes de intensiva al cargar la página. */
+        document.querySelectorAll(".schedule-intensive-check").forEach(function (chk) {
+            toggleAfternoon(chk);
+            chk.addEventListener("change", function () {
+                toggleAfternoon(chk);
+            });
+        });
+
+        /* Populate edit modal from data attributes on the trigger button.
+           Rellenar modal de edición desde atributos data del botón disparador. */
         var modalEl = document.getElementById("modalEditSchedule");
         if (!modalEl) { return; }
+
         modalEl.addEventListener("show.bs.modal", function (event) {
             var btn = event.relatedTarget;
             if (!btn) { return; }
-            document.getElementById("editSchedulePk").value  = btn.getAttribute("data-pk")        || "";
-            document.getElementById("editLabel").value       = btn.getAttribute("data-label")      || "";
-            document.getElementById("editStartTime").value   = btn.getAttribute("data-start")      || "";
-            document.getElementById("editEndTime").value     = btn.getAttribute("data-end")        || "";
-            document.getElementById("editTolerance").value   = btn.getAttribute("data-tolerance")  || "15";
-            document.getElementById("editIsDefault").checked = btn.getAttribute("data-is-default") === "true";
+
+            document.getElementById("editSchedulePk").value     = btn.getAttribute("data-pk")             || "";
+            document.getElementById("editLabel").value          = btn.getAttribute("data-label")           || "";
+            document.getElementById("editSeason").value         = btn.getAttribute("data-season")          || "WINTER";
+            document.getElementById("editTolerance").value      = btn.getAttribute("data-tolerance")       || "15";
+            document.getElementById("editIsDefault").checked    = btn.getAttribute("data-is-default")      === "true";
+            document.getElementById("editStartMorning").value   = btn.getAttribute("data-start-morning")   || "";
+            document.getElementById("editEndMorning").value     = btn.getAttribute("data-end-morning")     || "";
+            document.getElementById("editStartAfternoon").value = btn.getAttribute("data-start-afternoon") || "";
+            document.getElementById("editEndAfternoon").value   = btn.getAttribute("data-end-afternoon")   || "";
+
+            /* Set is_intensive checkbox and trigger toggle.
+               Establecer checkbox is_intensive y disparar el toggle. */
+            var chk = document.getElementById("editIsIntensive");
+            chk.checked = btn.getAttribute("data-is-intensive") === "true";
+            toggleAfternoon(chk);
         });
+
     });
 }());
 </script>
