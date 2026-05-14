@@ -503,7 +503,7 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                 # e) Persist one WorkOrderEntryLine per work block.
                 # e) Persistir un WorkOrderEntryLine por bloque de trabajo.
                 for line_idx, bloque in enumerate(entradas, start=1):
-                    machine_raw  = (bloque.get("maquina_raw") or "").strip()
+                    machine_raw  = (bloque.get("machine_raw") or "").strip()
                     machine_norm = _normalise_machine_code(machine_raw)
                     machine_asset = _resolve_machine_asset(machine_norm)
 
@@ -547,9 +547,9 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
                             "machine_raw":       machine_raw,
                             "machine_norm":      machine_norm,
                             "fault_description": (
-                                bloque.get("descripcion_averia") or ""
+                                bloque.get("fault_description") or ""
                             ),
-                            "repair_notes":      (bloque.get("reparacion") or ""),
+                            "repair_notes":      (bloque.get("repair_notes") or ""),
                             "hc":                hc,
                             "hf":                hf,
                             "or_val":            (bloque.get("or_val") or ""),

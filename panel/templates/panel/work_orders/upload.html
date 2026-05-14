@@ -2,23 +2,19 @@
 {#                                                                                           #}
 {# PDF upload form for work order processing.                                               #}
 {# Hito 8 — Paso 5 (2026-04-28): duplicate detection modal (Bloque E).                     #}
-{# If the server detects a duplicate WorkOrder (same worker + overlapping period),          #}
-{# the duplicate_wo context variable is set and the warning modal opens automatically.      #}
-{# The user can cancel or confirm overwrite. On confirmation the form re-submits            #}
-{# with confirm_overwrite=1 hidden field so the server deletes the duplicate first.         #}
+{# S028: rewrite — modal progress bar on submit + clean XHR engine.                        #}
+{# S028b: batch upload — folder selection via webkitdirectory, sequential XHR per PDF.     #}
+{# S028c: batch result log — per-file status (enqueued/duplicate/error) in modal.          #}
 {#                                                                                           #}
 {# Formulario de carga de PDF para procesamiento de partes de trabajo.                      #}
 {# Hito 8 — Paso 5 (2026-04-28): modal de detección de duplicado (Bloque E).               #}
-{# Si el servidor detecta un WorkOrder duplicado (mismo operario + periodo solapado),       #}
-{# la variable de contexto duplicate_wo se establece y el modal de advertencia se abre      #}
-{# automáticamente. El usuario puede cancelar o confirmar la sobrescritura. Al confirmar    #}
-{# el formulario se reenvía con el campo oculto confirm_overwrite=1 para que el servidor    #}
-{# elimine primero el duplicado.                                                             #}
+{# S028: reescritura — modal de progreso al enviar + motor XHR limpio.                     #}
+{# S028b: carga por lotes — selección de carpeta via webkitdirectory, XHR secuencial.      #}
+{# S028c: log de resultados — estado por fichero (encolado/duplicado/error) en modal.      #}
 {# ======================================================================================== #}
 {% extends "panel/base.html" %}
 
 {% block page_title %}Subir Partes de Trabajo{% endblock %}
-
 
 {% block content %}
 <div class="row justify-content-center">
@@ -34,56 +30,151 @@
         <div class="card shadow-sm">
             <div class="card-body p-4">
                 <p class="text-muted mb-4">
-                    Selecciona el archivo PDF con las fotografías de los partes de trabajo.
+                    Selecciona un archivo PDF individual o una carpeta completa con varios PDFs.
                     El sistema extraerá automáticamente los datos de cada página mediante
-                    visión artificial y generará un informe Excel descargable.
+                    visión artificial y generará un informe Excel descargable por cada parte.
                 </p>
 
-                <form method="post" enctype="multipart/form-data">
-                    {% csrf_token %}
+                {# ============================================================ #}
+                {# Mode selector — individual vs batch                          #}
+                {# Selector de modo — individual vs lote                        #}
+                {# ============================================================ #}
+                <div class="btn-group w-100 mb-4" role="group" id="upload-mode-group">
+                    <input type="radio" class="btn-check" name="upload-mode"
+                           id="mode-single" value="single" autocomplete="off" checked>
+                    <label class="btn btn-outline-primary" for="mode-single">
+                        <i class="bi bi-file-earmark-pdf me-1"></i>Un archivo
+                    </label>
+                    <input type="radio" class="btn-check" name="upload-mode"
+                           id="mode-batch" value="batch" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="mode-batch">
+                        <i class="bi bi-folder2-open me-1"></i>Carpeta completa
+                    </label>
+                </div>
+
+                {# ============================================================ #}
+                {# Single file form                                              #}
+                {# Formulario de archivo individual                             #}
+                {# ============================================================ #}
+                <div id="panel-single">
+                    <form method="post" enctype="multipart/form-data" id="upload-form-single">
+                        {% csrf_token %}
+
+                        <div class="mb-4">
+                            <label for="source_pdf" class="form-label fw-semibold">
+                                Archivo PDF <span class="text-danger">*</span>
+                            </label>
+                            <input type="file"
+                                   class="form-control"
+                                   id="source_pdf"
+                                   name="source_pdf"
+                                   accept=".pdf"
+                                   required>
+                            <div class="form-text">
+                                Solo se admiten archivos en formato PDF.
+                                Cada página del PDF debe contener la fotografía de un parte de trabajo.
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info d-flex gap-2 align-items-start mb-4" role="alert">
+                            <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+                            <div>
+                                El procesamiento comienza de forma inmediata tras la carga.
+                                Puedes seguir el progreso en la lista de partes de trabajo.
+                                Cuando el estado sea <strong>Completado</strong>, el Excel
+                                estará disponible para descarga.
+                            </div>
+                        </div>
+
+                        <input type="hidden" id="confirm_overwrite" name="confirm_overwrite" value="">
+
+                        <div class="d-flex gap-2 justify-content-end">
+                            <a href="{% url 'panel:work_order_list' %}"
+                               class="btn btn-outline-secondary" id="btn-cancel-single">
+                                Cancelar
+                            </a>
+                            <button type="submit" class="btn btn-primary" id="btn-submit-single">
+                                <i class="bi bi-upload me-1"></i>Cargar y procesar
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                {# ============================================================ #}
+                {# Batch folder form                                             #}
+                {# Formulario de carga por carpeta                              #}
+                {# ============================================================ #}
+                <div id="panel-batch" class="d-none">
+
+                    {# -------------------------------------------------------- #}
+                    {# Batch folder input — hidden native input triggered by    #}
+                    {# a custom button. accept omitted intentionally: Chrome    #}
+                    {# hides files when webkitdirectory+accept are combined.    #}
+                    {# JS filters .pdf files after selection.                  #}
+                    {# Input de carpeta — input nativo oculto disparado por    #}
+                    {# botón custom. accept omitido intencionadamente: Chrome  #}
+                    {# oculta ficheros al combinar webkitdirectory+accept.     #}
+                    {# JS filtra los .pdf tras la selección.                  #}
+                    {# -------------------------------------------------------- #}
+                    <input type="file"
+                           id="batch_folder"
+                           class="d-none"
+                           webkitdirectory
+                           multiple>
 
                     <div class="mb-4">
-                        <label for="source_pdf" class="form-label fw-semibold">
-                            Archivo PDF <span class="text-danger">*</span>
-                        </label>
-                        <input type="file"
-                               class="form-control"
-                               id="source_pdf"
-                               name="source_pdf"
-                               accept=".pdf"
-                               required>
-                        <div class="form-text">
-                            Solo se admiten archivos en formato PDF.
-                            Cada página del PDF debe contener la fotografía de un parte de trabajo.
+                        <label class="form-label fw-semibold">Carpeta de PDFs</label>
+                        <div class="input-group">
+                            <button type="button"
+                                    class="btn btn-outline-secondary"
+                                    id="btn-pick-folder"
+                                    onclick="document.getElementById('batch_folder').click()">
+                                <i class="bi bi-folder2-open me-1"></i>Seleccionar carpeta
+                            </button>
+                            <span class="form-control text-muted text-sm d-flex align-items-center"
+                                  id="batch-folder-label">Ninguna carpeta seleccionada</span>
                         </div>
+                        <div class="form-text">
+                            Navega hasta la carpeta deseada y pulsa <strong>Subir</strong> o <strong>Seleccionar carpeta</strong> — no es necesario seleccionar archivos individuales.
+                            Solo se procesarán los archivos <strong>.pdf</strong> — el resto se ignorará.
+                        </div>
+                    </div>
+
+                    {# PDF list preview — populated by JS after folder selection #}
+                    {# Lista de PDFs — rellenada por JS tras seleccionar carpeta  #}
+                    <div id="batch-preview" class="d-none mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="fw-semibold text-sm">
+                                PDFs detectados: <span id="batch-count" class="text-primary">0</span>
+                            </span>
+                            <span class="text-muted text-sm" id="batch-ignored"></span>
+                        </div>
+                        {# djlint:off H021 #}
+                        <ul class="list-group list-group-flush border rounded" id="batch-file-list"
+                            style="max-height:180px;overflow-y:auto">
+                        </ul>
+                        {# djlint:on H021 #}
                     </div>
 
                     <div class="alert alert-info d-flex gap-2 align-items-start mb-4" role="alert">
                         <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
                         <div>
-                            El procesamiento comienza de forma inmediata tras la carga.
-                            Puedes seguir el progreso en la lista de partes de trabajo.
-                            Cuando el estado sea <strong>Completado</strong>, el Excel
-                            estará disponible para descarga.
+                            Cada PDF se enviará y encolará de forma independiente, en secuencia.
+                            Puedes seguir el progreso individual de cada parte en la lista de PDFs.
                         </div>
                     </div>
 
-                    {# Hidden field: confirm_overwrite — set to 1 by the duplicate modal  #}
-                    {# on user confirmation to authorise deletion of the existing duplicate #}
-                    {# Campo oculto: confirm_overwrite — establecido a 1 por el modal de  #}
-                    {# duplicado al confirmar para autorizar la eliminación del duplicado  #}
-                    <input type="hidden" id="confirm_overwrite" name="confirm_overwrite" value="">
-
                     <div class="d-flex gap-2 justify-content-end">
                         <a href="{% url 'panel:work_order_list' %}"
-                           class="btn btn-outline-secondary">
+                           class="btn btn-outline-secondary" id="btn-cancel-batch">
                             Cancelar
                         </a>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-upload me-1"></i>Cargar y procesar
+                        <button type="button" class="btn btn-primary" id="btn-submit-batch" disabled>
+                            <i class="bi bi-folder-symlink me-1"></i>Procesar carpeta
                         </button>
                     </div>
-                </form>
+                </div>
+
             </div>
         </div>
 
@@ -91,16 +182,526 @@
 </div>
 
 {# ================================================================ #}
+{# Upload progress modal — shared by single and batch modes         #}
+{# Modal de progreso — compartido por los modos individual y lote   #}
+{# ================================================================ #}
+<div class="modal fade" id="uploadProgressModal" tabindex="-1"
+     aria-labelledby="uploadProgressModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h6 class="modal-title fw-semibold" id="uploadProgressModalLabel">
+                    <i class="bi bi-cloud-upload me-2 text-primary"></i>
+                    <span id="upm-title">Subiendo archivo…</span>
+                </h6>
+                <button type="button" class="btn-close" id="upm-close-btn"
+                        aria-label="Cerrar" disabled></button>
+            </div>
+            <div class="modal-body pt-2">
+
+                {# Global batch progress — hidden in single mode          #}
+                {# Progreso global del lote — oculto en modo individual   #}
+                <div id="upm-batch-global" class="d-none mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <small class="text-muted">Progreso del lote</small>
+                        <small class="fw-semibold text-secondary" id="upm-batch-counter">0 / 0</small>
+                    </div>
+                    <div class="progress" role="progressbar"
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div id="upm-batch-bar"
+                             class="progress-bar bg-secondary">
+                        </div>
+                    </div>
+                </div>
+
+                {# Current file label / Nombre del fichero actual #}
+                <p class="text-muted text-sm mb-2" id="upm-filename">—</p>
+
+                {# Phase 1 — upload progress bar                     #}
+                {# Fase 1 — barra de progreso de subida              #}
+                <div id="upm-upload-phase">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <small class="text-muted">Enviando al servidor…</small>
+                        <small class="fw-semibold text-primary" id="upm-pct">0%</small>
+                    </div>
+                    <div class="progress mb-1" role="progressbar"
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div id="upm-bar"
+                             class="progress-bar progress-bar-striped progress-bar-animated bg-primary">
+                        </div>
+                    </div>
+                    <small class="text-muted" id="upm-bytes">Preparando…</small>
+                </div>
+
+                {# Phase 2 — server processing spinner (single mode)  #}
+                {# Fase 2 — spinner de procesamiento en servidor       #}
+                <div id="upm-processing-phase" class="d-none">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="spinner-border spinner-border-sm text-warning" role="status">
+                            <span class="visually-hidden">Procesando…</span>
+                        </div>
+                        <div>
+                            <span class="text-muted text-sm">
+                                Archivo recibido. El servidor está procesando la solicitud…
+                            </span><br>
+                            <small class="text-muted">
+                                Cierra este diálogo para ver el progreso en la lista de PDFs.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                {# Phase 3 — batch result log                         #}
+                {# Fase 3 — log de resultados del lote                #}
+                {# djlint:off H021 #}
+                <ul id="upm-batch-log" class="d-none list-group list-group-flush border rounded mt-2 mb-2"
+                    style="max-height:160px;overflow-y:auto">
+                </ul>
+                {# djlint:on H021 #}
+
+                {# Phase 4 — batch complete summary + footer note     #}
+                {# Fase 4 — resumen de lote completado + nota pie     #}
+                <div id="upm-batch-done" class="d-none">
+                    <div class="alert alert-success d-flex gap-2 align-items-center mb-2" role="alert">
+                        <i class="bi bi-check-circle-fill flex-shrink-0"></i>
+                        <div>
+                            <span class="text-sm fw-semibold">Lote completado.</span><br>
+                            <small id="upm-batch-summary"></small>
+                        </div>
+                    </div>
+                    <p class="text-muted text-sm mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Para sobrescribir un duplicado, cárgalo de forma individual.
+                    </p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ================================================================ #}
+{# Upload engine — single + batch XHR                               #}
+{# Motor de carga — XHR individual + lote                           #}
+{# ================================================================ #}
+<script>
+(function () {
+    "use strict";
+
+    /*
+     * Upload engine supporting two modes:
+     *
+     * SINGLE MODE
+     *   Standard single-file XHR. Modal opens immediately. Progress bar
+     *   tracks upload bytes. On server response the close button is enabled.
+     *
+     * BATCH MODE
+     *   User selects a folder. JS filters .pdf files and uploads them
+     *   sequentially. A global bar tracks files completed (N / total).
+     *   Per-file bar resets on each iteration.
+     *   Duplicate detection: if xhr.responseText contains 'duplicateModal'
+     *   the server signalled a duplicate — the file is skipped silently and
+     *   logged as "Omitido (duplicado)" in the result log.
+     *   Network errors are logged as "Error de red".
+     *   On completion: summary + per-file log visible, close button enabled.
+     *   Footer note: "Para sobrescribir un duplicado, cárgalo individualmente."
+     *
+     * ---
+     *
+     * Motor de carga con dos modos:
+     *
+     * MODO INDIVIDUAL
+     *   XHR estándar de un único fichero. Modal abre de inmediato. Barra
+     *   rastrea bytes subidos. Al responder el servidor, cierre habilitado.
+     *
+     * MODO LOTE
+     *   El usuario selecciona una carpeta. JS filtra .pdf y los sube
+     *   secuencialmente. Barra global rastrea ficheros completados (N/total).
+     *   La barra por fichero se reinicia en cada iteración.
+     *   Detección de duplicado: si xhr.responseText contiene 'duplicateModal'
+     *   el servidor señaló duplicado — el fichero se salta silenciosamente y
+     *   se registra como "Omitido (duplicado)" en el log de resultados.
+     *   Los errores de red se registran como "Error de red".
+     *   Al terminar: resumen + log por fichero visibles, cierre habilitado.
+     *   Nota a pie: "Para sobrescribir un duplicado, cárgalo individualmente."
+     */
+
+    document.addEventListener("DOMContentLoaded", function () {
+
+        // ------------------------------------------------------------------
+        // Shared modal elements / Elementos compartidos del modal
+        // ------------------------------------------------------------------
+        var modalEl      = document.getElementById("uploadProgressModal");
+        var upmTitle     = document.getElementById("upm-title");
+        var upmFile      = document.getElementById("upm-filename");
+        var upmPhase1    = document.getElementById("upm-upload-phase");
+        var upmPhase2    = document.getElementById("upm-processing-phase");
+        var upmPhaseDone = document.getElementById("upm-batch-done");
+        var upmBar       = document.getElementById("upm-bar");
+        var upmPct       = document.getElementById("upm-pct");
+        var upmBytes     = document.getElementById("upm-bytes");
+        var upmCloseBtn  = document.getElementById("upm-close-btn");
+        var upmBatchGlob = document.getElementById("upm-batch-global");
+        var upmBatchBar  = document.getElementById("upm-batch-bar");
+        var upmBatchCtr  = document.getElementById("upm-batch-counter");
+        var upmBatchSum  = document.getElementById("upm-batch-summary");
+        var upmBatchLog  = document.getElementById("upm-batch-log");
+
+        if (!modalEl) { return; }
+        var bsModal = new bootstrap.Modal(modalEl);
+
+        // Wire close button manually — avoids Bootstrap dual-instance conflict
+        // with data-bs-dismiss. Conectar cierre manualmente.
+        if (upmCloseBtn) {
+            upmCloseBtn.addEventListener("click", function () { bsModal.hide(); });
+        }
+
+        // ------------------------------------------------------------------
+        // Mode switcher / Selector de modo
+        // ------------------------------------------------------------------
+        var modeSingle  = document.getElementById("mode-single");
+        var modeBatch   = document.getElementById("mode-batch");
+        var panelSingle = document.getElementById("panel-single");
+        var panelBatch  = document.getElementById("panel-batch");
+
+        function _switchMode() {
+            if (modeBatch && modeBatch.checked) {
+                panelSingle.classList.add("d-none");
+                panelBatch.classList.remove("d-none");
+            } else {
+                panelSingle.classList.remove("d-none");
+                panelBatch.classList.add("d-none");
+            }
+        }
+
+        if (modeSingle) { modeSingle.addEventListener("change", _switchMode); }
+        if (modeBatch)  { modeBatch.addEventListener("change",  _switchMode); }
+
+        // ------------------------------------------------------------------
+        // Helper — reset per-file modal state
+        // Auxiliar — reiniciar estado del modal por fichero
+        // ------------------------------------------------------------------
+        function _resetFilePhase(fileName) {
+            upmFile.textContent   = fileName;
+            upmBar.style.width    = "0%";
+            upmBar.setAttribute("aria-valuenow", 0);
+            upmBar.className      = "progress-bar progress-bar-striped progress-bar-animated bg-primary";
+            upmPct.textContent    = "0%";
+            upmBytes.textContent  = "Preparando…";
+            upmPhase1.classList.remove("d-none");
+            upmPhase2.classList.add("d-none");
+            upmPhaseDone.classList.add("d-none");
+        }
+
+        // ------------------------------------------------------------------
+        // Helper — human-readable bytes / Auxiliar — bytes legibles
+        // ------------------------------------------------------------------
+        function _fmt(b) {
+            if (b < 1024)    { return b + " B"; }
+            if (b < 1048576) { return (b / 1024).toFixed(1) + " KB"; }
+            return (b / 1048576).toFixed(1) + " MB";
+        }
+
+        // ------------------------------------------------------------------
+        // Helper — append entry to batch result log
+        // status: 'ok' | 'duplicate' | 'error'
+        // Auxiliar — añadir entrada al log de resultados del lote
+        // ------------------------------------------------------------------
+        function _logEntry(fileName, status) {
+            if (!upmBatchLog) { return; }
+            upmBatchLog.classList.remove("d-none");
+            var li = document.createElement("li");
+            li.className = "list-group-item py-1 px-3 text-sm d-flex align-items-center gap-2";
+            var icon, label, textClass;
+            if (status === "ok") {
+                icon      = "<i class=\"bi bi-check-circle-fill text-success\"></i>";
+                label     = "Encolado";
+                textClass = "text-success";
+            } else if (status === "duplicate") {
+                icon      = "<i class=\"bi bi-skip-forward-circle-fill text-warning\"></i>";
+                label     = "Omitido (duplicado)";
+                textClass = "text-warning";
+            } else {
+                icon      = "<i class=\"bi bi-x-circle-fill text-danger\"></i>";
+                label     = "Error de red";
+                textClass = "text-danger";
+            }
+            li.innerHTML = icon +
+                "<span class=\"text-truncate flex-grow-1\">" + fileName + "</span>" +
+                "<small class=\"" + textClass + " flex-shrink-0 fw-semibold\">" + label + "</small>";
+            upmBatchLog.appendChild(li);
+            // Auto-scroll to latest entry / Scroll automático a la última entrada
+            upmBatchLog.scrollTop = upmBatchLog.scrollHeight;
+        }
+
+        // ------------------------------------------------------------------
+        // Helper — upload a single File object via XHR
+        // Resolves with { ok, duplicate, file } when server responds.
+        // Auxiliar — subir un único objeto File mediante XHR.
+        // Resuelve con { ok, duplicate, file } cuando el servidor responde.
+        // ------------------------------------------------------------------
+        function _uploadFile(file, csrfToken) {
+            return new Promise(function (resolve) {
+                var formData = new FormData();
+                formData.append("csrfmiddlewaretoken", csrfToken);
+                formData.append("source_pdf", file, file.name);
+
+                var xhr = new XMLHttpRequest();
+
+                xhr.upload.onprogress = function (e) {
+                    if (!e.lengthComputable) { return; }
+                    var pct = Math.round((e.loaded / e.total) * 100);
+                    upmBar.style.width = pct + "%";
+                    upmBar.setAttribute("aria-valuenow", pct);
+                    upmPct.textContent   = pct + "%";
+                    upmBytes.textContent = _fmt(e.loaded) + " de " + _fmt(e.total);
+                };
+
+                xhr.upload.onload = function () {
+                    upmBar.style.width = "100%";
+                    upmBar.setAttribute("aria-valuenow", 100);
+                    upmPct.textContent = "100%";
+                    upmBar.classList.remove("progress-bar-animated");
+                    upmBar.classList.add("bg-success");
+                    upmPhase1.classList.add("d-none");
+                    upmPhase2.classList.remove("d-none");
+                };
+
+                xhr.onload = function () {
+                    // Detect duplicate: server renders the duplicate warning modal
+                    // in the response HTML when a duplicate is found.
+                    // Detectar duplicado: el servidor incluye el modal de duplicado
+                    // en el HTML de respuesta cuando detecta un duplicado.
+                    var isDuplicate = xhr.responseText.indexOf("duplicateModal") !== -1;
+                    resolve({ ok: !isDuplicate, duplicate: isDuplicate, file: file.name });
+                };
+
+                xhr.onerror = function () {
+                    resolve({ ok: false, duplicate: false, file: file.name });
+                };
+
+                xhr.open("POST", window.location.href, true);
+                xhr.setRequestHeader("X-CSRFToken", csrfToken);
+                xhr.send(formData);
+            });
+        }
+
+        // ==================================================================
+        // SINGLE MODE engine / Motor modo individual
+        // ==================================================================
+        var formSingle = document.getElementById("upload-form-single");
+        var btnSingle  = document.getElementById("btn-submit-single");
+        var btnCancelS = document.getElementById("btn-cancel-single");
+
+        if (formSingle) {
+            formSingle.addEventListener("submit", function (evt) {
+                evt.preventDefault();
+
+                var fileInput = document.getElementById("source_pdf");
+                if (!fileInput || !fileInput.files || fileInput.files.length === 0) { return; }
+
+                var file      = fileInput.files[0];
+                var csrfEl    = formSingle.querySelector("[name=csrfmiddlewaretoken]");
+                var csrfToken = csrfEl ? csrfEl.value : "";
+
+                // Modal setup — single mode
+                // Configuración del modal — modo individual
+                upmTitle.textContent = "Subiendo archivo…";
+                upmBatchGlob.classList.add("d-none");
+                upmCloseBtn.disabled = true;
+                _resetFilePhase(file.name);
+                bsModal.show();
+
+                btnSingle.disabled = true;
+                if (btnCancelS) { btnCancelS.classList.add("d-none"); }
+
+                _uploadFile(file, csrfToken).then(function () {
+                    upmCloseBtn.disabled = false;
+                });
+            });
+        }
+
+        // ==================================================================
+        // BATCH MODE engine / Motor modo lote
+        // ==================================================================
+        var folderInput  = document.getElementById("batch_folder");
+        var btnBatch     = document.getElementById("btn-submit-batch");
+        var btnCancelB   = document.getElementById("btn-cancel-batch");
+        var batchPreview = document.getElementById("batch-preview");
+        var batchList    = document.getElementById("batch-file-list");
+        var batchCount   = document.getElementById("batch-count");
+        var batchIgnored = document.getElementById("batch-ignored");
+        var folderLabel  = document.getElementById("batch-folder-label");
+
+        var _pdfFiles = [];  // Filtered PDF file list / Lista de PDFs filtrada
+
+        // Folder selected — filter PDFs and show preview
+        // Carpeta seleccionada — filtrar PDFs y mostrar vista previa
+        if (folderInput) {
+            folderInput.addEventListener("change", function () {
+                var all = Array.from(folderInput.files);
+                // Update custom label with folder name from first file path.
+                // Actualizar label custom con nombre de carpeta del primer fichero.
+                if (folderLabel && all.length > 0) {
+                    var parts = (all[0].webkitRelativePath || all[0].name).split("/");
+                    folderLabel.textContent = parts.length > 1 ? parts[0] : "Carpeta seleccionada";
+                    folderLabel.classList.remove("text-muted");
+                }
+                _pdfFiles = all.filter(function (f) {
+                    return f.name.toLowerCase().endsWith(".pdf");
+                });
+                var ignored = all.length - _pdfFiles.length;
+
+                // Populate preview list / Rellenar lista de vista previa
+                batchList.innerHTML = "";
+                _pdfFiles.forEach(function (f) {
+                    var li = document.createElement("li");
+                    li.className = "list-group-item py-1 px-3 text-sm d-flex align-items-center gap-2";
+                    li.innerHTML = "<i class=\"bi bi-file-earmark-pdf text-danger\"></i>" +
+                                   "<span class=\"text-truncate\">" + f.name + "</span>" +
+                                   "<small class=\"text-muted ms-auto flex-shrink-0\">" + _fmt(f.size) + "</small>";
+                    batchList.appendChild(li);
+                });
+
+                batchCount.textContent = _pdfFiles.length;
+                batchIgnored.textContent = ignored > 0
+                    ? ignored + " archivo" + (ignored > 1 ? "s" : "") +
+                      " no PDF ignorado" + (ignored > 1 ? "s" : "")
+                    : "";
+
+                if (_pdfFiles.length > 0) {
+                    batchPreview.classList.remove("d-none");
+                    btnBatch.disabled = false;
+                } else {
+                    batchPreview.classList.add("d-none");
+                    btnBatch.disabled = true;
+                }
+            });
+        }
+
+        // Batch submit — sequential XHR per PDF
+        // Envío de lote — XHR secuencial por PDF
+        if (btnBatch) {
+            btnBatch.addEventListener("click", function () {
+                if (_pdfFiles.length === 0) { return; }
+
+                var csrfEl    = document.querySelector("[name=csrfmiddlewaretoken]");
+                var csrfToken = csrfEl ? csrfEl.value : "";
+                var total      = _pdfFiles.length;
+                var done       = 0;
+                var enqueued   = 0;
+                var duplicates = 0;
+                var errors     = 0;
+
+                // Modal setup — batch mode
+                // Configuración del modal — modo lote
+                upmTitle.textContent = "Subiendo lote…";
+                upmBatchGlob.classList.remove("d-none");
+                upmBatchBar.style.width = "0%";
+                upmBatchBar.setAttribute("aria-valuenow", 0);
+                upmBatchCtr.textContent = "0 / " + total;
+                upmCloseBtn.disabled = true;
+                if (upmBatchLog) {
+                    upmBatchLog.innerHTML = "";
+                    upmBatchLog.classList.add("d-none");
+                }
+                _resetFilePhase(_pdfFiles[0].name);
+                bsModal.show();
+
+                btnBatch.disabled = true;
+                if (btnCancelB) { btnCancelB.classList.add("d-none"); }
+
+                // Sequential upload via recursive Promise chain
+                // Subida secuencial mediante cadena recursiva de Promises
+                function _uploadNext(idx) {
+                    if (idx >= total) {
+                        // All files processed — show summary and log
+                        // Todos los ficheros procesados — mostrar resumen y log
+                        upmTitle.textContent = "Lote completado";
+                        upmFile.textContent  = "";
+                        upmPhase1.classList.add("d-none");
+                        upmPhase2.classList.add("d-none");
+                        upmPhaseDone.classList.remove("d-none");
+
+                        var summaryParts = [];
+                        if (enqueued > 0) {
+                            summaryParts.push(
+                                enqueued + " encolado" + (enqueued > 1 ? "s" : "")
+                            );
+                        }
+                        if (duplicates > 0) {
+                            summaryParts.push(
+                                duplicates + " omitido" + (duplicates > 1 ? "s" : "") + " por duplicado"
+                            );
+                        }
+                        if (errors > 0) {
+                            summaryParts.push(
+                                errors + " con error de red"
+                            );
+                        }
+                        upmBatchSum.textContent = summaryParts.join(" · ") + ".";
+                        upmCloseBtn.disabled = false;
+                        return;
+                    }
+
+                    var file = _pdfFiles[idx];
+
+                    // Update global progress bar / Actualizar barra global
+                    var globalPct = Math.round((idx / total) * 100);
+                    upmBatchBar.style.width = globalPct + "%";
+                    upmBatchBar.setAttribute("aria-valuenow", globalPct);
+                    upmBatchCtr.textContent = (idx + 1) + " / " + total;
+
+                    // Reset per-file phase / Reiniciar fase por fichero
+                    upmTitle.textContent = "Subiendo " + (idx + 1) + " de " + total + "…";
+                    _resetFilePhase(file.name);
+
+                    _uploadFile(file, csrfToken).then(function (result) {
+                        done += 1;
+
+                        if (result.duplicate) {
+                            duplicates += 1;
+                            _logEntry(result.file, "duplicate");
+                        } else if (!result.ok) {
+                            errors += 1;
+                            _logEntry(result.file, "error");
+                        } else {
+                            enqueued += 1;
+                            _logEntry(result.file, "ok");
+                        }
+
+                        // Update global bar / Actualizar barra global
+                        var pct = Math.round((done / total) * 100);
+                        upmBatchBar.style.width = pct + "%";
+                        upmBatchBar.setAttribute("aria-valuenow", pct);
+                        upmBatchCtr.textContent = done + " / " + total;
+
+                        _uploadNext(idx + 1);
+                    });
+                }
+
+                _uploadNext(0);
+            });
+        }
+
+    }); // DOMContentLoaded
+
+}());
+</script>
+
+{# ================================================================ #}
 {# Duplicate WorkOrder warning modal — Bloque I, Paso 9, Hito 8    #}
 {# Shown automatically when duplicate_wo is set in the context.    #}
 {# duplicate_reason controls the message shown:                    #}
-{#   'exact'   — same SHA-256 hash: identical file re-uploaded.    #}
-{#   'content' — different file, same worker + overlapping period.  #}
+{#   'exact'            — same SHA-256 hash: identical file.       #}
+{#   'content'          — different file, same worker + period.    #}
+{#   'duplicate_entries'— concrete overlap dates detected in DB.   #}
 {# Modal de aviso de WorkOrder duplicado — Bloque I, Paso 9, H8   #}
 {# Se muestra automáticamente cuando duplicate_wo está en contexto. #}
 {# duplicate_reason controla el mensaje mostrado:                  #}
-{#   'exact'   — mismo hash SHA-256: fichero idéntico re-subido.   #}
-{#   'content' — fichero distinto, mismo operario + periodo.       #}
+{#   'exact'            — mismo hash SHA-256: fichero idéntico.    #}
+{#   'content'          — fichero distinto, mismo operario+periodo. #}
+{#   'duplicate_entries'— fechas concretas solapadas en BD.        #}
 {# ================================================================ #}
 {% if duplicate_wo %}
 <div class="modal fade" id="duplicateModal" tabindex="-1"
@@ -118,11 +719,7 @@
 
                 {# -------------------------------------------------------- #}
                 {# Differentiated message block — Bloque I, Hito 8          #}
-                {# 'exact'   -> identical file (SHA-256 match).             #}
-                {# 'content' -> different file, same worker + period.       #}
                 {# Bloque de mensaje diferenciado — Bloque I, Hito 8        #}
-                {# 'exact'   -> fichero idéntico (match SHA-256).           #}
-                {# 'content' -> fichero distinto, mismo operario + periodo. #}
                 {# -------------------------------------------------------- #}
                 {% if duplicate_reason == 'exact' %}
                 <p>
@@ -144,8 +741,6 @@
                     El fichero es distinto pero cubre los mismos datos.
                 </p>
                 {% elif duplicate_reason == 'duplicate_entries' %}
-                {# Nivel 3 — fechas concretas de solapamiento detectadas en BD. #}
-                {# Level 3 — concrete overlap dates detected in the database.   #}
                 <p>
                     Ya existen entradas del operario
                     <strong>{{ duplicate_wo.pdf_display_name }}</strong>
@@ -178,29 +773,25 @@
     </div>
 </div>
 
-{# Auto-open the modal and wire the confirm button on page load. #}
-{# Abrir el modal automáticamente y conectar el botón de confirmación al cargar. #}
+{# Wire the confirm button — set hidden field and re-submit.        #}
+{# Conectar el botón de confirmación — campo oculto y reenvío.     #}
 <script>
 (function () {
     "use strict";
 
     /*
-     * Wait for Bootstrap JS to be fully loaded before initialising the modal.
-     * Bootstrap is loaded at the bottom of base.html — by the time this inline
-     * script runs the bundle may not yet be parsed. We poll every 50 ms until
-     * the global bootstrap object is available (max 3 s) and then show the modal.
-     *
-     * Esperar a que Bootstrap JS esté completamente cargado antes de inicializar
-     * el modal. Bootstrap se carga al final de base.html — en el momento en que
-     * este script inline se ejecuta el bundle puede no estar aún parseado.
-     * Hacemos polling cada 50 ms hasta que el objeto global bootstrap esté
-     * disponible (máximo 3 s) y entonces mostramos el modal.
+     * Polls for Bootstrap availability (loaded at bottom of base.html)
+     * then shows the duplicate warning modal and wires the confirm button.
+     * ---
+     * Hace polling hasta que Bootstrap esté disponible (cargado al final de
+     * base.html), luego muestra el modal de aviso de duplicado y conecta
+     * el botón de confirmación.
      */
     var modalEl = document.getElementById("duplicateModal");
     if (!modalEl) { return; }
 
-    var _maxWait  = 3000;   // ms
-    var _interval = 50;     // ms
+    var _maxWait  = 3000;
+    var _interval = 50;
     var _elapsed  = 0;
 
     var _timer = setInterval(function () {
@@ -209,13 +800,9 @@
         if (typeof bootstrap !== "undefined" && bootstrap.Modal) {
             clearInterval(_timer);
 
-            // Bootstrap available — show the modal.
-            // Bootstrap disponible — mostrar el modal.
             var bsModal = new bootstrap.Modal(modalEl);
             bsModal.show();
 
-            // On confirm: set the hidden field and re-submit the form.
-            // Al confirmar: establecer el campo oculto y reenviar el formulario.
             document.getElementById("btn-confirm-overwrite").addEventListener(
                 "click",
                 function () {
@@ -227,8 +814,6 @@
 
         if (_elapsed >= _maxWait) {
             clearInterval(_timer);
-            // Fallback: show modal via data-bs attributes if Bootstrap never loaded.
-            // Fallback: mostrar modal via atributos data-bs si Bootstrap no cargó.
             console.error("# [upload] Bootstrap no disponible tras 3 s — modal no mostrado.");
         }
     }, _interval);

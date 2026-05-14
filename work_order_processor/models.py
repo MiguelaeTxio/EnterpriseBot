@@ -414,6 +414,34 @@ class WorkOrder(models.Model):
     )
 
     # ------------------------------------------------------------------
+    # Original PDF filename — S028
+    # Nombre original del fichero PDF — S028
+    #
+    # Persists the original PDF filename at upload time so that
+    # pdf_display_name remains accurate after the pipeline deletes the
+    # physical file and clears source_pdf (Paso 5 of process_work_order_pdf).
+    # Empty for DIGITAL and GENERATED work orders (no PDF involved).
+    #
+    # Persiste el nombre original del fichero PDF en el momento de la
+    # carga para que pdf_display_name siga siendo correcto después de
+    # que el pipeline elimine el fichero físico y vacíe source_pdf
+    # (Paso 5 de process_work_order_pdf). Vacío en partes DIGITAL y
+    # GENERATED (sin PDF implicado).
+    # ------------------------------------------------------------------
+    source_pdf_name = models.CharField(
+        _("Nombre original del PDF"),
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_(
+            "Nombre del fichero PDF original tal como fue subido por el usuario. "
+            "Se persiste en el momento de la carga y sobrevive al borrado del "
+            "fichero físico ejecutado por el pipeline Celery (Paso 5). "
+            "Vacío en partes de origen DIGITAL o GENERATED."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Duplicate detection — Hito 8 / Bloque I
     # Detección de duplicados — Hito 8 / Bloque I
     # ------------------------------------------------------------------
@@ -460,29 +488,45 @@ class WorkOrder(models.Model):
     @property
     def pdf_display_name(self) -> str:
         """
-        Returns the PDF filename with the Django random suffix stripped.
-        The suffix pattern is an underscore followed by exactly seven
-        alphanumeric characters immediately before the file extension
-        (e.g. ``OPERARIO 01-01-25 AL 31-01-25_bVofaFF.pdf`` ->
-        ``OPERARIO 01-01-25 AL 31-01-25``).
-        Falls back to the raw basename if the field has no value.
+        Returns the human-readable PDF filename for display purposes.
+
+        Priority:
+          1. source_pdf_name (persisted at upload time, survives PDF deletion).
+          2. source_pdf.name (legacy — file still on disk, pre-S028 records).
+          3. Fallback: "Parte #<pk>" (no filename information available).
+
+        The Django random suffix (_XXXXXXX before the extension) is stripped
+        from both sources so the display name matches the original filename.
 
         ---
 
-        Devuelve el nombre del fichero PDF sin el sufijo aleatorio de Django.
-        El patrón del sufijo es un guión bajo seguido de exactamente siete
-        caracteres alfanuméricos inmediatamente antes de la extensión
-        (p. ej. ``OPERARIO 01-01-25 AL 31-01-25_bVofaFF.pdf`` ->
-        ``OPERARIO 01-01-25 AL 31-01-25``).
-        Cae de vuelta al nombre base sin procesar si el campo no tiene valor.
+        Devuelve el nombre legible del fichero PDF para mostrar en la UI.
+
+        Prioridad:
+          1. source_pdf_name (persistido en la carga, sobrevive al borrado).
+          2. source_pdf.name (legado — fichero en disco, registros pre-S028).
+          3. Fallback: "Parte #<pk>" (sin información de nombre disponible).
+
+        El sufijo aleatorio de Django (_XXXXXXX antes de la extensión) se
+        elimina de ambas fuentes para coincidir con el fichero original.
         """
         import re
-        if not self.source_pdf:
-            return f"Parte #{self.pk}"
-        basename = self.source_pdf.name.split("/")[-1]
-        # Strip Django random suffix: _XXXXXXX before the extension.
-        # Eliminar sufijo aleatorio de Django: _XXXXXXX antes de la extensión.
-        return re.sub(r'_[A-Za-z0-9]{7}(\.[^.]+)$', r'', basename)
+        _SUFFIX_RE = re.compile(r'_[A-Za-z0-9]{7}(\.[^.]+)$')
+
+        if self.source_pdf_name:
+            # Strip Django suffix from the persisted name if present.
+            # Eliminar sufijo Django del nombre persistido si está presente.
+            basename = self.source_pdf_name.split("/")[-1]
+            cleaned  = _SUFFIX_RE.sub(r'', basename)
+            return cleaned if cleaned else self.source_pdf_name
+
+        if self.source_pdf:
+            # Legacy path: file still on disk (pre-S028 records).
+            # Ruta legado: fichero aún en disco (registros pre-S028).
+            basename = self.source_pdf.name.split("/")[-1]
+            return _SUFFIX_RE.sub(r'', basename)
+
+        return f"Parte #{self.pk}"
 
 
 class WorkOrderEntry(models.Model):

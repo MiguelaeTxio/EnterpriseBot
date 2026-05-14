@@ -43,17 +43,40 @@
 
     {# ------------------------------------------------------------------ #}
     {# Progress bar — only shown while extraction is active               #}
+    {# Phase A (total_pages == 0): indeterminate animated bar — Celery    #}
+    {#   has not yet opened the PDF and set total_pages.                  #}
+    {# Phase B (total_pages > 0): determinate bar with real percentage.   #}
     {# Barra de progreso — solo visible mientras la extracción está activa #}
+    {# Fase A (total_pages == 0): barra indeterminada — Celery aún no ha  #}
+    {#   abierto el PDF y establecido total_pages.                        #}
+    {# Fase B (total_pages > 0): barra determinada con porcentaje real.   #}
     {# ------------------------------------------------------------------ #}
     {% if wo.status == 'PENDING' or wo.status == 'PROCESSING' %}
-        <div class="progress mt-1" style="height: 6px;" role="progressbar"
-             aria-valuenow="{{ wo.progress }}"
-             aria-valuemin="0"
-             aria-valuemax="100">
-            <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning"
-                 style="width: {{ wo.progress }}%;"></div>
-        </div>
-        <small class="text-muted">{{ wo.progress }}%</small>
+        {% if wo.total_pages > 0 %}
+            {% with pct=wo.processed_pages|floatformat:0 %}
+            <div class="progress mt-1" role="progressbar"
+                 aria-valuenow="{{ wo.processed_pages }}"
+                 aria-valuemin="0"
+                 aria-valuemax="{{ wo.total_pages }}">
+                <div class="progress-bar bg-warning"
+                     style="width:{% widthratio wo.processed_pages wo.total_pages 100 %}%">
+                </div>
+            </div>
+            <small class="text-muted">
+                {{ wo.processed_pages }}&nbsp;/&nbsp;{{ wo.total_pages }}&nbsp;págs.
+            </small>
+            {% endwith %}
+        {% else %}
+            {# djlint:off H021 #}
+            <div class="progress mt-1" role="progressbar"
+                 aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning"
+                     style="width:100%">
+                </div>
+            </div>
+            {# djlint:on H021 #}
+            <small class="text-muted">Iniciando…</small>
+        {% endif %}
     {% endif %}
 
 </div>

@@ -2735,6 +2735,96 @@ class WorkOrderListView(SupervisorAccessMixin, View):
             "default_tab":  default_tab,
         })
 
+    def post(self, request):
+        """
+        Handles bulk actions submitted from the PDF pipeline list tabs.
+        Supported bulk_op values:
+          mark_reviewed   — sets reviewed=True on selected PDF_UPLOAD WorkOrders.
+          unmark_reviewed — sets reviewed=False on selected PDF_UPLOAD WorkOrders.
+          delete          — deletes selected PDF_UPLOAD WorkOrders (CASCADE).
+        All operations are scoped to the authenticated user's company.
+
+        ---
+
+        Gestiona acciones en lote enviadas desde las pestañas de la lista PDF.
+        Valores de bulk_op soportados:
+          mark_reviewed   — establece reviewed=True en los WorkOrders seleccionados.
+          unmark_reviewed — establece reviewed=False en los WorkOrders seleccionados.
+          delete          — elimina los WorkOrders seleccionados (CASCADE).
+        Todas las operaciones están acotadas a la empresa del usuario autenticado.
+        """
+        from django.utils.timezone import now as _now
+        from django.contrib import messages as django_messages
+
+        company_user = request.user.company_user
+        company      = company_user.company
+        active_tab   = request.POST.get("active_tab", "pending")
+        bulk_op      = request.POST.get("bulk_op", "")
+        raw_pks      = request.POST.getlist("pks")
+
+        # Parse and validate pks — integers only, scoped to company PDF_UPLOAD.
+        # Parsear y validar pks — solo enteros, acotados a empresa PDF_UPLOAD.
+        try:
+            pk_list = [int(p) for p in raw_pks if str(p).strip().isdigit()]
+        except (ValueError, AttributeError):
+            pk_list = []
+
+        if not pk_list:
+            django_messages.warning(request, "No se ha seleccionado ningún parte.")
+            return redirect(f"{request.path}?tab={active_tab}")
+
+        qs = (
+            WorkOrder.objects
+            .filter(
+                company=company,
+                source=WorkOrder.Source.PDF_UPLOAD,
+                pk__in=pk_list,
+            )
+        )
+
+        if bulk_op == "mark_reviewed":
+            # Mark as reviewed / Marcar como revisado
+            updated = qs.filter(status=WorkOrder.Status.DONE).update(
+                reviewed    = True,
+                reviewed_by = company_user,
+                reviewed_at = _now(),
+            )
+            django_messages.success(
+                request,
+                f"{updated} parte{'s' if updated != 1 else ''} "
+                f"marcado{'s' if updated != 1 else ''} como revisado{'s' if updated != 1 else ''}."
+            )
+
+        elif bulk_op == "unmark_reviewed":
+            # Unmark review / Desmarcar revisión
+            updated = qs.filter(status=WorkOrder.Status.DONE, reviewed=True).update(
+                reviewed    = False,
+                reviewed_by = None,
+                reviewed_at = None,
+            )
+            django_messages.success(
+                request,
+                f"Revisión desmarcada en {updated} parte{'s' if updated != 1 else ''}."
+            )
+
+        elif bulk_op == "delete":
+            # Delete selected work orders / Eliminar partes seleccionados
+            count = qs.count()
+            qs.delete()
+            django_messages.success(
+                request,
+                f"{count} parte{'s' if count != 1 else ''} "
+                f"eliminado{'s' if count != 1 else ''} correctamente."
+            )
+
+        else:
+            django_messages.warning(
+                request,
+                f"Operación en lote desconocida: '{bulk_op}'."
+            )
+
+        return redirect(f"{request.path}?tab={active_tab}")
+
 
 # ---------------------------------------------------------------------------
 # DIGITAL WORK ORDER LIST VIEW — Partes digitales (DIGITAL + GENERATED).

@@ -1,6 +1,7 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/list.html #}
 {#                                                                                         #}
 {# Work-order list template — Hito 8, Paso 1 (2026-04-28).                               #}
+{# S028: bulk actions — checkboxes + action bar on all tabs.                              #}
 {# Displays all WorkOrder records for the authenticated company user with:                 #}
 {#   A) PDF display name (Django suffix stripped via WorkOrder.pdf_display_name).          #}
 {#   B) Direct "Editar" link per row -> /panel/work-orders/{pk}/edit/.                    #}
@@ -9,10 +10,13 @@
 {#   E) HTMX status fragment (badge + progress bar) via _status_fragment.html partial.    #}
 {#      Rows in PENDING or PROCESSING poll the status endpoint every 4 seconds.           #}
 {#      Polling stops automatically when status reaches DONE or ERROR.                    #}
-{#   F) Checkbox per DONE row + "Descargar selección" button (Bloque F, Paso 6, H8).     #}
-{#      Selected WorkOrders are exported as a concatenated multi-sheet Excel file.        #}
+{#   F) Checkbox per row + select-all + bulk action bar (S028).                           #}
+{#      Pending tab: Mark reviewed + Delete.                                               #}
+{#      Reviewed tab: Unmark review + Delete + Export Excel.                              #}
+{#      Queue/Error tabs: Delete only.                                                     #}
 {#                                                                                         #}
 {# Template de lista de partes de trabajo — Hito 8, Paso 1 (2026-04-28).                 #}
+{# S028: acciones en lote — checkboxes + barra de acción en todas las pestañas.          #}
 {# Muestra todos los registros WorkOrder del usuario de empresa autenticado con:           #}
 {#   A) Nombre PDF legible (sufijo Django eliminado via WorkOrder.pdf_display_name).       #}
 {#   B) Enlace directo "Editar" por fila -> /panel/work-orders/{pk}/edit/.                #}
@@ -22,8 +26,10 @@
 {#      _status_fragment.html. Las filas en PENDING o PROCESSING hacen polling            #}
 {#      al endpoint de estado cada 4 segundos. El polling se detiene                      #}
 {#      automáticamente al alcanzar DONE o ERROR.                                         #}
-{#   F) Checkbox por fila DONE + botón "Descargar selección" (Bloque F, Paso 6, H8).     #}
-{#      Los WorkOrders seleccionados se exportan como un Excel multi-hoja concatenado.    #}
+{#   F) Checkbox por fila + seleccionar todos + barra de acción en lote (S028).          #}
+{#      Pendiente revisión: Marcar revisados + Eliminar.                                  #}
+{#      Revisados: Desmarcar revisión + Eliminar + Exportar Excel.                        #}
+{#      En cola / Error: Solo Eliminar.                                                    #}
 {% extends "panel/base.html" %}
 
 {% block page_title %}PDFs{% endblock %}
@@ -39,13 +45,13 @@
         <span class="text-muted text-sm">{{ company.name }}</span>
     </div>
     <div class="d-flex gap-2">
-        {# Export modal trigger — only shown in tabs 3 and 4 via JS     #}
-        {# Disparador modal exportación — visible en pestañas 3 y 4     #}
+        {# Export modal trigger — only shown in Revisados tab via JS    #}
+        {# Disparador modal exportación — visible solo en Revisados     #}
         <button type="button"
                 id="btn-export-trigger"
                 class="btn btn-success btn-sm d-none"
                 disabled
-                title="Selecciona partes completados para descargar"
+                title="Selecciona partes revisados para descargar"
                 data-bs-toggle="modal"
                 data-bs-target="#exportModal">
             <i class="bi bi-file-earmark-excel me-1"></i>Descargar selección
@@ -57,7 +63,7 @@
 </div>
 
 {# ================================================================== #}
-{# Bootstrap nav-tabs — H2 (Hito 8 / Bloque H)                        #}
+{# Bootstrap nav-tabs                                                  #}
 {# ================================================================== #}
 <ul class="nav nav-tabs mb-3" id="woTabs" role="tablist">
 
@@ -138,45 +144,73 @@
     <div class="tab-pane fade {% if default_tab == 'queue' %}show active{% endif %}"
          id="pane-queue" role="tabpanel" aria-labelledby="tab-queue">
         {% if wo_queue %}
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Parte / Operario</th>
-                                <th>Subido por</th>
-                                <th>Fecha de carga</th>
-                                <th class="text-center">Estado</th>
-                                <th class="text-center pe-3">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for wo in wo_queue %}
-                            <tr>
-                                <td>
-                                    <span class="fw-semibold text-sm">{{ wo.pdf_display_name }}</span><br>
-                                    <span class="text-muted small">#{{ wo.pk }}</span>
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.uploaded_by %}
-                                        {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
-                                    {% else %}<span class="text-muted">—</span>{% endif %}
-                                </td>
-                                <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
-                                <td class="text-center">
-                                    {% include "panel/work_orders/_status_fragment.html" with wo=wo %}
-                                </td>
-                                <td class="text-center pe-3">
-                                    {% include "panel/work_orders/_queue_actions.html" with wo=wo %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        <form method="post" id="form-bulk-queue">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk_action">
+            <input type="hidden" name="active_tab" value="queue">
+            {# Bulk action bar — queue tab / Barra de acción en lote — pestaña En cola #}
+            <div class="px-0 py-2 mb-2 d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
+                 id="bulk-bar-queue">
+                <span class="text-sm text-muted" id="bulk-count-queue">0 seleccionados</span>
+                <button type="submit" name="bulk_op" value="delete"
+                        class="btn btn-danger btn-sm py-0 px-3"
+                        onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
+                    <i class="bi bi-trash me-1"></i>Eliminar
+                </button>
+            </div>
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th class="ps-3 col-chk">
+                                        <input type="checkbox" id="chk-select-all-queue"
+                                               class="form-check-input"
+                                               title="Seleccionar todos">
+                                    </th>
+                                    <th>Parte / Operario</th>
+                                    <th>Subido por</th>
+                                    <th>Fecha de carga</th>
+                                    <th class="text-center">Estado</th>
+                                    <th class="text-center pe-3">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for wo in wo_queue %}
+                                <tr>
+                                    <td class="ps-3">
+                                        <input type="checkbox"
+                                               class="form-check-input wo-bulk-chk"
+                                               name="pks" value="{{ wo.pk }}"
+                                               data-bar="bulk-bar-queue"
+                                               data-count="bulk-count-queue"
+                                               data-selall="chk-select-all-queue">
+                                    </td>
+                                    <td>
+                                        <span class="fw-semibold text-sm">{{ wo.pdf_display_name }}</span><br>
+                                        <span class="text-muted small">#{{ wo.pk }}</span>
+                                    </td>
+                                    <td class="text-sm">
+                                        {% if wo.uploaded_by %}
+                                            {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                                        {% else %}<span class="text-muted">—</span>{% endif %}
+                                    </td>
+                                    <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                                    <td class="text-center">
+                                        {% include "panel/work_orders/_status_fragment.html" with wo=wo %}
+                                    </td>
+                                    <td class="text-center pe-3">
+                                        {% include "panel/work_orders/_queue_actions.html" with wo=wo %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
+        </form>
         {% else %}
         <div class="text-center text-muted py-5">
             <i class="bi bi-hourglass fs-1 d-block mb-3"></i>
@@ -190,65 +224,91 @@
     {# ---------------------------------------------------------------- #}
     <div class="tab-pane fade" id="pane-error" role="tabpanel" aria-labelledby="tab-error">
         {% if wo_error %}
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Parte / Operario</th>
-                                <th>Subido por</th>
-                                <th>Fecha de carga</th>
-                                <th class="text-center">Error</th>
-                                <th class="text-center pe-3">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for wo in wo_error %}
-                            <tr>
-                                <td>
-                                    <span class="fw-semibold text-sm">{{ wo.pdf_display_name }}</span><br>
-                                    <span class="text-muted small">#{{ wo.pk }}</span>
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.uploaded_by %}
-                                        {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
-                                    {% else %}<span class="text-muted">—</span>{% endif %}
-                                </td>
-                                <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
-                                <td class="text-center">
-                                    {% if wo.error_log %}
-                                    <button class="btn btn-outline-warning btn-sm"
-                                            type="button"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#incidenceModal"
-                                            data-wo-name="{{ wo.pdf_display_name }}"
-                                            data-wo-log="{{ wo.error_log|escapejs }}">
-                                        <i class="bi bi-exclamation-triangle me-1"></i>Ver log
-                                    </button>
-                                    {% else %}
-                                    <span class="text-muted text-sm">Sin log</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-center pe-3">
-                                    {# Delete only — no editing of errored parts #}
-                                    {# Solo borrado — no edición de partes con error #}
-                                    <button class="btn btn-outline-danger btn-sm"
-                                            type="button"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#deleteModal"
-                                            data-wo-pk="{{ wo.pk }}"
-                                            data-wo-name="{{ wo.pdf_display_name }}">
-                                        <i class="bi bi-trash me-1"></i>Borrar
-                                    </button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        <form method="post" id="form-bulk-error">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk_action">
+            <input type="hidden" name="active_tab" value="error">
+            {# Bulk action bar — error tab / Barra de acción en lote — pestaña Error #}
+            <div class="px-0 py-2 mb-2 d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
+                 id="bulk-bar-error">
+                <span class="text-sm text-muted" id="bulk-count-error">0 seleccionados</span>
+                <button type="submit" name="bulk_op" value="delete"
+                        class="btn btn-danger btn-sm py-0 px-3"
+                        onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
+                    <i class="bi bi-trash me-1"></i>Eliminar
+                </button>
+            </div>
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th class="ps-3 col-chk">
+                                        <input type="checkbox" id="chk-select-all-error"
+                                               class="form-check-input"
+                                               title="Seleccionar todos">
+                                    </th>
+                                    <th>Parte / Operario</th>
+                                    <th>Subido por</th>
+                                    <th>Fecha de carga</th>
+                                    <th class="text-center">Error</th>
+                                    <th class="text-center pe-3">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for wo in wo_error %}
+                                <tr>
+                                    <td class="ps-3">
+                                        <input type="checkbox"
+                                               class="form-check-input wo-bulk-chk"
+                                               name="pks" value="{{ wo.pk }}"
+                                               data-bar="bulk-bar-error"
+                                               data-count="bulk-count-error"
+                                               data-selall="chk-select-all-error">
+                                    </td>
+                                    <td>
+                                        <span class="fw-semibold text-sm">{{ wo.pdf_display_name }}</span><br>
+                                        <span class="text-muted small">#{{ wo.pk }}</span>
+                                    </td>
+                                    <td class="text-sm">
+                                        {% if wo.uploaded_by %}
+                                            {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                                        {% else %}<span class="text-muted">—</span>{% endif %}
+                                    </td>
+                                    <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                                    <td class="text-center">
+                                        {% if wo.error_log %}
+                                        <button class="btn btn-outline-warning btn-sm"
+                                                type="button"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#incidenceModal"
+                                                data-wo-name="{{ wo.pdf_display_name }}"
+                                                data-wo-log="{{ wo.error_log|escapejs }}">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>Ver log
+                                        </button>
+                                        {% else %}
+                                        <span class="text-muted text-sm">Sin log</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center pe-3">
+                                        <button class="btn btn-outline-danger btn-sm"
+                                                type="button"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#deleteModal"
+                                                data-wo-pk="{{ wo.pk }}"
+                                                data-wo-name="{{ wo.pdf_display_name }}">
+                                            <i class="bi bi-trash me-1"></i>Borrar
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
+        </form>
         {% else %}
         <div class="text-center text-muted py-5">
             <i class="bi bi-check-circle fs-1 d-block mb-3"></i>
@@ -263,13 +323,7 @@
     <div class="tab-pane fade {% if default_tab == 'pending' %}show active{% endif %}"
          id="pane-pending" role="tabpanel" aria-labelledby="tab-pending">
 
-        {# ------------------------------------------------------------ #}
-        {# Duplicate search button + HTMX results container             #}
-        {# Botón de búsqueda de duplicados + contenedor de resultados   #}
-        {# Paso 13 — Hito 8 (2026-04-29)                                #}
-        {# Visible only to SUPERVISOR and ADMIN roles.                  #}
-        {# Solo visible para los roles SUPERVISOR y ADMIN.              #}
-        {# ------------------------------------------------------------ #}
+        {# Duplicate search — ADMIN / SUPERVISOR only                   #}
         {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
         <div class="d-flex justify-content-end mb-3">
             <button type="button"
@@ -285,93 +339,118 @@
         {% endif %}
 
         {% if wo_pending %}
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-0">
-                <div class="table-responsive table-overflow-visible">
-                    <table class="table table-hover align-middle mb-0" id="tbl-pending">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Parte / Operario</th>
-                                <th>Subido por</th>
-                                <th>Fecha de carga</th>
-                                <th class="text-center">Revisión</th>
-                                <th class="text-center pe-3">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for wo in wo_pending %}
-                            <tr>
-                                <td>
-                                    <span class="fw-semibold text-sm">{{ wo.pdf_display_name }}</span><br>
-                                    <span class="text-muted small">#{{ wo.pk }}</span>
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.uploaded_by %}
-                                        {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
-                                    {% else %}<span class="text-muted">—</span>{% endif %}
-                                </td>
-                                <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
-                                <td class="text-center">
-                                    {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
-                                </td>
-                                <td class="text-center pe-3">
-                                    <div class="d-flex justify-content-center align-items-center gap-1">
-                                        <div class="dropdown">
-                                            <button class="btn btn-outline-secondary btn-sm dropdown-toggle"
-                                                    type="button"
-                                                    data-bs-toggle="dropdown"
-                                                    aria-expanded="false">
-                                                <i class="bi bi-three-dots-vertical"></i>
-                                            </button>
-                                            {# Excel download is restricted to the Revisados tab per   #}
-                                            {# Alejandro's business directive. Pending parts cannot be  #}
-                                            {# downloaded until reviewed.                               #}
-                                            {# La descarga de Excel está restringida a la pestaña       #}
-                                            {# Revisados por directriz de negocio de Alejandro. Los     #}
-                                            {# partes pendientes no pueden descargarse antes de ser     #}
-                                            {# revisados.                                               #}
-                                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                                                <li>
-                                                    <a class="dropdown-item"
-                                                       href="{% url 'panel:work_order_edit' pk=wo.pk %}">
-                                                        <i class="bi bi-pencil-square me-2 text-primary"></i>Editar
-                                                    </a>
-                                                </li>
-                                                {% if wo.error_log %}
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li>
-                                                    <button class="dropdown-item text-warning"
-                                                            type="button"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#incidenceModal"
-                                                            data-wo-name="{{ wo.pdf_display_name }}"
-                                                            data-wo-log="{{ wo.error_log|escapejs }}">
-                                                        <i class="bi bi-exclamation-triangle me-2"></i>Ver incidencias
-                                                    </button>
-                                                </li>
-                                                {% endif %}
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li>
-                                                    <button class="dropdown-item text-danger"
-                                                            type="button"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#deleteModal"
-                                                            data-wo-pk="{{ wo.pk }}"
-                                                            data-wo-name="{{ wo.pdf_display_name }}">
-                                                        <i class="bi bi-trash me-2"></i>Borrar
-                                                    </button>
-                                                </li>
-                                            </ul>
+        <form method="post" id="form-bulk-pending">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk_action">
+            <input type="hidden" name="active_tab" value="pending">
+            {# Bulk action bar — pending tab / Barra de acción en lote — pestaña Pendiente #}
+            <div class="px-0 py-2 mb-2 d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
+                 id="bulk-bar-pending">
+                <span class="text-sm text-muted" id="bulk-count-pending">0 seleccionados</span>
+                <button type="submit" name="bulk_op" value="mark_reviewed"
+                        class="btn btn-success btn-sm py-0 px-3">
+                    <i class="bi bi-check2-all me-1"></i>Marcar revisados
+                </button>
+                <button type="submit" name="bulk_op" value="delete"
+                        class="btn btn-danger btn-sm py-0 px-3"
+                        onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
+                    <i class="bi bi-trash me-1"></i>Eliminar
+                </button>
+            </div>
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive table-overflow-visible">
+                        <table class="table table-hover align-middle mb-0" id="tbl-pending">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th class="ps-3 col-chk">
+                                        <input type="checkbox" id="chk-select-all-pending"
+                                               class="form-check-input"
+                                               title="Seleccionar todos">
+                                    </th>
+                                    <th>Parte / Operario</th>
+                                    <th>Subido por</th>
+                                    <th>Fecha de carga</th>
+                                    <th class="text-center">Revisión</th>
+                                    <th class="text-center pe-3">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for wo in wo_pending %}
+                                <tr>
+                                    <td class="ps-3">
+                                        <input type="checkbox"
+                                               class="form-check-input wo-bulk-chk"
+                                               name="pks" value="{{ wo.pk }}"
+                                               data-bar="bulk-bar-pending"
+                                               data-count="bulk-count-pending"
+                                               data-selall="chk-select-all-pending">
+                                    </td>
+                                    <td>
+                                        <span class="fw-semibold text-sm">{{ wo.pdf_display_name }}</span><br>
+                                        <span class="text-muted small">#{{ wo.pk }}</span>
+                                    </td>
+                                    <td class="text-sm">
+                                        {% if wo.uploaded_by %}
+                                            {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                                        {% else %}<span class="text-muted">—</span>{% endif %}
+                                    </td>
+                                    <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                                    <td class="text-center">
+                                        {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
+                                    </td>
+                                    <td class="text-center pe-3">
+                                        <div class="d-flex justify-content-center align-items-center gap-1">
+                                            <div class="dropdown">
+                                                <button class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                                                        type="button"
+                                                        data-bs-toggle="dropdown"
+                                                        aria-expanded="false">
+                                                    <i class="bi bi-three-dots-vertical"></i>
+                                                </button>
+                                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                                    <li>
+                                                        <a class="dropdown-item"
+                                                           href="{% url 'panel:work_order_edit' pk=wo.pk %}">
+                                                            <i class="bi bi-pencil-square me-2 text-primary"></i>Editar
+                                                        </a>
+                                                    </li>
+                                                    {% if wo.error_log %}
+                                                    <li><hr class="dropdown-divider"></li>
+                                                    <li>
+                                                        <button class="dropdown-item text-warning"
+                                                                type="button"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#incidenceModal"
+                                                                data-wo-name="{{ wo.pdf_display_name }}"
+                                                                data-wo-log="{{ wo.error_log|escapejs }}">
+                                                            <i class="bi bi-exclamation-triangle me-2"></i>Ver incidencias
+                                                        </button>
+                                                    </li>
+                                                    {% endif %}
+                                                    <li><hr class="dropdown-divider"></li>
+                                                    <li>
+                                                        <button class="dropdown-item text-danger"
+                                                                type="button"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#deleteModal"
+                                                                data-wo-pk="{{ wo.pk }}"
+                                                                data-wo-name="{{ wo.pdf_display_name }}">
+                                                            <i class="bi bi-trash me-2"></i>Borrar
+                                                        </button>
+                                                    </li>
+                                                </ul>
+                                            </div>
                                         </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
+        </form>
         {% else %}
         <div class="text-center text-muted py-5">
             <i class="bi bi-clipboard-check fs-1 d-block mb-3"></i>
@@ -385,105 +464,127 @@
     {# ---------------------------------------------------------------- #}
     <div class="tab-pane fade" id="pane-reviewed" role="tabpanel" aria-labelledby="tab-reviewed">
         {% if wo_reviewed %}
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-0">
-                <div class="table-responsive table-overflow-visible">
-                    <table class="table table-hover align-middle mb-0" id="tbl-reviewed">
-                        <thead class="table-dark">
-                            <tr>
-                                <th class="ps-3 col-chk">
-                                    <input type="checkbox" id="chk-select-all-reviewed"
-                                           class="form-check-input"
-                                           title="Seleccionar todos">
-                                </th>
-                                <th>Parte / Operario</th>
-                                <th>Subido por</th>
-                                <th>Fecha de carga</th>
-                                <th class="text-center">Revisión</th>
-                                <th class="text-center pe-3">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for wo in wo_reviewed %}
-                            <tr>
-                                <td class="ps-3">
-                                    <input type="checkbox"
-                                           class="form-check-input wo-export-chk"
-                                           value="{{ wo.pk }}"
-                                           data-table="reviewed">
-                                </td>
-                                <td>
-                                    <span class="fw-semibold text-sm">{{ wo.pdf_display_name }}</span><br>
-                                    <span class="text-muted small">#{{ wo.pk }}</span>
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.uploaded_by %}
-                                        {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
-                                    {% else %}<span class="text-muted">—</span>{% endif %}
-                                </td>
-                                <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
-                                <td class="text-center">
-                                    {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
-                                </td>
-                                <td class="text-center pe-3">
-                                    <div class="d-flex justify-content-center align-items-center gap-1">
-                                        <div class="dropdown">
-                                            <button class="btn btn-outline-secondary btn-sm dropdown-toggle"
-                                                    type="button"
-                                                    data-bs-toggle="dropdown"
-                                                    aria-expanded="false">
-                                                <i class="bi bi-three-dots-vertical"></i>
-                                            </button>
-                                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                                                <li>
-                                                    <a class="dropdown-item"
-                                                       href="{% url 'panel:work_order_edit' pk=wo.pk %}">
-                                                        <i class="bi bi-pencil-square me-2 text-primary"></i>Editar
-                                                    </a>
-                                                </li>
-                                                {% if wo.excel_file %}
-                                                <li>
-                                                    <a class="dropdown-item"
-                                                       href="{{ wo.excel_file.url }}" download>
-                                                        <i class="bi bi-file-earmark-excel me-2 text-success"></i>Descargar Excel
-                                                    </a>
-                                                </li>
-                                                {% endif %}
-                                                {% if wo.error_log %}
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li>
-                                                    <button class="dropdown-item text-warning"
-                                                            type="button"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#incidenceModal"
-                                                            data-wo-name="{{ wo.pdf_display_name }}"
-                                                            data-wo-log="{{ wo.error_log|escapejs }}">
-                                                        <i class="bi bi-exclamation-triangle me-2"></i>Ver incidencias
-                                                    </button>
-                                                </li>
-                                                {% endif %}
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li>
-                                                    <button class="dropdown-item text-danger"
-                                                            type="button"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#deleteModal"
-                                                            data-wo-pk="{{ wo.pk }}"
-                                                            data-wo-name="{{ wo.pdf_display_name }}">
-                                                        <i class="bi bi-trash me-2"></i>Borrar
-                                                    </button>
-                                                </li>
-                                            </ul>
+        <form method="post" id="form-bulk-reviewed">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk_action">
+            <input type="hidden" name="active_tab" value="reviewed">
+            {# Bulk action bar — reviewed tab / Barra de acción en lote — pestaña Revisados #}
+            <div class="px-0 py-2 mb-2 d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
+                 id="bulk-bar-reviewed">
+                <span class="text-sm text-muted" id="bulk-count-reviewed">0 seleccionados</span>
+                <button type="submit" name="bulk_op" value="unmark_reviewed"
+                        class="btn btn-warning btn-sm py-0 px-3">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Desmarcar revisión
+                </button>
+                <button type="submit" name="bulk_op" value="delete"
+                        class="btn btn-danger btn-sm py-0 px-3"
+                        onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
+                    <i class="bi bi-trash me-1"></i>Eliminar
+                </button>
+            </div>
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive table-overflow-visible">
+                        <table class="table table-hover align-middle mb-0" id="tbl-reviewed">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th class="ps-3 col-chk">
+                                        <input type="checkbox" id="chk-select-all-reviewed"
+                                               class="form-check-input"
+                                               title="Seleccionar todos">
+                                    </th>
+                                    <th>Parte / Operario</th>
+                                    <th>Subido por</th>
+                                    <th>Fecha de carga</th>
+                                    <th class="text-center">Revisión</th>
+                                    <th class="text-center pe-3">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for wo in wo_reviewed %}
+                                <tr>
+                                    <td class="ps-3">
+                                        <input type="checkbox"
+                                               class="form-check-input wo-bulk-chk wo-export-chk"
+                                               name="pks" value="{{ wo.pk }}"
+                                               data-bar="bulk-bar-reviewed"
+                                               data-count="bulk-count-reviewed"
+                                               data-selall="chk-select-all-reviewed"
+                                               data-table="reviewed">
+                                    </td>
+                                    <td>
+                                        <span class="fw-semibold text-sm">{{ wo.pdf_display_name }}</span><br>
+                                        <span class="text-muted small">#{{ wo.pk }}</span>
+                                    </td>
+                                    <td class="text-sm">
+                                        {% if wo.uploaded_by %}
+                                            {{ wo.uploaded_by.user.get_full_name|default:wo.uploaded_by.user.username }}
+                                        {% else %}<span class="text-muted">—</span>{% endif %}
+                                    </td>
+                                    <td class="text-sm">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
+                                    <td class="text-center">
+                                        {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
+                                    </td>
+                                    <td class="text-center pe-3">
+                                        <div class="d-flex justify-content-center align-items-center gap-1">
+                                            <div class="dropdown">
+                                                <button class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                                                        type="button"
+                                                        data-bs-toggle="dropdown"
+                                                        aria-expanded="false">
+                                                    <i class="bi bi-three-dots-vertical"></i>
+                                                </button>
+                                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                                    <li>
+                                                        <a class="dropdown-item"
+                                                           href="{% url 'panel:work_order_edit' pk=wo.pk %}">
+                                                            <i class="bi bi-pencil-square me-2 text-primary"></i>Editar
+                                                        </a>
+                                                    </li>
+                                                    {% if wo.excel_file %}
+                                                    <li>
+                                                        <a class="dropdown-item"
+                                                           href="{{ wo.excel_file.url }}" download>
+                                                            <i class="bi bi-file-earmark-excel me-2 text-success"></i>Descargar Excel
+                                                        </a>
+                                                    </li>
+                                                    {% endif %}
+                                                    {% if wo.error_log %}
+                                                    <li><hr class="dropdown-divider"></li>
+                                                    <li>
+                                                        <button class="dropdown-item text-warning"
+                                                                type="button"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#incidenceModal"
+                                                                data-wo-name="{{ wo.pdf_display_name }}"
+                                                                data-wo-log="{{ wo.error_log|escapejs }}">
+                                                            <i class="bi bi-exclamation-triangle me-2"></i>Ver incidencias
+                                                        </button>
+                                                    </li>
+                                                    {% endif %}
+                                                    <li><hr class="dropdown-divider"></li>
+                                                    <li>
+                                                        <button class="dropdown-item text-danger"
+                                                                type="button"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#deleteModal"
+                                                                data-wo-pk="{{ wo.pk }}"
+                                                                data-wo-name="{{ wo.pdf_display_name }}">
+                                                            <i class="bi bi-trash me-2"></i>Borrar
+                                                        </button>
+                                                    </li>
+                                                </ul>
+                                            </div>
                                         </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
+        </form>
         {% else %}
         <div class="text-center text-muted py-5">
             <i class="bi bi-patch-check fs-1 d-block mb-3"></i>
@@ -511,9 +612,11 @@
                         aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
+                {# djlint:off H021 #}
                 <pre id="incidence-log-content"
                      class="bg-light rounded p-3 text-sm"
                      style="white-space: pre-wrap; word-break: break-word;"></pre>
+                {# djlint:on H021 #}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary btn-sm"
@@ -560,8 +663,6 @@
 
 {# ================================================================== #}
 {# Export mode modal — H4 (Hito 8 / Bloque H)                         #}
-{# Muestra selector de modo antes del POST de exportación.             #}
-{# Si un único operario está seleccionado, JS salta el modal.          #}
 {# ================================================================== #}
 <div class="modal fade" id="exportModal" tabindex="-1"
      aria-labelledby="exportModalLabel" aria-hidden="true">
@@ -618,38 +719,94 @@
     "use strict";
 
     // ------------------------------------------------------------------
-    // Tab change handler — show/hide export button on tabs 3 and 4.
-    // Handler de cambio de pestaña — mostrar/ocultar botón de exportación
-    // en pestañas 3 (Pendiente revisión) y 4 (Revisados).
+    // Bulk checkbox engine — shared across all tabs
+    // Motor de checkboxes en lote — compartido entre todas las pestañas
+    //
+    // Each checkbox carries:
+    //   data-bar    — id of the action bar div to update counter in.
+    //   data-count  — id of the <span> showing "N seleccionados".
+    //   data-selall — id of the select-all checkbox for this table.
     // ------------------------------------------------------------------
-    // Business rule (Alejandro): Excel export is available only in
-    // the "Revisados" tab. Pending-review parts cannot be exported.
-    // Directriz de negocio (Alejandro): la exportación de Excel sólo
-    // está disponible en la pestaña "Revisados". Los partes pendientes
-    // de revisión no pueden exportarse.
-    var exportTabIds = new Set(["tab-reviewed"]);
+    function _updateBulkBar(barId, countId, selAllId) {
+        /*
+         * Counts checked checkboxes for the bar, updates the counter label
+         * and syncs the select-all indeterminate state.
+         * ---
+         * Cuenta los checkboxes marcados del bar, actualiza la etiqueta de
+         * contador y sincroniza el estado indeterminado del select-all.
+         */
+        var bar    = document.getElementById(barId);
+        var countEl = document.getElementById(countId);
+        var selAll  = document.getElementById(selAllId);
+
+        // Find all checkboxes belonging to this bar.
+        // Encontrar todos los checkboxes pertenecientes a esta barra.
+        var all  = document.querySelectorAll(".wo-bulk-chk[data-bar='" + barId + "']");
+        var chkd = document.querySelectorAll(".wo-bulk-chk[data-bar='" + barId + "']:checked");
+
+        if (countEl) {
+            countEl.textContent = chkd.length + " seleccionado" + (chkd.length !== 1 ? "s" : "");
+        }
+        if (selAll) {
+            selAll.indeterminate = (chkd.length > 0 && chkd.length < all.length);
+            selAll.checked       = (all.length > 0 && chkd.length === all.length);
+        }
+    }
+
+    // Individual checkbox change / Cambio de checkbox individual
+    document.addEventListener("change", function (event) {
+        var tgt = event.target;
+
+        // Bulk checkbox changed / Checkbox de lote cambiado
+        if (tgt.classList.contains("wo-bulk-chk")) {
+            var barId    = tgt.getAttribute("data-bar");
+            var countId  = tgt.getAttribute("data-count");
+            var selAllId = tgt.getAttribute("data-selall");
+            _updateBulkBar(barId, countId, selAllId);
+        }
+
+        // Export checkbox changed (subset of wo-bulk-chk in reviewed tab)
+        // Checkbox de exportación cambiado (subconjunto en pestaña Revisados)
+        if (tgt.classList.contains("wo-export-chk")) {
+            _syncExportButton();
+        }
+    });
+
+    // Select-all checkboxes / Checkboxes de seleccionar todos
+    [
+        { selAllId: "chk-select-all-queue",    barId: "bulk-bar-queue",    countId: "bulk-count-queue" },
+        { selAllId: "chk-select-all-error",    barId: "bulk-bar-error",    countId: "bulk-count-error" },
+        { selAllId: "chk-select-all-pending",  barId: "bulk-bar-pending",  countId: "bulk-count-pending" },
+        { selAllId: "chk-select-all-reviewed", barId: "bulk-bar-reviewed", countId: "bulk-count-reviewed" }
+    ].forEach(function (cfg) {
+        var el = document.getElementById(cfg.selAllId);
+        if (!el) { return; }
+        el.addEventListener("change", function () {
+            document.querySelectorAll(".wo-bulk-chk[data-bar='" + cfg.barId + "']").forEach(function (chk) {
+                chk.checked = el.checked;
+            });
+            _updateBulkBar(cfg.barId, cfg.countId, cfg.selAllId);
+            // Sync export button if reviewed tab / Sincronizar botón export en Revisados
+            if (cfg.barId === "bulk-bar-reviewed") { _syncExportButton(); }
+        });
+    });
+
+    // ------------------------------------------------------------------
+    // Tab change handler — show/hide export button on Revisados tab only
+    // Handler de cambio de pestaña — mostrar/ocultar botón en Revisados
+    // ------------------------------------------------------------------
+    var exportTabIds     = new Set(["tab-reviewed"]);
     var btnExportTrigger = document.getElementById("btn-export-trigger");
 
     document.querySelectorAll("#woTabs button[data-bs-toggle='tab']").forEach(function (btn) {
         btn.addEventListener("shown.bs.tab", function (event) {
-            /*
-             * Shows the export trigger button only when the active tab is
-             * tab-pending or tab-reviewed (DONE work orders).
-             * ---
-             * Muestra el botón de exportación solo cuando la pestaña activa
-             * es tab-pending o tab-reviewed (partes DONE).
-             */
             if (exportTabIds.has(event.target.id)) {
-                if (btnExportTrigger) {
-                    btnExportTrigger.classList.remove("d-none");
-                }
+                if (btnExportTrigger) { btnExportTrigger.classList.remove("d-none"); }
             } else {
                 if (btnExportTrigger) {
                     btnExportTrigger.classList.add("d-none");
                     btnExportTrigger.disabled = true;
                 }
-                // Uncheck all export checkboxes when leaving export tabs.
-                // Desmarcar todos los checkboxes al salir de las pestañas de exportación.
                 document.querySelectorAll(".wo-export-chk").forEach(function (chk) {
                     chk.checked = false;
                 });
@@ -658,28 +815,19 @@
         });
     });
 
-    // Show export button immediately if default tab is pending or reviewed.
-    // Mostrar botón de exportación de inmediato si la pestaña por defecto es pending o reviewed.
+    // Show export button immediately if default tab is reviewed.
+    // Mostrar botón de exportación si la pestaña por defecto es Revisados.
     (function _initExportButtonVisibility() {
         var activeTab = document.querySelector("#woTabs button.active");
         if (activeTab && exportTabIds.has(activeTab.id)) {
-            if (btnExportTrigger) {
-                btnExportTrigger.classList.remove("d-none");
-            }
+            if (btnExportTrigger) { btnExportTrigger.classList.remove("d-none"); }
         }
     }());
 
     // ------------------------------------------------------------------
-    // Export checkbox wiring / Conexión de checkboxes de exportación.
+    // Export checkbox wiring / Conexión de checkboxes de exportación
     // ------------------------------------------------------------------
     function _syncExportButton() {
-        /*
-         * Enables the export trigger button when at least one checkbox is
-         * checked. Rebuilds the hidden pk inputs in the export form.
-         * ---
-         * Activa el botón disparador de exportación cuando al menos un
-         * checkbox está marcado. Reconstruye los inputs ocultos de pk.
-         */
         var checked = document.querySelectorAll(".wo-export-chk:checked");
         if (btnExportTrigger) {
             btnExportTrigger.disabled = (checked.length === 0);
@@ -697,68 +845,21 @@
         }
     }
 
-    // Individual checkbox change.
-    // Cambio de checkbox individual.
-    document.addEventListener("change", function (event) {
-        if (event.target.classList.contains("wo-export-chk")) {
-            _syncExportButton();
-            // Sync the select-all checkbox for the active table.
-            // Sincronizar el select-all del tabla activa.
-            var tbl = event.target.getAttribute("data-table");
-            var selAllId = tbl === "pending" ? "chk-select-all-pending" : "chk-select-all-reviewed";
-            var selAll   = document.getElementById(selAllId);
-            if (selAll) {
-                var all  = document.querySelectorAll(".wo-export-chk[data-table='" + tbl + "']");
-                var chkd = document.querySelectorAll(".wo-export-chk[data-table='" + tbl + "']:checked");
-                selAll.indeterminate = (chkd.length > 0 && chkd.length < all.length);
-                selAll.checked       = (all.length > 0 && chkd.length === all.length);
-            }
-        }
-    });
-
-    // Select-all checkboxes.
-    // Checkboxes de seleccionar todos.
-    // Only the "Revisados" tab has a select-all checkbox.
-    // Solo la pestaña "Revisados" tiene checkbox de seleccionar todos.
-    ["chk-select-all-reviewed"].forEach(function (id) {
-        var el = document.getElementById(id);
-        if (!el) { return; }
-        el.addEventListener("change", function () {
-            document.querySelectorAll(".wo-export-chk[data-table='reviewed']").forEach(function (chk) {
-                chk.checked = el.checked;
-            });
-            _syncExportButton();
-        });
-    });
-
     // ------------------------------------------------------------------
-    // H4 — Export mode modal wiring.
-    // Conexión del modal de modo de exportación (H4).
+    // H4 — Export mode modal wiring / Conexión del modal de exportación
     // ------------------------------------------------------------------
     var exportModal     = document.getElementById("exportModal");
     var exportForm      = document.getElementById("export-form");
     var exportModeInput = document.getElementById("export-mode-input");
 
     function _getUniqueWorkerCount() {
-        /*
-         * Counts the number of distinct worker names among the selected
-         * checkboxes by reading the PDF display name from the closest <td>
-         * sibling. Falls back to 2 (multi-worker) if names cannot be parsed.
-         * ---
-         * Cuenta el número de operarios distintos entre los checkboxes
-         * seleccionados leyendo el nombre del PDF del <td> hermano más
-         * cercano. Retorna 2 (multi-operario) si los nombres no pueden
-         * parsearse.
-         */
         var names = new Set();
         document.querySelectorAll(".wo-export-chk:checked").forEach(function (chk) {
             var row      = chk.closest("tr");
             var nameSpan = row ? row.querySelector(".fw-semibold.text-sm") : null;
             if (nameSpan) {
-                // Worker name is the prefix before the first date token.
-                // Nombre del operario es el prefijo antes del primer token de fecha.
-                var text   = nameSpan.textContent.trim();
-                var tokens = text.split(/\s+/);
+                var text       = nameSpan.textContent.trim();
+                var tokens     = text.split(/\s+/);
                 var nameTokens = [];
                 for (var i = 0; i < tokens.length; i++) {
                     if (/^\d/.test(tokens[i])) { break; }
@@ -773,28 +874,14 @@
 
     if (btnExportTrigger) {
         btnExportTrigger.addEventListener("click", function (event) {
-            /*
-             * If all selected rows belong to a single worker, skip the modal
-             * and submit directly with single_sheet mode.
-             * Otherwise, show the export mode modal.
-             * ---
-             * Si todas las filas seleccionadas pertenecen a un único operario,
-             * omitir el modal y enviar directamente en modo single_sheet.
-             * En caso contrario, mostrar el modal de modo de exportación.
-             */
             event.preventDefault();
             var workerCount = _getUniqueWorkerCount();
             var wcEl = document.getElementById("export-workers-count");
             if (wcEl) { wcEl.textContent = workerCount; }
-
             if (workerCount <= 1) {
-                // Single worker — submit immediately in single_sheet mode.
-                // Un único operario — enviar de inmediato en modo single_sheet.
                 if (exportModeInput) { exportModeInput.value = "single_sheet"; }
                 if (exportForm)      { exportForm.submit(); }
             } else {
-                // Multiple workers — show the selection modal.
-                // Varios operarios — mostrar el modal de selección.
                 var bsModal = new bootstrap.Modal(exportModal);
                 bsModal.show();
             }
@@ -803,11 +890,6 @@
 
     if (document.getElementById("btn-export-single")) {
         document.getElementById("btn-export-single").addEventListener("click", function () {
-            /*
-             * User chose single-sheet mode — submit the export form.
-             * ---
-             * El usuario eligió modo una sola hoja — enviar el formulario.
-             */
             if (exportModeInput) { exportModeInput.value = "single_sheet"; }
             var bsModal = bootstrap.Modal.getInstance(exportModal);
             if (bsModal) { bsModal.hide(); }
@@ -817,11 +899,6 @@
 
     if (document.getElementById("btn-export-multi")) {
         document.getElementById("btn-export-multi").addEventListener("click", function () {
-            /*
-             * User chose multi-sheet mode — submit the export form.
-             * ---
-             * El usuario eligió modo multi-hoja — enviar el formulario.
-             */
             if (exportModeInput) { exportModeInput.value = "multi_sheet"; }
             var bsModal = bootstrap.Modal.getInstance(exportModal);
             if (bsModal) { bsModal.hide(); }
@@ -835,11 +912,6 @@
     var incidenceModal = document.getElementById("incidenceModal");
     if (incidenceModal) {
         incidenceModal.addEventListener("show.bs.modal", function (event) {
-            /*
-             * Populates the incidence modal with the error_log content.
-             * ---
-             * Puebla el modal de incidencias con el contenido de error_log.
-             */
             var trigger = event.relatedTarget;
             document.getElementById("incidence-wo-name").textContent    = trigger.getAttribute("data-wo-name");
             document.getElementById("incidence-log-content").textContent = trigger.getAttribute("data-wo-log");
@@ -852,11 +924,6 @@
     var deleteModal = document.getElementById("deleteModal");
     if (deleteModal) {
         deleteModal.addEventListener("show.bs.modal", function (event) {
-            /*
-             * Sets the delete form action to the correct endpoint.
-             * ---
-             * Establece la acción del formulario de borrado al endpoint correcto.
-             */
             var trigger = event.relatedTarget;
             var woPk    = trigger.getAttribute("data-wo-pk");
             document.getElementById("delete-wo-name").textContent = trigger.getAttribute("data-wo-name");
