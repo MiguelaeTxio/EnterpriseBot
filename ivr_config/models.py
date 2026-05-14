@@ -182,6 +182,20 @@ class CompanyUser(models.Model):
             "Debe ser único por empresa cuando se informe."
         ),
     )
+    workday_schedule = models.ForeignKey(
+        "WorkdaySchedule",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_users",
+        verbose_name="Horario de jornada",
+        help_text=(
+            "Horario de jornada asignado a este operario por el supervisor. "
+            "Gate 4 usa este horario con prioridad máxima. "
+            "Si no está asignado, Gate 4 aplica el horario por defecto de la empresa. "
+            "Si tampoco existe horario por defecto, Gate 4 se omite completamente."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -1649,3 +1663,239 @@ class WorkPeriod(models.Model):
             f"{self.start_date:%d/%m/%Y} / {end_label}"
             + (f" [{self.label}]" if self.label else "")
         )
+
+
+# ---------------------------------------------------------------------------
+# 18. WORKDAY SCHEDULE — Reference workday timetable for a company.
+#     Horario de jornada de referencia para una empresa.
+# ---------------------------------------------------------------------------
+
+class WorkdaySchedule(models.Model):
+    """
+    Defines a named workday timetable for a Company. A company can have
+    multiple schedules to cover the different shift profiles of its workforce
+    (e.g. "Mecánicos 07:00–15:00", "Chóferes grúa 06:00–14:00",
+    "Administración 09:00–17:00").
+
+    Each CompanyUser with the WORKSHOP role can be assigned a specific schedule
+    via the CompanyUser.workday_schedule FK. Gate 4 resolves the schedule to
+    apply using this priority chain:
+      1. CompanyUser.workday_schedule (if set).
+      2. WorkdaySchedule with is_default=True for the company (fallback).
+      3. None → Gate 4 is skipped entirely (current behaviour preserved).
+
+    Only one schedule per company may have is_default=True. This invariant is
+    enforced in the save() override: setting is_default=True on a record
+    automatically clears is_default on all other schedules of the same company.
+
+    ---
+
+    Define un horario de jornada con nombre para una Company. Una empresa puede
+    tener múltiples horarios para cubrir los distintos perfiles de turno de su
+    plantilla (p. ej. "Mecánicos 07:00–15:00", "Chóferes grúa 06:00–14:00",
+    "Administración 09:00–17:00").
+
+    Cada CompanyUser con rol WORKSHOP puede tener asignado un horario concreto
+    mediante la FK CompanyUser.workday_schedule. Gate 4 resuelve el horario
+    aplicable usando esta cadena de prioridad:
+      1. CompanyUser.workday_schedule (si está asignado).
+      2. WorkdaySchedule con is_default=True para la empresa (fallback).
+      3. None → Gate 4 se omite completamente (comportamiento actual preservado).
+
+    Solo puede haber un horario con is_default=True por empresa. Este invariante
+    se impone en el override de save(): establecer is_default=True en un registro
+    limpia automáticamente is_default en todos los demás horarios de la empresa.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="workday_schedules",
+        verbose_name="Empresa",
+        help_text="Empresa a la que pertenece este horario de jornada.",
+    )
+    label = models.CharField(
+        max_length=100,
+        default="",
+        verbose_name="Nombre del horario",
+        help_text=(
+            "Nombre descriptivo del perfil de turno "
+            "(p. ej. 'Mecánicos', 'Chóferes de grúa', 'Administración'). "
+            "Visible en el panel del supervisor al asignar horarios a operarios."
+        ),
+    )
+    start_time = models.TimeField(
+        verbose_name="Hora de entrada",
+        help_text=(
+            "Hora de inicio ordinaria de la jornada laboral. "
+            "Los partes cuyo primer bloque comience después de esta hora más "
+            "el margen de tolerancia generarán un aviso de inicio tardío."
+        ),
+    )
+    end_time = models.TimeField(
+        verbose_name="Hora de salida",
+        help_text=(
+            "Hora de fin ordinaria de la jornada laboral. "
+            "Los partes cuyo último bloque termine antes de esta hora menos "
+            "el margen de tolerancia generarán un aviso de cierre anticipado."
+        ),
+    )
+    tolerance_minutes = models.PositiveSmallIntegerField(
+        default=15,
+        verbose_name="Tolerancia (minutos)",
+        help_text=(
+            "Margen de tolerancia en minutos aplicado tanto al inicio como al "
+            "fin de la jornada antes de registrar un aviso. Por defecto: 15 min."
+        ),
+    )
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name="Horario por defecto",
+        help_text=(
+            "Si está activo, este horario se aplica como fallback a los operarios "
+            "que no tienen un horario específicamente asignado. "
+            "Solo puede haber un horario por defecto por empresa — activarlo aquí "
+            "desactiva automáticamente el anterior horario por defecto."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Horario de jornada"
+        verbose_name_plural = "Horarios de jornada"
+        ordering = ["company__name", "label"]
+
+    def save(self, *args, **kwargs):
+        """
+        Enforces the single-default invariant: if this schedule is being saved
+        with is_default=True, all other schedules of the same company are
+        updated to is_default=False before this record is written.
+        ---
+        Impone el invariante de único-por-defecto: si este horario se guarda con
+        is_default=True, todos los demás horarios de la misma empresa se actualizan
+        a is_default=False antes de escribir este registro.
+        """
+        if self.is_default:
+            WorkdaySchedule.objects.filter(
+                company=self.company,
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        default_marker = " [por defecto]" if self.is_default else ""
+        return (
+            f"{self.company.name} — {self.label} "
+            f"{self.start_time:%H:%M}–{self.end_time:%H:%M} "
+            f"(±{self.tolerance_minutes} min){default_marker}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 19. ABSENCE CATEGORY — Supervisor-managed catalogue of absence reasons.
+#     Catálogo de motivos de ausencia gestionado por el supervisor.
+# ---------------------------------------------------------------------------
+
+class AbsenceCategory(models.Model):
+    """
+    Supervisor-managed catalogue of absence/incident reasons for a Company.
+    Used by the Gate 4 resolution flow (WorkdayGapResolutionView) to let the
+    operator justify each detected workday gap before the work order is
+    persisted as DONE.
+
+    Standard categories are pre-loaded via the seed_absence_categories
+    management command. Supervisors can deactivate categories (is_active=False)
+    without deleting them to preserve historical references.
+
+    Uniqueness is enforced on (company, code) so that seed runs are idempotent
+    (get_or_create by code + company).
+
+    ---
+
+    Catálogo de motivos de ausencia/incidencia gestionado por el supervisor de
+    una Company. Usado por el flujo de resolución de Gate 4
+    (WorkdayGapResolutionView) para que el operario justifique cada laguna de
+    jornada detectada antes de que el parte se persista como DONE.
+
+    Las categorías estándar se precargan mediante el comando de gestión
+    seed_absence_categories. Los supervisores pueden desactivar categorías
+    (is_active=False) sin eliminarlas para preservar referencias históricas.
+
+    La unicidad se impone sobre (company, code) para que las ejecuciones del
+    seed sean idempotentes (get_or_create por code + company).
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="absence_categories",
+        verbose_name="Empresa",
+        help_text="Empresa a la que pertenece esta categoría de ausencia.",
+    )
+    code = models.CharField(
+        max_length=40,
+        verbose_name="Código",
+        help_text=(
+            "Identificador interno de la categoría (p. ej. MEDICAL, DAY_OFF). "
+            "Único por empresa. Usado por el seed y la lógica de Gate 4."
+        ),
+    )
+    label = models.CharField(
+        max_length=100,
+        verbose_name="Etiqueta",
+        help_text=(
+            "Texto visible para el operario en el selector de justificación "
+            "de lagunas de jornada (WorkdayGapResolutionView)."
+        ),
+    )
+    requires_note = models.BooleanField(
+        default=False,
+        verbose_name="Requiere nota",
+        help_text=(
+            "Si está activo, el operario debe rellenar el campo de notas "
+            "para poder guardar la justificación de la laguna."
+        ),
+    )
+    is_justified = models.BooleanField(
+        default=True,
+        verbose_name="Justificada",
+        help_text=(
+            "Indica si esta categoría de ausencia se considera justificada "
+            "a efectos de informes de incidencias de jornada."
+        ),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activa",
+        help_text=(
+            "Desactivar en lugar de eliminar para preservar referencias "
+            "históricas en WorkdayGap ya registrados."
+        ),
+    )
+    order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="Orden",
+        help_text=(
+            "Posición de esta categoría en el selector del operario. "
+            "Menor número = aparece antes. Las categorías con el mismo "
+            "orden se ordenan alfabéticamente por etiqueta."
+        ),
+    )
+
+    class Meta:
+        verbose_name = "Categoría de ausencia"
+        verbose_name_plural = "Categorías de ausencia"
+        unique_together = [("company", "code")]
+        ordering = ["company__name", "order", "label"]
+
+    def __str__(self):
+        status = "" if self.is_active else " [inactiva]"
+        return f"{self.company.name} — {self.label}{status}"
+

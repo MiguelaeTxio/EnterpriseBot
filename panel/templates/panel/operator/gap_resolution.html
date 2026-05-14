@@ -1,0 +1,357 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/gap_resolution.html #}
+{#                                                                                                #}
+{# Workday gap resolution form — Gate 4 justification interface for WORKSHOP operators.          #}
+{#   Displays each detected workday gap (GAP / LATE_START / EARLY_END) with an                  #}
+{#   AbsenceCategory selector and an optional note field. The operator must justify              #}
+{#   every gap before the draft work order is promoted from PENDING_GAPS to DONE.               #}
+{#                                                                                                #}
+{# Formulario de resolución de lagunas de jornada — interfaz de justificación Gate 4.            #}
+{#   Muestra cada laguna detectada (GAP / LATE_START / EARLY_END) con un selector de            #}
+{#   AbsenceCategory y un campo de nota opcional. El operario debe justificar cada              #}
+{#   laguna antes de que el borrador pase de PENDING_GAPS a DONE.                               #}
+{% extends "panel/base.html" %}
+
+{% block title %}Justificación de jornada{% endblock %}
+
+{% block page_title %}Justificación de jornada{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0 gap-resolution-container">
+
+    {# ------------------------------------------------------------------ #}
+    {# Header card — date and context summary                              #}
+    {# Tarjeta de cabecera — fecha y resumen de contexto                  #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-3 px-4">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <span class="fs-5">
+                    <i class="bi bi-calendar-exclamation text-warning me-2"></i>
+                    <strong>Parte del
+                        {% if work_date %}
+                            {{ work_date|date:"d/m/Y" }}
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </strong>
+                </span>
+                <span class="badge bg-warning text-dark ms-auto">
+                    {{ gaps|length }} laguna{{ gaps|length|pluralize:"s" }} detectada{{ gaps|length|pluralize:"s" }}
+                </span>
+            </div>
+            <p class="text-sm text-muted mt-2 mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                Se han detectado lagunas en tu jornada laboral. Debes indicar el motivo
+                de cada una antes de que el parte quede registrado definitivamente.
+            </p>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Jornada summary — chronological block timeline                      #}
+    {# Resumen de jornada — línea de tiempo cronológica de bloques         #}
+    {# Helps the operator identify which gap falls between which blocks    #}
+    {# before selecting an absence category for each one.                  #}
+    {# Ayuda al operario a identificar qué laguna cae entre qué bloques   #}
+    {# antes de seleccionar una categoría de ausencia para cada una.       #}
+    {# ------------------------------------------------------------------ #}
+    {% if entry_lines %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light border-bottom py-2 px-4">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-list-ol me-2 text-muted"></i>Bloques de trabajo registrados
+            </span>
+        </div>
+        <div class="card-body px-4 py-3">
+            <div class="d-flex flex-column gap-1">
+                {% for line in entry_lines %}
+
+                {# ---- Work block row ---- #}
+                {# ---- Fila de bloque de trabajo ---- #}
+                <div class="d-flex align-items-center gap-3 py-1 px-2 rounded work-block-row">
+                    <span class="text-sm fw-semibold text-primary work-block-time">
+                        {% if line.hc %}{{ line.hc|time:"H:i" }}{% else %}—{% endif %}
+                        –
+                        {% if line.hf %}{{ line.hf|time:"H:i" }}{% else %}—{% endif %}
+                    </span>
+                    <span class="text-sm text-muted work-block-machine">
+                        {% if line.machine_asset %}
+                            {{ line.machine_asset.code }}
+                        {% elif line.machine_raw %}
+                            {{ line.machine_raw }}
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </span>
+                    <span class="text-sm text-truncate">
+                        {{ line.fault_description|default:"Sin descripción"|truncatechars:60 }}
+                    </span>
+                </div>
+
+                {# ---- Gap indicator between consecutive blocks ---- #}
+                {# ---- Indicador de laguna entre bloques consecutivos ---- #}
+                {% if not forloop.last %}
+                {% with next_line=entry_lines|slice:forloop.counter %}
+                {% for nl in next_line|slice:":1" %}
+                {% if line.hf and nl.hc %}
+                <div class="d-flex align-items-center gap-2 px-2 py-1">
+                    <span class="text-muted gap-indicator-label gap-indicator-time">
+                        ▲ {{ line.hf|time:"H:i" }}
+                    </span>
+                    <span class="badge bg-warning text-dark gap-indicator-badge">
+                        <i class="bi bi-hourglass-split me-1"></i>Laguna
+                    </span>
+                    <span class="text-muted gap-indicator-label">
+                        ▼ {{ nl.hc|time:"H:i" }}
+                    </span>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% endwith %}
+                {% endif %}
+
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Validation errors banner                                            #}
+    {# Banner de errores de validación                                     #}
+    {# ------------------------------------------------------------------ #}
+    {% if errors %}
+    <div class="alert alert-danger border-0 shadow-sm mb-4" role="alert">
+        <div class="d-flex align-items-start gap-2">
+            <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+            <div>
+                <strong>Corrige los siguientes errores antes de continuar:</strong>
+                <ul class="mb-0 mt-1 ps-3">
+                    {% for error in errors %}
+                    <li class="text-sm">{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Gap resolution form                                                 #}
+    {# Formulario de resolución de lagunas                                 #}
+    {# ------------------------------------------------------------------ #}
+    <form method="post" id="formGapResolution">
+        {% csrf_token %}
+
+        {% for gap in gaps %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light border-bottom py-2 px-4">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+
+                    {# Gap type badge — Insignia de tipo de laguna #}
+                    {% if gap.gap_type == "GAP" %}
+                    <span class="badge bg-warning text-dark">
+                        <i class="bi bi-hourglass-split me-1"></i>Laguna entre bloques
+                    </span>
+                    {% elif gap.gap_type == "LATE_START" %}
+                    <span class="badge bg-info text-dark">
+                        <i class="bi bi-clock me-1"></i>Inicio tardío
+                    </span>
+                    {% elif gap.gap_type == "EARLY_END" %}
+                    <span class="badge bg-secondary">
+                        <i class="bi bi-clock-history me-1"></i>Cierre anticipado
+                    </span>
+                    {% endif %}
+
+                    <span class="text-sm fw-semibold ms-1">
+                        {{ gap.gap_start|time:"H:i" }} – {{ gap.gap_end|time:"H:i" }}
+                    </span>
+                    <span class="text-sm text-muted ms-auto">
+                        {{ gap.duration_minutes }} min
+                    </span>
+                </div>
+            </div>
+
+            <div class="card-body px-4 py-3">
+
+                {# AbsenceCategory selector — Selector de categoría de ausencia #}
+                <div class="mb-3">
+                    <label class="form-label text-sm fw-semibold mb-1" for="gap_{{ gap.pk }}_category">
+                        Motivo de la laguna <span class="text-danger">*</span>
+                    </label>
+                    <select name="gap_{{ gap.pk }}_category"
+                            id="gap_{{ gap.pk }}_category"
+                            class="form-select form-select-sm gap-category-select"
+                            data-gap-pk="{{ gap.pk }}"
+                            required>
+                        <option value="">Selecciona un motivo…</option>
+                        {% for cat in absence_categories %}
+                        <option value="{{ cat.pk }}"
+                                data-requires-note="{{ cat.requires_note|yesno:'true,false' }}"
+                                {% if gap.absence_category_id == cat.pk %}selected{% endif %}>
+                            {{ cat.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                {# Note field — Campo de nota (shown/required based on category) #}
+                <div class="mb-0 gap-note-wrapper gap-note-hidden" id="note_wrapper_{{ gap.pk }}">
+                    <label class="form-label text-sm fw-semibold mb-1"
+                           for="gap_{{ gap.pk }}_note">
+                        Nota explicativa <span class="text-danger">*</span>
+                    </label>
+                    <textarea name="gap_{{ gap.pk }}_note"
+                              id="gap_{{ gap.pk }}_note"
+                              class="form-control form-control-sm"
+                              rows="2"
+                              placeholder="Describe brevemente el motivo de la laguna…">{{ request.POST|default_if_none:"" }}</textarea>
+                </div>
+
+            </div>
+        </div>
+        {% empty %}
+        {# No gaps remaining — should not normally reach this state #}
+        {# Sin gaps pendientes — no debería llegar aquí normalmente #}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body px-4 py-5 text-center text-muted">
+                <i class="bi bi-check2-circle fs-3 d-block mb-2 text-success"></i>
+                <span class="text-sm">No hay lagunas pendientes de justificación.</span>
+            </div>
+        </div>
+        {% endfor %}
+
+        {# ------------------------------------------------------------------ #}
+        {# Action buttons — Botones de acción                                 #}
+        {# ------------------------------------------------------------------ #}
+        {% if gaps %}
+        <div class="d-flex gap-3 justify-content-between align-items-center flex-wrap mt-2">
+
+            {# Back to edit — Volver y editar horas #}
+            <button type="submit"
+                    name="back_to_form"
+                    value="1"
+                    class="btn btn-outline-secondary btn-sm px-4"
+                    onclick="return confirm('¿Descartar el parte y volver al formulario para corregir las horas?')">
+                <i class="bi bi-arrow-left me-1"></i>Volver y editar
+            </button>
+
+            {# Submit justification — Enviar justificación #}
+            <button type="submit"
+                    id="btnSubmitGaps"
+                    class="btn btn-primary btn-sm px-4">
+                <i class="bi bi-check2-all me-1"></i>Confirmar justificación y guardar parte
+            </button>
+
+        </div>
+        {% endif %}
+
+    </form>
+
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Gap card hover — Hover de tarjeta de laguna */
+    .card:has(.gap-category-select) {
+        transition: box-shadow 0.15s ease;
+    }
+    .card:has(.gap-category-select):hover {
+        box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1) !important;
+    }
+    /* Note wrapper transition — Transición del campo de nota */
+    .gap-note-wrapper {
+        transition: opacity 0.2s ease;
+    }
+</style>
+<script>
+/*
+ * gap_resolution.js (inline) — Gate 4 gap resolution UI.
+ * Shows/hides the note field based on the requires_note flag of the
+ * selected AbsenceCategory. Validates that all required notes are filled
+ * before allowing form submission.
+ *
+ * gap_resolution.js (inline) — UI de resolución de lagunas Gate 4.
+ * Muestra/oculta el campo de nota según el flag requires_note de la
+ * AbsenceCategory seleccionada. Valida que todas las notas requeridas
+ * estén rellenas antes de permitir el envío del formulario.
+ */
+(function () {
+    "use strict";
+
+    /**
+     * Toggles the visibility and required attribute of the note field
+     * for a given gap pk based on the selected category's requires_note flag.
+     * ---
+     * Activa/desactiva la visibilidad y el atributo required del campo de
+     * nota para un gap pk dado según el flag requires_note de la categoría.
+     */
+    function toggleNoteField(selectEl) {
+        var gapPk       = selectEl.getAttribute("data-gap-pk");
+        var wrapper     = document.getElementById("note_wrapper_" + gapPk);
+        var noteField   = document.getElementById("gap_" + gapPk + "_note");
+        var selectedOpt = selectEl.options[selectEl.selectedIndex];
+
+        if (!wrapper || !noteField) { return; }
+
+        var requiresNote = selectedOpt && selectedOpt.getAttribute("data-requires-note") === "true";
+
+        if (requiresNote) {
+            wrapper.style.display = "block";
+            noteField.required    = true;
+        } else {
+            wrapper.style.display = "none";
+            noteField.required    = false;
+            noteField.value       = "";
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        /* Initialise all category selects on page load. */
+        /* Inicializar todos los selectores de categoría al cargar la página. */
+        var selects = document.querySelectorAll(".gap-category-select");
+        selects.forEach(function (sel) {
+            toggleNoteField(sel);
+            sel.addEventListener("change", function () {
+                toggleNoteField(sel);
+            });
+        });
+
+        /* Client-side validation before submission. */
+        /* Validación client-side antes del envío. */
+        var form = document.getElementById("formGapResolution");
+        if (!form) { return; }
+
+        form.addEventListener("submit", function (e) {
+            /* Skip validation for the "Volver y editar" back button. */
+            /* Omitir validación para el botón "Volver y editar". */
+            if (document.activeElement &&
+                document.activeElement.name === "back_to_form") {
+                return;
+            }
+
+            var allValid = true;
+            selects.forEach(function (sel) {
+                if (!sel.value) {
+                    sel.classList.add("is-invalid");
+                    allValid = false;
+                } else {
+                    sel.classList.remove("is-invalid");
+                }
+            });
+
+            if (!allValid) {
+                e.preventDefault();
+                /* Scroll to first invalid field. */
+                /* Desplazar al primer campo inválido. */
+                var firstInvalid = form.querySelector(".is-invalid");
+                if (firstInvalid) {
+                    firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+            }
+        });
+    });
+}());
+</script>
+{% endblock %}

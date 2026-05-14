@@ -17,6 +17,8 @@
 ./vox_bridge/services.py
 ./panel/urls.py
 ./panel/templates/panel/base.html
+./panel/templates/panel/workday/schedule_form.html
+./panel/templates/panel/workday/absence_category_list.html
 ./panel/templates/panel/whatsapp/active_session_list.html
 ./panel/templates/panel/whatsapp/template_list.html
 ./panel/templates/panel/voiceprofile/detail.html
@@ -67,6 +69,7 @@
 ./panel/templates/panel/_description_typeahead.html
 ./panel/templates/panel/_tour_driver_cdn.html
 ./panel/templates/panel/operator/history.html
+./panel/templates/panel/operator/gap_resolution.html
 ./panel/templates/panel/operator/merge_entry.html
 ./panel/templates/panel/operator/form_entry.html
 ./panel/templates/panel/operator/confirm_entry.html
@@ -259,6 +262,7 @@
 ./ivr_config/views.py
 ./ivr_config/apps.py
 ./ivr_config/models.py
+./ivr_config/migrations/0017_workdayschedule_refactor_multiprofile.py
 ./ivr_config/migrations/0013_alter_companyuser_role.py
 ./ivr_config/migrations/0014_companyuser_dni_companyuser_phone.py
 ./ivr_config/migrations/0011_section_fleet_families.py
@@ -273,6 +277,7 @@
 ./ivr_config/migrations/0006_callflow_voiceprofile_add_backup_fields.py
 ./ivr_config/migrations/0005_corporatevoiceprofile_add_voice_name.py
 ./ivr_config/migrations/0012_callflow_backup_name.py
+./ivr_config/migrations/0016_workdayschedule_absencecategory.py
 ./ivr_config/migrations/0002_phonenumber_capabilities.py
 ./ivr_config/migrations/0001_initial.py
 ./ivr_config/tests.py
@@ -295,6 +300,7 @@
 ./work_order_processor/migrations/0014_workorderentryline_fault_category_and_more.py
 ./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py
 ./work_order_processor/migrations/0008_workorder_has_overlap_incident.py
+./work_order_processor/migrations/0017_workdaygap_pending_gaps.py
 ./work_order_processor/migrations/0010_workorderentryline_crane_hours_reading_and_more.py
 ./work_order_processor/migrations/0013_workorder_source.py
 ./work_order_processor/migrations/0004_workorder_source_pdf_hash.py
@@ -308,6 +314,7 @@
 ./work_order_processor/tests.py
 ./work_order_processor/management/commands/__init__.py
 ./work_order_processor/management/commands/repair_entry_lines.py
+./work_order_processor/management/commands/seed_absence_categories.py
 ./work_order_processor/management/commands/backfill_pdf_hashes.py
 ./work_order_processor/management/commands/classify_entry_lines.py
 ./work_order_processor/management/commands/detect_duplicate_entries.py

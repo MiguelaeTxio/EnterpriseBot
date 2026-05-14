@@ -1,0 +1,291 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/workday/schedule_form.html #}
+{#                                                                                              #}
+{# Workday schedule management page — SUPERVISOR and ADMIN roles.                              #}
+{#   Lists all WorkdaySchedule records for the company and provides a creation form.           #}
+{#   Each existing schedule can be edited or deleted inline.                                    #}
+{#                                                                                              #}
+{# Página de gestión de horarios de jornada — roles SUPERVISOR y ADMIN.                        #}
+{#   Lista todos los registros WorkdaySchedule de la empresa y ofrece un formulario de alta.   #}
+{#   Cada horario existente puede editarse o eliminarse desde la misma página.                  #}
+{% extends "panel/base.html" %}
+
+{% block title %}Horarios de jornada{% endblock %}
+
+{% block page_title %}Horarios de jornada{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0 workday-container">
+
+    {# ------------------------------------------------------------------ #}
+    {# Validation errors banner                                            #}
+    {# Banner de errores de validación                                     #}
+    {# ------------------------------------------------------------------ #}
+    {% if errors %}
+    <div class="alert alert-danger border-0 shadow-sm mb-4" role="alert">
+        <div class="d-flex align-items-start gap-2">
+            <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+            <div>
+                <strong>Corrige los siguientes errores:</strong>
+                <ul class="mb-0 mt-1 ps-3">
+                    {% for error in errors %}
+                    <li class="text-sm">{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Existing schedules list                                             #}
+    {# Lista de horarios existentes                                        #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light border-bottom py-2 px-4 d-flex align-items-center justify-content-between">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-clock me-2 text-muted"></i>Horarios configurados
+            </span>
+            <span class="badge bg-secondary">{{ schedules|length }}</span>
+        </div>
+
+        {% if schedules %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="px-4 text-sm fw-semibold">Nombre</th>
+                        <th class="text-sm fw-semibold">Entrada</th>
+                        <th class="text-sm fw-semibold">Salida</th>
+                        <th class="text-sm fw-semibold">Tolerancia</th>
+                        <th class="text-sm fw-semibold">Por defecto</th>
+                        <th class="text-sm fw-semibold">Operarios</th>
+                        <th class="text-sm fw-semibold">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sched in schedules %}
+                    <tr>
+                        <td class="px-4 text-sm fw-semibold">{{ sched.label }}</td>
+                        <td class="text-sm">{{ sched.start_time|time:"H:i" }}</td>
+                        <td class="text-sm">{{ sched.end_time|time:"H:i" }}</td>
+                        <td class="text-sm">{{ sched.tolerance_minutes }} min</td>
+                        <td class="text-sm">
+                            {% if sched.is_default %}
+                            <span class="badge bg-success">Sí</span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-sm text-muted">
+                            {{ sched.assigned_users.count }}
+                        </td>
+                        <td class="text-sm">
+                            <div class="d-flex gap-2">
+                                <button type="button"
+                                        class="btn btn-outline-primary btn-sm py-0 px-2"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#modalEditSchedule"
+                                        data-pk="{{ sched.pk }}"
+                                        data-label="{{ sched.label|escapejs }}"
+                                        data-start="{{ sched.start_time|time:'H:i' }}"
+                                        data-end="{{ sched.end_time|time:'H:i' }}"
+                                        data-tolerance="{{ sched.tolerance_minutes }}"
+                                        data-is-default="{{ sched.is_default|yesno:'true,false' }}"
+                                        title="Editar horario">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form method="post" class="d-inline"
+                                      onsubmit="return confirm('¿Eliminar el horario \'{{ sched.label|escapejs }}\'? Los operarios asignados quedarán sin horario específico.')">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="schedule_pk" value="{{ sched.pk }}">
+                                    <button type="submit"
+                                            class="btn btn-outline-danger btn-sm py-0 px-2"
+                                            title="Eliminar horario">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-4 py-5 text-center text-muted">
+            <i class="bi bi-clock fs-3 d-block mb-2"></i>
+            <span class="text-sm">No hay horarios configurados para esta empresa.</span>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Create new schedule form                                            #}
+    {# Formulario de alta de nuevo horario                                 #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light border-bottom py-2 px-4">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-plus-circle me-2 text-muted"></i>Nuevo horario
+            </span>
+        </div>
+        <div class="card-body px-4 py-4">
+            <form method="post" id="formCreateSchedule">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label text-sm fw-semibold mb-1">
+                            Nombre <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" name="label"
+                               class="form-control form-control-sm"
+                               placeholder="Ej: Mecánicos, Chóferes de grúa…"
+                               value="{{ post_data.label|default:'' }}"
+                               required>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label text-sm fw-semibold mb-1">
+                            Entrada <span class="text-danger">*</span>
+                        </label>
+                        <input type="time" name="start_time"
+                               class="form-control form-control-sm"
+                               value="{{ post_data.start_time|default:'' }}"
+                               required>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label text-sm fw-semibold mb-1">
+                            Salida <span class="text-danger">*</span>
+                        </label>
+                        <input type="time" name="end_time"
+                               class="form-control form-control-sm"
+                               value="{{ post_data.end_time|default:'' }}"
+                               required>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label text-sm fw-semibold mb-1">Tolerancia (min)</label>
+                        <input type="number" name="tolerance_minutes"
+                               class="form-control form-control-sm"
+                               min="0" max="60"
+                               value="{{ post_data.tolerance_minutes|default:'15' }}">
+                    </div>
+                    <div class="col-12 d-flex align-items-center gap-3 flex-wrap">
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox"
+                                   name="is_default" id="createIsDefault"
+                                   {% if post_data.is_default %}checked{% endif %}>
+                            <label class="form-check-label text-sm" for="createIsDefault">
+                                Establecer como horario por defecto
+                            </label>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm px-4 ms-auto">
+                            <i class="bi bi-plus-circle me-1"></i>Crear horario
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Edit existing schedule                                      #}
+{# Modal — Editar horario existente                                    #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalEditSchedule" tabindex="-1"
+     aria-labelledby="modalEditScheduleLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalEditScheduleLabel">
+                    <i class="bi bi-pencil me-2 text-muted"></i>Editar horario
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form method="post" id="formEditSchedule">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update">
+                    <input type="hidden" name="schedule_pk" id="editSchedulePk">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label text-sm fw-semibold mb-1">
+                                Nombre <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" name="label" id="editLabel"
+                                   class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold mb-1">
+                                Entrada <span class="text-danger">*</span>
+                            </label>
+                            <input type="time" name="start_time" id="editStartTime"
+                                   class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold mb-1">
+                                Salida <span class="text-danger">*</span>
+                            </label>
+                            <input type="time" name="end_time" id="editEndTime"
+                                   class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label text-sm fw-semibold mb-1">Tolerancia (min)</label>
+                            <input type="number" name="tolerance_minutes" id="editTolerance"
+                                   class="form-control form-control-sm" min="0" max="60">
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox"
+                                       name="is_default" id="editIsDefault">
+                                <label class="form-check-label text-sm" for="editIsDefault">
+                                    Establecer como horario por defecto
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" form="formEditSchedule"
+                        class="btn btn-primary btn-sm px-4">
+                    <i class="bi bi-check2 me-1"></i>Guardar cambios
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Workday management container max-width
+       Anchura máxima del contenedor de gestión de jornada */
+    .workday-container { max-width: 860px; }
+</style>
+<script>
+/* Populate edit modal with schedule data from data attributes.
+   Rellena el modal de edición con datos del horario desde atributos data. */
+(function () {
+    "use strict";
+    document.addEventListener("DOMContentLoaded", function () {
+        var modalEl = document.getElementById("modalEditSchedule");
+        if (!modalEl) { return; }
+        modalEl.addEventListener("show.bs.modal", function (event) {
+            var btn = event.relatedTarget;
+            if (!btn) { return; }
+            document.getElementById("editSchedulePk").value  = btn.getAttribute("data-pk")        || "";
+            document.getElementById("editLabel").value       = btn.getAttribute("data-label")      || "";
+            document.getElementById("editStartTime").value   = btn.getAttribute("data-start")      || "";
+            document.getElementById("editEndTime").value     = btn.getAttribute("data-end")        || "";
+            document.getElementById("editTolerance").value   = btn.getAttribute("data-tolerance")  || "15";
+            document.getElementById("editIsDefault").checked = btn.getAttribute("data-is-default") === "true";
+        });
+    });
+}());
+</script>
+{% endblock %}

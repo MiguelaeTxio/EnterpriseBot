@@ -3511,6 +3511,27 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
             from django.urls import reverse
             back_url = reverse("panel:work_order_list")
 
+        # Retrieve WorkdayGap records for DIGITAL/GENERATED parts only.
+        # They are ordered by gap_start so the supervisor sees the timeline
+        # in chronological order. Empty list for PDF_UPLOAD parts.
+        #
+        # Recuperar registros WorkdayGap solo para partes DIGITAL/GENERATED.
+        # Se ordenan por gap_start para que el supervisor vea la línea de tiempo
+        # en orden cronológico. Lista vacía para partes PDF_UPLOAD.
+        from work_order_processor.models import WorkdayGap
+        if work_order.source in (
+            WorkOrder.Source.DIGITAL,
+            WorkOrder.Source.GENERATED,
+        ):
+            workday_gaps = list(
+                WorkdayGap.objects
+                .filter(work_order=work_order)
+                .select_related("absence_category")
+                .order_by("gap_start")
+            )
+        else:
+            workday_gaps = []
+
         return render(request, self.template_name, {
             "company":      company,
             "company_user": company_user,
@@ -3519,6 +3540,7 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
             "work_order":   work_order,
             "groups":       groups,
             "back_url":     back_url,
+            "workday_gaps": workday_gaps,
         })
 
     def post(self, request, pk):
@@ -6666,6 +6688,108 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 })
                 return render(request, self.template_name, context)
 
+        # ------------------------------------------------------------------
+        # Gate 4 — Workday completeness validation.
+        # Gate 4 — Validación de jornada completa.
+        #
+        # Resolves the WorkdaySchedule applicable to this operator using the
+        # priority chain: operator-specific → company default → None (skip).
+        # If gaps are detected, persists a PENDING_GAPS draft and redirects
+        # to WorkdayGapResolutionView for justification before the final INSERT.
+        #
+        # Resuelve el WorkdaySchedule aplicable al operario usando la cadena de
+        # prioridad: específico del operario → por defecto empresa → None (omitir).
+        # Si se detectan gaps, persiste un borrador PENDING_GAPS y redirige a
+        # WorkdayGapResolutionView para justificación antes del INSERT final.
+        # ------------------------------------------------------------------
+        if work_date is not None:
+            from ivr_config.models import WorkdaySchedule as _WDS_C2
+            from django.urls import reverse as _rev_g4c2
+            _schedule_g4c2 = (
+                cu.workday_schedule
+                if cu.workday_schedule_id
+                else _WDS_C2.objects.filter(
+                    company=company, is_default=True
+                ).first()
+            )
+            _gaps_g4c2 = _detect_workday_gaps(
+                entry_lines_data, _schedule_g4c2, work_date
+            )
+            if _gaps_g4c2:
+                # Persist PENDING_GAPS draft WorkOrder so the resolution view
+                # can promote it to DONE once all gaps are justified.
+                # Persistir borrador PENDING_GAPS para que la vista de resolución
+                # lo promueva a DONE cuando todos los gaps estén justificados.
+                from django.db import transaction as _tx_g4c2
+                _worker_name_g4 = (
+                    cu.user.get_full_name() or cu.user.username
+                ).upper()
+                _date_tag_g4 = work_date.strftime("%d-%m-%Y")
+                _synth_g4    = f"{_worker_name_g4}_{_date_tag_g4}_DRAFT.pdf"
+                with _tx_g4c2.atomic():
+                    _wo_draft = WorkOrder(
+                        company         = company,
+                        uploaded_by     = cu,
+                        source          = WorkOrder.Source.DIGITAL,
+                        status          = WorkOrder.Status.PENDING_GAPS,
+                        total_pages     = 1,
+                        processed_pages = 1,
+                        reviewed        = False,
+                    )
+                    _wo_draft.source_pdf.name = _synth_g4
+                    _wo_draft.save()
+                    _entry_draft = WorkOrderEntry.objects.create(
+                        work_order            = _wo_draft,
+                        page_number           = 1,
+                        worker_name           = _worker_name_g4,
+                        work_date             = work_date,
+                        uncertain_date        = False,
+                        extraction_confidence = WorkOrderEntry.Confidence.HIGH,
+                        raw_gemini_response   = None,
+                    )
+                    _line_num_g4 = 1
+                    for _ld in entry_lines_data:
+                        _ln = WorkOrderEntryLine.objects.create(
+                            entry             = _entry_draft,
+                            line_number       = _line_num_g4,
+                            machine_asset     = _ld.get("machine_asset"),
+                            machine_raw       = _ld.get("machine_raw", ""),
+                            machine_norm      = "",
+                            fault_description = _ld.get("fault_description", ""),
+                            repair_notes      = _ld.get("repair_notes", ""),
+                            hc                = _ld.get("hc"),
+                            hf                = _ld.get("hf"),
+                            or_val            = _ld.get("or_val", ""),
+                            delta_hours       = _ld.get("delta_hours"),
+                            flags             = [],
+                            odometer_reading     = _ld.get("odometer_reading"),
+                            engine_hours_reading = _ld.get("engine_hours_reading"),
+                            crane_hours_reading  = _ld.get("crane_hours_reading"),
+                        )
+                        _line_num_g4 += 1
+                    from work_order_processor.models import WorkdayGap as _WDG_C2
+                    for _gap in _gaps_g4c2:
+                        _WDG_C2.objects.create(
+                            work_order       = _wo_draft,
+                            gap_type         = _gap["gap_type"],
+                            gap_start        = _gap["gap_start"],
+                            gap_end          = _gap["gap_end"],
+                            duration_minutes = _gap["duration_minutes"],
+                        )
+                request.session["pending_gaps_wo_pk"] = _wo_draft.pk
+                request.session.modified = True
+                logger.info(
+                    "# [ConfirmView/Gate4] PENDING_GAPS borrador pk=%d creado. "
+                    "%d gap(s) detectado(s). Redirigiendo a resolución.",
+                    _wo_draft.pk, len(_gaps_g4c2),
+                )
+                return redirect(
+                    _rev_g4c2(
+                        "panel:operator_gap_resolution",
+                        kwargs={"wo_draft_pk": _wo_draft.pk},
+                    )
+                )
+
         # Clear session extraction data / Limpiar datos de extracción de sesión.
         request.session.pop("operator_upload_extraction", None)
         request.session.modified = True
@@ -7369,6 +7493,97 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     "min_date":           _get_min_allowed_date(cu).isoformat() if _get_min_allowed_date(cu) else "",
                 })
                 return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Gate 4 — Workday completeness validation.
+        # Gate 4 — Validación de jornada completa.
+        #
+        # Same logic as WorkOrderEntryConfirmView Gate 4.
+        # Misma lógica que Gate 4 de WorkOrderEntryConfirmView.
+        # ------------------------------------------------------------------
+        if work_date is not None:
+            from ivr_config.models import WorkdaySchedule as _WDS_FA
+            from django.urls import reverse as _rev_g4fa
+            _schedule_g4fa = (
+                cu.workday_schedule
+                if cu.workday_schedule_id
+                else _WDS_FA.objects.filter(
+                    company=company, is_default=True
+                ).first()
+            )
+            _gaps_g4fa = _detect_workday_gaps(
+                entry_lines_data, _schedule_g4fa, work_date
+            )
+            if _gaps_g4fa:
+                from django.db import transaction as _tx_g4fa
+                _worker_name_g4fa = (
+                    cu.user.get_full_name() or cu.user.username
+                ).upper()
+                _date_tag_g4fa = work_date.strftime("%d-%m-%Y")
+                _synth_g4fa    = f"{_worker_name_g4fa}_{_date_tag_g4fa}_DRAFT.pdf"
+                with _tx_g4fa.atomic():
+                    _wo_draft_fa = WorkOrder(
+                        company         = company,
+                        uploaded_by     = cu,
+                        source          = WorkOrder.Source.DIGITAL,
+                        status          = WorkOrder.Status.PENDING_GAPS,
+                        total_pages     = 1,
+                        processed_pages = 1,
+                        reviewed        = False,
+                    )
+                    _wo_draft_fa.source_pdf.name = _synth_g4fa
+                    _wo_draft_fa.save()
+                    _entry_draft_fa = WorkOrderEntry.objects.create(
+                        work_order            = _wo_draft_fa,
+                        page_number           = 1,
+                        worker_name           = _worker_name_g4fa,
+                        work_date             = work_date,
+                        uncertain_date        = False,
+                        extraction_confidence = WorkOrderEntry.Confidence.HIGH,
+                        raw_gemini_response   = None,
+                    )
+                    _line_num_g4fa = 1
+                    for _ld in entry_lines_data:
+                        WorkOrderEntryLine.objects.create(
+                            entry             = _entry_draft_fa,
+                            line_number       = _line_num_g4fa,
+                            machine_asset     = _ld.get("machine_asset"),
+                            machine_raw       = _ld.get("machine_raw", ""),
+                            machine_norm      = "",
+                            fault_description = _ld.get("fault_description", ""),
+                            repair_notes      = _ld.get("repair_notes", ""),
+                            hc                = _ld.get("hc"),
+                            hf                = _ld.get("hf"),
+                            or_val            = _ld.get("or_val", ""),
+                            delta_hours       = _ld.get("delta_hours"),
+                            flags             = [],
+                            odometer_reading     = _ld.get("odometer_reading"),
+                            engine_hours_reading = _ld.get("engine_hours_reading"),
+                            crane_hours_reading  = _ld.get("crane_hours_reading"),
+                        )
+                        _line_num_g4fa += 1
+                    from work_order_processor.models import WorkdayGap as _WDG_FA
+                    for _gap in _gaps_g4fa:
+                        _WDG_FA.objects.create(
+                            work_order       = _wo_draft_fa,
+                            gap_type         = _gap["gap_type"],
+                            gap_start        = _gap["gap_start"],
+                            gap_end          = _gap["gap_end"],
+                            duration_minutes = _gap["duration_minutes"],
+                        )
+                request.session["pending_gaps_wo_pk"] = _wo_draft_fa.pk
+                request.session.modified = True
+                logger.info(
+                    "# [FormView/Gate4] PENDING_GAPS borrador pk=%d creado. "
+                    "%d gap(s) detectado(s). Redirigiendo a resolución.",
+                    _wo_draft_fa.pk, len(_gaps_g4fa),
+                )
+                return redirect(
+                    _rev_g4fa(
+                        "panel:operator_gap_resolution",
+                        kwargs={"wo_draft_pk": _wo_draft_fa.pk},
+                    )
+                )
 
         # ------------------------------------------------------------------
         # Atomic persistence / Persistencia atomica.
@@ -8381,6 +8596,176 @@ def _get_min_allowed_date(cu):
     return last_reviewed + timedelta(days=1)
 
 
+def _detect_workday_gaps(entry_lines, schedule, work_date):
+    """
+    Detects workday gaps and deviations in a set of parsed entry lines
+    against a WorkdaySchedule reference timetable.
+
+    Checks performed (all require schedule to be non-None):
+      LATE_START — first block starts after schedule.start_time + tolerance.
+      EARLY_END  — last block ends before schedule.end_time - tolerance.
+      GAP        — uncovered interval >= tolerance_minutes between consecutive
+                   blocks (after sorting by hc ascending).
+
+    Lines with null hc or hf are silently ignored in all checks.
+
+    Parameters:
+        entry_lines (list[dict]) — parsed line dicts with keys 'hc' and 'hf'
+                                   (time objects or HH:MM strings).
+        schedule    (WorkdaySchedule | None) — reference timetable. If None,
+                                   the function returns an empty list
+                                   (Gate 4 disabled).
+        work_date   (date)        — date of the work order (reserved for
+                                   future use, e.g. holiday calendars).
+
+    Returns:
+        list[dict] — one dict per detected gap/deviation, each with keys:
+            gap_type        (str)  — "GAP" | "LATE_START" | "EARLY_END"
+            gap_start       (time) — start of the uncovered interval.
+            gap_end         (time) — end of the uncovered interval.
+            duration_minutes (int) — duration in minutes.
+
+    ---
+
+    Detecta lagunas y desviaciones de jornada en un conjunto de líneas de
+    entrada parseadas contra un horario de referencia WorkdaySchedule.
+
+    Comprobaciones realizadas (todas requieren schedule no nulo):
+      LATE_START — el primer bloque comienza después de start_time + tolerancia.
+      EARLY_END  — el último bloque termina antes de end_time - tolerancia.
+      GAP        — intervalo sin cubrir >= tolerance_minutes entre bloques
+                   consecutivos (ordenados por hc ascendente).
+
+    Las líneas con hc o hf nulos se ignoran silenciosamente en todas las
+    comprobaciones.
+
+    Parámetros:
+        entry_lines (list[dict]) — dicts de líneas parseadas con claves 'hc' y
+                                   'hf' (objetos time o cadenas HH:MM).
+        schedule    (WorkdaySchedule | None) — horario de referencia. Si es
+                                   None, la función devuelve lista vacía
+                                   (Gate 4 desactivado).
+        work_date   (date)        — fecha del parte (reservado para uso futuro,
+                                   p. ej. calendarios de festivos).
+
+    Retorna:
+        list[dict] — un dict por laguna/desviación detectada, con claves:
+            gap_type         (str)  — "GAP" | "LATE_START" | "EARLY_END"
+            gap_start        (time) — inicio del intervalo sin cubrir.
+            gap_end          (time) — fin del intervalo sin cubrir.
+            duration_minutes (int)  — duración en minutos.
+    """
+    from datetime import datetime as _dt_gaps, time as _time_gaps, timedelta as _td_gaps
+
+    # Gate disabled — no schedule configured for this operator/company.
+    # Gate desactivado — no hay horario configurado para este operario/empresa.
+    if schedule is None:
+        return []
+
+    def _to_t(val):
+        """
+        Coerces a time object or HH:MM string to a time instance.
+        Returns None on failure.
+        ---
+        Convierte un objeto time o cadena HH:MM a una instancia time.
+        Devuelve None en caso de fallo.
+        """
+        if val is None:
+            return None
+        if hasattr(val, "hour"):
+            return val
+        try:
+            return _dt_gaps.strptime(str(val).strip(), "%H:%M").time()
+        except ValueError:
+            return None
+
+    def _mins(t):
+        """
+        Converts a time object to total minutes since midnight.
+        ---
+        Convierte un objeto time a minutos totales desde medianoche.
+        """
+        return t.hour * 60 + t.minute
+
+    def _time_from_mins(total_mins):
+        """
+        Converts total minutes since midnight back to a time object.
+        Clamps to 23:59 if overflow.
+        ---
+        Convierte minutos totales desde medianoche de vuelta a un objeto time.
+        Limita a 23:59 si hay desbordamiento.
+        """
+        total_mins = min(total_mins, 23 * 60 + 59)
+        return _time_gaps(total_mins // 60, total_mins % 60)
+
+    # Build list of valid (hc, hf) pairs, sorted by hc ascending.
+    # Construir lista de pares (hc, hf) válidos, ordenados por hc ascendente.
+    valid_blocks = []
+    for ld in entry_lines:
+        hc = _to_t(ld.get("hc"))
+        hf = _to_t(ld.get("hf"))
+        if hc is not None and hf is not None:
+            valid_blocks.append((hc, hf))
+
+    if not valid_blocks:
+        return []
+
+    valid_blocks.sort(key=lambda b: _mins(b[0]))
+
+    gaps = []
+    tol  = schedule.tolerance_minutes
+
+    # ------------------------------------------------------------------
+    # LATE_START — first block starts after start_time + tolerance.
+    # LATE_START — el primer bloque empieza después de start_time + tolerancia.
+    # ------------------------------------------------------------------
+    first_hc      = valid_blocks[0][0]
+    schedule_start_mins = _mins(schedule.start_time) + tol
+    if _mins(first_hc) > schedule_start_mins:
+        gap_start = schedule.start_time
+        gap_end   = first_hc
+        gaps.append({
+            "gap_type":         "LATE_START",
+            "gap_start":        gap_start,
+            "gap_end":          gap_end,
+            "duration_minutes": _mins(gap_end) - _mins(gap_start),
+        })
+
+    # ------------------------------------------------------------------
+    # EARLY_END — last block ends before end_time - tolerance.
+    # EARLY_END — el último bloque termina antes de end_time - tolerancia.
+    # ------------------------------------------------------------------
+    last_hf             = valid_blocks[-1][1]
+    schedule_end_mins   = _mins(schedule.end_time) - tol
+    if _mins(last_hf) < schedule_end_mins:
+        gap_start = last_hf
+        gap_end   = schedule.end_time
+        gaps.append({
+            "gap_type":         "EARLY_END",
+            "gap_start":        gap_start,
+            "gap_end":          gap_end,
+            "duration_minutes": _mins(gap_end) - _mins(gap_start),
+        })
+
+    # ------------------------------------------------------------------
+    # GAP — uncovered interval >= tolerance between consecutive blocks.
+    # GAP — intervalo sin cubrir >= tolerancia entre bloques consecutivos.
+    # ------------------------------------------------------------------
+    for i in range(len(valid_blocks) - 1):
+        hf_curr  = valid_blocks[i][1]
+        hc_next  = valid_blocks[i + 1][0]
+        gap_mins = _mins(hc_next) - _mins(hf_curr)
+        if gap_mins >= tol:
+            gaps.append({
+                "gap_type":         "GAP",
+                "gap_start":        hf_curr,
+                "gap_end":          hc_next,
+                "duration_minutes": gap_mins,
+            })
+
+    return gaps
+
+
 def _detect_overlaps(existing_lines, new_lines):
     """
     Detects time overlaps between existing WorkOrderEntryLine records
@@ -8769,6 +9154,145 @@ class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
             return redirect(reverse("panel:operator_history"))
 
         # ------------------------------------------------------------------
+        # Gate 4 — Workday completeness validation (discard_existing / merge).
+        # Gate 4 — Validación de jornada completa (discard_existing / merge).
+        #
+        # Fires only for actions that persist new lines into the database.
+        # discard_new already returned above so it never reaches this point.
+        # The entry_lines used for Gap detection are the new lines from the
+        # pending_merge_lines session payload (list of dicts with hc/hf keys).
+        #
+        # Solo se activa para acciones que persisten líneas nuevas en la BD.
+        # discard_new ya retornó antes, nunca llega a este punto.
+        # Las entry_lines usadas para detección de gaps son las líneas nuevas
+        # del payload pending_merge_lines de sesión (dicts con claves hc/hf).
+        # ------------------------------------------------------------------
+        if merge_action in ("discard_existing", "merge"):
+            _work_date_g4mv = None
+            if work_date_iso:
+                try:
+                    _work_date_g4mv = _dtp.strptime(work_date_iso, "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+
+            if _work_date_g4mv is not None:
+                from ivr_config.models import WorkdaySchedule as _WDS_MV
+                from django.urls import reverse as _rev_g4mv
+                _schedule_g4mv = (
+                    cu.workday_schedule
+                    if cu.workday_schedule_id
+                    else _WDS_MV.objects.filter(
+                        company=company, is_default=True
+                    ).first()
+                )
+                _gaps_g4mv = _detect_workday_gaps(
+                    new_lines, _schedule_g4mv, _work_date_g4mv
+                )
+                if _gaps_g4mv:
+                    from django.db import transaction as _tx_g4mv
+                    _worker_name_g4mv = (
+                        cu.user.get_full_name() or cu.user.username
+                    ).upper()
+                    _date_tag_g4mv = _work_date_g4mv.strftime("%d-%m-%Y")
+                    _synth_g4mv    = (
+                        f"{_worker_name_g4mv}_{_date_tag_g4mv}_MERGE_DRAFT.pdf"
+                    )
+                    with _tx_g4mv.atomic():
+                        _wo_draft_mv = WorkOrder(
+                            company         = company,
+                            uploaded_by     = cu,
+                            source          = WorkOrder.Source.DIGITAL,
+                            status          = WorkOrder.Status.PENDING_GAPS,
+                            total_pages     = 1,
+                            processed_pages = 1,
+                            reviewed        = False,
+                        )
+                        _wo_draft_mv.source_pdf.name = _synth_g4mv
+                        _wo_draft_mv.save()
+                        _entry_draft_mv = WorkOrderEntry.objects.create(
+                            work_order            = _wo_draft_mv,
+                            page_number           = 1,
+                            worker_name           = _worker_name_g4mv,
+                            work_date             = _work_date_g4mv,
+                            uncertain_date        = False,
+                            extraction_confidence = WorkOrderEntry.Confidence.HIGH,
+                            raw_gemini_response   = None,
+                        )
+                        _line_num_g4mv = 1
+                        for _nd in new_lines:
+                            _ma_pk = _nd.get("machine_asset_pk")
+                            _ma_mv = None
+                            if _ma_pk:
+                                try:
+                                    from fleet.models import MachineAsset as _MA_MV
+                                    _ma_mv = _MA_MV.objects.filter(
+                                        pk=_ma_pk, company=company
+                                    ).first()
+                                except Exception:
+                                    pass
+                            from datetime import datetime as _dtm_mv
+                            def _tp(v):
+                                if not v:
+                                    return None
+                                try:
+                                    return _dtm_mv.strptime(str(v).strip(), "%H:%M").time()
+                                except ValueError:
+                                    return None
+                            from decimal import Decimal as _Dec_mv
+                            WorkOrderEntryLine.objects.create(
+                                entry             = _entry_draft_mv,
+                                line_number       = _line_num_g4mv,
+                                machine_asset     = _ma_mv,
+                                machine_raw       = _nd.get("machine_raw", ""),
+                                machine_norm      = "",
+                                fault_description = _nd.get("fault_description", ""),
+                                repair_notes      = _nd.get("repair_notes", ""),
+                                hc                = _tp(_nd.get("hc")),
+                                hf                = _tp(_nd.get("hf")),
+                                or_val            = "",
+                                delta_hours       = (
+                                    _Dec_mv(_nd["delta_hours"])
+                                    if _nd.get("delta_hours") else None
+                                ),
+                                flags             = [],
+                                odometer_reading     = (
+                                    _Dec_mv(_nd["odometer_reading"])
+                                    if _nd.get("odometer_reading") else None
+                                ),
+                                engine_hours_reading = (
+                                    _Dec_mv(_nd["engine_hours_reading"])
+                                    if _nd.get("engine_hours_reading") else None
+                                ),
+                                crane_hours_reading  = (
+                                    _Dec_mv(_nd["crane_hours_reading"])
+                                    if _nd.get("crane_hours_reading") else None
+                                ),
+                            )
+                            _line_num_g4mv += 1
+                        from work_order_processor.models import WorkdayGap as _WDG_MV
+                        for _gap in _gaps_g4mv:
+                            _WDG_MV.objects.create(
+                                work_order       = _wo_draft_mv,
+                                gap_type         = _gap["gap_type"],
+                                gap_start        = _gap["gap_start"],
+                                gap_end          = _gap["gap_end"],
+                                duration_minutes = _gap["duration_minutes"],
+                            )
+                    request.session["pending_gaps_wo_pk"] = _wo_draft_mv.pk
+                    request.session.modified = True
+                    logger.info(
+                        "# [MergeView/Gate4] PENDING_GAPS borrador pk=%d creado. "
+                        "%d gap(s) detectado(s). Redirigiendo a resolución.",
+                        _wo_draft_mv.pk, len(_gaps_g4mv),
+                    )
+                    return redirect(
+                        _rev_g4mv(
+                            "panel:operator_gap_resolution",
+                            kwargs={"wo_draft_pk": _wo_draft_mv.pk},
+                        )
+                    )
+
+        # ------------------------------------------------------------------
         # Action: discard_existing
         # ------------------------------------------------------------------
         if merge_action == "discard_existing":
@@ -8999,6 +9523,785 @@ class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
             "Accion de merge no reconocida. No se ha realizado ningun cambio.",
         )
         return redirect(reverse("panel:operator_history"))
+
+
+class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
+    """
+    Allows a WORKSHOP operator to justify each workday gap detected by Gate 4
+    before the draft work order is promoted from PENDING_GAPS to DONE.
+
+    GET  /panel/operator/gaps/<int:wo_draft_pk>/
+         Retrieves the pending WorkdayGap records for the draft WorkOrder and
+         renders the resolution form. Each unresolved gap is presented with an
+         AbsenceCategory selector and an optional note field.
+         Redirects to operator_history if the draft is not found or does not
+         belong to the authenticated operator.
+
+    POST /panel/operator/gaps/<int:wo_draft_pk>/
+         Validates that every gap has an AbsenceCategory assigned, and that a
+         note is provided when AbsenceCategory.requires_note=True.
+         On success:
+           - Persists AbsenceCategory + note on each WorkdayGap.
+           - Marks all gaps as resolved=True.
+           - Promotes the WorkOrder from PENDING_GAPS to DONE.
+           - Clears the pending_gaps_wo_pk session key.
+           - Enqueues classify_fault_line for each entry line.
+           - Generates the Excel report synchronously.
+           - Redirects to operator_history with a success message.
+         The "Volver y editar" action (POST field back_to_form=1) discards
+         the draft WorkOrder and redirects to operator_dashboard so the
+         operator can resubmit with corrected times.
+
+    ---
+
+    Permite a un operario WORKSHOP justificar cada laguna de jornada detectada
+    por Gate 4 antes de que el borrador de parte sea promovido de PENDING_GAPS
+    a DONE.
+
+    GET  /panel/operator/gaps/<int:wo_draft_pk>/
+         Recupera los registros WorkdayGap pendientes del WorkOrder borrador y
+         renderiza el formulario de resolución. Cada gap no resuelto se presenta
+         con un selector de AbsenceCategory y un campo de nota opcional.
+         Redirige a operator_history si el borrador no se encuentra o no
+         pertenece al operario autenticado.
+
+    POST /panel/operator/gaps/<int:wo_draft_pk>/
+         Valida que cada gap tenga una AbsenceCategory asignada, y que se
+         proporcione nota cuando AbsenceCategory.requires_note=True.
+         En caso de éxito:
+           - Persiste AbsenceCategory + nota en cada WorkdayGap.
+           - Marca todos los gaps como resolved=True.
+           - Promueve el WorkOrder de PENDING_GAPS a DONE.
+           - Limpia la clave de sesión pending_gaps_wo_pk.
+           - Encola classify_fault_line para cada línea del entry.
+           - Genera el informe Excel de forma síncrona.
+           - Redirige a operator_history con mensaje de éxito.
+         La acción "Volver y editar" (campo POST back_to_form=1) descarta el
+         borrador WorkOrder y redirige a operator_dashboard para que el operario
+         pueda reenviar con horas corregidas.
+    """
+
+    template_name = "panel/operator/gap_resolution.html"
+
+    def _get_draft(self, wo_draft_pk, company, cu):
+        """
+        Resolves the PENDING_GAPS WorkOrder draft by pk, scoped to the
+        authenticated operator and company. Returns None if not found.
+        ---
+        Resuelve el borrador WorkOrder PENDING_GAPS por pk, acotado al operario
+        autenticado y la empresa. Devuelve None si no se encuentra.
+        """
+        return WorkOrder.objects.filter(
+            pk         = wo_draft_pk,
+            company    = company,
+            uploaded_by = cu,
+            status     = WorkOrder.Status.PENDING_GAPS,
+            source__in = [WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+        ).first()
+
+    def get(self, request, wo_draft_pk, *args, **kwargs):
+        """
+        Renders the gap resolution form for the given PENDING_GAPS draft.
+        ---
+        Renderiza el formulario de resolución de gaps para el borrador dado.
+        """
+        from django.urls import reverse
+        from ivr_config.models import AbsenceCategory
+        from work_order_processor.models import WorkdayGap
+
+        cu      = request.user.company_user
+        company = cu.company
+
+        draft = self._get_draft(wo_draft_pk, company, cu)
+        if draft is None:
+            django_messages.error(
+                request,
+                "El parte borrador no se ha encontrado o ya fue procesado.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        gaps = WorkdayGap.objects.filter(
+            work_order=draft, resolved=False
+        ).order_by("gap_start")
+
+        absence_categories = AbsenceCategory.objects.filter(
+            company=company, is_active=True
+        ).order_by("order", "label")
+
+        # Retrieve first entry and its lines for jornada summary context.
+        # Lines are ordered by hc so the template can render a chronological
+        # timeline that helps the operator identify which gap falls where.
+        #
+        # Recuperar el primer entry y sus líneas para el resumen de jornada.
+        # Las líneas se ordenan por hc para que el template pueda renderizar
+        # una línea de tiempo cronológica que ayude al operario a identificar
+        # en qué momento de su jornada cae cada laguna.
+        first_entry  = draft.entries.first()
+        entry_lines  = (
+            list(first_entry.lines.order_by("hc"))
+            if first_entry else []
+        )
+
+        context = {
+            "company":            company,
+            "company_user":       cu,
+            "active_nav":         "operator_dashboard",
+            "draft":              draft,
+            "gaps":               list(gaps),
+            "absence_categories": absence_categories,
+            "work_date":          first_entry.work_date if first_entry else None,
+            "entry_lines":        entry_lines,
+        }
+        return render(request, self.template_name, context)
+
+    def post(self, request, wo_draft_pk, *args, **kwargs):
+        """
+        Processes the gap resolution form. On "Volver y editar" discards
+        the draft. Otherwise validates and persists all gap justifications,
+        promotes the WorkOrder to DONE and enqueues post-processing tasks.
+        ---
+        Procesa el formulario de resolución de gaps. Con "Volver y editar"
+        descarta el borrador. Si no, valida y persiste todas las justificaciones,
+        promueve el WorkOrder a DONE y encola las tareas de post-procesamiento.
+        """
+        from django.urls import reverse
+        from django.db import transaction
+        from ivr_config.models import AbsenceCategory
+        from work_order_processor.models import WorkdayGap
+        from work_order_processor.services import (
+            generate_work_order_excel,
+            find_cached_classification,
+        )
+
+        cu      = request.user.company_user
+        company = cu.company
+
+        draft = self._get_draft(wo_draft_pk, company, cu)
+        if draft is None:
+            django_messages.error(
+                request,
+                "El parte borrador no se ha encontrado o ya fue procesado.",
+            )
+            return redirect(reverse("panel:operator_history"))
+
+        # ------------------------------------------------------------------
+        # "Volver y editar" — discard draft and return to operator dashboard.
+        # "Volver y editar" — descartar borrador y volver al panel de operario.
+        # ------------------------------------------------------------------
+        if request.POST.get("back_to_form"):
+            draft.delete()
+            request.session.pop("pending_gaps_wo_pk", None)
+            request.session.modified = True
+            django_messages.info(
+                request,
+                "Borrador descartado. Puedes corregir las horas y enviar de nuevo.",
+            )
+            return redirect(reverse("panel:operator_dashboard"))
+
+        # ------------------------------------------------------------------
+        # Validate and resolve each pending gap.
+        # Validar y resolver cada gap pendiente.
+        # ------------------------------------------------------------------
+        gaps = list(
+            WorkdayGap.objects.filter(
+                work_order=draft, resolved=False
+            ).order_by("gap_start")
+        )
+
+        validation_errors = []
+        resolutions = []
+
+        for gap in gaps:
+            field_cat  = f"gap_{gap.pk}_category"
+            field_note = f"gap_{gap.pk}_note"
+
+            cat_pk_raw = request.POST.get(field_cat, "").strip()
+            note_val   = request.POST.get(field_note, "").strip()
+
+            if not cat_pk_raw:
+                validation_errors.append(
+                    f"Laguna {gap.gap_start:%H:%M}–{gap.gap_end:%H:%M}: "
+                    f"debes seleccionar un motivo de ausencia."
+                )
+                continue
+
+            try:
+                absence_cat = AbsenceCategory.objects.get(
+                    pk=int(cat_pk_raw), company=company, is_active=True
+                )
+            except (AbsenceCategory.DoesNotExist, ValueError, TypeError):
+                validation_errors.append(
+                    f"Laguna {gap.gap_start:%H:%M}–{gap.gap_end:%H:%M}: "
+                    f"la categoría seleccionada no es válida."
+                )
+                continue
+
+            if absence_cat.requires_note and not note_val:
+                validation_errors.append(
+                    f"Laguna {gap.gap_start:%H:%M}–{gap.gap_end:%H:%M}: "
+                    f"la categoría '{absence_cat.label}' requiere una nota explicativa."
+                )
+                continue
+
+            resolutions.append((gap, absence_cat, note_val))
+
+        if validation_errors:
+            # Re-render the form with errors — gaps remain unresolved.
+            # Re-renderizar el formulario con errores — gaps permanecen sin resolver.
+            from ivr_config.models import AbsenceCategory as _AC
+            absence_categories = _AC.objects.filter(
+                company=company, is_active=True
+            ).order_by("order", "label")
+            first_entry = draft.entries.first()
+            context = {
+                "company":            company,
+                "company_user":       cu,
+                "active_nav":         "operator_dashboard",
+                "draft":              draft,
+                "gaps":               gaps,
+                "absence_categories": absence_categories,
+                "work_date":          first_entry.work_date if first_entry else None,
+                "errors":             validation_errors,
+            }
+            return render(request, self.template_name, context)
+
+        # ------------------------------------------------------------------
+        # Persist resolutions and promote WorkOrder to DONE atomically.
+        # Persistir resoluciones y promover WorkOrder a DONE de forma atómica.
+        # ------------------------------------------------------------------
+        try:
+            with transaction.atomic():
+                for gap, absence_cat, note_val in resolutions:
+                    gap.absence_category = absence_cat
+                    gap.note             = note_val
+                    gap.resolved         = True
+                    gap.save(update_fields=["absence_category", "note", "resolved"])
+
+                draft.status = WorkOrder.Status.DONE
+                draft.save(update_fields=["status"])
+
+        except Exception as exc:
+            logger.error(
+                "# [GapResolutionView] Error al persistir resoluciones: %s",
+                exc, exc_info=True,
+            )
+            django_messages.error(
+                request,
+                f"Error al guardar la justificación: {exc}. "
+                "Por favor, inténtalo de nuevo.",
+            )
+            return redirect(
+                reverse(
+                    "panel:operator_gap_resolution",
+                    kwargs={"wo_draft_pk": wo_draft_pk},
+                )
+            )
+
+        # Clear session gap key.
+        # Limpiar clave de sesión de gaps.
+        request.session.pop("pending_gaps_wo_pk", None)
+        request.session.modified = True
+
+        # ------------------------------------------------------------------
+        # Post-processing: classify fault lines + generate Excel.
+        # Post-procesamiento: clasificar líneas de avería + generar Excel.
+        # ------------------------------------------------------------------
+        first_entry = draft.entries.first()
+        if first_entry:
+            for _line in first_entry.lines.all():
+                _cached = find_cached_classification(
+                    fault_description = _line.fault_description,
+                    repair_notes      = _line.repair_notes,
+                    company           = company,
+                )
+                if _cached:
+                    WorkOrderEntryLine.objects.filter(pk=_line.pk).update(
+                        fault_category    = _cached[0],
+                        fault_subcategory = _cached[1],
+                    )
+                    logger.info(
+                        "# [GapResolutionView] Clasificación copiada desde caché "
+                        "para WorkOrderEntryLine pk=%d: category=%s subcategory=%s.",
+                        _line.pk, _cached[0], _cached[1],
+                    )
+                else:
+                    classify_fault_line.apply_async(
+                        args  = [_line.pk],
+                        queue = "work_orders",
+                    )
+                    logger.info(
+                        "# [GapResolutionView] classify_fault_line encolada "
+                        "para WorkOrderEntryLine pk=%d.",
+                        _line.pk,
+                    )
+
+        try:
+            generate_work_order_excel(draft.pk)
+            logger.info(
+                "# [GapResolutionView] Excel generado para WorkOrder #%d.",
+                draft.pk,
+            )
+        except Exception as exc:
+            logger.warning(
+                "# [GapResolutionView] Excel no generado para WorkOrder #%d: %s.",
+                draft.pk, exc,
+            )
+
+        django_messages.success(
+            request,
+            f"Parte #{draft.pk} registrado correctamente. "
+            f"Todas las lagunas de jornada han sido justificadas.",
+        )
+        return redirect(reverse("panel:operator_history"))
+
+
+class WorkdayScheduleView(SupervisorAccessMixin, View):
+    """
+    Creates or updates the WorkdaySchedule records for the authenticated
+    user's company. Supports multiple named schedules per company.
+
+    GET  /panel/workday-schedule/
+         Renders the schedule management page with the list of existing
+         schedules and a creation form.
+
+    POST /panel/workday-schedule/   (action=create)
+         Creates a new WorkdaySchedule for the company.
+
+    POST /panel/workday-schedule/   (action=update, schedule_pk=<pk>)
+         Updates an existing WorkdaySchedule.
+
+    POST /panel/workday-schedule/   (action=delete, schedule_pk=<pk>)
+         Deletes a WorkdaySchedule. Clears workday_schedule FK on all
+         CompanyUsers assigned to it before deletion.
+
+    ---
+
+    Crea o actualiza los registros WorkdaySchedule de la empresa del usuario
+    autenticado. Soporta múltiples horarios con nombre por empresa.
+
+    GET  /panel/workday-schedule/
+         Renderiza la página de gestión de horarios con la lista de horarios
+         existentes y un formulario de creación.
+
+    POST /panel/workday-schedule/   (action=create)
+         Crea un nuevo WorkdaySchedule para la empresa.
+
+    POST /panel/workday-schedule/   (action=update, schedule_pk=<pk>)
+         Actualiza un WorkdaySchedule existente.
+
+    POST /panel/workday-schedule/   (action=delete, schedule_pk=<pk>)
+         Elimina un WorkdaySchedule. Limpia la FK workday_schedule en todos
+         los CompanyUsers asignados a él antes de la eliminación.
+    """
+
+    template_name = "panel/workday/schedule_form.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _parse_time(self, value):
+        """
+        Parses an HH:MM time string and returns a time object, or None.
+        ---
+        Parsea una cadena HH:MM y devuelve un objeto time, o None.
+        """
+        from datetime import datetime
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value.strip(), "%H:%M").time()
+        except ValueError:
+            return None
+
+    def _build_context(self, request, errors=None, post_data=None):
+        """
+        Builds the template context with the list of existing schedules,
+        the creation form data and validation errors.
+        ---
+        Construye el contexto con la lista de horarios existentes, los datos
+        del formulario de creación y los errores de validación.
+        """
+        from ivr_config.models import WorkdaySchedule
+        cu      = request.user.company_user
+        company = cu.company
+        return {
+            "company":            company,
+            "company_user":       cu,
+            "own_presence":       self._get_own_presence(cu),
+            "active_nav":         "workday_schedule",
+            "schedules":          WorkdaySchedule.objects.filter(
+                                      company=company
+                                  ).order_by("label"),
+            "errors":             errors or [],
+            "post_data":          post_data or {},
+        }
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the workday schedule management page.
+        ---
+        Renderiza la página de gestión de horarios de jornada.
+        """
+        return render(request, self.template_name, self._build_context(request))
+
+    def post(self, request, *args, **kwargs):
+        """
+        Dispatches create, update and delete actions for WorkdaySchedule.
+        ---
+        Despacha las acciones create, update y delete para WorkdaySchedule.
+        """
+        from django.urls import reverse
+        from ivr_config.models import WorkdaySchedule
+
+        cu      = request.user.company_user
+        company = cu.company
+        action  = request.POST.get("action", "").strip()
+
+        REDIRECT_URL = reverse("panel:workday_schedule")
+
+        # ------------------------------------------------------------------
+        # Action: delete
+        # Acción: delete
+        # ------------------------------------------------------------------
+        if action == "delete":
+            try:
+                pk  = int(request.POST.get("schedule_pk", ""))
+                sched = WorkdaySchedule.objects.get(pk=pk, company=company)
+                # Clear FK on assigned operators before deletion.
+                # Limpiar FK en operarios asignados antes de eliminar.
+                CompanyUser.objects.filter(
+                    company=company, workday_schedule=sched
+                ).update(workday_schedule=None)
+                label = sched.label
+                sched.delete()
+                django_messages.success(
+                    request,
+                    f"Horario '{label}' eliminado correctamente.",
+                )
+            except (WorkdaySchedule.DoesNotExist, ValueError, TypeError):
+                django_messages.error(
+                    request,
+                    "Horario no encontrado o no pertenece a esta empresa.",
+                )
+            return redirect(REDIRECT_URL)
+
+        # ------------------------------------------------------------------
+        # Shared field parsing for create and update.
+        # Parseo de campos compartido para create y update.
+        # ------------------------------------------------------------------
+        label_val      = request.POST.get("label", "").strip()
+        start_val      = request.POST.get("start_time", "").strip()
+        end_val        = request.POST.get("end_time", "").strip()
+        tol_val        = request.POST.get("tolerance_minutes", "15").strip()
+        is_default_val = bool(request.POST.get("is_default"))
+
+        errors = []
+        if not label_val:
+            errors.append("El nombre del horario es obligatorio.")
+        start_time = self._parse_time(start_val)
+        if start_time is None:
+            errors.append("La hora de entrada debe tener formato HH:MM.")
+        end_time = self._parse_time(end_val)
+        if end_time is None:
+            errors.append("La hora de salida debe tener formato HH:MM.")
+        if start_time and end_time and end_time <= start_time:
+            errors.append("La hora de salida debe ser posterior a la de entrada.")
+        try:
+            tolerance = int(tol_val)
+            if tolerance < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            errors.append("La tolerancia debe ser un número entero positivo.")
+            tolerance = 15
+
+        if errors:
+            return render(
+                request,
+                self.template_name,
+                self._build_context(request, errors=errors, post_data=request.POST),
+            )
+
+        # ------------------------------------------------------------------
+        # Action: update
+        # Acción: update
+        # ------------------------------------------------------------------
+        if action == "update":
+            try:
+                pk    = int(request.POST.get("schedule_pk", ""))
+                sched = WorkdaySchedule.objects.get(pk=pk, company=company)
+                sched.label             = label_val
+                sched.start_time        = start_time
+                sched.end_time          = end_time
+                sched.tolerance_minutes = tolerance
+                sched.is_default        = is_default_val
+                sched.save()
+                django_messages.success(
+                    request,
+                    f"Horario '{label_val}' actualizado correctamente.",
+                )
+            except (WorkdaySchedule.DoesNotExist, ValueError, TypeError):
+                django_messages.error(
+                    request,
+                    "Horario no encontrado o no pertenece a esta empresa.",
+                )
+            return redirect(REDIRECT_URL)
+
+        # ------------------------------------------------------------------
+        # Action: create (default)
+        # Acción: create (por defecto)
+        # ------------------------------------------------------------------
+        WorkdaySchedule.objects.create(
+            company         = company,
+            label           = label_val,
+            start_time      = start_time,
+            end_time        = end_time,
+            tolerance_minutes = tolerance,
+            is_default      = is_default_val,
+        )
+        django_messages.success(
+            request,
+            f"Horario '{label_val}' creado correctamente.",
+        )
+        return redirect(REDIRECT_URL)
+
+
+class AbsenceCategoryListView(SupervisorAccessMixin, View):
+    """
+    Lists all AbsenceCategory records for the authenticated user's company.
+    Renders the full absence category management page on GET.
+
+    GET /panel/absence-categories/
+    ---
+    Lista todos los registros AbsenceCategory de la empresa del usuario
+    autenticado. Renderiza la página completa de gestión en GET.
+
+    GET /panel/absence-categories/
+    """
+
+    template_name = "panel/workday/absence_category_list.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the absence category list page.
+        ---
+        Renderiza la página de listado de categorías de ausencia.
+        """
+        from ivr_config.models import AbsenceCategory
+        cu      = request.user.company_user
+        company = cu.company
+        categories = AbsenceCategory.objects.filter(
+            company=company
+        ).order_by("order", "label")
+        context = {
+            "company":      company,
+            "company_user": cu,
+            "own_presence": self._get_own_presence(cu),
+            "active_nav":   "absence_categories",
+            "categories":   categories,
+        }
+        return render(request, self.template_name, context)
+
+
+class AbsenceCategoryCreateView(SupervisorAccessMixin, View):
+    """
+    Creates a new AbsenceCategory for the authenticated user's company.
+    On success or failure, redirects to absence_category_list.
+
+    POST /panel/absence-categories/create/
+    ---
+    Crea una nueva AbsenceCategory para la empresa del usuario autenticado.
+    En caso de éxito o fallo, redirige a absence_category_list.
+
+    POST /panel/absence-categories/create/
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates POST data and creates the AbsenceCategory.
+        ---
+        Valida los datos POST y crea la AbsenceCategory.
+        """
+        from django.urls import reverse
+        from ivr_config.models import AbsenceCategory
+
+        cu      = request.user.company_user
+        company = cu.company
+        LIST_URL = reverse("panel:absence_category_list")
+
+        label_val        = request.POST.get("label", "").strip()
+        code_val         = request.POST.get("code", "").strip().upper()
+        requires_note    = bool(request.POST.get("requires_note"))
+        is_justified     = bool(request.POST.get("is_justified"))
+        order_val        = request.POST.get("order", "0").strip()
+
+        if not label_val or not code_val:
+            django_messages.error(
+                request,
+                "El nombre y el código son obligatorios.",
+            )
+            return redirect(LIST_URL)
+
+        try:
+            order = int(order_val)
+        except (ValueError, TypeError):
+            order = 0
+
+        if AbsenceCategory.objects.filter(company=company, code=code_val).exists():
+            django_messages.error(
+                request,
+                f"Ya existe una categoría con el código '{code_val}' en esta empresa.",
+            )
+            return redirect(LIST_URL)
+
+        AbsenceCategory.objects.create(
+            company       = company,
+            code          = code_val,
+            label         = label_val,
+            requires_note = requires_note,
+            is_justified  = is_justified,
+            order         = order,
+            is_active     = True,
+        )
+        django_messages.success(
+            request,
+            f"Categoría '{label_val}' creada correctamente.",
+        )
+        return redirect(LIST_URL)
+
+
+class AbsenceCategoryUpdateView(SupervisorAccessMixin, View):
+    """
+    Updates an existing AbsenceCategory belonging to the authenticated
+    user's company. On success or failure, redirects to absence_category_list.
+
+    POST /panel/absence-categories/<pk>/update/
+    ---
+    Actualiza una AbsenceCategory existente de la empresa del usuario
+    autenticado. En caso de éxito o fallo, redirige a absence_category_list.
+
+    POST /panel/absence-categories/<pk>/update/
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Validates POST data and updates the AbsenceCategory.
+        ---
+        Valida los datos POST y actualiza la AbsenceCategory.
+        """
+        from django.urls import reverse
+        from ivr_config.models import AbsenceCategory
+
+        cu      = request.user.company_user
+        company = cu.company
+        LIST_URL = reverse("panel:absence_category_list")
+
+        try:
+            category = AbsenceCategory.objects.get(pk=pk, company=company)
+        except AbsenceCategory.DoesNotExist:
+            django_messages.error(
+                request,
+                "Categoría no encontrada o no pertenece a esta empresa.",
+            )
+            return redirect(LIST_URL)
+
+        label_val     = request.POST.get("label", "").strip()
+        requires_note = bool(request.POST.get("requires_note"))
+        is_justified  = bool(request.POST.get("is_justified"))
+        order_val     = request.POST.get("order", "0").strip()
+
+        if not label_val:
+            django_messages.error(request, "El nombre es obligatorio.")
+            return redirect(LIST_URL)
+
+        try:
+            order = int(order_val)
+        except (ValueError, TypeError):
+            order = category.order
+
+        category.label         = label_val
+        category.requires_note = requires_note
+        category.is_justified  = is_justified
+        category.order         = order
+        category.save(update_fields=[
+            "label", "requires_note", "is_justified", "order"
+        ])
+
+        django_messages.success(
+            request,
+            f"Categoría '{label_val}' actualizada correctamente.",
+        )
+        return redirect(LIST_URL)
+
+
+class AbsenceCategoryToggleView(SupervisorAccessMixin, View):
+    """
+    Toggles the is_active flag of an AbsenceCategory. Deactivating a
+    category hides it from the operator's gap resolution selector without
+    deleting historical references in WorkdayGap records.
+
+    POST /panel/absence-categories/<pk>/toggle/
+    ---
+    Alterna el flag is_active de una AbsenceCategory. Desactivar una
+    categoría la oculta del selector del operario sin eliminar las
+    referencias históricas en registros WorkdayGap.
+
+    POST /panel/absence-categories/<pk>/toggle/
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Toggles is_active and redirects to absence_category_list.
+        ---
+        Alterna is_active y redirige a absence_category_list.
+        """
+        from django.urls import reverse
+        from ivr_config.models import AbsenceCategory
+
+        cu      = request.user.company_user
+        company = cu.company
+        LIST_URL = reverse("panel:absence_category_list")
+
+        try:
+            category = AbsenceCategory.objects.get(pk=pk, company=company)
+        except AbsenceCategory.DoesNotExist:
+            django_messages.error(
+                request,
+                "Categoría no encontrada o no pertenece a esta empresa.",
+            )
+            return redirect(LIST_URL)
+
+        category.is_active = not category.is_active
+        category.save(update_fields=["is_active"])
+
+        state = "activada" if category.is_active else "desactivada"
+        django_messages.success(
+            request,
+            f"Categoría '{category.label}' {state} correctamente.",
+        )
+        return redirect(LIST_URL)
 
 
 class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):

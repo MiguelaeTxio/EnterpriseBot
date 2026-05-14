@@ -208,10 +208,11 @@ class WorkOrder(models.Model):
     # Status choices / Opciones de estado
     # ------------------------------------------------------------------
     class Status(models.TextChoices):
-        PENDING    = "PENDING",    _("Pendiente")
-        PROCESSING = "PROCESSING", _("Procesando")
-        DONE       = "DONE",       _("Completado")
-        ERROR      = "ERROR",      _("Error")
+        PENDING      = "PENDING",      _("Pendiente")
+        PROCESSING   = "PROCESSING",   _("Procesando")
+        DONE         = "DONE",         _("Completado")
+        ERROR        = "ERROR",        _("Error")
+        PENDING_GAPS = "PENDING_GAPS", _("Pendiente de justificación de jornada")
 
     # ------------------------------------------------------------------
     # Source choices — origin classification (Hito 7 / S016)
@@ -1125,5 +1126,131 @@ class SparePartLine(models.Model):
         return (
             f"Repuesto {self.line_number} | {ref} — {mat} "
             f"× {qty} | {self.get_source_display()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# WorkdayGap — Detected gap or deviation in a digital work order's workday.
+# WorkdayGap — Laguna o desviación detectada en la jornada de un parte digital.
+# ---------------------------------------------------------------------------
+
+class WorkdayGap(models.Model):
+    """
+    Records each gap or workday deviation detected by Gate 4 in a digital
+    work order. One record per detected gap/deviation per work order.
+    Each record must be resolved (absence_category assigned, note provided
+    if required) before the work order can be promoted from PENDING_GAPS
+    to DONE.
+
+    Gap types:
+      GAP        — uncovered time between two consecutive work blocks.
+      LATE_START — first block starts later than schedule + tolerance.
+      EARLY_END  — last block ends earlier than schedule - tolerance.
+
+    ---
+
+    Registra cada laguna o desviación de jornada detectada por Gate 4 en un
+    parte digital. Un registro por laguna/desviación detectada por parte.
+    Cada registro debe resolverse (AbsenceCategory asignada, nota si se
+    requiere) antes de que el parte pueda pasar de PENDING_GAPS a DONE.
+
+    Tipos de gap:
+      GAP        — tiempo sin cubrir entre dos bloques de trabajo consecutivos.
+      LATE_START — el primer bloque empieza más tarde que el horario + tolerancia.
+      EARLY_END  — el último bloque termina antes que el horario - tolerancia.
+    """
+
+    # ------------------------------------------------------------------
+    # Gap type choices / Opciones de tipo de laguna
+    # ------------------------------------------------------------------
+    class GapType(models.TextChoices):
+        GAP        = "GAP",        _("Laguna entre bloques")
+        LATE_START = "LATE_START", _("Inicio tardío")
+        EARLY_END  = "EARLY_END",  _("Cierre anticipado")
+
+    # ------------------------------------------------------------------
+    # Relation / Relación
+    # ------------------------------------------------------------------
+    work_order = models.ForeignKey(
+        WorkOrder,
+        on_delete=models.CASCADE,
+        related_name="workday_gaps",
+        verbose_name=_("Parte de trabajo"),
+        help_text=_(
+            "Parte digital al que pertenece esta laguna de jornada. "
+            "El parte debe tener status=PENDING_GAPS mientras tenga gaps no resueltos."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Gap identification / Identificación de la laguna
+    # ------------------------------------------------------------------
+    gap_type = models.CharField(
+        _("Tipo"),
+        max_length=15,
+        choices=GapType.choices,
+        help_text=_("Tipo de desviación de jornada detectada por Gate 4."),
+    )
+    gap_start = models.TimeField(
+        _("Inicio de laguna"),
+        help_text=_("Hora de inicio del intervalo sin cubrir o de la desviación detectada."),
+    )
+    gap_end = models.TimeField(
+        _("Fin de laguna"),
+        help_text=_("Hora de fin del intervalo sin cubrir o de la desviación detectada."),
+    )
+    duration_minutes = models.PositiveSmallIntegerField(
+        _("Duración (minutos)"),
+        help_text=_(
+            "Duración de la laguna en minutos. "
+            "Campo calculado — no editar manualmente."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Resolution / Resolución
+    # ------------------------------------------------------------------
+    absence_category = models.ForeignKey(
+        "ivr_config.AbsenceCategory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="workday_gaps",
+        verbose_name=_("Categoría de ausencia"),
+        help_text=_(
+            "Categoría de ausencia seleccionada por el operario para justificar "
+            "esta laguna. Obligatoria para marcar el gap como resuelto."
+        ),
+    )
+    note = models.TextField(
+        _("Nota"),
+        blank=True,
+        default="",
+        help_text=_(
+            "Nota libre del operario para justificar la laguna. "
+            "Obligatoria cuando AbsenceCategory.requires_note=True."
+        ),
+    )
+    resolved = models.BooleanField(
+        _("Resuelto"),
+        default=False,
+        help_text=_(
+            "True cuando el operario ha asignado una AbsenceCategory y "
+            "proporcionado nota si era requerida. Gate 4 requiere que todos "
+            "los gaps de un WorkOrder estén resueltos antes de promoverlo a DONE."
+        ),
+    )
+
+    class Meta:
+        verbose_name        = _("Laguna de jornada")
+        verbose_name_plural = _("Lagunas de jornada")
+        ordering            = ["work_order", "gap_start"]
+
+    def __str__(self):
+        return (
+            f"Parte #{self.work_order_id} — "
+            f"{self.get_gap_type_display()} "
+            f"{self.gap_start:%H:%M}–{self.gap_end:%H:%M} "
+            f"({'resuelto' if self.resolved else 'pendiente'})"
         )
 

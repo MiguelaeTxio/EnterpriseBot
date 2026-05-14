@@ -65,6 +65,7 @@ from panel.views import (
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
     WorkOrderEntryMergeView,
+    WorkdayGapResolutionView,
     WorkOrderEntryHistoryView,
     WorkOrderAdminHistoryView,
     WorkerAbsenceCreateView,
@@ -83,6 +84,11 @@ from panel.views import (
     WorkPeriodCloseView,
     WorkOrderMachineFilterView,
     DigitalWorkOrderListView,
+    WorkdayScheduleView,
+    AbsenceCategoryListView,
+    AbsenceCategoryCreateView,
+    AbsenceCategoryUpdateView,
+    AbsenceCategoryToggleView,
 )
 
 app_name = "panel"
@@ -185,6 +191,10 @@ urlpatterns = [
     # Primera Accion — Hito 7 Sesion 018 (2026-05-11)
     path("operator/merge/<int:entry_pk>/", WorkOrderEntryMergeView.as_view(), name="operator_merge"),
 
+    # Operator gap resolution — Justificación de lagunas de jornada detectadas por Gate 4.
+    # Paso E — CUARTA ACCION Hito 7 Sesion 029 (2026-05-14)
+    path("operator/gaps/<int:wo_draft_pk>/", WorkdayGapResolutionView.as_view(), name="operator_gap_resolution"),
+
     # Description typeahead autocomplete — Autocompletado de descripciones (fault_description / repair_notes).
     # Tercer Fleco — Hito 7 (2026-05-05)
     path("operator/descriptions/", WorkOrderDescriptionAutocompleteView.as_view(), name="operator_descriptions"),
@@ -258,6 +268,17 @@ urlpatterns = [
     path("work-periods/", WorkPeriodListView.as_view(), name="work_period_list"),
     path("work-periods/create/", WorkPeriodCreateView.as_view(), name="work_period_create"),
     path("work-periods/close/", WorkPeriodCloseView.as_view(), name="work_period_close"),
+
+    # Workday schedule management — Gestión de horarios de jornada (rol SUPERVISOR y ADMIN).
+    # Paso G — CUARTA ACCION Hito 7 Sesion 029 (2026-05-14)
+    path("workday-schedule/", WorkdayScheduleView.as_view(), name="workday_schedule"),
+
+    # Absence category management — Gestión de categorías de ausencia (rol SUPERVISOR y ADMIN).
+    # Paso G — CUARTA ACCION Hito 7 Sesion 029 (2026-05-14)
+    path("absence-categories/", AbsenceCategoryListView.as_view(), name="absence_category_list"),
+    path("absence-categories/create/", AbsenceCategoryCreateView.as_view(), name="absence_category_create"),
+    path("absence-categories/<int:pk>/update/", AbsenceCategoryUpdateView.as_view(), name="absence_category_update"),
+    path("absence-categories/<int:pk>/toggle/", AbsenceCategoryToggleView.as_view(), name="absence_category_toggle"),
 
     # Analytics — Panel de analítica con gráficos Plotly (rol ADMIN).
     # Subtarea 9.6 — Hito 6 (2026-04-27)
