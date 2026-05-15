@@ -846,112 +846,97 @@ Estado: COMPLETADO (sesiones 015-017).
 | 028    | 2026-05-14 | Incidencia critica pipeline PDF + UX carga PDFs + Acciones en lote | BLOQUE 1 — Incidencia critica: diagnostico completo del pipeline PDF_UPLOAD. Causa raiz: tres claves JSON obsoletas en tasks.py (maquina_raw, descripcion_averia, reparacion) que vaciaban machine_raw/fault_description/repair_notes en todos los partes procesados desde S011. PMP tasks.py: tres sustituciones atomicas restaurando claves a machine_raw/fault_description/repair_notes. Segunda causa: source_pdf borrado por Celery tras procesamiento sin persistir el nombre — PMA models.py: campo source_pdf_name (CharField max_length=255, blank, default='') + pdf_display_name actualizado con prioridad source_pdf_name > source_pdf > fallback. PMA views.py: source_pdf_name=incoming_name en WorkOrderUploadView.create(). PEA migracion 0016_workorder_source_pdf_name aplicada. Script backfill SWAP: 18 registros actualizados (8 CASO A desde source_pdf, 10 CASO B desde worker_name). BLOQUE 2 — UX carga PDFs: PEA upload.html reescritura completa — selector modo individual/lote, modal de progreso XHR con btn-close manual (evita conflicto doble instancia Bootstrap), log de resultados por fichero en lote (encolado/omitido duplicado/error de red), nota pie para sobrescritura individual. PMA _status_fragment.html: barra Celery con fase A indeterminada (total_pages==0) y fase B determinada (widthratio processed_pages/total_pages). BLOQUE 3 — Acciones en lote list.html: PEA list.html reescritura — checkboxes por fila + select-all + barra de acciones en las 4 pestanas (En cola: Eliminar; Error: Eliminar; Pendiente revision: Marcar revisados + Eliminar; Revisados: Desmarcar revision + Eliminar). PMA views.py: metodo post en WorkOrderListView con bulk_op mark_reviewed/unmark_reviewed/delete, scoped a company PDF_UPLOAD. Estado migraciones al cierre: work_order_processor 0016_workorder_source_pdf_name, ivr_config 0015_workerabsence_workperiod. |
 | 027    | 2026-05-13 | Excel por periodo + Vista Partes Digitales — Pasos 4 y 5 + Diseno Validacion Jornada | PASO 4 (PMA work_period_list.html): cuatro cambios aplicados — boton Nuevo periodo envuelto en div flex con boton Cerrar periodo activo global (condicional has_open_periods), modal modalWorkPeriodCreate sin selector operario + campo end_date anadido con pre-relleno suggested_end + start_date con suggested_start, modal modalWorkPeriodClose con texto global y action fija sin JS dinamico, celda Acciones sustituida por indicador de estado badge/texto. Bloque script extra_head eliminado via fichero Python intermedio (heredoc con OLD_BLOCK multilinea). PASO 5 (PEA digital_list.html): neonato puro creado — tres pestanas Pendiente/Revisados/Error, filtros operator_pk/period_pk, descarga Excel exclusivamente en tab Revisados (Directriz Alejandro), modales incidenceModal y deleteModal, JS minimo activacion tab + checkbox seleccionar todos + boton descarga. Cuatro avisos H021 estilos inline resueltos via sed. DISENO: Sistema de Validacion de Jornada Completa aprobado — WorkdaySchedule, AbsenceCategory, WorkdayGap, Gate 4, WorkdayGapResolutionView, vistas supervisor, comando seed. Implementacion diferida a S028. Incidencia: tres errores PMA por OLD_BLOCKs construidos desde memoria en lugar del archivo real SFTP — diagnostico y correccion del proceso documentados. |
 
-| 031    | 2026-05-15 | gap_resolution.html patcher 2/2, Gate 4 E2E, asignacion WorkdaySchedule, extraccion JS form_entry | PRIMERA ACCION (PMA gap_resolution.html extra_head): CSS hover restaurado con box-shadow, JS de validacion client-side reparado (condiciones if faltantes: !sel.value, !lunchGroups[pk], !group.hasChecked, !allValid), extraccion completa a gap_resolution.js archivo estatico + collectstatic. MEJORAS UX Gate 4 (serie de PMPs): texto descriptivo contextual por tipo de gap (LATE_START/EARLY_END/GAP) en tarjeta estandar; bug timeline fix — indicador laguna usaba slice fragil en template, resuelto enriqueciendo entry_lines con next_gap y early_end_gap/late_start_gap en WorkdayGapResolutionView.get() (logica en view, no en template); boton Volver y editar corregido — onclick confirm() robaba foco antes del submit event, resuelto con type=button + createElement hidden + form.submit() programatico; "Volver y editar" redirigia al dashboard vacio — corregido promoviendo borrador PENDING_GAPS a DONE y redirigiendo a operator_form_edit para pre-rellenar el formulario. SEGUNDA ACCION (E2E Gate 4): validacion completa en produccion — LATE_START, EARLY_END, GAP, LUNCH_BREAK, Volver y editar, confirmacion y parte DONE en historial. Bug _compute_delta_hours devolvía 0.00 para bloques digitales: anadido parametro deduct_lunch=True/False — pipeline PDF mantiene deduccion 90min comida, partes digitales usan deduct_lunch=False en _parse_entry_lines_from_post, WorkOrderLineRestoreView digital y MergeView._create_lines_from_session. TERCERA ACCION (PMA views.py + form.html): CompanyUserUpdateView ampliado con workday_schedule en fields + get_form() con queryset restringido a empresa + widget form-select; form.html con bloque workday_schedule label/widget/helptext. EXTRACCION JS form_entry.html: tres bloques JS inline (604+138+74 lineas) extraidos a form_entry_assets.js, form_entry_modal.js, form_entry_tour.js; window.EB_CONFIG inyectado inline para URLs Django; correcciones acentos _buildBlockRow (Descripcion averia→Descripcion averia con acento, Reparacion→Reparacion con acento, Codigo de maquina, Descripcion del material) + badge Bloque N→Tarea N. |
+| 031    | 2026-05-15 | gap_resolution.html patcher 2/2, Gate 4 E2E, asignacion WorkdaySchedule, extraccion JS form_entry | PRIMERA ACCION (PMA gap_resolution.html extra_head): CSS hover restaurado con box-shadow, JS de validacion client-side reparado (condiciones if faltantes: !sel.value, !lunchGroups[pk], !group.hasChecked, !allValid), extraccion completa a gap_resolution.js archivo estatico + collectstatic. MEJORAS UX Gate 4 (serie de PMPs): texto descriptivo contextual por tipo de gap (LATE_START/EARLY_END/GAP) en tarjeta estandar; bug timeline fix — indicador laguna usaba slice fragil en template, resuelto enriqueciendo entry_lines con next_gap y early_end_gap/late_start_gap en WorkdayGapResolutionView.get() (logica en view, no en template); boton Volver y editar corregido — onclick confirm() robaba foco antes del submit event, resuelto con type=button + createElement hidden + form.submit() programatico; Volver y editar redirigia al dashboard vacio — corregido promoviendo borrador PENDING_GAPS a DONE y redirigiendo a operator_form_edit para pre-rellenar el formulario. SEGUNDA ACCION (E2E Gate 4): validacion completa en produccion — LATE_START, EARLY_END, GAP, LUNCH_BREAK, Volver y editar, confirmacion y parte DONE en historial. Bug _compute_delta_hours devolvía 0.00 para bloques digitales: anadido parametro deduct_lunch=True/False — pipeline PDF mantiene deduccion 90min comida, partes digitales usan deduct_lunch=False en _parse_entry_lines_from_post, WorkOrderLineRestoreView digital y MergeView._create_lines_from_session. TERCERA ACCION (PMA views.py + form.html): CompanyUserUpdateView ampliado con workday_schedule en fields + get_form() con queryset restringido a empresa + widget form-select; form.html con bloque workday_schedule label/widget/helptext. EXTRACCION JS form_entry.html: tres bloques JS inline (604+138+74 lineas) extraidos a form_entry_assets.js, form_entry_modal.js, form_entry_tour.js; window.EB_CONFIG inyectado inline para URLs Django; correcciones acentos _buildBlockRow (Descripcion averia con acento, Reparacion con acento, Codigo de maquina, Descripcion del material) + badge Bloque N a Tarea N. |
+| 032    | 2026-05-15 | Via C camara directa, unificacion prompt extraccion, CSS naranja campos operario, repair_notes obligatorio | CUARTA ACCION: PMP capture=environment en upload_entry.html — activa camara trasera Android Chrome directamente. QUINTA ACCION: analisis comparativo WorkOrderEntryConfirmView / tasks.py / services.py — divergencias D1-D5 auditadas. Unificacion prompt: extract_work_order_page() pasa a usar _EXTRACTION_PROMPT_FULL (PMA services.py) — pipeline PDF historico e igual calidad de extraccion que Via C. Correcciones D4/D5 (PMA views.py): extraction_confidence ya no se hardcodea a HIGH sino que se lee desde sesion via _coerce_confidence(); uncertain_date ya no se hardcodea a False sino que se lee desde sesion. SEXTA ACCION: ampliacion .field-flagged en panel.css — cubre form-control, form-select, input[type=time] neutralizando :invalid nativo del browser; nueva clase .field-optional para campos no obligatorios con relleno tenue naranja. PMP form_entry.html y form_entry_assets.js (_buildBlockRow): or_val con field-optional, repair_notes con field-flagged. repair_notes OBLIGATORIO en todas las vias: Gate 2 server-side en WorkOrderEntryFormView y WorkOrderEntryConfirmView (PMA views.py); Gate 2 client-side en form_entry_assets.js; label asterisco en form_entry.html y _buildBlockRow. collectstatic en todos los pasos de estaticos. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S032)
+## 5. Hoja de Ruta para la Siguiente Sesion (S033)
 
 ### CONTEXTO
 
-S031 completo las tres primeras acciones del hito mas una serie de correcciones
-UX y bugs criticos detectados durante el E2E de Gate 4:
+S032 completo la CUARTA, QUINTA y SEXTA acciones de la hoja de ruta pendiente
+desde S031, mas la decision de hacer repair_notes obligatorio en todas las vias:
 
-PRIMERA ACCION — gap_resolution.html patcher 2/2: completado y mejorado.
-  JS extraido a archivo estatico gap_resolution.js. CSS hover restaurado.
-  Validacion client-side reparada. Texto descriptivo contextual por tipo de gap.
-  Bug timeline fix: logica de slice eliminada del template, enriquecimiento
-  de entry_lines con next_gap/early_end_gap/late_start_gap en la view.
-  Boton "Volver y editar" corregido: type=button + createElement + form.submit().
-  "Volver y editar" ahora promueve borrador PENDING_GAPS a DONE y redirige a
-  operator_form_edit para recuperar el formulario pre-rellenado.
+CUARTA ACCION — capture=environment en upload_entry.html: completada.
+  PMP quirurgico. Activa camara trasera en Android Chrome sin afectar desktop.
 
-SEGUNDA ACCION — Validacion E2E de Gate 4: completada.
-  Bug _compute_delta_hours: anadido parametro deduct_lunch=True/False.
-  Pipeline PDF mantiene deduccion 90min comida (deduct_lunch=True por defecto).
-  Partes digitales usan deduct_lunch=False en _parse_entry_lines_from_post,
-  WorkOrderLineRestoreView digital y MergeView._create_lines_from_session.
+QUINTA ACCION — Unificacion prompt extraccion + correcciones D4/D5: completada.
+  extract_work_order_page() unificada a _EXTRACTION_PROMPT_FULL.
+  extraction_confidence y uncertain_date leidos desde sesion en ConfirmView.
 
-TERCERA ACCION — Asignacion WorkdaySchedule a operarios: completada.
-  CompanyUserUpdateView: fields + get_form() + widget form-select.
-  form.html: bloque workday_schedule con label/widget/helptext.
+SEXTA ACCION — CSS naranja campos operario: completada.
+  .field-flagged ampliado en panel.css. .field-optional creada.
+  form_entry.html, form_entry_assets.js y _buildBlockRow actualizados.
 
-EXTRACCION JS form_entry.html (no planificada, ejecutada en S031):
-  Tres bloques JS extraidos a archivos estaticos independientes.
-  window.EB_CONFIG inyectado inline. Correcciones de acentos en _buildBlockRow.
+repair_notes OBLIGATORIO en todas las vias: completado.
+  Gate 2 server-side en WorkOrderEntryFormView y WorkOrderEntryConfirmView.
+  Gate 2 client-side en form_entry_assets.js.
+  Label con asterisco en form_entry.html y _buildBlockRow.
 
-ADVERTENCIA CRITICA — mantener siempre presente:
+ADVERTENCIAS CRITICAS — mantener siempre presentes:
   El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
   Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-ADVERTENCIA CRITICA _compute_delta_hours:
-  Siempre pasar deduct_lunch=False en llamadas desde vistas de partes digitales.
+  _compute_delta_hours: siempre pasar deduct_lunch=False en partes digitales.
   Pipeline PDF usa el valor por defecto True. NO cambiar el default.
 
-ADVERTENCIA CRITICA form_entry_assets.js:
-  Las URLs Django se inyectan via window.EB_CONFIG en el template (inline script).
-  El archivo JS estático lee window.EB_CONFIG.assetsUrl y window.EB_CONFIG.assetDetailUrl.
-  Si se añaden nuevas URLs Django al JS, añadirlas primero al bloque EB_CONFIG del template.
+  form_entry_assets.js: URLs Django inyectadas via window.EB_CONFIG en el template.
+  Si se anaden nuevas URLs Django al JS, anadirlas primero al bloque EB_CONFIG.
 
 ### ORDEN DE IMPLEMENTACION (estricto)
 
-  CUARTA ACCION  — Via C: captura directa desde camara (capture=environment).
-  QUINTA ACCION  — Via C: unificar parseo con pipeline PDF.
-  SEXTA ACCION   — CSS naranja: sustituir rojo de campos obligatorios vacios.
+  PRIMERA ACCION — Rediseno validacion Via C (confirm_entry.html).
+  SEGUNDA ACCION — Actualizacion tecnica de secciones del anexo V07.
 
-### CUARTA ACCION — Via C: captura directa desde camara
+### PRIMERA ACCION — Rediseno validacion Via C
 
-  PMP quirurgico sobre upload_entry.html:
-    Anadir capture="environment" al input type="file" id="work_order_file".
+  La validacion del formulario de confirmacion de la Via C (confirm_entry.html)
+  es actualmente precaria e inconsistente con la Via A. Se requiere un rediseno
+  completo que cubra:
 
-    OLD exacto (extraer del archivo real via SFTP antes de aplicar):
-      accept="image/*,.pdf"
-    NEW:
-      accept="image/*,.pdf" capture="environment"
+  1. ANALISIS PREVIO obligatorio al inicio de S033:
+     Solicitar via SFTP:
+       panel/templates/panel/operator/confirm_entry.html
+       panel/views.py (WorkOrderEntryConfirmView — bloque GET y metodo _resolve_machine)
 
-    NOTA: capture="environment" activa la camara trasera del movil directamente
-    en Android Chrome. No afecta a desktop (atributo ignorado).
+  2. AUDITORIA de la validacion client-side actual en confirm_entry.html:
+     - Identificar todos los campos con validacion presente.
+     - Identificar campos sin validacion o con validacion incompleta.
+     - Comparar punto a punto con la validacion de form_entry.html (Via A).
 
-  Solicitar al inicio de S032 via SFTP:
-    panel/templates/panel/operator/upload_entry.html
+  3. IMPLEMENTACION (alcance a determinar tras auditoria):
+     Objetivo: confirm_entry.html debe tener exactamente la misma cobertura
+     de validacion client-side que form_entry.html:
+       - .field-flagged en todos los campos obligatorios vacios al cargar.
+       - .field-optional en or_val.
+       - repair_notes obligatorio con .field-flagged y asterisco en label.
+       - Neutralizacion :invalid nativo en input[type=time].
+       - Coherencia visual completa con la Via A.
 
-### QUINTA ACCION — Via C: unificar parseo con pipeline PDF
+  4. DECISION DE DISENO pendiente a resolver en S033:
+     Cuando Gemini extrae un campo con confianza LOW o con flags, el operario
+     debe poder identificarlo visualmente en el formulario de confirmacion.
+     Definir y documentar el comportamiento esperado antes de implementar.
 
-  Analisis previo obligatorio: comparar logica de parseo entre:
-    - WorkOrderEntryConfirmView en panel/views.py (Via C confirm)
-    - _parse_work_order_from_gemini() en work_order_processor/tasks.py (pipeline PDF)
-    - extract_work_order_page_full() en work_order_processor/services.py
+### SEGUNDA ACCION — Actualizacion tecnica del anexo V07
 
-  Divergencias conocidas a verificar:
-    - Claves JSON de respuesta Gemini (entradas vs bloques, repuestos).
-    - Normalizacion morfologica O/0, L/1, t/7 en machine_raw.
-    - Validacion de campos opcionales vs obligatorios.
-    - Manejo de extraction_confidence FAILED/LOW/HIGH.
+  Varias secciones de arquitectura del anexo quedaron desactualizadas tras S032.
+  Actualizar via PMA las siguientes secciones:
 
-  Solicitar al inicio de S032 via SFTP:
-    panel/views.py (WorkOrderEntryConfirmView — bloque de parseo)
-    work_order_processor/tasks.py (_parse_work_order_from_gemini)
-    work_order_processor/services.py (extract_work_order_page_full + prompt)
+  Seccion 2.2 (Tres vias de entrada):
+    Via C — Estado: actualizar a COMPLETADO (S032) con nota sobre repair_notes
+    obligatorio y unificacion de prompt.
 
-### SEXTA ACCION — CSS naranja: campos obligatorios vacios
+  Seccion 2.4 (Prompt Gemini ampliado):
+    Anadir nota: _EXTRACTION_PROMPT unificado a _EXTRACTION_PROMPT_FULL en S032.
+    Ambas rutas (pipeline PDF y Via C) usan ahora el mismo prompt de maxima calidad.
 
-  El formulario form_entry.html usa la clase .field-flagged para marcar campos
-  obligatorios vacios con borde naranja. Sin embargo los campos de tipo time
-  (H.C. y H.F.) muestran borde rojo nativo del browser en lugar de naranja.
-  Ademas O.R. y Reparacion realizada deben mostrar tambien orla y relleno naranja
-  tenue aunque no sean obligatorios (coherencia visual).
+  Seccion 2.10 (Barrera de integridad sine qua non):
+    Actualizar Gate 2: repair_notes anadido como campo obligatorio en S032.
+    Aplica a WorkOrderEntryConfirmView y WorkOrderEntryFormView.
 
-  Implementacion:
-    PMA sobre el CSS de form_entry.html o sobre el archivo CSS del proyecto.
-    Objetivo: todos los campos del formulario de operario con estado de validacion
-    pendiente muestran borde naranja (#FFA500 o equivalente Bootstrap) y relleno
-    naranja muy tenue (rgba(255,165,0,0.08) aprox), incluyendo inputs type=time,
-    textareas y selects, obligatorios o no cuando esten vacios al cargar la pagina.
-
-  Solicitar al inicio de S032 via SFTP:
-    panel/templates/panel/operator/form_entry.html
-
-### Estado de migraciones al cierre de S031
+### Estado de migraciones al cierre de S032
 
 | App                  | Ultima migracion aplicada                                          |
 |----------------------|--------------------------------------------------------------------|
@@ -960,19 +945,7 @@ ADVERTENCIA CRITICA form_entry_assets.js:
 | ivr_config           | 0018_workdayschedule_season_split_times                            |
 | panel                | 0001_initial (AnalyticsProfile)                                    |
 
-### Archivos JS estaticos creados en S031
+### Archivos a solicitar al inicio de S033 via SFTP
 
-| Archivo                                                                    | Contenido                                      |
-|----------------------------------------------------------------------------|------------------------------------------------|
-| panel/static/panel/js/gap_resolution.js                                    | UI resolucion lagunas Gate 4                   |
-| panel/static/panel/js/form_entry_assets.js                                 | Autocompletado activos + bloques dinamicos     |
-| panel/static/panel/js/form_entry_modal.js                                  | Flujo modal guardado Via A                     |
-| panel/static/panel/js/form_entry_tour.js                                   | Tour Driver.js Via A                           |
-
-### Archivos a solicitar al inicio de S032 via SFTP
-
-  panel/templates/panel/operator/upload_entry.html
-  panel/views.py (WorkOrderEntryConfirmView — bloque de parseo)
-  work_order_processor/tasks.py
-  work_order_processor/services.py
-  panel/templates/panel/operator/form_entry.html
+  panel/templates/panel/operator/confirm_entry.html
+  panel/views.py (WorkOrderEntryConfirmView — bloque GET y _resolve_machine)

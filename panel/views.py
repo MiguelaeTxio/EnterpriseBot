@@ -6213,6 +6213,10 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                 integrity_errors.append(
                     f"{blk}: la descripción de la avería es obligatoria."
                 )
+            if not ld["repair_notes"]:
+                integrity_errors.append(
+                    f"{blk}: la descripción de la reparación realizada es obligatoria."
+                )
 
         # Gate 2b — Meter readings: mandatory counter fields per asset flags.
         # If first_repair=True zeros are allowed (baseline setup).
@@ -6458,14 +6462,34 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
 
                 # WorkOrderEntry — one per submitted form (page 1).
                 # WorkOrderEntry — uno por formulario enviado (página 1).
+                #
+                # Confidence and uncertain_date are read from the session
+                # extraction data produced by WorkOrderEntryUploadView so
+                # that the persisted entry faithfully reflects what Gemini
+                # reported, rather than always defaulting to HIGH / False.
+                #
+                # La confianza y uncertain_date se leen de los datos de
+                # extracción en sesión producidos por WorkOrderEntryUploadView
+                # para que la entrada persistida refleje fielmente lo que
+                # Gemini indicó, en lugar de usar siempre HIGH / False.
+                from work_order_processor.services import _coerce_confidence as _cc
+                _session_extraction = request.session.get(
+                    "operator_upload_extraction", {}
+                )
+                _gemini_confidence = _cc(
+                    _session_extraction.get("extraction_confidence")
+                )
+                _gemini_uncertain_date = bool(
+                    _session_extraction.get("uncertain_date", False)
+                )
                 entry = WorkOrderEntry.objects.create(
-                    work_order          = work_order,
-                    page_number         = 1,
-                    worker_name         = worker_name,
-                    work_date           = work_date,
-                    uncertain_date      = False,
-                    extraction_confidence = WorkOrderEntry.Confidence.HIGH,
-                    raw_gemini_response = None,
+                    work_order            = work_order,
+                    page_number           = 1,
+                    worker_name           = worker_name,
+                    work_date             = work_date,
+                    uncertain_date        = _gemini_uncertain_date,
+                    extraction_confidence = _gemini_confidence,
+                    raw_gemini_response   = None,
                 )
 
                 # WorkOrderEntryLine records / Registros WorkOrderEntryLine.
@@ -7249,6 +7273,10 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             if not ld["fault_description"]:
                 integrity_errors.append(
                     f"{blk}: la descripcion de la averia es obligatoria."
+                )
+            if not ld["repair_notes"]:
+                integrity_errors.append(
+                    f"{blk}: la descripcion de la reparacion realizada es obligatoria."
                 )
 
         # Gate 2b — Meter readings: mandatory counter fields per asset flags.

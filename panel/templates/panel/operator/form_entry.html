@@ -157,9 +157,9 @@
                                     <label class="form-label fw-medium">O.R.</label>
                                     <input type="text"
                                            name="entrada_{{ entrada.idx }}_or_val"
-                                           class="form-control"
-                                           value="{{ entrada.or_val }}"
-                                           placeholder="Referencia O.R. (opcional)">
+                                       class="form-control field-optional"
+                                       value="{{ entrada.or_val }}"
+                                       placeholder="Referencia O.R. (opcional)">
                                 </div>
                                 {# ---- Lecturas de contadores (R6/R7/R8) — ocultas por defecto, JS las revela ---- #}
                                 <div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="{{ entrada.idx }}">
@@ -194,9 +194,9 @@
                                               data-desc-field="fault_description">{{ entrada.fault_description }}</textarea>
                                 </div>
                                 <div class="col-12 col-md-6">
-                                    <label class="form-label fw-medium">Reparación realizada</label>
+                                    <label class="form-label fw-medium">Reparación realizada <span class="text-danger">*</span></label>
                                     <textarea name="entrada_{{ entrada.idx }}_repair_notes"
-                                              class="form-control desc-search"
+                                              class="form-control desc-search field-flagged"
                                               rows="3"
                                               placeholder="Descripción de la reparación"
                                               data-desc-field="repair_notes">{{ entrada.repair_notes }}</textarea>
@@ -249,7 +249,7 @@
                                 <label class="form-label fw-medium">O.R.</label>
                                 <input type="text"
                                        name="entrada_1_or_val"
-                                       class="form-control"
+                                       class="form-control field-optional"
                                        value=""
                                        placeholder="Referencia O.R. (opcional)">
                             </div>
@@ -286,9 +286,9 @@
                                           data-desc-field="fault_description"></textarea>
                             </div>
                             <div class="col-12 col-md-6">
-                                <label class="form-label fw-medium">Reparación realizada</label>
+                                <label class="form-label fw-medium">Reparación realizada <span class="text-danger">*</span></label>
                                 <textarea name="entrada_1_repair_notes"
-                                          class="form-control desc-search"
+                                          class="form-control desc-search field-flagged"
                                           rows="3"
                                           placeholder="Descripción de la reparación"
                                           data-desc-field="repair_notes"></textarea>

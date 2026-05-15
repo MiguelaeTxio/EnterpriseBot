@@ -356,7 +356,7 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
                     model=_GEMINI_MODEL,
                     contents=[
                         Part.from_bytes(data=image_bytes, mime_type="image/png"),
-                        _EXTRACTION_PROMPT,
+                        _EXTRACTION_PROMPT_FULL,
                     ],
                     config=_GEMINI_REQUEST_CONFIG,
                 )

@@ -268,10 +268,51 @@ body {
     background-color: #fffbe6;
 }
 
-/* Flagged field highlight — campo con incidencia pendiente / field with pending flag */
-.field-flagged {
+/* Flagged field highlight — campo con incidencia pendiente / field with pending flag.
+   Applies to all form control types used in the operator entry form:
+   text inputs, time inputs, textareas and selects.
+   The browser native :invalid pseudo-class on input[type=time] renders a red
+   border that overrides .field-flagged; it is neutralised here unconditionally
+   for all inputs inside the operator entry form so the orange style prevails.
+
+   Se aplica a todos los tipos de control de formulario usados en el parte
+   del operario: inputs de texto, inputs de hora, textareas y selects.
+   El pseudo-selector nativo :invalid del browser en input[type=time] aplica
+   un borde rojo que sobreescribe .field-flagged; se neutraliza aqui de forma
+   incondicional para todos los inputs del formulario del operario. */
+.field-flagged,
+.field-flagged.form-control,
+.field-flagged.form-select {
     border-color: #fd7e14 !important;
-    box-shadow: 0 0 0 0.15rem rgba(253,126,20,.2) !important;
+    background-color: rgba(255, 165, 0, 0.06) !important;
+    box-shadow: 0 0 0 0.15rem rgba(253, 126, 20, 0.20) !important;
+}
+
+/* Neutralise browser :invalid red border on time inputs so .field-flagged
+   orange always wins regardless of the input validity state.
+   Neutraliza el borde rojo nativo :invalid en inputs de hora para que el
+   naranja de .field-flagged siempre prevalezca. */
+input[type="time"].field-flagged:invalid,
+input[type="time"].field-flagged {
+    border-color: #fd7e14 !important;
+    background-color: rgba(255, 165, 0, 0.06) !important;
+    box-shadow: 0 0 0 0.15rem rgba(253, 126, 20, 0.20) !important;
+}
+
+/* Optional field soft highlight — campo opcional con estado visual pendiente.
+   Used on repair_notes and or_val in the operator entry form: these fields
+   are not required but receive a subtle orange fill when empty on page load
+   to maintain visual coherence with the mandatory fields alongside them.
+   No solid border — only the tinted background signals the pending state.
+
+   Usado en repair_notes y or_val en el formulario de partes del operario:
+   no son obligatorios pero reciben un relleno naranja tenue al cargar la
+   pagina vacios para mantener coherencia visual con los campos obligatorios
+   adyacentes. Sin borde solido — solo el fondo tintado senala el estado. */
+.field-optional,
+.field-optional.form-control,
+.field-optional.form-select {
+    background-color: rgba(255, 165, 0, 0.06) !important;
 }
 
 /* Drag handle — icono de agarre para reordenar filas via SortableJS.

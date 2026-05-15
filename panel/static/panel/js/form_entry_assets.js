@@ -326,7 +326,7 @@
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">O.R.</label>' +
                     '<input type="text" name="entrada_' + idx + '_or_val" ' +
-                           'class="form-control" placeholder="Referencia O.R. (opcional)">' +
+                           'class="form-control field-optional" placeholder="Referencia O.R. (opcional)">' +
                 '</div>' +
                 // Meter readings — ocultos por defecto, revelados por _applyMeterFields().
                 '<div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="' + idx + '">' +
@@ -349,9 +349,9 @@
                               'placeholder="Descripción de la avería o tarea"></textarea>' +
                 '</div>' +
                 '<div class="col-12 col-md-6">' +
-                    '<label class="form-label fw-medium">Reparación realizada</label>' +
+                    '<label class="form-label fw-medium">Reparación realizada <span class=\"text-danger\">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_repair_notes" ' +
-                              'class="form-control desc-search" rows="3" ' +
+                              'class="form-control desc-search field-flagged" rows="3" ' +
                               'data-desc-field="repair_notes" ' +
                               'placeholder="Descripción de la reparación"></textarea>' +
                 '</div>' +
@@ -583,6 +583,9 @@
                 if (!hc)   { errors.push(blk + ": H.C. obligatoria."); }
                 if (!hf)   { errors.push(blk + ": H.F. obligatoria."); }
                 if (!desc) { errors.push(blk + ": descripcion de averia obligatoria."); }
+                var rep_notes = _val("entrada_" + i + "_repair_notes");
+                _markField("entrada_" + i + "_repair_notes", !rep_notes);
+                if (!rep_notes) { errors.push(blk + ": descripcion de reparacion obligatoria."); }
                 if (hc && hf && hf <= hc) {
                     _markField("entrada_" + i + "_hf", true);
                     errors.push(blk + ": H.F. debe ser posterior a H.C.");
