@@ -76,6 +76,10 @@
 ./panel/templates/panel/operator/dashboard.html
 ./panel/templates/panel/operator/upload_entry.html
 ./panel/static/panel/js/admin_history.js
+./panel/static/panel/js/form_entry_modal.js
+./panel/static/panel/js/gap_resolution.js
+./panel/static/panel/js/form_entry_assets.js
+./panel/static/panel/js/form_entry_tour.js
 ./panel/static/panel/css/panel.css
 ./panel/static/panel/vendor/bootstrap.min.css
 ./panel/static/panel/vendor/bootstrap.bundle.min.js
@@ -126,6 +130,10 @@
 ./enterprise_core/settings.py
 ./enterprise_core/wsgi.py
 ./static/panel/js/admin_history.js
+./static/panel/js/form_entry_modal.js
+./static/panel/js/gap_resolution.js
+./static/panel/js/form_entry_assets.js
+./static/panel/js/form_entry_tour.js
 ./static/panel/css/panel.css
 ./static/panel/vendor/bootstrap.min.css
 ./static/panel/vendor/bootstrap.bundle.min.js

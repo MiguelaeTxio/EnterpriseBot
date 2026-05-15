@@ -846,123 +846,112 @@ Estado: COMPLETADO (sesiones 015-017).
 | 028    | 2026-05-14 | Incidencia critica pipeline PDF + UX carga PDFs + Acciones en lote | BLOQUE 1 — Incidencia critica: diagnostico completo del pipeline PDF_UPLOAD. Causa raiz: tres claves JSON obsoletas en tasks.py (maquina_raw, descripcion_averia, reparacion) que vaciaban machine_raw/fault_description/repair_notes en todos los partes procesados desde S011. PMP tasks.py: tres sustituciones atomicas restaurando claves a machine_raw/fault_description/repair_notes. Segunda causa: source_pdf borrado por Celery tras procesamiento sin persistir el nombre — PMA models.py: campo source_pdf_name (CharField max_length=255, blank, default='') + pdf_display_name actualizado con prioridad source_pdf_name > source_pdf > fallback. PMA views.py: source_pdf_name=incoming_name en WorkOrderUploadView.create(). PEA migracion 0016_workorder_source_pdf_name aplicada. Script backfill SWAP: 18 registros actualizados (8 CASO A desde source_pdf, 10 CASO B desde worker_name). BLOQUE 2 — UX carga PDFs: PEA upload.html reescritura completa — selector modo individual/lote, modal de progreso XHR con btn-close manual (evita conflicto doble instancia Bootstrap), log de resultados por fichero en lote (encolado/omitido duplicado/error de red), nota pie para sobrescritura individual. PMA _status_fragment.html: barra Celery con fase A indeterminada (total_pages==0) y fase B determinada (widthratio processed_pages/total_pages). BLOQUE 3 — Acciones en lote list.html: PEA list.html reescritura — checkboxes por fila + select-all + barra de acciones en las 4 pestanas (En cola: Eliminar; Error: Eliminar; Pendiente revision: Marcar revisados + Eliminar; Revisados: Desmarcar revision + Eliminar). PMA views.py: metodo post en WorkOrderListView con bulk_op mark_reviewed/unmark_reviewed/delete, scoped a company PDF_UPLOAD. Estado migraciones al cierre: work_order_processor 0016_workorder_source_pdf_name, ivr_config 0015_workerabsence_workperiod. |
 | 027    | 2026-05-13 | Excel por periodo + Vista Partes Digitales — Pasos 4 y 5 + Diseno Validacion Jornada | PASO 4 (PMA work_period_list.html): cuatro cambios aplicados — boton Nuevo periodo envuelto en div flex con boton Cerrar periodo activo global (condicional has_open_periods), modal modalWorkPeriodCreate sin selector operario + campo end_date anadido con pre-relleno suggested_end + start_date con suggested_start, modal modalWorkPeriodClose con texto global y action fija sin JS dinamico, celda Acciones sustituida por indicador de estado badge/texto. Bloque script extra_head eliminado via fichero Python intermedio (heredoc con OLD_BLOCK multilinea). PASO 5 (PEA digital_list.html): neonato puro creado — tres pestanas Pendiente/Revisados/Error, filtros operator_pk/period_pk, descarga Excel exclusivamente en tab Revisados (Directriz Alejandro), modales incidenceModal y deleteModal, JS minimo activacion tab + checkbox seleccionar todos + boton descarga. Cuatro avisos H021 estilos inline resueltos via sed. DISENO: Sistema de Validacion de Jornada Completa aprobado — WorkdaySchedule, AbsenceCategory, WorkdayGap, Gate 4, WorkdayGapResolutionView, vistas supervisor, comando seed. Implementacion diferida a S028. Incidencia: tres errores PMA por OLD_BLOCKs construidos desde memoria en lugar del archivo real SFTP — diagnostico y correccion del proceso documentados. |
 
+| 031    | 2026-05-15 | gap_resolution.html patcher 2/2, Gate 4 E2E, asignacion WorkdaySchedule, extraccion JS form_entry | PRIMERA ACCION (PMA gap_resolution.html extra_head): CSS hover restaurado con box-shadow, JS de validacion client-side reparado (condiciones if faltantes: !sel.value, !lunchGroups[pk], !group.hasChecked, !allValid), extraccion completa a gap_resolution.js archivo estatico + collectstatic. MEJORAS UX Gate 4 (serie de PMPs): texto descriptivo contextual por tipo de gap (LATE_START/EARLY_END/GAP) en tarjeta estandar; bug timeline fix — indicador laguna usaba slice fragil en template, resuelto enriqueciendo entry_lines con next_gap y early_end_gap/late_start_gap en WorkdayGapResolutionView.get() (logica en view, no en template); boton Volver y editar corregido — onclick confirm() robaba foco antes del submit event, resuelto con type=button + createElement hidden + form.submit() programatico; "Volver y editar" redirigia al dashboard vacio — corregido promoviendo borrador PENDING_GAPS a DONE y redirigiendo a operator_form_edit para pre-rellenar el formulario. SEGUNDA ACCION (E2E Gate 4): validacion completa en produccion — LATE_START, EARLY_END, GAP, LUNCH_BREAK, Volver y editar, confirmacion y parte DONE en historial. Bug _compute_delta_hours devolvía 0.00 para bloques digitales: anadido parametro deduct_lunch=True/False — pipeline PDF mantiene deduccion 90min comida, partes digitales usan deduct_lunch=False en _parse_entry_lines_from_post, WorkOrderLineRestoreView digital y MergeView._create_lines_from_session. TERCERA ACCION (PMA views.py + form.html): CompanyUserUpdateView ampliado con workday_schedule en fields + get_form() con queryset restringido a empresa + widget form-select; form.html con bloque workday_schedule label/widget/helptext. EXTRACCION JS form_entry.html: tres bloques JS inline (604+138+74 lineas) extraidos a form_entry_assets.js, form_entry_modal.js, form_entry_tour.js; window.EB_CONFIG inyectado inline para URLs Django; correcciones acentos _buildBlockRow (Descripcion averia→Descripcion averia con acento, Reparacion→Reparacion con acento, Codigo de maquina, Descripcion del material) + badge Bloque N→Tarea N. |
+
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S031)
+## 5. Hoja de Ruta para la Siguiente Sesion (S032)
 
 ### CONTEXTO
 
-S030 implemento la SEXTA ACCION completa: refactor WorkdaySchedule a modelo
-de turno partido por temporada (season/is_intensive/tramos manana+tarde),
-nuevo WorkdayGap.GapType LUNCH_BREAK con campos lunch_had y lunch_time,
-refactor de _detect_workday_gaps() con soporte split-shift y exclusion de
-ventana de mediodía, actualizacion de WorkdayScheduleView.post() y
-WorkdayGapResolutionView.post(), reescritura de schedule_form.html y
-PMA parcial de gap_resolution.html (patcher 1 aplicado, patcher 2 pendiente).
-Seed de categorias de ausencia completado con taxonomia Grupo Alvarez correcta.
-Sidebar _nav_items.html con nueva seccion Configuracion de jornada.
+S031 completo las tres primeras acciones del hito mas una serie de correcciones
+UX y bugs criticos detectados durante el E2E de Gate 4:
+
+PRIMERA ACCION — gap_resolution.html patcher 2/2: completado y mejorado.
+  JS extraido a archivo estatico gap_resolution.js. CSS hover restaurado.
+  Validacion client-side reparada. Texto descriptivo contextual por tipo de gap.
+  Bug timeline fix: logica de slice eliminada del template, enriquecimiento
+  de entry_lines con next_gap/early_end_gap/late_start_gap en la view.
+  Boton "Volver y editar" corregido: type=button + createElement + form.submit().
+  "Volver y editar" ahora promueve borrador PENDING_GAPS a DONE y redirige a
+  operator_form_edit para recuperar el formulario pre-rellenado.
+
+SEGUNDA ACCION — Validacion E2E de Gate 4: completada.
+  Bug _compute_delta_hours: anadido parametro deduct_lunch=True/False.
+  Pipeline PDF mantiene deduccion 90min comida (deduct_lunch=True por defecto).
+  Partes digitales usan deduct_lunch=False en _parse_entry_lines_from_post,
+  WorkOrderLineRestoreView digital y MergeView._create_lines_from_session.
+
+TERCERA ACCION — Asignacion WorkdaySchedule a operarios: completada.
+  CompanyUserUpdateView: fields + get_form() + widget form-select.
+  form.html: bloque workday_schedule con label/widget/helptext.
+
+EXTRACCION JS form_entry.html (no planificada, ejecutada en S031):
+  Tres bloques JS extraidos a archivos estaticos independientes.
+  window.EB_CONFIG inyectado inline. Correcciones de acentos en _buildBlockRow.
 
 ADVERTENCIA CRITICA — mantener siempre presente:
   El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
   Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-ADVERTENCIA CRITICA BACKWARD COMPATIBILITY:
-  _detect_workday_gaps() usa getattr con fallback para start_time/end_time
-  (campos eliminados) → start_time_morning/end_time_morning. Esto es correcto
-  ya que no existen registros con los campos antiguos en BD.
+ADVERTENCIA CRITICA _compute_delta_hours:
+  Siempre pasar deduct_lunch=False en llamadas desde vistas de partes digitales.
+  Pipeline PDF usa el valor por defecto True. NO cambiar el default.
+
+ADVERTENCIA CRITICA form_entry_assets.js:
+  Las URLs Django se inyectan via window.EB_CONFIG en el template (inline script).
+  El archivo JS estático lee window.EB_CONFIG.assetsUrl y window.EB_CONFIG.assetDetailUrl.
+  Si se añaden nuevas URLs Django al JS, añadirlas primero al bloque EB_CONFIG del template.
 
 ### ORDEN DE IMPLEMENTACION (estricto)
 
-  PRIMERA ACCION  — gap_resolution.html: completar patcher 2/2 (script JS + style).
-  SEGUNDA ACCION  — Validacion E2E de Gate 4 en produccion.
-  TERCERA ACCION  — Asignacion de WorkdaySchedule a operarios desde el panel.
-  CUARTA ACCION   — Via C: captura directa desde camara (capture=environment).
-  QUINTA ACCION   — Via C: unificar parseo con pipeline PDF.
-
-### PRIMERA ACCION — gap_resolution.html: completar patcher 2/2
-
-  El patcher 1/2 de S030 modifico correctamente las cards de gaps anadiendo
-  la tarjeta diferenciada LUNCH_BREAK. El patcher 2/2 (style + script JS)
-  no pudo aplicarse porque el OLD_BLOCK del bloque extra_head no coincidio
-  con el contenido real del archivo tras el patcher 1.
-
-  Accion: descargar gap_resolution.html real del servidor, leer el bloque
-  extra_head EXACTO tal como quedo tras el patcher 1, construir el OLD_BLOCK
-  desde ese contenido y aplicar el patcher.
-
-  El NEW_BLOCK del script JS ya esta definido en S030 — incluye:
-    - Style: hover para .card:has(.lunch-had-radio), transitions para
-      .lunch-note-wrapper y .lunch-time-wrapper, clase .lunch-time-input.
-    - toggleNoteField() usando classList.add/remove("d-none") en lugar de
-      wrapper.style.display (elimina avisos H021 djlint).
-    - toggleLunchFields(): radio yes → muestra lunch_time_wrapper, oculta
-      lunch_note_wrapper; radio no → oculta lunch_time_wrapper, muestra
-      lunch_note_wrapper, nota obligatoria.
-    - Validacion LUNCH_BREAK en submit: lunchGroups dict, al menos un radio
-      marcado por gap pk.
-
-  Solicitar al inicio de S031 via SFTP:
-    panel/templates/panel/operator/gap_resolution.html
-
-### SEGUNDA ACCION — Validacion E2E de Gate 4 en produccion
-
-  Prerequisitos:
-    1. Crear WorkdaySchedule via /panel/workday-schedule/ (nueva UI con
-       season/is_intensive/tramos disponible desde S030).
-       Ejemplo: Mecanicos Invierno, 07:00-14:00 / 15:00-18:00, tolerancia 15 min.
-    2. Verificar que seed de AbsenceCategory esta correcto (completado en S030).
-
-  Flujo de validacion:
-    1. Crear WorkdaySchedule is_default=True para Grupo Alvarez.
-    2. Con usuario WORKSHOP registrar un parte con laguna deliberada.
-    3. Verificar redireccion a gap_resolution.html con gaps detectados.
-    4. Para gap tipo GAP/LATE_START/EARLY_END: seleccionar AbsenceCategory y guardar.
-    5. Para gap tipo LUNCH_BREAK (turno partido): responder radio Si/No y guardar.
-    6. Verificar que el parte queda DONE en historial del operario.
-    7. Verificar que la seccion "Incidencias de jornada" aparece en edit.html.
-
-### TERCERA ACCION — Asignacion de WorkdaySchedule a operarios desde el panel
-
-  Implementacion:
-    PMA panel/views.py — CompanyUserUpdateView:
-      - get_context_data(): anadir workday_schedules (WorkdaySchedule.objects
-        .filter(company=company).order_by("label")) al contexto.
-      - post(): leer workday_schedule_pk del POST. Si vacio o "0": SET_NULL.
-        Si pk valido: WorkdaySchedule.objects.get(pk=pk, company=company)
-        y asignar a self.object.workday_schedule. save(update_fields=
-        ["role","is_active","workday_schedule"]) junto con los campos existentes.
-    PMA panel/templates/panel/users/form.html — anadir selector WorkdaySchedule:
-      <select name="workday_schedule_pk"> con option "Sin asignar" (value="")
-      y options para cada sched en workday_schedules, marcando selected si
-      object.workday_schedule_id == sched.pk.
-
-  Solicitar al inicio de S031 via SFTP:
-    panel/views.py
-    panel/templates/panel/users/form.html
+  CUARTA ACCION  — Via C: captura directa desde camara (capture=environment).
+  QUINTA ACCION  — Via C: unificar parseo con pipeline PDF.
+  SEXTA ACCION   — CSS naranja: sustituir rojo de campos obligatorios vacios.
 
 ### CUARTA ACCION — Via C: captura directa desde camara
 
   PMP quirurgico sobre upload_entry.html:
     Anadir capture="environment" al input type="file" id="work_order_file".
-    OLD: accept="image/*,.pdf"
-    NEW: accept="image/*,.pdf" capture="environment"
 
-  Solicitar al inicio de S031 via SFTP:
+    OLD exacto (extraer del archivo real via SFTP antes de aplicar):
+      accept="image/*,.pdf"
+    NEW:
+      accept="image/*,.pdf" capture="environment"
+
+    NOTA: capture="environment" activa la camara trasera del movil directamente
+    en Android Chrome. No afecta a desktop (atributo ignorado).
+
+  Solicitar al inicio de S032 via SFTP:
     panel/templates/panel/operator/upload_entry.html
 
 ### QUINTA ACCION — Via C: unificar parseo con pipeline PDF
 
-  Analisis previo: comparar logica de parseo de WorkOrderEntryUploadView
-  y WorkOrderEntryConfirmView en panel/views.py con _parse_work_order_from_gemini()
-  en tasks.py. Identificar divergencias en claves JSON, normalizacion morfologica
-  (O/0, L/1, t/7) y validacion de campos.
+  Analisis previo obligatorio: comparar logica de parseo entre:
+    - WorkOrderEntryConfirmView en panel/views.py (Via C confirm)
+    - _parse_work_order_from_gemini() en work_order_processor/tasks.py (pipeline PDF)
+    - extract_work_order_page_full() en work_order_processor/services.py
 
-  Solicitar al inicio de S031 via SFTP:
-    panel/views.py
-    work_order_processor/tasks.py
-    work_order_processor/services.py
+  Divergencias conocidas a verificar:
+    - Claves JSON de respuesta Gemini (entradas vs bloques, repuestos).
+    - Normalizacion morfologica O/0, L/1, t/7 en machine_raw.
+    - Validacion de campos opcionales vs obligatorios.
+    - Manejo de extraction_confidence FAILED/LOW/HIGH.
 
-### Estado de migraciones al cierre de S030
+  Solicitar al inicio de S032 via SFTP:
+    panel/views.py (WorkOrderEntryConfirmView — bloque de parseo)
+    work_order_processor/tasks.py (_parse_work_order_from_gemini)
+    work_order_processor/services.py (extract_work_order_page_full + prompt)
+
+### SEXTA ACCION — CSS naranja: campos obligatorios vacios
+
+  El formulario form_entry.html usa la clase .field-flagged para marcar campos
+  obligatorios vacios con borde naranja. Sin embargo los campos de tipo time
+  (H.C. y H.F.) muestran borde rojo nativo del browser en lugar de naranja.
+  Ademas O.R. y Reparacion realizada deben mostrar tambien orla y relleno naranja
+  tenue aunque no sean obligatorios (coherencia visual).
+
+  Implementacion:
+    PMA sobre el CSS de form_entry.html o sobre el archivo CSS del proyecto.
+    Objetivo: todos los campos del formulario de operario con estado de validacion
+    pendiente muestran borde naranja (#FFA500 o equivalente Bootstrap) y relleno
+    naranja muy tenue (rgba(255,165,0,0.08) aprox), incluyendo inputs type=time,
+    textareas y selects, obligatorios o no cuando esten vacios al cargar la pagina.
+
+  Solicitar al inicio de S032 via SFTP:
+    panel/templates/panel/operator/form_entry.html
+
+### Estado de migraciones al cierre de S031
 
 | App                  | Ultima migracion aplicada                                          |
 |----------------------|--------------------------------------------------------------------|
@@ -971,11 +960,19 @@ ADVERTENCIA CRITICA BACKWARD COMPATIBILITY:
 | ivr_config           | 0018_workdayschedule_season_split_times                            |
 | panel                | 0001_initial (AnalyticsProfile)                                    |
 
-### Archivos a solicitar al inicio de S031 via SFTP
+### Archivos JS estaticos creados en S031
 
-  panel/templates/panel/operator/gap_resolution.html
-  panel/views.py
-  panel/templates/panel/users/form.html
+| Archivo                                                                    | Contenido                                      |
+|----------------------------------------------------------------------------|------------------------------------------------|
+| panel/static/panel/js/gap_resolution.js                                    | UI resolucion lagunas Gate 4                   |
+| panel/static/panel/js/form_entry_assets.js                                 | Autocompletado activos + bloques dinamicos     |
+| panel/static/panel/js/form_entry_modal.js                                  | Flujo modal guardado Via A                     |
+| panel/static/panel/js/form_entry_tour.js                                   | Tour Driver.js Via A                           |
+
+### Archivos a solicitar al inicio de S032 via SFTP
+
   panel/templates/panel/operator/upload_entry.html
+  panel/views.py (WorkOrderEntryConfirmView — bloque de parseo)
   work_order_processor/tasks.py
   work_order_processor/services.py
+  panel/templates/panel/operator/form_entry.html

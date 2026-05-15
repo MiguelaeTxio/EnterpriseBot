@@ -88,29 +88,45 @@
                     </span>
                 </div>
 
-                {# ---- Gap indicator between consecutive blocks ---- #}
-                {# ---- Indicador de laguna entre bloques consecutivos ---- #}
-                {% if not forloop.last %}
-                {% with next_line=entry_lines|slice:forloop.counter %}
-                {% for nl in next_line|slice:":1" %}
-                {% if line.hf and nl.hc %}
+                {# ---- Gap indicator — uses line.next_gap set by the view ---- #}
+                {# ---- Indicador de laguna — usa line.next_gap asignado en    ---- #}
+                {# ---- la view, sin lógica de slice en el template.           ---- #}
+                {% if line.next_gap %}
                 <div class="d-flex align-items-center gap-2 px-2 py-1">
                     <span class="text-muted gap-indicator-label gap-indicator-time">
-                        ▲ {{ line.hf|time:"H:i" }}
+                        ▲ {{ line.next_gap.gap_start|time:"H:i" }}
                     </span>
                     <span class="badge bg-warning text-dark gap-indicator-badge">
                         <i class="bi bi-hourglass-split me-1"></i>Laguna
                     </span>
                     <span class="text-muted gap-indicator-label">
-                        ▼ {{ nl.hc|time:"H:i" }}
+                        ▼ {{ line.next_gap.gap_end|time:"H:i" }}
                     </span>
                 </div>
                 {% endif %}
-                {% endfor %}
-                {% endwith %}
+
+                {# ---- EARLY_END indicator after the last block ---- #}
+                {# ---- Indicador EARLY_END tras el último bloque ---- #}
+                {% if forloop.last and early_end_gap %}
+                <div class="d-flex align-items-center gap-2 px-2 py-1">
+                    <span class="text-muted gap-indicator-label gap-indicator-time">
+                        ▲ {{ early_end_gap.gap_start|time:"H:i" }}
+                    </span>
+                    <span class="badge bg-secondary gap-indicator-badge">
+                        <i class="bi bi-clock-history me-1"></i>Cierre anticipado
+                    </span>
+                    <span class="text-muted gap-indicator-label">
+                        ▼ {{ early_end_gap.gap_end|time:"H:i" }}
+                    </span>
+                </div>
                 {% endif %}
 
                 {% endfor %}
+
+                {# ---- LATE_START indicator before the first block ---- #}
+                {# ---- Indicador LATE_START antes del primer bloque ---- #}
+                {# Rendered after the loop to avoid breaking forloop.first logic. #}
+                {# Se renderiza tras el bucle para no interferir con forloop.first. #}
             </div>
         </div>
     </div>
@@ -144,6 +160,103 @@
         {% csrf_token %}
 
         {% for gap in gaps %}
+
+        {# ------------------------------------------------------------------ #}
+        {# LUNCH_BREAK gap card — differentiated card with yes/no radio       #}
+        {# Tarjeta de laguna LUNCH_BREAK — tarjeta diferenciada con radio     #}
+        {# sí/no para registrar si el operario comió y a qué hora.           #}
+        {# ------------------------------------------------------------------ #}
+        {% if gap.gap_type == "LUNCH_BREAK" %}
+        <div class="card border-0 shadow-sm mb-3 lunch-break-card" data-gap-pk="{{ gap.pk }}">
+            <div class="card-header bg-light border-bottom py-2 px-4">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+
+                    {# LUNCH_BREAK badge — Insignia de pausa de comida #}
+                    <span class="badge bg-success text-white">
+                        <i class="bi bi-cup-hot me-1"></i>Pausa de comida
+                    </span>
+
+                    <span class="text-sm fw-semibold ms-1">
+                        {{ gap.gap_start|time:"H:i" }} – {{ gap.gap_end|time:"H:i" }}
+                    </span>
+                    <span class="text-sm text-muted ms-auto">
+                        {{ gap.duration_minutes }} min
+                    </span>
+                </div>
+            </div>
+
+            <div class="card-body px-4 py-3">
+
+                {# Lunch radio — ¿Has comido? #}
+                <div class="mb-3">
+                    <label class="form-label text-sm fw-semibold mb-2">
+                        ¿Has comido durante esta pausa? <span class="text-danger">*</span>
+                    </label>
+                    <div class="d-flex gap-4">
+                        <div class="form-check">
+                            <input class="form-check-input lunch-had-radio"
+                                   type="radio"
+                                   name="gap_{{ gap.pk }}_lunch_had"
+                                   id="gap_{{ gap.pk }}_lunch_yes"
+                                   value="yes"
+                                   data-gap-pk="{{ gap.pk }}"
+                                   {% if gap.lunch_had == True %}checked{% endif %}>
+                            <label class="form-check-label text-sm" for="gap_{{ gap.pk }}_lunch_yes">
+                                Sí
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input lunch-had-radio"
+                                   type="radio"
+                                   name="gap_{{ gap.pk }}_lunch_had"
+                                   id="gap_{{ gap.pk }}_lunch_no"
+                                   value="no"
+                                   data-gap-pk="{{ gap.pk }}"
+                                   {% if gap.lunch_had == False %}checked{% endif %}>
+                            <label class="form-check-label text-sm" for="gap_{{ gap.pk }}_lunch_no">
+                                No
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                {# Lunch time field — Hora de comida (shown when radio = yes) #}
+                {# Campo hora de comida — visible cuando radio = sí           #}
+                <div class="mb-3 d-none lunch-time-wrapper" id="lunch_time_wrapper_{{ gap.pk }}">
+                    <label class="form-label text-sm fw-semibold mb-1"
+                           for="gap_{{ gap.pk }}_lunch_time">
+                        Hora de comida
+                    </label>
+                    <input type="time"
+                           name="gap_{{ gap.pk }}_lunch_time"
+                           id="gap_{{ gap.pk }}_lunch_time"
+                           class="form-control form-control-sm lunch-time-input"
+                           step="1800"
+                           {% if gap.lunch_time %}value="{{ gap.lunch_time|time:'H:i' }}"{% endif %}>
+                </div>
+
+                {# Lunch note field — Nota obligatoria cuando radio = no      #}
+                {# Campo nota obligatoria — visible cuando radio = no         #}
+                <div class="mb-0 d-none lunch-note-wrapper" id="lunch_note_wrapper_{{ gap.pk }}">
+                    <label class="form-label text-sm fw-semibold mb-1"
+                           for="gap_{{ gap.pk }}_lunch_note">
+                        Motivo de no comer <span class="text-danger">*</span>
+                    </label>
+                    <textarea name="gap_{{ gap.pk }}_lunch_note"
+                              id="gap_{{ gap.pk }}_lunch_note"
+                              class="form-control form-control-sm"
+                              rows="2"
+                              placeholder="Indica brevemente el motivo…">{% if gap.note %}{{ gap.note }}{% endif %}</textarea>
+                </div>
+
+            </div>
+        </div>
+
+        {# ------------------------------------------------------------------ #}
+        {# Standard gap card — GAP / LATE_START / EARLY_END                  #}
+        {# Tarjeta de laguna estándar — selector AbsenceCategory + nota       #}
+        {# ------------------------------------------------------------------ #}
+        {% else %}
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-light border-bottom py-2 px-4">
                 <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -174,6 +287,32 @@
 
             <div class="card-body px-4 py-3">
 
+                {# Contextual description — Descripción contextual en lenguaje natural #}
+                {# Explains to the operator what the gap means in terms of their shift. #}
+                {# Explica al operario qué significa la laguna en términos de su jornada. #}
+                <p class="text-sm text-muted mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    {% if gap.gap_type == "LATE_START" %}
+                        Tu primer bloque de trabajo comenzó a las
+                        <strong>{{ gap.gap_end|time:"H:i" }}</strong>,
+                        pero tu horario prevé entrada a las
+                        <strong>{{ gap.gap_start|time:"H:i" }}</strong>.
+                        Indica el motivo del inicio tardío.
+                    {% elif gap.gap_type == "EARLY_END" %}
+                        Tu último bloque de trabajo terminó a las
+                        <strong>{{ gap.gap_start|time:"H:i" }}</strong>,
+                        pero tu horario prevé salida a las
+                        <strong>{{ gap.gap_end|time:"H:i" }}</strong>.
+                        Indica el motivo del cierre anticipado.
+                    {% elif gap.gap_type == "GAP" %}
+                        Se ha detectado un periodo sin actividad registrada entre las
+                        <strong>{{ gap.gap_start|time:"H:i" }}</strong> y las
+                        <strong>{{ gap.gap_end|time:"H:i" }}</strong>
+                        ({{ gap.duration_minutes }} min).
+                        Indica el motivo de la laguna.
+                    {% endif %}
+                </p>
+
                 {# AbsenceCategory selector — Selector de categoría de ausencia #}
                 <div class="mb-3">
                     <label class="form-label text-sm fw-semibold mb-1" for="gap_{{ gap.pk }}_category">
@@ -196,7 +335,7 @@
                 </div>
 
                 {# Note field — Campo de nota (shown/required based on category) #}
-                <div class="mb-0 gap-note-wrapper gap-note-hidden" id="note_wrapper_{{ gap.pk }}">
+                <div class="mb-0 gap-note-wrapper d-none" id="note_wrapper_{{ gap.pk }}">
                     <label class="form-label text-sm fw-semibold mb-1"
                            for="gap_{{ gap.pk }}_note">
                         Nota explicativa <span class="text-danger">*</span>
@@ -205,11 +344,13 @@
                               id="gap_{{ gap.pk }}_note"
                               class="form-control form-control-sm"
                               rows="2"
-                              placeholder="Describe brevemente el motivo de la laguna…">{{ request.POST|default_if_none:"" }}</textarea>
+                              placeholder="Describe brevemente el motivo de la laguna…">{% if gap.note %}{{ gap.note }}{% endif %}</textarea>
                 </div>
 
             </div>
         </div>
+        {% endif %}
+
         {% empty %}
         {# No gaps remaining — should not normally reach this state #}
         {# Sin gaps pendientes — no debería llegar aquí normalmente #}
@@ -228,11 +369,17 @@
         <div class="d-flex gap-3 justify-content-between align-items-center flex-wrap mt-2">
 
             {# Back to edit — Volver y editar horas #}
+            {# Confirmation is handled in the submit event listener (JS) so  #}
+            {# it fires AFTER activeElement is read, avoiding the race       #}
+            {# condition caused by onclick confirm() stealing focus first.   #}
+            {# La confirmación se gestiona en el event listener de submit    #}
+            {# para que se ejecute DESPUÉS de leer activeElement, evitando  #}
+            {# la condición de carrera de onclick confirm() robando el foco. #}
             <button type="submit"
                     name="back_to_form"
                     value="1"
-                    class="btn btn-outline-secondary btn-sm px-4"
-                    onclick="return confirm('¿Descartar el parte y volver al formulario para corregir las horas?')">
+                    id="btnBackToForm"
+                    class="btn btn-outline-secondary btn-sm px-4">
                 <i class="bi bi-arrow-left me-1"></i>Volver y editar
             </button>
 
@@ -252,106 +399,38 @@
 {% endblock %}
 
 {% block extra_head %}
+{% load static %}
 <style>
-    /* Gap card hover — Hover de tarjeta de laguna */
+    /* Gap card hover — Hover de tarjeta de laguna estándar */
     .card:has(.gap-category-select) {
         transition: box-shadow 0.15s ease;
     }
     .card:has(.gap-category-select):hover {
         box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1) !important;
     }
-    /* Note wrapper transition — Transición del campo de nota */
+    /* Lunch break card hover — Hover de tarjeta LUNCH_BREAK */
+    .card:has(.lunch-had-radio) {
+        transition: box-shadow 0.15s ease;
+    }
+    .card:has(.lunch-had-radio):hover {
+        box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1) !important;
+    }
+    /* Note wrapper transition — Transición del campo de nota estándar */
     .gap-note-wrapper {
         transition: opacity 0.2s ease;
     }
-</style>
-<script>
-/*
- * gap_resolution.js (inline) — Gate 4 gap resolution UI.
- * Shows/hides the note field based on the requires_note flag of the
- * selected AbsenceCategory. Validates that all required notes are filled
- * before allowing form submission.
- *
- * gap_resolution.js (inline) — UI de resolución de lagunas Gate 4.
- * Muestra/oculta el campo de nota según el flag requires_note de la
- * AbsenceCategory seleccionada. Valida que todas las notas requeridas
- * estén rellenas antes de permitir el envío del formulario.
- */
-(function () {
-    "use strict";
-
-    /**
-     * Toggles the visibility and required attribute of the note field
-     * for a given gap pk based on the selected category's requires_note flag.
-     * ---
-     * Activa/desactiva la visibilidad y el atributo required del campo de
-     * nota para un gap pk dado según el flag requires_note de la categoría.
-     */
-    function toggleNoteField(selectEl) {
-        var gapPk       = selectEl.getAttribute("data-gap-pk");
-        var wrapper     = document.getElementById("note_wrapper_" + gapPk);
-        var noteField   = document.getElementById("gap_" + gapPk + "_note");
-        var selectedOpt = selectEl.options[selectEl.selectedIndex];
-
-        if (!wrapper || !noteField) { return; }
-
-        var requiresNote = selectedOpt && selectedOpt.getAttribute("data-requires-note") === "true";
-
-        if (requiresNote) {
-            wrapper.style.display = "block";
-            noteField.required    = true;
-        } else {
-            wrapper.style.display = "none";
-            noteField.required    = false;
-            noteField.value       = "";
-        }
+    /* Lunch note wrapper transition — Transición del campo de nota de comida */
+    .lunch-note-wrapper {
+        transition: opacity 0.2s ease;
     }
-
-    document.addEventListener("DOMContentLoaded", function () {
-        /* Initialise all category selects on page load. */
-        /* Inicializar todos los selectores de categoría al cargar la página. */
-        var selects = document.querySelectorAll(".gap-category-select");
-        selects.forEach(function (sel) {
-            toggleNoteField(sel);
-            sel.addEventListener("change", function () {
-                toggleNoteField(sel);
-            });
-        });
-
-        /* Client-side validation before submission. */
-        /* Validación client-side antes del envío. */
-        var form = document.getElementById("formGapResolution");
-        if (!form) { return; }
-
-        form.addEventListener("submit", function (e) {
-            /* Skip validation for the "Volver y editar" back button. */
-            /* Omitir validación para el botón "Volver y editar". */
-            if (document.activeElement &&
-                document.activeElement.name === "back_to_form") {
-                return;
-            }
-
-            var allValid = true;
-            selects.forEach(function (sel) {
-                if (!sel.value) {
-                    sel.classList.add("is-invalid");
-                    allValid = false;
-                } else {
-                    sel.classList.remove("is-invalid");
-                }
-            });
-
-            if (!allValid) {
-                e.preventDefault();
-                /* Scroll to first invalid field. */
-                /* Desplazar al primer campo inválido. */
-                var firstInvalid = form.querySelector(".is-invalid");
-                if (firstInvalid) {
-                    firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
-                }
-            }
-        });
-    });
-}());
-</script>
+    /* Lunch time wrapper transition — Transición del campo de hora de comida */
+    .lunch-time-wrapper {
+        transition: opacity 0.2s ease;
+    }
+    /* Lunch time input — Input de hora de comida */
+    .lunch-time-input {
+        max-width: 10rem;
+    }
+</style>
+<script src="{% static 'panel/js/gap_resolution.js' %}"></script>
 {% endblock %}

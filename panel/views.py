@@ -378,16 +378,24 @@ class CompanyUserListView(AdminRoleRequiredMixin, ListView):
 
 class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
     """
-    Allows an ADMIN to update the role and active status of a CompanyUser
-    belonging to the same company. Prevents editing users from other companies.
+    Allows an ADMIN to update the role, active status and workday schedule
+    of a CompanyUser belonging to the same company.
+    Prevents editing users from other companies.
+    The workday_schedule queryset is restricted to the authenticated
+    company's own schedules via get_form() — no schedule from another
+    company can be selected.
     ---
-    Permite a un ADMIN actualizar el rol y el estado activo de un CompanyUser
-    de la misma empresa. Impide editar usuarios de otras empresas.
+    Permite a un ADMIN actualizar el rol, el estado activo y el horario de
+    jornada de un CompanyUser de la misma empresa.
+    Impide editar usuarios de otras empresas.
+    El queryset de workday_schedule se restringe a los horarios de la empresa
+    autenticada mediante get_form() — ningún horario de otra empresa puede
+    ser seleccionado.
     """
 
-    model = CompanyUser
+    model         = CompanyUser
     template_name = "panel/users/form.html"
-    fields = ["role", "is_active"]
+    fields        = ["role", "is_active", "workday_schedule"]
 
     def get_queryset(self):
         """
@@ -398,6 +406,26 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
         return CompanyUser.objects.filter(
             company=self.request.user.company_user.company
         )
+
+    def get_form(self, form_class=None):
+        """
+        Restricts the workday_schedule queryset to the authenticated user's
+        company so that no foreign schedule can be selected from the dropdown.
+        Marks workday_schedule as optional (blank allowed).
+        ---
+        Restringe el queryset de workday_schedule a la empresa del usuario
+        autenticado para que ningún horario externo pueda seleccionarse.
+        Marca workday_schedule como opcional (blank permitido).
+        """
+        from ivr_config.models import WorkdaySchedule
+        form    = super().get_form(form_class)
+        company = self.request.user.company_user.company
+        form.fields["workday_schedule"].queryset = WorkdaySchedule.objects.filter(
+            company=company
+        ).order_by("label")
+        form.fields["workday_schedule"].required = False
+        form.fields["workday_schedule"].widget.attrs.update({"class": "form-select"})
+        return form
 
     def post(self, request, *args, **kwargs):
         """
@@ -438,10 +466,10 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
         Añade company, company_user y own_presence al contexto de la plantilla.
         """
         context = super().get_context_data(**kwargs)
-        context["company"] = self.request.user.company_user.company
+        context["company"]      = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
-        context["active_nav"] = "users"
+        context["active_nav"]   = "users"
         return context
 
     def _get_own_presence(self):
@@ -4144,7 +4172,7 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
             # Ruta de parte digital — re-resolver activo y recalcular horas únicamente.
             machine_norm  = _normalise_machine_code(line.machine_raw or "")
             machine_asset = _resolve_machine_asset(machine_norm, company=company) if machine_norm else None
-            delta         = _compute_delta_hours(line.hc, line.hf)
+            delta         = _compute_delta_hours(line.hc, line.hf, deduct_lunch=False)
 
             line.machine_norm  = machine_norm
             line.machine_asset = machine_asset
@@ -5615,7 +5643,7 @@ def _parse_entry_lines_from_post(POST, company):
                     code__iexact=machine_norm, company=company
                 ).first()
 
-        delta_hours = _compute_delta_hours(hc, hf)
+        delta_hours = _compute_delta_hours(hc, hf, deduct_lunch=False)
 
         try:
             flags = _json.loads(flags_raw) if flags_raw else []
@@ -9073,7 +9101,7 @@ class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
             hf_str = edits.get("hf") or line_data.get("hf")
             hc_val = self._parse_time_str(hc_str)
             hf_val = self._parse_time_str(hf_str)
-            delta  = _compute_delta_hours(hc_val, hf_val)
+            delta  = _compute_delta_hours(hc_val, hf_val, deduct_lunch=False)
 
             # Resolve MachineAsset from pk stored in session.
             # Resolver MachineAsset desde pk almacenado en sesion.
@@ -9709,15 +9737,71 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
         # Retrieve first entry and its lines for jornada summary context.
         # Lines are ordered by hc so the template can render a chronological
         # timeline that helps the operator identify which gap falls where.
+        # Each line is enriched with a next_gap attribute: the WorkdayGap
+        # whose gap_start matches the line hf, or None if no gap follows.
+        # This avoids fragile slice logic in the template — all computation
+        # stays in the view layer.
         #
         # Recuperar el primer entry y sus líneas para el resumen de jornada.
         # Las líneas se ordenan por hc para que el template pueda renderizar
         # una línea de tiempo cronológica que ayude al operario a identificar
         # en qué momento de su jornada cae cada laguna.
+        # Cada línea se enriquece con el atributo next_gap: el WorkdayGap
+        # cuyo gap_start coincide con el hf de la línea, o None si no hay
+        # ningún gap tras ella. Esto evita lógica de slice frágil en el
+        # template — todo el cómputo permanece en la capa de vista.
         first_entry  = draft.entries.first()
-        entry_lines  = (
+        raw_lines    = (
             list(first_entry.lines.order_by("hc"))
             if first_entry else []
+        )
+
+        # Build a lookup dict: gap_start (time) → WorkdayGap for O(1) matching.
+        # Construir dict de búsqueda: gap_start (time) → WorkdayGap para match O(1).
+        gaps_list     = list(gaps)
+        gap_by_start  = {g.gap_start: g for g in gaps_list}
+
+        # Attach next_gap to each line. A line has a next_gap when its hf
+        # exactly matches a gap_start — meaning a gap begins right after
+        # that line ends. Only standard gaps (GAP / LATE_START / EARLY_END)
+        # are shown in the timeline; LUNCH_BREAK is already visible as a
+        # midday window between the two tract blocks.
+        #
+        # Adjuntar next_gap a cada línea. Una línea tiene next_gap cuando su
+        # hf coincide exactamente con un gap_start — es decir, una laguna
+        # comienza justo después de que esa línea termina. Solo los gaps
+        # estándar (GAP / LATE_START / EARLY_END) se muestran en la timeline;
+        # LUNCH_BREAK ya es visible como ventana de mediodía entre los dos
+        # tramos del turno partido.
+        for line in raw_lines:
+            matched = gap_by_start.get(line.hf)
+            # Only GAP type gaps attach as next_gap — they represent uncovered
+            # intervals between two consecutive work blocks. EARLY_END and
+            # LATE_START are rendered separately via early_end_gap / late_start_gap
+            # context variables. LUNCH_BREAK is excluded from the timeline.
+            #
+            # Solo los gaps de tipo GAP se adjuntan como next_gap — representan
+            # intervalos sin cubrir entre dos bloques consecutivos. EARLY_END y
+            # LATE_START se renderizan por separado mediante las variables de
+            # contexto early_end_gap / late_start_gap. LUNCH_BREAK se excluye.
+            line.next_gap = (
+                matched
+                if matched and matched.gap_type == "GAP"
+                else None
+            )
+
+        # EARLY_END and LATE_START gaps do not attach to any line hf/hc —
+        # they are shown as a trailing / leading indicator in the timeline.
+        # Pass them separately so the template can render them explicitly.
+        #
+        # Los gaps EARLY_END y LATE_START no se adjuntan al hf/hc de ninguna
+        # línea — se muestran como indicador al final / al inicio de la
+        # timeline. Se pasan por separado para que el template los renderice.
+        late_start_gap = next(
+            (g for g in gaps_list if g.gap_type == "LATE_START"), None
+        )
+        early_end_gap  = next(
+            (g for g in gaps_list if g.gap_type == "EARLY_END"), None
         )
 
         context = {
@@ -9725,10 +9809,12 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
             "company_user":       cu,
             "active_nav":         "operator_dashboard",
             "draft":              draft,
-            "gaps":               list(gaps),
+            "gaps":               gaps_list,
             "absence_categories": absence_categories,
             "work_date":          first_entry.work_date if first_entry else None,
-            "entry_lines":        entry_lines,
+            "entry_lines":        raw_lines,
+            "late_start_gap":     late_start_gap,
+            "early_end_gap":      early_end_gap,
         }
         return render(request, self.template_name, context)
 
@@ -9763,18 +9849,38 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
             return redirect(reverse("panel:operator_history"))
 
         # ------------------------------------------------------------------
-        # "Volver y editar" — discard draft and return to operator dashboard.
-        # "Volver y editar" — descartar borrador y volver al panel de operario.
+        # "Volver y editar" — promote draft to editable DONE and redirect
+        # to WorkOrderEntryFormView edit mode so the operator recovers all
+        # their data pre-filled and can correct times before resubmitting.
+        # Promoting to DONE (reviewed=False) lets the existing edit mode
+        # queryset find the record without any new infrastructure.
+        #
+        # "Volver y editar" — promover el borrador a DONE editable y
+        # redirigir al modo edición de WorkOrderEntryFormView para que el
+        # operario recupere todos sus datos pre-rellenados y pueda corregir
+        # las horas antes de reenviar. Promover a DONE (reviewed=False)
+        # permite que el queryset del modo edición existente encuentre el
+        # registro sin infraestructura nueva.
         # ------------------------------------------------------------------
         if request.POST.get("back_to_form"):
-            draft.delete()
+            from django.urls import reverse as _rev_btf
+            from work_order_processor.models import WorkOrder as _WO_BTF
+            # Promote PENDING_GAPS draft to DONE (unreviewed) so the
+            # FormView edit-mode queryset can locate it by pk.
+            # Promover borrador PENDING_GAPS a DONE (sin revisar) para que
+            # el queryset del modo edición de FormView lo encuentre por pk.
+            _WO_BTF.objects.filter(pk=draft.pk).update(
+                status=_WO_BTF.Status.DONE,
+            )
             request.session.pop("pending_gaps_wo_pk", None)
             request.session.modified = True
             django_messages.info(
                 request,
-                "Borrador descartado. Puedes corregir las horas y enviar de nuevo.",
+                "Puedes corregir las horas del parte y enviarlo de nuevo.",
             )
-            return redirect(reverse("panel:operator_dashboard"))
+            return redirect(
+                _rev_btf("panel:operator_form_edit", kwargs={"wo_pk": draft.pk})
+            )
 
         # ------------------------------------------------------------------
         # Validate and resolve each pending gap.

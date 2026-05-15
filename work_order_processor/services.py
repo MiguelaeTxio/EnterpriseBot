@@ -1230,23 +1230,40 @@ def _resolve_machine_asset(
     return None
 
 
-def _compute_delta_hours(hc: time | None, hf: time | None) -> Decimal | None:
+def _compute_delta_hours(
+    hc: time | None,
+    hf: time | None,
+    deduct_lunch: bool = True,
+) -> Decimal | None:
     """
-    Computes the net hours for a work block by subtracting the lunch break
-    (13:30–15:00, 90 minutes) if the block covers that interval, as defined
-    in the partes-trabajo skill.
+    Computes the hours for a work block.
+
+    When deduct_lunch=True (default, PDF pipeline): subtracts the fixed
+    lunch break window (13:30–15:00, 90 min) if the block covers it, as
+    defined in the partes-trabajo skill.
+
+    When deduct_lunch=False (digital/form entry): returns the gross
+    duration without any deduction. Gate 4 already handles the midday
+    window as a LUNCH_BREAK gap, so no implicit deduction is needed.
 
     Returns a Decimal rounded to 2 decimal places, or None if either time
     is missing or hf <= hc.
 
     ---
 
-    Calcula las horas netas de un bloque de trabajo descontando la pausa de
-    comida (13:30–15:00, 90 minutos) si el bloque cubre ese intervalo, según
-    la definición de la skill partes-trabajo.
+    Calcula las horas de un bloque de trabajo.
 
-    Devuelve un Decimal redondeado a 2 decimales, o None si alguna hora falta
-    o hf <= hc.
+    Con deduct_lunch=True (por defecto, pipeline PDF): descuenta la pausa
+    de comida fija (13:30–15:00, 90 min) si el bloque la cubre, según la
+    definición de la skill partes-trabajo.
+
+    Con deduct_lunch=False (entrada digital/formulario): devuelve la
+    duración bruta sin ningún descuento. Gate 4 ya gestiona la ventana de
+    mediodía como laguna LUNCH_BREAK, por lo que no se necesita descuento
+    implícito.
+
+    Devuelve un Decimal redondeado a 2 decimales, o None si alguna hora
+    falta o hf <= hc.
     """
     if not hc or not hf:
         return None
@@ -1260,17 +1277,17 @@ def _compute_delta_hours(hc: time | None, hf: time | None) -> Decimal | None:
 
     total_min = hf_min - hc_min
 
-    # Lunch break deduction: 13:30–15:00 = 90 minutes.
-    # Descuento pausa comida: 13:30–15:00 = 90 minutos.
-    lunch_start = 13 * 60 + 30   # 810
-    lunch_end   = 15 * 60        # 900
+    if deduct_lunch:
+        # Lunch break deduction: 13:30–15:00 = 90 minutes (PDF pipeline only).
+        # Descuento pausa comida: 13:30–15:00 = 90 min (solo pipeline PDF).
+        lunch_start   = 13 * 60 + 30   # 810
+        lunch_end     = 15 * 60        # 900
+        overlap_start = max(hc_min, lunch_start)
+        overlap_end   = min(hf_min, lunch_end)
+        deduction     = max(0, overlap_end - overlap_start)
+        total_min     = total_min - deduction
 
-    overlap_start = max(hc_min, lunch_start)
-    overlap_end   = min(hf_min, lunch_end)
-    deduction     = max(0, overlap_end - overlap_start)
-
-    net_min = total_min - deduction
-    net_h   = Decimal(net_min) / Decimal(60)
+    net_h = Decimal(total_min) / Decimal(60)
     return net_h.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
