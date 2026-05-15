@@ -3357,10 +3357,11 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
                 return redirect("panel:work_order_list")
 
             work_order = WorkOrder.objects.create(
-                company         = company,
-                uploaded_by     = company_user,
-                source_pdf      = pdf_file,
-                source_pdf_hash = incoming_hash,
+                company          = company,
+                uploaded_by      = company_user,
+                source_pdf       = pdf_file,
+                source_pdf_hash  = incoming_hash,
+                source_pdf_name  = incoming_name,
             )
 
         process_work_order_pdf.delay_on_commit(work_order.pk)

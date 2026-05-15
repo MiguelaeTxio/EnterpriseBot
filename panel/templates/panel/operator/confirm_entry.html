@@ -170,7 +170,7 @@
                                 <input
                                     type="text"
                                     name="entrada_{{ entrada.idx }}_or_val"
-                                    class="form-control"
+                                    class="form-control field-optional"
                                     value="{{ entrada.or_val }}"
                                     placeholder="Referencia O.R. (opcional)"
                                 >
@@ -218,10 +218,11 @@
                             <div class="col-12 col-md-6">
                                 <label class="form-label fw-medium">
                                     Reparación realizada
+                                    <span class="text-danger">*</span>
                                 </label>
                                 <textarea
                                     name="entrada_{{ entrada.idx }}_repair_notes"
-                                    class="form-control desc-search"
+                                    class="form-control desc-search {% if not entrada.repair_notes %}field-flagged{% endif %}"
                                     rows="3"
                                     placeholder="Descripción de la reparación"
                                     data-desc-field="repair_notes"
@@ -803,6 +804,12 @@
                 if (!hc)   { errors.push(blk + ": H.C. obligatoria."); }
                 if (!hf)   { errors.push(blk + ": H.F. obligatoria."); }
                 if (!desc) { errors.push(blk + ": descripción de avería obligatoria."); }
+
+                // Gate 2 repair_notes — mandatory in all entry paths.
+                // Gate 2 repair_notes — obligatorio en todas las vías de entrada.
+                var repNotes = _val("entrada_" + i + "_repair_notes");
+                _markField("entrada_" + i + "_repair_notes", !repNotes);
+                if (!repNotes) { errors.push(blk + ": descripción de reparación obligatoria."); }
 
                 // Check HF > HC / Verificar HF > HC.
                 if (hc && hf && hf <= hc) {

@@ -186,7 +186,8 @@
 {# Modal de progreso — compartido por los modos individual y lote   #}
 {# ================================================================ #}
 <div class="modal fade" id="uploadProgressModal" tabindex="-1"
-     aria-labelledby="uploadProgressModalLabel" aria-hidden="true">
+     aria-labelledby="uploadProgressModalLabel" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header border-0 pb-0">
@@ -198,6 +199,20 @@
                         aria-label="Cerrar" disabled></button>
             </div>
             <div class="modal-body pt-2">
+
+                {# Upload-in-progress warning banner                     #}
+                {# Aviso de carga en curso — no cerrar, no salir         #}
+                <div id="upm-warning-banner" class="alert alert-warning d-flex gap-2 align-items-start mb-3 py-2" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+                    <div class="text-sm">
+                        <strong>No cierres esta ventana ni salgas de la página</strong>
+                        mientras la carga esté en curso.<br>
+                        <span class="text-muted">
+                            Abandonar la página o navegar a otra sección
+                            interrumpirá la carga del archivo.
+                        </span>
+                    </div>
+                </div>
 
                 {# Global batch progress — hidden in single mode          #}
                 {# Progreso global del lote — oculto en modo individual   #}

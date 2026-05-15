@@ -111,7 +111,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -171,5 +171,18 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   agrupacion logica de flujos IVR, usuarios, partes, maquinaria/centros de gasto.
 - Los centros de gasto no resueltos en partes historicos podran asignarse tras
   crear el centro de gasto correspondiente.
+
+### Hito 13: Salas de Chat IRC por Sección (WhatsApp → Panel) (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V13.md`)
+- Sistema de salas de chat en tiempo cuasi-real en el panel, una sala por sección.
+- Canal de entrada: WhatsApp (+34607961650). Mensajes de contactos replicados en
+  la sala de su sección. Simula grupo WhatsApp sin restricción de 8 integrantes.
+- Polling HTMX cada 4 segundos. Persistencia en BD con TTL de 7 días.
+- Redis externo (instancia Redis Labs existente, DB separada) como broker Celery.
+- Sala especial BREAKDOWNS: agente Gemini 2.5 Flash conversacional recoge datos
+  de averías (máquina, síntoma, ubicación, urgencia) campo a campo vía WhatsApp.
+- BreakdownTicket persistido en BD. SUPERVISOR cierra el ticket desde el panel.
+- Nueva app Django `chat` con modelos ChatRoom, ChatMessage, BreakdownTicket,
+  BreakdownConversationTurn. Comando init_chat_rooms idempotente.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

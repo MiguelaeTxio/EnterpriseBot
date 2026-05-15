@@ -49,7 +49,7 @@ Estado: PENDIENTE REDISENO (S021) — arquitectura de dictado global descartada.
 Ver seccion 2.37 para el nuevo diseno aprobado.
 
 #### Via C — Upload (foto/PDF manuscrito con Gemini Vision)
-Estado: COMPLETADO (sesion 003).
+Estado: COMPLETADO (S032).
 - WorkOrderEntryUploadView: rasteriza la imagen/PDF y llama a
   extract_work_order_page_full() (prompt completo, cara delantera + trasera).
 - WorkOrderEntryConfirmView: formulario de confirmacion completo con
@@ -57,6 +57,15 @@ Estado: COMPLETADO (sesion 003).
   source_pdf en blanco) + WorkOrderEntry + WorkOrderEntryLine + SparePartLine.
 - Templates: panel/operator/upload_entry.html, panel/operator/confirm_entry.html.
 - Endpoint de autocompletado: GET /panel/operator/assets/ (WorkshopAssetAutocompleteView).
+- repair_notes obligatorio en todas las vias desde S032: Gate 2 server-side en
+  WorkOrderEntryConfirmView.post() y WorkOrderEntryFormView.post(); Gate 2
+  client-side en confirm_entry.html y form_entry_assets.js.
+- Validacion client-side de confirm_entry.html alineada con form_entry.html (S033):
+  field-optional en or_val, asterisco y field-flagged en repair_notes, Gate 2
+  repair_notes en submit JS.
+- Prompt de extraccion unificado en S032: extract_work_order_page() pasa a usar
+  _EXTRACTION_PROMPT_FULL. Pipeline PDF historico e igual calidad de extraccion
+  que Via C desde S032.
 
 ### 2.3. Modelo SparePartLine
 
@@ -72,12 +81,16 @@ source (SUPPLIER/WAREHOUSE), supplier, flags (JSONField).
 
 _EXTRACTION_PROMPT_FULL en work_order_processor/services.py: extrae tanto
 la cara delantera (bloques de trabajo) como la trasera (tabla de repuestos)
-en una unica llamada API. El pipeline historico sigue usando _EXTRACTION_PROMPT
-sin modificacion.
+en una unica llamada API.
 
 Funcion publica: extract_work_order_page_full(image_bytes) -> dict.
 JSON de respuesta incluye clave "repuestos": [{referencia, vehiculo_raw,
 material, unidades, origen, proveedor, flags}].
+
+Nota S032 — Unificacion de prompt: extract_work_order_page() (pipeline PDF
+historico) unificada a _EXTRACTION_PROMPT_FULL. Ambas rutas (pipeline PDF y
+Via C) usan ahora el mismo prompt de maxima calidad desde S032. _EXTRACTION_PROMPT
+queda obsoleto en la practica aunque se conserva por compatibilidad.
 
 ### 2.5. Correccion multiempresa en _resolve_machine_asset
 
@@ -126,10 +139,13 @@ obligatoria antes del INSERT. Los datos deben estar completos al 100%.
 Barrera server-side en WorkOrderEntryConfirmView.post() y WorkOrderEntryFormView.post():
   Gate 1: fecha presente y parseable (DD/MM/AAAA o YYYY-MM-DD).
   Gate 2: cada bloque tiene machine_raw, machine_asset, hc, hf, delta_hours
-          positivo y fault_description no vacios.
+          positivo, fault_description y repair_notes no vacios.
+          (repair_notes anadido como campo obligatorio en S032.)
   Gate 3: cada repuesto tiene material no vacio y quantity positiva.
 
 Barrera client-side en confirm_entry.html y form_entry.html replica las tres gates.
+confirm_entry.html alineada con form_entry.html en S033: field-optional en or_val,
+asterisco y field-flagged en repair_notes, Gate 2 repair_notes en submit JS.
 
 ### 2.11. Correccion identificadores Regla de Oro del Idioma (sesion 008)
 
