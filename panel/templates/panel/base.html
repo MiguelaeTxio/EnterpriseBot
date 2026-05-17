@@ -208,6 +208,9 @@
         });
     }());
     </script>
+    {% if active_nav == 'chat' %}
+    <script src="{% static 'panel/js/chat.js' %}" defer></script>
+    {% endif %}
     {% block extra_scripts %}{% endblock %}
     {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
     {% include "panel/_tour_workshop.html" %}

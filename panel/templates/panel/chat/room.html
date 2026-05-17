@@ -1,0 +1,139 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/chat/room.html #}
+{#                                                                                  #}
+{# Página completa de sala de chat IRC.                                             #}
+{# Muestra el historial de mensajes de los últimos 7 días.                         #}
+{# Polling HTMX cada 3 segundos al endpoint de mensajes.                           #}
+{# Envío de mensajes disponible para ADMIN y SUPERVISOR (can_send=True).           #}
+{#                                                                                  #}
+{# Full IRC-style chat room page.                                                   #}
+{# Shows the last 7 days of message history.                                        #}
+{# HTMX polling every 3 seconds to the messages endpoint.                           #}
+{# Message sending available to ADMIN and SUPERVISOR (can_send=True).              #}
+{% extends "panel/base.html" %}
+
+{% block title %}{{ room.name }}{% endblock %}
+{% block page_title %}<i class="bi bi-chat-dots me-2"></i>{{ room.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3 d-flex flex-column chat-room-container">
+
+    {# ------------------------------------------------------------------ #}
+    {# Cabecera de sala / Room header                                       #}
+    {# ------------------------------------------------------------------ #}
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <a href="{% url 'chat:room_list' %}"
+               class="btn btn-sm btn-outline-secondary me-2">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <span class="fw-semibold fs-5">
+                {% if room.room_type == 'BREAKDOWNS' %}
+                    <i class="bi bi-exclamation-triangle text-danger me-1"></i>
+                {% else %}
+                    <i class="bi bi-chat-left-dots text-primary me-1"></i>
+                {% endif %}
+                {{ room.name }}
+            </span>
+            {% if room.section %}
+            <span class="badge bg-secondary ms-2">{{ room.section.name }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Contenedor de mensajes con polling HTMX / Message container + poll  #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card flex-grow-1 shadow-sm border-0 d-flex flex-column overflow-hidden">
+        <div class="card-body p-0 d-flex flex-column">
+
+            {# Polling HTMX: refresca el fragmento de mensajes cada 3s.    #}
+            {# HTMX polling: refreshes the messages fragment every 3s.      #}
+            <div id="chat-messages-container"
+                 class="flex-grow-1 overflow-y-auto p-3"
+                 hx-get="{% url 'chat:room_messages' room.pk %}"
+                 hx-trigger="every 3s"
+                 hx-swap="innerHTML"
+                 hx-target="#chat-messages-container">
+
+                {# Renderizado inicial — mismo fragmento que devuelve el polling. #}
+                {# Initial render — same fragment returned by the polling view.    #}
+                {% include "panel/chat/_messages_fragment.html" %}
+
+            </div>
+
+            {# ---------------------------------------------------------------- #}
+            {# Caja de envío — visible solo si can_send=True                    #}
+            {# Send box — visible only when can_send=True                       #}
+            {# ---------------------------------------------------------------- #}
+            {% if can_send %}
+            <div class="border-top p-3 bg-light">
+                <div class="d-flex gap-2">
+                    <input type="text"
+                           id="chat-input"
+                           class="form-control"
+                           placeholder="Escribe un mensaje..."
+                           autocomplete="off"
+                           maxlength="2000">
+                    <button class="btn btn-primary"
+                            id="chat-send-btn"
+                            data-room-pk="{{ room.pk }}"
+                            disabled>
+                        <i class="bi bi-send"></i>
+                    </button>
+                </div>
+            </div>
+            {% else %}
+            <div class="border-top p-2 bg-light text-center text-muted small">
+                <i class="bi bi-eye me-1"></i>Solo lectura — tu rol no permite enviar mensajes.
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+</div>
+{# ------------------------------------------------------------------ #}
+{# Modal de alias — visible solo si alias_required=True               #}
+{# Alias modal — shown only when alias_required=True                  #}
+{# ------------------------------------------------------------------ #}
+{% if alias_required %}
+<div class="modal fade" id="aliasModal" tabindex="-1"
+     data-bs-backdrop="static" data-bs-keyboard="false"
+     aria-labelledby="aliasModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="aliasModalLabel">
+                    <i class="bi bi-person-badge me-2"></i>Elige tu alias de chat
+                </h5>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">
+                    El alias es el nombre con el que aparecerás en el chat de grupo
+                    para todos los miembros de tu sección. Elige un nombre o apodo
+                    con el que quieras que te identifiquen.
+                </p>
+                <input type="text"
+                       id="alias-input"
+                       class="form-control"
+                       placeholder="Tu alias (máx. 50 caracteres)"
+                       maxlength="50"
+                       autocomplete="off">
+                <div id="alias-error" class="text-danger small mt-2 d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-primary w-100"
+                        id="alias-save-btn"
+                        disabled>
+                    Guardar alias
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}{% endblock %}

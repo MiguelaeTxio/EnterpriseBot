@@ -228,7 +228,23 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Analítica — solo ADMIN                                     #}
+    {# Sección: Chat de Secciones — ADMIN y SUPERVISOR                     #}
+    {# Section: Section Chat — ADMIN and SUPERVISOR                        #}
+    {# Hito 13 Paso 4 (2026-05-15)                                         #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+    <li><div class="sidebar-section-label">Chat de Secciones</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'chat' %}active{% endif %}"
+           href="{% url 'panel:chat_room_list' %}">
+            <i class="bi bi-chat-dots"></i>Salas de chat
+        </a>
+    </li>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Analítica — solo ADMIN
     {# Section: Analytics — ADMIN only                                    #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' %}
@@ -241,7 +257,6 @@
         </a>
     </li>
 
-    <!-- Informes — pendiente Hito 9
          Reports — pending Milestone 9
     <li class="nav-item">
         <a class="nav-link" href="#">

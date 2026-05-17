@@ -245,6 +245,31 @@ class IncomingWhatsAppView(View):
                 msg_longitude,
             )
 
+        # --- Step 4c: Chat IRC dispatcher — Hito 13. ---
+        # Evaluates the inbound message against the chat dispatch rules before
+        # the Hito 4 chatbot pipeline. If the message is consumed by the chat
+        # dispatcher (contact belongs to a section with an active ChatRoom),
+        # the Hito 4 pipeline is bypassed entirely for this message.
+        # --- Paso 4c: Despachador de chat IRC — Hito 13. ---
+        # Evalúa el mensaje entrante contra las reglas de despacho de chat antes
+        # del pipeline del chatbot del Hito 4. Si el mensaje es consumido por el
+        # despachador de chat (el contacto pertenece a una sección con ChatRoom
+        # activa), el pipeline del Hito 4 se omite completamente para este mensaje.
+        from chat.services import dispatch_inbound_message
+        dispatch_result = dispatch_inbound_message(
+            company=company,
+            from_number=from_number,
+            body=body,
+            to_number=to_number,
+        )
+        if dispatch_result.consumed:
+            logger.info(
+                "# [WHATSAPP] Mensaje de %s consumido por despachador IRC. "
+                "Pipeline Hito 4 omitido.",
+                from_number,
+            )
+            return HttpResponse(status=200)
+
         # --- Step 5: Build dynamic system prompt enriched with session context. ---
         # The session object is now passed to build_system_prompt so the agent
         # can include the client's location in the context when available.

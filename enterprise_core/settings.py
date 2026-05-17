@@ -71,6 +71,8 @@ INSTALLED_APPS = [
     'whatsapp',
     'work_order_processor',
     'fleet',
+    # IRC-style section chat rooms and breakdown agent — salas de chat IRC y agente de averías.
+    'chat',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
@@ -200,52 +202,18 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'whatsapp.tasks.expire_presence_statuses',
         'schedule': crontab(minute='*/5'),
     },
-}
 
-# 8. LOGGING CONFIGURATION
-# Activates DEBUG-level tracing for Gemini Vision HTTP calls (httpx + google.genai)
-# to diagnose hangs and silent failures in the Celery worker pipeline.
-# Activa trazas a nivel DEBUG para las llamadas HTTP de Gemini Vision (httpx + google.genai)
-# para diagnosticar cuelgues y fallos silenciosos en el pipeline del worker Celery.
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {name} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-    },
-    'loggers': {
-        # EnterpriseBot application loggers — aplicaciones EnterpriseBot.
-        'work_order_processor': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        # HTTP client — trazas de peticiones HTTP de httpx.
-        'httpx': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        # Google GenAI SDK — trazas del SDK google-genai.
-        'google.genai': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        # Google Auth — trazas de autenticación de credenciales.
-        'google.auth': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
+    # ---------------------------------------------------------------------------
+    # CHAT IRC TASKS — Hito 13
+    # Tareas del módulo de chat IRC — Hito 13.
+    # ---------------------------------------------------------------------------
+
+    # Deletes ChatMessage records older than 7 days and BreakdownConversationTurn
+    # records from RESOLVED tickets older than 7 days. BreakdownTickets are kept.
+    # Elimina ChatMessage con más de 7 días y BreakdownConversationTurn de tickets
+    # RESOLVED con más de 7 días. Los BreakdownTicket se conservan indefinidamente.
+    'purge-old-chat-messages': {
+        'task':     'chat.tasks.purge_old_chat_messages',
+        'schedule': crontab(hour=3, minute=0),
     },
 }

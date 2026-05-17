@@ -20,4 +20,6 @@ urlpatterns = [
     path('api/whatsapp/', include('whatsapp.urls')),
     # Custom administration panel for CompanyUser accounts — panel de administración personalizado para cuentas CompanyUser.
     path('panel/', include('panel.urls')),
+    # IRC-style section chat rooms — salas de chat IRC por sección (Hito 13).
+    path('panel/chat/', include('chat.urls', namespace='chat')),
 ]

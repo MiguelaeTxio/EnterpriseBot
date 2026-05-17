@@ -196,6 +196,19 @@ class CompanyUser(models.Model):
             "Si tampoco existe horario por defecto, Gate 4 se omite completamente."
         ),
     )
+    alias = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Alias de chat",
+        help_text=(
+            "Apodo del usuario en el chat IRC de grupo. Fuente de verdad única "
+            "para los mensajes enviados desde el panel. Se solicita mediante modal "
+            "al acceder a una sala de chat por primera vez sin alias configurado. "
+            "Los contactos externos (sin CompanyUser) usan Contact.alias para "
+            "los mensajes recibidos por WhatsApp."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -499,6 +512,26 @@ class Section(models.Model):
             "(p. ej. Asistencia en carretera)."
         ),
     )
+    DEFAULT_ROLE_WORKSHOP = "WORKSHOP"
+    DEFAULT_ROLE_DRIVER   = "DRIVER"
+    DEFAULT_ROLE_CHOICES  = [
+        (DEFAULT_ROLE_WORKSHOP, "Operario de taller"),
+        (DEFAULT_ROLE_DRIVER,   "Chófer"),
+    ]
+
+    default_role = models.CharField(
+        max_length=20,
+        choices=DEFAULT_ROLE_CHOICES,
+        default=DEFAULT_ROLE_WORKSHOP,
+        verbose_name="Rol por defecto",
+        help_text=(
+            "Rol asignado automáticamente a los contactos de esta sección cuando se "
+            "registran en la plataforma vía onboarding WhatsApp. "
+            "WORKSHOP: operario de taller. DRIVER: chófer. "
+            "Los roles de mayor rango (ADMIN, SUPERVISOR, OPERATOR) se asignan "
+            "manualmente desde la consola de administración."
+        ),
+    )
     is_active = models.BooleanField(
         default=True,
         verbose_name="Activa",
@@ -586,6 +619,23 @@ class Contact(models.Model):
         default=False,
         verbose_name="Interno",
         help_text="True si el contacto es un empleado interno con acceso al panel.",
+    )
+    alias = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Alias de chat",
+        help_text=(
+            "Apodo del contacto externo en el chat IRC de grupo. Se recoge la primera "
+            "vez que el contacto escribe en su sala SECTION via WhatsApp. "
+            "Hasta que no está configurado, sus mensajes no se reenvían al grupo — "
+            "el chatbot le solicita que elija su alias. "
+            "Los contactos sin sección asignada (clientes) no tienen alias "
+            "y nunca se les solicita. "
+            "Para contactos internos (is_internal=True) vinculados a un CompanyUser, "
+            "el alias canónico es CompanyUser.alias — este campo queda en desuso "
+            "para contactos internos."
+        ),
     )
     company_user = models.ForeignKey(
         CompanyUser,

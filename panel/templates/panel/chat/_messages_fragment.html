@@ -1,0 +1,60 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/chat/_messages_fragment.html #}
+{#                                                                                               #}
+{# Fragmento HTMX de mensajes. Devuelto por ChatMessagesPollingView cada 3s.                    #}
+{# También incluido en el renderizado inicial de room.html.                                     #}
+{# Renderiza todos los ChatMessage activos (últimos 7 días) ordenados cronológicamente.         #}
+{#                                                                                               #}
+{# HTMX messages fragment. Returned by ChatMessagesPollingView every 3s.                        #}
+{# Also included in the initial render of room.html.                                            #}
+{# Renders all active ChatMessage records (last 7 days) in chronological order.                 #}
+
+{% if messages %}
+    {% for message in messages %}
+    <div class="d-flex mb-2
+        {% if message.direction == 'OUTBOUND' %}justify-content-end{% else %}justify-content-start{% endif %}">
+
+        <div class="chat-bubble
+            {% if message.direction == 'OUTBOUND' %}chat-bubble-outbound{% else %}chat-bubble-inbound{% endif %}"
+             style="max-width: 75%;">
+
+            {# Alias o nombre del remitente / Sender alias or name #}
+            <div class="chat-bubble-sender small fw-semibold mb-1
+                {% if message.direction == 'OUTBOUND' %}text-end{% endif %}">
+                {% if message.direction == 'INBOUND' and message.sender_contact %}
+                    {% if message.sender_contact.alias %}
+                        {{ message.sender_contact.alias }}
+                    {% else %}
+                        {{ message.sender_contact.name }}
+                    {% endif %}
+                {% elif message.direction == 'OUTBOUND' and message.sender_user %}
+                    {% with cu=message.sender_user %}
+                        {% if cu.contact_profile.first and cu.contact_profile.first.alias %}
+                            {{ cu.contact_profile.first.alias }}
+                        {% else %}
+                            {{ cu.user.get_full_name|default:cu.user.username }}
+                        {% endif %}
+                    {% endwith %}
+                {% else %}
+                    Sistema
+                {% endif %}
+            </div>
+
+            {# Cuerpo del mensaje / Message body #}
+            <div class="chat-bubble-body">{{ message.body }}</div>
+
+            {# Timestamp / Marca de tiempo #}
+            <div class="chat-bubble-time text-muted"
+                 style="font-size: 0.7rem;">
+                {{ message.created_at|date:"H:i" }}
+            </div>
+
+        </div>
+    </div>
+    {% endfor %}
+
+{% else %}
+    <div class="text-center text-muted py-5">
+        <i class="bi bi-chat-dots fs-1 d-block mb-2"></i>
+        Aún no hay mensajes en esta sala.
+    </div>
+{% endif %}

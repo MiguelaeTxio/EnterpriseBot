@@ -91,6 +91,14 @@ from panel.views import (
     AbsenceCategoryToggleView,
 )
 
+from chat.views import (
+    ChatRoomListView,
+    ChatRoomView,
+    ChatMessagesPollingView,
+    ChatSendView,
+    ChatAliasSetView,
+)
+
 app_name = "panel"
 
 urlpatterns = [
@@ -300,4 +308,11 @@ urlpatterns = [
     path("fleet/<int:pk>/deactivate/", MachineAssetDeactivateView.as_view(), name="fleet_deactivate"),
     path("fleet/<int:pk>/reactivate/", MachineAssetReactivateView.as_view(), name="fleet_reactivate"),
     path("fleet/<int:pk>/delete/", MachineAssetDeleteView.as_view(), name="fleet_delete"),
+
+    # Chat IRC — Salas de chat por sección (Hito 13 Paso 4).
+    path("chat/", ChatRoomListView.as_view(), name="chat_room_list"),
+    path("chat/<int:room_pk>/", ChatRoomView.as_view(), name="chat_room_detail"),
+    path("chat/<int:room_pk>/messages/", ChatMessagesPollingView.as_view(), name="chat_room_messages"),
+    path("chat/<int:room_pk>/send/", ChatSendView.as_view(), name="chat_room_send"),
+    path("chat/alias/set/", ChatAliasSetView.as_view(), name="chat_alias_set"),
 ]

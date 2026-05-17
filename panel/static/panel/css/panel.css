@@ -422,3 +422,54 @@ input[type="time"].field-flagged {
 .modal {
     z-index: 1070 !important;
 }
+
+/* ===========================================================================
+   Chat IRC — Salas de chat por sección (Hito 13)
+   Chat IRC — IRC-style section chat rooms (Milestone 13)
+   =========================================================================== */
+
+/* Burbuja base / Base bubble */
+.chat-bubble {
+    padding: 0.5rem 0.75rem;
+    border-radius: 1rem;
+    word-break: break-word;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+/* Burbuja entrante (INBOUND) — WhatsApp → panel */
+/* Inbound bubble (INBOUND) — WhatsApp → panel */
+.chat-bubble-inbound {
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    border-bottom-left-radius: 0.25rem;
+}
+
+/* Burbuja saliente (OUTBOUND) — panel → WhatsApp */
+/* Outbound bubble (OUTBOUND) — panel → WhatsApp */
+.chat-bubble-outbound {
+    background-color: #0d6efd;
+    color: #ffffff;
+    border-bottom-right-radius: 0.25rem;
+}
+.chat-bubble-outbound .chat-bubble-sender,
+.chat-bubble-outbound .chat-bubble-time {
+}
+
+/* Nombre del remitente / Sender name */
+.chat-bubble-sender {
+    color: #6c757d;
+    font-size: 0.75rem;
+}
+
+/* Timestamp / Marca de tiempo */
+.chat-bubble-time {
+    font-size: 0.7rem;
+    margin-top: 0.2rem;
+    text-align: right;
+}
+
+/* Chat room container height — Hito 13 */
+.chat-room-container {
+    height: calc(100vh - 80px);
+}

@@ -1,0 +1,66 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/chat/room_list.html #}
+{#                                                                                       #}
+{# Lista de salas de chat IRC activas de la empresa.                                    #}
+{# Punto de entrada de la sección "Chat de Secciones" del sidebar.                      #}
+{# Accesible para ADMIN y SUPERVISOR.                                                   #}
+{#                                                                                       #}
+{# IRC-style chat room list for the company's active rooms.                             #}
+{# Entry point for the "Chat de Secciones" sidebar section.                             #}
+{# Accessible to ADMIN and SUPERVISOR roles.                                            #}
+{% extends "panel/base.html" %}
+
+{% block title %}Chat de Secciones{% endblock %}
+{% block page_title %}Chat de Secciones{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h4 class="mb-0">
+            <i class="bi bi-chat-dots me-2"></i>Salas de chat
+        </h4>
+    </div>
+
+    {% if rooms %}
+    <div class="row g-3">
+        {% for room in rooms %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <a href="{% url 'chat:room_detail' room.pk %}"
+               class="text-decoration-none">
+                <div class="card h-100 shadow-sm border-0
+                    {% if room.room_type == 'BREAKDOWNS' %}border-start border-danger border-3{% endif %}">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <div class="fs-2
+                            {% if room.room_type == 'BREAKDOWNS' %}text-danger{% else %}text-primary{% endif %}">
+                            {% if room.room_type == 'BREAKDOWNS' %}
+                                <i class="bi bi-exclamation-triangle"></i>
+                            {% else %}
+                                <i class="bi bi-chat-left-dots"></i>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <div class="fw-semibold text-dark">{{ room.name }}</div>
+                            <div class="text-muted small">
+                                {% if room.room_type == 'BREAKDOWNS' %}
+                                    Sala de averías
+                                {% else %}
+                                    Sección
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        No hay salas de chat activas. Ejecuta <code>init_chat_rooms</code> para inicializarlas.
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
