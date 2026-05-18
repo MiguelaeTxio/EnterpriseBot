@@ -1,0 +1,117 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/chat/breakdown_ticket_list.html #}
+{# Lista de tickets de avería — Hito 13 Paso 12 (2026-05-18) #}
+{% extends "panel/base.html" %}
+
+{% block title %}Tickets de Avería{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="mb-0">Tickets de Avería</h4>
+    <a href="{% url 'panel:breakdown_room_manage' %}" class="btn btn-sm btn-outline-secondary">
+      Gestionar membresía
+    </a>
+  </div>
+
+  {# Filtros #}
+  <form method="get" class="row g-2 mb-4">
+    <div class="col-auto">
+      <select name="status" class="form-select form-select-sm">
+        <option value="">Todos los estados</option>
+        {% for value, label in STATUS_CHOICES %}
+          <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <select name="is_repair_order" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="1" {% if repair_filter == "1" %}selected{% endif %}>Solo órdenes de reparación</option>
+        <option value="0" {% if repair_filter == "0" %}selected{% endif %}>Sin convertir</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-sm btn-primary">Filtrar</button>
+    </div>
+    {% if status_filter or repair_filter %}
+    <div class="col-auto">
+      <a href="{% url 'panel:breakdown_ticket_list' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+    </div>
+    {% endif %}
+  </form>
+
+  {% if tickets %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Estado</th>
+          <th>Contacto</th>
+          <th>Máquina</th>
+          <th>Urgencia</th>
+          <th>Sección</th>
+          <th>OT</th>
+          <th>Creado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ticket in tickets %}
+        <tr>
+          <td class="text-muted small">#{{ ticket.ticket_number|default:"—" }}</td>
+          <td>
+            {% if ticket.status == "OPEN" %}
+              <span class="badge bg-danger">Abierto</span>
+            {% elif ticket.status == "IN_PROGRESS" %}
+              <span class="badge bg-warning text-dark">En curso</span>
+            {% else %}
+              <span class="badge bg-success">Resuelto</span>
+            {% endif %}
+          </td>
+          <td>{{ ticket.contact.name }}</td>
+          <td>
+            {% if ticket.machine %}
+              <span title="{{ ticket.machine.brand_model }}">{{ ticket.machine.code }}</span>
+            {% else %}
+              <span class="text-muted">{{ ticket.machine_raw|default:"—" }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if ticket.urgency == "HIGH" or ticket.urgency == "CRITICAL" %}
+              <span class="badge bg-danger">{{ ticket.get_urgency_display }}</span>
+            {% elif ticket.urgency == "MEDIUM" %}
+              <span class="badge bg-warning text-dark">{{ ticket.get_urgency_display }}</span>
+            {% elif ticket.urgency == "LOW" %}
+              <span class="badge bg-secondary">{{ ticket.get_urgency_display }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>{{ ticket.section.name|default:"—" }}</td>
+          <td>
+            {% if ticket.is_repair_order %}
+              <span class="badge bg-primary">OT</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ ticket.created_at|date:"d/m/Y H:i" }}</td>
+          <td>
+            <a href="{% url 'panel:breakdown_ticket_detail' pk=ticket.pk %}"
+               class="btn btn-sm btn-outline-primary">Ver</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <p class="mb-0">No hay tickets de avería con los filtros seleccionados.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

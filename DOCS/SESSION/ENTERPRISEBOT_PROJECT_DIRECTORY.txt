@@ -21,6 +21,7 @@
 ./chat/views.py
 ./chat/apps.py
 ./chat/models.py
+./chat/migrations/0002_breakdownticket_is_repair_order_and_more.py
 ./chat/migrations/__init__.py
 ./chat/migrations/0001_initial.py
 ./chat/tasks.py
@@ -32,9 +33,12 @@
 ./panel/templates/panel/base.html
 ./panel/templates/panel/workday/schedule_form.html
 ./panel/templates/panel/workday/absence_category_list.html
+./panel/templates/panel/chat/breakdown_room_manage.html
 ./panel/templates/panel/chat/room.html
+./panel/templates/panel/chat/breakdown_ticket_list.html
 ./panel/templates/panel/chat/room_list.html
 ./panel/templates/panel/chat/_messages_fragment.html
+./panel/templates/panel/chat/breakdown_ticket_detail.html
 ./panel/templates/panel/whatsapp/active_session_list.html
 ./panel/templates/panel/whatsapp/template_list.html
 ./panel/templates/panel/voiceprofile/detail.html
@@ -312,6 +316,7 @@
 ./ivr_config/migrations/0021_section_default_role.py
 ./ivr_config/migrations/0002_phonenumber_capabilities.py
 ./ivr_config/migrations/0001_initial.py
+./ivr_config/migrations/0023_contact_opt_out_broadcast_and_more.py
 ./ivr_config/tests.py
 ./ivr_config/management/commands/set_asset_flags.py
 ./ivr_config/management/commands/seed_grupo_alvarez.py

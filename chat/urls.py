@@ -15,6 +15,9 @@ from chat.views import (
     ChatMessagesPollingView,
     ChatSendView,
     ChatAliasSetView,
+    BreakdownTicketListView,
+    BreakdownTicketDetailView,
+    BreakdownRoomManageView,
 )
 
 app_name = "chat"
@@ -39,4 +42,16 @@ urlpatterns = [
     # Alias set — Establecimiento de alias del CompanyUser desde el modal de sala.
     # Paso 6 — Hito 13 (2026-05-15)
     path("alias/set/", ChatAliasSetView.as_view(), name="alias_set"),
+
+    # Breakdown ticket list — Lista de tickets de avería (ADMIN y SUPERVISOR).
+    # Paso 12 — Hito 13 (2026-05-18)
+    path("breakdowns/tickets/", BreakdownTicketListView.as_view(), name="breakdown_ticket_list"),
+
+    # Breakdown ticket detail — Detalle + acciones sobre ticket de avería.
+    # Paso 12 — Hito 13 (2026-05-18)
+    path("breakdowns/tickets/<int:pk>/", BreakdownTicketDetailView.as_view(), name="breakdown_ticket_detail"),
+
+    # Breakdown room manage — Gestión de membresía M2M de la sala BREAKDOWNS.
+    # Paso 12 — Hito 13 (2026-05-18)
+    path("breakdowns/manage/", BreakdownRoomManageView.as_view(), name="breakdown_room_manage"),
 ]

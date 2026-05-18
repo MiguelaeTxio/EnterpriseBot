@@ -1,28 +1,38 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/chat/views.py
 """
 View definitions for the chat module.
-Implements IRC-style section chat room views with HTMX polling support.
+Implements IRC-style section chat room views with HTMX polling support,
+and BREAKDOWNS management views for Paso 12 (Hito 13).
 
-ChatRoomView          — full room page with message history (last 7 days).
-ChatMessagesPollingView — HTMX polling fragment, returns all active messages
-                          every 3 seconds for quasi-real-time updates.
+ChatRoomView              — full room page with message history (last 7 days).
+ChatMessagesPollingView   — HTMX polling fragment every 3 seconds.
+ChatRoomListView          — list of active rooms (ADMIN / SUPERVISOR).
+ChatSendView              — POST broadcast to section contacts via WhatsApp.
+ChatAliasSetView          — POST alias setup for CompanyUser.
+BreakdownTicketListView   — list of all BreakdownTickets for the company.
+BreakdownTicketDetailView — detail + actions (convert to repair order, close).
+BreakdownRoomManageView   — manage breakdown_sections and breakdown_contacts M2M.
 
 Access control: CompanyUserRequiredMixin on all views.
-WORKSHOP role: read-only (no send button rendered).
-ADMIN / SUPERVISOR: full read + send access.
+WORKSHOP role: read-only in chat rooms.
+ADMIN / SUPERVISOR: full access including BREAKDOWNS management.
 ---
 Definiciones de vistas para el módulo de chat.
-Implementa vistas de sala de chat IRC por sección con soporte de polling HTMX.
+Implementa vistas de sala IRC con polling HTMX y vistas de gestión de
+averías para el Paso 12 (Hito 13).
 
-ChatRoomView            — página completa de sala con historial de mensajes
-                          (últimos 7 días).
-ChatMessagesPollingView — fragmento de polling HTMX, devuelve todos los
-                          mensajes activos cada 3 segundos para actualizaciones
-                          en tiempo cuasi-real.
+ChatRoomView              — página completa de sala con historial 7 días.
+ChatMessagesPollingView   — fragmento HTMX cada 3 segundos.
+ChatRoomListView          — lista de salas activas (ADMIN / SUPERVISOR).
+ChatSendView              — POST broadcast a contactos de sección vía WhatsApp.
+ChatAliasSetView          — POST para establecer alias del CompanyUser.
+BreakdownTicketListView   — lista de todos los BreakdownTickets de la empresa.
+BreakdownTicketDetailView — detalle + acciones (convertir en OT, cerrar).
+BreakdownRoomManageView   — gestión de breakdown_sections y breakdown_contacts M2M.
 
 Control de acceso: CompanyUserRequiredMixin en todas las vistas.
-Rol WORKSHOP: solo lectura (sin botón de envío renderizado).
-ADMIN / SUPERVISOR: acceso completo de lectura y envío.
+Rol WORKSHOP: solo lectura en salas de chat.
+ADMIN / SUPERVISOR: acceso completo incluida gestión de BREAKDOWNS.
 """
 
 import logging
@@ -570,3 +580,342 @@ class ChatAliasSetView(CompanyUserRequiredMixin, View):
         company_user.save(update_fields=["alias"])
 
         return JsonResponse({"ok": True, "alias": alias})
+
+
+class BreakdownTicketListView(CompanyUserRequiredMixin, View):
+    """
+    Lists all BreakdownTickets for the authenticated user's company,
+    ordered by created_at descending. Supports optional filters:
+    status, is_repair_order.
+    Accessible to ADMIN and SUPERVISOR roles only.
+
+    URL: GET /panel/chat/breakdowns/tickets/
+    ---
+    Lista todos los BreakdownTickets de la empresa del usuario autenticado,
+    ordenados por created_at descendente. Soporta filtros opcionales:
+    status, is_repair_order.
+    Accesible solo para los roles ADMIN y SUPERVISOR.
+
+    URL: GET /panel/chat/breakdowns/tickets/
+    """
+
+    template_name = "panel/chat/breakdown_ticket_list.html"
+
+    def get(self, request, *args, **kwargs):
+        """
+        Resolves and filters BreakdownTickets scoped to the company.
+        ---
+        Resuelve y filtra BreakdownTickets acotados a la empresa.
+        """
+        from django.db.models import Q
+        from ivr_config.models import PresenceStatus
+        from chat.models import BreakdownTicket
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden()
+
+        qs = (
+            BreakdownTicket.objects
+            .filter(room__company=company)
+            .select_related("contact", "machine", "section", "resolved_by__user")
+            .order_by("-created_at")
+        )
+
+        status_filter = request.GET.get("status", "").strip()
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        repair_filter = request.GET.get("is_repair_order", "").strip()
+        if repair_filter in ("1", "true"):
+            qs = qs.filter(is_repair_order=True)
+        elif repair_filter in ("0", "false"):
+            qs = qs.filter(is_repair_order=False)
+
+        own_presence = PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+        return render(request, self.template_name, {
+            "tickets":       qs,
+            "company":       company,
+            "company_user":  company_user,
+            "own_presence":  own_presence,
+            "active_nav":    "chat",
+            "status_filter": status_filter,
+            "repair_filter": repair_filter,
+            "STATUS_CHOICES": BreakdownTicket.STATUS_CHOICES,
+        })
+
+
+class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
+    """
+    Displays a single BreakdownTicket with its conversation turns and photos.
+    Provides two POST actions:
+      action=convert_repair — sets is_repair_order=True.
+      action=close          — sets status=RESOLVED, resolved_by, resolved_at.
+    Accessible to ADMIN and SUPERVISOR roles only.
+
+    URL: GET/POST /panel/chat/breakdowns/tickets/<pk>/
+    ---
+    Muestra un BreakdownTicket individual con sus turnos de conversación y fotos.
+    Proporciona dos acciones POST:
+      action=convert_repair — establece is_repair_order=True.
+      action=close          — establece status=RESOLVED, resolved_by, resolved_at.
+    Accesible solo para los roles ADMIN y SUPERVISOR.
+
+    URL: GET/POST /panel/chat/breakdowns/tickets/<pk>/
+    """
+
+    template_name = "panel/chat/breakdown_ticket_detail.html"
+
+    def _get_ticket(self, request, pk):
+        """
+        Resolves the BreakdownTicket scoped to the company. Returns 404 if not found.
+        ---
+        Resuelve el BreakdownTicket acotado a la empresa. Devuelve 404 si no existe.
+        """
+        from chat.models import BreakdownTicket
+        return get_object_or_404(
+            BreakdownTicket,
+            pk=pk,
+            room__company=request.user.company_user.company,
+        )
+
+    def get(self, request, pk, *args, **kwargs):
+        """
+        Renders the ticket detail page.
+        ---
+        Renderiza la página de detalle del ticket.
+        """
+        from django.db.models import Q
+        from ivr_config.models import PresenceStatus
+        from chat.models import BreakdownConversationTurn
+
+        company_user = request.user.company_user
+
+        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden()
+
+        ticket = self._get_ticket(request, pk)
+        turns  = BreakdownConversationTurn.objects.filter(
+            ticket=ticket,
+        ).order_by("created_at")
+
+        own_presence = PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+        return render(request, self.template_name, {
+            "ticket":       ticket,
+            "turns":        turns,
+            "company_user": company_user,
+            "own_presence": own_presence,
+            "active_nav":   "chat",
+        })
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Handles convert_repair and close actions on the ticket.
+        ---
+        Gestiona las acciones convert_repair y close sobre el ticket.
+        """
+        from django.http import HttpResponseForbidden
+        from django.shortcuts import redirect
+        from chat.models import BreakdownTicket
+
+        company_user = request.user.company_user
+
+        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+            return HttpResponseForbidden()
+
+        ticket = self._get_ticket(request, pk)
+        action = request.POST.get("action", "").strip()
+
+        if action == "convert_repair":
+            ticket.is_repair_order = True
+            ticket.save(update_fields=["is_repair_order"])
+            logger.info(
+                "# [BREAKDOWN] Ticket pk=%s convertido en orden de reparacion por usuario pk=%s.",
+                ticket.pk, company_user.pk,
+            )
+
+        elif action == "close":
+            ticket.status      = BreakdownTicket.STATUS_RESOLVED
+            ticket.resolved_by = company_user
+            ticket.resolved_at = now()
+            ticket.save(update_fields=["status", "resolved_by", "resolved_at"])
+            logger.info(
+                "# [BREAKDOWN] Ticket pk=%s cerrado por usuario pk=%s.",
+                ticket.pk, company_user.pk,
+            )
+
+        return redirect("panel:breakdown_ticket_detail", pk=ticket.pk)
+
+
+class BreakdownRoomManageView(CompanyUserRequiredMixin, View):
+    """
+    Manages the breakdown_sections and breakdown_contacts M2M membership of the
+    company's BREAKDOWNS ChatRoom. Allows ADMIN and SUPERVISOR to add or remove
+    sections and individual contacts from the room's access list.
+
+    GET  — renders the management form with current membership.
+    POST — processes add/remove actions for sections and contacts.
+
+    URL: GET/POST /panel/chat/breakdowns/manage/
+    ---
+    Gestiona la membresía M2M breakdown_sections y breakdown_contacts de la
+    ChatRoom BREAKDOWNS de la empresa. Permite a ADMIN y SUPERVISOR añadir o
+    quitar secciones y contactos individuales de la lista de acceso.
+
+    GET  — renderiza el formulario de gestión con la membresía actual.
+    POST — procesa acciones de añadir/quitar secciones y contactos.
+
+    URL: GET/POST /panel/chat/breakdowns/manage/
+    """
+
+    template_name = "panel/chat/breakdown_room_manage.html"
+
+    def _get_breakdown_room(self, company):
+        """
+        Returns the BREAKDOWNS ChatRoom for the company, or None if not found.
+        ---
+        Devuelve la ChatRoom BREAKDOWNS de la empresa, o None si no existe.
+        """
+        return ChatRoom.objects.filter(
+            company=company,
+            room_type=ChatRoom.ROOM_TYPE_BREAKDOWNS,
+            is_active=True,
+        ).first()
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the breakdown room management page.
+        ---
+        Renderiza la página de gestión de la sala de averías.
+        """
+        from django.db.models import Q
+        from ivr_config.models import PresenceStatus, Section, Contact
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden()
+
+        breakdown_room = self._get_breakdown_room(company)
+
+        all_sections = Section.objects.filter(company=company, is_active=True).order_by("name")
+        all_contacts = (
+            Contact.objects.filter(company=company)
+            .exclude(phone_number="")
+            .order_by("name")
+        )
+
+        member_section_pks = set(
+            breakdown_room.breakdown_sections.values_list("pk", flat=True)
+        ) if breakdown_room else set()
+
+        member_contact_pks = set(
+            breakdown_room.breakdown_contacts.values_list("pk", flat=True)
+        ) if breakdown_room else set()
+
+        own_presence = PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+        return render(request, self.template_name, {
+            "breakdown_room":     breakdown_room,
+            "all_sections":       all_sections,
+            "all_contacts":       all_contacts,
+            "member_section_pks": member_section_pks,
+            "member_contact_pks": member_contact_pks,
+            "company_user":       company_user,
+            "own_presence":       own_presence,
+            "active_nav":         "chat",
+        })
+
+    def post(self, request, *args, **kwargs):
+        """
+        Adds or removes sections/contacts from the BREAKDOWNS room membership.
+        ---
+        Añade o quita secciones/contactos de la membresía de la sala BREAKDOWNS.
+        """
+        from django.http import HttpResponseForbidden
+        from django.shortcuts import redirect
+        from ivr_config.models import Section, Contact
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+            return HttpResponseForbidden()
+
+        breakdown_room = self._get_breakdown_room(company)
+        if breakdown_room is None:
+            from django.http import HttpResponseNotFound
+            return HttpResponseNotFound()
+
+        action      = request.POST.get("action", "").strip()
+        section_pk  = request.POST.get("section_pk", "").strip()
+        contact_pk  = request.POST.get("contact_pk", "").strip()
+
+        if action == "add_section" and section_pk:
+            try:
+                section = Section.objects.get(pk=section_pk, company=company)
+                breakdown_room.breakdown_sections.add(section)
+                logger.info(
+                    "# [BREAKDOWN] Seccion pk=%s anadida a sala BREAKDOWNS pk=%s.",
+                    section.pk, breakdown_room.pk,
+                )
+            except Section.DoesNotExist:
+                pass
+
+        elif action == "remove_section" and section_pk:
+            try:
+                section = Section.objects.get(pk=section_pk, company=company)
+                breakdown_room.breakdown_sections.remove(section)
+                logger.info(
+                    "# [BREAKDOWN] Seccion pk=%s eliminada de sala BREAKDOWNS pk=%s.",
+                    section.pk, breakdown_room.pk,
+                )
+            except Section.DoesNotExist:
+                pass
+
+        elif action == "add_contact" and contact_pk:
+            try:
+                contact = Contact.objects.get(pk=contact_pk, company=company)
+                breakdown_room.breakdown_contacts.add(contact)
+                logger.info(
+                    "# [BREAKDOWN] Contacto pk=%s anadido a sala BREAKDOWNS pk=%s.",
+                    contact.pk, breakdown_room.pk,
+                )
+            except Contact.DoesNotExist:
+                pass
+
+        elif action == "remove_contact" and contact_pk:
+            try:
+                contact = Contact.objects.get(pk=contact_pk, company=company)
+                breakdown_room.breakdown_contacts.remove(contact)
+                logger.info(
+                    "# [BREAKDOWN] Contacto pk=%s eliminado de sala BREAKDOWNS pk=%s.",
+                    contact.pk, breakdown_room.pk,
+                )
+            except Contact.DoesNotExist:
+                pass
+
+        return redirect("panel:breakdown_room_manage")

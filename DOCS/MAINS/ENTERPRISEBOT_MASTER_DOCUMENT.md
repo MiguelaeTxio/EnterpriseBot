@@ -111,7 +111,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -172,7 +172,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Los centros de gasto no resueltos en partes historicos podran asignarse tras
   crear el centro de gasto correspondiente.
 
-### Hito 13: Salas de Chat IRC por Sección (WhatsApp → Panel) (EN PROGRESO)
+### Hito 13: Salas de Chat IRC por Sección (WhatsApp → Panel) (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V13.md`)
 - Sistema de salas de chat en tiempo cuasi-real en el panel, una sala por sección.
 - Canal de entrada: WhatsApp (+34607961650). Mensajes de contactos replicados en

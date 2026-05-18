@@ -81,6 +81,31 @@ class ChatRoom(models.Model):
         verbose_name="Activa",
         help_text="Indica si la sala está operativa y visible en el panel.",
     )
+    # --- Breakdown membership — Paso 12. ---
+    # --- Membresía de la sala BREAKDOWNS — Paso 12. ---
+    breakdown_sections = models.ManyToManyField(
+        "ivr_config.Section",
+        blank=True,
+        related_name="breakdown_rooms",
+        verbose_name="Secciones con acceso a Averías",
+        help_text=(
+            "Secciones cuyos miembros tienen acceso a esta sala BREAKDOWNS. "
+            "Al añadir una sección, todos sus contactos quedan elegibles para "
+            "enviar mensajes a la sala de averías. "
+            "Solo aplica a salas de tipo BREAKDOWNS."
+        ),
+    )
+    breakdown_contacts = models.ManyToManyField(
+        "ivr_config.Contact",
+        blank=True,
+        related_name="breakdown_rooms",
+        verbose_name="Contactos individuales con acceso a Averías",
+        help_text=(
+            "Contactos individuales adicionales con acceso directo a esta sala "
+            "BREAKDOWNS, independientemente de su sección. "
+            "Solo aplica a salas de tipo BREAKDOWNS."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -233,6 +258,19 @@ class BreakdownTicket(models.Model):
         (URGENCY_CRITICAL, "Crítica"),
     ]
 
+    # --- ticket_number: auto-incremental por empresa. ---
+    # Se inicializa en save() si es None usando MAX(ticket_number)+1 dentro
+    # de la empresa, o 1 si no existe ningún ticket previo.
+    ticket_number = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Número de ticket",
+        help_text=(
+            "Número de ticket autoincremental por empresa. Se asigna "
+            "automáticamente en el primer save() mediante MAX+1 dentro "
+            "del scope de la empresa."
+        ),
+    )
     room = models.ForeignKey(
         ChatRoom,
         on_delete=models.CASCADE,
@@ -246,6 +284,47 @@ class BreakdownTicket(models.Model):
         related_name="breakdown_tickets",
         verbose_name="Contacto",
         help_text="Contacto de WhatsApp que inició el reporte de avería.",
+    )
+    section = models.ForeignKey(
+        "ivr_config.Section",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="breakdown_tickets",
+        verbose_name="Sección",
+        help_text=(
+            "Sección del contacto en el momento de abrir el ticket. "
+            "Se registra para trazabilidad aunque la membresía M2M pueda cambiar."
+        ),
+    )
+    machine = models.ForeignKey(
+        "fleet.MachineAsset",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="breakdown_tickets",
+        verbose_name="Máquina / Centro de gasto",
+        help_text=(
+            "MachineAsset resuelto por el agente Gemini a partir de machine_raw. "
+            "Null hasta que el agente identifica la máquina en el catálogo."
+        ),
+    )
+    is_repair_order = models.BooleanField(
+        default=False,
+        verbose_name="Convertido en orden de reparación",
+        help_text=(
+            "True cuando el SUPERVISOR ha pulsado 'Convertir en orden de "
+            "reparación' desde la vista de detalle del ticket."
+        ),
+    )
+    photos = models.JSONField(
+        default=list,
+        verbose_name="Fotos adjuntas",
+        help_text=(
+            "Lista de rutas o URLs de las fotos adjuntas enviadas por el "
+            "contacto durante el diálogo de recogida de avería. "
+            "El agente Gemini acepta hasta 3 imágenes vía WhatsApp Media."
+        ),
     )
     status = models.CharField(
         max_length=15,

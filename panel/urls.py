@@ -98,6 +98,9 @@ from chat.views import (
     ChatMessagesPollingView,
     ChatSendView,
     ChatAliasSetView,
+    BreakdownTicketListView,
+    BreakdownTicketDetailView,
+    BreakdownRoomManageView,
 )
 
 app_name = "panel"
@@ -319,4 +322,9 @@ urlpatterns = [
     path("chat/<int:room_pk>/messages/", ChatMessagesPollingView.as_view(), name="chat_room_messages"),
     path("chat/<int:room_pk>/send/", ChatSendView.as_view(), name="chat_room_send"),
     path("chat/alias/set/", ChatAliasSetView.as_view(), name="chat_alias_set"),
+
+    # Breakdown tickets — Gestión de tickets de avería (Hito 13 Paso 12).
+    path("chat/breakdowns/tickets/", BreakdownTicketListView.as_view(), name="breakdown_ticket_list"),
+    path("chat/breakdowns/tickets/<int:pk>/", BreakdownTicketDetailView.as_view(), name="breakdown_ticket_detail"),
+    path("chat/breakdowns/manage/", BreakdownRoomManageView.as_view(), name="breakdown_room_manage"),
 ]

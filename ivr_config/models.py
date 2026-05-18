@@ -668,6 +668,51 @@ class Contact(models.Model):
             "Se guarda en el Paso B y se confirma o descarta en el Paso C."
         ),
     )
+    # --- Broadcast opt-out — Paso 10 (chat_session_renewal). ---
+    # --- Baja del broadcast — Paso 10 (chat_session_renewal). ---
+    opt_out_broadcast = models.BooleanField(
+        default=False,
+        verbose_name="Baja del broadcast",
+        help_text=(
+            "Si está activo, el contacto ha optado por no recibir mensajes de "
+            "broadcast del grupo de su sección. Se activa cuando el contacto "
+            "pulsa 'No, gracias' en el template chat_session_renewal. "
+            "Los contactos con este flag activo se excluyen del bucle de "
+            "broadcast en ChatSendView."
+        ),
+    )
+    # --- Breakdown routing state — Paso 12 (sala BREAKDOWNS). ---
+    # --- Estado de enrutamiento a averías — Paso 12 (sala BREAKDOWNS). ---
+    ROUTING_STATE_NONE           = "NONE"
+    ROUTING_STATE_AWAITING_ROUTE = "AWAITING_ROUTE"
+    ROUTING_STATE_CHOICES        = [
+        (ROUTING_STATE_NONE,           "Sin enrutamiento pendiente"),
+        (ROUTING_STATE_AWAITING_ROUTE, "Esperando selección de sala"),
+    ]
+    routing_state = models.CharField(
+        max_length=20,
+        choices=ROUTING_STATE_CHOICES,
+        default=ROUTING_STATE_NONE,
+        verbose_name="Estado de enrutamiento",
+        help_text=(
+            "Estado del diálogo de enrutamiento dinámico para contactos con "
+            "sección y acceso a la sala BREAKDOWNS. "
+            "NONE: sin diálogo activo. "
+            "AWAITING_ROUTE: se ha enviado el Quick Reply de selección de sala "
+            "y se espera la respuesta del contacto."
+        ),
+    )
+    pending_routing_body = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Mensaje pendiente de enrutamiento",
+        help_text=(
+            "Cuerpo del mensaje original recibido del contacto mientras se espera "
+            "su selección de sala en el diálogo de enrutamiento dinámico. "
+            "Se guarda cuando routing_state pasa a AWAITING_ROUTE y se descarta "
+            "tras procesar la respuesta del contacto."
+        ),
+    )
     company_user = models.ForeignKey(
         CompanyUser,
         null=True,

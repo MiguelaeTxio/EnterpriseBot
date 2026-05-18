@@ -1,0 +1,101 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/chat/breakdown_room_manage.html #}
+{# Gestión de membresía sala BREAKDOWNS — Hito 13 Paso 12 (2026-05-18) #}
+{% extends "panel/base.html" %}
+
+{% block title %}Gestión Sala de Averías{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{% url 'panel:breakdown_ticket_list' %}" class="btn btn-sm btn-outline-secondary">← Tickets</a>
+    <h4 class="mb-0">Gestión — Sala de Averías</h4>
+  </div>
+
+  {% if not breakdown_room %}
+  <div class="alert alert-warning">
+    No existe una sala de tipo BREAKDOWNS para esta empresa.
+    Ejecuta el comando <code>init_chat_rooms</code> para crearla.
+  </div>
+  {% else %}
+
+  <div class="row g-4">
+
+    {# Secciones #}
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header fw-semibold">Secciones con acceso</div>
+        <div class="card-body p-0">
+          {% if all_sections %}
+          <ul class="list-group list-group-flush">
+            {% for section in all_sections %}
+            <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+              <span>{{ section.name }}</span>
+              {% if section.pk in member_section_pks %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="remove_section">
+                  <input type="hidden" name="section_pk" value="{{ section.pk }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Quitar</button>
+                </form>
+              {% else %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="add_section">
+                  <input type="hidden" name="section_pk" value="{{ section.pk }}">
+                  <button type="submit" class="btn btn-sm btn-outline-success">Añadir</button>
+                </form>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-muted p-3 mb-0">No hay secciones activas.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Contactos individuales #}
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header fw-semibold">Contactos individuales con acceso</div>
+        <div class="card-body p-0">
+          {% if all_contacts %}
+          <ul class="list-group list-group-flush" style="max-height:480px;overflow-y:auto;">
+            {% for contact in all_contacts %}
+            <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+              <span>
+                {{ contact.name }}
+                <span class="text-muted small">{{ contact.phone_number }}</span>
+              </span>
+              {% if contact.pk in member_contact_pks %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="remove_contact">
+                  <input type="hidden" name="contact_pk" value="{{ contact.pk }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Quitar</button>
+                </form>
+              {% else %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="add_contact">
+                  <input type="hidden" name="contact_pk" value="{{ contact.pk }}">
+                  <button type="submit" class="btn btn-sm btn-outline-success">Añadir</button>
+                </form>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-muted p-3 mb-0">No hay contactos registrados.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -1,33 +1,48 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/chat/services.py
 """
 Service layer for the chat module.
-Implements the inbound message dispatcher and the alias collection flow.
+Implements the inbound message dispatcher, the alias collection flow,
+the dynamic BREAKDOWNS routing and the Gemini breakdown agent.
 
-dispatch_inbound_message(company, from_number, body) -> DispatchResult
+dispatch_inbound_message(company, from_number, body, to_number) -> DispatchResult
     Entry point called from IncomingWhatsAppView before the existing Hito 4
     chatbot pipeline. Returns a DispatchResult indicating whether the message
     was consumed by the chat dispatcher or should continue to the Hito 4 flow.
 
-_handle_alias_collection(contact, body, from_number, to_number) -> bool
+_handle_alias_collection(contact, section, room, body, from_number, to_number) -> bool
     Manages the alias collection dialogue for contacts without an alias.
-    Returns True if the message was consumed (alias pending or just set).
-    Returns False if the contact already has an alias (message proceeds normally).
+
+_handle_breakdown_routing(contact, section, body, from_number, to_number) -> bool
+    Sends the breakdown_routing Quick Reply and stores routing state in DB.
+
+_resolve_pending_routing(contact, section, room, breakdown_room, body, from_number, to_number) -> bool
+    Processes the contact routing selection and routes the held message.
+
+process_breakdown_turn(contact, body, room, to_number, from_number) -> None
+    Gemini 2.5 Flash conversational agent for breakdown ticket collection.
 
 _persist_and_broadcast(room, contact, body) -> None
     Creates the ChatMessage(INBOUND) and enqueues the Celery broadcast task.
 ---
 Capa de servicios para el módulo de chat.
-Implementa el despachador de mensajes entrantes y el flujo de recogida de alias.
+Implementa el despachador de mensajes entrantes, el flujo de recogida de alias,
+el enrutamiento dinámico a BREAKDOWNS y el agente Gemini de averías.
 
-dispatch_inbound_message(company, from_number, body) -> DispatchResult
+dispatch_inbound_message(company, from_number, body, to_number) -> DispatchResult
     Punto de entrada llamado desde IncomingWhatsAppView antes del pipeline
-    del chatbot del Hito 4. Devuelve un DispatchResult indicando si el mensaje
-    fue consumido por el despachador de chat o debe continuar al flujo del Hito 4.
+    del chatbot del Hito 4.
 
-_handle_alias_collection(contact, body, from_number, to_number) -> bool
+_handle_alias_collection(contact, section, room, body, from_number, to_number) -> bool
     Gestiona el diálogo de recogida de alias para contactos sin alias.
-    Devuelve True si el mensaje fue consumido (alias pendiente o recién establecido).
-    Devuelve False si el contacto ya tiene alias (el mensaje prosigue normalmente).
+
+_handle_breakdown_routing(contact, section, body, from_number, to_number) -> bool
+    Envía el Quick Reply breakdown_routing y guarda el estado de enrutamiento.
+
+_resolve_pending_routing(contact, section, room, breakdown_room, body, from_number, to_number) -> bool
+    Procesa la selección de sala del contacto y enruta el mensaje retenido.
+
+process_breakdown_turn(contact, body, room, to_number, from_number) -> None
+    Agente conversacional Gemini 2.5 Flash para recogida de tickets de avería.
 
 _persist_and_broadcast(room, contact, body) -> None
     Crea el ChatMessage(INBOUND) y encola la tarea Celery de broadcast.
@@ -207,8 +222,50 @@ def dispatch_inbound_message(
         )
         return DispatchResult(consumed=consumed, room=room, contact=contact)
 
-    # --- Rule 5: Alias present — persist and broadcast. ---
-    # --- Regla 5: Alias presente — persistir y broadcast. ---
+    # --- Rule 5: Check BREAKDOWNS access and pending routing state. ---
+    # --- Regla 5: Comprobar acceso a BREAKDOWNS y estado de enrutamiento. ---
+    breakdown_room = ChatRoom.objects.filter(
+        company=company,
+        room_type=ChatRoom.ROOM_TYPE_BREAKDOWNS,
+        is_active=True,
+    ).first()
+
+    has_breakdown_access = (
+        breakdown_room is not None
+        and (
+            breakdown_room.breakdown_sections.filter(pk=section.pk).exists()
+            or breakdown_room.breakdown_contacts.filter(pk=contact.pk).exists()
+        )
+    )
+
+    # --- Rule 5a: Contact is AWAITING_ROUTE — process routing response. ---
+    # --- Regla 5a: Contacto en AWAITING_ROUTE — procesar respuesta. ---
+    if contact.routing_state == contact.ROUTING_STATE_AWAITING_ROUTE:
+        consumed = _resolve_pending_routing(
+            contact=contact,
+            section=section,
+            room=room,
+            breakdown_room=breakdown_room,
+            body=body,
+            from_number=from_number,
+            to_number=to_number,
+        )
+        return DispatchResult(consumed=consumed, room=room, contact=contact)
+
+    # --- Rule 5b: Contact has breakdown access — send routing Quick Reply. ---
+    # --- Regla 5b: Contacto con acceso a BREAKDOWNS — enviar Quick Reply. ---
+    if has_breakdown_access:
+        consumed = _handle_breakdown_routing(
+            contact=contact,
+            section=section,
+            body=body,
+            from_number=from_number,
+            to_number=to_number,
+        )
+        return DispatchResult(consumed=consumed, room=room, contact=contact)
+
+    # --- Rule 6: Alias present, no breakdown routing needed — persist and broadcast. ---
+    # --- Regla 6: Alias presente, sin enrutamiento a BREAKDOWNS. ---
     _persist_and_broadcast(room=room, contact=contact, body=body)
     logger.info(
         "# [CHAT DISPATCH] Mensaje de '%s' (%s) enrutado a sala '%s'.",
@@ -719,6 +776,369 @@ def _provision_company_user(
             from_number,
             exc,
         )
+
+
+# ---------------------------------------------------------------------------
+# _HANDLE_BREAKDOWN_ROUTING
+# ---------------------------------------------------------------------------
+
+def _handle_breakdown_routing(
+    contact: Contact,
+    section,
+    body: str,
+    from_number: str,
+    to_number: str,
+) -> bool:
+    """
+    Sends the breakdown_routing Quick Reply and stores routing_state in DB.
+    Returns True (message consumed).
+    ---
+    Envia el Quick Reply breakdown_routing y guarda routing_state en BD.
+    Devuelve True (mensaje consumido).
+    """
+    from whatsapp.models import WhatsAppTemplate
+    from whatsapp.services import WhatsAppChatService
+
+    contact.routing_state        = contact.ROUTING_STATE_AWAITING_ROUTE
+    contact.pending_routing_body = body
+    contact.save(update_fields=["routing_state", "pending_routing_body"])
+
+    try:
+        _tpl = WhatsAppTemplate.objects.get(
+            company=contact.company,
+            name="breakdown_routing",
+            is_active=True,
+        )
+        WhatsAppChatService.send_quick_reply(
+            from_number=to_number,
+            to_number=from_number,
+            content_sid=_tpl.content_sid,
+            content_variables={"1": section.name},
+        )
+        logger.info(
+            "# [CHAT DISPATCH] Quick Reply breakdown_routing enviado a %s.",
+            from_number,
+        )
+    except WhatsAppTemplate.DoesNotExist:
+        logger.error(
+            "# [CHAT DISPATCH] Template breakdown_routing no encontrado empresa pk=%s.",
+            contact.company_id,
+        )
+        contact.routing_state        = contact.ROUTING_STATE_NONE
+        contact.pending_routing_body = ""
+        contact.save(update_fields=["routing_state", "pending_routing_body"])
+    except Exception as exc:
+        logger.error(
+            "# [CHAT DISPATCH] Error enviando breakdown_routing a %s: %s",
+            from_number, exc,
+        )
+        contact.routing_state        = contact.ROUTING_STATE_NONE
+        contact.pending_routing_body = ""
+        contact.save(update_fields=["routing_state", "pending_routing_body"])
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# _RESOLVE_PENDING_ROUTING
+# ---------------------------------------------------------------------------
+
+def _resolve_pending_routing(
+    contact: Contact,
+    section,
+    room,
+    breakdown_room,
+    body: str,
+    from_number: str,
+    to_number: str,
+) -> bool:
+    """
+    Processes the contact routing selection and routes the held message.
+    Button id "section" routes to SECTION room.
+    Button id "breakdowns" routes to BREAKDOWNS agent.
+    Unrecognised input re-sends the Quick Reply.
+    ---
+    Procesa la seleccion de sala del contacto y enruta el mensaje retenido.
+    Id "section" -> sala SECTION. Id "breakdowns" -> agente BREAKDOWNS.
+    Entrada no reconocida reenvía el Quick Reply.
+    """
+    from whatsapp.models import WhatsAppTemplate
+    from whatsapp.services import WhatsAppChatService
+
+    body_norm          = body.strip().lower()
+    pending_body       = contact.pending_routing_body
+    selected_section   = body_norm in ("mi seccion", "mi sección", "section", "1")
+    selected_breakdown = body_norm in ("sala de averias", "sala de averías", "breakdowns", "2")
+
+    if selected_section:
+        contact.routing_state        = contact.ROUTING_STATE_NONE
+        contact.pending_routing_body = ""
+        contact.save(update_fields=["routing_state", "pending_routing_body"])
+        _persist_and_broadcast(room=room, contact=contact, body=pending_body)
+        logger.info(
+            "# [CHAT DISPATCH] Enrutamiento resuelto a SECTION para %s.",
+            from_number,
+        )
+        return True
+
+    if selected_breakdown:
+        contact.routing_state        = contact.ROUTING_STATE_NONE
+        contact.pending_routing_body = ""
+        contact.save(update_fields=["routing_state", "pending_routing_body"])
+        if breakdown_room is not None:
+            process_breakdown_turn(
+                contact=contact,
+                body=pending_body,
+                room=breakdown_room,
+                to_number=to_number,
+                from_number=from_number,
+            )
+        logger.info(
+            "# [CHAT DISPATCH] Enrutamiento resuelto a BREAKDOWNS para %s.",
+            from_number,
+        )
+        return True
+
+    # Unrecognised — re-send Quick Reply.
+    # No reconocido — reenviar Quick Reply.
+    logger.info(
+        "# [CHAT DISPATCH] Respuesta de enrutamiento no reconocida de %s: %r.",
+        from_number, body[:60],
+    )
+    try:
+        _tpl = WhatsAppTemplate.objects.get(
+            company=contact.company,
+            name="breakdown_routing",
+            is_active=True,
+        )
+        WhatsAppChatService.send_quick_reply(
+            from_number=to_number,
+            to_number=from_number,
+            content_sid=_tpl.content_sid,
+            content_variables={"1": section.name},
+        )
+    except Exception as exc:
+        logger.error(
+            "# [CHAT DISPATCH] Error reenviando breakdown_routing a %s: %s",
+            from_number, exc,
+        )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# PROCESS_BREAKDOWN_TURN
+# ---------------------------------------------------------------------------
+
+def process_breakdown_turn(
+    contact: Contact,
+    body: str,
+    room,
+    to_number: str,
+    from_number: str,
+) -> None:
+    """
+    Gemini 2.5 Flash conversational agent for breakdown ticket collection.
+    Collects machine, fault, urgency and location field by field.
+    Persists BreakdownConversationTurn records and finalises the ticket
+    when [TICKET_COMPLETE:{...}] marker is detected in the Gemini reply.
+    ---
+    Agente conversacional Gemini 2.5 Flash para recogida de tickets de averia.
+    Recoge maquina, fallo, urgencia y ubicacion campo a campo.
+    Persiste turnos BreakdownConversationTurn y finaliza el ticket cuando
+    detecta el marcador [TICKET_COMPLETE:{...}] en la respuesta de Gemini.
+    """
+    import json as _json
+    import re   as _re
+    from chat.models import BreakdownTicket, BreakdownConversationTurn
+    from whatsapp.services import WhatsAppChatService, _build_genai_client
+    from fleet.models import MachineAsset
+
+    company = contact.company
+
+    # Resolve or create open ticket.
+    ticket = BreakdownTicket.objects.filter(
+        room=room,
+        contact=contact,
+        status__in=[BreakdownTicket.STATUS_OPEN, BreakdownTicket.STATUS_IN_PROGRESS],
+    ).order_by("-created_at").first()
+
+    if ticket is None:
+        section = contact.sections.filter(company=company, is_active=True).first()
+        ticket  = BreakdownTicket.objects.create(
+            room=room,
+            contact=contact,
+            section=section,
+            status=BreakdownTicket.STATUS_OPEN,
+        )
+        logger.info(
+            "# [BREAKDOWN] Nuevo BreakdownTicket pk=%s creado para contacto pk=%s.",
+            ticket.pk, contact.pk,
+        )
+
+    # Persist USER turn.
+    BreakdownConversationTurn.objects.create(
+        ticket=ticket,
+        role=BreakdownConversationTurn.ROLE_USER,
+        content=body,
+    )
+
+    # Reconstruct history.
+    turns = list(
+        BreakdownConversationTurn.objects.filter(ticket=ticket).order_by("created_at")
+    )
+    history_parts = [
+        {
+            "role":  "user" if t.role == BreakdownConversationTurn.ROLE_USER else "model",
+            "parts": [{"text": t.content}],
+        }
+        for t in turns
+    ]
+
+    # Build machine catalogue snippet.
+    catalogue_codes = list(
+        MachineAsset.objects.filter(company=company, is_active=True)
+        .values_list("code", flat=True).order_by("code")[:100]
+    )
+    machine_catalogue = ", ".join(catalogue_codes) if catalogue_codes else "Sin catalogo disponible"
+
+    # Build system prompt.
+    system_prompt = (
+        "Eres un asistente de gestion de averias de " + company.name + ". "
+        "Tu mision es recoger los siguientes datos campo a campo mediante dialogo natural: "
+        "1) Maquina afectada (codigo o nombre). "
+        "2) Descripcion del problema o sintoma. "
+        "3) Urgencia (Alta/Media/Baja). "
+        "4) Ubicacion actual de la maquina. "
+        "Reglas: pregunta UN campo a la vez, maximo 2 frases por turno. "
+        "Catalogo de maquinas: " + machine_catalogue + ". "
+        "Cuando tengas los 4 campos responde EXCLUSIVAMENTE con: "
+        "[TICKET_COMPLETE:{\"machine_raw\": \"X\", \"fault_summary\": \"X\", "
+        "\"urgency\": \"HIGH|MEDIUM|LOW\", \"location\": \"X\"}] "
+        "sin ningun texto adicional. Si el contacto cancela responde: CANCELADO."
+    )
+
+    # Call Gemini.
+    try:
+        genai_client = _build_genai_client()
+        response     = genai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=history_parts,
+            config={"system_instruction": system_prompt, "temperature": 0.3},
+        )
+        reply_text = response.text.strip()
+    except Exception as exc:
+        logger.error(
+            "# [BREAKDOWN] Error llamando a Gemini para ticket pk=%s: %s",
+            ticket.pk, exc,
+        )
+        try:
+            WhatsAppChatService.send_reply(
+                from_number=to_number,
+                to_number=from_number,
+                reply_text=(
+                    "Lo sentimos, ha habido un error procesando tu averia. "
+                    "Por favor, intentalo de nuevo en unos instantes."
+                ),
+            )
+        except Exception:
+            pass
+        return
+
+    # Parse TICKET_COMPLETE marker.
+    _COMPLETE_RE = _re.compile(r'\[TICKET_COMPLETE:\s*(\{[^\]]+\})\s*\]', _re.DOTALL)
+    match = _COMPLETE_RE.search(reply_text)
+
+    if match:
+        try:
+            data = _json.loads(match.group(1))
+        except (_json.JSONDecodeError, TypeError):
+            data = {}
+
+        machine_raw   = data.get("machine_raw",   "").strip()
+        fault_summary = data.get("fault_summary", "").strip()
+        location      = data.get("location",      "").strip()
+        urgency_raw   = data.get("urgency",        "").strip().upper()
+        urgency_map   = {
+            "HIGH":     BreakdownTicket.URGENCY_HIGH,
+            "MEDIUM":   BreakdownTicket.URGENCY_MEDIUM,
+            "LOW":      BreakdownTicket.URGENCY_LOW,
+            "CRITICAL": BreakdownTicket.URGENCY_CRITICAL,
+        }
+        urgency = urgency_map.get(urgency_raw, BreakdownTicket.URGENCY_MEDIUM)
+
+        machine_asset = MachineAsset.objects.filter(
+            company=company, code__iexact=machine_raw, is_active=True,
+        ).first()
+
+        ticket.machine_raw   = machine_raw
+        ticket.fault_summary = fault_summary
+        ticket.location      = location
+        ticket.urgency       = urgency
+        ticket.machine       = machine_asset
+        ticket.status        = BreakdownTicket.STATUS_IN_PROGRESS
+        ticket.save(update_fields=[
+            "machine_raw", "fault_summary", "location", "urgency", "machine", "status",
+        ])
+
+        BreakdownConversationTurn.objects.create(
+            ticket=ticket,
+            role=BreakdownConversationTurn.ROLE_MODEL,
+            content=reply_text,
+        )
+
+        contact_msg = (
+            "Averia registrada con el numero #" + str(ticket.ticket_number) + ". "
+            "Maquina: " + (machine_raw or "Sin identificar") + ". "
+            "Urgencia: " + ticket.get_urgency_display() + ". "
+            "El equipo de mantenimiento ha sido notificado."
+        )
+        try:
+            WhatsAppChatService.send_reply(
+                from_number=to_number, to_number=from_number, reply_text=contact_msg,
+            )
+        except Exception as exc:
+            logger.error(
+                "# [BREAKDOWN] Error enviando confirmacion al contacto %s: %s",
+                from_number, exc,
+            )
+
+        from chat.models import ChatMessage as _CM
+        supervisor_body = (
+            "Nuevo ticket de averia #" + str(ticket.ticket_number) + " | "
+            "Contacto: " + (_resolve_alias(contact) or contact.name) + " | "
+            "Maquina: " + (machine_raw or "Sin identificar") + " | "
+            "Problema: " + fault_summary + " | "
+            "Ubicacion: " + location + " | "
+            "Urgencia: " + ticket.get_urgency_display()
+        )
+        _CM.objects.create(
+            room=room, direction=_CM.DIRECTION_OUTBOUND,
+            body=supervisor_body, whatsapp_sid="",
+        )
+        logger.info(
+            "# [BREAKDOWN] Ticket pk=%s #%s finalizado para contacto pk=%s.",
+            ticket.pk, ticket.ticket_number, contact.pk,
+        )
+
+    else:
+        BreakdownConversationTurn.objects.create(
+            ticket=ticket,
+            role=BreakdownConversationTurn.ROLE_MODEL,
+            content=reply_text,
+        )
+        try:
+            WhatsAppChatService.send_reply(
+                from_number=to_number, to_number=from_number, reply_text=reply_text,
+            )
+            logger.info(
+                "# [BREAKDOWN] Turno intermedio enviado a %s para ticket pk=%s.",
+                from_number, ticket.pk,
+            )
+        except Exception as exc:
+            logger.error(
+                "# [BREAKDOWN] Error enviando turno Gemini a %s: %s",
+                from_number, exc,
+            )
 
 
 def _persist_and_broadcast(room: ChatRoom, contact: Contact, body: str) -> None:
