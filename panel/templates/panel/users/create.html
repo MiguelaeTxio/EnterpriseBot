@@ -92,6 +92,61 @@
                         </div>
                     </div>
 
+                    <!-- section field — Campo de sección (H13) -->
+                    <div class="mb-4">
+                        <label for="{{ form.section.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.section.label }}
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.section }}
+                        {% if form.section.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.section.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            {{ form.section.help_text }}
+                        </div>
+                    </div>
+
+                    <!-- phone_number field — Campo de teléfono (H13) -->
+                    <div class="mb-4">
+                        <label for="{{ form.phone_number.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.phone_number.label }}
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.phone_number }}
+                        {% if form.phone_number.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.phone_number.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            {{ form.phone_number.help_text }}
+                        </div>
+                    </div>
+
+                    <!-- is_ivr_active field — Activo en IVR (H13) -->
+                    <div class="mb-4">
+                        <div class="form-check">
+                            {{ form.is_ivr_active }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.is_ivr_active.id_for_label }}">
+                                {{ form.is_ivr_active.label }}
+                            </label>
+                        </div>
+                        {% if form.is_ivr_active.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.is_ivr_active.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            {{ form.is_ivr_active.help_text }}
+                        </div>
+                    </div>
+
                     <!-- initial_password field — Campo de contraseña inicial -->
                     <div class="mb-4">
                         <label for="{{ form.initial_password.id_for_label }}"
@@ -154,14 +209,12 @@
 <script>
 /*
  * Password UX: show/hide toggle + strength meter for user create form.
- * UX de contraseña: toggle mostrar/ocultar + medidor para el formulario de creación.
+ * UX de contrasena: toggle mostrar/ocultar + medidor para el formulario de creacion.
  */
 (function () {
     'use strict';
-
     var TOGGLE_IDS   = ['id_initial_password'];
     var STRENGTH_IDS = ['id_initial_password'];
-
     function addToggle(input) {
         var wrapper = document.createElement('div');
         wrapper.className = 'password-wrapper';
@@ -170,19 +223,16 @@
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'password-toggle';
-        btn.setAttribute('aria-label', 'Mostrar u ocultar contraseña');
+        btn.setAttribute('aria-label', 'Mostrar u ocultar contrasena');
         btn.innerHTML = '<i class="bi bi-eye"></i>';
         wrapper.appendChild(btn);
         btn.addEventListener('click', function () {
-            var show  = input.type === 'password';
+            var show = input.type === 'password';
             input.type    = show ? 'text' : 'password';
-            btn.innerHTML = show
-                ? '<i class="bi bi-eye-slash"></i>'
-                : '<i class="bi bi-eye"></i>';
+            btn.innerHTML = show ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
         });
         return wrapper;
     }
-
     function addStrength(input) {
         var anchor  = input.closest('.password-wrapper') || input;
         var barWrap = document.createElement('div');
@@ -202,14 +252,10 @@
             if (/[A-Z]/.test(v))        score++;
             if (/[0-9]/.test(v))        score++;
             if (/[^A-Za-z0-9]/.test(v)) score++;
-            if (v.length === 0) {
-                bar.style.width = '0'; bar.style.backgroundColor = '';
-                lbl.textContent = ''; return;
-            }
-            var levels = [
-                null,
-                {w:'20%', c:'#dc3545', t:'Muy débil'},
-                {w:'40%', c:'#fd7e14', t:'Débil'},
+            if (v.length === 0) { bar.style.width = '0'; bar.style.backgroundColor = ''; lbl.textContent = ''; return; }
+            var levels = [null,
+                {w:'20%', c:'#dc3545', t:'Muy debil'},
+                {w:'40%', c:'#fd7e14', t:'Debil'},
                 {w:'60%', c:'#ffc107', t:'Aceptable'},
                 {w:'80%', c:'#20c997', t:'Fuerte'},
                 {w:'100%',c:'#198754', t:'Muy fuerte'},
@@ -221,14 +267,29 @@
             lbl.style.color = levels[l].c;
         });
     }
-
-    TOGGLE_IDS.forEach(function (id) {
-        var el = document.getElementById(id);
-        if (el) addToggle(el);
-    });
-    STRENGTH_IDS.forEach(function (id) {
-        var el = document.getElementById(id);
-        if (el) addStrength(el);
+    TOGGLE_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) addToggle(el); });
+    STRENGTH_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) addStrength(el); });
+}());
+</script>
+<script>
+/*
+ * Section to role pre-fill via AJAX.
+ * Pre-relleno de rol por seccion via AJAX.
+ */
+(function () {
+    'use strict';
+    var sectionSelect = document.getElementById('id_section');
+    var roleSelect    = document.getElementById('id_role');
+    if (!sectionSelect || !roleSelect) return;
+    sectionSelect.addEventListener('change', function () {
+        var pk = sectionSelect.value;
+        if (!pk) return;
+        fetch('/panel/sections/' + pk + '/default-role/', {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) { if (data.default_role) { roleSelect.value = data.default_role; } })
+        .catch(function (err) { console.warn('# [SECTION DEFAULT ROLE] Error:', err); });
     });
 }());
 </script>

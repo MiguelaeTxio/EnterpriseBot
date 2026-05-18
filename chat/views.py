@@ -25,6 +25,8 @@ Rol WORKSHOP: solo lectura (sin botón de envío renderizado).
 ADMIN / SUPERVISOR: acceso completo de lectura y envío.
 """
 
+import logging
+
 from django.shortcuts import render, get_object_or_404
 from django.views import View
 from django.utils.timezone import now
@@ -32,6 +34,8 @@ from datetime import timedelta
 
 from panel.mixins import CompanyUserRequiredMixin
 from chat.models import ChatRoom, ChatMessage
+
+logger = logging.getLogger(__name__)
 
 
 class ChatRoomView(CompanyUserRequiredMixin, View):
@@ -124,7 +128,7 @@ class ChatRoomView(CompanyUserRequiredMixin, View):
 
         return render(request, self.template_name, {
             "room":           room,
-            "messages":       messages,
+            "chat_messages":  messages,
             "company":        company,
             "company_user":   company_user,
             "own_presence":   own_presence,
@@ -174,8 +178,8 @@ class ChatMessagesPollingView(CompanyUserRequiredMixin, View):
         )
 
         return render(request, self.template_name, {
-            "messages":     messages,
-            "company_user": company_user,
+            "chat_messages": messages,
+            "company_user":  company_user,
         })
 
 
@@ -396,14 +400,77 @@ class ChatSendView(CompanyUserRequiredMixin, View):
             if phone_number == sender_phone:
                 continue
 
+            # A session is considered active only if last_message_at
+            # is within the last 24 hours — Twilio's conversation window.
+            # Una sesión se considera activa solo si last_message_at
+            # está dentro de las últimas 24 horas — ventana de Twilio.
+            _window_cutoff = now() - timedelta(hours=24)
             has_active_session = WhatsAppSession.objects.filter(
                 company=company,
                 phone_number=phone_number,
                 is_active=True,
+                last_message_at__gte=_window_cutoff,
             ).exists()
 
-            if not has_active_session:
-                out_of_window.append(alias)
+            # Resolve contact alias — check CompanyUser.alias if linked.
+            # Resolver alias del contacto — comprobar CompanyUser.alias si está vinculado.
+            _contact_obj = section.contacts.filter(phone_number=phone_number).first()
+            _receiver_alias = ""
+            if _contact_obj:
+                if _contact_obj.company_user_id and _contact_obj.company_user:
+                    _receiver_alias = _contact_obj.company_user.alias.strip()
+                if not _receiver_alias:
+                    _receiver_alias = _contact_obj.alias.strip()
+            _contact_name = (
+                _contact_obj.name if _contact_obj and _contact_obj.name
+                else phone_number
+            )
+
+            # If receiver has no alias OR is outside 24h window — send chat_onboarding.
+            # Si el receptor no tiene alias O está fuera de ventana 24h — enviar chat_onboarding.
+            needs_onboarding = not _receiver_alias or not has_active_session
+            if needs_onboarding:
+                try:
+                    import json as _json
+                    from whatsapp.models import WhatsAppTemplate
+                    _onboarding_template = WhatsAppTemplate.objects.filter(
+                        company=company,
+                        name="chat_onboarding",
+                        is_active=True,
+                    ).first()
+                    if _onboarding_template:
+                        _twilio_client = __import__(
+                            "whatsapp.services", fromlist=["_build_twilio_client"]
+                        )._build_twilio_client()
+                        _twilio_client.messages.create(
+                            from_=f"whatsapp:{from_number}",
+                            to=f"whatsapp:{phone_number}",
+                            content_sid=_onboarding_template.content_sid,
+                            content_variables=_json.dumps({
+                                "1": _contact_name,
+                                "2": company.name,
+                            }),
+                        )
+                        logger.info(
+                            "# [CHAT SEND] Template chat_onboarding enviado a %s (sin alias o fuera de ventana).",
+                            phone_number,
+                        )
+                        out_of_window.append(_receiver_alias or _contact_name)
+                    else:
+                        logger.warning(
+                            "# [CHAT SEND] Template chat_onboarding no encontrado "
+                            "para empresa %s. Contacto %s omitido.",
+                            company.name,
+                            phone_number,
+                        )
+                        out_of_window.append(_receiver_alias or _contact_name)
+                except Exception as _exc:
+                    logger.error(
+                        "# [CHAT SEND] Error enviando template chat_onboarding a %s: %s",
+                        phone_number,
+                        _exc,
+                    )
+                    out_of_window.append(_receiver_alias or _contact_name)
                 skipped += 1
                 continue
 

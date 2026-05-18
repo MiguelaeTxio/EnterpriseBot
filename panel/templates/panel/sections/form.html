@@ -236,6 +236,86 @@
     });
 }());
 </script>
+<script>
+/*
+ * Inline worker creation panel for the section form.
+ * Panel de alta de trabajador inline para el formulario de seccion.
+ */
+(function () {
+    'use strict';
+    var addBtn    = document.getElementById('wk-add-btn');
+    var cancelBtn = document.getElementById('wk-cancel-btn');
+    var saveBtn   = document.getElementById('wk-save-btn');
+    var panel     = document.getElementById('worker-add-panel');
+    var feedback  = document.getElementById('wk-feedback');
+    if (!addBtn || !panel) return;
+    addBtn.addEventListener('click', function () {
+        panel.classList.remove('d-none');
+        addBtn.classList.add('d-none');
+        document.getElementById('wk-username').focus();
+    });
+    cancelBtn.addEventListener('click', function () { resetPanel(); });
+    function resetPanel() {
+        panel.classList.add('d-none');
+        addBtn.classList.remove('d-none');
+        ['wk-username','wk-first-name','wk-last-name','wk-phone'].forEach(function (id) {
+            var el = document.getElementById(id); if (el) el.value = '';
+        });
+        document.getElementById('wk-role').selectedIndex = 0;
+        document.getElementById('wk-ivr-active').checked = true;
+        showFeedback('', '');
+    }
+    function showFeedback(msg, type) {
+        if (!msg) { feedback.style.display = 'none'; feedback.innerHTML = ''; return; }
+        feedback.innerHTML = '<div class="alert alert-' + type + ' py-2 text-sm mb-0">' + msg + '</div>';
+        feedback.style.display = 'block';
+    }
+    function getCookie(name) {
+        var value = '; ' + document.cookie;
+        var parts = value.split('; ' + name + '=');
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+    }
+    saveBtn.addEventListener('click', function () {
+        var username  = (document.getElementById('wk-username').value  || '').trim();
+        var firstName = (document.getElementById('wk-first-name').value || '').trim();
+        var lastName  = (document.getElementById('wk-last-name').value  || '').trim();
+        var phone     = (document.getElementById('wk-phone').value      || '').trim();
+        var role      = document.getElementById('wk-role').value;
+        var ivrActive = document.getElementById('wk-ivr-active').checked;
+        if (!username) { showFeedback('El nombre de usuario es obligatorio.', 'danger'); return; }
+        var match     = window.location.pathname.match(/\/sections\/(\d+)\//);
+        var sectionPk = match ? match[1] : '';
+        var formData  = new FormData();
+        formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
+        formData.append('username',     username);
+        formData.append('first_name',   firstName);
+        formData.append('last_name',    lastName);
+        formData.append('phone_number', phone);
+        formData.append('role',         role);
+        formData.append('section',      sectionPk);
+        if (ivrActive) formData.append('is_ivr_active', 'on');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Guardando...';
+        fetch('/panel/users/create/', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: formData })
+        .then(function (resp) {
+            if (resp.redirected || resp.ok) {
+                showFeedback('Trabajador creado correctamente. Recargando...', 'success');
+                setTimeout(function () { window.location.reload(); }, 900);
+            } else {
+                showFeedback('Error al crear el trabajador. Revisa los datos e intentalo de nuevo.', 'danger');
+                saveBtn.disabled = false; saveBtn.textContent = 'Guardar trabajador';
+            }
+        })
+        .catch(function (err) {
+            console.error('# [WORKER INLINE] Error de red:', err);
+            showFeedback('Error de red. Comprueba tu conexion e intentalo de nuevo.', 'danger');
+            saveBtn.disabled = false; saveBtn.textContent = 'Guardar trabajador';
+        });
+    });
+}());
+</script>
+
 {% endblock %}
 {% block page_title %}{{ action }} sección{% endblock %}
 
@@ -526,14 +606,119 @@
                         </table>
                     </div>
 
-                    <!-- Add schedule row button — Botón de añadir franja horaria -->
+                    <!-- Add schedule row button — Boton de anadir franja horaria -->
                     <div class="mb-4">
                         <button type="button" class="btn btn-outline-primary btn-sm"
                                 id="add-schedule-row">
-                            <i class="bi bi-plus-lg me-1"></i>Añadir franja horaria
+                            <i class="bi bi-plus-lg me-1"></i>Anadir franja horaria
                         </button>
                     </div>
 
+                    <!-- Workers inline — Trabajadores de la seccion (H13) -->
+                    <hr class="my-4">
+                    <h6 class="fw-semibold mb-1">
+                        <i class="bi bi-people me-2 text-primary"></i>Trabajadores de la seccion
+                    </h6>
+                    <p class="text-muted mb-3 text-sm">
+                        Trabajadores asignados a esta seccion. Puedes anadir nuevos trabajadores
+                        directamente desde aqui; se creara su cuenta de acceso al panel con
+                        contrasena inicial <strong>1234</strong> y deberan cambiarla en el
+                        primer acceso.
+                    </p>
+
+                    {% if section_workers %}
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Usuario</th>
+                                    <th>Nombre</th>
+                                    <th>Rol</th>
+                                    <th>Telefono</th>
+                                    <th class="text-center">Activo IVR</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for w in section_workers %}
+                                <tr>
+                                    <td class="text-sm font-monospace">{{ w.user.username }}</td>
+                                    <td class="text-sm">{{ w.user.get_full_name|default:w.user.username }}</td>
+                                    <td class="text-sm">{{ w.get_role_display }}</td>
+                                    <td class="text-sm">
+                                        {% if w.contact_phone %}{{ w.contact_phone }}{% else %}<span class="text-muted">—</span>{% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if w.is_ivr_active %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-x-circle text-muted"></i>{% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <a href="{% url 'panel:user_edit' w.pk %}" class="btn btn-outline-secondary btn-sm py-0">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-sm mb-3">No hay trabajadores asignados a esta seccion todavia.</p>
+                    {% endif %}
+
+                    <div id="worker-add-panel" class="border rounded p-3 bg-light mb-4 d-none">
+                        <h6 class="fw-semibold mb-3 text-sm">
+                            <i class="bi bi-person-plus me-1 text-primary"></i>Nuevo trabajador
+                        </h6>
+                        <div class="row g-2">
+                            <div class="col-12 col-md-3">
+                                <input type="text" class="form-control form-control-sm" id="wk-username" placeholder="nombre.apellido" autocomplete="off">
+                                <div class="form-text">Usuario</div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <input type="text" class="form-control form-control-sm" id="wk-first-name" placeholder="Nombre" autocomplete="off">
+                                <div class="form-text">Nombre</div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <input type="text" class="form-control form-control-sm" id="wk-last-name" placeholder="Apellidos" autocomplete="off">
+                                <div class="form-text">Apellidos</div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <input type="text" class="form-control form-control-sm" id="wk-phone" placeholder="+34XXXXXXXXX" autocomplete="off">
+                                <div class="form-text">Telefono (E.164)</div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <select class="form-select form-select-sm" id="wk-role">
+                                    <option value="WORKSHOP">Operario de taller</option>
+                                    <option value="DRIVER">Conductor</option>
+                                    <option value="OPERATOR">Operador</option>
+                                    <option value="SUPERVISOR">Supervisor</option>
+                                    <option value="ADMIN">Administrador</option>
+                                </select>
+                                <div class="form-text">Rol</div>
+                            </div>
+                            <div class="col-12 col-md-3 d-flex align-items-center gap-2 pt-3">
+                                <div class="form-check mb-0">
+                                    <input class="form-check-input" type="checkbox" id="wk-ivr-active" checked>
+                                    <label class="form-check-label text-sm" for="wk-ivr-active">Activo IVR</label>
+                                </div>
+                            </div>
+                            <div class="col-12 d-flex gap-2 mt-2">
+                                <button type="button" class="btn btn-dark btn-sm" id="wk-save-btn">
+                                    <i class="bi bi-person-check me-1"></i>Guardar trabajador
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="wk-cancel-btn">Cancelar</button>
+                            </div>
+                            <div class="col-12 d-none" id="wk-feedback"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="wk-add-btn">
+                            <i class="bi bi-person-plus me-1"></i>Anadir trabajador
+                        </button>
+                    </div>
+
+                    <!-- Submit buttons — Botones de envio -->
                     <!-- Submit buttons — Botones de envío -->
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-dark px-4">

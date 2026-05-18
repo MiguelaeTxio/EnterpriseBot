@@ -637,6 +637,37 @@ class Contact(models.Model):
             "para contactos internos."
         ),
     )
+    # --- Alias onboarding state — persisted in DB to survive server reloads. ---
+    # --- Estado del onboarding de alias — persistido en BD para sobrevivir reloads. ---
+    ALIAS_STEP_NONE       = "NONE"
+    ALIAS_STEP_PENDING    = "PENDING"
+    ALIAS_STEP_CONFIRMING = "CONFIRMING"
+    ALIAS_STEP_CHOICES    = [
+        (ALIAS_STEP_NONE,       "Sin estado"),
+        (ALIAS_STEP_PENDING,    "Esperando nombre"),
+        (ALIAS_STEP_CONFIRMING, "Esperando confirmación"),
+    ]
+    alias_onboarding_step = models.CharField(
+        max_length=12,
+        choices=ALIAS_STEP_CHOICES,
+        default=ALIAS_STEP_NONE,
+        verbose_name="Paso de onboarding de alias",
+        help_text=(
+            "Estado actual del diálogo de recogida de alias vía WhatsApp. "
+            "NONE: sin diálogo activo. PENDING: se ha pedido el nombre, esperando respuesta. "
+            "CONFIRMING: se ha recibido un alias propuesto, esperando confirmación SÍ/NO."
+        ),
+    )
+    alias_onboarding_proposed = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Alias propuesto en onboarding",
+        help_text=(
+            "Alias propuesto por el contacto durante el diálogo de onboarding. "
+            "Se guarda en el Paso B y se confirma o descarta en el Paso C."
+        ),
+    )
     company_user = models.ForeignKey(
         CompanyUser,
         null=True,

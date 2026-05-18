@@ -332,15 +332,22 @@ class BlockedCallerForm(forms.ModelForm):
         self.fields["blocked_until"].required = False
 
 
+
 class CompanyUserCreateForm(forms.Form):
     """
-    Form for creating a new CompanyUser from the panel.
-    The ADMIN provides username, full name, role and an initial password.
-    must_change_password is set to True automatically by the view.
+    Form for creating a new CompanyUser from the panel (Supervisor or Admin).
+    The Supervisor provides username, full name, role, optional section,
+    optional phone number and IVR active flag.
+    Password is always set to '1234'; must_change_password is set to True
+    automatically by the view.
+    Updated H13: section, phone_number and is_ivr_active fields added.
     ---
-    Formulario para crear un nuevo CompanyUser desde el panel.
-    El ADMIN introduce nombre de usuario, nombre completo, rol y contraseña inicial.
-    must_change_password se activa automáticamente en la vista.
+    Formulario para crear un nuevo CompanyUser desde el panel (Supervisor o Admin).
+    El Supervisor introduce nombre de usuario, nombre completo, rol, sección
+    opcional, teléfono opcional y flag de activo en IVR.
+    La contraseña se fija siempre a '1234'; must_change_password se activa
+    automáticamente en la vista.
+    Actualización H13: añadidos campos section, phone_number e is_ivr_active.
     """
 
     username = forms.CharField(
@@ -367,8 +374,45 @@ class CompanyUserCreateForm(forms.Form):
     role = forms.ChoiceField(
         choices=CompanyUser.ROLE_CHOICES,
         label="Rol",
-        initial=CompanyUser.ROLE_OPERATOR,
-        widget=forms.Select(attrs={"class": "form-select"}),
+        initial=CompanyUser.ROLE_WORKSHOP,
+        widget=forms.Select(attrs={"class": "form-select", "id": "id_role"}),
+    )
+    section = forms.ModelChoiceField(
+        queryset=Section.objects.none(),
+        label="Sección",
+        required=False,
+        empty_label="— Sin sección —",
+        widget=forms.Select(attrs={
+            "class": "form-select",
+            "id": "id_section",
+        }),
+        help_text=(
+            "Selecciona la sección a la que pertenece el trabajador. "
+            "El rol se pre-rellenará con el rol por defecto de la sección."
+        ),
+    )
+    phone_number = forms.CharField(
+        max_length=20,
+        label="Teléfono (E.164)",
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "+34XXXXXXXXX",
+        }),
+        help_text=(
+            "Opcional. Si se indica, se creará o vinculará el contacto WhatsApp "
+            "correspondiente para recibir broadcasts de su sección."
+        ),
+    )
+    is_ivr_active = forms.BooleanField(
+        label="Activo en IVR",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        help_text=(
+            "Si está activo, el contacto vinculado participará en el enrutamiento "
+            "IVR y en los broadcasts de WhatsApp de su sección."
+        ),
     )
     initial_password = forms.CharField(
         max_length=128,
@@ -378,24 +422,8 @@ class CompanyUserCreateForm(forms.Form):
             "class": "form-control",
             "placeholder": "Dejar vacío para usar '1234'",
         }),
-        help_text=(
-            "El usuario deberá cambiarla en su primer acceso. "
-            "Si se deja vacío se asigna '1234' como contraseña inicial."
-        ),
+        help_text="Si se deja vacío, la contraseña inicial será '1234'.",
     )
-
-    def clean_username(self):
-        """
-        Validates that the username is not already taken by another auth.User.
-        ---
-        Valida que el nombre de usuario no esté ya en uso por otro auth.User.
-        """
-        username = self.cleaned_data.get("username")
-        if User.objects.filter(username=username).exists():
-            raise ValidationError(
-                "Este nombre de usuario ya está en uso. Elige otro."
-            )
-        return username
 
     def get_initial_password(self):
         """
@@ -405,6 +433,29 @@ class CompanyUserCreateForm(forms.Form):
         """
         return self.cleaned_data.get("initial_password") or "1234"
 
+    def clean_username(self):
+        """
+        Validates that the username is not already taken by another auth.User.
+        ---
+        Valida que el nombre de usuario no esté ya en uso por otro auth.User.
+        """
+        username = self.cleaned_data.get("username", "").strip()
+        if User.objects.filter(username=username).exists():
+            raise ValidationError(
+                "Este nombre de usuario ya está en uso. Elige otro."
+            )
+        return username
+
+    def clean_phone_number(self):
+        """
+        Normalises the phone number to E.164 format (leading + preserved).
+        Returns empty string if blank.
+        ---
+        Normaliza el número de teléfono a formato E.164 (conserva el + inicial).
+        Retorna cadena vacía si está en blanco.
+        """
+        phone = self.cleaned_data.get("phone_number", "").strip()
+        return phone
 
 class PanelPasswordChangeForm(PasswordChangeForm):
     """

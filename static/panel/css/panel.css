@@ -473,3 +473,22 @@ input[type="time"].field-flagged {
 .chat-room-container {
     height: calc(100vh - 80px);
 }
+
+/* Chat room container — fills all available vertical space inside page-content-flush.
+   Contenedor de sala de chat — ocupa todo el espacio vertical disponible en page-content-flush. */
+.chat-room-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Flush page content — removes padding and lets child fill full height.
+   Contenido de página flush — elimina padding y permite al hijo ocupar toda la altura. */
+.page-content-flush {
+    padding: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}

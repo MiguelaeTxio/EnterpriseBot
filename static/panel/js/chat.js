@@ -75,6 +75,13 @@
             .then(function (data) {
                 if (data.ok) {
                     bsAliasModal.hide();
+                    /* If there is a pending message, resend it now that alias is set.
+                       Si hay un mensaje pendiente, reenviarlo ahora que el alias está establecido. */
+                    if (pendingMessage) {
+                        var msgToSend  = pendingMessage;
+                        pendingMessage = null;
+                        _doSend(msgToSend);
+                    }
                 } else {
                     aliasError.textContent = data.error || "Error desconocido.";
                     aliasError.classList.remove("d-none");
@@ -94,8 +101,11 @@
      * Only active when #chat-send-btn exists in the DOM (can_send=True).
      * Solo activo cuando #chat-send-btn existe en el DOM (can_send=True).
      * ================================================================ */
-    var input   = document.getElementById("chat-input");
-    var sendBtn = document.getElementById("chat-send-btn");
+    var input          = document.getElementById("chat-input");
+    var sendBtn        = document.getElementById("chat-send-btn");
+    /* pendingMessage holds a message body awaiting alias setup before resend.
+       pendingMessage guarda el cuerpo de un mensaje en espera de alias antes del reenvío. */
+    var pendingMessage = null;
 
     if (input && sendBtn) {
 
@@ -103,10 +113,16 @@
             sendBtn.disabled = input.value.trim().length === 0;
         });
 
-        function handleSend() {
-            var body = input.value.trim();
-            if (!body) { return; }
-
+        function _doSend(body) {
+            /*
+             * Core send function — posts body to ChatSendView.
+             * If the server returns HTTP 400 with an alias error, stores the
+             * message as pending and opens the alias modal for immediate setup.
+             * ---
+             * Función de envío central — envía body a ChatSendView.
+             * Si el servidor devuelve HTTP 400 con error de alias, guarda el
+             * mensaje como pendiente y abre el modal de alias para configurarlo.
+             */
             sendBtn.disabled = true;
             input.value      = "";
 
@@ -120,11 +136,34 @@
                 },
                 body: JSON.stringify({ body: body }),
             })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data.ok) {
-                    console.error("# [CHAT SEND] Error:", data.error);
+            .then(function (r) {
+                return r.json().then(function (data) {
+                    return { status: r.status, data: data };
+                });
+            })
+            .then(function (result) {
+                if (result.status === 400 && result.data.error &&
+                        result.data.error.indexOf("alias") !== -1) {
+                    /* Alias not set — store message and open alias modal.
+                       Alias no configurado — guardar mensaje y abrir modal de alias. */
+                    pendingMessage   = body;
+                    sendBtn.disabled = false;
+                    var modalEl = document.getElementById("aliasModal");
+                    if (modalEl) {
+                        var bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                        bsModal.show();
+                    } else {
+                        /* Modal not in DOM — alias_required was False on page load.
+                           Reload to force modal rendering with alias_required=True.
+                           Modal no está en el DOM — alias_required era False al cargar la página.
+                           Recargar para forzar la renderización con alias_required=True. */
+                        window.location.reload();
+                    }
+                } else if (!result.data.ok) {
+                    console.error("# [CHAT SEND] Error:", result.data.error);
                     input.value      = body;
+                    sendBtn.disabled = false;
+                } else {
                     sendBtn.disabled = false;
                 }
             })
@@ -133,6 +172,12 @@
                 input.value      = body;
                 sendBtn.disabled = false;
             });
+        }
+
+        function handleSend() {
+            var body = input.value.trim();
+            if (!body) { return; }
+            _doSend(body);
         }
 
         sendBtn.addEventListener("click", handleSend);

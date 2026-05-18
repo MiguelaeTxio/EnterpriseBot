@@ -93,26 +93,11 @@ class DispatchResult:
 
 
 # ---------------------------------------------------------------------------
-# ALIAS STATE SETS — In-memory state machine for the three-step alias dialogue.
-# Sets en memoria para la máquina de estados del diálogo de alias en tres pasos.
-#
-# _ALIAS_PENDING    : phone numbers that have been asked for their name
-#                     but have not yet provided one.
-#                     Números que han recibido la solicitud de nombre pero
-#                     aún no han respondido.
-#
-# _ALIAS_CONFIRMING : maps phone_number -> proposed_alias for numbers that
-#                     have provided a name and are awaiting confirmation (SÍ).
-#                     Mapea phone_number -> alias_propuesto para los números
-#                     que han dado un nombre y esperan confirmación (SÍ).
-#
-# NOTE: Intentionally simple for the pilot (single worker process).
-# A Redis hash would be required for multi-process deployments.
-# NOTA: Deliberadamente simple para el piloto (proceso único).
-# Se requeriría un hash Redis para despliegues multiproceso.
+# ALIAS STATE — Persisted in Contact.alias_onboarding_step and
+# Contact.alias_onboarding_proposed (DB fields, migration 0022).
+# Estado de alias — persistido en Contact.alias_onboarding_step y
+# Contact.alias_onboarding_proposed (campos en BD, migración 0022).
 # ---------------------------------------------------------------------------
-_ALIAS_PENDING: set = set()
-_ALIAS_CONFIRMING: dict = {}
 
 
 # ---------------------------------------------------------------------------
@@ -284,12 +269,17 @@ def _handle_alias_collection(
 
     # --- Step A: No state — request name. ---
     # --- Paso A: Sin estado — solicitar nombre. ---
-    if from_number not in _ALIAS_PENDING and from_number not in _ALIAS_CONFIRMING:
-        _ALIAS_PENDING.add(from_number)
+    step = contact.alias_onboarding_step
+
+    # --- Step A: No state — request name. ---
+    # --- Paso A: Sin estado — solicitar nombre. ---
+    if step == contact.ALIAS_STEP_NONE:
+        contact.alias_onboarding_step = contact.ALIAS_STEP_PENDING
+        contact.save(update_fields=["alias_onboarding_step"])
         alias_request = (
-            "¡Hola! Para participar en el chat de grupo de tu sección necesito saber "
-            "cómo quieres que te identifiquen los demás compañeros.\n\n"
-            "¿Con qué nombre o apodo quieres aparecer en el chat?"
+            "Para participar en el chat de grupo de tu seccion necesito saber "
+            "como quieres que te identifiquen los demas companeros.\n\n"
+            "Con que nombre o apodo quieres aparecer en el chat?"
         )
         try:
             WhatsAppChatService.send_reply(
@@ -310,8 +300,8 @@ def _handle_alias_collection(
         return True
 
     # --- Step B: Pending — receive proposed name, ask for confirmation. ---
-    # --- Paso B: Pendiente — recibir nombre propuesto, pedir confirmación. ---
-    if from_number in _ALIAS_PENDING:
+    # --- Paso B: Pendiente — recibir nombre propuesto, pedir confirmacion. ---
+    if step == contact.ALIAS_STEP_PENDING:
         proposed_alias = body.strip()[:50]
         if not proposed_alias:
             try:
@@ -319,8 +309,8 @@ def _handle_alias_collection(
                     from_number=to_number,
                     to_number=from_number,
                     reply_text=(
-                        "El nombre no puede estar vacío. "
-                        "Por favor, indícame el nombre o apodo con el que quieres aparecer."
+                        "El nombre no puede estar vacio. "
+                        "Por favor, indicame el nombre o apodo con el que quieres aparecer."
                     ),
                 )
             except Exception as exc:
@@ -331,31 +321,30 @@ def _handle_alias_collection(
                 )
             return True
 
-        _ALIAS_PENDING.discard(from_number)
-        _ALIAS_CONFIRMING[from_number] = proposed_alias
+        contact.alias_onboarding_step     = contact.ALIAS_STEP_CONFIRMING
+        contact.alias_onboarding_proposed = proposed_alias
+        contact.save(update_fields=["alias_onboarding_step", "alias_onboarding_proposed"])
 
-        confirmation_request = (
-            f"Hemos recibido tu nombre: *{proposed_alias}*.\n\n"
-            "Este será tu alias en el chat de grupo de tu sección — el nombre "
-            "con el que te identificarán el resto de compañeros.\n\n"
-            "¿Confirmas que quieres usar este nombre? "
-            "Responde *SÍ* para confirmarlo o escribe el nombre que prefieras "
-            "si quieres cambiarlo."
+        confirmation_body = (
+            f"Hemos recibido tu nombre: *{proposed_alias}*. "
+            "Este sera tu alias en el chat de grupo de tu seccion. "
+            "Confirmas que quieres usar este nombre?"
         )
         try:
-            WhatsAppChatService.send_reply(
+            WhatsAppChatService.send_quick_reply(
                 from_number=to_number,
                 to_number=from_number,
-                reply_text=confirmation_request,
+                body_text=confirmation_body,
+                buttons=["Si, usar este nombre", "Cambiar nombre"],
             )
             logger.info(
-                "# [CHAT DISPATCH] Confirmación de alias solicitada a %s para alias '%s'.",
+                "# [CHAT DISPATCH] Confirmacion de alias con botones enviada a %s para alias '%s'.",
                 from_number,
                 proposed_alias,
             )
         except Exception as exc:
             logger.error(
-                "# [CHAT DISPATCH] Error enviando confirmación de alias a %s: %s",
+                "# [CHAT DISPATCH] Error enviando confirmacion de alias a %s: %s",
                 from_number,
                 exc,
             )
@@ -363,13 +352,19 @@ def _handle_alias_collection(
 
     # --- Step C: Confirming — save alias or re-ask. ---
     # --- Paso C: Confirmando — guardar alias o volver a pedir. ---
-    if from_number in _ALIAS_CONFIRMING:
-        proposed_alias = _ALIAS_CONFIRMING[from_number]
-        affirmative    = body.strip().upper() in ("SI", "SÍ", "S", "YES", "Y")
+    if step == contact.ALIAS_STEP_CONFIRMING:
+        proposed_alias = contact.alias_onboarding_proposed
+        # Detect button press or free-text affirmative.
+        # Detectar pulsación de botón o texto libre afirmativo.
+        _body_upper = body.strip().upper()
+        affirmative = (
+            _body_upper in ("SI", "SÍ", "S", "YES", "Y")
+            or body.strip().lower() == "si, usar este nombre"
+        )
 
         if affirmative:
             # Persist alias and provision CompanyUser if not yet registered.
-            # Persistir alias y provisionar CompanyUser si aún no está registrado.
+            # Persistir alias y provisionar CompanyUser si aun no esta registrado.
             _provision_company_user(
                 contact=contact,
                 section=section,
@@ -377,11 +372,13 @@ def _handle_alias_collection(
                 to_number=to_number,
                 from_number=from_number,
             )
-            del _ALIAS_CONFIRMING[from_number]
+            contact.alias_onboarding_step     = contact.ALIAS_STEP_NONE
+            contact.alias_onboarding_proposed = ""
+            contact.save(update_fields=["alias_onboarding_step", "alias_onboarding_proposed"])
 
             final_confirmation = (
-                f"✓ Perfecto, a partir de ahora aparecerás como *{proposed_alias}* "
-                "en el chat de grupo de tu sección. "
+                f"Perfecto, a partir de ahora aparecerás como *{proposed_alias}* "
+                "en el chat de grupo de tu seccion. "
                 "Ya puedes escribir tus mensajes con normalidad."
             )
             try:
@@ -397,35 +394,7 @@ def _handle_alias_collection(
                 )
             except Exception as exc:
                 logger.error(
-                    "# [CHAT DISPATCH] Error enviando confirmación final a %s: %s",
-                    from_number,
-                    exc,
-                )
-        else:
-            contact.alias = proposed_alias
-            contact.save(update_fields=["alias"])
-
-            del _ALIAS_CONFIRMING[from_number]
-
-            final_confirmation = (
-                f"✓ Perfecto, a partir de ahora aparecerás como *{proposed_alias}* "
-                "en el chat de grupo de tu sección. "
-                "Ya puedes escribir tus mensajes con normalidad."
-            )
-            try:
-                WhatsAppChatService.send_reply(
-                    from_number=to_number,
-                    to_number=from_number,
-                    reply_text=final_confirmation,
-                )
-                logger.info(
-                    "# [CHAT DISPATCH] Alias '%s' confirmado y registrado para contacto pk=%s.",
-                    proposed_alias,
-                    contact.pk,
-                )
-            except Exception as exc:
-                logger.error(
-                    "# [CHAT DISPATCH] Error enviando confirmación final a %s: %s",
+                    "# [CHAT DISPATCH] Error enviando confirmacion final a %s: %s",
                     from_number,
                     exc,
                 )
@@ -439,7 +408,7 @@ def _handle_alias_collection(
                         from_number=to_number,
                         to_number=from_number,
                         reply_text=(
-                            "El nombre no puede estar vacío. "
+                            "El nombre no puede estar vacio. "
                             "Por favor, escribe el nombre con el que quieres aparecer."
                         ),
                     )
@@ -451,32 +420,177 @@ def _handle_alias_collection(
                     )
                 return True
 
-            _ALIAS_CONFIRMING[from_number] = new_alias
+            contact.alias_onboarding_proposed = new_alias
+            contact.save(update_fields=["alias_onboarding_proposed"])
 
-            re_confirmation_request = (
-                f"De acuerdo, ¿confirmas que quieres usar *{new_alias}* "
-                "como tu nombre en el grupo? "
-                "Responde *SÍ* para confirmarlo o escribe otro nombre si prefieres cambiarlo."
+            re_confirmation_body = (
+                f"De acuerdo, usamos *{new_alias}* como tu nombre en el grupo?"
             )
             try:
-                WhatsAppChatService.send_reply(
+                WhatsAppChatService.send_quick_reply(
                     from_number=to_number,
                     to_number=from_number,
-                    reply_text=re_confirmation_request,
+                    body_text=re_confirmation_body,
+                    buttons=["Si, usar este nombre", "Cambiar nombre"],
                 )
                 logger.info(
-                    "# [CHAT DISPATCH] Re-confirmación de alias solicitada a %s para alias '%s'.",
+                    "# [CHAT DISPATCH] Re-confirmacion de alias con botones enviada a %s para alias '%s'.",
                     from_number,
                     new_alias,
                 )
             except Exception as exc:
                 logger.error(
-                    "# [CHAT DISPATCH] Error enviando re-confirmación de alias a %s: %s",
+                    "# [CHAT DISPATCH] Error enviando re-confirmacion de alias a %s: %s",
                     from_number,
                     exc,
                 )
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# _PROVISION_COMPANY_USER
+# Creates or updates a CompanyUser for the given contact after alias confirmation.
+# Crea o actualiza un CompanyUser para el contacto tras la confirmación del alias.
+# ---------------------------------------------------------------------------
+
+def _provision_company_user(
+    contact,
+    section,
+    proposed_alias: str,
+    to_number: str,
+    from_number: str,
+) -> None:
+    """
+    Provisions or updates the CompanyUser associated with the given contact
+    after the three-step alias confirmation dialogue completes successfully.
+
+    Branch A — contact already has a linked CompanyUser:
+        Updates CompanyUser.alias only. No new User or CompanyUser is created.
+
+    Branch B — contact has no linked CompanyUser:
+        1. Generates a slug-based username from proposed_alias (lowercase).
+           Appends a numeric suffix if the username is already taken in auth.User.
+        2. Creates auth.User with password "1234" (must_change_password=True).
+        3. Creates CompanyUser linked to the new User with section.default_role.
+        4. Links contact.company_user = new CompanyUser.
+           Clears contact.alias (canonical alias is now CompanyUser.alias).
+           Sets contact.is_internal = True.
+        5. Sends WhatsApp credentials message to the contact.
+    ---
+    Provisiona o actualiza el CompanyUser asociado al contacto tras completarse
+    con éxito el diálogo de confirmación de alias en tres pasos.
+
+    Rama A — el contacto ya tiene CompanyUser vinculado:
+        Actualiza únicamente CompanyUser.alias. No se crea ningún User ni CompanyUser.
+
+    Rama B — el contacto no tiene CompanyUser vinculado:
+        1. Genera un username basado en slug del alias propuesto (minúsculas).
+           Añade sufijo numérico si el username ya existe en auth.User.
+        2. Crea auth.User con contraseña "1234" (must_change_password=True).
+        3. Crea CompanyUser vinculado al nuevo User con section.default_role.
+        4. Vincula contact.company_user = nuevo CompanyUser.
+           Vacía contact.alias (el alias canónico es ahora CompanyUser.alias).
+           Establece contact.is_internal = True.
+        5. Envía mensaje WhatsApp al contacto con sus credenciales de acceso.
+    """
+    from django.contrib.auth import get_user_model
+    from django.utils.text import slugify
+    from ivr_config.models import CompanyUser
+    from whatsapp.services import WhatsAppChatService
+
+    User = get_user_model()
+
+    # --- Branch A: CompanyUser already linked — update alias only. ---
+    # --- Rama A: CompanyUser ya vinculado — actualizar solo el alias. ---
+    if contact.company_user_id and contact.company_user:
+        contact.company_user.alias = proposed_alias
+        contact.company_user.save(update_fields=["alias"])
+        logger.info(
+            "# [PROVISION] Alias actualizado para CompanyUser pk=%s: '%s'.",
+            contact.company_user.pk,
+            proposed_alias,
+        )
+        return
+
+    # --- Branch B: No CompanyUser — create User, CompanyUser and link. ---
+    # --- Rama B: Sin CompanyUser — crear User, CompanyUser y vincular. ---
+
+    # Step B-1: Generate a unique slug-based username.
+    # Paso B-1: Generar un username único basado en slug.
+    base_username = slugify(proposed_alias).lower() or "usuario"
+    username      = base_username
+    suffix        = 1
+    while User.objects.filter(username=username).exists():
+        username = f"{base_username}{suffix}"
+        suffix  += 1
+
+    # Step B-2: Create auth.User with a temporary password.
+    # Paso B-2: Crear auth.User con contraseña temporal.
+    new_user = User(username=username)
+    new_user.set_password("1234")
+    new_user.save()
+    logger.info(
+        "# [PROVISION] auth.User creado: username='%s' pk=%s.",
+        username,
+        new_user.pk,
+    )
+
+    # Step B-3: Create CompanyUser with section role and alias.
+    # Paso B-3: Crear CompanyUser con el rol de sección y el alias.
+    new_company_user = CompanyUser.objects.create(
+        company=section.company,
+        user=new_user,
+        role=section.default_role,
+        alias=proposed_alias,
+        must_change_password=True,
+        is_active=True,
+    )
+    logger.info(
+        "# [PROVISION] CompanyUser creado: pk=%s rol='%s'.",
+        new_company_user.pk,
+        section.default_role,
+    )
+
+    # Step B-4: Link contact to new CompanyUser and clear contact.alias.
+    # Paso B-4: Vincular contacto al nuevo CompanyUser y vaciar contact.alias.
+    contact.company_user = new_company_user
+    contact.alias        = ""
+    contact.is_internal  = True
+    contact.save(update_fields=["company_user", "alias", "is_internal"])
+    logger.info(
+        "# [PROVISION] Contacto pk=%s vinculado a CompanyUser pk=%s.",
+        contact.pk,
+        new_company_user.pk,
+    )
+
+    # Step B-5: Send credentials via WhatsApp.
+    # Paso B-5: Enviar credenciales vía WhatsApp.
+    credentials_message = (
+        f"✓ Ya estás registrado en la plataforma de {section.company.name}.\n"
+        "Puedes acceder en: "
+        "https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/login/\n"
+        f"Usuario: {username}\n"
+        "Contraseña: 1234\n"
+        "Te pediremos que la cambies en tu primer inicio de sesión."
+    )
+    try:
+        WhatsAppChatService.send_reply(
+            from_number=to_number,
+            to_number=from_number,
+            reply_text=credentials_message,
+        )
+        logger.info(
+            "# [PROVISION] Credenciales enviadas a %s para username '%s'.",
+            from_number,
+            username,
+        )
+    except Exception as exc:
+        logger.error(
+            "# [PROVISION] Error enviando credenciales a %s: %s",
+            from_number,
+            exc,
+        )
 
 
 def _persist_and_broadcast(room: ChatRoom, contact: Contact, body: str) -> None:

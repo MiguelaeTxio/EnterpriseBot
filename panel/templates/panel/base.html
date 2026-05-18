@@ -171,7 +171,7 @@
         {% endif %}
 
         <!-- Page content block — Bloque de contenido de página -->
-        <div class="page-content">
+        <div class="page-content{% if active_nav == 'chat' %} page-content-flush{% endif %}">
             {% block content %}{% endblock %}
         </div>
 

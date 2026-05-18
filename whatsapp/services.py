@@ -589,6 +589,41 @@ class WhatsAppChatService:
         )
         return message.sid
 
+    @classmethod
+    def send_quick_reply(
+        cls,
+        from_number: str,
+        to_number: str,
+        body_text: str,
+        buttons: list,
+    ) -> str:
+        import json
+        twilio_client = _build_twilio_client()
+        actions = [{"title": btn, "id": f"btn_{i}"} for i, btn in enumerate(buttons)]
+        content = twilio_client.content.v1.contents.create(
+            friendly_name=f"qr_{to_number[-6:]}",
+            language="es",
+            variables={},
+            types={
+                "twilio/quick-reply": {
+                    "body": body_text,
+                    "actions": actions,
+                }
+            },
+        )
+        message = twilio_client.messages.create(
+            from_=f"whatsapp:{from_number}",
+            to=f"whatsapp:{to_number}",
+            content_sid=content.sid,
+        )
+        logger.info(
+            "# [WHATSAPP] Quick Reply enviado a %s — SID: %s",
+            to_number,
+            message.sid,
+        )
+        return message.sid
+
+
 
 # ---------------------------------------------------------------------------
 # PRESENCE RESPONSE SERVICE

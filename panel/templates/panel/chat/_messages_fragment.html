@@ -8,8 +8,8 @@
 {# Also included in the initial render of room.html.                                            #}
 {# Renders all active ChatMessage records (last 7 days) in chronological order.                 #}
 
-{% if messages %}
-    {% for message in messages %}
+{% if chat_messages %}
+    {% for message in chat_messages %}
     <div class="d-flex mb-2
         {% if message.direction == 'OUTBOUND' %}justify-content-end{% else %}justify-content-start{% endif %}">
 

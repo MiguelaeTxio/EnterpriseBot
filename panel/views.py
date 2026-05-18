@@ -128,129 +128,61 @@ class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
 
 class WorkerSignupView(View):
     """
-    Public self-registration view for workshop operators.
-    Resolves the target company server-side (Grupo Álvarez pilot).
-    Creates an auth.User and a CompanyUser with role=WORKSHOP on valid POST.
-    No authentication required — this view is intentionally public.
-    Architecture is prepared for multi-company extension: the company
-    resolution logic is isolated in _resolve_company() for easy replacement.
+    Worker self-registration view — DEACTIVATED (H13 redesign).
+    Registration is now exclusively managed by Supervisors from the panel.
+    Both GET and POST redirect to login with an informative message.
+    The URL is preserved to avoid breaking existing links.
     ---
-    Vista de auto-registro público para operarios de taller.
-    Resuelve la empresa destino en el servidor (piloto Grupo Álvarez).
-    Crea un auth.User y un CompanyUser con rol=WORKSHOP en un POST válido.
-    No requiere autenticación — esta vista es intencionalmente pública.
-    La arquitectura está preparada para extensión multiempresa: la lógica de
-    resolución de empresa está aislada en _resolve_company() para fácil sustitución.
+    Vista de auto-registro de operarios — DESACTIVADA (rediseño H13).
+    El registro es ahora gestionado exclusivamente por los Supervisores
+    desde el panel. GET y POST redirigen al login con un mensaje informativo.
+    La URL se preserva para no romper enlaces existentes.
     """
-
-    template_name = "panel/workers/signup.html"
-
-    def _resolve_company(self):
-        """
-        Resolves the target Company for new worker registrations.
-        Current implementation: returns the Grupo Álvarez company (pilot).
-        Returns None if the company does not exist, which causes the view
-        to render an informative error page.
-        ---
-        Resuelve la Company destino para los nuevos registros de operarios.
-        Implementación actual: devuelve la empresa Grupo Álvarez (piloto).
-        Devuelve None si la empresa no existe, lo que hace que la vista
-        renderice una página de error informativa.
-        """
-        from ivr_config.models import Company
-        try:
-            return Company.objects.get(name__icontains="Álvarez")
-        except (Company.DoesNotExist, Company.MultipleObjectsReturned):
-            return None
 
     def get(self, request, *args, **kwargs):
         """
-        Renders the signup form. Redirects to operator dashboard if already
-        authenticated to avoid re-registration.
+        Redirects to login with an informative message.
         ---
-        Renderiza el formulario de registro. Redirige al panel del operario
-        si ya está autenticado para evitar re-registros.
+        Redirige al login con un mensaje informativo.
         """
-        from panel.forms import WorkerSignupForm
-        if request.user.is_authenticated:
-            return redirect("/panel/operator/")
-        company = self._resolve_company()
-        form    = WorkerSignupForm(company=company)
-        return render(request, self.template_name, {
-            "form":    form,
-            "company": company,
-        })
+        django_messages.info(
+            request,
+            "El registro de trabajadores lo gestiona el supervisor desde el panel.",
+        )
+        return redirect("/panel/login/")
 
     def post(self, request, *args, **kwargs):
         """
-        Validates the signup form. On success creates auth.User + CompanyUser
-        with role=WORKSHOP, logs the user in and redirects to operator dashboard.
-        On failure re-renders the form with validation errors.
+        Redirects to login with an informative message.
         ---
-        Valida el formulario de registro. En caso de éxito crea auth.User +
-        CompanyUser con rol=WORKSHOP, autentica al usuario y redirige al panel
-        del operario. En caso de fallo re-renderiza el formulario con errores.
+        Redirige al login con un mensaje informativo.
         """
-        from django.contrib.auth import login as auth_login
-        from django.contrib.auth.models import User as AuthUser
-        from panel.forms import WorkerSignupForm
-        company = self._resolve_company()
-        if company is None:
-            django_messages.error(
-                request,
-                "No es posible completar el registro en este momento. "
-                "Contacta con tu administrador.",
-            )
-            return render(request, self.template_name, {
-                "form":    WorkerSignupForm(),
-                "company": None,
-            })
-        form = WorkerSignupForm(request.POST, company=company)
-        if not form.is_valid():
-            return render(request, self.template_name, {
-                "form":    form,
-                "company": company,
-            })
-        # Create auth.User with the operator-chosen password.
-        # Crear auth.User con la contraseña elegida por el operario.
-        auth_user = AuthUser.objects.create_user(
-            username   = form.cleaned_data["username"],
-            first_name = form.cleaned_data["first_name"],
-            last_name  = form.cleaned_data["last_name"],
-            password   = form.cleaned_data["password"],
-            is_staff     = False,
-            is_superuser = False,
-        )
-        # Create CompanyUser linked to the resolved company with WORKSHOP role.
-        # Crear CompanyUser vinculado a la empresa resuelta con rol WORKSHOP.
-        CompanyUser.objects.create(
-            user                 = auth_user,
-            company              = company,
-            role                 = CompanyUser.ROLE_WORKSHOP,
-            is_active            = True,
-            must_change_password = False,
-            phone                = form.cleaned_data.get("phone", ""),
-            dni                  = form.cleaned_data.get("dni", ""),
-        )
-        # Log the new user in immediately after registration.
-        # Autenticar al nuevo usuario inmediatamente tras el registro.
-        auth_login(request, auth_user)
-        django_messages.success(
+        django_messages.info(
             request,
-            f"¡Bienvenido, {auth_user.first_name}! Tu cuenta ha sido creada correctamente.",
+            "El registro de trabajadores lo gestiona el supervisor desde el panel.",
         )
-        return redirect("/panel/operator/")
+        return redirect("/panel/login/")
 
 
-class CompanyUserCreateView(AdminRoleRequiredMixin, View):
+
+class CompanyUserCreateView(SupervisorAccessMixin, View):
     """
-    Allows an ADMIN to create a new CompanyUser for their company.
-    Creates the underlying auth.User with the provided initial password and sets
+    Allows a SUPERVISOR or ADMIN to create a new CompanyUser for their company.
+    Creates the underlying auth.User with password '1234' and sets
     must_change_password=True so the new user must change it on first login.
+    Optionally links the new user to a Section and creates or retrieves the
+    associated Contact record if a phone number is provided.
+    Updated H13: mixin changed to SupervisorAccessMixin; section, phone_number
+    and is_ivr_active fields added; Contact auto-creation/linking logic added.
     ---
-    Permite a un ADMIN crear un nuevo CompanyUser para su empresa.
-    Crea el auth.User subyacente con la contraseña inicial y establece
+    Permite a un SUPERVISOR o ADMIN crear un nuevo CompanyUser para su empresa.
+    Crea el auth.User subyacente con contraseña '1234' y establece
     must_change_password=True para forzar el cambio en el primer acceso.
+    Opcionalmente vincula el nuevo usuario a una Section y crea o recupera
+    el Contact asociado si se indica un número de teléfono.
+    Actualización H13: mixin cambiado a SupervisorAccessMixin; campos section,
+    phone_number e is_ivr_active añadidos; lógica de auto-creación/vinculación
+    de Contact incorporada.
     """
 
     template_name = "panel/users/create.html"
@@ -270,38 +202,69 @@ class CompanyUserCreateView(AdminRoleRequiredMixin, View):
 
     def _get_context(self, request, form=None):
         """
-        Builds base template context with company, company_user and own_presence.
+        Builds base template context with company, company_user, own_presence
+        and sections queryset for the section selector JS pre-fill.
         ---
-        Construye el contexto base con company, company_user y own_presence.
+        Construye el contexto base con company, company_user, own_presence
+        y el queryset de secciones para el pre-relleno JS del selector de sección.
         """
-        cu = request.user.company_user
+        cu      = request.user.company_user
+        company = cu.company
+        if form is None:
+            form = CompanyUserCreateForm()
+            form.fields["section"].queryset = Section.objects.filter(
+                company=company
+            ).order_by("name")
         return {
-            "company":      cu.company,
-            "company_user": cu,
-            "own_presence": self._get_own_presence(cu),
-            "active_nav":   "users",
-            "form":         form or CompanyUserCreateForm(),
+            "company":       company,
+            "company_user":  cu,
+            "own_presence":  self._get_own_presence(cu),
+            "active_nav":    "users",
+            "form":          form,
+            "sections_data": list(
+                Section.objects.filter(company=company).values(
+                    "id", "default_role"
+                )
+            ),
         }
 
     def get(self, request, *args, **kwargs):
         """
-        Renders the user creation form.
+        Renders the user creation form with section queryset scoped to company.
         ---
-        Renderiza el formulario de creación de usuario.
+        Renderiza el formulario de creación de usuario con el queryset de secciones
+        acotado a la empresa.
         """
         return render(request, self.template_name, self._get_context(request))
 
     def post(self, request, *args, **kwargs):
         """
-        Validates the form, creates auth.User and CompanyUser, redirects on success.
+        Validates the form, creates auth.User and CompanyUser, optionally creates
+        or retrieves the Contact record and links it to the new CompanyUser,
+        then optionally assigns the new user to the selected Section.
+        Redirects to user list on success.
         ---
-        Valida el formulario, crea auth.User y CompanyUser, redirige en caso de éxito.
+        Valida el formulario, crea auth.User y CompanyUser, opcionalmente crea
+        o recupera el Contact y lo vincula al nuevo CompanyUser, y opcionalmente
+        asigna el nuevo usuario a la Section seleccionada.
+        Redirige a la lista de usuarios en caso de éxito.
         """
         from django.contrib.auth.models import User as AuthUser
+
+        cu      = request.user.company_user
+        company = cu.company
+
         form = CompanyUserCreateForm(request.POST)
+        form.fields["section"].queryset = Section.objects.filter(
+            company=company
+        ).order_by("name")
+
         if not form.is_valid():
-            return render(request, self.template_name, self._get_context(request, form))
-        company = request.user.company_user.company
+            context = self._get_context(request, form)
+            return render(request, self.template_name, context)
+
+        # --- Create auth.User with initial password. ---
+        # --- Crear auth.User con contraseña inicial. ---
         auth_user = AuthUser.objects.create_user(
             username     = form.cleaned_data["username"],
             first_name   = form.cleaned_data.get("first_name", ""),
@@ -310,19 +273,78 @@ class CompanyUserCreateView(AdminRoleRequiredMixin, View):
             is_staff     = False,
             is_superuser = False,
         )
-        CompanyUser.objects.create(
+
+        # --- Create CompanyUser linked to company with chosen role. ---
+        # --- Crear CompanyUser vinculado a la empresa con el rol elegido. ---
+        new_cu = CompanyUser.objects.create(
             user                 = auth_user,
             company              = company,
             role                 = form.cleaned_data["role"],
             is_active            = True,
             must_change_password = True,
         )
+        logger.info(
+            "# [USER CREATE] CompanyUser pk=%s (username='%s') creado por %s.",
+            new_cu.pk,
+            auth_user.username,
+            request.user.username,
+        )
+
+        # --- Optionally create or retrieve Contact and link to CompanyUser. ---
+        # --- Opcionalmente crear o recuperar Contact y vincularlo al CompanyUser. ---
+        phone_number  = form.cleaned_data.get("phone_number", "")
+        is_ivr_active = form.cleaned_data.get("is_ivr_active", True)
+        section       = form.cleaned_data.get("section")
+
+        if phone_number:
+            contact, created = Contact.objects.get_or_create(
+                company      = company,
+                phone_number = phone_number,
+                defaults     = {
+                    "name": (
+                        f"{form.cleaned_data.get('first_name', '')} "
+                        f"{form.cleaned_data.get('last_name', '')}".strip()
+                        or auth_user.username
+                    ),
+                    "is_internal":  is_ivr_active,
+                    "company_user": new_cu,
+                },
+            )
+            if not created:
+                # Contact already existed — link it to the new CompanyUser.
+                # El Contact ya existía — vincularlo al nuevo CompanyUser.
+                contact.company_user = new_cu
+                contact.is_internal  = is_ivr_active
+                contact.save(update_fields=["company_user", "is_internal"])
+                logger.info(
+                    "# [USER CREATE] Contact existente pk=%s vinculado a CompanyUser pk=%s.",
+                    contact.pk,
+                    new_cu.pk,
+                )
+            else:
+                logger.info(
+                    "# [USER CREATE] Contact nuevo pk=%s creado y vinculado a CompanyUser pk=%s.",
+                    contact.pk,
+                    new_cu.pk,
+                )
+
+            # --- Add contact to section if section was selected. ---
+            # --- Añadir contacto a la sección si se seleccionó una sección. ---
+            if section is not None:
+                section.contacts.add(contact)
+                logger.info(
+                    "# [USER CREATE] Contact pk=%s añadido a Section pk=%s.",
+                    contact.pk,
+                    section.pk,
+                )
+
         django_messages.success(
             request,
-            f"Usuario '{auth_user.username}' creado. "
+            f"Usuario '{auth_user.username}' creado correctamente. "
             f"Deberá cambiar su contraseña en el primer acceso."
         )
         return redirect("/panel/users/")
+
 
 
 class CompanyUserListView(AdminRoleRequiredMixin, ListView):
@@ -544,7 +566,7 @@ class SectionListView(AdminRoleRequiredMixin, ListView):
         ).order_by("-starts_at").first()
 
 
-class SectionCreateView(AdminRoleRequiredMixin, CreateView):
+class SectionCreateView(SupervisorAccessMixin, CreateView):
     """
     Allows an ADMIN to create a new Section for their company.
     Automatically assigns the company from the authenticated user's CompanyUser.
@@ -706,6 +728,7 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
         context["own_presence"] = self._get_own_presence()
         context["active_nav"] = "sections"
         context["action"] = "Crear"
+        context["section_workers"] = []
         if "schedule_formset" not in context:
             ScheduleFormSet = self._get_schedule_formset_class()
             context["schedule_formset"] = ScheduleFormSet(
@@ -731,7 +754,7 @@ class SectionCreateView(AdminRoleRequiredMixin, CreateView):
         ).order_by("-starts_at").first()
 
 
-class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
+class SectionUpdateView(SupervisorAccessMixin, UpdateView):
     """
     Allows an ADMIN to update an existing Section belonging to their company.
     Prevents editing sections from other companies.
@@ -911,6 +934,21 @@ class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
         context["own_presence"] = self._get_own_presence()
         context["active_nav"] = "sections"
         context["action"] = "Guardar"
+        # Build enriched worker list from contacts assigned to this section.
+        # Construir lista de trabajadores desde los contactos asignados a esta sección.
+        _section_contacts = (
+            self.object.contacts
+            .filter(company_user__isnull=False)
+            .select_related("company_user__user")
+            .order_by("company_user__user__username")
+        )
+        _workers = []
+        for _contact in _section_contacts:
+            _cu = _contact.company_user
+            _cu.contact_phone = _contact.phone_number or ""
+            _cu.is_ivr_active = _contact.is_internal
+            _workers.append(_cu)
+        context["section_workers"] = _workers
         if "schedule_formset" not in context:
             ScheduleFormSet = self._get_schedule_formset_class()
             context["schedule_formset"] = ScheduleFormSet(
@@ -1051,6 +1089,7 @@ class ContactCreateView(AdminRoleRequiredMixin, CreateView):
         context["own_presence"] = self._get_own_presence()
         context["active_nav"] = "contacts"
         context["action"] = "Crear"
+        context["section_workers"] = []
         return context
 
     def _get_own_presence(self):
@@ -1281,6 +1320,7 @@ class CallFlowCreateView(AdminRoleRequiredMixin, CreateView):
         context["own_presence"] = self._get_own_presence()
         context["active_nav"] = "callflows"
         context["action"] = "Crear"
+        context["section_workers"] = []
         return context
 
     def _get_own_presence(self):
@@ -2547,6 +2587,7 @@ class DataCaptureSetCreateView(AdminRoleRequiredMixin, CreateView):
         context["own_presence"] = self._get_own_presence()
         context["active_nav"] = "datacapturesets"
         context["action"] = "Crear"
+        context["section_workers"] = []
         context["existing_fields_json"] = json.dumps([])
         return context
 
@@ -2631,6 +2672,13 @@ class DataCaptureSetUpdateView(AdminRoleRequiredMixin, UpdateView):
         context["own_presence"] = self._get_own_presence()
         context["active_nav"] = "datacapturesets"
         context["action"] = "Guardar"
+        context["section_workers"] = list(
+            CompanyUser.objects.filter(
+                company=self.request.user.company_user.company,
+                user__isnull=False,
+                contact_profile__section=self.object,
+            ).select_related("user", "contact").order_by("user__username")
+        )
         context["existing_fields_json"] = json.dumps(self.object.fields or [])
         return context
 
@@ -12797,4 +12845,37 @@ class WorkOrderDescriptionAutocompleteView(WorkshopRequiredMixin, View):
         )
 
         return JsonResponse({"results": list(qs)})
+
+
+
+class SectionDefaultRoleView(SupervisorAccessMixin, View):
+    """
+    AJAX endpoint that returns the default_role of a Section as JSON.
+    Used by the user creation form to pre-fill the role selector when
+    a section is chosen from the dropdown.
+    ---
+    Endpoint AJAX que devuelve el default_role de una Section como JSON.
+    Usado por el formulario de creación de usuario para pre-rellenar el
+    selector de rol cuando se elige una sección del desplegable.
+    """
+
+    def get(self, request, pk, *args, **kwargs):
+        """
+        Returns JSON {"default_role": "<ROLE>"} for the requested section pk,
+        restricted to the authenticated user's company.
+        Returns HTTP 404 if the section does not exist or belongs to another company.
+        ---
+        Retorna JSON {"default_role": "<ROLE>"} para el pk de sección solicitado,
+        restringido a la empresa del usuario autenticado.
+        Retorna HTTP 404 si la sección no existe o pertenece a otra empresa.
+        """
+        from django.http import JsonResponse
+        try:
+            section = Section.objects.get(
+                pk      = pk,
+                company = request.user.company_user.company,
+            )
+        except Section.DoesNotExist:
+            return JsonResponse({"error": "Sección no encontrada."}, status=404)
+        return JsonResponse({"default_role": section.default_role})
 

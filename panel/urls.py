@@ -89,6 +89,7 @@ from panel.views import (
     AbsenceCategoryCreateView,
     AbsenceCategoryUpdateView,
     AbsenceCategoryToggleView,
+    SectionDefaultRoleView,
 )
 
 from chat.views import (
@@ -308,6 +309,9 @@ urlpatterns = [
     path("fleet/<int:pk>/deactivate/", MachineAssetDeactivateView.as_view(), name="fleet_deactivate"),
     path("fleet/<int:pk>/reactivate/", MachineAssetReactivateView.as_view(), name="fleet_reactivate"),
     path("fleet/<int:pk>/delete/", MachineAssetDeleteView.as_view(), name="fleet_delete"),
+
+    # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
+    path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),
 
     # Chat IRC — Salas de chat por sección (Hito 13 Paso 4).
     path("chat/", ChatRoomListView.as_view(), name="chat_room_list"),
