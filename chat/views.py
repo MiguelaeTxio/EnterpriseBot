@@ -126,15 +126,35 @@ class ChatRoomView(CompanyUserRequiredMixin, View):
         # Detectar alias ausente — se mostrará el modal en la plantilla.
         alias_required = not bool(company_user.alias)
 
+        # Resolve section members for the side panel — CompanyUser records
+        # assigned to the room's section, ordered by alias.
+        # Only populated for SECTION rooms; BREAKDOWNS rooms have no section.
+        # Resolver miembros de la sección para el panel lateral — registros
+        # CompanyUser asignados a la sección de la sala, ordenados por alias.
+        # Solo se rellena para salas SECTION; las salas BREAKDOWNS no tienen sección.
+        section_members = []
+        if room.section is not None:
+            from ivr_config.models import CompanyUser
+            section_members = list(
+                CompanyUser.objects.filter(
+                    company=company,
+                    is_active=True,
+                    contact_profile__sections=room.section,
+                ).select_related("user")
+                .order_by("alias", "user__username")
+                .distinct()
+            )
+
         return render(request, self.template_name, {
-            "room":           room,
-            "chat_messages":  messages,
-            "company":        company,
-            "company_user":   company_user,
-            "own_presence":   own_presence,
-            "active_nav":     "chat",
-            "can_send":       can_send,
-            "alias_required": alias_required,
+            "room":            room,
+            "chat_messages":   messages,
+            "company":         company,
+            "company_user":    company_user,
+            "own_presence":    own_presence,
+            "active_nav":      "chat",
+            "can_send":        can_send,
+            "alias_required":  alias_required,
+            "section_members": section_members,
         })
 
 

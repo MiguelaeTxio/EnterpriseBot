@@ -199,6 +199,8 @@ def dispatch_inbound_message(
     if not _resolve_alias(contact):
         consumed = _handle_alias_collection(
             contact=contact,
+            section=section,
+            room=room,
             body=body,
             from_number=from_number,
             to_number=to_number,
@@ -224,6 +226,8 @@ def dispatch_inbound_message(
 
 def _handle_alias_collection(
     contact: Contact,
+    section,
+    room,
     body: str,
     from_number: str,
     to_number: str,
@@ -325,29 +329,77 @@ def _handle_alias_collection(
         contact.alias_onboarding_proposed = proposed_alias
         contact.save(update_fields=["alias_onboarding_step", "alias_onboarding_proposed"])
 
-        confirmation_body = (
-            f"Hemos recibido tu nombre: *{proposed_alias}*. "
-            "Este sera tu alias en el chat de grupo de tu seccion. "
-            "Confirmas que quieres usar este nombre?"
-        )
+        # Attempt to send quick-reply buttons via the pre-registered
+        # alias_confirmation Content Template (HX...). If the template is not
+        # found in DB or the Twilio API call fails, fall back to a plain-text
+        # reply so the onboarding flow is never silently broken.
+        # Intentar enviar botones de respuesta rápida vía el Content Template
+        # alias_confirmation pre-registrado (HX...). Si el template no se
+        # encuentra en BD o la llamada a la API de Twilio falla, caer a un
+        # reply de texto plano para que el flujo de onboarding nunca se rompa
+        # silenciosamente.
+        from whatsapp.models import WhatsAppTemplate
+
+        _quick_reply_sent = False
         try:
+            _alias_template = WhatsAppTemplate.objects.get(
+                company=contact.company,
+                name="alias_confirmation",
+                is_active=True,
+            )
             WhatsAppChatService.send_quick_reply(
                 from_number=to_number,
                 to_number=from_number,
-                body_text=confirmation_body,
-                buttons=["Si, usar este nombre", "Cambiar nombre"],
+                content_sid=_alias_template.content_sid,
+                content_variables={"1": proposed_alias},
             )
+            _quick_reply_sent = True
             logger.info(
                 "# [CHAT DISPATCH] Confirmacion de alias con botones enviada a %s para alias '%s'.",
                 from_number,
                 proposed_alias,
             )
+        except WhatsAppTemplate.DoesNotExist:
+            logger.error(
+                "# [CHAT DISPATCH] Template alias_confirmation no encontrado en BD "
+                "para empresa pk=%s — activando fallback a texto plano.",
+                contact.company_id,
+            )
         except Exception as exc:
             logger.error(
-                "# [CHAT DISPATCH] Error enviando confirmacion de alias a %s: %s",
+                "# [CHAT DISPATCH] Error enviando confirmacion de alias con botones "
+                "a %s — activando fallback a texto plano. Error: %s",
                 from_number,
                 exc,
             )
+
+        if not _quick_reply_sent:
+            # --- Fallback: plain-text confirmation with explicit instruction. ---
+            # --- Fallback: confirmacion en texto plano con instruccion explicita. ---
+            fallback_confirmation = (
+                f"Hemos recibido tu nombre: *{proposed_alias}*. "
+                "Este sera tu alias en el chat de grupo de tu seccion. "
+                "Confirmas que quieres usar este nombre?\n\n"
+                "Responde con una de las siguientes opciones: "
+                "\"Si, usar este nombre\" / \"Cambiar nombre\""
+            )
+            try:
+                WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=fallback_confirmation,
+                )
+                logger.info(
+                    "# [CHAT DISPATCH] Fallback de texto plano enviado a %s para alias '%s'.",
+                    from_number,
+                    proposed_alias,
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [CHAT DISPATCH] Error enviando fallback de confirmacion a %s: %s",
+                    from_number,
+                    exc,
+                )
         return True
 
     # --- Step C: Confirming — save alias or re-ask. ---
@@ -398,6 +450,39 @@ def _handle_alias_collection(
                     from_number,
                     exc,
                 )
+
+            # Relay the last pending OUTBOUND message from the room so the
+            # contact receives the message that triggered the onboarding.
+            # The body already carries the canonical format "{alias}: {body}"
+            # — relay it as-is, no additional prefix needed.
+            # Reenviar el ultimo mensaje OUTBOUND pendiente de la sala para
+            # que el contacto reciba el mensaje que origino el onboarding.
+            # El body ya lleva el formato canonico "{alias}: {body}"
+            # — se reenvía tal cual, sin prefijo adicional.
+            try:
+                last_outbound = ChatMessage.objects.filter(
+                    room=room,
+                    direction=ChatMessage.DIRECTION_OUTBOUND,
+                ).order_by("-created_at").first()
+
+                if last_outbound and last_outbound.body:
+                    WhatsAppChatService.send_reply(
+                        from_number=to_number,
+                        to_number=from_number,
+                        reply_text=last_outbound.body,
+                    )
+                    logger.info(
+                        "# [CHAT DISPATCH] Mensaje pendiente reenviado a '%s' (%s): '%s'.",
+                        proposed_alias,
+                        from_number,
+                        last_outbound.body,
+                    )
+            except Exception as exc:
+                logger.error(
+                    "# [CHAT DISPATCH] Error reenviando mensaje pendiente a %s: %s",
+                    from_number,
+                    exc,
+                )
         else:
             # Interpret body as a new proposed alias.
             # Interpretar body como nuevo alias propuesto.
@@ -423,27 +508,70 @@ def _handle_alias_collection(
             contact.alias_onboarding_proposed = new_alias
             contact.save(update_fields=["alias_onboarding_proposed"])
 
-            re_confirmation_body = (
-                f"De acuerdo, usamos *{new_alias}* como tu nombre en el grupo?"
-            )
+            # Attempt quick-reply re-confirmation via alias_confirmation template.
+            # Fall back to plain text if template not found or API fails.
+            # Intentar re-confirmacion con botones vía template alias_confirmation.
+            # Caer a texto plano si el template no se encuentra o la API falla.
+            from whatsapp.models import WhatsAppTemplate
+
+            _reconfirm_sent = False
             try:
+                _alias_template = WhatsAppTemplate.objects.get(
+                    company=contact.company,
+                    name="alias_confirmation",
+                    is_active=True,
+                )
                 WhatsAppChatService.send_quick_reply(
                     from_number=to_number,
                     to_number=from_number,
-                    body_text=re_confirmation_body,
-                    buttons=["Si, usar este nombre", "Cambiar nombre"],
+                    content_sid=_alias_template.content_sid,
+                    content_variables={"1": new_alias},
                 )
+                _reconfirm_sent = True
                 logger.info(
                     "# [CHAT DISPATCH] Re-confirmacion de alias con botones enviada a %s para alias '%s'.",
                     from_number,
                     new_alias,
                 )
+            except WhatsAppTemplate.DoesNotExist:
+                logger.error(
+                    "# [CHAT DISPATCH] Template alias_confirmation no encontrado en BD "
+                    "para empresa pk=%s — activando fallback a texto plano.",
+                    contact.company_id,
+                )
             except Exception as exc:
                 logger.error(
-                    "# [CHAT DISPATCH] Error enviando re-confirmacion de alias a %s: %s",
+                    "# [CHAT DISPATCH] Error enviando re-confirmacion con botones "
+                    "a %s — activando fallback a texto plano. Error: %s",
                     from_number,
                     exc,
                 )
+
+            if not _reconfirm_sent:
+                # --- Fallback: plain-text re-confirmation. ---
+                # --- Fallback: re-confirmacion en texto plano. ---
+                fallback_reconfirmation = (
+                    f"De acuerdo, usamos *{new_alias}* como tu nombre en el grupo?\n\n"
+                    "Responde con una de las siguientes opciones: "
+                    "\"Si, usar este nombre\" / \"Cambiar nombre\""
+                )
+                try:
+                    WhatsAppChatService.send_reply(
+                        from_number=to_number,
+                        to_number=from_number,
+                        reply_text=fallback_reconfirmation,
+                    )
+                    logger.info(
+                        "# [CHAT DISPATCH] Fallback de re-confirmacion enviado a %s para alias '%s'.",
+                        from_number,
+                        new_alias,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "# [CHAT DISPATCH] Error enviando fallback de re-confirmacion a %s: %s",
+                        from_number,
+                        exc,
+                    )
 
     return True
 

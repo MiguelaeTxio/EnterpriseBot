@@ -594,27 +594,54 @@ class WhatsAppChatService:
         cls,
         from_number: str,
         to_number: str,
-        body_text: str,
-        buttons: list,
+        content_sid: str,
+        content_variables: dict,
     ) -> str:
+        """
+        Sends a WhatsApp quick-reply message using a pre-registered Twilio
+        Content Template identified by content_sid. The template must exist
+        in the Twilio account (created via Content Template Builder or Content
+        API) and must NOT have been submitted for Meta approval, so it can be
+        sent in-session without approval within the 24-hour window.
+
+        content_variables is a dict mapping variable placeholders to their
+        runtime values, e.g. {"1": "MiguelTxio"}. It is serialised to a JSON
+        string before being passed to the Twilio Messages API, as required by
+        the SDK.
+
+        If messages.create() fails for any reason, the method raises the
+        exception so the caller (_handle_alias_collection) can handle it and
+        fall back to a plain-text reply via send_reply().
+
+        Returns the Twilio message SID on success.
+        ---
+        Envía un mensaje de WhatsApp de respuesta rápida usando un Content
+        Template de Twilio pre-registrado identificado por content_sid. El
+        template debe existir en la cuenta de Twilio (creado vía Content
+        Template Builder o Content API) y NO debe haber sido enviado a
+        aprobación de Meta, para poder enviarse en sesión sin aprobación
+        dentro de la ventana de 24 horas.
+
+        content_variables es un dict que mapea los placeholders de variables
+        a sus valores en tiempo de ejecución, p. ej. {"1": "MiguelTxio"}.
+        Se serializa a cadena JSON antes de pasarse a la API de Mensajes de
+        Twilio, tal como requiere el SDK.
+
+        Si messages.create() falla por cualquier motivo, el método relanza
+        la excepción para que el llamador (_handle_alias_collection) pueda
+        gestionarla y caer a un reply de texto plano vía send_reply().
+
+        Devuelve el SID del mensaje Twilio en caso de éxito.
+        """
         import json
+
         twilio_client = _build_twilio_client()
-        actions = [{"title": btn, "id": f"btn_{i}"} for i, btn in enumerate(buttons)]
-        content = twilio_client.content.v1.contents.create(
-            friendly_name=f"qr_{to_number[-6:]}",
-            language="es",
-            variables={},
-            types={
-                "twilio/quick-reply": {
-                    "body": body_text,
-                    "actions": actions,
-                }
-            },
-        )
+
         message = twilio_client.messages.create(
             from_=f"whatsapp:{from_number}",
             to=f"whatsapp:{to_number}",
-            content_sid=content.sid,
+            content_sid=content_sid,
+            content_variables=json.dumps(content_variables),
         )
         logger.info(
             "# [WHATSAPP] Quick Reply enviado a %s — SID: %s",

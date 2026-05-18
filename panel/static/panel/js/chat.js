@@ -164,7 +164,17 @@
                     input.value      = body;
                     sendBtn.disabled = false;
                 } else {
+                    /* Send successful — trigger immediate HTMX refresh so the
+                       sent message appears instantly without waiting for the
+                       next 3-second polling cycle.
+                       Envío exitoso — disparar refresco HTMX inmediato para que
+                       el mensaje enviado aparezca al instante sin esperar el
+                       próximo ciclo de polling de 3 segundos. */
                     sendBtn.disabled = false;
+                    var container = document.getElementById("chat-messages-container");
+                    if (container && window.htmx) {
+                        htmx.trigger(container, "refresh");
+                    }
                 }
             })
             .catch(function (err) {
@@ -195,13 +205,16 @@
     }
 
     /* ================================================================
-     * AUTO-SCROLL after HTMX swap.
-     * Auto-scroll tras cada swap de HTMX.
+     * AUTO-SCROLL
+     * Managed by chatScrollIfNewMessages() in room.html — called via
+     * hx-on::after-swap on #chat-messages-container. The htmx:afterSwap
+     * global listener is intentionally removed here to avoid overriding
+     * the conditional scroll logic and forcing scroll on every poll.
+     * ---
+     * Gestionado por chatScrollIfNewMessages() en room.html — llamado vía
+     * hx-on::after-swap en #chat-messages-container. El listener global
+     * htmx:afterSwap se elimina aquí intencionalmente para no sobreescribir
+     * la lógica de scroll condicional y forzar scroll en cada polling.
      * ================================================================ */
-    document.addEventListener("htmx:afterSwap", function (event) {
-        if (event.detail.target && event.detail.target.id === "chat-messages-container") {
-            event.detail.target.scrollTop = event.detail.target.scrollHeight;
-        }
-    });
 
 }());

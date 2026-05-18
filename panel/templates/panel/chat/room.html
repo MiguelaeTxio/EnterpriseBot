@@ -4,11 +4,15 @@
 {# Muestra el historial de mensajes de los últimos 7 días.                         #}
 {# Polling HTMX cada 3 segundos al endpoint de mensajes.                           #}
 {# Envío de mensajes disponible para ADMIN y SUPERVISOR (can_send=True).           #}
+{# Panel lateral de miembros colapsable — toggle de tres puntos verticales.        #}
+{# Auto-scroll al último mensaje al cargar y tras cada polling HTMX.              #}
 {#                                                                                  #}
 {# Full IRC-style chat room page.                                                   #}
 {# Shows the last 7 days of message history.                                        #}
 {# HTMX polling every 3 seconds to the messages endpoint.                           #}
 {# Message sending available to ADMIN and SUPERVISOR (can_send=True).              #}
+{# Collapsible members side panel — three-dot vertical toggle.                     #}
+{# Auto-scroll to last message on load and after each HTMX poll.                  #}
 {% extends "panel/base.html" %}
 
 {% block title %}{{ room.name }}{% endblock %}
@@ -20,7 +24,7 @@
     {# ------------------------------------------------------------------ #}
     {# Cabecera de sala / Room header                                       #}
     {# ------------------------------------------------------------------ #}
-    <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-shrink-0">
         <div>
             <a href="{% url 'chat:room_list' %}"
                class="btn btn-sm btn-outline-secondary me-2">
@@ -41,57 +45,103 @@
     </div>
 
     {# ------------------------------------------------------------------ #}
-    {# Contenedor de mensajes con polling HTMX / Message container + poll  #}
+    {# Card principal: layout de chat + panel lateral                      #}
+    {# Main card: chat layout + side panel                                 #}
     {# ------------------------------------------------------------------ #}
     <div class="card flex-grow-1 shadow-sm border-0 d-flex flex-column overflow-hidden">
-        <div class="card-body p-0 d-flex flex-column">
+        <div class="card-body p-0 d-flex flex-column overflow-hidden">
 
-            {# Polling HTMX: refresca el fragmento de mensajes cada 3s.    #}
-            {# HTMX polling: refreshes the messages fragment every 3s.      #}
-            <div id="chat-messages-container"
-                 class="flex-grow-1 overflow-y-auto p-3"
-                 hx-get="{% url 'chat:room_messages' room.pk %}"
-                 hx-trigger="every 3s"
-                 hx-swap="innerHTML"
-                 hx-target="#chat-messages-container">
+            {# Layout: área de mensajes + toggle + panel lateral           #}
+            {# Layout: messages area + toggle + side panel                 #}
+            <div class="chat-layout">
 
-                {# Renderizado inicial — mismo fragmento que devuelve el polling. #}
-                {# Initial render — same fragment returned by the polling view.    #}
-                {% include "panel/chat/_messages_fragment.html" %}
+                {# -------------------------------------------------------- #}
+                {# Área de mensajes                                          #}
+                {# Messages area                                             #}
+                {# -------------------------------------------------------- #}
+                <div class="chat-messages-area">
 
-            </div>
+                    {# Polling HTMX: refresca el fragmento cada 3s.         #}
+                    {# HTMX polling: refreshes the fragment every 3s.        #}
+                    <div id="chat-messages-container"
+                         class="flex-grow-1 overflow-y-auto p-3 min-h-0"
+                         hx-get="{% url 'chat:room_messages' room.pk %}"
+                         hx-trigger="every 3s, refresh"
+                         hx-swap="innerHTML"
+                         hx-target="#chat-messages-container"
+                         hx-on::after-swap="chatScrollIfNewMessages(this)">
 
-            {# ---------------------------------------------------------------- #}
-            {# Caja de envío — visible solo si can_send=True                    #}
-            {# Send box — visible only when can_send=True                       #}
-            {# ---------------------------------------------------------------- #}
-            {% if can_send %}
-            <div class="border-top p-3 bg-light">
-                <div class="d-flex gap-2">
-                    <input type="text"
-                           id="chat-input"
-                           class="form-control"
-                           placeholder="Escribe un mensaje..."
-                           autocomplete="off"
-                           maxlength="2000">
-                    <button class="btn btn-primary"
-                            id="chat-send-btn"
-                            data-room-pk="{{ room.pk }}"
-                            disabled>
-                        <i class="bi bi-send"></i>
-                    </button>
+                        {# Renderizado inicial — mismo fragmento que el polling. #}
+                        {# Initial render — same fragment as polling view.        #}
+                        {% include "panel/chat/_messages_fragment.html" %}
+
+                    </div>
+
+                    {# ---------------------------------------------------- #}
+                    {# Caja de envío / Send box                               #}
+                    {# ---------------------------------------------------- #}
+                    {% if can_send %}
+                    <div class="border-top p-3 bg-light flex-shrink-0">
+                        <div class="d-flex gap-2">
+                            <input type="text"
+                                   id="chat-input"
+                                   class="form-control"
+                                   placeholder="Escribe un mensaje..."
+                                   autocomplete="off"
+                                   maxlength="2000">
+                            <button class="btn btn-primary"
+                                    id="chat-send-btn"
+                                    data-room-pk="{{ room.pk }}"
+                                    disabled>
+                                <i class="bi bi-send"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="border-top p-2 bg-light text-center text-muted small flex-shrink-0">
+                        <i class="bi bi-eye me-1"></i>Solo lectura — tu rol no permite enviar mensajes.
+                    </div>
+                    {% endif %}
+
+                </div>{# /chat-messages-area #}
+
+                {# -------------------------------------------------------- #}
+                {# Toggle de tres puntos verticales                          #}
+                {# Three-dot vertical toggle                                 #}
+                {# -------------------------------------------------------- #}
+                {% if section_members %}
+                <div class="chat-members-toggle"
+                     id="chat-members-toggle"
+                     title="Mostrar / ocultar miembros">
+                    ⋮
                 </div>
-            </div>
-            {% else %}
-            <div class="border-top p-2 bg-light text-center text-muted small">
-                <i class="bi bi-eye me-1"></i>Solo lectura — tu rol no permite enviar mensajes.
-            </div>
-            {% endif %}
+
+                {# -------------------------------------------------------- #}
+                {# Panel lateral de miembros — colapsado por defecto         #}
+                {# Members side panel — collapsed by default                 #}
+                {# -------------------------------------------------------- #}
+                <div class="chat-members-panel" id="chat-members-panel">
+                    <div class="chat-members-header">
+                        <i class="bi bi-people me-1"></i>Miembros
+                    </div>
+                    <div class="chat-members-list">
+                        {% for member in section_members %}
+                        <div class="chat-member-item">
+                            <i class="bi bi-circle-fill"></i>
+                            {{ member.alias|default:member.user.username }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+            </div>{# /chat-layout #}
 
         </div>
     </div>
 
 </div>
+
 {# ------------------------------------------------------------------ #}
 {# Modal de alias — visible solo si alias_required=True               #}
 {# Alias modal — shown only when alias_required=True                  #}
@@ -136,4 +186,56 @@
 
 {% endblock %}
 
-{% block extra_scripts %}{% endblock %}
+{% block extra_scripts %}
+<script>
+/* Scroll forzado al último mensaje — usado solo al cargar la página
+   y tras enviar un mensaje desde el panel.
+   Forced scroll to last message — used only on page load and after
+   sending a message from the panel. */
+function chatScrollToBottom() {
+    var container = document.getElementById('chat-messages-container');
+    if (container) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+/* Scroll condicional tras polling HTMX — solo desplaza si el número
+   de mensajes ha aumentado respecto al último polling. Evita que el
+   usuario pierda su posición de lectura durante el polling periódico.
+   Conditional scroll after HTMX polling — only scrolls if the message
+   count has increased since the last poll. Prevents the user from losing
+   their reading position during periodic polling. */
+var _chatLastMessageCount = 0;
+function chatScrollIfNewMessages(container) {
+    var current = container.querySelectorAll('.chat-bubble').length;
+    if (current > _chatLastMessageCount) {
+        _chatLastMessageCount = current;
+        container.scrollTop = container.scrollHeight;
+    } else {
+        _chatLastMessageCount = current;
+    }
+}
+
+/* Toggle del panel lateral de miembros.
+   Members side panel toggle. */
+document.addEventListener('DOMContentLoaded', function () {
+    /* Inicializar el conteo de mensajes en la carga inicial y hacer
+       scroll al último mensaje.
+       Initialise message count on initial load and scroll to last message. */
+    var container = document.getElementById('chat-messages-container');
+    if (container) {
+        _chatLastMessageCount = container.querySelectorAll('.chat-bubble').length;
+        chatScrollToBottom();
+    }
+
+    var toggle = document.getElementById('chat-members-toggle');
+    var panel  = document.getElementById('chat-members-panel');
+
+    if (toggle && panel) {
+        toggle.addEventListener('click', function () {
+            panel.classList.toggle('open');
+        });
+    }
+});
+</script>
+{% endblock %}
