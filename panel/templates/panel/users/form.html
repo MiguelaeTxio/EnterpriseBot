@@ -127,6 +127,27 @@
                         </div>
                     </div>
 
+                    <!-- phone_number field — Campo de teléfono -->
+                    <div class="mb-4">
+                        <label for="id_phone_number" class="form-label fw-medium">
+                            Teléfono
+                        </label>
+                        <input
+                            type="text"
+                            id="id_phone_number"
+                            name="phone_number"
+                            class="form-control"
+                            value="{{ contact_phone }}"
+                            placeholder="+34XXXXXXXXX"
+                            autocomplete="off"
+                        >
+                        <div class="form-text">
+                            Número en formato E.164 (ej. +34612345678).
+                            Necesario para recibir mensajes de WhatsApp.
+                            Si se deja vacío, el campo no se modifica.
+                        </div>
+                    </div>
+
                     <!-- Submit buttons — Botones de envío -->
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-dark px-4">

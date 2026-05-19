@@ -24,3 +24,12 @@ class ChatConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "chat"
     verbose_name = "Chat de Secciones"
+
+    def ready(self):
+        # Connects the post_save signal on Section to automatically
+        # create a ChatRoom of type SECTION on new Section creation.
+        # ---
+        # Conecta la signal post_save sobre Section para crear
+        # automaticamente una ChatRoom de tipo SECTION al crear una
+        # nueva Section.
+        import chat.signals  # noqa: F401

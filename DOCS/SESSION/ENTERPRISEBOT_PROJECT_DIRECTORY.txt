@@ -16,6 +16,7 @@
 ./vox_bridge/management/__init__.py
 ./vox_bridge/services.py
 ./chat/urls.py
+./chat/signals.py
 ./chat/admin.py
 ./chat/__init__.py
 ./chat/views.py

@@ -49,7 +49,7 @@ Estado: PENDIENTE REDISENO (S021) — arquitectura de dictado global descartada.
 Ver seccion 2.37 para el nuevo diseno aprobado.
 
 #### Via C — Upload (foto/PDF manuscrito con Gemini Vision)
-Estado: COMPLETADO (S032).
+Estado: COMPLETADO (S033).
 - WorkOrderEntryUploadView: rasteriza la imagen/PDF y llama a
   extract_work_order_page_full() (prompt completo, cara delantera + trasera).
 - WorkOrderEntryConfirmView: formulario de confirmacion completo con
@@ -60,9 +60,12 @@ Estado: COMPLETADO (S032).
 - repair_notes obligatorio en todas las vias desde S032: Gate 2 server-side en
   WorkOrderEntryConfirmView.post() y WorkOrderEntryFormView.post(); Gate 2
   client-side en confirm_entry.html y form_entry_assets.js.
-- Validacion client-side de confirm_entry.html alineada con form_entry.html (S033):
-  field-optional en or_val, asterisco y field-flagged en repair_notes, Gate 2
-  repair_notes en submit JS.
+- Validacion client-side de confirm_entry.html completamente alineada con
+  form_entry.html (S033): field-optional en or_val, asterisco en label de
+  fault_description, asterisco y field-flagged en repair_notes, Gate 2
+  repair_notes en submit JS. Texto de ayuda por campo (small.text-warning)
+  cuando Gemini asigna flag al campo — senaliza baja confianza de extraccion
+  directamente sobre el input afectado.
 - Prompt de extraccion unificado en S032: extract_work_order_page() pasa a usar
   _EXTRACTION_PROMPT_FULL. Pipeline PDF historico e igual calidad de extraccion
   que Via C desde S032.
@@ -91,6 +94,14 @@ Nota S032 — Unificacion de prompt: extract_work_order_page() (pipeline PDF
 historico) unificada a _EXTRACTION_PROMPT_FULL. Ambas rutas (pipeline PDF y
 Via C) usan ahora el mismo prompt de maxima calidad desde S032. _EXTRACTION_PROMPT
 queda obsoleto en la practica aunque se conserva por compatibilidad.
+
+Nota S033 — Uso de flags en confirm_entry.html: los flags devueltos por Gemini
+por campo (MAQUINA, H.C., H.F., DESCRIPCION, REFERENCIA, MATERIAL, UNIDADES,
+PROCEDENCIA) se usan ahora para mostrar un texto de ayuda contextual bajo cada
+input afectado, indicando al operario que ese campo no pudo leerse con certeza.
+La senalizacion visual (field-flagged + small.text-warning) opera de forma
+independiente para campo vacio (solo field-flagged) y campo con flag Gemini
+(field-flagged + texto de ayuda).
 
 ### 2.5. Correccion multiempresa en _resolve_machine_asset
 
@@ -144,8 +155,13 @@ Barrera server-side en WorkOrderEntryConfirmView.post() y WorkOrderEntryFormView
   Gate 3: cada repuesto tiene material no vacio y quantity positiva.
 
 Barrera client-side en confirm_entry.html y form_entry.html replica las tres gates.
-confirm_entry.html alineada con form_entry.html en S033: field-optional en or_val,
-asterisco y field-flagged en repair_notes, Gate 2 repair_notes en submit JS.
+confirm_entry.html completamente alineada con form_entry.html en S033:
+  - field-optional en or_val.
+  - field-flagged en repair_notes + asterisco en label.
+  - asterisco en label de fault_description (campo obligatorio Gate 2).
+  - Gate 2 repair_notes en submit JS.
+  - Texto de ayuda small.text-warning bajo cada campo con flag Gemini,
+    independiente de la senalizacion por campo vacio.
 
 ### 2.11. Correccion identificadores Regla de Oro del Idioma (sesion 008)
 
@@ -900,68 +916,118 @@ ADVERTENCIAS CRITICAS — mantener siempre presentes:
   form_entry_assets.js: URLs Django inyectadas via window.EB_CONFIG en el template.
   Si se anaden nuevas URLs Django al JS, anadirlas primero al bloque EB_CONFIG.
 
-### ORDEN DE IMPLEMENTACION (estricto)
+### REGISTRO DE SESION S033 (2026-05-19)
 
-  PRIMERA ACCION — Rediseno validacion Via C (confirm_entry.html).
-  SEGUNDA ACCION — Actualizacion tecnica de secciones del anexo V07.
+PRIMERA ACCION completada — Rediseno validacion Via C (confirm_entry.html):
+  - Asterisco en label de fault_description (campo obligatorio Gate 2).
+  - small.text-warning bajo cada campo con flag Gemini (9 patchers):
+    MAQUINA, H.C., H.F., DESCRIPCION en entradas;
+    REFERENCIA, MATERIAL, UNIDADES, PROCEDENCIA en repuestos.
+  - Texto: 'Gemini no pudo leer este campo con certeza — revisa el valor
+    antes de guardar.' — aparece solo cuando el flag esta presente,
+    independientemente de si el campo esta vacio.
+  - djlint: 0 errores.
 
-### PRIMERA ACCION — Rediseno validacion Via C
+SEGUNDA ACCION completada — Actualizacion tecnica del anexo V07:
+  - Seccion 2.2 Via C: estado COMPLETADO (S033), nota S033 sobre flags.
+  - Seccion 2.4: nota S033 sobre uso de flags en confirm_entry.html.
+  - Seccion 2.10: Gate 2 y alineacion client-side documentados al completo.
 
-  La validacion del formulario de confirmacion de la Via C (confirm_entry.html)
-  es actualmente precaria e inconsistente con la Via A. Se requiere un rediseno
-  completo que cubra:
+Incidencias on-fly resueltas en S033 (fuera del H7):
+  H13 — Salas de chat no se creaban al crear seccion nueva:
+    chat/signals.py creado (signal post_save sobre Section).
+    chat/apps.py: ready() conecta la signal.
+    init_chat_rooms: filtro is_active=True eliminado de Section.
+    3 salas nuevas creadas: Asistencia, Elevacion, Taller Mecanico.
+  Panel — Gestion de trabajadores por seccion:
+    SectionUpdateView/form.html: boton desvincular trabajador de seccion.
+    CompanyUserSectionUnlinkView: POST /panel/users/<pk>/unlink-section/.
+    CompanyUserListView: filtro ?section=<pk> en lista de usuarios.
+    users/list.html: select de seccion con submit automatico.
+    CompanyUserCreateView: Contact creado siempre al asignar seccion
+      aunque no haya telefono (fix bug trabajadores sin Contact).
+    Contactos IVR: excluidos roles WORKSHOP y DRIVER de todos los
+      selectores de contacto en secciones y CallFlows.
+    CompanyUserUpdateView: campo telefono en formulario de edicion;
+      get_context_data pre-rellena desde Contact vinculado;
+      post() actualiza o crea Contact con nuevo phone_number.
+    chat/services.py: mensaje de bienvenida WhatsApp ampliado:
+      Rama A (CompanyUser ya existe): envia credenciales si
+        must_change_password=True, distinguiendo usuario del panel
+        de alias del chat.
+      Rama B (nuevo CompanyUser): mensaje mejorado con misma distincion.
 
-  1. ANALISIS PREVIO obligatorio al inicio de S033:
-     Solicitar via SFTP:
-       panel/templates/panel/operator/confirm_entry.html
-       panel/views.py (WorkOrderEntryConfirmView — bloque GET y metodo _resolve_machine)
+### Estado de migraciones al cierre de S033
 
-  2. AUDITORIA de la validacion client-side actual en confirm_entry.html:
-     - Identificar todos los campos con validacion presente.
-     - Identificar campos sin validacion o con validacion incompleta.
-     - Comparar punto a punto con la validacion de form_entry.html (Via A).
+| App                  | Ultima migracion aplicada                  |
+|----------------------|--------------------------------------------|
+| fleet                | 0005_add_first_repair_to_machineasset      |
+| work_order_processor | 0018_workdaygap_lunch_break                |
+| ivr_config           | 0018_workdayschedule_season_split_times    |
+| panel                | 0001_initial (AnalyticsProfile)            |
 
-  3. IMPLEMENTACION (alcance a determinar tras auditoria):
-     Objetivo: confirm_entry.html debe tener exactamente la misma cobertura
-     de validacion client-side que form_entry.html:
-       - .field-flagged en todos los campos obligatorios vacios al cargar.
-       - .field-optional en or_val.
-       - repair_notes obligatorio con .field-flagged y asterisco en label.
-       - Neutralizacion :invalid nativo en input[type=time].
-       - Coherencia visual completa con la Via A.
+---
 
-  4. DECISION DE DISENO pendiente a resolver en S033:
-     Cuando Gemini extrae un campo con confianza LOW o con flags, el operario
-     debe poder identificarlo visualmente en el formulario de confirmacion.
-     Definir y documentar el comportamiento esperado antes de implementar.
+## 5. Hoja de Ruta para la Siguiente Sesion
 
-### SEGUNDA ACCION — Actualizacion tecnica del anexo V07
+### NOTA DE ESTADO
+El Hito 7 continua EN PROGRESO en S034.
 
-  Varias secciones de arquitectura del anexo quedaron desactualizadas tras S032.
-  Actualizar via PMA las siguientes secciones:
+### PRIORIDAD 1 — Eliminacion de usuarios con seleccion multiple y avisos IVR
 
-  Seccion 2.2 (Tres vias de entrada):
-    Via C — Estado: actualizar a COMPLETADO (S032) con nota sobre repair_notes
-    obligatorio y unificacion de prompt.
+  Vista: panel/users/list.html + CompanyUserListView + nueva vista de eliminacion.
 
-  Seccion 2.4 (Prompt Gemini ampliado):
-    Anadir nota: _EXTRACTION_PROMPT unificado a _EXTRACTION_PROMPT_FULL en S032.
-    Ambas rutas (pipeline PDF y Via C) usan ahora el mismo prompt de maxima calidad.
+  OBJETIVO: permitir al supervisor eliminar uno o varios CompanyUser desde la
+  lista de usuarios, con el mismo patron de casilleros de seleccion multiple
+  que existe en otras vistas del panel, y con avisos preventivos cuando alguno
+  de los usuarios seleccionados tenga contactos vinculados a flujos IVR activos.
 
-  Seccion 2.10 (Barrera de integridad sine qua non):
-    Actualizar Gate 2: repair_notes anadido como campo obligatorio en S032.
-    Aplica a WorkOrderEntryConfirmView y WorkOrderEntryFormView.
+  IMPLEMENTACION:
 
-### Estado de migraciones al cierre de S032
+  1. users/list.html:
+     - Columna de checkbox al inicio de cada fila (input[type=checkbox]
+       con value={{ cu.pk }}).
+     - Checkbox global en la cabecera para seleccionar/deseleccionar todos.
+     - Boton 'Eliminar seleccionados' (btn-outline-danger) que solo se
+       activa cuando hay al menos un checkbox marcado.
+     - El boton envia un POST a la nueva vista de eliminacion con los
+       pks seleccionados.
 
-| App                  | Ultima migracion aplicada                                          |
-|----------------------|--------------------------------------------------------------------|
-| fleet                | 0005_add_first_repair_to_machineasset                              |
-| work_order_processor | 0018_workdaygap_lunch_break                                        |
-| ivr_config           | 0018_workdayschedule_season_split_times                            |
-| panel                | 0001_initial (AnalyticsProfile)                                    |
+  2. CompanyUserBulkDeleteView (nueva — SupervisorAccessMixin, View):
+     POST /panel/users/bulk-delete/
+     - Recibe lista de pks via POST (campo 'selected_users').
+     - Para cada CompanyUser seleccionado:
+         a. Verificar que pertenece a la empresa del usuario autenticado.
+         b. Verificar si tiene Contact vinculado que sea miembro de alguna
+            Section con is_active=True (contacto IVR activo).
+         c. Si tiene contacto IVR activo: acumular en lista de 'en riesgo'.
+     - Si hay usuarios 'en riesgo': NO eliminar nada. Renderizar pagina de
+       confirmacion con aviso claro listando los usuarios en riesgo y las
+       secciones IVR afectadas. El supervisor debe confirmar expresamente.
+     - Si el supervisor confirma (segundo POST con flag 'confirmed=1'):
+       eliminar todos los CompanyUser seleccionados incluyendo los en riesgo.
+     - Cascade esperado al eliminar CompanyUser:
+         Contact.company_user → SET_NULL (el Contact queda huerfano).
+         auth.User: eliminar junto al CompanyUser (cascade o delete explicito).
+     - Mensaje de exito con contador de usuarios eliminados.
 
-### Archivos a solicitar al inicio de S033 via SFTP
+  3. urls.py:
+     path('users/bulk-delete/', CompanyUserBulkDeleteView.as_view(),
+          name='user_bulk_delete')
 
-  panel/templates/panel/operator/confirm_entry.html
-  panel/views.py (WorkOrderEntryConfirmView — bloque GET y _resolve_machine)
+  CRITERIO DE RIESGO IVR:
+     Un CompanyUser se considera 'en riesgo IVR' si:
+       contact = Contact.objects.filter(company_user=cu).first()
+       contact is not None
+       AND contact.sections.filter(is_active=True).exists()
+
+  PATRON DE REFERENCIA:
+     Revisar otras vistas de eliminacion multiple existentes en el panel
+     (p.ej. eliminacion de CallFlow o Section) para mantener coherencia
+     visual y de UX con el resto del panel.
+
+### Archivos a solicitar al inicio de S034 via SFTP
+
+  panel/templates/panel/users/list.html
+  panel/views.py (CompanyUserListView y CompanyUserUpdateView)
+  panel/urls.py

@@ -2,13 +2,17 @@
 """
 Management command: init_chat_rooms
 Creates ChatRoom instances for a given company in an idempotent manner.
-One SECTION room is created per active Section that does not yet have one.
+One SECTION room is created per Section (regardless of is_active) that does
+not yet have one. Section.is_active controls IVR visibility only — chat rooms
+are created for all sections unconditionally.
 One BREAKDOWNS room is created if it does not yet exist for the company.
 Existing rooms are never modified or deleted.
 ---
 Comando de gestión: init_chat_rooms
 Crea instancias de ChatRoom para una empresa dada de forma idempotente.
-Se crea una sala SECTION por cada Section activa que no tenga sala aún.
+Se crea una sala SECTION por cada Section (independientemente de is_active)
+que no tenga sala aún. Section.is_active controla únicamente la visibilidad
+en el IVR — las salas de chat se crean para todas las secciones sin condición.
 Se crea una sala BREAKDOWNS si no existe aún para la empresa.
 Las salas existentes nunca se modifican ni eliminan.
 """
@@ -49,13 +53,16 @@ class Command(BaseCommand):
         """
         Main execution logic.
         1. Resolves the Company from --company-pk.
-        2. Creates one ChatRoom(SECTION) per active Section without an existing room.
+        2. Creates one ChatRoom(SECTION) per Section (regardless of is_active)
+           without an existing room.
         3. Creates one ChatRoom(BREAKDOWNS) if none exists for the company.
         Reports created and skipped counts per category.
         ---
         Lógica principal de ejecución.
         1. Resuelve la Company a partir de --company-pk.
-        2. Crea una ChatRoom(SECTION) por cada Section activa sin sala existente.
+        2. Crea una ChatRoom(SECTION) por cada Section sin sala existente,
+           independientemente de Section.is_active (el flag controla el IVR,
+           no la existencia de sala de chat).
         3. Crea una ChatRoom(BREAKDOWNS) si no existe ninguna para la empresa.
         Informa de los contadores de creadas y omitidas por categoría.
         """
@@ -78,7 +85,7 @@ class Command(BaseCommand):
         sections_skipped = 0
 
         # --- SECTION rooms — salas de tipo SECTION ---
-        active_sections = Section.objects.filter(company=company, is_active=True)
+        active_sections = Section.objects.filter(company=company)
 
         for section in active_sections:
             # Check existence without raising — comprobación de existencia sin excepción.

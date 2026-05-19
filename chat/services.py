@@ -687,15 +687,54 @@ def _provision_company_user(
     User = get_user_model()
 
     # --- Branch A: CompanyUser already linked — update alias only. ---
+    # If must_change_password is True, it is the first alias setup after the
+    # supervisor created the account from the panel. Send credentials so the
+    # worker knows how to log in and understands the difference between their
+    # panel username and their chat alias.
+    # ---
     # --- Rama A: CompanyUser ya vinculado — actualizar solo el alias. ---
+    # Si must_change_password es True, es la primera configuracion de alias
+    # tras la creacion de la cuenta por el supervisor desde el panel.
     if contact.company_user_id and contact.company_user:
-        contact.company_user.alias = proposed_alias
-        contact.company_user.save(update_fields=["alias"])
+        cu       = contact.company_user
+        cu.alias = proposed_alias
+        cu.save(update_fields=["alias"])
         logger.info(
             "# [PROVISION] Alias actualizado para CompanyUser pk=%s: '%s'.",
-            contact.company_user.pk,
+            cu.pk,
             proposed_alias,
         )
+        if cu.must_change_password:
+            _panel_username = cu.user.username
+            _bienvenido = (
+                "✅ ¡Bienvenido/a a la plataforma de "
+                + cu.company.name + ", " + proposed_alias + "!\n\n"
+                + "🔐 *Acceso al panel de gestión:*\n"
+                "https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/login/\n\n"
+                + "👤 *Usuario del panel:* " + _panel_username + "\n"
+                + "🔑 *Contraseña inicial:* 1234\n"
+                "_(Te pediremos que la cambies en tu primer inicio de sesión.)_\n\n"
+                + "💬 *Tu alias en el chat:* " + proposed_alias + "\n"
+                "_(Este es tu nombre visible en las salas de chat, "
+                "distinto al usuario del panel.)_"
+            )
+            try:
+                WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=_bienvenido,
+                )
+                logger.info(
+                    "# [PROVISION] Credenciales enviadas (Rama A) a %s para username '%s'.",
+                    from_number,
+                    _panel_username,
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [PROVISION] Error enviando credenciales (Rama A) a %s: %s",
+                    from_number,
+                    exc,
+                )
         return
 
     # --- Branch B: No CompanyUser — create User, CompanyUser and link. ---
@@ -750,14 +789,20 @@ def _provision_company_user(
     )
 
     # Step B-5: Send credentials via WhatsApp.
-    # Paso B-5: Enviar credenciales vía WhatsApp.
+    # Distinguishes panel username from chat alias clearly.
+    # Paso B-5: Enviar credenciales via WhatsApp.
+    # Distingue claramente el usuario del panel del alias del chat.
     credentials_message = (
-        f"✓ Ya estás registrado en la plataforma de {section.company.name}.\n"
-        "Puedes acceder en: "
-        "https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/login/\n"
-        f"Usuario: {username}\n"
-        "Contraseña: 1234\n"
-        "Te pediremos que la cambies en tu primer inicio de sesión."
+        "✅ ¡Bienvenido/a a la plataforma de "
+        + section.company.name + ", " + proposed_alias + "!\n\n"
+        + "🔐 *Acceso al panel de gestión:*\n"
+        "https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/login/\n\n"
+        + "👤 *Usuario del panel:* " + username + "\n"
+        + "🔑 *Contraseña inicial:* 1234\n"
+        "_(Te pediremos que la cambies en tu primer inicio de sesión.)_\n\n"
+        + "💬 *Tu alias en el chat:* " + proposed_alias + "\n"
+        "_(Este es tu nombre visible en las salas de chat, "
+        "distinto al usuario del panel.)_"
     )
     try:
         WhatsAppChatService.send_reply(

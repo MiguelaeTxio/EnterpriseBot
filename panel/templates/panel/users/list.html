@@ -15,6 +15,32 @@
     </a>
 </div>
 
+{# Section filter — Filtro por sección #}
+{% if sections %}
+<form method="get" class="mb-4 d-flex align-items-center gap-2 flex-wrap">
+    <label for="id-section-filter" class="form-label mb-0 fw-medium text-sm">
+        <i class="bi bi-diagram-3 me-1 text-primary"></i>Filtrar por sección:
+    </label>
+    <select id="id-section-filter"
+            name="section"
+            class="form-select form-select-sm w-auto"
+            onchange="this.form.submit()">
+        <option value="">Todas las secciones</option>
+        {% for sec in sections %}
+        <option value="{{ sec.pk }}"
+                {% if selected_section == sec.pk|stringformat:"s" %}selected{% endif %}>
+            {{ sec.name }}
+        </option>
+        {% endfor %}
+    </select>
+    {% if selected_section %}
+    <a href="{% url 'panel:user_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-x me-1"></i>Limpiar filtro
+    </a>
+    {% endif %}
+</form>
+{% endif %}
+
 <div class="card border-0 shadow-sm">
     <div class="card-header bg-white border-bottom py-3">
         <h6 class="mb-0 fw-semibold">

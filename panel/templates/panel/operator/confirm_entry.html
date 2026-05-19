@@ -135,6 +135,11 @@
                                     data-asset-input="true"
                                 >
                                 <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                {% if 'MAQUINA' in entrada.flags %}
+                                <small class="text-warning">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>Gemini no pudo leer este campo con certeza — revisa el valor antes de guardar.
+                                </small>
+                                {% endif %}
                                 <input type="hidden"
                                        name="entrada_{{ entrada.idx }}_flags"
                                        value="{{ entrada.flags|default:'[]' }}">
@@ -151,6 +156,11 @@
                                     value="{{ entrada.hc }}"
                                     placeholder="HH:MM"
                                 >
+                                {% if 'H.C.' in entrada.flags %}
+                                <small class="text-warning">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>Gemini no pudo leer este campo con certeza — revisa el valor antes de guardar.
+                                </small>
+                                {% endif %}
                             </div>
                             <div class="col-6 col-md-2">
                                 <label class="form-label fw-medium">H.F.</label>
@@ -162,6 +172,11 @@
                                     value="{{ entrada.hf }}"
                                     placeholder="HH:MM"
                                 >
+                                {% if 'H.F.' in entrada.flags %}
+                                <small class="text-warning">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>Gemini no pudo leer este campo con certeza — revisa el valor antes de guardar.
+                                </small>
+                                {% endif %}
                             </div>
 
                             {# O.R. #}
@@ -203,6 +218,7 @@
                             <div class="col-12 col-md-6">
                                 <label class="form-label fw-medium">
                                     Descripción avería
+                                    <span class="text-danger">*</span>
                                 </label>
                                 <textarea
                                     name="entrada_{{ entrada.idx }}_fault_description"
@@ -212,6 +228,11 @@
                                     placeholder="Descripción de la avería o tarea"
                                     data-desc-field="fault_description"
                                 >{{ entrada.fault_description }}</textarea>
+                                {% if 'DESCRIPCION' in entrada.flags %}
+                                <small class="text-warning">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>Gemini no pudo leer este campo con certeza — revisa el valor antes de guardar.
+                                </small>
+                                {% endif %}
                             </div>
 
                             {# Repair notes / Reparación #}
@@ -295,6 +316,11 @@
                                     value="{{ rep.referencia }}"
                                     placeholder="Ref. albarán"
                                 >
+                                {% if 'REFERENCIA' in rep.flags %}
+                                <small class="text-warning">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>Gemini no pudo leer este campo con certeza — revisa el valor antes de guardar.
+                                </small>
+                                {% endif %}
                             </div>
 
                             <input type="hidden"
@@ -312,6 +338,11 @@
                                     value="{{ rep.material }}"
                                     placeholder="Descripción del material"
                                 >
+                                {% if 'MATERIAL' in rep.flags %}
+                                <small class="text-warning">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>Gemini no pudo leer este campo con certeza — revisa el valor antes de guardar.
+                                </small>
+                                {% endif %}
                             </div>
 
                             {# Quantity / Unidades #}
@@ -325,6 +356,11 @@
                                     value="{{ rep.unidades|default:'' }}"
                                     placeholder="Cantidad"
                                 >
+                                {% if 'UNIDADES' in rep.flags %}
+                                <small class="text-warning">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>Gemini no pudo leer este campo con certeza — revisa el valor antes de guardar.
+                                </small>
+                                {% endif %}
                             </div>
 
                             {# Source / Procedencia #}
@@ -344,6 +380,11 @@
                                         Proveedor
                                     </option>
                                 </select>
+                                {% if 'PROCEDENCIA' in rep.flags %}
+                                <small class="text-warning">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>Gemini no pudo leer este campo con certeza — revisa el valor antes de guardar.
+                                </small>
+                                {% endif %}
                             </div>
 
                             {# Supplier / Proveedor #}

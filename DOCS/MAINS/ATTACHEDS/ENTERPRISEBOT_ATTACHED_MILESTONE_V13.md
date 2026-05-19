@@ -209,6 +209,29 @@ Access log: /var/log/enterprisebot-miguelaetxio.pythonanywhere.com.access.log
 Error log:  /var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log
 Server log: /var/log/enterprisebot-miguelaetxio.pythonanywhere.com.server.log
 
+### 2.12. Signal post_save sobre Section — creacion automatica de ChatRoom
+
+Implementada en S033 (incidencia on-fly) al detectar que las secciones creadas
+desde el panel no generaban su ChatRoom automaticamente.
+
+Archivo: chat/signals.py (neonato creado en S033).
+Conexion: chat/apps.py ChatConfig.ready() importa chat.signals.
+
+Logica:
+  @receiver(post_save, sender=Section)
+  def create_chat_room_for_section(sender, instance, created, **kwargs):
+    Si created=False → return sin accion.
+    Si created=True → ChatRoom.objects.get_or_create(
+        company=instance.company, section=instance,
+        room_type=SECTION, defaults={name, is_active=True})
+
+Desacoplamiento Section.is_active / ChatRoom:
+  Section.is_active=False significa que la seccion no es visible en el IVR.
+  No implica ausencia de sala de chat. El comando init_chat_rooms fue corregido
+  en S033 para eliminar el filtro is_active=True sobre Section, alineandose con
+  este criterio. ChatRoom.is_active gestiona la visibilidad de la sala en el panel
+  de forma independiente.
+
 ---
 
 ## 3. Hoja de Ruta
@@ -218,7 +241,12 @@ Estado: COMPLETADO.
 
 ### Paso 2 — Comando init_chat_rooms + inicializacion en produccion
 Estado: COMPLETADO.
-Resultado: 2 salas SECTION + 1 sala BREAKDOWNS para Grupo Alvarez (company_pk=1).
+Resultado inicial: 2 salas SECTION + 1 sala BREAKDOWNS para Grupo Alvarez (company_pk=1).
+Actualizacion S033 (incidencia on-fly): filtro is_active=True eliminado del comando —
+Section.is_active controla el IVR, no la existencia de sala de chat. Signal post_save
+sobre Section anadida (chat/signals.py) para creacion automatica en nuevas secciones.
+Ejecucion tras correccion: 3 salas SECTION adicionales creadas (Asistencia, Elevacion,
+Taller Mecanico). Total activo: 6 salas (5 SECTION + 1 BREAKDOWNS).
 
 ### Paso 3 — Campos alias y default_role + migraciones
 Estado: COMPLETADO.
@@ -313,6 +341,7 @@ Estado: PENDIENTE.
 | 004    | 2026-05-17/18 | Pasos 3-9 + rediseno | Restauracion y correccion de chat/services.py. Rediseno arquitectura de registro: WorkerSignupView desactivada, gestion de trabajadores desde panel Supervisor. CompanyUserCreateForm ampliado. SectionCreateView/UpdateView con inline trabajadores. SectionDefaultRoleView. Migracion 0022: alias_onboarding_step y alias_onboarding_proposed en Contact. Flujo de onboarding migrado de memoria a BD. send_quick_reply anadido a WhatsAppChatService. SID chat_onboarding corregido en BD. Sandbox eliminado. PhoneNumber +34607961650 registrado. Paso 7 en pruebas: Paso A y B operativos, Paso C pendiente verificacion. |
 | 005    | 2026-05-18 | Pasos 7, 10, 11 + skill PED | Paso 7 completado E2E: template alias_confirmation creado via Content API, send_quick_reply rediseñado para usar content_sid pre-registrado con fallback a texto plano, NameError section y room corregidos en _handle_alias_collection, reenvio de mensaje pendiente tras onboarding operativo. Template chat_session_renewal creado y enviado a aprobacion Meta (pk=6). Paso 11 completado: layout flex robusto PC/Android, scroll condicional, refresco inmediato tras envio, panel lateral colapsable de miembros. Skill PED creada y actualizada con reglas de anclas exactas via script obligatorio. Logs PythonAnywhere registrados en arquitectura. |
 | 006    | 2026-05-18 | Paso 12 completo            | Paso 10 bloqueado — template chat_session_renewal En revision en Meta. Paso 12 completado: Contact extendido (opt_out_broadcast, routing_state, pending_routing_body), ChatRoom M2M (breakdown_sections, breakdown_contacts), BreakdownTicket extendido (ticket_number autoincremental, section, machine, is_repair_order, photos), migraciones ivr_config/0023 y chat/0002 aplicadas. Template breakdown_routing creado via curl (HX71d736523adabbd1e6d0fdf8acc2e99c, pk=7). chat/services.py ampliado con _handle_breakdown_routing, _resolve_pending_routing y process_breakdown_turn (Gemini 2.5 Flash). Vistas BreakdownTicketListView, BreakdownTicketDetailView, BreakdownRoomManageView con templates HTML. Hito 13 pausado — se activa Hito 7 para siguiente sesion. |
+| S033   | 2026-05-18 | Incidencia on-fly           | Incidencia detectada desde H7: secciones creadas desde el panel no generaban ChatRoom automaticamente. Causa raiz: init_chat_rooms filtraba Section.is_active=True mezclando visibilidad IVR con existencia de sala de chat. Solucion: (1) chat/signals.py creado — signal post_save sobre Section con get_or_create de ChatRoom tipo SECTION; (2) chat/apps.py ampliado con ready() que conecta la signal; (3) init_chat_rooms corregido eliminando filtro is_active=True sobre Section. Ejecucion del comando corregido: 3 salas nuevas creadas (Asistencia, Elevacion, Taller Mecanico). Total activo: 6 salas. django check: 0 errores. |
 
 ---
 

@@ -4,13 +4,15 @@ Data models for the chat module of EnterpriseBot.
 Defines the entity graph for IRC-style section chat rooms:
 ChatRoom, ChatMessage, BreakdownTicket, BreakdownConversationTurn.
 All entities are scoped to a Company. ChatRoom instances are created
-idempotently via the init_chat_rooms management command.
+idempotently via the init_chat_rooms management command, and also
+automatically via the post_save signal on Section (chat/signals.py).
 ---
 Modelos de datos para el módulo de chat de EnterpriseBot.
 Define el grafo de entidades para las salas de chat IRC por sección:
 ChatRoom, ChatMessage, BreakdownTicket, BreakdownConversationTurn.
 Todas las entidades pertenecen a una Company. Las instancias de ChatRoom
-se crean de forma idempotente mediante el comando init_chat_rooms.
+se crean de forma idempotente mediante el comando init_chat_rooms, y también
+de forma automática mediante la signal post_save sobre Section (chat/signals.py).
 """
 
 from django.db import models

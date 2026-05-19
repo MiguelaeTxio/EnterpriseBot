@@ -18,6 +18,7 @@ from panel.views import (
     CompanyUserListView,
     CompanyUserCreateView,
     CompanyUserUpdateView,
+    CompanyUserSectionUnlinkView,
     SectionListView,
     SectionCreateView,
     SectionUpdateView,
@@ -140,6 +141,7 @@ urlpatterns = [
     path("users/", CompanyUserListView.as_view(), name="user_list"),
     path("users/create/", CompanyUserCreateView.as_view(), name="user_create"),
     path("users/<int:pk>/edit/", CompanyUserUpdateView.as_view(), name="user_edit"),
+    path("users/<int:pk>/unlink-section/", CompanyUserSectionUnlinkView.as_view(), name="user_unlink_section"),
 
     # Password management — Gestión de contraseña (todos los roles).
     path("password/change/", PanelPasswordChangeView.as_view(), name="password_change"),

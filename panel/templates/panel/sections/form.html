@@ -652,9 +652,27 @@
                                         {% if w.is_ivr_active %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-x-circle text-muted"></i>{% endif %}
                                     </td>
                                     <td class="text-end">
-                                        <a href="{% url 'panel:user_edit' w.pk %}" class="btn btn-outline-secondary btn-sm py-0">
-                                            <i class="bi bi-pencil"></i>
-                                        </a>
+                                        <div class="d-flex gap-1 justify-content-end">
+                                            <a href="{% url 'panel:user_edit' w.pk %}"
+                                               class="btn btn-outline-secondary btn-sm py-0"
+                                               title="Editar usuario">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                            {# Unlink worker from section — Desvincular trabajador de la sección #}
+                                            <form method="post"
+                                                  action="{% url 'panel:user_unlink_section' w.pk %}"
+                                                  class="d-inline"
+                                                  onsubmit="return confirm('¿Desvincular a {{ w.user.get_full_name|default:w.user.username }} de esta sección?');">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="section_pk" value="{{ object.pk }}">
+                                                <input type="hidden" name="next" value="{% url 'panel:section_edit' object.pk %}">
+                                                <button type="submit"
+                                                        class="btn btn-outline-danger btn-sm py-0"
+                                                        title="Desvincular de la sección">
+                                                    <i class="bi bi-person-dash"></i>
+                                                </button>
+                                            </form>
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}

@@ -290,22 +290,37 @@ class CompanyUserCreateView(SupervisorAccessMixin, View):
             request.user.username,
         )
 
-        # --- Optionally create or retrieve Contact and link to CompanyUser. ---
-        # --- Opcionalmente crear o recuperar Contact y vincularlo al CompanyUser. ---
+        # --- Create or retrieve Contact and link to CompanyUser. ---
+        # A Contact is always created when a section is assigned (required for the
+        # section M2M membership). When no phone number is provided, the contact is
+        # created with an empty phone_number so the section link can still be established.
+        # ---
+        # --- Crear o recuperar Contact y vincularlo al CompanyUser. ---
+        # Se crea siempre un Contact cuando se asigna sección (necesario para la
+        # membresía M2M de la sección). Sin teléfono, el contacto se crea con
+        # phone_number vacío para que el vínculo con la sección pueda establecerse.
         phone_number  = form.cleaned_data.get("phone_number", "")
         is_ivr_active = form.cleaned_data.get("is_ivr_active", True)
         section       = form.cleaned_data.get("section")
 
+        # Resolve display name for the contact record.
+        # Resolver nombre visible para el registro de contacto.
+        _display_name = (
+            f"{form.cleaned_data.get('first_name', '')} "
+            f"{form.cleaned_data.get('last_name', '')}".strip()
+            or auth_user.username
+        )
+
+        contact = None
+
         if phone_number:
+            # Phone provided — use get_or_create keyed on phone_number.
+            # Teléfono proporcionado — usar get_or_create por phone_number.
             contact, created = Contact.objects.get_or_create(
                 company      = company,
                 phone_number = phone_number,
                 defaults     = {
-                    "name": (
-                        f"{form.cleaned_data.get('first_name', '')} "
-                        f"{form.cleaned_data.get('last_name', '')}".strip()
-                        or auth_user.username
-                    ),
+                    "name":         _display_name,
                     "is_internal":  is_ivr_active,
                     "company_user": new_cu,
                 },
@@ -327,16 +342,33 @@ class CompanyUserCreateView(SupervisorAccessMixin, View):
                     contact.pk,
                     new_cu.pk,
                 )
+        elif section is not None:
+            # No phone but section assigned — create a phoneless contact so the
+            # section M2M membership can be established.
+            # Sin teléfono pero con sección — crear contacto sin teléfono para
+            # poder establecer la membresía M2M de la sección.
+            contact = Contact.objects.create(
+                company      = company,
+                phone_number = "",
+                name         = _display_name,
+                is_internal  = is_ivr_active,
+                company_user = new_cu,
+            )
+            logger.info(
+                "# [USER CREATE] Contact sin telefono pk=%s creado para CompanyUser pk=%s.",
+                contact.pk,
+                new_cu.pk,
+            )
 
-            # --- Add contact to section if section was selected. ---
-            # --- Añadir contacto a la sección si se seleccionó una sección. ---
-            if section is not None:
-                section.contacts.add(contact)
-                logger.info(
-                    "# [USER CREATE] Contact pk=%s añadido a Section pk=%s.",
-                    contact.pk,
-                    section.pk,
-                )
+        # --- Add contact to section M2M if section was selected. ---
+        # --- Añadir contacto al M2M de la sección si se seleccionó una. ---
+        if section is not None and contact is not None:
+            section.contacts.add(contact)
+            logger.info(
+                "# [USER CREATE] Contact pk=%s añadido a Section pk=%s.",
+                contact.pk,
+                section.pk,
+            )
 
         django_messages.success(
             request,
@@ -351,9 +383,11 @@ class CompanyUserListView(AdminRoleRequiredMixin, ListView):
     """
     Lists all CompanyUser accounts belonging to the authenticated user's company.
     Accessible only to users with the ADMIN role.
+    Supports optional filtering by section via GET parameter ?section=<pk>.
     ---
     Lista todas las cuentas CompanyUser pertenecientes a la empresa del usuario autenticado.
     Solo accesible para usuarios con rol ADMIN.
+    Soporta filtrado opcional por sección mediante el parámetro GET ?section=<pk>.
     """
 
     model = CompanyUser
@@ -363,24 +397,50 @@ class CompanyUserListView(AdminRoleRequiredMixin, ListView):
     def get_queryset(self):
         """
         Returns CompanyUser records scoped to the authenticated user's company.
+        If the GET parameter 'section' is present and valid, filters by the
+        contacts assigned to that section (company-scoped, injection-safe).
         ---
         Retorna los registros CompanyUser acotados a la empresa del usuario autenticado.
+        Si el parámetro GET 'section' está presente y es válido, filtra por los
+        contactos asignados a esa sección (acotado a empresa, seguro contra inyección).
         """
-        return CompanyUser.objects.filter(
-            company=self.request.user.company_user.company
+        company = self.request.user.company_user.company
+        qs = CompanyUser.objects.filter(
+            company=company
         ).select_related("user").order_by("user__username")
+
+        # Optional section filter — Filtro de sección opcional.
+        section_pk = self.request.GET.get("section", "").strip()
+        if section_pk:
+            try:
+                from ivr_config.models import Section as _Section
+                section_obj = _Section.objects.get(pk=int(section_pk), company=company)
+                qs = qs.filter(
+                    contact_profile__sections=section_obj,
+                )
+            except (ValueError, TypeError, _Section.DoesNotExist):
+                pass
+
+        return qs
 
     def get_context_data(self, **kwargs):
         """
-        Adds company and company_user to template context.
+        Adds company, company_user and sections list to template context.
+        Passes the currently selected section pk for filter persistence.
         ---
-        Añade company y company_user al contexto de la plantilla.
+        Añade company, company_user y lista de secciones al contexto de la plantilla.
+        Pasa el pk de sección seleccionado actualmente para persistencia del filtro.
         """
         context = super().get_context_data(**kwargs)
-        context["company"] = self.request.user.company_user.company
-        context["company_user"] = self.request.user.company_user
-        context["own_presence"] = self._get_own_presence()
-        context["active_nav"] = "users"
+        company = self.request.user.company_user.company
+        context["company"]          = company
+        context["company_user"]     = self.request.user.company_user
+        context["own_presence"]     = self._get_own_presence()
+        context["active_nav"]       = "users"
+        context["sections"]         = Section.objects.filter(
+            company=company
+        ).order_by("name")
+        context["selected_section"] = self.request.GET.get("section", "")
         return context
 
     def _get_own_presence(self):
@@ -485,15 +545,25 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         """
-        Adds company, company_user and own_presence to template context.
+        Adds company, company_user, own_presence and contact_phone to context.
+        contact_phone is pre-populated from the linked Contact phone_number.
         ---
-        Añade company, company_user y own_presence al contexto de la plantilla.
+        Añade company, company_user, own_presence y contact_phone al contexto.
+        contact_phone se pre-rellena desde el phone_number del Contact vinculado.
         """
+        if not hasattr(self, 'object') or self.object is None:
+            self.object = self.get_object()
         context = super().get_context_data(**kwargs)
         context["company"]      = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user
         context["own_presence"] = self._get_own_presence()
         context["active_nav"]   = "users"
+        from ivr_config.models import Contact as _Contact
+        _contact = _Contact.objects.filter(
+            company=self.object.company,
+            company_user=self.object,
+        ).first()
+        context["contact_phone"] = _contact.phone_number if _contact else ""
         return context
 
     def _get_own_presence(self):
@@ -511,6 +581,84 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
         ).filter(
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
+
+
+class CompanyUserSectionUnlinkView(SupervisorAccessMixin, View):
+    """
+    Unlinks a CompanyUser from a Section by removing their associated Contact
+    from the section's contacts M2M relation.
+    Redirects back to the section edit form on success.
+    Only affects the M2M membership — the CompanyUser account is preserved.
+    Scoped to the authenticated user's company; rejects cross-company attempts.
+
+    POST /panel/users/<pk>/unlink-section/
+         Body: section_pk (required) — pk of the section to unlink from.
+               next (optional)       — URL to redirect to after unlinking.
+    ---
+    Desvincula un CompanyUser de una Section eliminando su Contact asociado
+    de la relación M2M de contactos de la sección.
+    Redirige de vuelta al formulario de edición de sección en caso de éxito.
+    Solo afecta a la membresía M2M — la cuenta CompanyUser se conserva.
+    Acotado a la empresa del usuario autenticado; rechaza intentos entre empresas.
+
+    POST /panel/users/<pk>/unlink-section/
+         Body: section_pk (requerido) — pk de la sección de la que desvincular.
+               next (opcional)        — URL a la que redirigir tras desvincular.
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Removes the Contact associated with the CompanyUser from the given section.
+        ---
+        Elimina el Contact asociado al CompanyUser de la sección indicada.
+        """
+        company    = request.user.company_user.company
+        section_pk = request.POST.get("section_pk", "").strip()
+        next_url   = request.POST.get("next", "/panel/sections/")
+
+        # Resolve the CompanyUser — scoped to company for security.
+        # Resolver el CompanyUser — acotado a empresa por seguridad.
+        try:
+            cu = CompanyUser.objects.get(pk=pk, company=company)
+        except CompanyUser.DoesNotExist:
+            django_messages.error(request, "Usuario no encontrado.")
+            return redirect(next_url)
+
+        # Resolve the Section — scoped to company for security.
+        # Resolver la Section — acotada a empresa por seguridad.
+        try:
+            section = Section.objects.get(pk=int(section_pk), company=company)
+        except (ValueError, TypeError, Section.DoesNotExist):
+            django_messages.error(request, "Sección no encontrada.")
+            return redirect(next_url)
+
+        # Remove the contact from the section M2M if present.
+        # Eliminar el contacto del M2M de la sección si está presente.
+        contact = getattr(cu, "contact", None)
+        if contact is None:
+            try:
+                from ivr_config.models import Contact as _Contact
+                contact = _Contact.objects.filter(
+                    company=company,
+                    company_user=cu,
+                ).first()
+            except Exception:
+                contact = None
+
+        if contact and section.contacts.filter(pk=contact.pk).exists():
+            section.contacts.remove(contact)
+            django_messages.success(
+                request,
+                f"Trabajador '{cu.user.get_full_name() or cu.user.username}' "
+                f"desvinculado de la sección '{section.name}'."
+            )
+        else:
+            django_messages.warning(
+                request,
+                f"El trabajador no estaba vinculado a la sección '{section.name}'."
+            )
+
+        return redirect(next_url)
 
 
 class SectionListView(AdminRoleRequiredMixin, ListView):
@@ -614,8 +762,14 @@ class SectionCreateView(SupervisorAccessMixin, CreateView):
         """
         form = super().get_form(form_class)
         company = self.request.user.company_user.company
+        # Exclude internal workers (WORKSHOP/DRIVER) from IVR contact selectors.
+        # These roles are operational-only and are never IVR recipients.
+        # Excluir trabajadores internos (WORKSHOP/DRIVER) de los selectores de contacto IVR.
+        # Estos roles son exclusivamente operativos y nunca son destinatarios IVR.
         form.fields["contacts"].queryset = Contact.objects.filter(
             company=company
+        ).exclude(
+            company_user__role__in=["WORKSHOP", "DRIVER"]
         )
         form.fields["call_flow"].queryset = CallFlow.objects.filter(
             company=company,
@@ -808,8 +962,14 @@ class SectionUpdateView(SupervisorAccessMixin, UpdateView):
         """
         form = super().get_form(form_class)
         company = self.request.user.company_user.company
+        # Exclude internal workers (WORKSHOP/DRIVER) from IVR contact selectors.
+        # These roles are operational-only and are never IVR recipients.
+        # Excluir trabajadores internos (WORKSHOP/DRIVER) de los selectores de contacto IVR.
+        # Estos roles son exclusivamente operativos y nunca son destinatarios IVR.
         form.fields["contacts"].queryset = Contact.objects.filter(
             company=company
+        ).exclude(
+            company_user__role__in=["WORKSHOP", "DRIVER"]
         )
         form.fields["call_flow"].queryset = CallFlow.objects.filter(
             company=company,
@@ -1275,8 +1435,12 @@ class CallFlowCreateView(AdminRoleRequiredMixin, CreateView):
         """
         form = super().get_form(form_class)
         company = self.request.user.company_user.company
+        # Exclude internal workers (WORKSHOP/DRIVER) from IVR contact selectors.
+        # Excluir trabajadores internos (WORKSHOP/DRIVER) de los selectores de contacto IVR.
         form.fields["notification_contact"].queryset = Contact.objects.filter(
             company=company
+        ).exclude(
+            company_user__role__in=["WORKSHOP", "DRIVER"]
         ).order_by("name")
         form.fields["notification_contact"].required = False
         form.fields["fallback_section"].queryset = Section.objects.filter(
@@ -1379,8 +1543,12 @@ class CallFlowUpdateView(AdminRoleRequiredMixin, UpdateView):
         """
         form = super().get_form(form_class)
         company = self.request.user.company_user.company
+        # Exclude internal workers (WORKSHOP/DRIVER) from IVR contact selectors.
+        # Excluir trabajadores internos (WORKSHOP/DRIVER) de los selectores de contacto IVR.
         form.fields["notification_contact"].queryset = Contact.objects.filter(
             company=company
+        ).exclude(
+            company_user__role__in=["WORKSHOP", "DRIVER"]
         ).order_by("name")
         form.fields["notification_contact"].required = False
         form.fields["fallback_section"].queryset = Section.objects.filter(
