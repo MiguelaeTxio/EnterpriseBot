@@ -25,6 +25,7 @@ from panel.views import (
     ContactListView,
     ContactCreateView,
     ContactUpdateView,
+    ContactDeleteView,
     CallFlowListView,
     CallFlowCreateView,
     CallFlowUpdateView,
@@ -91,6 +92,8 @@ from panel.views import (
     AbsenceCategoryUpdateView,
     AbsenceCategoryToggleView,
     SectionDefaultRoleView,
+    CompanyUserBulkDeleteView,
+    WorkerScheduleUpdateView,
 )
 
 from chat.views import (
@@ -140,7 +143,9 @@ urlpatterns = [
     # User management — Gestión de usuarios de empresa.
     path("users/", CompanyUserListView.as_view(), name="user_list"),
     path("users/create/", CompanyUserCreateView.as_view(), name="user_create"),
+    path("users/bulk-delete/", CompanyUserBulkDeleteView.as_view(), name="user_bulk_delete"),
     path("users/<int:pk>/edit/", CompanyUserUpdateView.as_view(), name="user_edit"),
+    path("users/<int:pk>/schedule/", WorkerScheduleUpdateView.as_view(), name="worker_schedule_update"),
     path("users/<int:pk>/unlink-section/", CompanyUserSectionUnlinkView.as_view(), name="user_unlink_section"),
 
     # Password management — Gestión de contraseña (todos los roles).
@@ -155,6 +160,7 @@ urlpatterns = [
     path("contacts/", ContactListView.as_view(), name="contact_list"),
     path("contacts/create/", ContactCreateView.as_view(), name="contact_create"),
     path("contacts/<int:pk>/edit/", ContactUpdateView.as_view(), name="contact_edit"),
+    path("contacts/<int:pk>/delete/", ContactDeleteView.as_view(), name="contact_delete"),
 
     # CallFlow management — Gestión de flujos IVR.
     path("callflows/", CallFlowListView.as_view(), name="callflow_list"),

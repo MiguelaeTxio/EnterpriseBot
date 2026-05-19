@@ -880,6 +880,7 @@ Estado: COMPLETADO (sesiones 015-017).
 
 | 031    | 2026-05-15 | gap_resolution.html patcher 2/2, Gate 4 E2E, asignacion WorkdaySchedule, extraccion JS form_entry | PRIMERA ACCION (PMA gap_resolution.html extra_head): CSS hover restaurado con box-shadow, JS de validacion client-side reparado (condiciones if faltantes: !sel.value, !lunchGroups[pk], !group.hasChecked, !allValid), extraccion completa a gap_resolution.js archivo estatico + collectstatic. MEJORAS UX Gate 4 (serie de PMPs): texto descriptivo contextual por tipo de gap (LATE_START/EARLY_END/GAP) en tarjeta estandar; bug timeline fix — indicador laguna usaba slice fragil en template, resuelto enriqueciendo entry_lines con next_gap y early_end_gap/late_start_gap en WorkdayGapResolutionView.get() (logica en view, no en template); boton Volver y editar corregido — onclick confirm() robaba foco antes del submit event, resuelto con type=button + createElement hidden + form.submit() programatico; Volver y editar redirigia al dashboard vacio — corregido promoviendo borrador PENDING_GAPS a DONE y redirigiendo a operator_form_edit para pre-rellenar el formulario. SEGUNDA ACCION (E2E Gate 4): validacion completa en produccion — LATE_START, EARLY_END, GAP, LUNCH_BREAK, Volver y editar, confirmacion y parte DONE en historial. Bug _compute_delta_hours devolvía 0.00 para bloques digitales: anadido parametro deduct_lunch=True/False — pipeline PDF mantiene deduccion 90min comida, partes digitales usan deduct_lunch=False en _parse_entry_lines_from_post, WorkOrderLineRestoreView digital y MergeView._create_lines_from_session. TERCERA ACCION (PMA views.py + form.html): CompanyUserUpdateView ampliado con workday_schedule en fields + get_form() con queryset restringido a empresa + widget form-select; form.html con bloque workday_schedule label/widget/helptext. EXTRACCION JS form_entry.html: tres bloques JS inline (604+138+74 lineas) extraidos a form_entry_assets.js, form_entry_modal.js, form_entry_tour.js; window.EB_CONFIG inyectado inline para URLs Django; correcciones acentos _buildBlockRow (Descripcion averia con acento, Reparacion con acento, Codigo de maquina, Descripcion del material) + badge Bloque N a Tarea N. |
 | 032    | 2026-05-15 | Via C camara directa, unificacion prompt extraccion, CSS naranja campos operario, repair_notes obligatorio | CUARTA ACCION: PMP capture=environment en upload_entry.html — activa camara trasera Android Chrome directamente. QUINTA ACCION: analisis comparativo WorkOrderEntryConfirmView / tasks.py / services.py — divergencias D1-D5 auditadas. Unificacion prompt: extract_work_order_page() pasa a usar _EXTRACTION_PROMPT_FULL (PMA services.py) — pipeline PDF historico e igual calidad de extraccion que Via C. Correcciones D4/D5 (PMA views.py): extraction_confidence ya no se hardcodea a HIGH sino que se lee desde sesion via _coerce_confidence(); uncertain_date ya no se hardcodea a False sino que se lee desde sesion. SEXTA ACCION: ampliacion .field-flagged en panel.css — cubre form-control, form-select, input[type=time] neutralizando :invalid nativo del browser; nueva clase .field-optional para campos no obligatorios con relleno tenue naranja. PMP form_entry.html y form_entry_assets.js (_buildBlockRow): or_val con field-optional, repair_notes con field-flagged. repair_notes OBLIGATORIO en todas las vias: Gate 2 server-side en WorkOrderEntryFormView y WorkOrderEntryConfirmView (PMA views.py); Gate 2 client-side en form_entry_assets.js; label asterisco en form_entry.html y _buildBlockRow. collectstatic en todos los pasos de estaticos. |
+| 034    | 2026-05-19 | Incidencias on-fly: gestión de usuarios, contactos, secciones y horarios de trabajo | PRIORIDAD 1 completada: eliminación múltiple de CompanyUser con detección de riesgo IVR (CompanyUserBulkDeleteView + bulk_delete_confirm.html + users/list.html con checkboxes). Incidencia: eliminación de contactos desde el formulario de contacto (ContactDeleteView + contacts/confirm_delete.html + botoón en contacts/form.html). Incidencia: TemplateSyntaxError doble bloque extra_head en absence_category_list.html — fusionado en un único bloque (CSS + JS). Incidencia: contadores de secciones corregidos — SectionListView anotada con ivr_contact_count (excluye WORKSHOP/DRIVER) y worker_count (solo WORKSHOP/DRIVER). Incidencia: selector de horario de trabajo individual por trabajador desde el formulario de sección — WorkerScheduleUpdateView AJAX + columna Horario de trabajo en tabla de trabajadores. Incidencia: horario de trabajo por defecto de sección — FK Section.workday_schedule (ivr_config migración 0024), SectionForm ampliado, SectionCreateView/UpdateView con queryset restringido. Gate 4 actualizado con cadena de prioridad de tres niveles: CompanyUser.workday_schedule → primera sección activa con workday_schedule → WorkdaySchedule.is_default=True de empresa. Incidencia: bugs CompanyUserUpdateView — teléfono no persiste (post() actualiza Contact), redirección fija corregida con next_url resuelto en get_context_data (POST → GET → HTTP_REFERER → fallback). Incidencia pendiente para S035: contador de trabajadores en secciones no persiste (worker_count muestra 0 aunque existan trabajadores asignados). |
 
 ---
 
@@ -959,75 +960,93 @@ Incidencias on-fly resueltas en S033 (fuera del H7):
 
 ### Estado de migraciones al cierre de S033
 
-| App                  | Ultima migracion aplicada                  |
-|----------------------|--------------------------------------------|
-| fleet                | 0005_add_first_repair_to_machineasset      |
-| work_order_processor | 0018_workdaygap_lunch_break                |
-| ivr_config           | 0018_workdayschedule_season_split_times    |
-| panel                | 0001_initial (AnalyticsProfile)            |
+| App                  | Última migración aplicada                    |
+|----------------------|----------------------------------------------|
+| fleet                | 0005_add_first_repair_to_machineasset        |
+| work_order_processor | 0018_workdaygap_lunch_break                  |
+| ivr_config           | 0018_workdayschedule_season_split_times      |
+| panel                | 0001_initial (AnalyticsProfile)              |
+
+### Estado de migraciones al cierre de S034
+
+| App                  | Última migración aplicada                    |
+|----------------------|----------------------------------------------|
+| fleet                | 0005_add_first_repair_to_machineasset        |
+| work_order_processor | 0018_workdaygap_lunch_break                  |
+| ivr_config           | 0024_section_workday_schedule                |
+| panel                | 0001_initial (AnalyticsProfile)              |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion
+## 5. Hoja de Ruta para la Siguiente Sesión
 
 ### NOTA DE ESTADO
-El Hito 7 continua EN PROGRESO en S034.
+El Hito 7 continúa EN PROGRESO en S035.
 
-### PRIORIDAD 1 — Eliminacion de usuarios con seleccion multiple y avisos IVR
+### ADVERTENCIAS CRÍTICAS — mantener siempre presentes
 
-  Vista: panel/users/list.html + CompanyUserListView + nueva vista de eliminacion.
+  El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
+  Usar siempre entry.lines.all() y prefetch_related("entries__lines").
 
-  OBJETIVO: permitir al supervisor eliminar uno o varios CompanyUser desde la
-  lista de usuarios, con el mismo patron de casilleros de seleccion multiple
-  que existe en otras vistas del panel, y con avisos preventivos cuando alguno
-  de los usuarios seleccionados tenga contactos vinculados a flujos IVR activos.
+  _compute_delta_hours: siempre pasar deduct_lunch=False en partes digitales.
+  Pipeline PDF usa el valor por defecto True. NO cambiar el default.
 
-  IMPLEMENTACION:
+  form_entry_assets.js: URLs Django inyectadas via window.EB_CONFIG en el template.
+  Si se añaden nuevas URLs Django al JS, añadirlas primero al bloque EB_CONFIG.
 
-  1. users/list.html:
-     - Columna de checkbox al inicio de cada fila (input[type=checkbox]
-       con value={{ cu.pk }}).
-     - Checkbox global en la cabecera para seleccionar/deseleccionar todos.
-     - Boton 'Eliminar seleccionados' (btn-outline-danger) que solo se
-       activa cuando hay al menos un checkbox marcado.
-     - El boton envia un POST a la nueva vista de eliminacion con los
-       pks seleccionados.
+  Section.workday_schedule: FK(WorkdaySchedule, SET_NULL, null=True, blank=True)
+  añadida en S034 (migración ivr_config 0024_section_workday_schedule).
+  Cadena de prioridad Gate 4:
+    1. CompanyUser.workday_schedule (individual, máxima prioridad).
+    2. Primera sección activa del operario con workday_schedule asignado.
+    3. WorkdaySchedule con is_default=True de empresa (fallback global).
+    4. None → Gate 4 se omite completamente.
 
-  2. CompanyUserBulkDeleteView (nueva — SupervisorAccessMixin, View):
-     POST /panel/users/bulk-delete/
-     - Recibe lista de pks via POST (campo 'selected_users').
-     - Para cada CompanyUser seleccionado:
-         a. Verificar que pertenece a la empresa del usuario autenticado.
-         b. Verificar si tiene Contact vinculado que sea miembro de alguna
-            Section con is_active=True (contacto IVR activo).
-         c. Si tiene contacto IVR activo: acumular en lista de 'en riesgo'.
-     - Si hay usuarios 'en riesgo': NO eliminar nada. Renderizar pagina de
-       confirmacion con aviso claro listando los usuarios en riesgo y las
-       secciones IVR afectadas. El supervisor debe confirmar expresamente.
-     - Si el supervisor confirma (segundo POST con flag 'confirmed=1'):
-       eliminar todos los CompanyUser seleccionados incluyendo los en riesgo.
-     - Cascade esperado al eliminar CompanyUser:
-         Contact.company_user → SET_NULL (el Contact queda huerfano).
-         auth.User: eliminar junto al CompanyUser (cascade o delete explicito).
-     - Mensaje de exito con contador de usuarios eliminados.
+### PRIORIDAD 1 — Bug: contador de trabajadores en secciones no persiste
 
-  3. urls.py:
-     path('users/bulk-delete/', CompanyUserBulkDeleteView.as_view(),
-          name='user_bulk_delete')
+  SÍNTOMA OBSERVADO:
+  La columna "Trabajadores" en sections/list.html muestra 0 para todas las
+  secciones aunque existan CompanyUser con rol WORKSHOP o DRIVER asignados.
 
-  CRITERIO DE RIESGO IVR:
-     Un CompanyUser se considera 'en riesgo IVR' si:
-       contact = Contact.objects.filter(company_user=cu).first()
-       contact is not None
-       AND contact.sections.filter(is_active=True).exists()
+  CAUSA PROBABLE:
+  SectionListView.get_queryset() anota worker_count filtrando por
+  contacts__company_user__role__in=["WORKSHOP", "DRIVER"].
+  Si el Contact del trabajador no está asignado a la sección vía el M2M
+  Section.contacts (tabla SectionContact), la anotación devuelve 0 aunque
+  el CompanyUser exista y tenga rol WORKSHOP. El problema puede ser que
+  los trabajadores se gestionan como CompanyUser en la tabla de trabajadores
+  de SectionUpdateView pero su Contact no se vincula explícitamente al M2M
+  de la sección, o que la anotación cruza Contact → company_user en lugar
+  de Section → CompanyUser directamente.
 
-  PATRON DE REFERENCIA:
-     Revisar otras vistas de eliminacion multiple existentes en el panel
-     (p.ej. eliminacion de CallFlow o Section) para mantener coherencia
-     visual y de UX con el resto del panel.
+  DIAGNÓSTICO PREVIO OBLIGATORIO antes de implementar cualquier solución:
+  1. Descargar panel/views.py (SectionListView.get_queryset()).
+  2. Descargar ivr_config/models.py (relación Section → contacts M2M).
+  3. Verificar en producción via shell Django si los Contact de los
+     trabajadores WORKSHOP/DRIVER están efectivamente en el M2M:
+       section = Section.objects.get(pk=<pk>)
+       section.contacts.filter(company_user__role__in=["WORKSHOP","DRIVER"])
+  4. Si el M2M está vacío: el worker_count correcto debe obtenerse desde
+     CompanyUser directamente, no pasando por Contact. La anotación
+     correcta sería:
+       worker_count = Count(
+           "contacts__company_user",
+           filter=Q(contacts__company_user__role__in=["WORKSHOP","DRIVER"]),
+           distinct=True,
+       )
+     O bien, si los trabajadores no pasan por Contact en absoluto, derivar
+     el conteo desde la relación inversa de CompanyUser hacia Section
+     (si existe) o usar una subquery anotada.
 
-### Archivos a solicitar al inicio de S034 via SFTP
+  ARCHIVOS A DESCARGAR AL INICIO DE S035:
+    panel/views.py (SectionListView)
+    ivr_config/models.py (modelos Section, SectionContact, CompanyUser)
 
-  panel/templates/panel/users/list.html
-  panel/views.py (CompanyUserListView y CompanyUserUpdateView)
-  panel/urls.py
+### PRIORIDAD 2 — Validación en producción de todas las incidencias de S034
+
+  Una vez resuelto el bug de worker_count, validar E2E en producción:
+  - Eliminación múltiple de usuarios: escenario sin riesgo IVR y con riesgo IVR.
+  - Eliminación de contacto huerfano desde el formulario de contacto.
+  - Selector de horario individual desde la tabla de trabajadores de sección.
+  - Horario por defecto de sección: guardar y verificar que Gate 4 lo aplica.
+  - Edición de usuario desde sección: teléfono persiste y redirección correcta.

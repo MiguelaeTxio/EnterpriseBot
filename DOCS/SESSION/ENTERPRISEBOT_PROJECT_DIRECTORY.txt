@@ -65,8 +65,10 @@
 ./panel/templates/panel/users/list.html
 ./panel/templates/panel/users/create.html
 ./panel/templates/panel/users/form.html
+./panel/templates/panel/users/bulk_delete_confirm.html
 ./panel/templates/panel/contacts/list.html
 ./panel/templates/panel/contacts/form.html
+./panel/templates/panel/contacts/confirm_delete.html
 ./panel/templates/panel/callflows/list.html
 ./panel/templates/panel/callflows/form.html
 ./panel/templates/panel/blockedcallers/list.html
@@ -318,6 +320,7 @@
 ./ivr_config/migrations/0002_phonenumber_capabilities.py
 ./ivr_config/migrations/0001_initial.py
 ./ivr_config/migrations/0023_contact_opt_out_broadcast_and_more.py
+./ivr_config/migrations/0024_section_workday_schedule.py
 ./ivr_config/tests.py
 ./ivr_config/management/commands/set_asset_flags.py
 ./ivr_config/management/commands/seed_grupo_alvarez.py

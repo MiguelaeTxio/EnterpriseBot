@@ -132,7 +132,7 @@ class SectionForm(forms.ModelForm):
 
     class Meta:
         model = Section
-        fields = ["name", "description", "contacts", "call_flow", "data_capture_set", "is_24h", "is_active"]
+        fields = ["name", "description", "contacts", "call_flow", "data_capture_set", "is_24h", "is_active", "workday_schedule"]
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
@@ -141,6 +141,7 @@ class SectionForm(forms.ModelForm):
             "data_capture_set": forms.Select(attrs={"class": "form-select"}),
             "is_24h": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "workday_schedule": forms.Select(attrs={"class": "form-select"}),
         }
         labels = {
             "name": "Nombre",
@@ -150,6 +151,7 @@ class SectionForm(forms.ModelForm):
             "data_capture_set": "Conjunto de captura de datos",
             "is_24h": "Disponible 24 horas",
             "is_active": "Activa",
+            "workday_schedule": "Horario de trabajo por defecto",
         }
 
 

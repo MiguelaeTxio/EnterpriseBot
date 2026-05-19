@@ -514,12 +514,17 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
     def post(self, request, *args, **kwargs):
         """
         Handles standard update and the force-reset action.
+        Persists the phone_number field by updating or creating the linked
+        Contact record. Respects the 'next' POST parameter for redirect.
         If POST contains 'force_reset', sets must_change_password=True and redirects.
         ---
         Gestiona la actualización estándar y la acción de forzar reset.
+        Persiste el campo phone_number actualizando o creando el registro
+        Contact vinculado. Respeta el parámetro POST 'next' para la redirección.
         Si el POST contiene 'force_reset', establece must_change_password=True y redirige.
         """
         self.object = self.get_object()
+        next_url = request.POST.get("next", "").strip() or "/panel/users/"
         if "force_reset" in request.POST:
             self.object.must_change_password = True
             self.object.save(update_fields=["must_change_password"])
@@ -528,28 +533,80 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
                 f"Se ha forzado el cambio de contraseña para "
                 f"'{self.object.user.username}'."
             )
-            return redirect("/panel/users/")
+            return redirect(next_url)
+        # Store next_url in session so get_success_url can read it after
+        # super().post() processes the form (Django UpdateView flow).
+        # Almacenar next_url en sesión para que get_success_url pueda leerlo
+        # tras el procesamiento del formulario por super().post().
+        request.session["_cu_update_next"] = next_url
+        # Persist phone_number: update or create the linked Contact.
+        # Persistir phone_number: actualizar o crear el Contact vinculado.
+        phone_number = request.POST.get("phone_number", "").strip()
+        if phone_number:
+            from ivr_config.models import Contact as _Contact
+            company = self.object.company
+            _contact = _Contact.objects.filter(
+                company=company, company_user=self.object
+            ).first()
+            if _contact is not None:
+                # Update existing Contact phone_number.
+                # Actualizar phone_number del Contact existente.
+                if _contact.phone_number != phone_number:
+                    _contact.phone_number = phone_number
+                    _contact.save(update_fields=["phone_number"])
+                    logger.info(
+                        "# [USER UPDATE] Contact pk=%s phone_number actualizado a '%s'.",
+                        _contact.pk, phone_number,
+                    )
+            else:
+                # No linked Contact — create a phoneless-to-phone one.
+                # Sin Contact vinculado — crear uno nuevo con el teléfono.
+                _display = (
+                    self.object.user.get_full_name() or self.object.user.username
+                )
+                _Contact.objects.create(
+                    company      = company,
+                    phone_number = phone_number,
+                    name         = _display,
+                    is_internal  = True,
+                    company_user = self.object,
+                )
+                logger.info(
+                    "# [USER UPDATE] Contact nuevo creado para CompanyUser pk=%s con phone '%s'.",
+                    self.object.pk, phone_number,
+                )
         return super().post(request, *args, **kwargs)
 
     def get_success_url(self):
         """
-        Redirects to the user list after a successful update.
+        Redirects to the 'next' URL stored in session, or falls back to user list.
         ---
-        Redirige a la lista de usuarios tras una actualización correcta.
+        Redirige a la URL 'next' almacenada en sesión, o a la lista de usuarios
+        como fallback.
         """
         django_messages.success(
             self.request,
             f"Usuario '{self.object.user.username}' actualizado correctamente."
         )
-        return "/panel/users/"
+        next_url = self.request.session.pop("_cu_update_next", "/panel/users/")
+        return next_url
 
     def get_context_data(self, **kwargs):
         """
-        Adds company, company_user, own_presence and contact_phone to context.
-        contact_phone is pre-populated from the linked Contact phone_number.
+        Adds company, company_user, own_presence, contact_phone and next_url
+        to context.
+        next_url resolution order: POST['next'] → GET['next'] → HTTP_REFERER → /panel/users/.
+        Using POST['next'] first ensures the origin is preserved across
+        validation re-renders (when the form is re-POSTed after an error,
+        HTTP_REFERER would already point to the edit page itself).
         ---
-        Añade company, company_user, own_presence y contact_phone al contexto.
-        contact_phone se pre-rellena desde el phone_number del Contact vinculado.
+        Añade company, company_user, own_presence, contact_phone y next_url
+        al contexto.
+        Orden de resolución de next_url: POST['next'] → GET['next'] →
+        HTTP_REFERER → /panel/users/.
+        Priorizar POST['next'] garantiza que el origen se preserva en
+        re-renders de validación (cuando el formulario se re-envía tras error,
+        HTTP_REFERER ya apunta a la propia página de edición).
         """
         if not hasattr(self, 'object') or self.object is None:
             self.object = self.get_object()
@@ -564,6 +621,14 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
             company_user=self.object,
         ).first()
         context["contact_phone"] = _contact.phone_number if _contact else ""
+        # Resolve next_url: POST → GET → Referer → fallback.
+        # Resolver next_url: POST → GET → Referer → fallback.
+        context["next_url"] = (
+            self.request.POST.get("next", "").strip()
+            or self.request.GET.get("next", "").strip()
+            or self.request.META.get("HTTP_REFERER", "")
+            or "/panel/users/"
+        )
         return context
 
     def _get_own_presence(self):
@@ -581,6 +646,223 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
         ).filter(
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
+
+
+
+class CompanyUserBulkDeleteView(SupervisorAccessMixin, View):
+    """
+    Allows a SUPERVISOR or ADMIN to delete one or more CompanyUser accounts
+    belonging to their company in a single operation.
+
+    Flow:
+      1. First POST (confirmed not set): evaluate selected pks.
+         - Verify all pks belong to the authenticated user's company.
+         - Detect IVR-risk users: those whose linked Contact is a member
+           of at least one active Section (is_active=True).
+         - If no IVR-risk users: delete immediately and redirect.
+         - If IVR-risk users exist: render confirmation page with a warning
+           listing the at-risk users and their affected sections.
+      2. Second POST (confirmed=1): delete all selected users including
+         IVR-risk ones. Contact.company_user is SET_NULL by the DB cascade;
+         auth.User is deleted explicitly to ensure full cleanup.
+
+    POST /panel/users/bulk-delete/
+         Body: selected_users (list of pks)
+               confirmed       (optional, '1' to bypass risk warning)
+    ---
+    Permite a un SUPERVISOR o ADMIN eliminar una o varias cuentas CompanyUser
+    de su empresa en una única operación.
+
+    Flujo:
+      1. Primer POST (sin confirmed): evaluar pks seleccionados.
+         - Verificar que todos los pks pertenecen a la empresa autenticada.
+         - Detectar usuarios en riesgo IVR: aquellos cuyo Contact vinculado
+           es miembro de al menos una Section activa (is_active=True).
+         - Sin usuarios en riesgo: eliminar directamente y redirigir.
+         - Con usuarios en riesgo: renderizar página de confirmación con
+           aviso listando los usuarios en riesgo y sus secciones afectadas.
+      2. Segundo POST (confirmed=1): eliminar todos los seleccionados
+         incluidos los en riesgo. Contact.company_user queda a NULL por
+         el cascade de la BD; auth.User se elimina explícitamente.
+
+    POST /panel/users/bulk-delete/
+         Body: selected_users (lista de pks)
+               confirmed       (opcional, '1' para saltarse el aviso de riesgo)
+    """
+
+    template_name = "panel/users/bulk_delete_confirm.html"
+
+    def _get_own_presence(self, request):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _resolve_users(self, pks_raw, company):
+        """
+        Returns a queryset of CompanyUser records for the given pk list,
+        scoped to the provided company. Silently drops invalid or
+        cross-company pks.
+        ---
+        Retorna un queryset de CompanyUser para la lista de pks dada,
+        acotado a la empresa proporcionada. Descarta silenciosamente los
+        pks inválidos o de otras empresas.
+        """
+        valid_pks = []
+        for raw in pks_raw:
+            try:
+                valid_pks.append(int(raw))
+            except (ValueError, TypeError):
+                pass
+        return CompanyUser.objects.filter(
+            pk__in=valid_pks,
+            company=company,
+        ).select_related("user")
+
+    def _classify_risk(self, users_qs):
+        """
+        Splits the given queryset into two lists:
+          - safe_users: CompanyUser records with no active IVR contact.
+          - risk_users: CompanyUser records whose linked Contact belongs
+            to at least one active Section (is_active=True). Each entry is
+            a dict with keys 'cu' and 'sections' (list of Section names).
+        A CompanyUser is IVR-risk if:
+            contact = Contact.objects.filter(company_user=cu).first()
+            contact is not None AND contact.sections.filter(is_active=True).exists()
+        ---
+        Divide el queryset en dos listas:
+          - safe_users: CompanyUser sin contacto IVR activo.
+          - risk_users: CompanyUser cuyo Contact vinculado pertenece
+            a al menos una Section activa (is_active=True). Cada entrada
+            es un dict con claves 'cu' y 'sections' (lista de nombres).
+        Un CompanyUser es riesgo IVR si:
+            contact = Contact.objects.filter(company_user=cu).first()
+            contact is not None AND contact.sections.filter(is_active=True).exists()
+        """
+        safe_users = []
+        risk_users = []
+        for cu in users_qs:
+            contact = Contact.objects.filter(company_user=cu).first()
+            if contact is not None and contact.sections.filter(is_active=True).exists():
+                active_sections = list(
+                    contact.sections.filter(is_active=True).values_list("name", flat=True)
+                )
+                risk_users.append({"cu": cu, "sections": active_sections})
+            else:
+                safe_users.append(cu)
+        return safe_users, risk_users
+
+    def _delete_users(self, cu_list):
+        """
+        Deletes all CompanyUser records in the given list together with
+        their underlying auth.User. The DB cascade sets Contact.company_user
+        to NULL automatically (SET_NULL). auth.User is deleted explicitly
+        to guarantee full cleanup regardless of cascade configuration.
+        Returns the count of deleted CompanyUser records.
+        ---
+        Elimina todos los registros CompanyUser de la lista junto con su
+        auth.User subyacente. El cascade de BD pone Contact.company_user
+        a NULL automáticamente (SET_NULL). auth.User se elimina de forma
+        explícita para garantizar la limpieza total independientemente
+        de la configuración del cascade.
+        Retorna el contador de CompanyUser eliminados.
+        """
+        from django.contrib.auth.models import User as AuthUser
+        count = 0
+        for cu in cu_list:
+            auth_user_pk = cu.user.pk
+            username     = cu.user.username
+            cu.delete()
+            AuthUser.objects.filter(pk=auth_user_pk).delete()
+            logger.info(
+                "# [USER BULK DELETE] CompanyUser '%s' eliminado.",
+                username,
+            )
+            count += 1
+        return count
+
+    def post(self, request, *args, **kwargs):
+        """
+        Handles both the initial evaluation POST and the confirmed deletion POST.
+        On the first POST without 'confirmed': resolves users, classifies IVR risk
+        and either deletes immediately (no risk) or renders the confirmation page.
+        On the second POST with confirmed='1': deletes all selected users including
+        those previously flagged as IVR-risk.
+        ---
+        Gestiona tanto el POST de evaluación inicial como el POST de confirmación.
+        En el primer POST sin 'confirmed': resuelve usuarios, clasifica riesgo IVR
+        y elimina directamente (sin riesgo) o renderiza la página de confirmación.
+        En el segundo POST con confirmed='1': elimina todos los seleccionados
+        incluidos los marcados como riesgo IVR.
+        """
+        company      = request.user.company_user.company
+        company_user = request.user.company_user
+        pks_raw      = request.POST.getlist("selected_users")
+        confirmed    = request.POST.get("confirmed", "") == "1"
+
+        # Guard: no users selected.
+        # Guardia: sin usuarios seleccionados.
+        if not pks_raw:
+            django_messages.warning(request, "No se seleccionó ningún usuario.")
+            return redirect("/panel/users/")
+
+        users_qs = self._resolve_users(pks_raw, company)
+
+        # Guard: exclude the authenticated user from deletion.
+        # Guardia: excluir al usuario autenticado de la eliminación.
+        users_qs = users_qs.exclude(pk=company_user.pk)
+
+        if not users_qs.exists():
+            django_messages.warning(request, "No se seleccionó ningún usuario válido.")
+            return redirect("/panel/users/")
+
+        if confirmed:
+            # Second POST: delete everything regardless of IVR risk.
+            # Segundo POST: eliminar todo independientemente del riesgo IVR.
+            count = self._delete_users(list(users_qs))
+            django_messages.success(
+                request,
+                f"{count} usuario{'s' if count != 1 else ''} eliminado"
+                f"{'s' if count != 1 else ''} correctamente.",
+            )
+            return redirect("/panel/users/")
+
+        # First POST: classify IVR risk.
+        # Primer POST: clasificar riesgo IVR.
+        safe_users, risk_users = self._classify_risk(users_qs)
+
+        if not risk_users:
+            # No risk users — delete immediately.
+            # Sin usuarios en riesgo — eliminar directamente.
+            count = self._delete_users(safe_users)
+            django_messages.success(
+                request,
+                f"{count} usuario{'s' if count != 1 else ''} eliminado"
+                f"{'s' if count != 1 else ''} correctamente.",
+            )
+            return redirect("/panel/users/")
+
+        # Risk users detected — render confirmation page.
+        # Usuarios en riesgo detectados — renderizar página de confirmación.
+        all_users = [entry["cu"] for entry in risk_users] + safe_users
+        context = {
+            "company":       company,
+            "company_user":  company_user,
+            "own_presence":  self._get_own_presence(request),
+            "active_nav":    "users",
+            "risk_users":    risk_users,
+            "safe_users":    safe_users,
+            "selected_pks":  [cu.pk for cu in all_users],
+        }
+        return render(request, self.template_name, context)
 
 
 class CompanyUserSectionUnlinkView(SupervisorAccessMixin, View):
@@ -661,12 +943,90 @@ class CompanyUserSectionUnlinkView(SupervisorAccessMixin, View):
         return redirect(next_url)
 
 
+
+class WorkerScheduleUpdateView(SupervisorAccessMixin, View):
+    """
+    Updates the workday_schedule FK of a single CompanyUser belonging to
+    the authenticated user's company. Designed for AJAX calls from the
+    section edit form worker table.
+    Returns JSON {"ok": true} on success or {"ok": false, "error": "..."}
+    on failure.
+
+    POST /panel/users/<pk>/schedule/
+         Body: schedule_pk — pk of the WorkdaySchedule to assign,
+                             or empty string to clear the assignment.
+    ---
+    Actualiza la FK workday_schedule de un CompanyUser perteneciente a la
+    empresa del usuario autenticado. Diseñado para llamadas AJAX desde la
+    tabla de trabajadores del formulario de edición de sección.
+    Devuelve JSON {"ok": true} en éxito o {"ok": false, "error": "..."}
+    en caso de fallo.
+
+    POST /panel/users/<pk>/schedule/
+         Body: schedule_pk — pk del WorkdaySchedule a asignar,
+                             o cadena vacía para limpiar la asignación.
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Resolves the CompanyUser and the WorkdaySchedule (if provided),
+        validates company ownership for both, and updates the FK.
+        ---
+        Resuelve el CompanyUser y el WorkdaySchedule (si se proporciona),
+        valida la propiedad de empresa en ambos y actualiza la FK.
+        """
+        import json as _json
+        from django.http import JsonResponse
+        from ivr_config.models import WorkdaySchedule as _WorkdaySchedule
+
+        company = request.user.company_user.company
+
+        # Resolve CompanyUser — scoped to company.
+        # Resolver CompanyUser — acotado a empresa.
+        try:
+            cu = CompanyUser.objects.get(pk=pk, company=company)
+        except CompanyUser.DoesNotExist:
+            return JsonResponse({"ok": False, "error": "Usuario no encontrado."}, status=404)
+
+        schedule_pk = request.POST.get("schedule_pk", "").strip()
+
+        if schedule_pk:
+            # Assign the selected WorkdaySchedule — validate company ownership.
+            # Asignar el WorkdaySchedule seleccionado — validar propiedad de empresa.
+            try:
+                schedule = _WorkdaySchedule.objects.get(pk=int(schedule_pk), company=company)
+            except (ValueError, TypeError, _WorkdaySchedule.DoesNotExist):
+                return JsonResponse({"ok": False, "error": "Horario no encontrado."}, status=404)
+            cu.workday_schedule = schedule
+        else:
+            # Clear the assignment.
+            # Limpiar la asignación.
+            cu.workday_schedule = None
+
+        cu.save(update_fields=["workday_schedule"])
+        logger.info(
+            "# [WORKER SCHEDULE] CompanyUser pk=%s — workday_schedule -> %s (por %s).",
+            cu.pk,
+            cu.workday_schedule_id,
+            request.user.username,
+        )
+        return JsonResponse({"ok": True})
+
+
 class SectionListView(AdminRoleRequiredMixin, ListView):
     """
     Lists all Section records belonging to the authenticated user's company.
+    Annotates each Section with two filtered counts:
+      - ivr_contact_count: contacts whose linked CompanyUser is None or has a
+        role other than WORKSHOP/DRIVER (true IVR contacts).
+      - worker_count: contacts whose linked CompanyUser has role WORKSHOP or DRIVER.
     Accessible only to users with the ADMIN role.
     ---
     Lista todos los registros Section pertenecientes a la empresa del usuario autenticado.
+    Anota cada Section con dos contadores filtrados:
+      - ivr_contact_count: contactos cuyo CompanyUser vinculado es None o tiene un rol
+        distinto de WORKSHOP/DRIVER (contactos IVR reales).
+      - worker_count: contactos cuyo CompanyUser vinculado tiene rol WORKSHOP o DRIVER.
     Solo accesible para usuarios con rol ADMIN.
     """
 
@@ -676,13 +1036,38 @@ class SectionListView(AdminRoleRequiredMixin, ListView):
 
     def get_queryset(self):
         """
-        Returns Section records scoped to the authenticated user's company.
+        Returns Section records scoped to the authenticated user's company,
+        annotated with ivr_contact_count and worker_count.
+        ivr_contact_count excludes contacts linked to WORKSHOP or DRIVER users.
+        worker_count counts only contacts linked to WORKSHOP or DRIVER users.
         ---
-        Retorna los registros Section acotados a la empresa del usuario autenticado.
+        Retorna los registros Section acotados a la empresa del usuario autenticado,
+        anotados con ivr_contact_count y worker_count.
+        ivr_contact_count excluye contactos vinculados a usuarios WORKSHOP o DRIVER.
+        worker_count cuenta solo los contactos vinculados a usuarios WORKSHOP o DRIVER.
         """
+        from django.db.models import Count, Q as _Q
         return Section.objects.filter(
             company=self.request.user.company_user.company
-        ).prefetch_related("contacts").order_by("name")
+        ).annotate(
+            # IVR contacts: no linked CompanyUser OR role not in WORKSHOP/DRIVER.
+            # Contactos IVR: sin CompanyUser vinculado O rol no WORKSHOP/DRIVER.
+            ivr_contact_count=Count(
+                "contacts",
+                filter=_Q(
+                    _Q(contacts__company_user__isnull=True)
+                    | ~_Q(contacts__company_user__role__in=["WORKSHOP", "DRIVER"])
+                ),
+                distinct=True,
+            ),
+            # Worker contacts: linked CompanyUser with role WORKSHOP or DRIVER.
+            # Contactos trabajadores: CompanyUser vinculado con rol WORKSHOP o DRIVER.
+            worker_count=Count(
+                "contacts",
+                filter=_Q(contacts__company_user__role__in=["WORKSHOP", "DRIVER"]),
+                distinct=True,
+            ),
+        ).order_by("name")
 
     def get_context_data(self, **kwargs):
         """
@@ -780,6 +1165,13 @@ class SectionCreateView(SupervisorAccessMixin, CreateView):
             company=company,
         ).order_by("name")
         form.fields["data_capture_set"].required = False
+        # Restrict workday_schedule to company schedules; optional.
+        # Restringir workday_schedule a los horarios de la empresa; opcional.
+        from ivr_config.models import WorkdaySchedule as _WorkdaySchedule
+        form.fields["workday_schedule"].queryset = _WorkdaySchedule.objects.filter(
+            company=company,
+        ).order_by("label")
+        form.fields["workday_schedule"].required = False
         return form
 
     def get(self, request, *args, **kwargs):
@@ -980,6 +1372,13 @@ class SectionUpdateView(SupervisorAccessMixin, UpdateView):
             company=company,
         ).order_by("name")
         form.fields["data_capture_set"].required = False
+        # Restrict workday_schedule to company schedules; optional.
+        # Restringir workday_schedule a los horarios de la empresa; opcional.
+        from ivr_config.models import WorkdaySchedule as _WorkdaySchedule
+        form.fields["workday_schedule"].queryset = _WorkdaySchedule.objects.filter(
+            company=company,
+        ).order_by("label")
+        form.fields["workday_schedule"].required = False
         return form
 
     def get(self, request, *args, **kwargs):
@@ -1109,6 +1508,13 @@ class SectionUpdateView(SupervisorAccessMixin, UpdateView):
             _cu.is_ivr_active = _contact.is_internal
             _workers.append(_cu)
         context["section_workers"] = _workers
+        # Workday schedules available for the company — for the worker schedule selector.
+        # Horarios de jornada disponibles para la empresa — para el selector de horario del trabajador.
+        from ivr_config.models import WorkdaySchedule as _WorkdaySchedule
+        context["workday_schedules"] = list(
+            _WorkdaySchedule.objects.filter(company=self.request.user.company_user.company)
+            .order_by("label")
+        )
         if "schedule_formset" not in context:
             ScheduleFormSet = self._get_schedule_formset_class()
             context["schedule_formset"] = ScheduleFormSet(
@@ -1349,6 +1755,88 @@ class ContactUpdateView(AdminRoleRequiredMixin, UpdateView):
         ).filter(
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
+
+
+
+class ContactDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Allows an ADMIN to delete a Contact belonging to their company.
+    Scoped to the authenticated user's company — cross-company deletions
+    are rejected silently via get_object_or_404.
+    Renders a confirmation page on GET; deletes on POST.
+    ---
+    Permite a un ADMIN eliminar un Contact de su empresa.
+    Acotado a la empresa del usuario autenticado — los intentos entre
+    empresas son rechazados silenciosamente via get_object_or_404.
+    Renderiza una página de confirmación en GET; elimina en POST.
+    """
+
+    template_name = "panel/contacts/confirm_delete.html"
+
+    def _get_contact(self, request, pk):
+        """
+        Returns the Contact scoped to the authenticated user's company
+        or raises Http404.
+        ---
+        Retorna el Contact acotado a la empresa del usuario autenticado
+        o lanza Http404.
+        """
+        from django.shortcuts import get_object_or_404
+        return get_object_or_404(
+            Contact,
+            pk=pk,
+            company=request.user.company_user.company,
+        )
+
+    def _get_own_presence(self, request):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        company_user = request.user.company_user
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def get(self, request, pk, *args, **kwargs):
+        """
+        Renders the confirmation page for the given Contact.
+        ---
+        Renderiza la página de confirmación para el Contact indicado.
+        """
+        contact = self._get_contact(request, pk)
+        context = {
+            "company":      request.user.company_user.company,
+            "company_user": request.user.company_user,
+            "own_presence": self._get_own_presence(request),
+            "active_nav":   "contacts",
+            "contact":      contact,
+        }
+        return render(request, self.template_name, context)
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Deletes the Contact and redirects to the contact list.
+        ---
+        Elimina el Contact y redirige a la lista de contactos.
+        """
+        contact = self._get_contact(request, pk)
+        name    = contact.name
+        contact.delete()
+        logger.info(
+            "# [CONTACT DELETE] Contact '%s' eliminado por %s.",
+            name,
+            request.user.username,
+        )
+        django_messages.success(
+            request,
+            f"Contacto '{name}' eliminado correctamente.",
+        )
+        return redirect("/panel/contacts/")
 
 
 class CallFlowListView(AdminRoleRequiredMixin, ListView):
@@ -6979,7 +7467,30 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             _schedule_g4c2 = (
                 cu.workday_schedule
                 if cu.workday_schedule_id
-                else _WDS_C2.objects.filter(
+                else (
+                    # Section-level default: first active section of the
+                    # operator that has a workday_schedule assigned.
+                    # Horario por defecto de seccion: primera seccion activa
+                    # del operario que tenga workday_schedule asignado.
+                    next(
+                        (
+                            _sec.workday_schedule
+                            for _sec in (
+                                _contact_g4c2.sections
+                                .filter(is_active=True, workday_schedule__isnull=False)
+                                .select_related("workday_schedule")
+                                .order_by("name")
+                            )
+                        ),
+                        None,
+                    )
+                    if (_contact_g4c2 := (
+                        Contact.objects.filter(company_user=cu)
+                        .prefetch_related("sections__workday_schedule")
+                        .first()
+                    )) is not None
+                    else None
+                ) or _WDS_C2.objects.filter(
                     company=company, is_default=True
                 ).first()
             )
@@ -7782,7 +8293,30 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             _schedule_g4fa = (
                 cu.workday_schedule
                 if cu.workday_schedule_id
-                else _WDS_FA.objects.filter(
+                else (
+                    # Section-level default: first active section of the
+                    # operator that has a workday_schedule assigned.
+                    # Horario por defecto de seccion: primera seccion activa
+                    # del operario que tenga workday_schedule asignado.
+                    next(
+                        (
+                            _sec.workday_schedule
+                            for _sec in (
+                                _contact_g4fa.sections
+                                .filter(is_active=True, workday_schedule__isnull=False)
+                                .select_related("workday_schedule")
+                                .order_by("name")
+                            )
+                        ),
+                        None,
+                    )
+                    if (_contact_g4fa := (
+                        Contact.objects.filter(company_user=cu)
+                        .prefetch_related("sections__workday_schedule")
+                        .first()
+                    )) is not None
+                    else None
+                ) or _WDS_FA.objects.filter(
                     company=company, is_default=True
                 ).first()
             )
@@ -9534,7 +10068,30 @@ class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
                 _schedule_g4mv = (
                     cu.workday_schedule
                     if cu.workday_schedule_id
-                    else _WDS_MV.objects.filter(
+                    else (
+                        # Section-level default: first active section of the
+                        # operator that has a workday_schedule assigned.
+                        # Horario por defecto de seccion: primera seccion activa
+                        # del operario que tenga workday_schedule asignado.
+                        next(
+                                (
+                                    _sec.workday_schedule
+                                    for _sec in (
+                                        _contact_g4mv.sections
+                                        .filter(is_active=True, workday_schedule__isnull=False)
+                                        .select_related("workday_schedule")
+                                        .order_by("name")
+                                    )
+                                ),
+                                None,
+                        )
+                        if (_contact_g4mv := (
+                                Contact.objects.filter(company_user=cu)
+                                .prefetch_related("sections__workday_schedule")
+                                .first()
+                        )) is not None
+                        else None
+                    ) or _WDS_MV.objects.filter(
                         company=company, is_default=True
                     ).first()
                 )

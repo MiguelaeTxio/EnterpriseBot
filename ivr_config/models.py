@@ -537,6 +537,21 @@ class Section(models.Model):
         verbose_name="Activa",
         help_text="Indica si esta sección está operativa para el enrutamiento IVR.",
     )
+    workday_schedule = models.ForeignKey(
+        "WorkdaySchedule",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sections",
+        verbose_name="Horario de trabajo por defecto",
+        help_text=(
+            "Horario de jornada que se aplica por defecto a todos los trabajadores "
+            "de esta sección. Un trabajador con horario individual asignado "
+            "(CompanyUser.workday_schedule) tiene prioridad sobre este valor. "
+            "Si no hay horario de sección ni individual, Gate 4 usa el horario "
+            "por defecto de empresa (WorkdaySchedule.is_default=True)."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

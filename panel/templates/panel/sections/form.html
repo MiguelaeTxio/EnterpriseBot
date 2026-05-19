@@ -315,6 +315,69 @@
     });
 }());
 </script>
+<script>
+/*
+ * Workday schedule AJAX selector for the worker table.
+ * On change, POSTs the selected schedule pk to the worker_schedule_update
+ * endpoint and shows inline feedback.
+ *
+ * Selector AJAX de horario de jornada para la tabla de trabajadores.
+ * Al cambiar, envía POST con el pk del horario seleccionado al endpoint
+ * worker_schedule_update y muestra feedback inline.
+ */
+(function () {
+    'use strict';
+
+    function getCookie(name) {
+        var value = '; ' + document.cookie;
+        var parts = value.split('; ' + name + '=');
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+    }
+
+    function showFeedback(workerPk, msg, type) {
+        var fb = document.querySelector('.wk-schedule-feedback[data-worker-pk="' + workerPk + '"]');
+        if (!fb) return;
+        if (!msg) { fb.textContent = ''; fb.className = 'wk-schedule-feedback text-sm mt-1'; return; }
+        fb.textContent = msg;
+        fb.className = 'wk-schedule-feedback text-sm mt-1 text-' + type;
+        setTimeout(function () { showFeedback(workerPk, '', ''); }, 3000);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.wk-schedule-select').forEach(function (sel) {
+            sel.addEventListener('change', function () {
+                var workerPk   = sel.getAttribute('data-worker-pk');
+                var url        = sel.getAttribute('data-url');
+                var schedulePk = sel.value;
+                var formData   = new FormData();
+                formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
+                formData.append('schedule_pk', schedulePk);
+                sel.disabled = true;
+                fetch(url, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                })
+                .then(function (resp) { return resp.json(); })
+                .then(function (data) {
+                    sel.disabled = false;
+                    if (data.ok) {
+                        showFeedback(workerPk, 'Horario guardado.', 'success');
+                    } else {
+                        showFeedback(workerPk, data.error || 'Error al guardar.', 'danger');
+                    }
+                })
+                .catch(function (err) {
+                    console.error('# [WORKER SCHEDULE] Error de red:', err);
+                    sel.disabled = false;
+                    showFeedback(workerPk, 'Error de red.', 'danger');
+                });
+            });
+        });
+    });
+}());
+</script>
 
 {% endblock %}
 {% block page_title %}{{ action }} sección{% endblock %}
@@ -533,6 +596,34 @@
                         </div>
                     </div>
 
+                    <!-- workday_schedule field — Horario de trabajo por defecto de la sección -->
+                    <hr class="my-4">
+                    <h6 class="fw-semibold mb-1">
+                        <i class="bi bi-briefcase me-2 text-primary"></i>Horario de trabajo
+                    </h6>
+                    <p class="text-muted mb-3 text-sm">
+                        Horario de jornada que se aplicará por defecto a todos los trabajadores
+                        de esta sección. Un trabajador con horario individual asignado desde la
+                        tabla de trabajadores tendrá prioridad sobre este valor.
+                    </p>
+                    <div class="mb-4">
+                        <label for="{{ form.workday_schedule.id_for_label }}"
+                               class="form-label fw-medium">
+                            Horario por defecto de la sección
+                            <span class="text-muted fw-normal">(opcional)</span>
+                        </label>
+                        {{ form.workday_schedule }}
+                        {% if form.workday_schedule.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.workday_schedule.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Si no se selecciona ningún horario, Gate 4 usará el horario
+                            por defecto de empresa como último recurso.
+                        </div>
+                    </div>
+
                     <!-- SectionSchedule formset — Horarios de la sección -->
                     <hr class="my-4">
                     <h6 class="fw-semibold mb-1">
@@ -634,8 +725,9 @@
                                     <th>Usuario</th>
                                     <th>Nombre</th>
                                     <th>Rol</th>
-                                    <th>Telefono</th>
+                                    <th>Teléfono</th>
                                     <th class="text-center">Activo IVR</th>
+                                    <th>Horario de trabajo</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -650,6 +742,23 @@
                                     </td>
                                     <td class="text-center">
                                         {% if w.is_ivr_active %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-x-circle text-muted"></i>{% endif %}
+                                    </td>
+                                    <td>
+                                        {# Workday schedule selector — Selector de horario de trabajo individual #}
+                                        <select class="form-select form-select-sm wk-schedule-select"
+                                                data-worker-pk="{{ w.pk }}"
+                                                data-url="{% url 'panel:worker_schedule_update' w.pk %}">
+                                            <option value="">— Sin horario específico —</option>
+                                            {% for sched in workday_schedules %}
+                                            <option value="{{ sched.pk }}"
+                                                    {% if w.workday_schedule_id == sched.pk %}selected{% endif %}>
+                                                {{ sched.label }}
+                                                ({% if sched.season == 'WINTER' %}Invierno{% else %}Verano{% endif %}
+                                                {% if sched.is_intensive %}· Intensiva{% endif %})
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                        <div class="wk-schedule-feedback text-sm mt-1" data-worker-pk="{{ w.pk }}"></div>
                                     </td>
                                     <td class="text-end">
                                         <div class="d-flex gap-1 justify-content-end">

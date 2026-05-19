@@ -1,0 +1,196 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/users/bulk_delete_confirm.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Confirmar eliminación de usuarios{% endblock %}
+{% block page_title %}Confirmar eliminación de usuarios{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+
+        <div class="mb-3">
+            <a href="{% url 'panel:user_list' %}" class="text-muted text-decoration-none text-nav">
+                <i class="bi bi-arrow-left me-1"></i>Volver al listado
+            </a>
+        </div>
+
+        {# Risk warning card — Tarjeta de aviso usuarios con riesgo IVR #}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-exclamation-triangle me-2 text-warning"></i>
+                    Usuarios vinculados a secciones IVR activas
+                </h6>
+            </div>
+            <div class="card-body p-0">
+
+                <div class="alert alert-warning py-2 px-3 m-3 mb-0">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Los siguientes usuarios tienen contactos asignados a secciones IVR activas.
+                    Al eliminarlos, sus contactos quedarán huérfanos y deberán reasignarse manualmente.
+                </div>
+
+                {# IVR-risk users table — Tabla de usuarios en riesgo IVR #}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Usuario</th>
+                                <th>Rol</th>
+                                <th>Secciones IVR afectadas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in risk_users %}
+                            <tr>
+                                <td class="ps-4 fw-medium">
+                                    <i class="bi bi-person-circle me-2 text-warning"></i>
+                                    {{ entry.cu.user.username }}
+                                    {% if entry.cu.user.get_full_name %}
+                                    <span class="text-muted fw-normal ms-1">
+                                        {{ entry.cu.user.get_full_name }}
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if entry.cu.role == 'ADMIN' %}
+                                        <span class="badge badge-admin">
+                                            <i class="bi bi-shield-check me-1"></i>Administrador
+                                        </span>
+                                    {% elif entry.cu.role == 'SUPERVISOR' %}
+                                        <span class="badge badge-supervisor">
+                                            <i class="bi bi-eye me-1"></i>Supervisor
+                                        </span>
+                                    {% elif entry.cu.role == 'WORKSHOP' %}
+                                        <span class="badge badge-workshop">
+                                            <i class="bi bi-wrench me-1"></i>Operario de taller
+                                        </span>
+                                    {% elif entry.cu.role == 'DRIVER' %}
+                                        <span class="badge badge-external">
+                                            <i class="bi bi-truck me-1"></i>Chófer
+                                        </span>
+                                    {% else %}
+                                        <span class="badge badge-external">
+                                            <i class="bi bi-person me-1"></i>Operador
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% for sec_name in entry.sections %}
+                                    <span class="badge bg-warning text-dark me-1">
+                                        <i class="bi bi-diagram-3 me-1"></i>{{ sec_name }}
+                                    </span>
+                                    {% endfor %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {# Safe users card — Tarjeta de usuarios sin riesgo IVR (condicional) #}
+        {% if safe_users %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold text-muted">
+                    <i class="bi bi-people me-2"></i>
+                    Usuarios sin contactos IVR activos
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Usuario</th>
+                                <th>Rol</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cu in safe_users %}
+                            <tr>
+                                <td class="ps-4 fw-medium">
+                                    <i class="bi bi-person-circle me-2 text-muted"></i>
+                                    {{ cu.user.username }}
+                                    {% if cu.user.get_full_name %}
+                                    <span class="text-muted fw-normal ms-1">
+                                        {{ cu.user.get_full_name }}
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if cu.role == 'ADMIN' %}
+                                        <span class="badge badge-admin">
+                                            <i class="bi bi-shield-check me-1"></i>Administrador
+                                        </span>
+                                    {% elif cu.role == 'SUPERVISOR' %}
+                                        <span class="badge badge-supervisor">
+                                            <i class="bi bi-eye me-1"></i>Supervisor
+                                        </span>
+                                    {% elif cu.role == 'WORKSHOP' %}
+                                        <span class="badge badge-workshop">
+                                            <i class="bi bi-wrench me-1"></i>Operario de taller
+                                        </span>
+                                    {% elif cu.role == 'DRIVER' %}
+                                        <span class="badge badge-external">
+                                            <i class="bi bi-truck me-1"></i>Chófer
+                                        </span>
+                                    {% else %}
+                                        <span class="badge badge-external">
+                                            <i class="bi bi-person me-1"></i>Operador
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {# Confirmation card — Tarjeta de confirmación con segundo POST confirmed=1 #}
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-trash me-2 text-danger"></i>
+                    Confirmar eliminación
+                </h6>
+            </div>
+            <div class="card-body p-4">
+
+                <p class="text-muted mb-4">
+                    Se eliminarán
+                    <strong>{{ selected_pks|length }} usuario{% if selected_pks|length != 1 %}s{% endif %}</strong>
+                    en total. Esta acción <strong>no se puede deshacer</strong>.
+                </p>
+
+                {# Confirmed POST form — Formulario de confirmación con flag confirmed=1 #}
+                <form method="post" action="{% url 'panel:user_bulk_delete' %}">
+                    {% csrf_token %}
+                    {% for pk in selected_pks %}
+                    <input type="hidden" name="selected_users" value="{{ pk }}">
+                    {% endfor %}
+                    <input type="hidden" name="confirmed" value="1">
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger px-4">
+                            <i class="bi bi-trash me-2"></i>Sí, eliminar todos igualmente
+                        </button>
+                        <a href="{% url 'panel:user_list' %}"
+                           class="btn btn-outline-secondary px-4">
+                            Cancelar
+                        </a>
+                    </div>
+                </form>
+
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

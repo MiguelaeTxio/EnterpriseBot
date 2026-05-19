@@ -246,6 +246,14 @@
 {% endblock %}
 
 {% block extra_head %}
+<style>
+    /* Workday management container max-width
+       Anchura máxima del contenedor de gestión de jornada */
+    .workday-container { max-width: 860px; }
+    /* Force uppercase on code input via CSS instead of inline style
+       Forzar mayúsculas en el input de código via CSS en lugar de style inline */
+    input[name="code"] { text-transform: uppercase; }
+</style>
 <script>
 /* Populate edit modal with category data from data attributes.
    Rellena el modal de edición con datos de la categoría desde atributos data. */
@@ -270,15 +278,4 @@
     });
 }());
 </script>
-{% endblock %}
-
-{% block extra_head %}
-<style>
-    /* Workday management container max-width
-       Anchura máxima del contenedor de gestión de jornada */
-    .workday-container { max-width: 860px; }
-    /* Force uppercase on code input via CSS instead of inline style
-       Forzar mayúsculas en el input de código via CSS en lugar de style inline */
-    input[name="code"] { text-transform: uppercase; }
-</style>
 {% endblock %}

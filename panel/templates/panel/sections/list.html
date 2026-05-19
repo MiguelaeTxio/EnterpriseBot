@@ -29,7 +29,8 @@
                     <tr>
                         <th class="ps-4">Nombre</th>
                         <th>Descripción</th>
-                        <th class="text-center">Contactos</th>
+                        <th class="text-center">Contactos IVR</th>
+                        <th class="text-center">Trabajadores</th>
                         <th class="text-center">Estado</th>
                         <th class="text-center">Acciones</th>
                     </tr>
@@ -46,7 +47,12 @@
                         </td>
                         <td class="text-center">
                             <span class="badge bg-light text-dark border">
-                                {{ section.contacts.count }}
+                                {{ section.ivr_contact_count }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-light text-dark border">
+                                {{ section.worker_count }}
                             </span>
                         </td>
                         <td class="text-center">
