@@ -262,6 +262,7 @@
             var el = document.getElementById(id); if (el) el.value = '';
         });
         document.getElementById('wk-role').selectedIndex = 0;
+        document.getElementById('wk-workday-schedule').selectedIndex = 0;
         document.getElementById('wk-ivr-active').checked = true;
         showFeedback('', '');
     }
@@ -281,8 +282,8 @@
         var firstName = (document.getElementById('wk-first-name').value || '').trim();
         var lastName  = (document.getElementById('wk-last-name').value  || '').trim();
         var phone     = (document.getElementById('wk-phone').value      || '').trim();
-        var role      = document.getElementById('wk-role').value;
-        var ivrActive = document.getElementById('wk-ivr-active').checked;
+        var role             = document.getElementById('wk-role').value;
+        var workdaySchedule  = document.getElementById('wk-workday-schedule').value;
         if (!username) { showFeedback('El nombre de usuario es obligatorio.', 'danger'); return; }
         var match     = window.location.pathname.match(/\/sections\/(\d+)\//);
         var sectionPk = match ? match[1] : '';
@@ -292,9 +293,9 @@
         formData.append('first_name',   firstName);
         formData.append('last_name',    lastName);
         formData.append('phone_number', phone);
-        formData.append('role',         role);
-        formData.append('section',      sectionPk);
-        if (ivrActive) formData.append('is_ivr_active', 'on');
+        formData.append('role',                 role);
+        formData.append('section',              sectionPk);
+        if (workdaySchedule) formData.append('workday_schedule_pk', workdaySchedule);
         saveBtn.disabled = true;
         saveBtn.textContent = 'Guardando...';
         fetch('/panel/users/create/', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: formData })
@@ -726,7 +727,6 @@
                                     <th>Nombre</th>
                                     <th>Rol</th>
                                     <th>Teléfono</th>
-                                    <th class="text-center">Activo IVR</th>
                                     <th>Horario de trabajo</th>
                                     <th></th>
                                 </tr>
@@ -739,9 +739,6 @@
                                     <td class="text-sm">{{ w.get_role_display }}</td>
                                     <td class="text-sm">
                                         {% if w.contact_phone %}{{ w.contact_phone }}{% else %}<span class="text-muted">—</span>{% endif %}
-                                    </td>
-                                    <td class="text-center">
-                                        {% if w.is_ivr_active %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-x-circle text-muted"></i>{% endif %}
                                     </td>
                                     <td>
                                         {# Workday schedule selector — Selector de horario de trabajo individual #}
@@ -823,11 +820,18 @@
                                 </select>
                                 <div class="form-text">Rol</div>
                             </div>
-                            <div class="col-12 col-md-3 d-flex align-items-center gap-2 pt-3">
-                                <div class="form-check mb-0">
-                                    <input class="form-check-input" type="checkbox" id="wk-ivr-active" checked>
-                                    <label class="form-check-label text-sm" for="wk-ivr-active">Activo IVR</label>
-                                </div>
+                            <div class="col-12 col-md-3">
+                                <select class="form-select form-select-sm" id="wk-workday-schedule">
+                                    <option value="">— Sin horario específico —</option>
+                                    {% for sched in workday_schedules %}
+                                    <option value="{{ sched.pk }}">
+                                        {{ sched.label }}
+                                        ({% if sched.season == 'WINTER' %}Invierno{% else %}Verano{% endif %}
+                                        {% if sched.is_intensive %}· Intensiva{% endif %})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">Horario de trabajo</div>
                             </div>
                             <div class="col-12 d-flex gap-2 mt-2">
                                 <button type="button" class="btn btn-dark btn-sm" id="wk-save-btn">

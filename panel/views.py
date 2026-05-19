@@ -290,6 +290,36 @@ class CompanyUserCreateView(SupervisorAccessMixin, View):
             request.user.username,
         )
 
+        # --- Assign workday schedule if provided via inline panel (workday_schedule_pk). ---
+        # Only accepts a schedule belonging to the same company to prevent cross-company
+        # assignments. Silently ignores invalid or foreign pks.
+        # --- Asignar horario de jornada si se proporcionó via panel inline (workday_schedule_pk). ---
+        # Solo acepta un horario perteneciente a la misma empresa para evitar asignaciones
+        # cruzadas entre empresas. Ignora silenciosamente pks inválidos o de otras empresas.
+        _schedule_pk = request.POST.get("workday_schedule_pk", "").strip()
+        if _schedule_pk:
+            try:
+                from ivr_config.models import WorkdaySchedule as _WorkdaySchedule
+                _schedule = _WorkdaySchedule.objects.get(pk=int(_schedule_pk), company=company)
+                new_cu.workday_schedule = _schedule
+                new_cu.save(update_fields=["workday_schedule"])
+                logger.info(
+                    "# [USER CREATE] WorkdaySchedule pk=%s asignado a CompanyUser pk=%s.",
+                    _schedule.pk,
+                    new_cu.pk,
+                )
+            except (ValueError, TypeError):
+                logger.warning(
+                    "# [USER CREATE] workday_schedule_pk='%s' no es un entero valido — ignorado.",
+                    _schedule_pk,
+                )
+            except _WorkdaySchedule.DoesNotExist:
+                logger.warning(
+                    "# [USER CREATE] WorkdaySchedule pk=%s no pertenece a la empresa pk=%s — ignorado.",
+                    _schedule_pk,
+                    company.pk,
+                )
+
         # --- Create or retrieve Contact and link to CompanyUser. ---
         # A Contact is always created when a section is assigned (required for the
         # section M2M membership). When no phone number is provided, the contact is
@@ -525,6 +555,13 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
         """
         self.object = self.get_object()
         next_url = request.POST.get("next", "").strip() or "/panel/users/"
+        # Force is_active=True for WORKSHOP/DRIVER roles — these users must always
+        # have panel access. Silently override whatever the POST body contains.
+        # Forzar is_active=True para roles WORKSHOP/DRIVER — estos usuarios deben
+        # tener acceso al panel siempre. Ignorar silenciosamente el body del POST.
+        if self.object.role in ("WORKSHOP", "DRIVER"):
+            self.object.is_active = True
+            self.object.save(update_fields=["is_active"])
         if "force_reset" in request.POST:
             self.object.must_change_password = True
             self.object.save(update_fields=["must_change_password"])
@@ -575,6 +612,53 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
                     "# [USER UPDATE] Contact nuevo creado para CompanyUser pk=%s con phone '%s'.",
                     self.object.pk, phone_number,
                 )
+        # --- Handle section assignment change via Contact M2M. ---
+        # Reads section_pk from POST. Resolves the Contact linked to this CompanyUser.
+        # Removes the contact from all current sections of the company, then adds it
+        # to the new section if one was selected. A blank section_pk means "no section".
+        # --- Gestionar cambio de sección asignada mediante M2M de Contact. ---
+        # Lee section_pk del POST. Resuelve el Contact vinculado a este CompanyUser.
+        # Elimina el contacto de todas las secciones actuales de la empresa, luego lo
+        # añade a la nueva sección si se seleccionó alguna. Un section_pk vacío = sin sección.
+        _section_pk_raw = request.POST.get("section_pk", "").strip()
+        if _section_pk_raw is not None:
+            from ivr_config.models import Contact as _Contact2
+            from ivr_config.models import Section as _Section
+            _cu_contact = _Contact2.objects.filter(
+                company=self.object.company,
+                company_user=self.object,
+            ).first()
+            if _cu_contact is not None:
+                # Remove from all current sections of this company.
+                # Eliminar de todas las secciones actuales de la empresa.
+                _current_sections = _Section.objects.filter(
+                    company=self.object.company,
+                    contacts=_cu_contact,
+                )
+                for _sec in _current_sections:
+                    _sec.contacts.remove(_cu_contact)
+                    logger.info(
+                        "# [USER UPDATE] Contact pk=%s desvinculado de Section pk=%s.",
+                        _cu_contact.pk, _sec.pk,
+                    )
+                # Add to new section if one was selected.
+                # Añadir a la nueva sección si se seleccionó alguna.
+                if _section_pk_raw:
+                    try:
+                        _new_section = _Section.objects.get(
+                            pk=int(_section_pk_raw),
+                            company=self.object.company,
+                        )
+                        _new_section.contacts.add(_cu_contact)
+                        logger.info(
+                            "# [USER UPDATE] Contact pk=%s vinculado a Section pk=%s.",
+                            _cu_contact.pk, _new_section.pk,
+                        )
+                    except (ValueError, TypeError, _Section.DoesNotExist):
+                        logger.warning(
+                            "# [USER UPDATE] section_pk='%s' inválido o no pertenece a la empresa — ignorado.",
+                            _section_pk_raw,
+                        )
         return super().post(request, *args, **kwargs)
 
     def get_success_url(self):
@@ -621,6 +705,17 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
             company_user=self.object,
         ).first()
         context["contact_phone"] = _contact.phone_number if _contact else ""
+        # Sections for the section assignment selector — scoped to company.
+        # Secciones para el selector de asignación de sección — acotadas a empresa.
+        context["sections"] = Section.objects.filter(
+            company=self.object.company
+        ).order_by("name")
+        # Current section of the edited user (first section from their Contact M2M).
+        # Sección actual del usuario editado (primera sección del M2M de su Contact).
+        context["current_section_pk"] = (
+            _contact.sections.values_list("pk", flat=True).first()
+            if _contact else None
+        )
         # Resolve next_url: POST → GET → Referer → fallback.
         # Resolver next_url: POST → GET → Referer → fallback.
         context["next_url"] = (
@@ -1468,7 +1563,34 @@ class SectionUpdateView(SupervisorAccessMixin, UpdateView):
                 )
                 form.instance.data_capture_set = new_dcs
 
+        # --- Preserve WORKSHOP/DRIVER contacts across form.save() M2M reset. ---
+        # form.save() calls save_m2m() which replaces Section.contacts entirely
+        # with the widget selection. Since WORKSHOP/DRIVER contacts are excluded
+        # from the IVR contact selector, they would be silently removed on every
+        # save. We capture them before the save and re-add them after.
+        # --- Preservar contactos WORKSHOP/DRIVER durante el reset M2M de form.save(). ---
+        # form.save() llama a save_m2m() que reemplaza Section.contacts completamente
+        # con la seleccion del widget. Como los contactos WORKSHOP/DRIVER estan excluidos
+        # del selector IVR, desaparecerian silenciosamente en cada guardado.
+        # Los capturamos antes del save y los reañadimos despues.
+        _worker_contacts = list(
+            self.object.contacts.filter(
+                company_user__role__in=["WORKSHOP", "DRIVER"]
+            ).values_list("pk", flat=True)
+        )
+
         self.object = form.save()
+
+        # Re-add WORKSHOP/DRIVER contacts that were wiped by save_m2m().
+        # Re-añadir contactos WORKSHOP/DRIVER eliminados por save_m2m().
+        if _worker_contacts:
+            self.object.contacts.add(*_worker_contacts)
+            logger.info(
+                "# [SECTION UPDATE] %d contacto(s) WORKSHOP/DRIVER preservados en M2M de Section pk=%s.",
+                len(_worker_contacts),
+                self.object.pk,
+            )
+
         schedules = schedule_formset.save(commit=False)
         for schedule in schedules:
             schedule.section = self.object

@@ -10,9 +10,8 @@
     <div class="col-12 col-lg-6">
 
         <div class="mb-3">
-            <a href="{% url 'panel:user_list' %}" class="text-muted text-decoration-none"
-              >
-                <i class="bi bi-arrow-left me-1"></i>Volver al listado
+            <a href="{{ next_url }}" class="text-muted text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>Volver atrás
             </a>
         </div>
 
@@ -65,7 +64,7 @@
                     {% endif %}
                 </div>
 
-                <form method="post" id="form-force-reset" action="">
+                <form method="post" id="form-user-edit" action="">
                     {% csrf_token %}
                     {# next: preserve origin page across POSTs — resolved in view context #}
                     {# next: preservar la página de origen entre POSTs — resuelto en contexto #}
@@ -89,7 +88,9 @@
                         </div>
                     </div>
 
-                    <!-- is_active field — Campo de estado activo -->
+                    <!-- is_active field — hidden for WORKSHOP/DRIVER (always active) -->
+                    <!-- Campo is_active — oculto para WORKSHOP/DRIVER (siempre activos) -->
+                    {% if object.role not in "WORKSHOP,DRIVER" %}
                     <div class="mb-4">
                         <div class="form-check">
                             {{ form.is_active }}
@@ -107,6 +108,7 @@
                             Los usuarios inactivos no pueden acceder al panel.
                         </div>
                     </div>
+                    {% endif %}
 
                     <!-- Submit buttons — Botones de envío -->
 
@@ -148,6 +150,27 @@
                             Número en formato E.164 (ej. +34612345678).
                             Necesario para recibir mensajes de WhatsApp.
                             Si se deja vacío, el campo no se modifica.
+                        </div>
+                    </div>
+
+                    <!-- section_pk field — Selector de sección asignada -->
+                    <!-- Campo section_pk — Selector de sección asignada -->
+                    <div class="mb-4">
+                        <label for="id_section_pk" class="form-label fw-medium">
+                            Sección asignada
+                        </label>
+                        <select id="id_section_pk" name="section_pk" class="form-select">
+                            <option value="">— Sin sección —</option>
+                            {% for sec in sections %}
+                            <option value="{{ sec.pk }}"
+                                    {% if sec.pk == current_section_pk %}selected{% endif %}>
+                                {{ sec.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            Sección del panel a la que pertenece este usuario.
+                            Cambiar la sección actualiza su vinculación en el M2M de contactos.
                         </div>
                     </div>
 
