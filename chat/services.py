@@ -222,8 +222,14 @@ def dispatch_inbound_message(
         )
         return DispatchResult(consumed=consumed, room=room, contact=contact)
 
-    # --- Rule 5: Check BREAKDOWNS access and pending routing state. ---
-    # --- Regla 5: Comprobar acceso a BREAKDOWNS y estado de enrutamiento. ---
+    # --- Rule 5: Resolve BREAKDOWNS room, check breakdown access and pending routing. ---
+    # The breakdown_routing Quick Reply is sent ONLY to contacts whose section
+    # belongs to breakdown_sections. Contacts without breakdown access are routed
+    # directly to their SECTION room without being asked.
+    # --- Regla 5: Resolver sala BREAKDOWNS, comprobar acceso y enrutamiento pendiente. ---
+    # El Quick Reply de enrutamiento se envía Únicamente a los contactos cuya
+    # sección pertenece a breakdown_sections. Los contactos sin acceso a BREAKDOWNS
+    # se enrutan directamente a su sala SECTION sin ser preguntados.
     breakdown_room = ChatRoom.objects.filter(
         company=company,
         room_type=ChatRoom.ROOM_TYPE_BREAKDOWNS,
@@ -232,14 +238,11 @@ def dispatch_inbound_message(
 
     has_breakdown_access = (
         breakdown_room is not None
-        and (
-            breakdown_room.breakdown_sections.filter(pk=section.pk).exists()
-            or breakdown_room.breakdown_contacts.filter(pk=contact.pk).exists()
-        )
+        and breakdown_room.breakdown_sections.filter(pk=section.pk).exists()
     )
 
     # --- Rule 5a: Contact is AWAITING_ROUTE — process routing response. ---
-    # --- Regla 5a: Contacto en AWAITING_ROUTE — procesar respuesta. ---
+    # --- Regla 5a: Contacto en AWAITING_ROUTE — procesar respuesta de enrutamiento. ---
     if contact.routing_state == contact.ROUTING_STATE_AWAITING_ROUTE:
         consumed = _resolve_pending_routing(
             contact=contact,
@@ -252,8 +255,8 @@ def dispatch_inbound_message(
         )
         return DispatchResult(consumed=consumed, room=room, contact=contact)
 
-    # --- Rule 5b: Contact has breakdown access — send routing Quick Reply. ---
-    # --- Regla 5b: Contacto con acceso a BREAKDOWNS — enviar Quick Reply. ---
+    # --- Rule 5b: Section has breakdown access — send routing Quick Reply. ---
+    # --- Regla 5b: Sección con acceso a BREAKDOWNS — enviar Quick Reply de enrutamiento. ---
     if has_breakdown_access:
         consumed = _handle_breakdown_routing(
             contact=contact,
@@ -264,11 +267,11 @@ def dispatch_inbound_message(
         )
         return DispatchResult(consumed=consumed, room=room, contact=contact)
 
-    # --- Rule 6: Alias present, no breakdown routing needed — persist and broadcast. ---
-    # --- Regla 6: Alias presente, sin enrutamiento a BREAKDOWNS. ---
+    # --- Rule 6: No breakdown access — persist and broadcast directly to SECTION. ---
+    # --- Regla 6: Sin acceso a BREAKDOWNS — persistir y broadcast directo a SECTION. ---
     _persist_and_broadcast(room=room, contact=contact, body=body)
     logger.info(
-        "# [CHAT DISPATCH] Mensaje de '%s' (%s) enrutado a sala '%s'.",
+        "# [CHAT DISPATCH] Mensaje de '%s' (%s) enrutado directamente a sala '%s'.",
         _resolve_alias(contact),
         from_number,
         room.name,
@@ -1010,12 +1013,27 @@ def _resolve_pending_routing(
         contact.pending_routing_body = ""
         contact.save(update_fields=["routing_state", "pending_routing_body"])
         if breakdown_room is not None:
-            process_breakdown_turn(
+            # Persist message in BREAKDOWNS room and broadcast to all members
+            # of all sections registered in breakdown_sections.
+            # Gemini ticket flow is not invoked at this stage — provisional
+            # implementation to verify end-to-end broadcast before adding
+            # the ticket collection dialogue.
+            # ---
+            # Persistir mensaje en sala BREAKDOWNS y hacer broadcast a todos
+            # los miembros de todas las secciones registradas en breakdown_sections.
+            # El flujo de tickets Gemini no se invoca en esta fase — implementación
+            # provisional para verificar el broadcast extremo a extremo antes de
+            # añadir el diálogo de recogida de tickets.
+            _persist_and_broadcast(
+                room=breakdown_room,
                 contact=contact,
                 body=pending_body,
-                room=breakdown_room,
-                to_number=to_number,
-                from_number=from_number,
+            )
+        else:
+            logger.warning(
+                "# [CHAT DISPATCH] Sala BREAKDOWNS no encontrada para empresa. "
+                "Mensaje de %s descartado.",
+                from_number,
             )
         logger.info(
             "# [CHAT DISPATCH] Enrutamiento resuelto a BREAKDOWNS para %s.",
@@ -1269,26 +1287,44 @@ def _persist_and_broadcast(room: ChatRoom, contact: Contact, body: str) -> None:
     """
     Creates a ChatMessage(INBOUND) in the room and enqueues the Celery
     broadcast task to relay the message to all section members via WhatsApp.
-    The message body is prefixed with the contact's alias.
+
+    Storage format  (panel):    "{alias}: {body}"
+    WhatsApp format (broadcast): "[{room.name}] {alias}: {body}"
+
+    The room name prefix is only needed in WhatsApp so recipients can identify
+    which room the message belongs to when they receive it in a 1:1 conversation
+    with the bot. Inside the panel the user is already inside the room so the
+    prefix would be redundant noise.
+    The task is enqueued in the 'work_orders' queue (declared in the task
+    decorator) so the existing always-on worker consumes it without changes.
     ---
     Crea un ChatMessage(INBOUND) en la sala y encola la tarea Celery de
-    broadcast para reenviar el mensaje a todos los miembros de la sección
-    vía WhatsApp. El cuerpo del mensaje se prefija con el alias del contacto.
+    broadcast para reenviar el mensaje a todos los miembros vía WhatsApp.
+
+    Formato almacenado (panel):      "{alias}: {body}"
+    Formato WhatsApp (broadcast):    "[{room.name}] {alias}: {body}"
+
+    El prefijo de sala solo es necesario en WhatsApp para que los destinatarios
+    identifiquen de qué sala proviene el mensaje al recibirlo en su conversación
+    1:1 con el bot. En el panel el usuario ya está dentro de la sala, por lo que
+    el prefijo sería ruido innecesario.
+    La tarea se encola en la cola 'work_orders' (declarada en el decorador
+    de la tarea) para que el worker always-on existente la consuma sin cambios.
     """
     from chat.tasks import broadcast_inbound_message
 
-    prefixed_body = f"{_resolve_alias(contact)}: {body}"
+    panel_body = f"{_resolve_alias(contact)}: {body}"
 
     chat_message = ChatMessage.objects.create(
         room=room,
         direction=ChatMessage.DIRECTION_INBOUND,
         sender_contact=contact,
-        body=prefixed_body,
+        body=panel_body,
         whatsapp_sid="",
     )
 
     try:
-        broadcast_inbound_message.delay(chat_message.pk)
+        broadcast_inbound_message.delay(chat_message.pk, room.name)
         logger.info(
             "# [CHAT DISPATCH] ChatMessage pk=%s encolado para broadcast.",
             chat_message.pk,

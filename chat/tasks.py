@@ -41,28 +41,54 @@ from django.utils.timezone import now
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=10)
-def broadcast_inbound_message(self, message_pk: int) -> None:
+@shared_task(bind=True, max_retries=3, default_retry_delay=10, queue='work_orders')
+def broadcast_inbound_message(self, message_pk: int, room_name: str = "") -> None:
     """
-    Relays a ChatMessage(INBOUND) to all active section members via WhatsApp.
-    Excludes the original sender. Only sends to contacts with an alias and
-    an active WhatsApp session (is_active=True, 24-hour window open).
+    Relays a ChatMessage(INBOUND) to all section members via WhatsApp.
+    Routing logic mirrors ChatSendView Step 6:
+      - Contact has opt_out_broadcast=True           -> skip entirely.
+      - Contact has no alias                         -> send chat_onboarding template.
+      - Contact has alias but no active WA session   -> send chat_session_renewal
+                                                        (fallback: chat_onboarding).
+      - Contact has alias and active WA session      -> send free-text message
+                                                        prefixed with "[{room_name}]".
+    Excludes the original sender in all cases.
     Retries up to 3 times with a 10-second delay on Twilio errors.
+    Enqueued in the 'work_orders' queue so the existing always-on worker
+    consumes it without script changes.
+    The room_name parameter is injected by _persist_and_broadcast and used
+    to prefix the WhatsApp message so recipients can identify the originating
+    room in their 1:1 bot conversation. The ChatMessage.body stored in the
+    panel does NOT carry this prefix (panel users are already inside the room).
     ---
-    Reenvía un ChatMessage(INBOUND) a todos los miembros activos de la sección
-    vía WhatsApp. Excluye al remitente original. Solo envía a contactos con
-    alias y sesión WhatsApp activa (is_active=True, ventana de 24h abierta).
-    Reintenta hasta 3 veces con un retardo de 10 segundos en errores de Twilio.
+    Reenvía un ChatMessage(INBOUND) a todos los miembros de la sección via WhatsApp.
+    La lógica de enrutamiento replica el Step 6 de ChatSendView:
+      - Contacto con opt_out_broadcast=True           -> omitir completamente.
+      - Contacto sin alias                            -> enviar template chat_onboarding.
+      - Contacto con alias pero sin sesión WA activa  -> enviar chat_session_renewal
+                                                          (fallback: chat_onboarding).
+      - Contacto con alias y sesión WA activa         -> enviar mensaje libre
+                                                          prefijado con "[{room_name}]".
+    Excluye al remitente original en todos los casos.
+    Reintenta hasta 3 veces con retardo de 10 segundos en errores de Twilio.
+    Encolada en 'work_orders' para que el worker always-on existente la consuma
+    sin necesidad de cambiar el script de arranque.
+    El parámetro room_name es inyectado por _persist_and_broadcast y se usa para
+    prefijar el mensaje WhatsApp de forma que los destinatarios identifiquen la
+    sala de origen en su conversación 1:1 con el bot. El ChatMessage.body
+    almacenado en el panel NO lleva este prefijo (los usuarios del panel ya
+    están dentro de la sala).
     """
     from chat.models import ChatMessage
-    from ivr_config.models import SectionContact
-    from whatsapp.models import WhatsAppSession
+    from ivr_config.models import PhoneNumber
+    from whatsapp.models import WhatsAppSession, WhatsAppTemplate
     from whatsapp.services import WhatsAppChatService
 
-    # Resolve message — resolución del mensaje.
+    # --- Resolve message --- Resolución del mensaje. ---
     try:
         message = ChatMessage.objects.select_related(
             "room__section",
+            "room__company",
             "sender_contact",
         ).get(pk=message_pk)
     except ChatMessage.DoesNotExist:
@@ -73,44 +99,14 @@ def broadcast_inbound_message(self, message_pk: int) -> None:
         return
 
     room    = message.room
-    section = room.section
-
-    if section is None:
-        logger.warning(
-            "# [BROADCAST] Sala pk=%s sin sección asociada. Tarea abortada.",
-            room.pk,
-        )
-        return
+    company = room.company
 
     sender_contact = message.sender_contact
 
-    # Resolve all contacts of the section with alias configured.
-    # Resolver todos los contactos de la sección con alias configurado.
-    # Broadcast to ALL section contacts with a phone number,
-    # regardless of alias — contacts without alias receive the message
-    # and are prompted to set their alias when they reply.
-    # Broadcast a TODOS los contactos de la sección con número de teléfono,
-    # independientemente del alias — los contactos sin alias reciben el mensaje
-    # y se les pide que configuren su alias cuando respondan.
-    section_contacts = (
-        section.contacts
-        .filter(phone_number__gt="")
-        .exclude(pk=sender_contact.pk if sender_contact else None)
-        .values_list("pk", "phone_number", "alias")
-    )
-
-    if not section_contacts:
-        logger.info(
-            "# [BROADCAST] Sin destinatarios para sala '%s'. Broadcast omitido.",
-            room.name,
-        )
-        return
-
-    # Resolve WhatsApp number for this company (To field).
-    # Resolver el número WhatsApp de la empresa (campo To).
-    from ivr_config.models import PhoneNumber
+    # --- Resolve WhatsApp sender number for this company. ---
+    # --- Resolver número WhatsApp remitente de la empresa. ---
     phone_record = PhoneNumber.objects.filter(
-        company=room.company,
+        company=company,
         is_active=True,
         capabilities__in=[
             PhoneNumber.CAPABILITY_WHATSAPP,
@@ -122,58 +118,249 @@ def broadcast_inbound_message(self, message_pk: int) -> None:
         logger.error(
             "# [BROADCAST] No hay PhoneNumber WhatsApp activo para empresa '%s'. "
             "Broadcast abortado.",
-            room.company.name,
+            company.name,
         )
         return
 
     from_number = phone_record.number
-    sent        = 0
-    skipped     = 0
 
-    for contact_pk, phone_number, alias in section_contacts:
+    # --- Resolve templates once for all recipients. ---
+    # --- Resolver templates una vez para todos los destinatarios. ---
+    try:
+        onboarding_template = WhatsAppTemplate.objects.get(
+            company=company,
+            name="chat_onboarding",
+            is_active=True,
+        )
+    except WhatsAppTemplate.DoesNotExist:
+        onboarding_template = None
+        logger.warning(
+            "# [BROADCAST] Template chat_onboarding no encontrado para empresa pk=%s.",
+            company.pk,
+        )
+
+    try:
+        renewal_template = WhatsAppTemplate.objects.get(
+            company=company,
+            name="chat_session_renewal",
+            is_active=True,
+        )
+    except WhatsAppTemplate.DoesNotExist:
+        renewal_template = None
+        logger.info(
+            "# [BROADCAST] Template chat_session_renewal no disponible para empresa pk=%s. "
+            "Se usará chat_onboarding como fallback para contactos fuera de ventana.",
+            company.pk,
+        )
+
+    # --- Collect recipients depending on room type. ---
+    # SECTION rooms   -> all contacts of room.section.
+    # BREAKDOWNS rooms -> all contacts of every section in breakdown_sections M2M.
+    # The original sender is always excluded.
+    # --- Obtener destinatarios según tipo de sala. ---
+    # Salas SECTION     -> todos los contactos de room.section.
+    # Salas BREAKDOWNS  -> todos los contactos de cada sección en breakdown_sections M2M.
+    # El remitente original siempre queda excluido.
+    from chat.models import ChatRoom as _ChatRoom
+    from ivr_config.models import Contact as _Contact
+
+    if room.room_type == _ChatRoom.ROOM_TYPE_BREAKDOWNS:
+        # Aggregate contacts from all sections registered in breakdown_sections.
+        # Agregar contactos de todas las secciones registradas en breakdown_sections.
+        _breakdown_section_pks = list(
+            room.breakdown_sections.values_list("pk", flat=True)
+        )
+        if not _breakdown_section_pks:
+            logger.warning(
+                "# [BROADCAST] Sala BREAKDOWNS pk=%s sin secciones en breakdown_sections. "
+                "Broadcast omitido.",
+                room.pk,
+            )
+            return
+        section_contacts = list(
+            _Contact.objects
+            .select_related("company_user")
+            .filter(
+                company=company,
+                sections__pk__in=_breakdown_section_pks,
+                phone_number__gt="",
+            )
+            .exclude(pk=sender_contact.pk if sender_contact else None)
+            .exclude(opt_out_broadcast=True)
+            .distinct()
+        )
+        logger.info(
+            "# [BROADCAST] Sala BREAKDOWNS '%s' — %d secciones, %d destinatarios.",
+            room.name, len(_breakdown_section_pks), len(section_contacts),
+        )
+    else:
+        # SECTION room — use the room's own section.
+        # Sala SECTION — usar la sección propia de la sala.
+        section = room.section
+        if section is None:
+            logger.warning(
+                "# [BROADCAST] Sala SECTION pk=%s sin sección asociada. Tarea abortada.",
+                room.pk,
+            )
+            return
+        section_contacts = list(
+            section.contacts
+            .select_related("company_user")
+            .filter(phone_number__gt="")
+            .exclude(pk=sender_contact.pk if sender_contact else None)
+            .exclude(opt_out_broadcast=True)
+        )
+
+    if not section_contacts:
+        logger.info(
+            "# [BROADCAST] Sin destinatarios para sala '%s'. Broadcast omitido.",
+            room.name,
+        )
+        return
+
+    sent      = 0
+    skipped   = 0
+    onboarded = 0
+    renewed   = 0
+
+    for contact in section_contacts:
+        phone_number = contact.phone_number
+
+        # Resolve canonical alias for this contact.
+        # Resolver alias canónico del contacto.
+        if contact.company_user_id and contact.company_user:
+            _alias = contact.company_user.alias or ""
+        else:
+            _alias = contact.alias or ""
+
         # Check for active WhatsApp session (24-hour window).
         # Verificar sesión WhatsApp activa (ventana de 24h).
         has_active_session = WhatsAppSession.objects.filter(
-            company=room.company,
+            company=company,
             phone_number=phone_number,
             is_active=True,
         ).exists()
 
-        if not has_active_session:
-            logger.info(
-                "# [BROADCAST] Contacto %s (%s) sin sesión activa. Omitido.",
-                alias,
-                phone_number,
-            )
-            skipped += 1
+        # --- Case 1: No alias -> send chat_onboarding. ---
+        # --- Caso 1: Sin alias -> enviar chat_onboarding. ---
+        if not _alias:
+            if onboarding_template is None:
+                logger.warning(
+                    "# [BROADCAST] Sin alias y sin template onboarding para %s. Omitido.",
+                    phone_number,
+                )
+                skipped += 1
+                continue
+            try:
+                WhatsAppChatService.send_template(
+                    from_number=from_number,
+                    to_number=phone_number,
+                    content_sid=onboarding_template.content_sid,
+                    content_variables={
+                        "1": contact.name or phone_number,
+                        "2": company.name,
+                    },
+                )
+                onboarded += 1
+                logger.info(
+                    "# [BROADCAST] chat_onboarding enviado a %s (sin alias).",
+                    phone_number,
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [BROADCAST] Error enviando chat_onboarding a %s: %s",
+                    phone_number, exc,
+                )
+                skipped += 1
             continue
 
+        # --- Case 2: Alias present, no active session -> renewal or onboarding fallback. ---
+        # --- Caso 2: Alias presente, sin sesión activa -> renewal o fallback onboarding. ---
+        if not has_active_session:
+            if renewal_template is not None:
+                try:
+                    WhatsAppChatService.send_template(
+                        from_number=from_number,
+                        to_number=phone_number,
+                        content_sid=renewal_template.content_sid,
+                        content_variables={
+                            "1": _alias,
+                            "2": company.name,
+                            "3": "https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/",
+                        },
+                    )
+                    renewed += 1
+                    logger.info(
+                        "# [BROADCAST] chat_session_renewal enviado a '%s' (%s).",
+                        _alias, phone_number,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "# [BROADCAST] Error enviando chat_session_renewal a '%s' (%s): %s",
+                        _alias, phone_number, exc,
+                    )
+                    skipped += 1
+            else:
+                # Fallback: chat_onboarding when renewal template not yet approved.
+                # Fallback: chat_onboarding cuando renewal template aun no aprobado.
+                if onboarding_template is None:
+                    logger.warning(
+                        "# [BROADCAST] Sin renewal ni onboarding para '%s' (%s). Omitido.",
+                        _alias, phone_number,
+                    )
+                    skipped += 1
+                    continue
+                try:
+                    WhatsAppChatService.send_template(
+                        from_number=from_number,
+                        to_number=phone_number,
+                        content_sid=onboarding_template.content_sid,
+                        content_variables={
+                            "1": _alias,
+                            "2": company.name,
+                        },
+                    )
+                    onboarded += 1
+                    logger.info(
+                        "# [BROADCAST] chat_onboarding (fallback) enviado a '%s' (%s).",
+                        _alias, phone_number,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "# [BROADCAST] Error enviando onboarding fallback a '%s' (%s): %s",
+                        _alias, phone_number, exc,
+                    )
+                    skipped += 1
+            continue
+
+        # --- Case 3: Alias present and active session -> send free-text message. ---
+        # Prefix with "[{room_name}]" so the WhatsApp recipient knows which room
+        # the message belongs to (panel users already see the room context).
+        # --- Caso 3: Alias presente y sesión activa -> enviar mensaje libre. ---
+        # Se prefija con "[{room_name}]" para que el destinatario WhatsApp sepa
+        # de qué sala proviene el mensaje (los usuarios del panel ya tienen el contexto).
+        _wa_body = f"[{room_name}] {message.body}" if room_name else message.body
         try:
             WhatsAppChatService.send_reply(
                 from_number=from_number,
                 to_number=phone_number,
-                reply_text=message.body,
+                reply_text=_wa_body,
             )
             sent += 1
             logger.info(
-                "# [BROADCAST] Mensaje enviado a '%s' (%s).",
-                alias,
-                phone_number,
+                "# [BROADCAST] Mensaje libre enviado a '%s' (%s).",
+                _alias, phone_number,
             )
         except Exception as exc:
             logger.error(
-                "# [BROADCAST] Error enviando a '%s' (%s): %s",
-                alias,
-                phone_number,
-                exc,
+                "# [BROADCAST] Error enviando mensaje a '%s' (%s): %s",
+                _alias, phone_number, exc,
             )
             skipped += 1
 
     logger.info(
-        "# [BROADCAST] Sala '%s' — enviados: %d, omitidos: %d.",
-        room.name,
-        sent,
-        skipped,
+        "# [BROADCAST] Sala '%s' — enviados: %d, onboarding: %d, renewal: %d, omitidos: %d.",
+        room.name, sent, onboarded, renewed, skipped,
     )
 
 
