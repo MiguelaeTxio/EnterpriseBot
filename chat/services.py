@@ -1013,21 +1013,38 @@ def _resolve_pending_routing(
         contact.pending_routing_body = ""
         contact.save(update_fields=["routing_state", "pending_routing_body"])
         if breakdown_room is not None:
-            # Persist message in BREAKDOWNS room and broadcast to all members
-            # of all sections registered in breakdown_sections.
-            # Gemini ticket flow is not invoked at this stage — provisional
-            # implementation to verify end-to-end broadcast before adding
-            # the ticket collection dialogue.
+            # Send confirmation to the contact and invoke the Gemini breakdown agent.
+            # The broadcast to the BREAKDOWNS room is produced automatically by
+            # process_breakdown_turn when it detects the TICKET_COMPLETE marker
+            # and creates the ChatMessage(OUTBOUND) with the ticket summary.
+            # No additional broadcast call is needed here.
             # ---
-            # Persistir mensaje en sala BREAKDOWNS y hacer broadcast a todos
-            # los miembros de todas las secciones registradas en breakdown_sections.
-            # El flujo de tickets Gemini no se invoca en esta fase — implementación
-            # provisional para verificar el broadcast extremo a extremo antes de
-            # añadir el diálogo de recogida de tickets.
-            _persist_and_broadcast(
-                room=breakdown_room,
+            # Enviar confirmación al contacto e invocar el agente Gemini de averiás.
+            # El broadcast a la sala BREAKDOWNS lo produce automáticamente
+            # process_breakdown_turn al detectar el marcador TICKET_COMPLETE
+            # y crear el ChatMessage(OUTBOUND) con el resumen del ticket.
+            # No se necesita llamada adicional a broadcast en este punto.
+            from whatsapp.services import WhatsAppChatService as _WCS
+            try:
+                _WCS.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=(
+                        "Vas a iniciar un ticket de avería. "
+                        "Descíbeme el problema y te iré guiando."
+                    ),
+                )
+            except Exception as _exc:
+                logger.error(
+                    "# [CHAT DISPATCH] Error enviando confirmación de avería a %s: %s",
+                    from_number, _exc,
+                )
+            process_breakdown_turn(
                 contact=contact,
                 body=pending_body,
+                room=breakdown_room,
+                to_number=to_number,
+                from_number=from_number,
             )
         else:
             logger.warning(
@@ -1036,7 +1053,8 @@ def _resolve_pending_routing(
                 from_number,
             )
         logger.info(
-            "# [CHAT DISPATCH] Enrutamiento resuelto a BREAKDOWNS para %s.",
+            "# [CHAT DISPATCH] Enrutamiento resuelto a BREAKDOWNS para %s "
+            "(agente Gemini activado).",
             from_number,
         )
         return True

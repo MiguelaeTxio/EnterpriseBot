@@ -245,6 +245,66 @@ class IncomingWhatsAppView(View):
                 msg_longitude,
             )
 
+        # --- Step 4b-bis: Handle ButtonPayload for chat_session_renewal — Hito 13, Paso 10. ---
+        # Intercepts Quick Reply button presses from the chat_session_renewal template
+        # BEFORE the IRC dispatcher and the Hito 4 chatbot pipeline. Two payloads:
+        #   opt_in  — reactivates the WhatsApp session window for the contact.
+        #   opt_out — sets contact.opt_out_broadcast = True to exclude from broadcasts.
+        # Both branches return HTTP 200 immediately, consuming the message.
+        # --- Paso 4b-bis: Gestionar ButtonPayload para chat_session_renewal — Hito 13, Paso 10. ---
+        # Intercepta pulsaciones de botón Quick Reply del template chat_session_renewal
+        # ANTES del despachador IRC y del pipeline del chatbot del Hito 4. Dos payloads:
+        #   opt_in  — reactiva la ventana de sesión WhatsApp del contacto.
+        #   opt_out — establece contact.opt_out_broadcast = True para excluirle de broadcasts.
+        # Ambas ramas devuelven HTTP 200 inmediatamente, consumiendo el mensaje.
+        _button_payload = request.POST.get("ButtonPayload", "").strip()
+        if _button_payload in ("opt_in", "opt_out"):
+            if _button_payload == "opt_in":
+                WhatsAppSession.objects.filter(
+                    company=company,
+                    phone_number=from_number,
+                ).update(is_active=True, last_message_at=now())
+                try:
+                    WhatsAppChatService.send_reply(
+                        from_number=to_number,
+                        to_number=from_number,
+                        reply_text="Perfecto, te mantendremos informado/a.",
+                    )
+                except Exception as _exc:
+                    logger.error(
+                        "# [WHATSAPP] Error enviando confirmación opt_in a %s: %s",
+                        from_number, _exc,
+                    )
+                logger.info(
+                    "# [WHATSAPP] opt_in procesado para %s — sesión reactivada.",
+                    from_number,
+                )
+            else:  # opt_out
+                from ivr_config.models import Contact as _Contact
+                _opt_contact = _Contact.objects.filter(
+                    company=company,
+                    phone_number=from_number,
+                ).first()
+                if _opt_contact is not None:
+                    _opt_contact.opt_out_broadcast = True
+                    _opt_contact.save(update_fields=["opt_out_broadcast"])
+                try:
+                    WhatsAppChatService.send_reply(
+                        from_number=to_number,
+                        to_number=from_number,
+                        reply_text="De acuerdo, no recibirás más mensajes del grupo.",
+                    )
+                except Exception as _exc:
+                    logger.error(
+                        "# [WHATSAPP] Error enviando confirmación opt_out a %s: %s",
+                        from_number, _exc,
+                    )
+                logger.info(
+                    "# [WHATSAPP] opt_out procesado para %s — excluido de broadcasts.",
+                    from_number,
+                )
+            return HttpResponse(status=200)
+
         # --- Step 4c: Chat IRC dispatcher — Hito 13. ---
         # Evaluates the inbound message against the chat dispatch rules before
         # the Hito 4 chatbot pipeline. If the message is consumed by the chat

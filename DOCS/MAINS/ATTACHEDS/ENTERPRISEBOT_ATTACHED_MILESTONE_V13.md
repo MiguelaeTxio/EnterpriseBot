@@ -287,19 +287,16 @@ Estado: COMPLETADO.
 Estado: COMPLETADO.
 
 ### Paso 10 — Template chat_session_renewal
-Estado: PARCIALMENTE COMPLETADO.
-- Template creado en Twilio (SID: HX7e0f3f4d9b8553acc58240e7767f2133).
-- Registrado en BD (WhatsAppTemplate pk=6).
-- Enviado a aprobacion Meta (2026-05-18). Pendiente de aprobacion.
-PENDIENTE tras aprobacion:
-  a. En ChatSendView: si receptor tiene alias PERO sesion fuera de ventana 24h
-     → enviar chat_session_renewal en lugar de chat_onboarding.
-  b. En whatsapp/views.py: handler para respuesta del boton:
-       "Si, quiero recibirlos" (ButtonPayload: opt_in):
-         → WhatsAppSession.is_active=True, last_message_at=now().
-       "No, gracias" (ButtonPayload: opt_out):
-         → contact.opt_out_broadcast = True (nuevo campo BooleanField, migracion nueva).
-  c. Migracion para Contact.opt_out_broadcast BooleanField(default=False).
+Estado: COMPLETADO (sesion 008).
+- Template aprobado por Meta (SID: HX7e0f3f4d9b8553acc58240e7767f2133, pk=6).
+- chat/views.py — ChatSendView: logica de tres casos implementada y verificada en disco.
+  Caso 1 (sin alias) → chat_onboarding. Caso 2 (alias, fuera de ventana) →
+  chat_session_renewal. Caso 3 (alias, dentro de ventana) → mensaje libre.
+  Exclusion de contactos con opt_out_broadcast=True implementada.
+- whatsapp/views.py — IncomingWhatsAppView: handler ButtonPayload insertado en
+  Step 4b-bis, antes del despachador IRC. opt_in reactiva WhatsAppSession.
+  opt_out establece Contact.opt_out_broadcast=True. Ambas ramas retornan HTTP 200.
+- Contact.opt_out_broadcast: campo en BD desde migracion ivr_config/0023 (sesion 006).
 
 ### Paso 11 — UX sala IRC
 Estado: COMPLETADO (sesion 005).
@@ -325,9 +322,13 @@ Estado: COMPLETADO (sesion 006).
 - django check: 0 errores. collectstatic: OK.
 
 ### Paso 13 — Tarea de limpieza y ajustes finales
-Estado: PENDIENTE.
-- Badge de mensajes no leidos en sidebar.
-- Pruebas con multiples salas y multiples usuarios.
+Estado: PARCIALMENTE COMPLETADO (sesion 008).
+- process_breakdown_turn reactivado en rama selected_breakdown de
+  _resolve_pending_routing (chat/services.py). Implementacion provisional
+  sustituida por flujo definitivo: confirmacion al contacto + agente Gemini.
+- Badge de mensajes no leidos en sidebar: PENDIENTE.
+- Pruebas E2E multiusuario: PENDIENTE.
+- Gestion de secciones en BreakdownRoomManageView: pendiente de auditoria.
 
 ---
 
@@ -342,120 +343,103 @@ Estado: PENDIENTE.
 | 005    | 2026-05-18 | Pasos 7, 10, 11 + skill PED | Paso 7 completado E2E: template alias_confirmation creado via Content API, send_quick_reply rediseñado para usar content_sid pre-registrado con fallback a texto plano, NameError section y room corregidos en _handle_alias_collection, reenvio de mensaje pendiente tras onboarding operativo. Template chat_session_renewal creado y enviado a aprobacion Meta (pk=6). Paso 11 completado: layout flex robusto PC/Android, scroll condicional, refresco inmediato tras envio, panel lateral colapsable de miembros. Skill PED creada y actualizada con reglas de anclas exactas via script obligatorio. Logs PythonAnywhere registrados en arquitectura. |
 | 006    | 2026-05-18 | Paso 12 completo            | Paso 10 bloqueado — template chat_session_renewal En revision en Meta. Paso 12 completado: Contact extendido (opt_out_broadcast, routing_state, pending_routing_body), ChatRoom M2M (breakdown_sections, breakdown_contacts), BreakdownTicket extendido (ticket_number autoincremental, section, machine, is_repair_order, photos), migraciones ivr_config/0023 y chat/0002 aplicadas. Template breakdown_routing creado via curl (HX71d736523adabbd1e6d0fdf8acc2e99c, pk=7). chat/services.py ampliado con _handle_breakdown_routing, _resolve_pending_routing y process_breakdown_turn (Gemini 2.5 Flash). Vistas BreakdownTicketListView, BreakdownTicketDetailView, BreakdownRoomManageView con templates HTML. Hito 13 pausado — se activa Hito 7 para siguiente sesion. |
 | S007   | 2026-05-20 | Broadcast Celery, enrutamiento alvarez_admin, BREAKDOWNS provisional | Pendiente 1 resuelto: broadcast_inbound_message encolada en work_orders, logica reescrita con tres casos (sin alias → onboarding; alias sin sesion → renewal/fallback; alias con sesion → mensaje libre). Parametro room_name anadido a la tarea para prefijo WhatsApp. Logica de destinatarios por tipo de sala implementada en tasks.py. Pendiente 2 resuelto: alvarez_admin (pk=1) reasignado a Taller Mecanico pk=13 via shell. Taller Mecanico pk=13 anadido a breakdown_sections de sala BREAKDOWNS via shell. Pendiente 3 (broadcast BREAKDOWNS): _resolve_pending_routing rama selected_breakdown sustituye process_breakdown_turn por _persist_and_broadcast provisional — broadcast E2E verificado en produccion. Formato de mensaje separado: panel almacena alias:body, WhatsApp recibe [sala] alias:body. Quick Reply restaurado a logica has_breakdown_access. Worker Celery reiniciado dos veces en sesion para cargar cambios. |
+| S008   | 2026-05-20 | Paso 10 completo, process_breakdown_turn reactivado | Paso 10 completado: template chat_session_renewal aprobado por Meta. ChatSendView ya tenia logica de tres casos en disco. whatsapp/views.py ampliado con handler ButtonPayload (Step 4b-bis): opt_in reactiva WhatsAppSession, opt_out establece Contact.opt_out_broadcast=True. Paso 13 parcial: rama selected_breakdown en _resolve_pending_routing reactivada con flujo definitivo — confirmacion al contacto + process_breakdown_turn. Worker Celery NO reiniciado en sesion — obligatorio al inicio de la siguiente. |
 | S033   | 2026-05-18 | Incidencia on-fly           | Incidencia detectada desde H7: secciones creadas desde el panel no generaban ChatRoom automaticamente. Causa raiz: init_chat_rooms filtraba Section.is_active=True mezclando visibilidad IVR con existencia de sala de chat. Solucion: (1) chat/signals.py creado — signal post_save sobre Section con get_or_create de ChatRoom tipo SECTION; (2) chat/apps.py ampliado con ready() que conecta la signal; (3) init_chat_rooms corregido eliminando filtro is_active=True sobre Section. Ejecucion del comando corregido: 3 salas nuevas creadas (Asistencia, Elevacion, Taller Mecanico). Total activo: 6 salas. django check: 0 errores. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
-### Contexto de Estado tras S007
+### Contexto de Estado tras S008
 
-El broadcast IRC extremo a extremo esta operativo. Los tres pendientes criticos
-de la sesion 006 han sido resueltos. Estado actual del sistema:
+Sesion 008 ha completado las dos prioridades tecnicas principales. Estado actual:
 
-- Broadcast Celery: `broadcast_inbound_message` encolada en `work_orders`.
-  Worker reiniciado tras la sesion. Entrega verificada E2E en produccion.
-- Formato de mensaje: panel almacena `{alias}: {body}`. WhatsApp recibe
-  `[{nombre_sala}] {alias}: {body}`. Separacion limpia entre ambos contextos.
-- Logica de destinatarios por tipo de sala: sala SECTION → contactos de
-  `room.section`; sala BREAKDOWNS → contactos de todas las secciones en
-  `breakdown_sections` M2M (actualmente: Taller Mecanico pk=13).
-- Quick Reply de enrutamiento: se envia unicamente a contactos cuya seccion
-  esta en `breakdown_sections`. Contactos sin acceso a BREAKDOWNS se enrutan
-  directamente a su sala SECTION sin Quick Reply.
-- Rama BREAKDOWNS provisional: `_persist_and_broadcast` sobre sala BREAKDOWNS
-  sin invocar agente Gemini — verificacion E2E del broadcast completada.
-- Enrutamiento `alvarez_admin` (pk=1, +34688360595) corregido: asignado a
-  Taller Mecanico pk=13 via shell.
-- Taller Mecanico pk=13 anadido a `breakdown_sections` de la sala BREAKDOWNS.
+- chat_session_renewal: logica de tres casos en ChatSendView operativa en disco.
+  Handler ButtonPayload (opt_in/opt_out) insertado en whatsapp/views.py Step 4b-bis.
+  Pendiente verificacion E2E con dispositivo real (requiere que Meta haya aprobado
+  el template y el worker Celery este reiniciado con los cambios de esta sesion).
+- process_breakdown_turn: rama selected_breakdown de _resolve_pending_routing
+  reactivada con flujo definitivo. Confirmacion al contacto + agente Gemini campo
+  a campo. Broadcast al supervisor automatico via TICKET_COMPLETE.
+- Worker Celery: NO reiniciado en sesion 008. Obligatorio reiniciar al inicio
+  de la siguiente sesion para cargar cambios de chat/services.py y whatsapp/views.py.
 
-### Prioridad 1 — Paso 10: implementar logica chat_session_renewal
+### Prioridad 1 — Reinicio del worker Celery (OBLIGATORIO PRIMERO)
 
-BLOQUEADO hasta aprobacion Meta del template chat_session_renewal
-(SID: HX7e0f3f4d9b8553acc58240e7767f2133, pk=6, estado: En revision 2026-05-18).
+Antes de cualquier prueba, reiniciar el worker para cargar los cambios de sesion 008:
 
-Al iniciar la siguiente sesion, verificar primero el estado en Twilio Dashboard.
-Si aprobado, implementar en tres archivos:
+  python -m dotenv run python manage.py celery_multi restart worker \
+    -A enterprise_core -Q work_orders --loglevel=info
 
-A) chat/views.py — ChatSendView — bucle de broadcast (Step 6).
-   Condicion actual:
-     needs_onboarding = not _receiver_alias or not has_active_session
-   Nueva logica:
-     needs_onboarding_cold = not _receiver_alias
-     needs_session_renewal = _receiver_alias and not has_active_session
-     Si needs_onboarding_cold → enviar chat_onboarding (sin cambio).
-     Si needs_session_renewal → enviar chat_session_renewal:
-       variables: {"1": _receiver_alias, "2": company.name,
-                   "3": "https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/"}
-     Ademas: excluir contactos con contact.opt_out_broadcast=True del bucle completo.
+O alternativamente desde la consola de PythonAnywhere:
+  Detener el worker existente y relanzarlo desde la pestana Tasks.
 
-B) whatsapp/views.py — IncomingWhatsAppView.post() — insertar handler de ButtonPayload
-   ANTES de la llamada a dispatch_inbound_message.
-   ButtonPayload = request.POST.get("ButtonPayload", "").strip()
-   Si ButtonPayload == "opt_in":
-     WhatsAppSession.objects.filter(company=company, phone_number=from_number).update(
-         is_active=True, last_message_at=now())
-     WhatsAppChatService.send_reply(from_number=to_number, to_number=from_number,
-         reply_text="Perfecto, te mantendremos informado/a.")
-     return HttpResponse(status=200)
-   Si ButtonPayload == "opt_out":
-     Contact resuelto de company+from_number.
-     contact.opt_out_broadcast = True
-     contact.save(update_fields=["opt_out_broadcast"])
-     WhatsAppChatService.send_reply(from_number=to_number, to_number=from_number,
-         reply_text="De acuerdo, no recibiras mas mensajes del grupo.")
-     return HttpResponse(status=200)
+Verificar que el worker arranca sin errores antes de continuar.
 
-C) Contact.opt_out_broadcast ya existe en BD (migracion 0023 aplicada).
-   Solo pendiente la logica de exclusion en ChatSendView (punto A).
+### Prioridad 2 — Auditoria de BreakdownRoomManageView
 
-### Prioridad 2 — Paso 13: sistema de tickets de averia E2E
+BreakdownRoomManageView ya existe en chat/views.py con su template
+panel/templates/panel/chat/breakdown_room_manage.html. Auditar si la
+gestion de secciones (breakdown_sections M2M) esta implementada o solo
+la de contactos (breakdown_contacts M2M).
 
-El flujo BREAKDOWNS provisional entrega el mensaje a la sala sin invocar a Gemini.
-Para la implementacion definitiva del sistema de tickets:
+A) Leer chat/views.py — BreakdownRoomManageView GET y POST completos.
+B) Leer panel/templates/panel/chat/breakdown_room_manage.html completo.
+C) Si la gestion de secciones NO esta implementada:
+   - Anadir al GET: context con todas las Section de la empresa y las
+     ya registradas en breakdown_room.breakdown_sections.
+   - Anadir al POST: acciones add_section/<pk> y remove_section/<pk>
+     que llamen a breakdown_room.breakdown_sections.add/remove.
+   - Anadir al template: tabla de secciones con botones Anadir/Eliminar
+     equivalentes a la tabla de contactos ya existente.
+D) Si ya esta implementada: documentarlo y marcar como COMPLETADO.
 
-A) Reactivar process_breakdown_turn en _resolve_pending_routing rama selected_breakdown.
-   La rama provisional debe sustituirse por:
-     1. Enviar confirmacion al contacto: "Vas a iniciar un ticket de averia.
-        Describe el problema y te iremos guiando."
-     2. Llamar a process_breakdown_turn(contact, body, breakdown_room, to_number, from_number).
-   El broadcast a la sala BREAKDOWNS se produce automaticamente cuando Gemini
-   persiste el ticket via _CM.objects.create (supervisor_body) al detectar
-   TICKET_COMPLETE — no es necesario un broadcast adicional en esta rama.
+### Prioridad 3 — Pruebas E2E
 
-B) Verificacion E2E del flujo completo:
-   Quick Reply "Sala de Averias" → process_breakdown_turn → dialogo Gemini campo
-   a campo → marcador TICKET_COMPLETE detectado → BreakdownTicket finalizado →
-   ChatMessage OUTBOUND con resumen en sala BREAKDOWNS → BreakdownTicketDetailView
-   en panel → cierre por SUPERVISOR.
+Con el worker reiniciado, ejecutar las siguientes pruebas en orden:
 
-C) Pendiente: entrada en el panel para que el ADMIN/SUPERVISOR pueda anadir o
-   eliminar secciones de `breakdown_sections` de la sala BREAKDOWNS sin consola.
-   (BreakdownRoomManageView ya existe — verificar si la funcionalidad de
-   gestion de secciones esta implementada o solo la de contactos.)
+A) Flujo chat_session_renewal:
+   - Desde el panel, enviar mensaje a una seccion cuyo contacto tenga alias
+     pero sesion fuera de ventana de 24h.
+   - Verificar que el contacto recibe el template chat_session_renewal con
+     botones opt_in / opt_out.
+   - Pulsar opt_in: verificar que WhatsAppSession.is_active=True en BD y
+     que el contacto recibe confirmacion de texto plano.
+   - Pulsar opt_out: verificar que Contact.opt_out_broadcast=True en BD y
+     que el contacto queda excluido de broadcasts posteriores.
 
-### Prioridad 3 — Pruebas E2E multiusuario
+B) Flujo tickets de averia E2E:
+   - Contacto con acceso a BREAKDOWNS envia mensaje desde WhatsApp.
+   - Verificar Quick Reply breakdown_routing recibido.
+   - Pulsar "Sala de Averias": verificar mensaje de confirmacion recibido
+     ("Vas a iniciar un ticket de averia. Describeme el problema...").
+   - Completar dialogo Gemini campo a campo hasta TICKET_COMPLETE.
+   - Verificar BreakdownTicket creado en BD con todos los campos.
+   - Verificar ChatMessage OUTBOUND con resumen en sala BREAKDOWNS visible en panel.
+   - Desde panel (SUPERVISOR): cerrar ticket via BreakdownTicketDetailView.
 
-Pruebas con multiples salas y multiples usuarios simultaneos:
-- Verificar que el broadcast de un mensaje en sala X no llega a sala Y.
-- Verificar que el remitente no se recibe a si mismo el broadcast.
-- Verificar el flujo completo con dos dispositivos reales en la misma seccion.
-- Verificar el flujo de onboarding con un contacto nuevo no registrado.
+C) Pruebas multiusuario:
+   - Verificar que el broadcast de un mensaje en sala X no llega a sala Y.
+   - Verificar que el remitente no se recibe a si mismo el broadcast.
+   - Verificar el flujo completo con dos dispositivos reales en la misma seccion.
 
-### Archivos modificados en S007
+### Prioridad 4 — Badge de mensajes no leidos en sidebar
 
-- `chat/tasks.py`:
-  Decorador `@shared_task(..., queue='work_orders')` anadido a `broadcast_inbound_message`.
-  Logica de broadcast reescrita: tres casos (sin alias → onboarding; alias sin sesion →
-  renewal/fallback; alias con sesion → mensaje libre prefijado con `[{room_name}]`).
-  Firma extendida con parametro `room_name: str = ""`.
-  Logica de destinatarios por tipo de sala: SECTION usa `room.section.contacts`;
-  BREAKDOWNS agrega contactos de todas las secciones en `breakdown_sections` M2M.
+Implementar badge numerico en el sidebar para indicar mensajes no leidos
+en las salas de chat. Diseno a definir al inicio de la sesion segun
+resultado de las pruebas E2E previas.
+
+### Archivos modificados en S008
+
+- `whatsapp/views.py`:
+  Handler ButtonPayload (opt_in/opt_out) insertado en Step 4b-bis de
+  IncomingWhatsAppView.post(), antes del despachador IRC (Step 4c).
+  opt_in: WhatsAppSession.objects.filter(...).update(is_active=True, last_message_at=now()).
+  opt_out: Contact.opt_out_broadcast=True + send_reply de confirmacion.
 
 - `chat/services.py`:
-  `_persist_and_broadcast`: cuerpo almacenado en ChatMessage como `{alias}: {body}` (sin prefijo
-  de sala). Nombre de sala pasado a `broadcast_inbound_message.delay(message_pk, room.name)`.
-  Regla 5b restaurada: Quick Reply solo si `has_breakdown_access`. Regla 6 anadida para
-  contactos sin acceso a BREAKDOWNS (broadcast directo a SECTION).
-  Rama `selected_breakdown` en `_resolve_pending_routing`: sustituido `process_breakdown_turn`
-  por `_persist_and_broadcast(room=breakdown_room, ...)` — implementacion provisional.
+  Rama selected_breakdown en _resolve_pending_routing: implementacion provisional
+  (_persist_and_broadcast) sustituida por flujo definitivo. Se envia confirmacion
+  al contacto via WhatsAppChatService.send_reply y se invoca process_breakdown_turn
+  con los parametros: contact, body=pending_body, room=breakdown_room,
+  to_number=to_number, from_number=from_number.
