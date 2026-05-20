@@ -228,11 +228,11 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Chat de Secciones — ADMIN y SUPERVISOR                     #}
-    {# Section: Section Chat — ADMIN and SUPERVISOR                        #}
+    {# Sección: Chat de Secciones — ADMIN, SUPERVISOR, WORKSHOP, DRIVER    #}
+    {# Section: Section Chat — ADMIN, SUPERVISOR, WORKSHOP, DRIVER         #}
     {# Hito 13 Paso 4 (2026-05-15)                                         #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'DRIVER' %}
     <li><div class="sidebar-section-label">Chat de Secciones</div></li>
 
     <li class="nav-item">

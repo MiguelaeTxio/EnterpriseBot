@@ -41,8 +41,8 @@
                 <form method="post" enctype="multipart/form-data">
                     {% csrf_token %}
 
-                    {# File input — Campo de archivo #}
-                    <div class="mb-4">
+                    {# File input + camera widget — Campo de archivo + widget de cámara #}
+                    <div class="mb-3">
                         <label for="work_order_file" class="form-label fw-medium">
                             Archivo del parte
                             <span class="text-danger">*</span>
@@ -52,12 +52,60 @@
                             id="work_order_file"
                             name="work_order_file"
                             class="form-control"
-                            accept="image/*,.pdf" capture="environment"
+                            accept="image/*,.pdf"
                             required
                         >
                         <div class="form-text">
                             Formatos admitidos: foto (JPG, PNG) o PDF.
                             Asegúrate de que la imagen sea nítida y esté bien iluminada.
+                        </div>
+                    </div>
+
+                    {# Camera widget button — Botón de cámara directa #}
+                    <div class="mb-4">
+                        <button type="button"
+                                id="btn-open-camera"
+                                class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-camera-video me-1"></i>Hacer foto con cámara
+                        </button>
+                        <span class="text-muted text-sm ms-2">o selecciona un archivo arriba</span>
+                    </div>
+
+                    {# Camera modal — Modal de cámara #}
+                    <div class="modal fade" id="cameraModal" tabindex="-1"
+                         aria-labelledby="cameraModalLabel" aria-hidden="true">
+                        <div class="modal-dialog modal-lg modal-dialog-centered">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h6 class="modal-title fw-semibold" id="cameraModalLabel">
+                                        <i class="bi bi-camera-video me-2 text-primary"></i>Cámara
+                                    </h6>
+                                    <button type="button" class="btn-close"
+                                            data-bs-dismiss="modal"
+                                            aria-label="Cerrar cámara"
+                                            id="btn-close-camera"></button>
+                                </div>
+                                <div class="modal-body p-0 bg-black text-center">
+                                    <video id="camera-stream"
+                                           autoplay playsinline
+                                           class="w-100"
+                                           style="max-height:60vh;object-fit:contain;">
+                                    </video>
+                                    <canvas id="camera-canvas" class="d-none"></canvas>
+                                </div>
+                                <div class="modal-footer justify-content-between">
+                                    <button type="button"
+                                            id="btn-switch-camera"
+                                            class="btn btn-outline-secondary btn-sm">
+                                        <i class="bi bi-arrow-repeat me-1"></i>Cambiar cámara
+                                    </button>
+                                    <button type="button"
+                                            id="btn-capture"
+                                            class="btn btn-dark">
+                                        <i class="bi bi-camera-fill me-1"></i>Capturar foto
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -98,6 +146,101 @@
         </div>
     </div>
 </div>
+
+{# Camera widget JS — JS del widget de cámara #}
+<script>
+(function () {
+    "use strict";
+
+    var btnOpenCamera  = document.getElementById("btn-open-camera");
+    var btnCloseCamera = document.getElementById("btn-close-camera");
+    var btnCapture     = document.getElementById("btn-capture");
+    var btnSwitch      = document.getElementById("btn-switch-camera");
+    var videoEl        = document.getElementById("camera-stream");
+    var canvasEl       = document.getElementById("camera-canvas");
+    var fileInput      = document.getElementById("work_order_file");
+    var previewArea    = document.getElementById("preview-area");
+    var previewImg     = document.getElementById("preview-img");
+    var cameraModal    = new bootstrap.Modal(document.getElementById("cameraModal"));
+
+    var stream         = null;
+    var facingMode     = "environment"; // Rear camera by default / Cámara trasera por defecto.
+
+    function stopStream() {
+        if (stream) {
+            stream.getTracks().forEach(function (t) { t.stop(); });
+            stream = null;
+        }
+    }
+
+    function startStream() {
+        stopStream();
+        var constraints = {
+            video: { facingMode: facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            audio: false,
+        };
+        navigator.mediaDevices.getUserMedia(constraints)
+            .then(function (s) {
+                stream = s;
+                videoEl.srcObject = s;
+            })
+            .catch(function (err) {
+                alert("No se pudo acceder a la cámara: " + err.message);
+                cameraModal.hide();
+            });
+    }
+
+    btnOpenCamera.addEventListener("click", function () {
+        cameraModal.show();
+        startStream();
+    });
+
+    btnCloseCamera.addEventListener("click", function () {
+        stopStream();
+    });
+
+    document.getElementById("cameraModal").addEventListener("hidden.bs.modal", function () {
+        stopStream();
+    });
+
+    btnSwitch.addEventListener("click", function () {
+        facingMode = (facingMode === "environment") ? "user" : "environment";
+        startStream();
+    });
+
+    btnCapture.addEventListener("click", function () {
+        // Draw current video frame to canvas.
+        // Dibujar el frame actual del vídeo en el canvas.
+        canvasEl.width  = videoEl.videoWidth  || 1280;
+        canvasEl.height = videoEl.videoHeight || 720;
+        var ctx = canvasEl.getContext("2d");
+        ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+
+        // Convert canvas to Blob and inject into file input via DataTransfer.
+        // Convertir canvas a Blob e inyectar en el file input vía DataTransfer.
+        canvasEl.toBlob(function (blob) {
+            var fileName = "foto_parte_" + Date.now() + ".png";
+            var file     = new File([blob], fileName, { type: "image/png" });
+            var dt       = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+
+            // Show preview.
+            // Mostrar vista previa.
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                previewImg.src = e.target.result;
+                previewArea.classList.remove("d-none");
+            };
+            reader.readAsDataURL(file);
+
+            stopStream();
+            cameraModal.hide();
+        }, "image/png");
+    });
+
+}());
+</script>
 
 {# Preview + submit UX script #}
 <script>

@@ -6,6 +6,59 @@
 {% block extra_scripts %}
 <script>
 /*
+ * Unlink worker from section via fetch POST.
+ * Prevents illegal nested <form> by using fetch instead of form submission.
+ *
+ * Desvincula un trabajador de la sección mediante fetch POST.
+ * Evita el <form> anidado ilegal usando fetch en lugar de envío de formulario.
+ */
+(function () {
+    "use strict";
+
+    function getCsrfToken() {
+        var match = document.cookie.match(/csrftoken=([^;]+)/);
+        return match ? match[1] : "";
+    }
+
+    document.addEventListener("click", function (e) {
+        var btn = e.target.closest(".btn-unlink-worker");
+        if (!btn) return;
+        e.preventDefault();
+
+        var name    = btn.dataset.name || "este trabajador";
+        var url     = btn.dataset.url;
+        var section = btn.dataset.sectionPk;
+        var next    = btn.dataset.next;
+
+        if (!confirm("¿Desvincular a " + name + " de esta sección?")) return;
+
+        var body = new URLSearchParams();
+        body.append("section_pk", section);
+        body.append("next", next);
+
+        fetch(url, {
+            method:  "POST",
+            headers: {
+                "X-CSRFToken": getCsrfToken(),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: body.toString(),
+        })
+        .then(function (resp) {
+            if (resp.ok || resp.redirected) {
+                window.location.href = next;
+            } else {
+                alert("Error al desvincular el trabajador (" + resp.status + ").");
+            }
+})
+        .catch(function () {
+            alert("Error de red al desvincular el trabajador.");
+        });
+    });
+}());
+</script>
+<script>
+/*
  * DataCaptureSet inline field row builder for the section form.
  * Manages dynamic addition/removal of capture field rows, serialises
  * the result to JSON in a hidden input before submit, and pre-populates
@@ -765,19 +818,17 @@
                                                 <i class="bi bi-pencil"></i>
                                             </a>
                                             {# Unlink worker from section — Desvincular trabajador de la sección #}
-                                            <form method="post"
-                                                  action="{% url 'panel:user_unlink_section' w.pk %}"
-                                                  class="d-inline"
-                                                  onsubmit="return confirm('¿Desvincular a {{ w.user.get_full_name|default:w.user.username }} de esta sección?');">
-                                                {% csrf_token %}
-                                                <input type="hidden" name="section_pk" value="{{ object.pk }}">
-                                                <input type="hidden" name="next" value="{% url 'panel:section_edit' object.pk %}">
-                                                <button type="submit"
-                                                        class="btn btn-outline-danger btn-sm py-0"
-                                                        title="Desvincular de la sección">
-                                                    <i class="bi bi-person-dash"></i>
-                                                </button>
-                                            </form>
+                                            {# fetch POST via JS — avoids illegal nested <form>. #}
+                                            {# fetch POST vía JS — evita <form> anidado ilegal. #}
+                                            <button type="button"
+                                                    class="btn btn-outline-danger btn-sm py-0 btn-unlink-worker"
+                                                    title="Desvincular de la sección"
+                                                    data-url="{% url 'panel:user_unlink_section' w.pk %}"
+                                                    data-section-pk="{{ object.pk }}"
+                                                    data-next="{% url 'panel:section_edit' object.pk %}"
+                                                    data-name="{{ w.user.get_full_name|default:w.user.username }}">
+                                                <i class="bi bi-person-dash"></i>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>

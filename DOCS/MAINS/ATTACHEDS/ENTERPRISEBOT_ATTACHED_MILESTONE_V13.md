@@ -398,4 +398,69 @@ C) Contact.opt_out_broadcast ya existe en BD (migracion 0023 aplicada).
   y endpoint para marcar como leido al abrir la sala.
 - Pruebas E2E con multiples salas y multiples usuarios simultaneos.
 - Verificacion E2E del flujo completo BREAKDOWNS: enrutamiento Quick Reply →
-  agente Gemini → ticket creado → vista panel → cierre por SUPERVISOR.
+  agente Gemini → ticket creado → vista panel → cierre por SUPERVISOR.## Hoja de Ruta para la Siguiente Sesión
+
+### Contexto de Estado
+
+La sesión actual ha resuelto múltiples bugs críticos del flujo de onboarding y broadcast. El sistema está operativo con los siguientes elementos funcionando correctamente:
+
+- Dispatcher IRC: `chat/services.py` — `_resolve_alias` corregido (`is_active` eliminado de Regla 2).
+- Flujo de onboarding por WhatsApp: tres pasos (A→B→C) operativos para contactos externos y operarios.
+- Onboarding acelerado para contactos internos con `CompanyUser`: propone `get_full_name()` o `username` como alias en el Paso A.
+- Rama 0 de `_provision_company_user`: contactos externos (`is_internal=False`, sin `CompanyUser`) persisten alias en `Contact.alias` directamente, sin crear `CompanyUser`.
+- Rama A de `_provision_company_user`: fuerza `is_active=True` para roles `WORKSHOP`/`DRIVER` al actualizar alias.
+- Broadcast del panel (`ChatSendView` Step 6): refactorizado con tres casos (sin alias → `chat_onboarding`; alias + fuera de ventana → `chat_session_renewal`; alias + dentro de ventana → mensaje directo).
+- Acceso WORKSHOP/DRIVER al chat: `ChatRoomListView`, `ChatRoomView` y `ChatSendView` permiten estos roles con filtro de salas propias.
+- Widget de cámara en `upload_entry.html`: botón "Hacer foto con cámara" con `getUserMedia`, modal Bootstrap, captura y `DataTransfer` al file input.
+- Botón desvincular trabajador en `form.html` (sección): resuelto anidamiento ilegal con `fetch` POST via JavaScript.
+
+### Pendientes Críticos para Próxima Sesión
+
+#### 1. Broadcast de mensajes entrantes no se distribuye — BLOQUEANTE
+
+**Causa raíz:** El worker Celery de EnterpriseBot (`start_celery_worker.sh`) escucha únicamente `--queues=work_orders`. La tarea `broadcast_inbound_message` en `chat/tasks.py` usa `@shared_task` sin cola explícita — se encola en la cola por defecto (`celery`). Nadie la consume.
+
+**Solución:** Añadir la cola `chat_broadcast` (o `celery`) al worker. Dos opciones:
+
+- **Opción A (recomendada):** Decorar `broadcast_inbound_message` con `@shared_task(..., queue='work_orders')` para que use la cola que ya escucha el worker. No requiere cambiar el script de arranque.
+- **Opción B:** Añadir `--queues=work_orders,celery` al `start_celery_worker.sh` y reiniciar el always-on task.
+
+Además, `broadcast_inbound_message` en `chat/tasks.py` tiene la lógica antigua de broadcast (sin alias → omitir). Debe alinearse con la nueva lógica del Step 6 del `ChatSendView`: sin alias → `chat_onboarding`; alias + fuera ventana → `chat_session_renewal`; alias + dentro ventana → mensaje directo.
+
+**Archivos a modificar:**
+- `chat/tasks.py`: decorador de cola + nueva lógica de broadcast.
+- `chat/services.py` (`_persist_and_broadcast`): verificar que el `.delay()` apunta a la cola correcta.
+- `start_celery_worker.sh`: solo si se elige Opción B.
+
+#### 2. `alvarez_admin` enrutado a sección incorrecta
+
+**Causa raíz:** El contacto de `+34688360595` (`alvarez_admin`) está asignado a la sección `Asistencia` (pk no confirmado), no a `Taller Mecánico` (pk=13). Por eso sus mensajes van a la sala de Asistencia.
+
+**Solución:** Reasignar el contacto de `alvarez_admin` a la sección correcta desde el panel (editar sección Taller Mecánico → añadir trabajador) o via shell:
+
+```python
+from ivr_config.models import Contact, Section
+contact = Contact.objects.get(company_id=1, phone_number="+34688360595")
+section_asistencia = contact.sections.filter(company_id=1).first()
+section_taller = Section.objects.get(pk=13)
+if section_asistencia:
+    section_asistencia.contacts.remove(contact)
+section_taller.contacts.add(contact)
+```
+
+#### 3. Paso 13 — Badge de mensajes no leídos (objetivo original del hito)
+
+Implementar `ChatMessage.read` (BooleanField, `default=False`) + migración + endpoint mark-as-read + badge en sidebar. Ver descripción original en el Paso 13 del anexo.
+
+#### 4. Norma de estado de hitos
+
+Registrado en sesión: **ningún anexo ni documento satélite menciona estados de hito**. El estado es responsabilidad exclusiva del `MASTER_DOCUMENT`. Aplicar en toda redacción futura.
+
+### Archivos Modificados en Esta Sesión
+
+- `chat/services.py`: Regla 2 dispatcher (`is_active` eliminado), Paso A onboarding interno, Rama 0 `_provision_company_user`, Rama A `is_active` WORKSHOP/DRIVER.
+- `chat/views.py`: `ChatRoomListView` (WORKSHOP/DRIVER con filtro), `ChatRoomView` (`can_send` ampliado), `ChatSendView` (rol guard ampliado + Step 6 refactorizado).
+- `panel/views.py`: `CompanyUserSectionUnlinkView` (fix fetch JS), `SectionUpdateView` (context `section_workers`).
+- `panel/templates/panel/sections/form.html`: formulario desvincular extraído de anidamiento ilegal → fetch POST JS.
+- `panel/templates/panel/_nav_items.html`: sección Chat de Secciones visible para WORKSHOP y DRIVER.
+- `panel/templates/panel/operator/upload_entry.html`: widget de cámara con `getUserMedia`.

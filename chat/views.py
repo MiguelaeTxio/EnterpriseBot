@@ -125,11 +125,13 @@ class ChatRoomView(CompanyUserRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
-        # WORKSHOP role is read-only — cannot send messages.
-        # El rol WORKSHOP es de solo lectura — no puede enviar mensajes.
+        # All roles can send messages in their accessible rooms.
+        # Todos los roles pueden enviar mensajes en sus salas accesibles.
         can_send = company_user.role in (
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOP,
+            company_user.ROLE_DRIVER,
         )
 
         # Detect missing alias — modal will be shown in the template.
@@ -242,18 +244,55 @@ class ChatRoomListView(CompanyUserRequiredMixin, View):
         company_user = request.user.company_user
         company      = company_user.company
 
-        # Restrict to ADMIN and SUPERVISOR — WORKSHOP has no chat list access.
-        # Restringir a ADMIN y SUPERVISOR — WORKSHOP no tiene acceso a la lista.
-        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+        # ADMIN and SUPERVISOR see all active rooms.
+        # WORKSHOP and DRIVER see only their own section room and the BREAKDOWNS room.
+        # Any other role is forbidden.
+        # ADMIN y SUPERVISOR ven todas las salas activas.
+        # WORKSHOP y DRIVER ven solo su sala de seccion y la sala BREAKDOWNS.
+        # Cualquier otro rol recibe 403.
+        _allowed_roles = (
+            company_user.ROLE_ADMIN,
+            company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOP,
+            company_user.ROLE_DRIVER,
+        )
+        if company_user.role not in _allowed_roles:
             from django.http import HttpResponseForbidden
             return HttpResponseForbidden()
 
-        rooms = (
-            ChatRoom.objects
-            .filter(company=company, is_active=True)
-            .select_related("section")
-            .order_by("room_type", "name")
-        )
+        if company_user.role in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+            rooms = (
+                ChatRoom.objects
+                .filter(company=company, is_active=True)
+                .select_related("section")
+                .order_by("room_type", "name")
+            )
+        else:
+            # Resolve the section assigned to this WORKSHOP/DRIVER contact.
+            # Resolver la seccion asignada al contacto WORKSHOP/DRIVER.
+            from ivr_config.models import Contact
+            _contact = Contact.objects.filter(
+                company=company,
+                company_user=company_user,
+            ).first()
+            _section = (
+                _contact.sections.filter(company=company).first()
+                if _contact else None
+            )
+            from django.db.models import Q
+            rooms = (
+                ChatRoom.objects
+                .filter(
+                    company=company,
+                    is_active=True,
+                )
+                .filter(
+                    Q(room_type=ChatRoom.ROOM_TYPE_BREAKDOWNS) |
+                    Q(room_type=ChatRoom.ROOM_TYPE_SECTION, section=_section)
+                )
+                .select_related("section")
+                .order_by("room_type", "name")
+            )
 
         own_presence = PresenceStatus.objects.filter(
             company_user=company_user,
@@ -319,9 +358,14 @@ class ChatSendView(CompanyUserRequiredMixin, View):
         company_user = request.user.company_user
         company      = company_user.company
 
-        # --- Step 1: Role guard — only ADMIN and SUPERVISOR can send. ---
-        # --- Paso 1: Guardia de rol — solo ADMIN y SUPERVISOR pueden enviar. ---
-        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+        # --- Step 1: Role guard — ADMIN, SUPERVISOR, WORKSHOP and DRIVER can send. ---
+        # --- Paso 1: Guardia de rol — ADMIN, SUPERVISOR, WORKSHOP y DRIVER pueden enviar. ---
+        if company_user.role not in (
+            company_user.ROLE_ADMIN,
+            company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOP,
+            company_user.ROLE_DRIVER,
+        ):
             return JsonResponse(
                 {"error": "Tu rol no permite enviar mensajes en el chat."},
                 status=403,
@@ -422,18 +466,45 @@ class ChatSendView(CompanyUserRequiredMixin, View):
             .values_list("phone_number", "alias")
         )
 
-        sent    = 0
-        skipped = 0
+        sent          = 0
+        skipped       = 0
         out_of_window = []
+
+        import json as _json
+        from whatsapp.models import WhatsAppTemplate
+
+        # Resolve onboarding and renewal templates once — reused per contact.
+        # Resolver templates de onboarding y renewal una vez — reutilizados por contacto.
+        _onboarding_template = WhatsAppTemplate.objects.filter(
+            company=company, name="chat_onboarding", is_active=True,
+        ).first()
+        _renewal_template = WhatsAppTemplate.objects.filter(
+            company=company, name="chat_session_renewal", is_active=True,
+        ).first()
+        _twilio_client = __import__(
+            "whatsapp.services", fromlist=["_build_twilio_client"]
+        )._build_twilio_client()
 
         for phone_number, alias in section_contacts:
             if phone_number == sender_phone:
                 continue
 
-            # A session is considered active only if last_message_at
-            # is within the last 24 hours — Twilio's conversation window.
-            # Una sesión se considera activa solo si last_message_at
-            # está dentro de las últimas 24 horas — ventana de Twilio.
+            # Resolve contact object and canonical alias.
+            # Resolver objeto de contacto y alias canónico.
+            _contact_obj = section.contacts.filter(phone_number=phone_number).first()
+            _receiver_alias = ""
+            if _contact_obj:
+                if _contact_obj.company_user_id and _contact_obj.company_user:
+                    _receiver_alias = (_contact_obj.company_user.alias or "").strip()
+                if not _receiver_alias:
+                    _receiver_alias = (_contact_obj.alias or "").strip()
+            _contact_name = (
+                _contact_obj.name if _contact_obj and _contact_obj.name
+                else phone_number
+            )
+
+            # Check 24h session window.
+            # Comprobar ventana de sesión de 24h.
             _window_cutoff = now() - timedelta(hours=24)
             has_active_session = WhatsAppSession.objects.filter(
                 company=company,
@@ -442,36 +513,15 @@ class ChatSendView(CompanyUserRequiredMixin, View):
                 last_message_at__gte=_window_cutoff,
             ).exists()
 
-            # Resolve contact alias — check CompanyUser.alias if linked.
-            # Resolver alias del contacto — comprobar CompanyUser.alias si está vinculado.
-            _contact_obj = section.contacts.filter(phone_number=phone_number).first()
-            _receiver_alias = ""
-            if _contact_obj:
-                if _contact_obj.company_user_id and _contact_obj.company_user:
-                    _receiver_alias = _contact_obj.company_user.alias.strip()
-                if not _receiver_alias:
-                    _receiver_alias = _contact_obj.alias.strip()
-            _contact_name = (
-                _contact_obj.name if _contact_obj and _contact_obj.name
-                else phone_number
-            )
-
-            # If receiver has no alias OR is outside 24h window — send chat_onboarding.
-            # Si el receptor no tiene alias O está fuera de ventana 24h — enviar chat_onboarding.
-            needs_onboarding = not _receiver_alias or not has_active_session
-            if needs_onboarding:
+            # --- Case 1: No alias — send chat_onboarding. ---
+            # The message is stored in the room; the contact will receive it
+            # automatically after completing the onboarding flow.
+            # --- Caso 1: Sin alias — enviar chat_onboarding. ---
+            # El mensaje queda almacenado en la sala; el contacto lo recibirá
+            # automáticamente al completar el flujo de onboarding.
+            if not _receiver_alias:
                 try:
-                    import json as _json
-                    from whatsapp.models import WhatsAppTemplate
-                    _onboarding_template = WhatsAppTemplate.objects.filter(
-                        company=company,
-                        name="chat_onboarding",
-                        is_active=True,
-                    ).first()
                     if _onboarding_template:
-                        _twilio_client = __import__(
-                            "whatsapp.services", fromlist=["_build_twilio_client"]
-                        )._build_twilio_client()
                         _twilio_client.messages.create(
                             from_=f"whatsapp:{from_number}",
                             to=f"whatsapp:{phone_number}",
@@ -482,43 +532,79 @@ class ChatSendView(CompanyUserRequiredMixin, View):
                             }),
                         )
                         logger.info(
-                            "# [CHAT SEND] Template chat_onboarding enviado a %s (sin alias o fuera de ventana).",
+                            "# [CHAT SEND] chat_onboarding enviado a %s (sin alias).",
                             phone_number,
                         )
-                        out_of_window.append(_receiver_alias or _contact_name)
                     else:
                         logger.warning(
                             "# [CHAT SEND] Template chat_onboarding no encontrado "
-                            "para empresa %s. Contacto %s omitido.",
-                            company.name,
-                            phone_number,
+                            "para empresa %s — contacto %s omitido.",
+                            company.name, phone_number,
                         )
-                        out_of_window.append(_receiver_alias or _contact_name)
                 except Exception as _exc:
                     logger.error(
-                        "# [CHAT SEND] Error enviando template chat_onboarding a %s: %s",
-                        phone_number,
-                        _exc,
+                        "# [CHAT SEND] Error enviando chat_onboarding a %s: %s",
+                        phone_number, _exc,
                     )
-                    out_of_window.append(_receiver_alias or _contact_name)
+                out_of_window.append(_contact_name)
                 skipped += 1
                 continue
 
+            # --- Case 2: Alias present, outside 24h window — send chat_session_renewal. ---
+            # The message is also sent after the renewal to ensure delivery.
+            # --- Caso 2: Alias presente, fuera de ventana 24h — enviar chat_session_renewal. ---
+            # El mensaje también se envía tras el renewal para garantizar la entrega.
+            if not has_active_session:
+                try:
+                    if _renewal_template:
+                        _twilio_client.messages.create(
+                            from_=f"whatsapp:{from_number}",
+                            to=f"whatsapp:{phone_number}",
+                            content_sid=_renewal_template.content_sid,
+                            content_variables=_json.dumps({"1": _receiver_alias}),
+                        )
+                        logger.info(
+                            "# [CHAT SEND] chat_session_renewal enviado a %s (%s) — fuera de ventana.",
+                            _receiver_alias, phone_number,
+                        )
+                    else:
+                        logger.warning(
+                            "# [CHAT SEND] Template chat_session_renewal no encontrado "
+                            "para empresa %s — contacto %s omitido.",
+                            company.name, phone_number,
+                        )
+                        out_of_window.append(_receiver_alias)
+                        skipped += 1
+                        continue
+                except Exception as _exc:
+                    logger.error(
+                        "# [CHAT SEND] Error enviando chat_session_renewal a %s: %s",
+                        phone_number, _exc,
+                    )
+                    out_of_window.append(_receiver_alias)
+                    skipped += 1
+                    continue
+
+            # --- Case 3: Alias present, within 24h window — send message directly. ---
+            # Also reached after a successful renewal (window reopened by the template). ---
+            # --- Caso 3: Alias presente, dentro de ventana 24h — enviar mensaje directamente. ---
+            # También se alcanza tras un renewal exitoso (ventana reabierta por el template). ---
             try:
                 sid = WhatsAppChatService.send_reply(
                     from_number=from_number,
                     to_number=phone_number,
                     reply_text=prefixed_body,
                 )
-                # Update whatsapp_sid with the last successful SID.
-                # Actualizar whatsapp_sid con el último SID exitoso.
                 chat_message.whatsapp_sid = sid or ""
                 sent += 1
-            except Exception as exc:
-                import logging as _logging
-                _logging.getLogger(__name__).error(
-                    "# [CHAT SEND] Error enviando a %s (%s): %s",
-                    alias, phone_number, exc,
+                logger.info(
+                    "# [CHAT SEND] Mensaje enviado a %s (%s).",
+                    _receiver_alias, phone_number,
+                )
+            except Exception as _exc:
+                logger.error(
+                    "# [CHAT SEND] Error enviando mensaje a %s (%s): %s",
+                    _receiver_alias, phone_number, _exc,
                 )
                 skipped += 1
 

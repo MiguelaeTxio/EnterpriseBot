@@ -183,7 +183,7 @@ def dispatch_inbound_message(
 
     # --- Rule 2: Contact must have a section assigned. ---
     # --- Regla 2: El contacto debe tener sección asignada. ---
-    section = contact.sections.filter(company=company, is_active=True).first()
+    section = contact.sections.filter(company=company).first()
     if section is None:
         logger.info(
             "# [CHAT DISPATCH] Contacto %s sin sección asignada. Flujo Hito 5.",
@@ -335,6 +335,79 @@ def _handle_alias_collection(
     # --- Step A: No state — request name. ---
     # --- Paso A: Sin estado — solicitar nombre. ---
     if step == contact.ALIAS_STEP_NONE:
+        # --- Step A: Internal contact with CompanyUser — propose panel username as alias. ---
+        # Skip the open-ended name question and jump straight to confirmation
+        # using the full name (or username) already registered in the panel.
+        # ---
+        # --- Paso A: Contacto interno con CompanyUser — proponer username del panel como alias. ---
+        # Omitir la pregunta abierta de nombre y saltar directamente a la confirmación
+        # usando el nombre completo (o username) ya registrado en el panel.
+        if contact.company_user_id and contact.company_user:
+            _cu = contact.company_user
+            _proposed = (
+                _cu.user.get_full_name().strip()
+                or _cu.user.username.strip()
+            )
+            contact.alias_onboarding_step     = contact.ALIAS_STEP_CONFIRMING
+            contact.alias_onboarding_proposed = _proposed
+            contact.save(update_fields=["alias_onboarding_step", "alias_onboarding_proposed"])
+
+            # Attempt quick-reply confirmation via alias_confirmation template.
+            # Fall back to plain text if template not found or API fails.
+            # Intentar confirmación con botones vía template alias_confirmation.
+            # Caer a texto plano si el template no se encuentra o la API falla.
+            from whatsapp.models import WhatsAppTemplate
+            _sent = False
+            try:
+                _alias_template = WhatsAppTemplate.objects.get(
+                    company=contact.company,
+                    name="alias_confirmation",
+                    is_active=True,
+                )
+                WhatsAppChatService.send_quick_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    content_sid=_alias_template.content_sid,
+                    content_variables={"1": _proposed},
+                )
+                _sent = True
+                logger.info(
+                    "# [CHAT DISPATCH] Confirmación de alias con username propuesto enviada "
+                    "a contacto interno %s: '%s'.",
+                    from_number, _proposed,
+                )
+            except WhatsAppTemplate.DoesNotExist:
+                logger.warning(
+                    "# [CHAT DISPATCH] Template alias_confirmation no encontrado "
+                    "para empresa pk=%s — fallback a texto plano.",
+                    contact.company_id,
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [CHAT DISPATCH] Error enviando confirmación de alias interno a %s: %s",
+                    from_number, exc,
+                )
+            if not _sent:
+                try:
+                    WhatsAppChatService.send_reply(
+                        from_number=to_number,
+                        to_number=from_number,
+                        reply_text=(
+                            f"Hemos recibido tu nombre: *{_proposed}*. "
+                            "Este será tu alias en el chat de grupo de tu sección. "
+                            "Confirmas que quieres usar este nombre? "
+                            "Responde \"Sí, usar este nombre\" o \"Cambiar nombre\"."
+                        ),
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "# [CHAT DISPATCH] Error enviando fallback de alias interno a %s: %s",
+                        from_number, exc,
+                    )
+            return True
+
+        # --- Step A: External contact or operator without CompanyUser — ask for name. ---
+        # --- Paso A: Contacto externo u operario sin CompanyUser — preguntar nombre. ---
         contact.alias_onboarding_step = contact.ALIAS_STEP_PENDING
         contact.save(update_fields=["alias_onboarding_step"])
         alias_request = (
@@ -698,7 +771,13 @@ def _provision_company_user(
     if contact.company_user_id and contact.company_user:
         cu       = contact.company_user
         cu.alias = proposed_alias
-        cu.save(update_fields=["alias"])
+        # Force is_active=True for WORKSHOP/DRIVER — panel creation defaults to False.
+        # Forzar is_active=True para WORKSHOP/DRIVER — la creacion desde panel usa False por defecto.
+        _fields_to_save = ["alias"]
+        if cu.role in ("WORKSHOP", "DRIVER") and not cu.is_active:
+            cu.is_active = True
+            _fields_to_save.append("is_active")
+        cu.save(update_fields=_fields_to_save)
         logger.info(
             "# [PROVISION] Alias actualizado para CompanyUser pk=%s: '%s'.",
             cu.pk,
@@ -1008,7 +1087,7 @@ def process_breakdown_turn(
     ).order_by("-created_at").first()
 
     if ticket is None:
-        section = contact.sections.filter(company=company, is_active=True).first()
+        section = contact.sections.filter(company=company).first()
         ticket  = BreakdownTicket.objects.create(
             room=room,
             contact=contact,
