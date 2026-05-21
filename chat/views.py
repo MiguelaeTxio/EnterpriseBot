@@ -126,10 +126,12 @@ class ChatRoomView(CompanyUserRequiredMixin, View):
         ).order_by("-starts_at").first()
 
         # All roles can send messages in their accessible rooms.
-        # Todos los roles pueden enviar mensajes en sus salas accesibles.
+        # Todos los roles con acceso a salas pueden enviar mensajes.
+        # All roles with room access are allowed to send messages.
         can_send = company_user.role in (
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
             company_user.ROLE_WORKSHOP,
             company_user.ROLE_DRIVER,
         )
@@ -250,9 +252,11 @@ class ChatRoomListView(CompanyUserRequiredMixin, View):
         # ADMIN y SUPERVISOR ven todas las salas activas.
         # WORKSHOP y DRIVER ven solo su sala de seccion y la sala BREAKDOWNS.
         # Cualquier otro rol recibe 403.
+        # Any other role receives HTTP 403.
         _allowed_roles = (
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
             company_user.ROLE_WORKSHOP,
             company_user.ROLE_DRIVER,
         )
@@ -268,8 +272,8 @@ class ChatRoomListView(CompanyUserRequiredMixin, View):
                 .order_by("room_type", "name")
             )
         else:
-            # Resolve the section assigned to this WORKSHOP/DRIVER contact.
-            # Resolver la seccion asignada al contacto WORKSHOP/DRIVER.
+            # Resolve the section assigned to this WORKSHOPBOSS/WORKSHOP/DRIVER contact.
+            # Resolver la seccion asignada al contacto WORKSHOPBOSS/WORKSHOP/DRIVER.
             from ivr_config.models import Contact
             _contact = Contact.objects.filter(
                 company=company,
@@ -359,10 +363,12 @@ class ChatSendView(CompanyUserRequiredMixin, View):
         company      = company_user.company
 
         # --- Step 1: Role guard — ADMIN, SUPERVISOR, WORKSHOP and DRIVER can send. ---
-        # --- Paso 1: Guardia de rol — ADMIN, SUPERVISOR, WORKSHOP y DRIVER pueden enviar. ---
+        # --- Step 1: Role guard — ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP and DRIVER can send. ---
+        # --- Paso 1: Guardia de rol — ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP y DRIVER pueden enviar. ---
         if company_user.role not in (
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
             company_user.ROLE_WORKSHOP,
             company_user.ROLE_DRIVER,
         ):
@@ -700,7 +706,11 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
         company_user = request.user.company_user
         company      = company_user.company
 
-        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+        if company_user.role not in (
+            company_user.ROLE_ADMIN,
+            company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
+        ):
             from django.http import HttpResponseForbidden
             return HttpResponseForbidden()
 
@@ -786,7 +796,11 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
 
         company_user = request.user.company_user
 
-        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+        if company_user.role not in (
+            company_user.ROLE_ADMIN,
+            company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
+        ):
             from django.http import HttpResponseForbidden
             return HttpResponseForbidden()
 
@@ -822,7 +836,11 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
 
         company_user = request.user.company_user
 
-        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+        if company_user.role not in (
+            company_user.ROLE_ADMIN,
+            company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
+        ):
             return HttpResponseForbidden()
 
         ticket = self._get_ticket(request, pk)
@@ -948,7 +966,11 @@ class BreakdownRoomManageView(CompanyUserRequiredMixin, View):
         company_user = request.user.company_user
         company      = company_user.company
 
-        if company_user.role not in (company_user.ROLE_ADMIN, company_user.ROLE_SUPERVISOR):
+        if company_user.role not in (
+            company_user.ROLE_ADMIN,
+            company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
+        ):
             return HttpResponseForbidden()
 
         breakdown_room = self._get_breakdown_room(company)

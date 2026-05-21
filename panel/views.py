@@ -557,9 +557,11 @@ class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
         next_url = request.POST.get("next", "").strip() or "/panel/users/"
         # Force is_active=True for WORKSHOP/DRIVER roles — these users must always
         # have panel access. Silently override whatever the POST body contains.
-        # Forzar is_active=True para roles WORKSHOP/DRIVER — estos usuarios deben
-        # tener acceso al panel siempre. Ignorar silenciosamente el body del POST.
-        if self.object.role in ("WORKSHOP", "DRIVER"):
+        # Forzar is_active=True para roles WORKSHOP, WORKSHOPBOSS y DRIVER — estos
+        # usuarios deben tener acceso al panel siempre. Ignorar el body del POST.
+        # Force is_active=True for WORKSHOP, WORKSHOPBOSS and DRIVER roles — these
+        # users must always retain panel access regardless of the POST body.
+        if self.object.role in ("WORKSHOP", "WORKSHOPBOSS", "DRIVER"):
             self.object.is_active = True
             self.object.save(update_fields=["is_active"])
         if "force_reset" in request.POST:
@@ -12974,7 +12976,7 @@ class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):
 # Fleet / Centros de gasto — Hito 12 Paso 4
 # ===========================================================================
 
-class MachineAssetListView(AdminRoleRequiredMixin, View):
+class MachineAssetListView(SupervisorAccessMixin, View):
     """
     List view for MachineAsset records belonging to the authenticated user's
     company. Supports filtering by family and is_active status.

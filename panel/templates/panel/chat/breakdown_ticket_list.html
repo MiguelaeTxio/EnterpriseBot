@@ -9,9 +9,11 @@
 
   <div class="d-flex align-items-center justify-content-between mb-4">
     <h4 class="mb-0">Tickets de Avería</h4>
+    {% if company_user.role == 'ADMIN' %}
     <a href="{% url 'panel:breakdown_room_manage' %}" class="btn btn-sm btn-outline-secondary">
       Gestionar membresía
     </a>
+    {% endif %}
   </div>
 
   {# Filtros #}

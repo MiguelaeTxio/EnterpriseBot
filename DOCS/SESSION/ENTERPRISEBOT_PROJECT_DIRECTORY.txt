@@ -305,6 +305,7 @@
 ./ivr_config/migrations/0008_sectioncontact_transferattempt_pendingnotification.py
 ./ivr_config/migrations/0003_callflow_notification_contact_contact_email_and_more.py
 ./ivr_config/migrations/0007_section_call_flow_callflow_fallback_section.py
+./ivr_config/migrations/0025_workshopboss_role.py
 ./ivr_config/migrations/__init__.py
 ./ivr_config/migrations/0019_contact_alias.py
 ./ivr_config/migrations/0010_alter_datacaptureset_fields.py

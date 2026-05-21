@@ -116,14 +116,16 @@ class WorkshopRequiredMixin(CompanyUserRequiredMixin):
             return response
 
         # Grant access only to WORKSHOP and ADMIN roles.
-        # Conceder acceso únicamente a los roles WORKSHOP y ADMIN.
+        # Conceder acceso a WORKSHOP, WORKSHOPBOSS y ADMIN.
+        # Grant access to WORKSHOP, WORKSHOPBOSS and ADMIN roles.
         allowed_roles = {
             CompanyUser.ROLE_WORKSHOP,
+            CompanyUser.ROLE_WORKSHOPBOSS,
             CompanyUser.ROLE_ADMIN,
         }
         if company_user.role not in allowed_roles:
             return HttpResponseForbidden(
-                "Acceso denegado. Esta sección requiere el rol de Operario de taller."
+                "Acceso denegado. Esta sección requiere el rol de Operario o Jefe de taller."
             )
 
         return response
@@ -216,15 +218,17 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
             return response
 
         # Grant access only to SUPERVISOR and ADMIN roles.
-        # Conceder acceso únicamente a los roles SUPERVISOR y ADMIN.
+        # Conceder acceso a SUPERVISOR, WORKSHOPBOSS y ADMIN.
+        # Grant access to SUPERVISOR, WORKSHOPBOSS and ADMIN roles.
         allowed_roles = {
             CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_WORKSHOPBOSS,
             CompanyUser.ROLE_ADMIN,
         }
         if company_user.role not in allowed_roles:
             messages.error(
                 request,
-                "Acceso denegado. Esta sección requiere el rol de Supervisor o Administrador.",
+                "Acceso denegado. Esta sección requiere el rol de Supervisor, Jefe de taller o Administrador.",
             )
             return redirect("/panel/")
 

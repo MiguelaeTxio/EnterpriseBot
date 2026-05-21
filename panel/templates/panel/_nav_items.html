@@ -37,10 +37,10 @@
 <ul class="nav flex-column mt-2">
 
     {# ------------------------------------------------------------------ #}
-    {# Inicio — visible para ADMIN y SUPERVISOR                            #}
-    {# Dashboard — visible to ADMIN and SUPERVISOR                        #}
+    {# Inicio — visible para ADMIN, SUPERVISOR y WORKSHOPBOSS              #}
+    {# Dashboard — visible to ADMIN, SUPERVISOR and WORKSHOPBOSS           #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}"
            href="{% url 'panel:dashboard' %}">
@@ -50,10 +50,10 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Presencia — ADMIN y SUPERVISOR                             #}
-    {# Section: Presence — ADMIN and SUPERVISOR                           #}
+    {# Sección: Presencia — ADMIN, SUPERVISOR y WORKSHOPBOSS                  #}
+    {# Section: Presence — ADMIN, SUPERVISOR and WORKSHOPBOSS                 #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
     <li><div class="sidebar-section-label">Presencia</div></li>
 
     <li class="nav-item">
@@ -143,8 +143,8 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Taller — WORKSHOP y ADMIN                                  #}
-    {# Section: Workshop — WORKSHOP and ADMIN                             #}
+    {# Sección: Taller — WORKSHOP y ADMIN (Nuevo parte + Historial operario) #}
+    {# Section: Workshop — WORKSHOP and ADMIN (work-order entry + history)    #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
     <li><div class="sidebar-section-label">Taller</div></li>
@@ -168,10 +168,10 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Administración — ADMIN y SUPERVISOR                        #}
-    {# Section: Administration — ADMIN and SUPERVISOR                     #}
+    {# Sección: Administración — ADMIN, SUPERVISOR y WORKSHOPBOSS           #}
+    {# Section: Administration — ADMIN, SUPERVISOR and WORKSHOPBOSS         #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
     <li><div class="sidebar-section-label">Administración</div></li>
 
     <li class="nav-item">
@@ -205,10 +205,10 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Configuración de jornada — ADMIN y SUPERVISOR              #}
-    {# Section: Workday configuration — ADMIN and SUPERVISOR              #}
+    {# Sección: Configuración de jornada — ADMIN, SUPERVISOR y WORKSHOPBOSS #}
+    {# Section: Workday configuration — ADMIN, SUPERVISOR and WORKSHOPBOSS  #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
     <li><div class="sidebar-section-label">Configuración de jornada</div></li>
 
     <li class="nav-item">
@@ -228,17 +228,33 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Chat de Secciones — ADMIN, SUPERVISOR, WORKSHOP, DRIVER    #}
-    {# Section: Section Chat — ADMIN, SUPERVISOR, WORKSHOP, DRIVER         #}
+    {# Sección: Chat de Secciones — ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP, DRIVER #}
+    {# Section: Section Chat — ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP, DRIVER      #}
     {# Hito 13 Paso 4 (2026-05-15)                                         #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'DRIVER' %}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' or company_user.role == 'DRIVER' %}
     <li><div class="sidebar-section-label">Chat de Secciones</div></li>
 
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'chat' %}active{% endif %}"
            href="{% url 'panel:chat_room_list' %}">
             <i class="bi bi-chat-dots"></i>Salas de chat
+        </a>
+    </li>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Tickets de Avería — ADMIN, SUPERVISOR, WORKSHOPBOSS        #}
+    {# Section: Breakdown Tickets — ADMIN, SUPERVISOR, WORKSHOPBOSS        #}
+    {# Hito 13                                                             #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+    <li><div class="sidebar-section-label">Tickets de Avería</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
+           href="{% url 'panel:breakdown_ticket_list' %}">
+            <i class="bi bi-exclamation-triangle"></i>Tickets de avería
         </a>
     </li>
     {% endif %}

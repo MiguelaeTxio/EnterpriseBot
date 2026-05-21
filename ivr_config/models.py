@@ -109,21 +109,29 @@ class CompanyUser(models.Model):
     El acceso a /admin/ se bloquea mediante CompanyUserAdminBlockMiddleware.
     """
 
-    ROLE_ADMIN       = "ADMIN"
-    ROLE_OPERATOR    = "OPERATOR"
-    ROLE_WORKSHOP    = "WORKSHOP"
+    ROLE_ADMIN        = "ADMIN"
+    ROLE_OPERATOR     = "OPERATOR"
+    ROLE_WORKSHOP     = "WORKSHOP"
+    # WORKSHOPBOSS: jefe de taller. Acceso a tickets de avería, sala BREAKDOWNS
+    # y sala de su sección asignada. Mismo acceso que SUPERVISOR en Taller,
+    # Administración y Configuración de jornada. Sin acceso a IVR ni WhatsApp.
+    # WORKSHOPBOSS: workshop manager. Access to breakdown tickets, BREAKDOWNS room
+    # and own section room. Same access as SUPERVISOR for Taller, Administration
+    # and Workday configuration sections. No IVR or WhatsApp access.
+    ROLE_WORKSHOPBOSS = "WORKSHOPBOSS"
     # SUPERVISOR: acceso a carga, lista, revisión y exportación de partes PDF.
     # Sin acceso al editor inline ni al resto del panel de configuración IVR.
     # SUPERVISOR: access to PDF work-order upload, list, review and export.
     # No access to the inline editor or the rest of the IVR configuration panel.
-    ROLE_SUPERVISOR  = "SUPERVISOR"
-    ROLE_DRIVER      = "DRIVER"
-    ROLE_CHOICES     = [
-        (ROLE_ADMIN,      "Administrador"),
-        (ROLE_OPERATOR,   "Operador"),
-        (ROLE_WORKSHOP,   "Operario de taller"),
-        (ROLE_SUPERVISOR, "Supervisor"),
-        (ROLE_DRIVER,     "Chófer"),
+    ROLE_SUPERVISOR   = "SUPERVISOR"
+    ROLE_DRIVER       = "DRIVER"
+    ROLE_CHOICES      = [
+        (ROLE_ADMIN,         "Administrador"),
+        (ROLE_OPERATOR,      "Operador"),
+        (ROLE_WORKSHOP,      "Operario de taller"),
+        (ROLE_WORKSHOPBOSS,  "Jefe de taller"),
+        (ROLE_SUPERVISOR,    "Supervisor"),
+        (ROLE_DRIVER,        "Chófer"),
     ]
 
     company = models.ForeignKey(
@@ -145,7 +153,15 @@ class CompanyUser(models.Model):
         choices=ROLE_CHOICES,
         default=ROLE_OPERATOR,
         verbose_name="Rol",
-        help_text="ADMIN: acceso completo a la configuración. OPERATOR: gestión de presencia. WORKSHOP: partes de taller. SUPERVISOR: revisión y exportación de partes PDF. DRIVER: reservado.",
+        help_text=(
+            "ADMIN: acceso completo a la configuración. "
+            "OPERATOR: gestión de presencia. "
+            "WORKSHOP: partes de taller. "
+            "WORKSHOPBOSS: jefe de taller — tickets de avería, sala BREAKDOWNS y sección propia, "
+            "más acceso equivalente a SUPERVISOR en Taller, Administración y jornada. "
+            "SUPERVISOR: revisión y exportación de partes PDF. "
+            "DRIVER: reservado."
+        ),
     )
     is_active = models.BooleanField(
         default=True,
