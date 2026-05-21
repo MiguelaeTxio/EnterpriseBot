@@ -150,6 +150,7 @@
 ./fleet/management/__init__.py
 ./manage.py
 ./requirements.txt
+./file_organizer/organizer_probe.py
 ./enterprise_core/urls.py
 ./enterprise_core/celery.py
 ./enterprise_core/asgi.py

@@ -1010,6 +1010,31 @@ El Hito 7 continúa EN PROGRESO. Pendiente validación E2E completa de las incid
   CompanyUserUpdateView.post(): fuerza is_active=True para WORKSHOP/DRIVER
   antes de super().post(). No revertir.
 
+### PRIORIDAD 0 -- Incidencia S011: fallo al guardar parte Via A en iPhone (Safari)
+
+  Un operario ha reportado que al rellenar el parte mediante la Via A
+  (formulario web estructurado) desde un iPhone y pulsar Guardar, el
+  parte no se guarda y no se produce ninguna accion aparente.
+
+  Hipotesis principal: incompatibilidad de Safari (iOS) con algun
+  elemento del Gate client-side implementado en form_entry_assets.js
+  o con el manejo de eventos de submit en form_entry.html. Safari en
+  iOS tiene restricciones propias sobre eventos touch, submit JS y
+  Web Speech API que pueden bloquear silenciosamente el guardado.
+
+  Pasos de investigacion y resolucion:
+  1. Reproducir el bug en Safari iOS (iPhone) con un parte de prueba.
+  2. Revisar la consola de Safari (depuracion remota via Mac + cable
+     o Safari Web Inspector) para identificar el error JS exacto.
+  3. Auditar form_entry_assets.js: eventos de submit, Gate 1/2/3
+     client-side, compatibilidad de APIs usadas con Safari iOS.
+  4. Auditar form_entry.html: atributos de formulario, botones de
+     submit, comportamiento en Safari.
+  5. Aplicar la correccion minima necesaria preservando el
+     comportamiento en Chrome/Android.
+  6. Validar en iPhone que el parte se guarda correctamente tras la
+     correccion.
+
 ### PRIORIDAD 1 — Validación E2E completa de incidencias S034/S035
 
   Validar en producción los siguientes flujos, que quedaron pendientes de

@@ -111,7 +111,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -199,7 +199,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   de contactos, color diferencial rojo/naranja, panel lateral de miembros.
 - Completado en S010 (2026-05-21).
 
-### Hito 15: Gestor de Árbol de Directorios con Power Automate (EN PROGRESO)
+### Hito 15: Gestor de Árbol de Directorios con Power Automate (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V15.md`)
 - Interfaz web donde el usuario define un árbol de directorios destino.
 - Lectura de una carpeta origen (y sus subcarpetas y archivos) en OneDrive/SharePoint.
