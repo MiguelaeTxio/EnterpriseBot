@@ -199,7 +199,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   de contactos, color diferencial rojo/naranja, panel lateral de miembros.
 - Completado en S010 (2026-05-21).
 
-### Hito 15: Gestor de Árbol de Directorios con Power Automate (PAUSADO)
+### Hito 15: Gestor de Árbol de Directorios con Power Automate (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V15.md`)
 - Interfaz web donde el usuario define un árbol de directorios destino.
 - Lectura de una carpeta origen (y sus subcarpetas y archivos) en OneDrive/SharePoint.
