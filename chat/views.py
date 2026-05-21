@@ -2,37 +2,41 @@
 """
 View definitions for the chat module.
 Implements IRC-style section chat room views with HTMX polling support,
-and BREAKDOWNS management views for Paso 12 (Hito 13).
+and BREAKDOWNS management views for Hito 13 / Hito 14.
 
-ChatRoomView              — full room page with message history (last 7 days).
-ChatMessagesPollingView   — HTMX polling fragment every 3 seconds.
-ChatRoomListView          — list of active rooms (ADMIN / SUPERVISOR).
-ChatSendView              — POST broadcast to section contacts via WhatsApp.
-ChatAliasSetView          — POST alias setup for CompanyUser.
-BreakdownTicketListView   — list of all BreakdownTickets for the company.
-BreakdownTicketDetailView — detail + actions (convert to repair order, close).
-BreakdownRoomManageView   — manage breakdown_sections and breakdown_contacts M2M.
+ChatRoomView                — full room page with message history (last 7 days).
+ChatMessagesPollingView     — HTMX polling fragment every 3 seconds.
+ChatRoomListView            — list of active rooms scoped to the user role.
+ChatSendView                — POST broadcast to section contacts via WhatsApp.
+ChatAliasSetView            — POST alias setup for CompanyUser.
+BreakdownTicketListView     — list of all BreakdownTickets for the company.
+BreakdownTicketDetailView   — detail + actions (convert, assign, set_urgency, close).
+BreakdownTicketCreateView   — manual creation of BreakdownTicket from the panel.
+BreakdownRoomManageView     — manage breakdown_sections and breakdown_contacts M2M.
 
 Access control: CompanyUserRequiredMixin on all views.
 WORKSHOP role: read-only in chat rooms.
-ADMIN / SUPERVISOR: full access including BREAKDOWNS management.
+ADMIN / SUPERVISOR / WORKSHOPBOSS: access to ticket management.
+ADMIN only: BREAKDOWNS room membership management.
 ---
 Definiciones de vistas para el módulo de chat.
 Implementa vistas de sala IRC con polling HTMX y vistas de gestión de
-averías para el Paso 12 (Hito 13).
+averías para el Hito 13 / Hito 14.
 
-ChatRoomView              — página completa de sala con historial 7 días.
-ChatMessagesPollingView   — fragmento HTMX cada 3 segundos.
-ChatRoomListView          — lista de salas activas (ADMIN / SUPERVISOR).
-ChatSendView              — POST broadcast a contactos de sección vía WhatsApp.
-ChatAliasSetView          — POST para establecer alias del CompanyUser.
-BreakdownTicketListView   — lista de todos los BreakdownTickets de la empresa.
-BreakdownTicketDetailView — detalle + acciones (convertir en OT, cerrar).
-BreakdownRoomManageView   — gestión de breakdown_sections y breakdown_contacts M2M.
+ChatRoomView                — página completa de sala con historial 7 días.
+ChatMessagesPollingView     — fragmento HTMX cada 3 segundos.
+ChatRoomListView            — lista de salas activas acotada al rol del usuario.
+ChatSendView                — POST broadcast a contactos de sección vía WhatsApp.
+ChatAliasSetView            — POST para establecer alias del CompanyUser.
+BreakdownTicketListView     — lista de todos los BreakdownTickets de la empresa.
+BreakdownTicketDetailView   — detalle + acciones (convertir, asignar, urgencia, cerrar).
+BreakdownTicketCreateView   — creación manual de BreakdownTicket desde el panel.
+BreakdownRoomManageView     — gestión de breakdown_sections y breakdown_contacts M2M.
 
 Control de acceso: CompanyUserRequiredMixin en todas las vistas.
 Rol WORKSHOP: solo lectura en salas de chat.
-ADMIN / SUPERVISOR: acceso completo incluida gestión de BREAKDOWNS.
+ADMIN / SUPERVISOR / WORKSHOPBOSS: acceso a gestión de tickets.
+Solo ADMIN: gestión de membresía de sala BREAKDOWNS.
 """
 
 import logging
@@ -140,24 +144,64 @@ class ChatRoomView(CompanyUserRequiredMixin, View):
         # Detectar alias ausente — se mostrará el modal en la plantilla.
         alias_required = not bool(company_user.alias)
 
-        # Resolve section members for the side panel — CompanyUser records
-        # assigned to the room's section, ordered by alias.
-        # Only populated for SECTION rooms; BREAKDOWNS rooms have no section.
-        # Resolver miembros de la sección para el panel lateral — registros
-        # CompanyUser asignados a la sección de la sala, ordenados por alias.
-        # Solo se rellena para salas SECTION; las salas BREAKDOWNS no tienen sección.
+        # Resolve section members for the side panel.
+        # For SECTION rooms: resolve Contact records assigned to the section
+        # via the Section.contacts M2M, then collect their display names
+        # (alias from linked CompanyUser, or Contact.name for external contacts).
+        # For BREAKDOWNS rooms: collect members from breakdown_sections and
+        # breakdown_contacts of the company BREAKDOWNS room.
+        # Para salas SECTION: resolver Contact del M2M Section.contacts y
+        # obtener su alias (CompanyUser vinculado) o nombre de Contact externo.
+        # Para salas BREAKDOWNS: recoger miembros de breakdown_sections y
+        # breakdown_contacts de la sala BREAKDOWNS de la empresa.
         section_members = []
-        if room.section is not None:
-            from ivr_config.models import CompanyUser
-            section_members = list(
-                CompanyUser.objects.filter(
-                    company=company,
-                    is_active=True,
-                    contact_profile__sections=room.section,
-                ).select_related("user")
-                .order_by("alias", "user__username")
-                .distinct()
+        if room.room_type == ChatRoom.ROOM_TYPE_SECTION and room.section is not None:
+            from ivr_config.models import Contact as _SectionContact
+            _contacts = (
+                _SectionContact.objects
+                .filter(sections=room.section, company=company)
+                .select_related("company_user__user")
+                .order_by("name")
             )
+            for _c in _contacts:
+                if _c.company_user and _c.company_user.is_active:
+                    _display = _c.company_user.alias or _c.company_user.user.username
+                else:
+                    _display = _c.alias if hasattr(_c, "alias") and _c.alias else _c.name
+                section_members.append({"display": _display, "is_internal": _c.is_internal})
+
+        elif room.room_type == ChatRoom.ROOM_TYPE_BREAKDOWNS:
+            from chat.models import ChatRoom as _CR
+            _bd_room = _CR.objects.filter(
+                company=company,
+                room_type=_CR.ROOM_TYPE_BREAKDOWNS,
+                is_active=True,
+            ).prefetch_related(
+                "breakdown_sections__contacts__company_user__user",
+                "breakdown_contacts__company_user__user",
+            ).first()
+            if _bd_room:
+                _seen = set()
+                for _sec in _bd_room.breakdown_sections.all():
+                    for _c in _sec.contacts.filter(company=company):
+                        if _c.pk in _seen:
+                            continue
+                        _seen.add(_c.pk)
+                        if _c.company_user and _c.company_user.is_active:
+                            _display = _c.company_user.alias or _c.company_user.user.username
+                        else:
+                            _display = _c.alias if hasattr(_c, "alias") and _c.alias else _c.name
+                        section_members.append({"display": _display, "is_internal": _c.is_internal})
+                for _c in _bd_room.breakdown_contacts.all():
+                    if _c.pk in _seen:
+                        continue
+                    _seen.add(_c.pk)
+                    if _c.company_user and _c.company_user.is_active:
+                        _display = _c.company_user.alias or _c.company_user.user.username
+                    else:
+                        _display = _c.alias if hasattr(_c, "alias") and _c.alias else _c.name
+                    section_members.append({"display": _display, "is_internal": _c.is_internal})
+                section_members.sort(key=lambda m: m["display"].lower())
 
         return render(request, self.template_name, {
             "room":            room,
@@ -816,25 +860,40 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
+        from ivr_config.models import CompanyUser as CU
+        workshopboss_users = (
+            CU.objects
+            .filter(
+                company=company_user.company,
+                role=CU.ROLE_WORKSHOPBOSS,
+                is_active=True,
+            )
+            .select_related("user")
+            .order_by("user__username")
+        )
+
         return render(request, self.template_name, {
-            "ticket":       ticket,
-            "turns":        turns,
-            "company_user": company_user,
-            "own_presence": own_presence,
-            "active_nav":   "chat",
+            "ticket":             ticket,
+            "turns":              turns,
+            "company_user":       company_user,
+            "own_presence":       own_presence,
+            "active_nav":         "chat",
+            "workshopboss_users": workshopboss_users,
+            "URGENCY_CHOICES":    ticket.URGENCY_CHOICES,
         })
 
     def post(self, request, pk, *args, **kwargs):
         """
-        Handles convert_repair and close actions on the ticket.
+        Handles convert_repair, assign, set_urgency and close actions.
         ---
-        Gestiona las acciones convert_repair y close sobre el ticket.
+        Gestiona las acciones convert_repair, assign, set_urgency y close.
         """
         from django.http import HttpResponseForbidden
         from django.shortcuts import redirect
         from chat.models import BreakdownTicket
 
         company_user = request.user.company_user
+        company      = company_user.company
 
         if company_user.role not in (
             company_user.ROLE_ADMIN,
@@ -848,11 +907,66 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
 
         if action == "convert_repair":
             ticket.is_repair_order = True
-            ticket.save(update_fields=["is_repair_order"])
+            if ticket.status == BreakdownTicket.STATUS_OPEN:
+                ticket.status = BreakdownTicket.STATUS_IN_PROGRESS
+                ticket.save(update_fields=["is_repair_order", "status"])
+            else:
+                ticket.save(update_fields=["is_repair_order"])
             logger.info(
-                "# [BREAKDOWN] Ticket pk=%s convertido en orden de reparacion por usuario pk=%s.",
+                "# [BREAKDOWN] Ticket pk=%s convertido en OT por usuario pk=%s.",
                 ticket.pk, company_user.pk,
             )
+
+        elif action == "assign":
+            if company_user.role not in (
+                company_user.ROLE_ADMIN,
+                company_user.ROLE_SUPERVISOR,
+            ):
+                return HttpResponseForbidden()
+            from ivr_config.models import CompanyUser as CU
+            assignee_pk = request.POST.get("assignee_pk", "").strip()
+            if assignee_pk:
+                try:
+                    assignee = CU.objects.get(
+                        pk=assignee_pk,
+                        company=company,
+                        role=CU.ROLE_WORKSHOPBOSS,
+                        is_active=True,
+                    )
+                    ticket.assigned_to = assignee
+                    ticket.save(update_fields=["assigned_to"])
+                    logger.info(
+                        "# [BREAKDOWN] Ticket pk=%s asignado a CU pk=%s por usuario pk=%s.",
+                        ticket.pk, assignee.pk, company_user.pk,
+                    )
+                except CU.DoesNotExist:
+                    logger.warning(
+                        "# [BREAKDOWN] assign fallido: assignee_pk=%s no valido empresa pk=%s.",
+                        assignee_pk, company.pk,
+                    )
+            else:
+                ticket.assigned_to = None
+                ticket.save(update_fields=["assigned_to"])
+                logger.info(
+                    "# [BREAKDOWN] Ticket pk=%s desasignado por usuario pk=%s.",
+                    ticket.pk, company_user.pk,
+                )
+
+        elif action == "set_urgency":
+            urgency_value   = request.POST.get("urgency", "").strip()
+            valid_urgencies = {u[0] for u in BreakdownTicket.URGENCY_CHOICES}
+            if urgency_value in valid_urgencies:
+                ticket.urgency = urgency_value
+                ticket.save(update_fields=["urgency"])
+                logger.info(
+                    "# [BREAKDOWN] Ticket pk=%s urgencia=%s por usuario pk=%s.",
+                    ticket.pk, urgency_value, company_user.pk,
+                )
+            else:
+                logger.warning(
+                    "# [BREAKDOWN] set_urgency valor=%s invalido ticket pk=%s.",
+                    urgency_value, ticket.pk,
+                )
 
         elif action == "close":
             ticket.status      = BreakdownTicket.STATUS_RESOLVED
@@ -864,6 +978,186 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
                 ticket.pk, company_user.pk,
             )
 
+        return redirect("panel:breakdown_ticket_detail", pk=ticket.pk)
+
+
+class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
+    """
+    Allows ADMIN, SUPERVISOR and WORKSHOPBOSS to manually create a
+    BreakdownTicket from the panel without requiring a WhatsApp interaction.
+    The ticket is created with status=OPEN and linked to the BREAKDOWNS room.
+
+    GET  — renders the creation form.
+    POST — validates and persists the ticket, redirects to its detail.
+
+    URL: GET/POST /panel/chat/breakdowns/tickets/create/
+    ---
+    Permite a ADMIN, SUPERVISOR y WORKSHOPBOSS crear manualmente un
+    BreakdownTicket desde el panel sin requerir interacción WhatsApp.
+    El ticket se crea con status=OPEN vinculado a la sala BREAKDOWNS.
+
+    GET  — renderiza el formulario de creación.
+    POST — valida y persiste el ticket, redirige a su detalle.
+
+    URL: GET/POST /panel/chat/breakdowns/tickets/create/
+    """
+
+    template_name = "panel/chat/breakdown_ticket_form.html"
+
+    def _get_context(self, request):
+        """
+        Builds the shared context for GET and validation-failed POST renders.
+        ---
+        Construye el contexto compartido para renders GET y POST con error.
+        """
+        from django.db.models import Q
+        from ivr_config.models import PresenceStatus, Contact, Section
+        from fleet.models import MachineAsset
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        own_presence = PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+        contacts = (
+            Contact.objects
+            .filter(company=company)
+            .exclude(phone_number="")
+            .order_by("name")
+        )
+        machines = (
+            MachineAsset.objects
+            .filter(company=company, is_active=True)
+            .order_by("asset_code")
+        )
+        sections = (
+            Section.objects
+            .filter(company=company, is_active=True)
+            .order_by("name")
+        )
+
+        return {
+            "contacts":     contacts,
+            "machines":     machines,
+            "sections":     sections,
+            "company_user": company_user,
+            "own_presence": own_presence,
+            "active_nav":   "chat",
+        }
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the BreakdownTicket creation form.
+        ---
+        Renderiza el formulario de creación de BreakdownTicket.
+        """
+        company_user = request.user.company_user
+        if company_user.role not in (
+            company_user.ROLE_ADMIN,
+            company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
+        ):
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden()
+        ctx = self._get_context(request)
+        return render(request, self.template_name, ctx)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates form fields and creates a new BreakdownTicket.
+        Required: contact_pk, fault_summary.
+        Optional: machine_pk, section_pk, urgency.
+        ---
+        Valida los campos y crea un nuevo BreakdownTicket.
+        Obligatorios: contact_pk, fault_summary.
+        Opcionales: machine_pk, section_pk, urgency.
+        """
+        from django.http import HttpResponseForbidden
+        from django.shortcuts import redirect
+        from ivr_config.models import Contact, Section
+        from fleet.models import MachineAsset
+        from chat.models import BreakdownTicket, ChatRoom
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        if company_user.role not in (
+            company_user.ROLE_ADMIN,
+            company_user.ROLE_SUPERVISOR,
+            company_user.ROLE_WORKSHOPBOSS,
+        ):
+            return HttpResponseForbidden()
+
+        breakdown_room = ChatRoom.objects.filter(
+            company=company,
+            room_type=ChatRoom.ROOM_TYPE_BREAKDOWNS,
+            is_active=True,
+        ).first()
+        if breakdown_room is None:
+            ctx = self._get_context(request)
+            ctx["error"] = "No existe una sala BREAKDOWNS activa para esta empresa."
+            return render(request, self.template_name, ctx)
+
+        contact_pk    = request.POST.get("contact_pk", "").strip()
+        fault_summary = request.POST.get("fault_summary", "").strip()
+        errors        = {}
+        contact       = None
+
+        if not contact_pk:
+            errors["contact_pk"] = "Debes seleccionar un contacto."
+        else:
+            try:
+                contact = Contact.objects.get(pk=contact_pk, company=company)
+            except Contact.DoesNotExist:
+                errors["contact_pk"] = "Contacto no válido."
+
+        if not fault_summary:
+            errors["fault_summary"] = "La descripción de la avería es obligatoria."
+
+        if errors:
+            ctx = self._get_context(request)
+            ctx["errors"]    = errors
+            ctx["post_data"] = request.POST
+            return render(request, self.template_name, ctx)
+
+        machine    = None
+        machine_pk = request.POST.get("machine_pk", "").strip()
+        if machine_pk:
+            machine = MachineAsset.objects.filter(
+                pk=machine_pk, company=company, is_active=True,
+            ).first()
+
+        section    = None
+        section_pk = request.POST.get("section_pk", "").strip()
+        if section_pk:
+            section = Section.objects.filter(
+                pk=section_pk, company=company, is_active=True,
+            ).first()
+
+        urgency_value   = request.POST.get("urgency", "").strip()
+        valid_urgencies = {u[0] for u in BreakdownTicket.URGENCY_CHOICES}
+        if urgency_value not in valid_urgencies:
+            urgency_value = ""
+
+        ticket = BreakdownTicket.objects.create(
+            room          = breakdown_room,
+            contact       = contact,
+            machine       = machine,
+            machine_raw   = machine.asset_code if machine else "",
+            section       = section,
+            fault_summary = fault_summary,
+            urgency       = urgency_value,
+            status        = BreakdownTicket.STATUS_OPEN,
+        )
+        logger.info(
+            "# [BREAKDOWN] Ticket pk=%s creado manualmente por usuario pk=%s.",
+            ticket.pk, company_user.pk,
+        )
         return redirect("panel:breakdown_ticket_detail", pk=ticket.pk)
 
 
@@ -920,7 +1214,7 @@ class BreakdownRoomManageView(CompanyUserRequiredMixin, View):
 
         breakdown_room = self._get_breakdown_room(company)
 
-        all_sections = Section.objects.filter(company=company, is_active=True).order_by("name")
+        all_sections = Section.objects.filter(company=company).order_by("name")
         all_contacts = (
             Contact.objects.filter(company=company)
             .exclude(phone_number="")
@@ -935,6 +1229,35 @@ class BreakdownRoomManageView(CompanyUserRequiredMixin, View):
             breakdown_room.breakdown_contacts.values_list("pk", flat=True)
         ) if breakdown_room else set()
 
+        # Detect incomplete sections: sections in member_section_pks that have
+        # at least one contact individually excluded (not in breakdown_contacts)
+        # but whose section IS in breakdown_sections.
+        # For each added section, retrieve its contacts and check whether any
+        # of them has been individually removed (i.e. not in member_contact_pks
+        # AND the contact is a member of that section but was never added back).
+        # Detectar secciones incompletas: secciones añadidas que tienen algún
+        # contacto individual excluido (eliminado manualmente de breakdown_contacts).
+        incomplete_section_pks = set()
+        if breakdown_room and member_section_pks:
+            from ivr_config.models import Contact as _Contact
+            for _sec in all_sections:
+                if _sec.pk not in member_section_pks:
+                    continue
+                # Contacts of this section that have a phone number.
+                # Contactos de esta sección con número de teléfono.
+                _sec_contact_pks = set(
+                    _Contact.objects
+                    .filter(sections=_sec)
+                    .exclude(phone_number="")
+                    .values_list("pk", flat=True)
+                )
+                # If any section contact is not in breakdown_contacts, the section
+                # is incomplete (some members were individually removed).
+                # Si algún contacto de la sección no está en breakdown_contacts,
+                # la sección está incompleta (algunos miembros se quitaron individualmente).
+                if _sec_contact_pks and not _sec_contact_pks.issubset(member_contact_pks):
+                    incomplete_section_pks.add(_sec.pk)
+
         own_presence = PresenceStatus.objects.filter(
             company_user=company_user,
             starts_at__lte=now(),
@@ -943,14 +1266,15 @@ class BreakdownRoomManageView(CompanyUserRequiredMixin, View):
         ).order_by("-starts_at").first()
 
         return render(request, self.template_name, {
-            "breakdown_room":     breakdown_room,
-            "all_sections":       all_sections,
-            "all_contacts":       all_contacts,
-            "member_section_pks": member_section_pks,
-            "member_contact_pks": member_contact_pks,
-            "company_user":       company_user,
-            "own_presence":       own_presence,
-            "active_nav":         "chat",
+            "breakdown_room":         breakdown_room,
+            "all_sections":           all_sections,
+            "all_contacts":           all_contacts,
+            "member_section_pks":     member_section_pks,
+            "member_contact_pks":     member_contact_pks,
+            "incomplete_section_pks": incomplete_section_pks,
+            "company_user":           company_user,
+            "own_presence":           own_presence,
+            "active_nav":             "chat",
         })
 
     def post(self, request, *args, **kwargs):
@@ -986,9 +1310,18 @@ class BreakdownRoomManageView(CompanyUserRequiredMixin, View):
             try:
                 section = Section.objects.get(pk=section_pk, company=company)
                 breakdown_room.breakdown_sections.add(section)
+                # Sync: add all contacts of this section with a phone number
+                # to breakdown_contacts so member_contact_pks is consistent.
+                # Sincronizar: añadir todos los contactos de la sección con teléfono
+                # a breakdown_contacts para que member_contact_pks sea consistente.
+                _section_contacts = Contact.objects.filter(
+                    sections=section,
+                ).exclude(phone_number="")
+                for _sc in _section_contacts:
+                    breakdown_room.breakdown_contacts.add(_sc)
                 logger.info(
-                    "# [BREAKDOWN] Seccion pk=%s anadida a sala BREAKDOWNS pk=%s.",
-                    section.pk, breakdown_room.pk,
+                    "# [BREAKDOWN] Seccion pk=%s anadida a sala BREAKDOWNS pk=%s (%d contactos sincronizados).",
+                    section.pk, breakdown_room.pk, _section_contacts.count(),
                 )
             except Section.DoesNotExist:
                 pass
@@ -997,6 +1330,24 @@ class BreakdownRoomManageView(CompanyUserRequiredMixin, View):
             try:
                 section = Section.objects.get(pk=section_pk, company=company)
                 breakdown_room.breakdown_sections.remove(section)
+                # Sync: remove all contacts of this section from breakdown_contacts
+                # unless they belong to another added section.
+                # Sincronizar: quitar los contactos de la sección de breakdown_contacts
+                # salvo que pertenezcan a otra sección añadida.
+                _remaining_section_pks = set(
+                    breakdown_room.breakdown_sections.values_list("pk", flat=True)
+                )
+                _section_contacts = Contact.objects.filter(
+                    sections=section,
+                ).exclude(phone_number="")
+                for _sc in _section_contacts:
+                    # Keep contact if it belongs to another remaining section.
+                    # Conservar el contacto si pertenece a otra sección restante.
+                    _other_sections = set(
+                        _sc.sections.values_list("pk", flat=True)
+                    ) & _remaining_section_pks
+                    if not _other_sections:
+                        breakdown_room.breakdown_contacts.remove(_sc)
                 logger.info(
                     "# [BREAKDOWN] Seccion pk=%s eliminada de sala BREAKDOWNS pk=%s.",
                     section.pk, breakdown_room.pk,

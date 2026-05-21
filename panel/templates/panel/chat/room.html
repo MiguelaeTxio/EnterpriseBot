@@ -128,7 +128,7 @@
                         {% for member in section_members %}
                         <div class="chat-member-item">
                             <i class="bi bi-circle-fill"></i>
-                            {{ member.alias|default:member.user.username }}
+                            {{ member.display }}
                         </div>
                         {% endfor %}
                     </div>

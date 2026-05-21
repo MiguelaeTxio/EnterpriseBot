@@ -7801,12 +7801,22 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
     def _get_context_base(self, request):
         """
         Returns the base template context with company and navigation data.
-        Also provides the list of active MachineAsset records for autocomplete.
+        Provides the list of active MachineAsset records for autocomplete and
+        the list of open repair orders (BreakdownTicket with is_repair_order=True
+        and status != RESOLVED) available to the authenticated operator.
+        Repair orders without assigned_to are available to all operators.
+        Repair orders assigned to this operator are included with priority.
         ---
-        Devuelve el contexto base con empresa y datos de navegacion.
-        Tambien proporciona la lista de MachineAsset activos para autocompletado.
+        Devuelve el contexto base con empresa y datos de navegación.
+        Proporciona la lista de MachineAsset activos para autocompletado y
+        la lista de órdenes de reparación abiertas (BreakdownTicket con
+        is_repair_order=True y status != RESOLVED) disponibles para el operario.
+        Las OTs sin assigned_to están disponibles para cualquier operario.
+        Las OTs asignadas a este operario se incluyen con prioridad.
         """
         from fleet.models import MachineAsset
+        from chat.models import BreakdownTicket
+        from django.db.models import Q as _Q
         cu      = self._get_company_user(request)
         company = cu.company
         assets  = list(
@@ -7814,11 +7824,27 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             .order_by("code")
             .values("code", "brand_model")
         )
+        # Repair orders: open OTs available to this operator.
+        # OTs: órdenes de reparación abiertas disponibles para este operario.
+        repair_orders = list(
+            BreakdownTicket.objects
+            .filter(
+                room__company=company,
+                is_repair_order=True,
+            )
+            .exclude(status=BreakdownTicket.STATUS_RESOLVED)
+            .filter(
+                _Q(assigned_to__isnull=True) | _Q(assigned_to=cu)
+            )
+            .select_related("machine", "section")
+            .order_by("-urgency", "created_at")
+        )
         return {
-            "company":      company,
-            "company_user": cu,
-            "active_nav":   "operator_dashboard",
-            "assets":       assets,
+            "company":       company,
+            "company_user":  cu,
+            "active_nav":    "operator_dashboard",
+            "assets":        assets,
+            "repair_orders": repair_orders,
         }
 
     def get(self, request, *args, **kwargs):
@@ -13728,3 +13754,90 @@ class SectionDefaultRoleView(SupervisorAccessMixin, View):
             return JsonResponse({"error": "Sección no encontrada."}, status=404)
         return JsonResponse({"default_role": section.default_role})
 
+
+class OwnProfileView(CompanyUserRequiredMixin, View):
+    """
+    Allows any authenticated CompanyUser to view and edit their own profile.
+    Currently exposes only the alias field (chat IRC nick).
+    Alias uniqueness within the company is enforced by OwnProfileForm.
+
+    GET  — renders the profile form pre-populated with the current alias.
+    POST — validates and saves the new alias, redirects back to the form.
+
+    URL: GET/POST /panel/profile/
+    ---
+    Permite a cualquier CompanyUser autenticado ver y editar su propio perfil.
+    Actualmente expone únicamente el campo alias (nick de chat IRC).
+    La unicidad del alias dentro de la empresa la impone OwnProfileForm.
+
+    GET  — renderiza el formulario de perfil prerellenado con el alias actual.
+    POST — valida y guarda el nuevo alias, redirige de vuelta al formulario.
+
+    URL: GET/POST /panel/profile/
+    """
+
+    template_name = "panel/profile/own_profile.html"
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the own-profile form pre-populated with the current alias.
+        ---
+        Renderiza el formulario de perfil propio prerellenado con el alias actual.
+        """
+        from panel.forms import OwnProfileForm
+        company_user = request.user.company_user
+        form         = OwnProfileForm(company_user=company_user)
+        return render(request, self.template_name, {
+            "form":         form,
+            "company_user": company_user,
+            "own_presence": self._get_own_presence(company_user),
+            "active_nav":   "own_profile",
+        })
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates and saves the new alias for the authenticated CompanyUser.
+        On success: saves and redirects back to the profile page with a
+        success message. On error: re-renders the form with validation errors.
+        ---
+        Valida y guarda el nuevo alias del CompanyUser autenticado.
+        En éxito: guarda y redirige a la página de perfil con mensaje de éxito.
+        En error: re-renderiza el formulario con los errores de validación.
+        """
+        from panel.forms import OwnProfileForm
+        company_user = request.user.company_user
+        form         = OwnProfileForm(request.POST, company_user=company_user)
+
+        if form.is_valid():
+            company_user.alias = form.cleaned_data["alias"]
+            company_user.save(update_fields=["alias"])
+            logger.info(
+                "# [OWN PROFILE] CompanyUser pk=%s alias actualizado a '%s'.",
+                company_user.pk,
+                company_user.alias,
+            )
+            django_messages.success(
+                request,
+                "Alias de chat actualizado correctamente.",
+            )
+            return redirect("panel:own_profile")
+
+        return render(request, self.template_name, {
+            "form":         form,
+            "company_user": company_user,
+            "own_presence": self._get_own_presence(company_user),
+            "active_nav":   "own_profile",
+        })

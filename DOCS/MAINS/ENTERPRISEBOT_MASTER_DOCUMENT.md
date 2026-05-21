@@ -172,7 +172,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Los centros de gasto no resueltos en partes historicos podran asignarse tras
   crear el centro de gasto correspondiente.
 
-### Hito 13: Salas de Chat IRC por Sección (WhatsApp → Panel) (EN PROGRESO)
+### Hito 13: Salas de Chat IRC por Sección (WhatsApp → Panel) (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V13.md`)
 - Sistema de salas de chat en tiempo cuasi-real en el panel, una sala por sección.
 - Canal de entrada: WhatsApp (+34607961650). Mensajes de contactos replicados en
@@ -184,5 +184,29 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - BreakdownTicket persistido en BD. SUPERVISOR cierra el ticket desde el panel.
 - Nueva app Django `chat` con modelos ChatRoom, ChatMessage, BreakdownTicket,
   BreakdownConversationTurn. Comando init_chat_rooms idempotente.
+- Rol WORKSHOPBOSS implementado con matriz de acceso completa. S009 completado.
+
+### Hito 14: Gestión de Tickets de Avería y Órdenes de Reparación (PAUSADO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md`)
+- Ciclo de vida completo del BreakdownTicket: creación manual desde panel,
+  asignación a WORKSHOPBOSS, conversión a orden de reparación, cierre.
+- Campos nuevos en BreakdownTicket: assigned_to (FK CompanyUser nullable),
+  urgency usado como priority (LOW/MEDIUM/HIGH/CRITICAL).
+- Integración con formulario de parte de operario: desplegable de órdenes
+  de reparación abiertas con prerelleno automático de campos.
+- Perfil propio del operario: OwnProfileView con edición de alias de chat.
+- Gestión completa de membresía sala BREAKDOWNS: sincronización automática
+  de contactos, color diferencial rojo/naranja, panel lateral de miembros.
+- Completado en S010 (2026-05-21).
+
+### Hito 15: Gestor de Árbol de Directorios con Power Automate (PAUSADO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V15.md`)
+- Interfaz web donde el usuario define un árbol de directorios destino.
+- Lectura de una carpeta origen (y sus subcarpetas y archivos) en OneDrive/SharePoint.
+- Organización automática de los archivos leídos según el árbol definido.
+- Evaluación de Power Automate como motor de orquestación (la empresa ya dispone
+  de licencia). Si Power Automate es suficiente, configuración de flujos sin agente
+  propio. Si no, construcción de agente Django + IA.
+- Actualización online obligatoria antes de implementar (Directriz 4.4).
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

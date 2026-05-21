@@ -283,4 +283,18 @@
 
     {% endif %}
 
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Mi perfil — todos los roles con acceso al panel            #}
+    {# Section: My profile — all roles with panel access                  #}
+    {# Hito 14 Paso 6 (2026-05-21)                                        #}
+    {# ------------------------------------------------------------------ #}
+    <li><div class="sidebar-section-label">Mi perfil</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'own_profile' %}active{% endif %}"
+           href="{% url 'panel:own_profile' %}">
+            <i class="bi bi-person-circle"></i>Mi alias de chat
+        </a>
+    </li>
+
 </ul>

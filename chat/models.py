@@ -369,6 +369,18 @@ class BreakdownTicket(models.Model):
         verbose_name="Notas adicionales",
         help_text="Observaciones adicionales del operario recogidas durante el diálogo.",
     )
+    assigned_to = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_breakdown_tickets",
+        verbose_name="Asignado a",
+        help_text=(
+            "WORKSHOPBOSS al que se ha asignado este ticket para su atención. "
+            "Null cuando el ticket está disponible para cualquier jefe de taller."
+        ),
+    )
     resolved_by = models.ForeignKey(
         CompanyUser,
         on_delete=models.SET_NULL,

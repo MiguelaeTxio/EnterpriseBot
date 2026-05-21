@@ -787,3 +787,66 @@ class WorkerSignupForm(forms.Form):
         if password and password_confirm and password != password_confirm:
             self.add_error("password_confirm", "Las contraseñas no coinciden.")
         return cleaned_data
+
+
+class OwnProfileForm(forms.Form):
+    """
+    Form for editing the authenticated CompanyUser own profile.
+    Currently exposes only the alias field (chat IRC nick).
+    Alias uniqueness within the company is validated in clean_alias().
+    The company instance must be injected via set_company() before validation.
+    ---
+    Formulario para editar el perfil propio del CompanyUser autenticado.
+    Actualmente expone únicamente el campo alias (nick de chat IRC).
+    La unicidad del alias dentro de la empresa se valida en clean_alias().
+    La instancia de empresa debe inyectarse mediante set_company() antes de validar.
+    """
+
+    alias = forms.CharField(
+        max_length=50,
+        required=False,
+        label="Alias de chat",
+        help_text=(
+            "Apodo que aparecerá en las salas de chat IRC. "
+            "Debe ser único dentro de tu empresa. "
+            "Los mensajes enviados anteriormente mantienen el alias con el que fueron enviados."
+        ),
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Tu alias de chat…",
+            "maxlength": "50",
+        }),
+    )
+
+    def __init__(self, *args, **kwargs):
+        """
+        Accepts company_user kwarg to pre-populate the alias field and
+        store the company for uniqueness validation.
+        ---
+        Acepta el kwarg company_user para prerellenar el alias y almacenar
+        la empresa para la validación de unicidad.
+        """
+        self._company_user = kwargs.pop("company_user", None)
+        super().__init__(*args, **kwargs)
+        if self._company_user and not args and not kwargs.get("data"):
+            self.fields["alias"].initial = self._company_user.alias
+
+    def clean_alias(self):
+        """
+        Validates alias uniqueness within the company, excluding the
+        authenticated user themselves.
+        ---
+        Valida la unicidad del alias dentro de la empresa, excluyendo
+        al propio usuario autenticado.
+        """
+        alias = self.cleaned_data.get("alias", "").strip()
+        if alias and self._company_user is not None:
+            qs = CompanyUser.objects.filter(
+                company=self._company_user.company,
+                alias__iexact=alias,
+            ).exclude(pk=self._company_user.pk)
+            if qs.exists():
+                raise ValidationError(
+                    "Este alias ya está en uso en tu empresa. Elige otro diferente."
+                )
+        return alias

@@ -94,6 +94,7 @@ from panel.views import (
     SectionDefaultRoleView,
     CompanyUserBulkDeleteView,
     WorkerScheduleUpdateView,
+    OwnProfileView,
 )
 
 from chat.views import (
@@ -104,6 +105,7 @@ from chat.views import (
     ChatAliasSetView,
     BreakdownTicketListView,
     BreakdownTicketDetailView,
+    BreakdownTicketCreateView,
     BreakdownRoomManageView,
 )
 
@@ -334,5 +336,10 @@ urlpatterns = [
     # Breakdown tickets — Gestión de tickets de avería (Hito 13 Paso 12).
     path("chat/breakdowns/tickets/", BreakdownTicketListView.as_view(), name="breakdown_ticket_list"),
     path("chat/breakdowns/tickets/<int:pk>/", BreakdownTicketDetailView.as_view(), name="breakdown_ticket_detail"),
+    # Breakdown ticket create — Creación manual de ticket desde el panel (Hito 14 Paso 3).
+    path("chat/breakdowns/tickets/create/", BreakdownTicketCreateView.as_view(), name="breakdown_ticket_create"),
     path("chat/breakdowns/manage/", BreakdownRoomManageView.as_view(), name="breakdown_room_manage"),
+
+    # Own profile — Perfil propio del operario: edición de alias de chat (Hito 14 Paso 6).
+    path("profile/", OwnProfileView.as_view(), name="own_profile"),
 ]

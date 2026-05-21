@@ -76,50 +76,9 @@
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S010)
+## Nota de Cierre S009
 
-### Bloque A — Gestión de Tickets y Órdenes de Reparación
-
-#### A1. Flujo de inicio de ticket desde sala BREAKDOWNS
-
-Revisar el mecanismo actual por el que un mensaje en la sala BREAKDOWNS genera un `BreakdownTicket`. Verificar:
-- Qué signal o view crea el ticket al detectar el patrón de avería en el mensaje entrante.
-- Qué campos se rellenan automáticamente (`contact`, `machine`, `section`).
-- Qué campo `status` inicial se asigna al ticket recién creado.
-- Si el `WORKSHOPBOSS` recibe notificación (WhatsApp o panel) cuando se crea un nuevo ticket.
-
-#### A2. Flujo de inicio de ticket desde el panel por `WORKSHOPBOSS`
-
-Implementar la capacidad de crear un `BreakdownTicket` manualmente desde el panel:
-- Nueva vista `BreakdownTicketCreateView` accesible para `ADMIN`, `SUPERVISOR` y `WORKSHOPBOSS`.
-- Formulario con campos: `contact` (desplegable contactos de empresa), `machine` (desplegable `MachineAsset` activos), `section` (desplegable secciones activas), descripción inicial.
-- URL: `panel/chat/breakdowns/tickets/create/` con nombre `panel:breakdown_ticket_create`.
-- Botón "Nuevo ticket" en `breakdown_ticket_list.html` visible para `ADMIN`, `SUPERVISOR` y `WORKSHOPBOSS`.
-
-#### A3. Gestión del ciclo de vida del ticket
-
-Revisar y completar las acciones disponibles en `BreakdownTicketDetailView`:
-- **Asignar al `WORKSHOPBOSS`**: el ticket puede asignarse a un `WORKSHOPBOSS` concreto. Añadir campo `assigned_to` (FK `CompanyUser` nullable) al modelo `BreakdownTicket` si no existe.
-- **Conversión a orden de reparación**: acción `convert_repair` — revisar su implementación actual y completarla si procede.
-- **Cierre del ticket**: acción `close` — revisar su implementación actual.
-- **Prioridad**: añadir campo `priority` (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`) al modelo `BreakdownTicket` si no existe.
-
-#### A4. Formulario de parte de operario — integración con órdenes de reparación
-
-En el formulario de entrada de partes (`operator_dashboard` / `OperatorDashboardView`):
-- Añadir desplegable de selección de orden de reparación que muestre:
-  - Órdenes `BreakdownTicket` con `is_repair_order=True` y `status` abierto, sin `assigned_to` (disponibles para cualquier operario).
-  - Órdenes `BreakdownTicket` con `is_repair_order=True` asignadas al operario autenticado (`assigned_to=company_user`), con su `priority`.
-- Al seleccionar una orden, prerrellenar automáticamente los campos del formulario de parte con los datos de la orden (`machine`, `section`, descripción).
-- La lógica de prerelleno debe implementarse via JavaScript (fetch a endpoint JSON) o via atributos `data-*` en las opciones del desplegable.
-
-### Bloque B — Perfil propio del operario
-
-#### B1. Cambio de nick del chat desde el panel
-
-- El nick del chat se almacena en `CompanyUser.alias` (verificar nombre exacto del campo consultando `ivr_config/models.py`).
-- Crear vista `OwnProfileView` accesible para `WORKSHOP` y `WORKSHOPBOSS` (y cualquier rol con acceso al panel).
-- Formulario con campo `alias` editable, con validación de unicidad dentro de la empresa.
-- URL: `panel/profile/` con nombre `panel:own_profile`.
-- Entrada en sidebar bajo nueva sección "Mi perfil" visible para todos los roles con acceso al panel.
-- El cambio de alias debe propagarse a los mensajes futuros del chat — los mensajes históricos mantienen el alias con el que fueron enviados (`sender_alias` es snapshot en `ChatMessage`).
+Todos los pasos del Hito 13 completados en S009 (2026-05-21).
+El sistema de gestión de tickets de avería y órdenes de reparación
+ha sido promovido a hito propio: **Hito 14**.
+Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md`.

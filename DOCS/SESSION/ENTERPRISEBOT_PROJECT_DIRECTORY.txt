@@ -22,6 +22,7 @@
 ./chat/views.py
 ./chat/apps.py
 ./chat/models.py
+./chat/migrations/0003_breakdownticket_assigned_to.py
 ./chat/migrations/0002_breakdownticket_is_repair_order_and_more.py
 ./chat/migrations/__init__.py
 ./chat/migrations/0001_initial.py
@@ -36,6 +37,7 @@
 ./panel/templates/panel/workday/absence_category_list.html
 ./panel/templates/panel/chat/breakdown_room_manage.html
 ./panel/templates/panel/chat/room.html
+./panel/templates/panel/chat/breakdown_ticket_form.html
 ./panel/templates/panel/chat/breakdown_ticket_list.html
 ./panel/templates/panel/chat/room_list.html
 ./panel/templates/panel/chat/_messages_fragment.html
@@ -59,6 +61,7 @@
 ./panel/templates/panel/_tour_workshop.html
 ./panel/templates/panel/dashboard.html
 ./panel/templates/panel/presence/status.html
+./panel/templates/panel/profile/own_profile.html
 ./panel/templates/panel/password/change.html
 ./panel/templates/panel/password/_field_pw.html
 ./panel/templates/panel/phonenumbers/list.html
@@ -282,6 +285,7 @@
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V06.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
+./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md

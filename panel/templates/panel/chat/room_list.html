@@ -25,32 +25,40 @@
     <div class="row g-3">
         {% for room in rooms %}
         <div class="col-12 col-md-6 col-lg-4">
-            <a href="{% url 'chat:room_detail' room.pk %}"
-               class="text-decoration-none">
-                <div class="card h-100 shadow-sm border-0
-                    {% if room.room_type == 'BREAKDOWNS' %}border-start border-danger border-3{% endif %}">
-                    <div class="card-body d-flex align-items-center gap-3">
-                        <div class="fs-2
-                            {% if room.room_type == 'BREAKDOWNS' %}text-danger{% else %}text-primary{% endif %}">
-                            {% if room.room_type == 'BREAKDOWNS' %}
-                                <i class="bi bi-exclamation-triangle"></i>
-                            {% else %}
-                                <i class="bi bi-chat-left-dots"></i>
-                            {% endif %}
-                        </div>
-                        <div>
-                            <div class="fw-semibold text-dark">{{ room.name }}</div>
-                            <div class="text-muted small">
+            <div class="d-flex flex-column gap-2">
+                <a href="{% url 'chat:room_detail' room.pk %}"
+                   class="text-decoration-none">
+                    <div class="card shadow-sm border-0
+                        {% if room.room_type == 'BREAKDOWNS' %}border-start border-danger border-3{% endif %}">
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <div class="fs-2
+                                {% if room.room_type == 'BREAKDOWNS' %}text-danger{% else %}text-primary{% endif %}">
                                 {% if room.room_type == 'BREAKDOWNS' %}
-                                    Sala de averías
+                                    <i class="bi bi-exclamation-triangle"></i>
                                 {% else %}
-                                    Sección
+                                    <i class="bi bi-chat-left-dots"></i>
                                 {% endif %}
+                            </div>
+                            <div>
+                                <div class="fw-semibold text-dark">{{ room.name }}</div>
+                                <div class="text-muted small">
+                                    {% if room.room_type == 'BREAKDOWNS' %}
+                                        Sala de averías
+                                    {% else %}
+                                        Sección
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            </a>
+                </a>
+                {% if room.room_type == "BREAKDOWNS" and company_user.role == "ADMIN" %}
+                <a href="{% url 'panel:breakdown_room_manage' %}"
+                   class="btn btn-sm btn-outline-danger w-100">
+                    <i class="bi bi-people me-1"></i>Gestionar membresía de Averías
+                </a>
+                {% endif %}
+            </div>
         </div>
         {% endfor %}
     </div>

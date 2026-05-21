@@ -1,0 +1,101 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/profile/own_profile.html #}
+{# Perfil propio del operario — edición de alias de chat IRC — Hito 14 Paso 6 (2026-05-21) #}
+{% extends "panel/base.html" %}
+
+{% block title %}Mi perfil{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <h4 class="mb-0">Mi perfil</h4>
+  </div>
+
+  <div class="row">
+    <div class="col-md-6 col-lg-5">
+
+      {% if messages %}
+      {% for message in messages %}
+      <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <div class="card">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-person-circle me-2 text-primary"></i>Alias de chat IRC
+        </div>
+        <div class="card-body">
+
+          <p class="text-muted small mb-4">
+            Tu alias es el nombre que aparece en las salas de chat de secciones
+            cuando envías mensajes desde el panel. Los mensajes enviados anteriormente
+            conservan el alias con el que fueron enviados.
+          </p>
+
+          <form method="post" novalidate>
+            {% csrf_token %}
+
+            <div class="mb-4">
+              <label for="id_alias" class="form-label fw-semibold">
+                {{ form.alias.label }}
+              </label>
+              {{ form.alias }}
+              {% if form.alias.help_text %}
+              <div class="form-text text-muted">{{ form.alias.help_text }}</div>
+              {% endif %}
+              {% if form.alias.errors %}
+              <div class="invalid-feedback d-block">
+                {% for error in form.alias.errors %}{{ error }}{% endfor %}
+              </div>
+              {% endif %}
+            </div>
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">Guardar alias</button>
+              <a href="{% url 'panel:dashboard' %}" class="btn btn-outline-secondary">Cancelar</a>
+            </div>
+
+          </form>
+        </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-info-circle me-2 text-secondary"></i>Información de cuenta
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Usuario</dt>
+            <dd class="col-sm-8">{{ company_user.user.username }}</dd>
+
+            <dt class="col-sm-4">Nombre</dt>
+            <dd class="col-sm-8">
+              {{ company_user.user.get_full_name|default:"—" }}
+            </dd>
+
+            <dt class="col-sm-4">Rol</dt>
+            <dd class="col-sm-8">{{ company_user.get_role_display }}</dd>
+
+            <dt class="col-sm-4">Empresa</dt>
+            <dd class="col-sm-8">{{ company_user.company.name }}</dd>
+
+            <dt class="col-sm-4">Alias actual</dt>
+            <dd class="col-sm-8">
+              {% if company_user.alias %}
+                <span class="badge bg-primary">{{ company_user.alias }}</span>
+              {% else %}
+                <span class="text-muted">Sin alias configurado</span>
+              {% endif %}
+            </dd>
+          </dl>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}

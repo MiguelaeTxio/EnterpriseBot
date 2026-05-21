@@ -9,11 +9,18 @@
 
   <div class="d-flex align-items-center justify-content-between mb-4">
     <h4 class="mb-0">Tickets de Avería</h4>
-    {% if company_user.role == 'ADMIN' %}
-    <a href="{% url 'panel:breakdown_room_manage' %}" class="btn btn-sm btn-outline-secondary">
-      Gestionar membresía
-    </a>
-    {% endif %}
+    <div class="d-flex gap-2">
+      {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
+      <a href="{% url 'panel:breakdown_ticket_create' %}" class="btn btn-sm btn-primary">
+        + Nuevo ticket de avería
+      </a>
+      {% endif %}
+      {% if company_user.role == "ADMIN" %}
+      <a href="{% url 'panel:breakdown_room_manage' %}" class="btn btn-sm btn-outline-secondary">
+        Gestionar membresía
+      </a>
+      {% endif %}
+    </div>
   </div>
 
   {# Filtros #}

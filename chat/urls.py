@@ -17,6 +17,7 @@ from chat.views import (
     ChatAliasSetView,
     BreakdownTicketListView,
     BreakdownTicketDetailView,
+    BreakdownTicketCreateView,
     BreakdownRoomManageView,
 )
 
@@ -50,6 +51,10 @@ urlpatterns = [
     # Breakdown ticket detail — Detalle + acciones sobre ticket de avería.
     # Paso 12 — Hito 13 (2026-05-18)
     path("breakdowns/tickets/<int:pk>/", BreakdownTicketDetailView.as_view(), name="breakdown_ticket_detail"),
+
+    # Breakdown ticket create — Creación manual de ticket de avería desde el panel.
+    # Paso 3 — Hito 14 (2026-05-21)
+    path("breakdowns/tickets/create/", BreakdownTicketCreateView.as_view(), name="breakdown_ticket_create"),
 
     # Breakdown room manage — Gestión de membresía M2M de la sala BREAKDOWNS.
     # Paso 12 — Hito 13 (2026-05-18)

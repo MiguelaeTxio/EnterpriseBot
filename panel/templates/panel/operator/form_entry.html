@@ -57,6 +57,53 @@
             {% endif %}
 
             {# ================================================================ #}
+            {# SECTION 0 — Repair order selector / Selector de OT             #}
+            {# Hito 14 Paso 5 (2026-05-21)                                     #}
+            {# ================================================================ #}
+            {% if repair_orders %}
+            <div class="card border-0 shadow-sm mb-4" id="repair-order-card">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-tools me-2 text-warning"></i>
+                        Orden de reparación (opcional)
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <p class="text-muted small mb-3">
+                        Selecciona una orden de reparación para prerrellenar automáticamente
+                        los campos del primer bloque de trabajo.
+                    </p>
+                    <select id="repair-order-select" name="repair_order_pk"
+                            class="form-select">
+                        <option value="">-- Sin orden de reparación --</option>
+                        {% for ot in repair_orders %}
+                        <option
+                            value="{{ ot.pk }}"
+                            data-machine-code="{{ ot.machine.asset_code|default:ot.machine_raw }}"
+                            data-machine-raw="{{ ot.machine_raw }}"
+                            data-section-name="{{ ot.section.name|default:'' }}"
+                            data-fault-summary="{{ ot.fault_summary }}"
+                            data-urgency="{{ ot.get_urgency_display }}"
+                            {% if ot.assigned_to %}data-assigned="1"{% endif %}
+                        >
+                            #{{ ot.ticket_number|default:ot.pk }}
+                            {% if ot.machine %}— {{ ot.machine.asset_code }}{% elif ot.machine_raw %}— {{ ot.machine_raw }}{% endif %}
+                            {% if ot.urgency %} [{{ ot.get_urgency_display }}]{% endif %}
+                            {% if ot.assigned_to %} ★ Asignada a ti{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div id="repair-order-summary" class="mt-3 d-none">
+                        <div class="alert alert-info mb-0 small">
+                            <strong>Avería:</strong>
+                            <span id="rot-fault-summary"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {# ================================================================ #}
             {# SECTION 1 — Work date / Fecha del parte                         #}
             {# ================================================================ #}
             <div class="card border-0 shadow-sm mb-4">
@@ -463,4 +510,44 @@ window.EB_CONFIG = {
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_modal.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_tour.js' %}"></script>
+
+{# Repair order prefill — prerelleno del primer bloque desde data-* de la OT seleccionada #}
+<script>
+(function () {
+    var sel = document.getElementById("repair-order-select");
+    if (!sel) return;
+
+    function applyRepairOrder(opt) {
+        if (!opt || !opt.value) {
+            document.getElementById("repair-order-summary").classList.add("d-none");
+            return;
+        }
+        var machineCode  = opt.dataset.machineCode  || "";
+        var machineRaw   = opt.dataset.machineRaw   || machineCode;
+        var faultSummary = opt.dataset.faultSummary || "";
+
+        /* Prefill first block machine input */
+        var machineInput = document.querySelector('input[name="entrada_1_maquina"]');
+        if (machineInput) machineInput.value = machineCode || machineRaw;
+
+        /* Prefill first block fault description */
+        var faultInput = document.querySelector('input[name="entrada_1_descripcion_fallo"]');
+        if (!faultInput) faultInput = document.querySelector('input[name="entrada_1_descripcion"]');
+        if (faultInput) faultInput.value = faultSummary;
+
+        /* Show summary panel */
+        var summaryDiv = document.getElementById("repair-order-summary");
+        var summarySpan = document.getElementById("rot-fault-summary");
+        if (summaryDiv && summarySpan) {
+            summarySpan.textContent = faultSummary || "—";
+            summaryDiv.classList.remove("d-none");
+        }
+    }
+
+    sel.addEventListener("change", function () {
+        var opt = sel.options[sel.selectedIndex];
+        applyRepairOrder(opt && opt.value ? opt : null);
+    });
+}());
+</script>
 {% endblock %}
