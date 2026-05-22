@@ -10,6 +10,8 @@
 (function () {
     "use strict";
 
+    function _initModalFlow() {
+
     /*
      * Modal save flow for form_entry.html (Via A).
      * Intercepts the "Guardar parte" button, runs zero-meter detection,
@@ -141,5 +143,25 @@
     if (btnTrigger) {
         btnTrigger.addEventListener("click", _onSaveTrigger);
     }
+}
+
+/*
+ * Defer modal initialisation until Bootstrap is available.
+ * form_entry_modal.js loads inside {% block content %}, before
+ * bootstrap.bundle.min.js at the end of base.html. Wrapping in
+ * DOMContentLoaded guarantees Bootstrap is ready when we call
+ * new bootstrap.Modal(...).
+ *
+ * Diferir la inicializacion de modales hasta que Bootstrap este disponible.
+ * form_entry_modal.js se carga dentro de {% block content %}, antes que
+ * bootstrap.bundle.min.js al final de base.html. Envolver en
+ * DOMContentLoaded garantiza que Bootstrap esta listo al llamar a
+ * new bootstrap.Modal(...).
+ */
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", _initModalFlow);
+} else {
+    _initModalFlow();
+}
 
 }());

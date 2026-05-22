@@ -19,6 +19,18 @@
     var ASSET_DETAIL_URL = (window.EB_CONFIG && window.EB_CONFIG.assetDetailUrl) || "";
 
     /*
+     * Lunch break interval from the operator WorkdaySchedule.
+     * Pre-filled by the server via window.EB_CONFIG. Empty strings when the
+     * operator has an intensive shift or no schedule assigned.
+     *
+     * Intervalo de pausa de comida del WorkdaySchedule del operario.
+     * Prerrellenado por el servidor via window.EB_CONFIG. Cadenas vacias
+     * cuando el operario tiene jornada intensiva o no tiene horario asignado.
+     */
+    var LUNCH_BREAK_START = (window.EB_CONFIG && window.EB_CONFIG.lunchBreakStart) || "";
+    var LUNCH_BREAK_END   = (window.EB_CONFIG && window.EB_CONFIG.lunchBreakEnd)   || "";
+
+    /*
      * Reveals or hides meter-reading fields for the given block index.
      * Revela u oculta los campos de contadores para el índice de bloque dado.
      */
@@ -567,6 +579,37 @@
 
             // Gate 2 — Work blocks / Bloques de trabajo.
             var numEntradas = parseInt(_val("num_entradas"), 10) || 1;
+            /*
+             * _lunchOverlapMinutes — computes the overlap in minutes between
+             * a work block [hc, hf] and the lunch break [lunchStart, lunchEnd].
+             * All params are "HH:MM" strings. Returns 0 if any param is empty
+             * or there is no overlap.
+             *
+             * _lunchOverlapMinutes — calcula el solapamiento en minutos entre
+             * un bloque de trabajo [hc, hf] y la pausa de comida [lunchStart, lunchEnd].
+             * Todos los parametros son cadenas "HH:MM". Devuelve 0 si algun parametro
+             * esta vacio o no hay solapamiento.
+             */
+            function _lunchOverlapMinutes(hc, hf, lunchStart, lunchEnd) {
+                if (!hc || !hf || !lunchStart || !lunchEnd) { return 0; }
+                function _toMin(t) {
+                    var parts = t.split(":");
+                    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+                }
+                var blockStart  = _toMin(hc);
+                var blockEnd    = _toMin(hf);
+                var lunchS      = _toMin(lunchStart);
+                var lunchE      = _toMin(lunchEnd);
+                var overlapStart = Math.max(blockStart, lunchS);
+                var overlapEnd   = Math.min(blockEnd,   lunchE);
+                return Math.max(0, overlapEnd - overlapStart);
+            }
+
+            /* Read lunch break from form fields (operator may have modified them). */
+            /* Leer pausa de comida desde los campos del formulario (el operario pudo modificarlos). */
+            var lunchStart = _val("lunch_break_start") || LUNCH_BREAK_START;
+            var lunchEnd   = _val("lunch_break_end")   || LUNCH_BREAK_END;
+
             for (var i = 1; i <= numEntradas; i++) {
                 var blk  = "Bloque " + i;
                 var maq  = _val("entrada_" + i + "_machine_raw");
@@ -590,6 +633,25 @@
                     _markField("entrada_" + i + "_hf", true);
                     errors.push(blk + ": H.F. debe ser posterior a H.C.");
                 }
+
+                /*
+                 * Compute lunch overlap for this block and store in a hidden input
+                 * so the backend can apply the exact deduction per line.
+                 *
+                 * Calcular el solapamiento de comida para este bloque y almacenarlo
+                 * en un input oculto para que el backend aplique el descuento exacto.
+                 */
+                var overlapMin = _lunchOverlapMinutes(hc, hf, lunchStart, lunchEnd);
+                var overlapId  = "lunch_overlap_" + i;
+                var overlapEl  = document.getElementById(overlapId);
+                if (!overlapEl) {
+                    overlapEl      = document.createElement("input");
+                    overlapEl.type = "hidden";
+                    overlapEl.id   = overlapId;
+                    overlapEl.name = "lunch_overlap_" + i;
+                    document.getElementById("form-entry").appendChild(overlapEl);
+                }
+                overlapEl.value = overlapMin;
             }
 
             // Gate 3 — Spare parts / Repuestos.

@@ -979,10 +979,14 @@ Incidencias on-fly resueltas en S033 (fuera del H7):
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesión
+## 5. Hoja de Ruta para la Siguiente Sesión (S037)
 
 ### NOTA DE ESTADO
-El Hito 7 continúa EN PROGRESO. Pendiente validación E2E completa de las incidencias de S034/S035.
+El Hito 7 continúa EN PROGRESO. S036 resolvió la PRIORIDAD 0 (bug Safari iOS Via A,
+modal de confirmación, TimePicker restaurado, pausa de comida, prerrellenado HC,
+prerrellenado OT desde desplegable, horas extra fallback sin WorkPeriod, sidebar
+duplicado eliminado, Bootstrap SRI). Pendiente validación E2E de incidencias S034/S035
+y reordenación del sidebar.
 
 ### ADVERTENCIAS CRÍTICAS — mantener siempre presentes
 
@@ -994,6 +998,7 @@ El Hito 7 continúa EN PROGRESO. Pendiente validación E2E completa de las incid
 
   form_entry_assets.js: URLs Django inyectadas via window.EB_CONFIG en el template.
   Si se añaden nuevas URLs Django al JS, añadirlas primero al bloque EB_CONFIG.
+  Desde S036: lunchBreakStart y lunchBreakEnd también se inyectan via EB_CONFIG.
 
   Section.workday_schedule: FK(WorkdaySchedule, SET_NULL, null=True, blank=True)
   añadida en S034 (migración ivr_config 0024_section_workday_schedule).
@@ -1003,6 +1008,14 @@ El Hito 7 continúa EN PROGRESO. Pendiente validación E2E completa de las incid
     3. WorkdaySchedule con is_default=True de empresa (fallback global).
     4. None → Gate 4 se omite completamente.
 
+  WorkOrderEntry.lunch_break_start / lunch_break_end: campos TimeField nullable
+  añadidos en S036 (migración work_order_processor 0019_add_lunch_break_to_workorderentry).
+  El descuento de pausa se aplica por bloque (overlap con [lunch_break_start, lunch_break_end]).
+  El JS precalcula el overlap en minutos (lunch_overlap_N) y el backend lo aplica al delta_hours.
+
+  _resolve_operator_schedule(cu, company): helper de módulo en panel/views.py
+  que resuelve la cadena de prioridad Gate 4. Usar en lugar de duplicar la lógica inline.
+
   SectionUpdateView._form_valid() preserva contactos WORKSHOP/DRIVER en M2M:
   _worker_contacts se captura antes de form.save() y se re-añade después.
   No eliminar esta lógica bajo ningún concepto.
@@ -1010,35 +1023,29 @@ El Hito 7 continúa EN PROGRESO. Pendiente validación E2E completa de las incid
   CompanyUserUpdateView.post(): fuerza is_active=True para WORKSHOP/DRIVER
   antes de super().post(). No revertir.
 
-### PRIORIDAD 0 -- Incidencia S011: fallo al guardar parte Via A en iPhone (Safari)
+### PRIORIDAD 0 — Reordenación del sidebar (_nav_items.html)
 
-  Un operario ha reportado que al rellenar el parte mediante la Via A
-  (formulario web estructurado) desde un iPhone y pulsar Guardar, el
-  parte no se guarda y no se produce ninguna accion aparente.
+  Reorganizar las secciones de navegación para agrupar por rol/temática:
 
-  Hipotesis principal: incompatibilidad de Safari (iOS) con algun
-  elemento del Gate client-side implementado en form_entry_assets.js
-  o con el manejo de eventos de submit en form_entry.html. Safari en
-  iOS tiene restricciones propias sobre eventos touch, submit JS y
-  Web Speech API que pueden bloquear silenciosamente el guardado.
+  1. Contactos y Secciones se mueven de la sección IVR a la sección Administración.
 
-  Pasos de investigacion y resolucion:
-  1. Reproducir el bug en Safari iOS (iPhone) con un parte de prueba.
-  2. Revisar la consola de Safari (depuracion remota via Mac + cable
-     o Safari Web Inspector) para identificar el error JS exacto.
-  3. Auditar form_entry_assets.js: eventos de submit, Gate 1/2/3
-     client-side, compatibilidad de APIs usadas con Safari iOS.
-  4. Auditar form_entry.html: atributos de formulario, botones de
-     submit, comportamiento en Safari.
-  5. Aplicar la correccion minima necesaria preservando el
-     comportamiento en Chrome/Android.
-  6. Validar en iPhone que el parte se guarda correctamente tras la
-     correccion.
+  2. Nuevo orden propuesto:
+     - PRESENCIA: Mi estado (ADMIN, SUPERVISOR, WORKSHOPBOSS).
+     - IVR: Flujos IVR, Números de teléfono, Perfil de voz, Bloqueados,
+       Conjuntos de captura. SIN Contactos ni Secciones.
+     - WHATSAPP: Plantillas, Sesiones activas.
+     - TALLER (WORKSHOP/ADMIN): Nuevo parte, Historial, Mi alias de chat.
+     - ADMINISTRACIÓN (ADMIN/SUPERVISOR/WORKSHOPBOSS): PDFs, Centros de gasto,
+       Usuarios, Contactos, Secciones, Horarios de jornada, Categorías de ausencia.
+     - CHAT DE SECCIONES: Salas de chat.
+     - TICKETS DE AVERÍA: Tickets de avería.
+     - ANALiTICA: Gráficas (ADMIN).
+
+  3. Confirmar con Miguel Ángel el orden exacto al inicio de S037 antes de implementar.
 
 ### PRIORIDAD 1 — Validación E2E completa de incidencias S034/S035
 
-  Validar en producción los siguientes flujos, que quedaron pendientes de
-  verificación formal completa:
+  Validar en producción los siguientes flujos pendientes de verificación formal:
 
   1. Eliminación múltiple de usuarios (CompanyUserBulkDeleteView):
      - Escenario sin riesgo IVR: eliminar directamente.
@@ -1063,3 +1070,4 @@ El Hito 7 continúa EN PROGRESO. Pendiente validación E2E completa de las incid
 
   7. Guardar sección con trabajadores WORKSHOP asignados: verificar que los
      trabajadores persisten en la tabla tras el guardado (fix M2M _worker_contacts).
+

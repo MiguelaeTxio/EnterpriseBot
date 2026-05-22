@@ -138,6 +138,50 @@
             </div>
 
             {# ================================================================ #}
+            {# SECTION 1b — Lunch break / Pausa de comida                      #}
+            {# Pre-filled from operator WorkdaySchedule (split shift only).    #}
+            {# Left empty for intensive shifts — operator may fill manually.   #}
+            {# Prerrellenada desde WorkdaySchedule del operario (jornada       #}
+            {# partida). Vacía en jornada intensiva — el operario puede        #}
+            {# rellenarla manualmente si ha parado a comer.                    #}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4" id="lunch-break-card">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-cup-hot me-2 text-warning"></i>
+                        Pausa de comida
+                        <span class="text-muted fw-normal fs-6 ms-2">— opcional</span>
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <p class="text-muted small mb-3">
+                        Indica la hora de inicio y fin de tu pausa de comida.
+                        Si no has parado a comer, deja estos campos vacíos.
+                        El sistema descontará automáticamente la pausa de las
+                        tareas que la cubran.
+                    </p>
+                    <div class="row g-3">
+                        <div class="col-6 col-md-2">
+                            <label class="form-label fw-medium">Inicio pausa</label>
+                            <input type="time" step="1800"
+                                   id="id_lunch_break_start"
+                                   name="lunch_break_start"
+                                   class="form-control"
+                                   value="{{ lunch_break_start }}">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label fw-medium">Fin pausa</label>
+                            <input type="time" step="1800"
+                                   id="id_lunch_break_end"
+                                   name="lunch_break_end"
+                                   class="form-control"
+                                   value="{{ lunch_break_end }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# ================================================================ #}
             {# SECTION 2 — Work blocks / Bloques de trabajo                    #}
             {# ================================================================ #}
             <div class="card border-0 shadow-sm mb-4">
@@ -280,7 +324,7 @@
                                        step="1800"
                                        name="entrada_1_hc"
                                        class="form-control field-flagged"
-                                       value="">
+                                       value="{{ first_block_hc }}">
                             </div>
                             <div class="col-6 col-md-2">
                                 <label class="form-label fw-medium">
@@ -504,7 +548,9 @@
 window.EB_CONFIG = {
     assetsUrl:       "{% url 'panel:operator_assets' %}",
     assetDetailUrl:  "{% url 'panel:operator_asset_detail' %}",
-    descriptionsUrl: "{% url 'panel:operator_descriptions' %}"
+    descriptionsUrl: "{% url 'panel:operator_descriptions' %}",
+    lunchBreakStart: "{{ lunch_break_start }}",
+    lunchBreakEnd:   "{{ lunch_break_end }}"
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>
@@ -526,13 +572,13 @@ window.EB_CONFIG = {
         var machineRaw   = opt.dataset.machineRaw   || machineCode;
         var faultSummary = opt.dataset.faultSummary || "";
 
-        /* Prefill first block machine input */
-        var machineInput = document.querySelector('input[name="entrada_1_maquina"]');
-        if (machineInput) machineInput.value = machineCode || machineRaw;
+        /* Prefill first block machine input — uppercase to match fleet catalogue. */
+        /* Prerrellenar campo de maquina del primer bloque — mayusculas para coincidir con el catalogo. */
+        var machineInput = document.querySelector('input[name="entrada_1_machine_raw"]');
+        if (machineInput) machineInput.value = (machineCode || machineRaw).toUpperCase();
 
         /* Prefill first block fault description */
-        var faultInput = document.querySelector('input[name="entrada_1_descripcion_fallo"]');
-        if (!faultInput) faultInput = document.querySelector('input[name="entrada_1_descripcion"]');
+        var faultInput = document.querySelector('textarea[name="entrada_1_fault_description"]');
         if (faultInput) faultInput.value = faultSummary;
 
         /* Show summary panel */
@@ -550,4 +596,12 @@ window.EB_CONFIG = {
     });
 }());
 </script>
+
+{# Modales de confirmacion de guardado — Modal partials for save confirmation flow #}
+{% include "panel/_zero_meter_modal.html" %}
+{% include "panel/_confirm_save_modal.html" %}
+
+{# Time Picker Widget — restricts time inputs to 00/30 minutes only #}
+{# Widget Selector de Hora — restringe inputs de hora a minutos 00/30 #}
+{% include "panel/_time_picker_widget.html" %}
 {% endblock %}

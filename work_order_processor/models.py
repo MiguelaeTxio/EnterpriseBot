@@ -634,6 +634,42 @@ class WorkOrderEntry(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Lunch break / Pausa de comida
+    #
+    # Optional lunch break interval recorded by the operator on the part.
+    # Pre-filled from the operator's WorkdaySchedule when the shift is
+    # split (is_intensive=False). Left null for intensive shifts.
+    # Used by the backend to deduct the overlapping portion of the break
+    # from each WorkOrderEntryLine.delta_hours that spans this interval.
+    #
+    # Pausa de comida opcional registrada por el operario en el parte.
+    # Prerrellenada desde el WorkdaySchedule del operario cuando la jornada
+    # es partida (is_intensive=False). Nula para jornadas intensivas.
+    # Usada por el backend para descontar la porción solapada de la pausa
+    # de cada WorkOrderEntryLine.delta_hours que cubre ese intervalo.
+    # ------------------------------------------------------------------
+    lunch_break_start = models.TimeField(
+        _("Inicio pausa de comida"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Hora de inicio de la pausa de comida del operario. "
+            "Prerrellenada desde el WorkdaySchedule (end_time_morning) "
+            "cuando la jornada es partida. Nula si no ha parado a comer."
+        ),
+    )
+    lunch_break_end = models.TimeField(
+        _("Fin pausa de comida"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Hora de fin de la pausa de comida del operario. "
+            "Prerrellenada desde el WorkdaySchedule (start_time_afternoon) "
+            "cuando la jornada es partida. Nula si no ha parado a comer."
+        ),
+    )
+
     class Meta:
         verbose_name        = _("Entrada de Parte")
         verbose_name_plural = _("Entradas de Parte")

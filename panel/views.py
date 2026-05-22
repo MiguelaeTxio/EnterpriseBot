@@ -6384,6 +6384,54 @@ class WorkOrderEntryUploadView(WorkshopRequiredMixin, View):
 # en dos pasadas para que ninguna vista duplique esta lógica.
 # ---------------------------------------------------------------------------
 
+def _resolve_operator_schedule(cu, company):
+    """
+    Resolves the effective WorkdaySchedule for a CompanyUser following
+    the Gate 4 priority chain:
+      1. CompanyUser.workday_schedule (individual assignment).
+      2. First active Section of the operator's Contact that has a
+         workday_schedule assigned.
+      3. Company-level default WorkdaySchedule (is_default=True).
+      4. None — no schedule available.
+    Returns the resolved WorkdaySchedule instance or None.
+    ---
+    Resuelve el WorkdaySchedule efectivo para un CompanyUser siguiendo
+    la cadena de prioridad de Gate 4:
+      1. CompanyUser.workday_schedule (asignacion individual).
+      2. Primera Section activa del Contact del operario que tenga
+         workday_schedule asignado.
+      3. WorkdaySchedule por defecto de empresa (is_default=True).
+      4. None — no hay horario disponible.
+    Devuelve la instancia WorkdaySchedule resuelta o None.
+    """
+    from ivr_config.models import WorkdaySchedule as _WDS_R
+    from ivr_config.models import Contact as _Contact_R
+
+    if cu.workday_schedule_id:
+        return cu.workday_schedule
+
+    contact = (
+        _Contact_R.objects
+        .filter(company_user=cu)
+        .prefetch_related("sections__workday_schedule")
+        .first()
+    )
+    if contact is not None:
+        section_schedule = next(
+            (
+                sec.workday_schedule
+                for sec in contact.sections.filter(
+                    is_active=True, workday_schedule__isnull=False
+                ).select_related("workday_schedule").order_by("name")
+            ),
+            None,
+        )
+        if section_schedule is not None:
+            return section_schedule
+
+    return _WDS_R.objects.filter(company=company, is_default=True).first()
+
+
 def _parse_entry_lines_from_post(POST, company):
     """
     Parses and resolves work-block entry lines submitted via POST.
@@ -7933,27 +7981,74 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                         })
                         ridx += 1
 
+            # Resolve lunch break for edit mode: use stored values if present,
+            # otherwise fall back to the operator's effective schedule.
+            # Resolver pausa de comida en modo edicion: usar valores guardados
+            # si existen, si no usar el horario efectivo del operario.
+            _schedule_edit = _resolve_operator_schedule(cu, company)
+            _lunch_start_edit = ""
+            _lunch_end_edit   = ""
+            _first_hc_edit    = ""
+            if first_entry and first_entry.lunch_break_start:
+                _lunch_start_edit = first_entry.lunch_break_start.strftime("%H:%M")
+            elif _schedule_edit and not _schedule_edit.is_intensive and _schedule_edit.end_time_morning:
+                _lunch_start_edit = _schedule_edit.end_time_morning.strftime("%H:%M")
+            if first_entry and first_entry.lunch_break_end:
+                _lunch_end_edit = first_entry.lunch_break_end.strftime("%H:%M")
+            elif _schedule_edit and not _schedule_edit.is_intensive and _schedule_edit.start_time_afternoon:
+                _lunch_end_edit = _schedule_edit.start_time_afternoon.strftime("%H:%M")
+            if _schedule_edit and _schedule_edit.start_time_morning:
+                _first_hc_edit = _schedule_edit.start_time_morning.strftime("%H:%M")
+
             context = self._get_context_base(request)
             context.update({
-                "edit_mode":         True,
-                "edit_wo_pk":        wo_pk,
-                "num_entradas":      len(entradas_enriched) or 1,
-                "num_repuestos":     len(repuestos_enriched),
-                "fecha":             fecha_str,
-                "entradas_enriched": entradas_enriched,
-                "repuestos_enriched": repuestos_enriched,
-                "min_date":          min_date.isoformat() if min_date else "",
+                "edit_mode":           True,
+                "edit_wo_pk":          wo_pk,
+                "num_entradas":        len(entradas_enriched) or 1,
+                "num_repuestos":       len(repuestos_enriched),
+                "fecha":               fecha_str,
+                "entradas_enriched":   entradas_enriched,
+                "repuestos_enriched":  repuestos_enriched,
+                "min_date":            min_date.isoformat() if min_date else "",
+                "lunch_break_start":   _lunch_start_edit,
+                "lunch_break_end":     _lunch_end_edit,
+                "first_block_hc":      _first_hc_edit,
             })
             return render(request, self.template_name, context)
 
         # Create mode — empty form.
         # Modo creacion — formulario vacio.
+        #
+        # Resolve the operator's effective schedule to pre-fill the lunch
+        # break interval and the first block start time (HC).
+        # Resolver el horario efectivo del operario para prerrellenar la
+        # pausa de comida y la hora de inicio del primer bloque (HC).
+        _schedule_create = _resolve_operator_schedule(cu, company)
+        _lunch_start = ""
+        _lunch_end   = ""
+        _first_hc    = ""
+        if _schedule_create is not None:
+            if not _schedule_create.is_intensive:
+                # Split shift — pre-fill lunch break from schedule.
+                # Jornada partida — prerrellenar pausa desde el horario.
+                if _schedule_create.end_time_morning:
+                    _lunch_start = _schedule_create.end_time_morning.strftime("%H:%M")
+                if _schedule_create.start_time_afternoon:
+                    _lunch_end = _schedule_create.start_time_afternoon.strftime("%H:%M")
+            # Pre-fill first block HC from schedule morning start.
+            # Prerrellenar HC del primer bloque desde inicio de mañana del horario.
+            if _schedule_create.start_time_morning:
+                _first_hc = _schedule_create.start_time_morning.strftime("%H:%M")
+
         context = self._get_context_base(request)
         context.update({
-            "num_entradas":  1,
-            "num_repuestos": 0,
-            "fecha":         "",
-            "min_date":      min_date.isoformat() if min_date else "",
+            "num_entradas":    1,
+            "num_repuestos":   0,
+            "fecha":           "",
+            "min_date":        min_date.isoformat() if min_date else "",
+            "lunch_break_start": _lunch_start,
+            "lunch_break_end":   _lunch_end,
+            "first_block_hc":    _first_hc,
         })
         return render(request, self.template_name, context)
 
@@ -7986,6 +8081,30 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         cu      = self._get_company_user(request)
         company = cu.company
         POST    = request.POST
+
+        # ------------------------------------------------------------------
+        # Parse lunch break interval from POST.
+        # Parsear el intervalo de pausa de comida del POST.
+        # ------------------------------------------------------------------
+        from datetime import time as _dt_time_lb
+        def _parse_time_field(raw):
+            """
+            Parses a HH:MM string into a datetime.time or None.
+            ---
+            Parsea una cadena HH:MM a datetime.time o None.
+            """
+            if not raw:
+                return None
+            try:
+                parts = raw.strip().split(":")
+                return _dt_time_lb(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                return None
+
+        _lb_start_raw = POST.get("lunch_break_start", "").strip()
+        _lb_end_raw   = POST.get("lunch_break_end",   "").strip()
+        _lb_start     = _parse_time_field(_lb_start_raw)
+        _lb_end       = _parse_time_field(_lb_end_raw)
 
         # ------------------------------------------------------------------
         # Parse work date / Parsear fecha del parte.
@@ -8608,12 +8727,34 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     uncertain_date        = False,
                     extraction_confidence = WorkOrderEntry.Confidence.HIGH,
                     raw_gemini_response   = None,
+                    lunch_break_start     = _lb_start,
+                    lunch_break_end       = _lb_end,
                 )
 
                 created_lines    = {}
                 created_line_pks = []  # Collected for classify_fault_line enqueue (post-atomic).
                                        # Recogidos para el encolado de classify_fault_line (post-atomic).
                 for ld in entry_lines_data:
+                    # Apply lunch break deduction to this line's delta_hours.
+                    # The JS pre-computed the overlap in minutes (lunch_overlap_N);
+                    # the backend applies the exact deduction to preserve per-line accuracy.
+                    # Aplicar el descuento de pausa de comida al delta_hours de esta linea.
+                    # El JS precalculo el solapamiento en minutos (lunch_overlap_N);
+                    # el backend aplica el descuento exacto para preservar la precision por linea.
+                    from decimal import Decimal as _Dec_lb
+                    _line_num      = ld["line_number"]
+                    _overlap_raw   = POST.get(f"lunch_overlap_{_line_num}", "0").strip()
+                    try:
+                        _overlap_min = int(_overlap_raw)
+                    except (ValueError, TypeError):
+                        _overlap_min = 0
+                    _delta_raw = ld["delta_hours"]
+                    if _delta_raw is not None and _overlap_min > 0:
+                        _delta_net = _Dec_lb(str(_delta_raw)) - _Dec_lb(_overlap_min) / _Dec_lb("60")
+                        _delta_net = max(_Dec_lb("0"), _delta_net)
+                    else:
+                        _delta_net = _delta_raw
+
                     line = WorkOrderEntryLine.objects.create(
                         entry                = entry,
                         line_number          = ld["line_number"],
@@ -8625,7 +8766,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                         hc                   = ld["hc"],
                         hf                   = ld["hf"],
                         or_val               = ld["or_val"],
-                        delta_hours          = ld["delta_hours"],
+                        delta_hours          = _delta_net,
                         flags                = ld["flags"],
                         odometer_reading     = ld.get("odometer_reading"),
                         engine_hours_reading = ld.get("engine_hours_reading"),
@@ -9093,21 +9234,40 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
 
         # ------------------------------------------------------------------
         # Tab 3 — Horas extra / Overtime calculation.
+        # When no active WorkPeriod exists, fall back to the date of the
+        # operator's earliest work-order entry as the implicit period start.
+        # Cuando no hay WorkPeriod activo, usar la fecha del parte mas antiguo
+        # del operario como inicio implicito del periodo.
         # ------------------------------------------------------------------
         overtime_hours    = Decimal("0")
         working_days_count = 0
 
         if active_period:
+            period_start_for_calc = active_period.start_date
             period_end_for_calc = (
                 active_period.end_date
                 if active_period.end_date and active_period.end_date < today
                 else today
             )
-            working_days_count = self._count_working_days(
-                active_period.start_date, period_end_for_calc
+        else:
+            # Fallback: use earliest work-order date for this operator.
+            # Fallback: usar la fecha del parte mas antiguo del operario.
+            from work_order_processor.models import WorkOrderEntry as _WOE_OT
+            earliest = (
+                _WOE_OT.objects
+                .filter(work_order__company=cu.company, work_order__uploaded_by=cu)
+                .order_by("work_date")
+                .values_list("work_date", flat=True)
+                .first()
             )
-            expected_hours = Decimal(working_days_count) * Decimal("8")
-            overtime_hours = current_period_hours - expected_hours
+            period_start_for_calc = earliest if earliest else today
+            period_end_for_calc   = today
+
+        working_days_count = self._count_working_days(
+            period_start_for_calc, period_end_for_calc
+        )
+        expected_hours = Decimal(working_days_count) * Decimal("8")
+        overtime_hours = current_period_hours - expected_hours
 
         # ------------------------------------------------------------------
         # Tab 4 — Ausencias del operario / Operator absences (read-only).
