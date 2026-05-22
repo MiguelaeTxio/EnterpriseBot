@@ -979,14 +979,17 @@ Incidencias on-fly resueltas en S033 (fuera del H7):
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesión (S037)
+## 5. Hoja de Ruta para la Siguiente Sesión (S038)
 
 ### NOTA DE ESTADO
-El Hito 7 continúa EN PROGRESO. S036 resolvió la PRIORIDAD 0 (bug Safari iOS Via A,
-modal de confirmación, TimePicker restaurado, pausa de comida, prerrellenado HC,
-prerrellenado OT desde desplegable, horas extra fallback sin WorkPeriod, sidebar
-duplicado eliminado, Bootstrap SRI). Pendiente validación E2E de incidencias S034/S035
-y reordenación del sidebar.
+S037 completó la reordenación del sidebar (_nav_items.html): nuevo orden Mi perfil →
+IVR → WhatsApp → Administración → Analítica → Chat de Secciones → Operarios →
+Tickets de Avería. Sección renombrada de Taller a Operarios. Contactos y Secciones
+movidos de IVR a Administración. Configuración de jornada fusionada en Administración.
+Mi estado (Presencia) movido a Mi perfil. Desplegado en producción sin errores.
+
+Las validaciones E2E de incidencias S034/S035 se realizan en producción conforme
+se producen. No se listan como tareas pendientes de sesión.
 
 ### ADVERTENCIAS CRÍTICAS — mantener siempre presentes
 
@@ -1023,41 +1026,16 @@ y reordenación del sidebar.
   CompanyUserUpdateView.post(): fuerza is_active=True para WORKSHOP/DRIVER
   antes de super().post(). No revertir.
 
-### PRIORIDAD 0 — Reordenación del sidebar (_nav_items.html)
+### PRIORIDAD 0 — Menú de ayuda WhatsApp para contactos de sección
 
-  Reorganizar las secciones de navegación para agrupar por rol/temática:
+  Implementar un sistema de ayuda conversacional vía WhatsApp para contactos
+  de salas SECTION (no BREAKDOWNS). Cuando un contacto escriba cualquier
+  variante de "ayuda" (incluyendo errores ortográficos como "halluda", "ayuuda",
+  etc.), el sistema interrumpe el flujo normal y presenta un menú de dos opciones.
 
-  1. Contactos y Secciones se mueven de la sección IVR a la sección Administración.
-
-  2. Nuevo orden propuesto:
-     - PRESENCIA: Mi estado (ADMIN, SUPERVISOR, WORKSHOPBOSS).
-     - IVR: Flujos IVR, Números de teléfono, Perfil de voz, Bloqueados,
-       Conjuntos de captura. SIN Contactos ni Secciones.
-     - WHATSAPP: Plantillas, Sesiones activas.
-     - TALLER (WORKSHOP/ADMIN): Nuevo parte, Historial, Mi alias de chat.
-     - ADMINISTRACIÓN (ADMIN/SUPERVISOR/WORKSHOPBOSS): PDFs, Centros de gasto,
-       Usuarios, Contactos, Secciones, Horarios de jornada, Categorías de ausencia.
-     - CHAT DE SECCIONES: Salas de chat.
-     - TICKETS DE AVERÍA: Tickets de avería.
-     - ANALiTICA: Gráficas (ADMIN).
-
-  3. Confirmar con Miguel Ángel el orden exacto al inicio de S037 antes de implementar.
-
-### PRIORIDAD 1 — Validación E2E completa de incidencias S034/S035
-
-  Validar en producción los siguientes flujos pendientes de verificación formal:
-
-  1. Eliminación múltiple de usuarios (CompanyUserBulkDeleteView):
-     - Escenario sin riesgo IVR: eliminar directamente.
-     - Escenario con riesgo IVR: página de confirmación + eliminación confirmada.
-
-  2. Eliminación de contacto huérfano desde el formulario de contacto
-     (ContactDeleteView + contacts/confirm_delete.html).
-
-  3. Selector de horario individual desde la tabla de trabajadores de sección
-     (WorkerScheduleUpdateView AJAX): cambiar horario y verificar persistencia.
-
-  4. Horario por defecto de sección: asignar WorkdaySchedule a una sección,
+  Estado actual al cierre de S037: diseño completo acordado, implementación
+  pendiente. La creación de la plantilla Twilio quedó sin completar por
+  dificultades con las credenciales de la Content API.
      guardar parte digital sin horario individual y verificar que Gate 4 aplica
      el horario de sección como segundo nivel de prioridad.
 

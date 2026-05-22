@@ -50,12 +50,21 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Presencia — ADMIN, SUPERVISOR y WORKSHOPBOSS                  #}
-    {# Section: Presence — ADMIN, SUPERVISOR and WORKSHOPBOSS                 #}
+    {# Sección: Mi perfil — todos los roles con acceso al panel            #}
+    {# Mi estado (Presencia) incluido aquí — ADMIN, SUPERVISOR, WORKSHOPBOSS #}
+    {# Section: My profile — all roles with panel access                  #}
+    {# Presence status included here — ADMIN, SUPERVISOR, WORKSHOPBOSS    #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-    <li><div class="sidebar-section-label">Presencia</div></li>
+    <li><div class="sidebar-section-label">Mi perfil</div></li>
 
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'own_profile' %}active{% endif %}"
+           href="{% url 'panel:own_profile' %}">
+            <i class="bi bi-person-circle"></i>Mi alias de chat
+        </a>
+    </li>
+
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'presence' %}active{% endif %}"
            href="{% url 'panel:presence_status' %}">
@@ -66,7 +75,7 @@
 
     {# ------------------------------------------------------------------ #}
     {# Sección: IVR — solo ADMIN                                           #}
-    {# Section: IVR — ADMIN only                                          #}
+    {# Section: IVR — ADMIN only                                           #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' %}
     <li><div class="sidebar-section-label">IVR</div></li>
@@ -75,20 +84,6 @@
         <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
            href="{% url 'panel:callflow_list' %}">
             <i class="bi bi-gear-wide-connected"></i>Flujos IVR
-        </a>
-    </li>
-
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'sections' %}active{% endif %}"
-           href="{% url 'panel:section_list' %}">
-            <i class="bi bi-diagram-3"></i>Secciones
-        </a>
-    </li>
-
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'contacts' %}active{% endif %}"
-           href="{% url 'panel:contact_list' %}">
-            <i class="bi bi-person-lines-fill"></i>Contactos
         </a>
     </li>
 
@@ -122,7 +117,7 @@
 
     {# ------------------------------------------------------------------ #}
     {# Sección: WhatsApp — solo ADMIN                                      #}
-    {# Section: WhatsApp — ADMIN only                                     #}
+    {# Section: WhatsApp — ADMIN only                                      #}
     {# ------------------------------------------------------------------ #}
     <li><div class="sidebar-section-label">WhatsApp</div></li>
 
@@ -143,33 +138,11 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Taller — WORKSHOP y ADMIN (Nuevo parte + Historial operario) #}
-    {# Section: Workshop — WORKSHOP and ADMIN (work-order entry + history)    #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
-    <li><div class="sidebar-section-label">Taller</div></li>
-
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
-           href="{% url 'panel:operator_dashboard' %}">
-            <i class="bi bi-tools"></i>Nuevo parte
-        </a>
-    </li>
-
-    {# Historial de partes del operario — Hito 7 Cuarta Acción.          #}
-    {# Operator work-order history — Milestone 7 Fourth Action.            #}
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'operator_history' %}active{% endif %}"
-           href="{% url 'panel:operator_history' %}">
-            <i class="bi bi-clock-history"></i>Historial
-        </a>
-    </li>
-
-    {% endif %}
-
-    {# ------------------------------------------------------------------ #}
-    {# Sección: Administración — ADMIN, SUPERVISOR y WORKSHOPBOSS           #}
-    {# Section: Administration — ADMIN, SUPERVISOR and WORKSHOPBOSS         #}
+    {# Sección: Administración — ADMIN, SUPERVISOR y WORKSHOPBOSS          #}
+    {# Incluye: PDFs, Partes digitales, Centros de gasto, Usuarios,        #}
+    {#          Contactos, Secciones, Horarios de jornada,                 #}
+    {#          Categorías de ausencia                                     #}
+    {# Section: Administration — ADMIN, SUPERVISOR and WORKSHOPBOSS        #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
     <li><div class="sidebar-section-label">Administración</div></li>
@@ -195,14 +168,19 @@
         </a>
     </li>
 
-    {% endif %}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'contacts' %}active{% endif %}"
+           href="{% url 'panel:contact_list' %}">
+            <i class="bi bi-person-lines-fill"></i>Contactos
+        </a>
+    </li>
 
-    {# ------------------------------------------------------------------ #}
-    {# Sección: Configuración de jornada — ADMIN, SUPERVISOR y WORKSHOPBOSS #}
-    {# Section: Workday configuration — ADMIN, SUPERVISOR and WORKSHOPBOSS  #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-    <li><div class="sidebar-section-label">Configuración de jornada</div></li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'sections' %}active{% endif %}"
+           href="{% url 'panel:section_list' %}">
+            <i class="bi bi-diagram-3"></i>Secciones
+        </a>
+    </li>
 
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'workday_schedule' %}active{% endif %}"
@@ -221,8 +199,33 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Chat de Secciones — ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP, DRIVER #}
-    {# Section: Section Chat — ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP, DRIVER      #}
+    {# Sección: Analítica — solo ADMIN                                     #}
+    {# Section: Analytics — ADMIN only                                     #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ADMIN' %}
+    <li><div class="sidebar-section-label">Analítica</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'analytics' %}active{% endif %}"
+           href="{% url 'panel:analytics' %}">
+            <i class="bi bi-bar-chart-line"></i>Gráficas
+        </a>
+    </li>
+
+    {# Reports — pendiente Hito 9 / Reports — pending Milestone 9 #}
+    {#
+    <li class="nav-item">
+        <a class="nav-link" href="#">
+            <i class="bi bi-file-earmark-bar-graph"></i>Informes
+        </a>
+    </li>
+    #}
+
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Chat de Secciones — todos los roles con acceso al panel    #}
+    {# Section: Section Chat — all roles with panel access                 #}
     {# Hito 13 Paso 4 (2026-05-15)                                         #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' or company_user.role == 'DRIVER' %}
@@ -232,6 +235,40 @@
         <a class="nav-link {% if active_nav == 'chat' %}active{% endif %}"
            href="{% url 'panel:chat_room_list' %}">
             <i class="bi bi-chat-dots"></i>Salas de chat
+        </a>
+    </li>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Operarios — todos los roles con acceso al panel            #}
+    {# Incluye: Nuevo parte, Historial, Partes digitales                   #}
+    {# Section: Operators — all roles with panel access                    #}
+    {# ------------------------------------------------------------------ #}
+    <li><div class="sidebar-section-label">Operarios</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
+           href="{% url 'panel:operator_dashboard' %}">
+            <i class="bi bi-tools"></i>Nuevo parte
+        </a>
+    </li>
+
+    {# Historial de partes del operario — Hito 7 Cuarta Acción.           #}
+    {# Operator work-order history — Milestone 7 Fourth Action.            #}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'operator_history' %}active{% endif %}"
+           href="{% url 'panel:operator_history' %}">
+            <i class="bi bi-clock-history"></i>Historial
+        </a>
+    </li>
+
+    {# Partes digitales — ADMIN y SUPERVISOR únicamente                    #}
+    {# Digital work orders — ADMIN and SUPERVISOR only                     #}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'digital_work_order_list' %}active{% endif %}"
+           href="{% url 'panel:digital_work_order_list' %}">
+            <i class="bi bi-file-earmark-check"></i>Partes digitales
         </a>
     </li>
     {% endif %}
@@ -251,43 +288,5 @@
         </a>
     </li>
     {% endif %}
-
-    {# ------------------------------------------------------------------ #}
-    {# Sección: Analítica — solo ADMIN
-    {# Section: Analytics — ADMIN only                                    #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' %}
-    <li><div class="sidebar-section-label">Analítica</div></li>
-
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'analytics' %}active{% endif %}"
-           href="{% url 'panel:analytics' %}">
-            <i class="bi bi-bar-chart-line"></i>Gráficas
-        </a>
-    </li>
-
-         Reports — pending Milestone 9
-    <li class="nav-item">
-        <a class="nav-link" href="#">
-            <i class="bi bi-file-earmark-bar-graph"></i>Informes
-        </a>
-    </li>
-    -->
-
-    {% endif %}
-
-    {# ------------------------------------------------------------------ #}
-    {# Sección: Mi perfil — todos los roles con acceso al panel            #}
-    {# Section: My profile — all roles with panel access                  #}
-    {# Hito 14 Paso 6 (2026-05-21)                                        #}
-    {# ------------------------------------------------------------------ #}
-    <li><div class="sidebar-section-label">Mi perfil</div></li>
-
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'own_profile' %}active{% endif %}"
-           href="{% url 'panel:own_profile' %}">
-            <i class="bi bi-person-circle"></i>Mi alias de chat
-        </a>
-    </li>
 
 </ul>
