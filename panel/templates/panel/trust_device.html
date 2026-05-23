@@ -1,0 +1,45 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/trust_device.html #}
+{# Pregunta de confianza de dispositivo tras login exitoso — S039 (2026-05-23) #}
+{% extends "panel/base.html" %}
+
+{% block title %}Dispositivo de confianza{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+
+      <div class="card shadow-sm">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-shield-lock me-2 text-primary"></i>Dispositivo de confianza
+        </div>
+        <div class="card-body">
+
+          <p class="mb-3">
+            Has iniciado sesión desde un dispositivo que no está marcado como de confianza.
+          </p>
+          <p class="text-muted small mb-4">
+            Si marcas este dispositivo como de confianza, la próxima vez accederás
+            directamente al panel sin necesidad de introducir tu contraseña.
+            Si no lo marcas, se te preguntará de nuevo en el próximo inicio de sesión.
+          </p>
+
+          <form method="post" novalidate>
+            {% csrf_token %}
+            <div class="d-flex gap-2">
+              <button type="submit" name="trust" value="yes" class="btn btn-primary">
+                <i class="bi bi-shield-check me-1"></i>Confiar en este dispositivo
+              </button>
+              <button type="submit" name="trust" value="no" class="btn btn-outline-secondary">
+                Ahora no
+              </button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

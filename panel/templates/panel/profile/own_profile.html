@@ -97,5 +97,43 @@
     </div>
   </div>
 
+  {# Dispositivo de confianza #}
+  <div class="row mt-4">
+    <div class="col-md-6 col-lg-5">
+      <div class="card">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-shield-lock me-2 text-primary"></i>Dispositivo de confianza
+        </div>
+        <div class="card-body">
+          {% if request.COOKIES.eb_trusted_device %}
+          <p class="text-success mb-3">
+            <i class="bi bi-shield-check me-1"></i>
+            Este dispositivo está marcado como de confianza.
+            Accedes al panel sin introducir contraseña.
+          </p>
+          <form method="post" action="{% url 'panel:trust_device_toggle' %}" novalidate>
+            {% csrf_token %}
+            <button type="submit" name="action" value="revoke" class="btn btn-outline-danger btn-sm">
+              <i class="bi bi-shield-x me-1"></i>Revocar confianza de este dispositivo
+            </button>
+          </form>
+          {% else %}
+          <p class="text-muted mb-3">
+            <i class="bi bi-shield me-1"></i>
+            Este dispositivo no está marcado como de confianza.
+            Se te pedirá la contraseña en cada inicio de sesión.
+          </p>
+          <form method="post" action="{% url 'panel:trust_device_toggle' %}" novalidate>
+            {% csrf_token %}
+            <button type="submit" name="action" value="trust" class="btn btn-primary btn-sm">
+              <i class="bi bi-shield-check me-1"></i>Confiar en este dispositivo
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}

@@ -95,6 +95,9 @@ from panel.views import (
     CompanyUserBulkDeleteView,
     WorkerScheduleUpdateView,
     OwnProfileView,
+    TrustDeviceView,
+    TrustDeviceToggleView,
+    TrustDeviceQuickLoginView,
 )
 
 from chat.views import (
@@ -342,4 +345,13 @@ urlpatterns = [
 
     # Own profile — Perfil propio del operario: edición de alias de chat (Hito 14 Paso 6).
     path("profile/", OwnProfileView.as_view(), name="own_profile"),
+
+    # Trust device — Pregunta de confianza de dispositivo tras login (S039).
+    path("trust-device/", TrustDeviceView.as_view(), name="trust_device"),
+
+    # Trust device toggle — Dar/quitar confianza al dispositivo desde el perfil (S039).
+    path("trust-device/toggle/", TrustDeviceToggleView.as_view(), name="trust_device_toggle"),
+
+    # Trust device quick login — Acceso rápido desde login con cookie (S039).
+    path("trust-device/quick-login/", TrustDeviceQuickLoginView.as_view(), name="trust_device_quick_login"),
 ]

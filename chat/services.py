@@ -116,122 +116,56 @@ class DispatchResult:
 
 
 # ---------------------------------------------------------------------------
-# HELP REQUEST DETECTION
-# Detección de solicitud de ayuda — menú de dos opciones vía quick-reply.
+# EMPLOYEE HELP REQUEST DETECTION
+# Detección de solicitud de ayuda de empleado — quick-reply con enlace y contraseña.
 # ---------------------------------------------------------------------------
 
-# Canonical set of normalised body variants that trigger the help menu.
-# Includes common misspellings, vocal duplications, phonetic variants and
-# synonyms. Detection is O(1) via frozenset membership.
-# Conjunto canónico de variantes normalizadas del body que activan el menú
-# de ayuda. Incluye errores ortográficos comunes, vocales duplicadas,
-# variantes fonéticas y sinónimos. Detección O(1) por pertenencia a frozenset.
-_HELP_VARIANTS: frozenset = frozenset({
-    # canonical / canónica
-    "ayuda",
-    # vocal duplication / vocal duplicada
-    "ayuuda", "ayudaa", "ayudaaa", "ayuudaa",
-    # transposition / omission / transposición / omisión
-    "ayda", "aydua", "ayuta", "ayua", "ayud",
-    # aspirated h, Andalusian phonetics / h aspirada, fonética andaluza
-    "halluda", "haluda", "hayuda",
-    # punctuation variants / variantes con puntuación
-    "ayuda!", "ayuda?", "¡ayuda!", "¿ayuda?",
-    "?ayuda", "!ayuda",
-    # English / inglés
-    "help", "help!",
-    # universal synonyms / sinónimos universales
-    "socorro", "auxilio", "sos",
-    # article + noun / artículo + sustantivo
-    "necesito ayuda", "quiero ayuda", "dame ayuda",
-    "pedir ayuda", "pide ayuda",
-})
+# SID of the employee_help_menu Content Template (twilio/quick-reply).
+# Two buttons: 'Acceder al panel' (help_panel_link) and
+# 'Recordar contraseña' (help_password).
+# SID de la plantilla Content employee_help_menu (twilio/quick-reply).
+# Dos botones: 'Acceder al panel' (help_panel_link) y
+# 'Recordar contraseña' (help_password).
+_EMPLOYEE_HELP_TEMPLATE_SID: str = "HXe8c20c02d4cf4ab340924ed5e2b0ac6f"
 
 
-def _is_help_request(body: str) -> bool:
+def _is_employee_help_request(body: str) -> bool:
     """
-    Returns True when the normalised body matches any variant in _HELP_VARIANTS.
-    Normalisation: strip whitespace and convert to lowercase.
+    Returns True when the normalised body is exactly 'ayuda'.
     ---
-    Devuelve True cuando el body normalizado coincide con alguna variante
-    de _HELP_VARIANTS. Normalización: eliminar espacios y convertir a minúsculas.
+    Devuelve True cuando el body normalizado es exactamente 'ayuda'.
     """
-    return body.strip().lower() in _HELP_VARIANTS
+    return body.strip().lower() == "ayuda"
 
 
-def _send_help_menu(
+def _send_employee_help_menu(
     contact,
     from_number: str,
     to_number: str,
 ) -> None:
     """
-    Sends the enterprisebot_help_menu quick-reply template to the contact.
-    The template SID is read from the TWILIO_HELP_MENU_TEMPLATE_SID environment
-    variable. Falls back to a plain-text message if the env var is missing or
-    the Twilio API call fails, so the help flow is never silently broken.
+    Sends the employee_help_menu quick-reply template to the employee.
+    Only called when the inbound contact is linked to a CompanyUser.
     ---
-    Envía el template quick-reply enterprisebot_help_menu al contacto.
-    El SID del template se lee de la variable de entorno
-    TWILIO_HELP_MENU_TEMPLATE_SID. Si la variable no existe o la llamada
-    a la API de Twilio falla, cae a un mensaje de texto plano para que
-    el flujo de ayuda nunca se rompa silenciosamente.
-
-    Args:
-        contact: Instancia de Contact — contacto destinatario.
-        from_number (str): Número Twilio origen (WhatsApp sender) en E.164.
-        to_number (str): Número del contacto destinatario en E.164.
+    Envía la plantilla quick-reply employee_help_menu al empleado.
+    Solo se llama cuando el contacto entrante tiene CompanyUser vinculado.
     """
-    import os
     from whatsapp.services import WhatsAppChatService
 
-    content_sid = os.environ.get("TWILIO_HELP_MENU_TEMPLATE_SID", "")
-
-    if content_sid:
-        try:
-            WhatsAppChatService.send_quick_reply(
-                from_number=from_number,
-                to_number=to_number,
-                content_sid=content_sid,
-                content_variables={},
-            )
-            logger.info(
-                "# [CHAT DISPATCH] Menú de ayuda enviado a %s — SID: %s",
-                to_number,
-                content_sid,
-            )
-            return
-        except Exception as exc:
-            logger.error(
-                "# [CHAT DISPATCH] Error enviando menú de ayuda a %s: %s — "
-                "activando fallback texto plano.",
-                to_number,
-                exc,
-            )
-    else:
-        logger.warning(
-            "# [CHAT DISPATCH] TWILIO_HELP_MENU_TEMPLATE_SID no configurado — "
-            "activando fallback texto plano."
-        )
-
-    # Fallback: plain-text menu when template is unavailable.
-    # Fallback: menú en texto plano cuando el template no está disponible.
     try:
-        WhatsAppChatService.send_reply(
+        WhatsAppChatService.send_quick_reply(
             from_number=from_number,
             to_number=to_number,
-            reply_text=(
-                "Hola 👋 ¿En qué podemos ayudarte?\n\n"
-                "1️⃣ Ver horarios\n"
-                "2️⃣ Hablar con alguien"
-            ),
+            content_sid=_EMPLOYEE_HELP_TEMPLATE_SID,
+            content_variables={},
         )
         logger.info(
-            "# [CHAT DISPATCH] Fallback texto plano de ayuda enviado a %s.",
+            "# [CHAT DISPATCH] Menú de ayuda de empleado enviado a %s.",
             to_number,
         )
     except Exception as exc:
         logger.error(
-            "# [CHAT DISPATCH] Error enviando fallback de ayuda a %s: %s",
+            "# [CHAT DISPATCH] Error enviando menú de ayuda de empleado a %s: %s",
             to_number,
             exc,
         )
@@ -331,23 +265,73 @@ def dispatch_inbound_message(
         )
         return DispatchResult(consumed=False)
 
-    # --- Rule 3b: Intercept help requests before any other logic. ---
-    # Evaluated after the SECTION room is confirmed to exist. Consumed
-    # immediately regardless of alias state or breakdown access.
-    # --- Regla 3b: Interceptar solicitudes de ayuda antes de cualquier otra lógica. ---
-    # Se evalúa tras confirmar que existe la sala SECTION. Se consume
-    # inmediatamente independientemente del estado de alias o acceso a BREAKDOWNS.
-    if _is_help_request(body):
-        _send_help_menu(
-            contact=contact,
-            from_number=to_number,
-            to_number=from_number,
-        )
-        logger.info(
-            "# [CHAT DISPATCH] Solicitud de ayuda detectada de %s — menú enviado.",
-            from_number,
-        )
-        return DispatchResult(consumed=True, room=room, contact=contact)
+    # --- Rule 3b: Intercept employee help requests and button responses. ---
+    # Fires only when the contact is linked to a CompanyUser (internal employee).
+    # Three cases handled:
+    #   1. body == 'ayuda'            -> send employee_help_menu quick-reply.
+    #   2. body == 'help_panel_link'  -> send panel URL.
+    #   3. body == 'help_password'    -> send username reminder.
+    # --- Regla 3b: Interceptar solicitudes de ayuda de empleados y respuestas de botón. ---
+    # Solo se activa cuando el contacto tiene CompanyUser vinculado.
+    # Tres casos gestionados:
+    #   1. body == 'ayuda'            -> envía quick-reply employee_help_menu.
+    #   2. body == 'help_panel_link'  -> envía URL del panel.
+    #   3. body == 'help_password'    -> envía recordatorio de usuario.
+    if contact.company_user_id and contact.company_user:
+        _body_norm = body.strip().lower()
+        _cu = contact.company_user
+        if _is_employee_help_request(body):
+            _send_employee_help_menu(
+                contact=contact,
+                from_number=to_number,
+                to_number=from_number,
+            )
+            logger.info(
+                "# [CHAT DISPATCH] Menú de ayuda de empleado enviado a %s.",
+                from_number,
+            )
+            return DispatchResult(consumed=True, room=room, contact=contact)
+
+        if _body_norm == "acceder al panel":
+            import os
+            from whatsapp.services import WhatsAppChatService
+            _panel_url = os.environ.get(
+                "PANEL_URL", "https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/"
+            )
+            try:
+                WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=(
+                        "📱 Accede al panel aquí:\n" + _panel_url
+                    ),
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [CHAT DISPATCH] Error enviando enlace de panel a %s: %s",
+                    from_number, exc,
+                )
+            return DispatchResult(consumed=True, room=room, contact=contact)
+
+        if _body_norm == "recordar contraseña":
+            from whatsapp.services import WhatsAppChatService
+            _username = _cu.user.username if _cu.user else ""
+            try:
+                WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=(
+                        "🔑 Tu usuario es: " + _username + "\n"
+                        "Si no recuerdas tu contraseña, contacta con tu administrador."
+                    ),
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [CHAT DISPATCH] Error enviando recordatorio de contraseña a %s: %s",
+                    from_number, exc,
+                )
+            return DispatchResult(consumed=True, room=room, contact=contact)
+
 
     # --- Rule 4: Handle alias collection if alias is missing. ---
     # --- Regla 4: Gestionar recogida de alias si falta el alias. ---

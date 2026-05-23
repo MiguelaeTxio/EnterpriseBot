@@ -78,6 +78,7 @@
 ./panel/templates/panel/blockedcallers/form.html
 ./panel/templates/panel/blockedcallers/confirm_delete.html
 ./panel/templates/panel/_zero_meter_modal.html
+./panel/templates/panel/trust_device.html
 ./panel/templates/panel/login.html
 ./panel/templates/panel/_confirm_save_modal.html
 ./panel/templates/panel/work_orders/_duplicates_fragment.html

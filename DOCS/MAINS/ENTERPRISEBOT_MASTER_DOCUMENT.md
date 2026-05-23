@@ -111,7 +111,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -160,7 +160,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Extracción desde documentos físicos existentes vía Gemini Vision si procede.
 - Integración con centros de gasto y módulo de Informes (Hito 9).
 
-### Hito 12: Gestión de Centros de Gasto y Reorganización del Panel (PAUSADO)
+### Hito 12: Gestión de Centros de Gasto y Reorganización del Panel (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md`)
 - Ampliacion del concepto MachineAsset a Centro de Gasto: maquinaria, administracion,
   almacen, alquiler, secciones externas y cualquier entidad facturable o asignable.

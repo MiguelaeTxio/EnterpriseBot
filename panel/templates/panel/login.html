@@ -91,6 +91,13 @@
         .login-signup-link:hover {
             text-decoration: underline;
         }
+        /* Trusted device quick-access mode — Modo acceso rápido dispositivo de confianza */
+        .login-trusted-label {
+            font-size: 0.85rem;
+        }
+        .login-trusted-switch {
+            font-size: 0.82rem;
+        }
     </style>
 </head>
 <body>
@@ -129,6 +136,28 @@
                     {% endfor %}
                 {% endif %}
 
+                {% if trusted_device_user %}
+                <!-- Modo acceso rápido — dispositivo de confianza detectado -->
+                <!-- Quick-access mode — trusted device detected -->
+                <div class="mb-3 text-center">
+                    <p class="text-muted mb-1 login-trusted-label">Dispositivo de confianza</p>
+                    <p class="fw-semibold mb-3">
+                        <i class="bi bi-person-circle me-1"></i>
+                        {{ trusted_device_user.get_full_name|default:trusted_device_user.username }}
+                    </p>
+                    <form method="post" action="{% url 'panel:trust_device_quick_login' %}">
+                        {% csrf_token %}
+                        <div class="d-grid mb-2">
+                            <button type="submit" class="btn btn-login">
+                                <i class="bi bi-shield-check me-2"></i>Entrar
+                            </button>
+                        </div>
+                    </form>
+                    <a href="{% url 'panel:login' %}?force_form=1" class="text-muted login-trusted-switch">
+                        <i class="bi bi-person-fill-x me-1"></i>Usar otro usuario
+                    </a>
+                </div>
+                {% else %}
                 <form method="post" action="{% url 'panel:login' %}">
                     {% csrf_token %}
                     {% if next %}
@@ -168,6 +197,7 @@
                         </button>
                     </div>
                 </form>
+                {% endif %}
 
                 <!-- Signup link for workshop operators — Enlace de registro para operarios de taller -->
                 <p class="login-footer-note">
