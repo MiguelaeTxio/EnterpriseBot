@@ -177,6 +177,19 @@ class CompanyUser(models.Model):
             "automáticamente al crear el usuario o cuando el ADMIN fuerza un reset."
         ),
     )
+    trusted_device_token = models.UUIDField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Token de dispositivo de confianza",
+        help_text=(
+            "UUID generado automáticamente cuando el usuario establece su "
+            "contraseña por primera vez. Se almacena en una cookie HttpOnly "
+            "firmada en el navegador del usuario para permitir el acceso "
+            "sin formulario de login desde ese dispositivo. "
+            "Anularlo fuerza al usuario a autenticarse de nuevo con contraseña."
+        ),
+    )
     phone = models.CharField(
         max_length=20,
         blank=True,

@@ -979,17 +979,56 @@ Incidencias on-fly resueltas en S033 (fuera del H7):
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesión (S038)
+## 5. Registro de Sesión S038 (2026-05-22)
 
-### NOTA DE ESTADO
-S037 completó la reordenación del sidebar (_nav_items.html): nuevo orden Mi perfil →
-IVR → WhatsApp → Administración → Analítica → Chat de Secciones → Operarios →
-Tickets de Avería. Sección renombrada de Taller a Operarios. Contactos y Secciones
-movidos de IVR a Administración. Configuración de jornada fusionada en Administración.
-Mi estado (Presencia) movido a Mi perfil. Desplegado en producción sin errores.
+### Ejecutado en S038
 
-Las validaciones E2E de incidencias S034/S035 se realizan en producción conforme
-se producen. No se listan como tareas pendientes de sesión.
+**S038 — Menú de Ayuda WhatsApp para Contactos de Sección + Dispositivo de Confianza**
+
+BLOQUE 1 — Menú de ayuda WhatsApp (PRIORIDAD 0 de S038):
+
+  - Diagnóstico de la Content API de Twilio: la autenticación correcta es
+    TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN (no API Key SID/Secret).
+    TWILIO_AUTH_TOKEN añadido al .env con valor correcto obtenido desde
+    la consola de Twilio.
+  - Plantilla `enterprisebot_help_menu` creada via Content API:
+      SID: HX60a55eb907abf6c06f4e825490ffd847
+      Tipo: twilio/quick-reply + twilio/text (fallback)
+      Cuerpo: "Hola 👋 ¿En qué podemos ayudarte?"
+      Botón 1 — id: help_schedules / título: "Ver horarios"
+      Botón 2 — id: help_agent   / título: "Hablar con alguien"
+      Estado WhatsApp: user-initiated OK (no requiere aprobación para nuestro caso).
+      TWILIO_HELP_MENU_TEMPLATE_SID añadido al .env.
+  - chat/services.py modificado (PMA):
+      Constante _HELP_VARIANTS (frozenset, O(1)) con variantes canónica,
+      duplicación vocal, transposición, fonética andaluza, puntuación,
+      inglés y sinónimos universales.
+      Helper _is_help_request(body) → bool.
+      Helper _send_help_menu(contact, from_number, to_number): envío
+      quick-reply via TWILIO_HELP_MENU_TEMPLATE_SID con fallback texto plano.
+      Regla 3b insertada en dispatch_inbound_message() entre Regla 3 y Regla 4:
+      intercepta la solicitud de ayuda antes de alias collection y breakdown
+      routing. Devuelve DispatchResult(consumed=True) inmediatamente.
+
+BLOQUE 2 — Dispositivo de confianza (incidencia S038, fuera de hoja de ruta original):
+
+  - ivr_config/models.py: campo trusted_device_token (UUIDField, null=True,
+    blank=True, default=None) añadido a CompanyUser.
+  - Migración ivr_config 0026_add_trusted_device_token aplicada en producción.
+  - panel/views.py modificado (PMA dos patchers):
+      PanelPasswordChangeView.post(): al limpiar must_change_password (_was_forced=True),
+      genera UUID4, lo persiste en CompanyUser.trusted_device_token y emite
+      cookie HttpOnly firmada "eb_trusted_device" (max_age=365 días, secure=True,
+      samesite=Lax) con payload {uid, tok} firmado via django.core.signing.
+      PanelLoginView.dispatch(): si el usuario no está autenticado y porta la
+      cookie "eb_trusted_device", valida firma, max_age, uid, tok contra BD
+      y autenticidad de CompanyUser (is_active=True, must_change_password=False,
+      trusted_device_token no nulo). Si válida, autentica directamente con
+      auth_login() y redirige al dashboard sin mostrar el formulario.
+
+---
+
+## 6. Hoja de Ruta para la Siguiente Sesión (S039)
 
 ### ADVERTENCIAS CRÍTICAS — mantener siempre presentes
 
@@ -1026,26 +1065,45 @@ se producen. No se listan como tareas pendientes de sesión.
   CompanyUserUpdateView.post(): fuerza is_active=True para WORKSHOP/DRIVER
   antes de super().post(). No revertir.
 
-### PRIORIDAD 0 — Menú de ayuda WhatsApp para contactos de sección
+  trusted_device_token (UUIDField, null=True) en CompanyUser — migración
+  ivr_config 0026_add_trusted_device_token aplicada.
+  Cookie "eb_trusted_device": HttpOnly, secure, samesite=Lax, max_age=365 días,
+  payload {uid, tok} firmado con django.core.signing.
+  La cookie se emite ÚNICAMENTE en el primer cambio obligatorio de contraseña
+  (_was_forced=True). Para usuarios que ya establecieron contraseña en el pasado
+  existe una tarea pendiente en S039 (ver PRIORIDAD 1 abajo).
 
-  Implementar un sistema de ayuda conversacional vía WhatsApp para contactos
-  de salas SECTION (no BREAKDOWNS). Cuando un contacto escriba cualquier
-  variante de "ayuda" (incluyendo errores ortográficos como "halluda", "ayuuda",
-  etc.), el sistema interrumpe el flujo normal y presenta un menú de dos opciones.
+### PRIORIDAD 0 — Validación E2E del menú de ayuda WhatsApp
 
-  Estado actual al cierre de S037: diseño completo acordado, implementación
-  pendiente. La creación de la plantilla Twilio quedó sin completar por
-  dificultades con las credenciales de la Content API.
-     guardar parte digital sin horario individual y verificar que Gate 4 aplica
-     el horario de sección como segundo nivel de prioridad.
+  Validar en producción el flujo completo del menú de ayuda:
+  1. Un contacto de sección escribe "ayuda" (y al menos dos variantes: "halluda",
+     "ayuuda") desde WhatsApp.
+  2. El sistema responde con el quick-reply de dos botones sin disparar el
+     flujo de alias collection ni breakdown routing.
+  3. El contacto pulsa cada botón y se verifica que el id devuelto
+     ("help_schedules" / "help_agent") llega correctamente al webhook.
+  Nota: la gestión de la respuesta al botón (enrutamiento posterior según
+  la opción elegida) NO está implementada aún — queda para una sesión futura.
+  En S039 solo se valida que el menú se envía y los ids se reciben.
 
-  5. Edición de usuario desde sección: cambiar teléfono, cambiar sección asignada
-     y verificar que la redirección vuelve a la sección de origen.
+### PRIORIDAD 1 — Dispositivo de confianza: checkbox en cambio voluntario de contraseña
 
-  6. Alta de nuevo trabajador desde panel inline de sección con horario asignado:
-     verificar que el trabajador aparece en la tabla con el horario correcto y
-     que su Contact queda inscrito en el M2M de la sección.
+  Los usuarios que establecieron su contraseña antes de S038 tienen
+  trusted_device_token=None y nunca pasarán por el flujo _was_forced=True.
+  Para que puedan marcar su dispositivo actual como de confianza se añade
+  un checkbox opcional "Recordar este dispositivo" en el formulario de cambio
+  voluntario de contraseña (PanelPasswordChangeView, rama is_forced=False).
 
-  7. Guardar sección con trabajadores WORKSHOP asignados: verificar que los
-     trabajadores persisten en la tabla tras el guardado (fix M2M _worker_contacts).
+  Archivos a modificar:
+    - panel/views.py: PanelPasswordChangeView.post() — si el formulario es
+      voluntario (not _was_forced) y el POST contiene "trust_device"=on,
+      generar UUID4, persistir en trusted_device_token y emitir la cookie
+      con la misma lógica que el flujo forzado.
+    - panel/templates/panel/password/change.html: añadir checkbox
+      "Recordar este dispositivo" visible únicamente cuando is_forced=False.
+
+  Criterio de éxito: un usuario con contraseña ya establecida marca el
+  checkbox, cambia (o no cambia, si se decide exponer el checkbox sin
+  obligar al cambio) su contraseña y el dispositivo queda como de confianza
+  — accede al panel sin formulario de login en la siguiente visita.
 

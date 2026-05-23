@@ -116,6 +116,128 @@ class DispatchResult:
 
 
 # ---------------------------------------------------------------------------
+# HELP REQUEST DETECTION
+# Detección de solicitud de ayuda — menú de dos opciones vía quick-reply.
+# ---------------------------------------------------------------------------
+
+# Canonical set of normalised body variants that trigger the help menu.
+# Includes common misspellings, vocal duplications, phonetic variants and
+# synonyms. Detection is O(1) via frozenset membership.
+# Conjunto canónico de variantes normalizadas del body que activan el menú
+# de ayuda. Incluye errores ortográficos comunes, vocales duplicadas,
+# variantes fonéticas y sinónimos. Detección O(1) por pertenencia a frozenset.
+_HELP_VARIANTS: frozenset = frozenset({
+    # canonical / canónica
+    "ayuda",
+    # vocal duplication / vocal duplicada
+    "ayuuda", "ayudaa", "ayudaaa", "ayuudaa",
+    # transposition / omission / transposición / omisión
+    "ayda", "aydua", "ayuta", "ayua", "ayud",
+    # aspirated h, Andalusian phonetics / h aspirada, fonética andaluza
+    "halluda", "haluda", "hayuda",
+    # punctuation variants / variantes con puntuación
+    "ayuda!", "ayuda?", "¡ayuda!", "¿ayuda?",
+    "?ayuda", "!ayuda",
+    # English / inglés
+    "help", "help!",
+    # universal synonyms / sinónimos universales
+    "socorro", "auxilio", "sos",
+    # article + noun / artículo + sustantivo
+    "necesito ayuda", "quiero ayuda", "dame ayuda",
+    "pedir ayuda", "pide ayuda",
+})
+
+
+def _is_help_request(body: str) -> bool:
+    """
+    Returns True when the normalised body matches any variant in _HELP_VARIANTS.
+    Normalisation: strip whitespace and convert to lowercase.
+    ---
+    Devuelve True cuando el body normalizado coincide con alguna variante
+    de _HELP_VARIANTS. Normalización: eliminar espacios y convertir a minúsculas.
+    """
+    return body.strip().lower() in _HELP_VARIANTS
+
+
+def _send_help_menu(
+    contact,
+    from_number: str,
+    to_number: str,
+) -> None:
+    """
+    Sends the enterprisebot_help_menu quick-reply template to the contact.
+    The template SID is read from the TWILIO_HELP_MENU_TEMPLATE_SID environment
+    variable. Falls back to a plain-text message if the env var is missing or
+    the Twilio API call fails, so the help flow is never silently broken.
+    ---
+    Envía el template quick-reply enterprisebot_help_menu al contacto.
+    El SID del template se lee de la variable de entorno
+    TWILIO_HELP_MENU_TEMPLATE_SID. Si la variable no existe o la llamada
+    a la API de Twilio falla, cae a un mensaje de texto plano para que
+    el flujo de ayuda nunca se rompa silenciosamente.
+
+    Args:
+        contact: Instancia de Contact — contacto destinatario.
+        from_number (str): Número Twilio origen (WhatsApp sender) en E.164.
+        to_number (str): Número del contacto destinatario en E.164.
+    """
+    import os
+    from whatsapp.services import WhatsAppChatService
+
+    content_sid = os.environ.get("TWILIO_HELP_MENU_TEMPLATE_SID", "")
+
+    if content_sid:
+        try:
+            WhatsAppChatService.send_quick_reply(
+                from_number=from_number,
+                to_number=to_number,
+                content_sid=content_sid,
+                content_variables={},
+            )
+            logger.info(
+                "# [CHAT DISPATCH] Menú de ayuda enviado a %s — SID: %s",
+                to_number,
+                content_sid,
+            )
+            return
+        except Exception as exc:
+            logger.error(
+                "# [CHAT DISPATCH] Error enviando menú de ayuda a %s: %s — "
+                "activando fallback texto plano.",
+                to_number,
+                exc,
+            )
+    else:
+        logger.warning(
+            "# [CHAT DISPATCH] TWILIO_HELP_MENU_TEMPLATE_SID no configurado — "
+            "activando fallback texto plano."
+        )
+
+    # Fallback: plain-text menu when template is unavailable.
+    # Fallback: menú en texto plano cuando el template no está disponible.
+    try:
+        WhatsAppChatService.send_reply(
+            from_number=from_number,
+            to_number=to_number,
+            reply_text=(
+                "Hola 👋 ¿En qué podemos ayudarte?\n\n"
+                "1️⃣ Ver horarios\n"
+                "2️⃣ Hablar con alguien"
+            ),
+        )
+        logger.info(
+            "# [CHAT DISPATCH] Fallback texto plano de ayuda enviado a %s.",
+            to_number,
+        )
+    except Exception as exc:
+        logger.error(
+            "# [CHAT DISPATCH] Error enviando fallback de ayuda a %s: %s",
+            to_number,
+            exc,
+        )
+
+
+# ---------------------------------------------------------------------------
 # PUBLIC ENTRY POINT
 # Punto de entrada público.
 # ---------------------------------------------------------------------------
@@ -208,6 +330,24 @@ def dispatch_inbound_message(
             company.name,
         )
         return DispatchResult(consumed=False)
+
+    # --- Rule 3b: Intercept help requests before any other logic. ---
+    # Evaluated after the SECTION room is confirmed to exist. Consumed
+    # immediately regardless of alias state or breakdown access.
+    # --- Regla 3b: Interceptar solicitudes de ayuda antes de cualquier otra lógica. ---
+    # Se evalúa tras confirmar que existe la sala SECTION. Se consume
+    # inmediatamente independientemente del estado de alias o acceso a BREAKDOWNS.
+    if _is_help_request(body):
+        _send_help_menu(
+            contact=contact,
+            from_number=to_number,
+            to_number=from_number,
+        )
+        logger.info(
+            "# [CHAT DISPATCH] Solicitud de ayuda detectada de %s — menú enviado.",
+            from_number,
+        )
+        return DispatchResult(consumed=True, room=room, contact=contact)
 
     # --- Rule 4: Handle alias collection if alias is missing. ---
     # --- Regla 4: Gestionar recogida de alias si falta el alias. ---

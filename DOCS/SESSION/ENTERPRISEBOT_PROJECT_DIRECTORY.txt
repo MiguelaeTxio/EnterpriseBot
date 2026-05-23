@@ -304,6 +304,7 @@
 ./ivr_config/models.py
 ./ivr_config/migrations/0017_workdayschedule_refactor_multiprofile.py
 ./ivr_config/migrations/0022_contact_alias_onboarding_state.py
+./ivr_config/migrations/0026_add_trusted_device_token.py
 ./ivr_config/migrations/0018_workdayschedule_season_split_times.py
 ./ivr_config/migrations/0013_alter_companyuser_role.py
 ./ivr_config/migrations/0014_companyuser_dni_companyuser_phone.py

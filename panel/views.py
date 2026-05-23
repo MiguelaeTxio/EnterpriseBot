@@ -2761,11 +2761,59 @@ class PanelLoginView(LoginView):
     def dispatch(self, request, *args, **kwargs):
         """
         Redirect authenticated CompanyUser accounts directly to the dashboard.
+        If the user carries a valid trusted-device cookie, authenticate them
+        directly without showing the login form.
         Superusers and users without CompanyUser proceed to the login form normally.
         ---
         Redirige las cuentas CompanyUser autenticadas directamente al dashboard.
+        Si el usuario porta una cookie de dispositivo de confianza válida, lo
+        autentica directamente sin mostrar el formulario de login.
         Los superusuarios y usuarios sin CompanyUser acceden al formulario normalmente.
         """
+        from django.contrib.auth import login as auth_login
+        from django.contrib.auth import get_user_model
+        from django.core import signing
+        from django.shortcuts import redirect
+        from ivr_config.models import CompanyUser as _CU
+
+        # --- Trusted-device cookie check (unauthenticated users only). ---
+        # --- Comprobación de cookie de dispositivo de confianza (solo no autenticados). ---
+        if not request.user.is_authenticated:
+            _raw = request.COOKIES.get("eb_trusted_device", "")
+            if _raw:
+                try:
+                    _payload = signing.loads(
+                        _raw,
+                        max_age=365 * 24 * 3600,
+                    )
+                    _user_id     = _payload.get("uid")
+                    _device_token = _payload.get("tok")
+                    User = get_user_model()
+                    _user = User.objects.select_related("company_user").get(pk=_user_id)
+                    _cu   = getattr(_user, "company_user", None)
+                    if (
+                        _cu is not None
+                        and _cu.is_active
+                        and not _cu.must_change_password
+                        and _cu.trusted_device_token is not None
+                        and str(_cu.trusted_device_token) == str(_device_token)
+                    ):
+                        auth_login(
+                            request,
+                            _user,
+                            backend="django.contrib.auth.backends.ModelBackend",
+                        )
+                        logger.info(
+                            "# [TRUSTED DEVICE] Acceso directo concedido a usuario pk=%s "
+                            "desde dispositivo de confianza.",
+                            _user.pk,
+                        )
+                        return redirect(self.next_page)
+                except Exception as _exc:
+                    logger.debug(
+                        "# [TRUSTED DEVICE] Cookie inválida o expirada: %s", _exc
+                    )
+
         # Only redirect if authenticated AND has an active CompanyUser linked.
         # Solo redirigir si está autenticado Y tiene un CompanyUser activo vinculado.
         if request.user.is_authenticated:
@@ -3088,11 +3136,45 @@ class PanelPasswordChangeView(CompanyUserRequiredMixin, View):
             form.save()
             update_session_auth_hash(request, form.user)
             cu = request.user.company_user
+            _was_forced = cu.must_change_password
             if cu.must_change_password:
                 cu.must_change_password = False
                 cu.save(update_fields=["must_change_password"])
             django_messages.success(request, "Contraseña actualizada correctamente.")
-            return redirect("/panel/")
+
+            # --- Emit trusted-device cookie on first mandatory password change. ---
+            # Generate a new UUID token, persist it in CompanyUser and store it
+            # in a signed HttpOnly cookie valid for 365 days. This allows the
+            # browser to bypass the login form on future visits from this device.
+            # --- Emitir cookie de dispositivo de confianza en el primer cambio obligatorio. ---
+            # Se genera un UUID, se persiste en CompanyUser y se almacena en una
+            # cookie HttpOnly firmada válida 365 días. Permite al navegador omitir
+            # el formulario de login en visitas futuras desde este dispositivo.
+            response = redirect("/panel/")
+            if _was_forced:
+                import uuid as _uuid
+                from django.core import signing as _signing
+                _token = _uuid.uuid4()
+                cu.trusted_device_token = _token
+                cu.save(update_fields=["trusted_device_token"])
+                _payload  = {"uid": request.user.pk, "tok": str(_token)}
+                _signed   = _signing.dumps(_payload)
+                _max_age  = 365 * 24 * 3600
+                response.set_cookie(
+                    key="eb_trusted_device",
+                    value=_signed,
+                    max_age=_max_age,
+                    httponly=True,
+                    secure=True,
+                    samesite="Lax",
+                )
+                logger.info(
+                    "# [TRUSTED DEVICE] Cookie emitida para usuario pk=%s — "
+                    "token=%s.",
+                    request.user.pk,
+                    _token,
+                )
+            return response
         return render(request, self.template_name, self._get_context(request, form))
 
 
