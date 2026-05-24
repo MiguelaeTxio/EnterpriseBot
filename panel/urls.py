@@ -58,6 +58,7 @@ from panel.views import (
     WorkOrderDuplicateDeleteView,
     AnalyticsView,
     AnalyticsDataView,
+    BotManagementView,
     AnalyticsProfileListCreateView,
     AnalyticsProfileDeleteView,
     OperatorDashboardView,
@@ -354,4 +355,7 @@ urlpatterns = [
 
     # Trust device quick login — Acceso rápido desde login con cookie (S039).
     path("trust-device/quick-login/", TrustDeviceQuickLoginView.as_view(), name="trust_device_quick_login"),
+
+    # Bot management — Panel de gestión del bot WhatsApp (Hito 13 Paso 17+).
+    path("bot/", BotManagementView.as_view(), name="bot_management"),
 ]

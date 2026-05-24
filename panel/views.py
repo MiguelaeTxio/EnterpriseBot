@@ -14236,37 +14236,200 @@ class OwnProfileView(CompanyUserRequiredMixin, View):
             "active_nav":   "own_profile",
         })
 
-    def post(self, request, *args, **kwargs):
-        """
-        Validates and saves the new alias for the authenticated CompanyUser.
-        On success: saves and redirects back to the profile page with a
-        success message. On error: re-renders the form with validation errors.
-        ---
-        Valida y guarda el nuevo alias del CompanyUser autenticado.
-        En éxito: guarda y redirige a la página de perfil con mensaje de éxito.
-        En error: re-renderiza el formulario con los errores de validación.
-        """
-        from panel.forms import OwnProfileForm
-        company_user = request.user.company_user
-        form         = OwnProfileForm(request.POST, company_user=company_user)
 
-        if form.is_valid():
-            company_user.alias = form.cleaned_data["alias"]
-            company_user.save(update_fields=["alias"])
-            logger.info(
-                "# [OWN PROFILE] CompanyUser pk=%s alias actualizado a '%s'.",
-                company_user.pk,
-                company_user.alias,
+# ===========================================================================
+# BOT MANAGEMENT
+# ===========================================================================
+
+class BotManagementView(CompanyUserRequiredMixin, View):
+    """
+    Central management dashboard for the WhatsApp bot.
+    Provides four functional blocks:
+      1. Section onboarding — triggers the onboarding flow for all
+         Contacts in a selected Section that have not yet completed it.
+      2. Group broadcast — sends a free-form message to one or both
+         WhatsApp workshop groups (Mechanical / Elevation) via the
+         Meta Cloud API Groups API.
+      3. 1-to-1 broadcast — sends a free-form message individually
+         to a selected set of Contacts via the Meta Cloud API.
+      4. Breakdown ticket viewer — lists active BreakdownTickets filtered
+         by the authenticated user's workshop family. ADMIN and SUPERVISOR
+         see all tickets with a family selector. WORKSHOPBOSS sees only
+         their own family. WORKSHOP sees the family of the WORKSHOPBOSS
+         assigned to their section.
+    Access: ADMIN (all blocks), SUPERVISOR (viewer only),
+    WORKSHOPBOSS and WORKSHOP (viewer only).
+    ---
+    Panel central de gestión del bot de WhatsApp.
+    Proporciona cuatro bloques funcionales:
+      1. Onboarding por sección — dispara el flujo de onboarding para todos
+         los Contacts de una Section seleccionada que no lo hayan completado.
+      2. Circular a grupos — envía un mensaje libre a uno o ambos grupos
+         WhatsApp de taller (Mecánico / Elevación) via Meta Cloud API Groups API.
+      3. Circular 1:1 — envía un mensaje libre individualmente a un conjunto
+         de Contacts seleccionados via Meta Cloud API.
+      4. Visor de averías — lista los BreakdownTickets activos filtrados
+         por la familia de taller del usuario autenticado. ADMIN y SUPERVISOR
+         ven todos los tickets con selector de familia. WORKSHOPBOSS ve solo
+         su familia. WORKSHOP ve la familia del WORKSHOPBOSS asignado a su sección.
+    Acceso: ADMIN (todos los bloques), SUPERVISOR (solo visor),
+    WORKSHOPBOSS y WORKSHOP (solo visor).
+    """
+
+    template_name = "panel/bot/dashboard.html"
+
+    # ------------------------------------------------------------------
+    # Access control
+    # Control de acceso
+    # ------------------------------------------------------------------
+    ALLOWED_ROLES = {
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_SUPERVISOR,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+        CompanyUser.ROLE_WORKSHOP,
+    }
+
+    def _get_workshop_family_for_user(self, company_user):
+        """
+        Resolves the workshop family visible to the authenticated user.
+        - ADMIN / SUPERVISOR: None (sees all, frontend applies selector).
+        - WORKSHOPBOSS: their own workshop_family.
+        - WORKSHOP: workshop_family of the WORKSHOPBOSS assigned to their
+          section, resolved via Section → WORKSHOPBOSS chain.
+        Returns None if no family can be resolved (tickets hidden).
+        ---
+        Resuelve la familia de taller visible para el usuario autenticado.
+        - ADMIN / SUPERVISOR: None (ve todas, el frontend aplica el selector).
+        - WORKSHOPBOSS: su propia workshop_family.
+        - WORKSHOP: workshop_family del WORKSHOPBOSS asignado a su sección,
+          resuelta via cadena Section → WORKSHOPBOSS.
+        Devuelve None si no se puede resolver ninguna familia (tickets ocultos).
+        """
+        role = company_user.role
+        if role in (CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR):
+            return None
+        if role == CompanyUser.ROLE_WORKSHOPBOSS:
+            return company_user.workshop_family
+        if role == CompanyUser.ROLE_WORKSHOP:
+            # Resolve via the section the operator belongs to.
+            # Resolver via la sección a la que pertenece el operario.
+            from ivr_config.models import SectionContact
+            section_contact = (
+                SectionContact.objects
+                .filter(
+                    contact__company_user=company_user,
+                    section__company=company_user.company,
+                )
+                .select_related("section")
+                .first()
             )
-            django_messages.success(
-                request,
-                "Alias de chat actualizado correctamente.",
+            if not section_contact:
+                return None
+            boss = (
+                CompanyUser.objects
+                .filter(
+                    company=company_user.company,
+                    role=CompanyUser.ROLE_WORKSHOPBOSS,
+                    workshop_family__isnull=False,
+                )
+                .first()
             )
-            return redirect("panel:own_profile")
+            return boss.workshop_family if boss else None
+        return None
+
+    def _get_breakdown_tickets(self, company_user, family_filter=None):
+        """
+        Returns a queryset of active BreakdownTickets for the given company,
+        filtered by workshop family when family_filter is provided.
+        ADMIN and SUPERVISOR may pass an explicit family_filter from the
+        GET parameter; other roles always use their resolved family.
+        ---
+        Devuelve un queryset de BreakdownTickets activos para la empresa dada,
+        filtrado por familia de taller cuando se proporciona family_filter.
+        ADMIN y SUPERVISOR pueden pasar un family_filter explícito desde el
+        parámetro GET; otros roles siempre usan su familia resuelta.
+        """
+        from chat.models import BreakdownTicket
+        from ivr_config.models import WorkshopFamilyMapping
+        qs = (
+            BreakdownTicket.objects
+            .filter(room__company=company_user.company)
+            .exclude(status=BreakdownTicket.STATUS_RESOLVED)
+            .select_related("machine", "contact", "assigned_to")
+            .order_by("-created_at")
+        )
+        if family_filter:
+            # Resolve catalogue families that map to the requested workshop family.
+            # Resolver las familias de catálogo que mapean a la familia de taller solicitada.
+            mapped_families = list(
+                WorkshopFamilyMapping.objects
+                .filter(
+                    company=company_user.company,
+                    workshop_family=family_filter,
+                )
+                .values_list("catalogue_family", flat=True)
+            )
+            if mapped_families:
+                qs = qs.filter(machine__family__in=mapped_families)
+            else:
+                qs = qs.none()
+        return qs
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the bot management dashboard with context data for all four
+        functional blocks. Applies role-based visibility rules.
+        ---
+        Renderiza el panel de gestión del bot con datos de contexto para los
+        cuatro bloques funcionales. Aplica las reglas de visibilidad por rol.
+        """
+        company_user = request.user.company_user
+        if company_user.role not in self.ALLOWED_ROLES:
+            return redirect("panel:dashboard")
+
+        is_admin = company_user.role == CompanyUser.ROLE_ADMIN
+        is_supervisor = company_user.role == CompanyUser.ROLE_SUPERVISOR
+        can_manage = is_admin
+
+        # -- Breakdown ticket viewer --
+        # -- Visor de tickets de avería --
+        resolved_family = self._get_workshop_family_for_user(company_user)
+        family_filter = resolved_family
+        if is_admin or is_supervisor:
+            # ADMIN/SUPERVISOR may filter by family via GET param.
+            # ADMIN/SUPERVISOR pueden filtrar por familia via parámetro GET.
+            family_filter = request.GET.get("family", None) or None
+
+        breakdown_tickets = self._get_breakdown_tickets(company_user, family_filter)
+
+        # -- Sections for onboarding selector (ADMIN only) --
+        # -- Secciones para el selector de onboarding (solo ADMIN) --
+        # All company sections regardless of IVR active status.
+        # Todas las secciones de la empresa independientemente del estado IVR.
+        from ivr_config.models import Section
+        sections = (
+            Section.objects
+            .filter(company=company_user.company)
+            .order_by("name")
+            if can_manage else []
+        )
+
+        # -- Workshop family choices for family selector (ADMIN/SUPERVISOR) --
+        # -- Opciones de familia para el selector (ADMIN/SUPERVISOR) --
+        family_choices = (
+            CompanyUser.WORKSHOP_FAMILY_CHOICES
+            if (is_admin or is_supervisor) else []
+        )
 
         return render(request, self.template_name, {
-            "form":         form,
-            "company_user": company_user,
-            "own_presence": self._get_own_presence(company_user),
-            "active_nav":   "own_profile",
+            "active_nav":        "bot_management",
+            "can_manage":        can_manage,
+            "is_admin":          is_admin,
+            "is_supervisor":     is_supervisor,
+            "sections":          sections,
+            "breakdown_tickets": breakdown_tickets,
+            "family_choices":    family_choices,
+            "family_filter":     family_filter,
+            "company_user":      company_user,
         })
+

@@ -1,0 +1,228 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/bot/dashboard.html #}
+{# Panel de gestión del bot WhatsApp — Hito 13 Paso 17+                               #}
+{# Bot management dashboard — Hito 13 Paso 17+                                        #}
+{% extends "panel/base.html" %}
+
+{% block title %}Gestión del Bot WhatsApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <h2 class="mb-4">
+    <i class="bi bi-robot me-2"></i>Gestión del Bot WhatsApp
+  </h2>
+
+  {# ------------------------------------------------------------------ #}
+  {# BLOQUE 1 — Onboarding por sección (solo ADMIN)                      #}
+  {# BLOCK 1 — Section onboarding (ADMIN only)                           #}
+  {# ------------------------------------------------------------------ #}
+  {% if can_manage %}
+  <div class="card mb-4">
+    <div class="card-header fw-semibold">
+      <i class="bi bi-person-check me-2"></i>Onboarding por sección
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Lanza el flujo de onboarding para todos los contactos de una sección
+        que aún no lo hayan completado.
+      </p>
+      <form method="post" action="{% url 'panel:bot_management' %}">
+        {% csrf_token %}
+        <div class="row g-2 align-items-end">
+          <div class="col-md-5">
+            <label for="onboarding_section" class="form-label">Sección</label>
+            <select name="section_id" id="onboarding_section" class="form-select" required>
+              <option value="">— Selecciona una sección —</option>
+              {% for section in sections %}
+              <option value="{{ section.pk }}">{{ section.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-send me-1"></i>Lanzar onboarding
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  {# BLOQUE 2 — Circular a grupos WhatsApp (solo ADMIN)                  #}
+  {# BLOCK 2 — Group broadcast (ADMIN only)                              #}
+  {# ------------------------------------------------------------------ #}
+  <div class="card mb-4">
+    <div class="card-header fw-semibold">
+      <i class="bi bi-broadcast me-2"></i>Circular a grupos de taller
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Envía un mensaje a uno o ambos grupos WhatsApp de taller vía Meta Cloud API.
+      </p>
+      <form method="post" action="{% url 'panel:bot_management' %}">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label">Grupos destinatarios</label>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="groups" value="MECHANICAL" id="grp_mechanical">
+            <label class="form-check-label" for="grp_mechanical">Taller Mecánico</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="groups" value="ELEVATION" id="grp_elevation">
+            <label class="form-check-label" for="grp_elevation">Taller Elevación</label>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label for="group_message" class="form-label">Mensaje</label>
+          <textarea name="message" id="group_message" class="form-control" rows="3"
+                    placeholder="Escribe el mensaje para el grupo..." required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-send me-1"></i>Enviar al grupo
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  {# BLOQUE 3 — Circular 1:1 (solo ADMIN)                               #}
+  {# BLOCK 3 — 1-to-1 broadcast (ADMIN only)                            #}
+  {# ------------------------------------------------------------------ #}
+  <div class="card mb-4">
+    <div class="card-header fw-semibold">
+      <i class="bi bi-chat-dots me-2"></i>Circular 1:1
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Envía un mensaje individual a uno o varios contactos vía Meta Cloud API.
+      </p>
+      <form method="post" action="{% url 'panel:bot_management' %}">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label for="direct_section" class="form-label">Filtrar por sección</label>
+          <select name="section_id" id="direct_section" class="form-select">
+            <option value="">— Todos los contactos —</option>
+            {% for section in sections %}
+            <option value="{{ section.pk }}">{{ section.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="direct_message" class="form-label">Mensaje</label>
+          <textarea name="message" id="direct_message" class="form-control" rows="3"
+                    placeholder="Escribe el mensaje individual..." required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-send me-1"></i>Enviar 1:1
+        </button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  {# BLOQUE 4 — Visor de averías                                         #}
+  {# BLOCK 4 — Breakdown ticket viewer                                   #}
+  {# ------------------------------------------------------------------ #}
+  <div class="card mb-4">
+    <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-exclamation-triangle me-2"></i>Averías activas</span>
+      {% if is_admin or is_supervisor %}
+      <form method="get" class="d-flex gap-2 align-items-center mb-0">
+        <select name="family" class="form-select form-select-sm w-auto"
+                onchange="this.form.submit()">
+          <option value="">— Todos los talleres —</option>
+          {% for value, label in family_choices %}
+          <option value="{{ value }}" {% if family_filter == value %}selected{% endif %}>
+            {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+    </div>
+    <div class="card-body p-0">
+      {% if breakdown_tickets %}
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>#</th>
+              <th>Máquina</th>
+              <th>Descripción</th>
+              <th>Urgencia</th>
+              <th>Reportado por</th>
+              <th>Asignado a</th>
+              <th>Estado</th>
+              <th>Fecha</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ticket in breakdown_tickets %}
+            <tr>
+              <td class="text-muted small">{{ ticket.pk }}</td>
+              <td>
+                {% if ticket.machine_asset %}
+                  {{ ticket.machine_asset.code }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="small">{{ ticket.description|truncatechars:60 }}</td>
+              <td>
+                <span class="badge
+                  {% if ticket.urgency == 'CRITICAL' %}bg-danger
+                  {% elif ticket.urgency == 'HIGH' %}bg-warning text-dark
+                  {% elif ticket.urgency == 'MEDIUM' %}bg-info text-dark
+                  {% else %}bg-secondary{% endif %}">
+                  {{ ticket.get_urgency_display }}
+                </span>
+              </td>
+              <td class="small">
+                {% if ticket.reported_by_contact %}
+                  {{ ticket.reported_by_contact.alias|default:ticket.reported_by_contact.name }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                {% if ticket.assigned_to %}
+                  {{ ticket.assigned_to.alias|default:ticket.assigned_to.user.username }}
+                {% else %}
+                  <span class="text-muted">Sin asignar</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge
+                  {% if ticket.status == 'OPEN' %}bg-danger
+                  {% elif ticket.status == 'ASSIGNED' %}bg-warning text-dark
+                  {% elif ticket.status == 'IN_PROGRESS' %}bg-primary
+                  {% else %}bg-secondary{% endif %}">
+                  {{ ticket.get_status_display }}
+                </span>
+              </td>
+              <td class="small text-muted">{{ ticket.created_at|date:"d/m/Y H:i" }}</td>
+              <td>
+                <a href="{% url 'panel:breakdown_ticket_detail' ticket.pk %}"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-4 text-center text-muted">
+        <i class="bi bi-check-circle fs-3 d-block mb-2"></i>
+        No hay averías activas en este momento.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

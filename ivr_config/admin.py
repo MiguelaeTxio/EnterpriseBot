@@ -28,6 +28,7 @@ from .models import (
     Section,
     SectionContact,
     TransferAttempt,
+    WorkshopFamilyMapping,
 )
 
 
@@ -370,3 +371,34 @@ class CallDataCaptureAdmin(admin.ModelAdmin):
         "whatsapp_sent_at",
     )
     ordering = ("-captured_at",)
+
+
+# ---------------------------------------------------------------------------
+# WORKSHOP FAMILY MAPPING
+# ---------------------------------------------------------------------------
+
+@admin.register(WorkshopFamilyMapping)
+class WorkshopFamilyMappingAdmin(admin.ModelAdmin):
+    """
+    Admin interface for the WorkshopFamilyMapping model.
+    Allows superusers to configure which MachineAsset catalogue families
+    route to each workshop group (MECHANICAL or ELEVATION) without code changes.
+    ---
+    Interfaz de administración para el modelo WorkshopFamilyMapping.
+    Permite a los superusuarios configurar qué familias del catálogo de
+    MachineAsset se enrutan a cada grupo de taller (MECHANICAL o ELEVATION)
+    sin necesidad de cambios en el código.
+    """
+
+    list_display  = (
+        "catalogue_family",
+        "company",
+        "workshop_family",
+        "notes",
+        "created_at",
+        "updated_at",
+    )
+    list_filter   = ("workshop_family", "company")
+    search_fields = ("catalogue_family", "company__name", "notes")
+    readonly_fields = ("created_at", "updated_at")
+    ordering = ("company__name", "catalogue_family")

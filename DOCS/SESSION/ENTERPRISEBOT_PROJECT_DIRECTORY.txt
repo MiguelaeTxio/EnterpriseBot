@@ -93,6 +93,7 @@
 ./panel/templates/panel/work_orders/_entry_group_fragment.html
 ./panel/templates/panel/work_orders/_review_badge_fragment.html
 ./panel/templates/panel/work_orders/digital_list.html
+./panel/templates/panel/bot/dashboard.html
 ./panel/templates/panel/_description_typeahead.html
 ./panel/templates/panel/_tour_driver_cdn.html
 ./panel/templates/panel/operator/history.html
@@ -325,6 +326,7 @@
 ./ivr_config/migrations/0005_corporatevoiceprofile_add_voice_name.py
 ./ivr_config/migrations/0012_callflow_backup_name.py
 ./ivr_config/migrations/0016_workdayschedule_absencecategory.py
+./ivr_config/migrations/0027_companyuser_workshop_family_workshopfamilymapping.py
 ./ivr_config/migrations/0021_section_default_role.py
 ./ivr_config/migrations/0002_phonenumber_capabilities.py
 ./ivr_config/migrations/0001_initial.py

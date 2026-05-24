@@ -238,6 +238,33 @@ class CompanyUser(models.Model):
             "los mensajes recibidos por WhatsApp."
         ),
     )
+
+    # ------------------------------------------------------------------
+    # Workshop family — only relevant for WORKSHOPBOSS role.
+    # Familia de taller — solo relevante para el rol WORKSHOPBOSS.
+    # ------------------------------------------------------------------
+    WORKSHOP_FAMILY_MECHANICAL = "MECHANICAL"
+    WORKSHOP_FAMILY_ELEVATION  = "ELEVATION"
+    WORKSHOP_FAMILY_CHOICES = [
+        (WORKSHOP_FAMILY_MECHANICAL, "Taller Mecánico"),
+        (WORKSHOP_FAMILY_ELEVATION,  "Taller Elevación"),
+    ]
+
+    workshop_family = models.CharField(
+        max_length=20,
+        choices=WORKSHOP_FAMILY_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Familia de taller",
+        help_text=(
+            "Solo aplica para el rol WORKSHOPBOSS. "
+            "Determina qué familia de centros de gasto gestiona este jefe de taller "
+            "y qué tickets de avería le son visibles y asignables. "
+            "MECHANICAL: camiones, grúas y maquinaria pesada. "
+            "ELEVATION: carretillas y plataformas elevadoras."
+        ),
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -2219,3 +2246,92 @@ class AbsenceCategory(models.Model):
         status = "" if self.is_active else " [inactiva]"
         return f"{self.company.name} — {self.label}{status}"
 
+
+# ---------------------------------------------------------------------------
+# 20. WORKSHOP FAMILY MAPPING — Catalogue-family → workshop-family routing.
+#     Mapeo de familia de catálogo a familia de taller para routing automático.
+# ---------------------------------------------------------------------------
+
+class WorkshopFamilyMapping(models.Model):
+    """
+    Maps a MachineAsset catalogue family string (e.g. "PLATAFOR", "CARR",
+    "MOVILES") to a workshop family (MECHANICAL or ELEVATION). Used by the
+    breakdown bot routing logic to determine which WhatsApp group receives
+    the breakdown ticket card.
+
+    Configurable from Django Admin without code changes. If a catalogue
+    family is not mapped, the routing service falls back to MECHANICAL.
+
+    Uniqueness is enforced on (company, catalogue_family) so that each
+    family has exactly one routing target per company.
+
+    ---
+
+    Mapea una cadena de familia del catálogo de MachineAsset (p.ej. "PLATAFOR",
+    "CARR", "MOVILES") a una familia de taller (MECHANICAL o ELEVATION). Lo usa
+    la lógica de routing del bot de averías para determinar qué grupo WhatsApp
+    recibe la tarjeta del ticket de avería.
+
+    Configurable desde Django Admin sin cambios de código. Si una familia del
+    catálogo no está mapeada, el servicio de routing usa MECHANICAL como fallback.
+
+    La unicidad se impone sobre (company, catalogue_family) para que cada
+    familia tenga exactamente un destino de routing por empresa.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="workshop_family_mappings",
+        verbose_name="Empresa",
+        help_text="Empresa a la que pertenece este mapeo de familia de taller.",
+    )
+    catalogue_family = models.CharField(
+        max_length=100,
+        verbose_name="Familia de catálogo",
+        help_text=(
+            "Valor exacto del campo MachineAsset.family tal como figura en el "
+            "catálogo importado (p.ej. PLATAFOR, CARR, MOVILES, AUTOCARG). "
+            "La comparación es sensible a mayúsculas/minúsculas."
+        ),
+    )
+    workshop_family = models.CharField(
+        max_length=20,
+        choices=CompanyUser.WORKSHOP_FAMILY_CHOICES,
+        verbose_name="Familia de taller destino",
+        help_text=(
+            "Grupo de taller al que se enruta el ticket de avería cuando la "
+            "máquina afectada pertenece a esta familia de catálogo. "
+            "MECHANICAL: Taller Mecánico. ELEVATION: Taller Elevación."
+        ),
+    )
+    notes = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Notas",
+        help_text=(
+            "Descripción opcional del tipo de maquinaria incluida en esta "
+            "familia (p.ej. 'Plataformas tijera eléctricas y articuladas')."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Mapeo de familia de taller"
+        verbose_name_plural = "Mapeos de familia de taller"
+        unique_together = [("company", "catalogue_family")]
+        ordering = ["company__name", "catalogue_family"]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.company.name} — {self.catalogue_family} "
+            f"→ {self.get_workshop_family_display()}"
+        )
