@@ -1,84 +1,131 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V13.md
 
 # ENTERPRISEBOT — ANEXO HITO 13
-## Salas de Chat IRC por Sección (WhatsApp → Panel)
+## Salas de Chat IRC por Sección (WhatsApp → Panel) — REDISEÑO ESTRATÉGICO S040
 
 ---
 
-## Estado de Pasos
+## 1. Contexto del Rediseño
+
+El planteamiento original del Hito 13 (salas IRC por sección con polling HTMX,
+replicación de mensajes WhatsApp en el panel y agente Gemini en sala BREAKDOWNS)
+quedó completado en S009 (2026-05-21) y promovido parcialmente al Hito 14.
+
+En la sesión S039 (2026-05-23) se acordó un cambio estratégico completo en el
+modelo de gestión de averías y comunicación por WhatsApp. El nuevo enfoque
+elimina la sala BREAKDOWNS como canal de entrada y redefine el rol del bot.
+
+---
+
+## 2. Nueva Arquitectura Estratégica
+
+### 2.1. Grupos WhatsApp con Bot
+
+Se crean dos grupos WhatsApp reales de menos de 8 miembros, cada uno con el
+bot como participante:
+
+  - Grupo Taller Mecánico: mecánicos de la sección de mecánica + bot.
+  - Grupo Taller Elevación: mecánicos de la sección de elevación + bot.
+
+El bot participa en estos grupos únicamente como receptor de la tarjeta de
+avería generada — no gestiona conversaciones en el grupo. Los mecánicos se
+comunican directamente entre ellos y con el chófer sin intervención del bot.
+
+Sin restricción de ventana de 24h en grupos: el bot puede entregar tarjetas
+en cualquier momento independientemente de la actividad del grupo.
+
+### 2.2. Flujo de Avería 1:1 Chófer → Bot
+
+Los chóferes reportan averías enviando un mensaje directo (1:1) al bot de
+WhatsApp. El chófer siempre inicia la conversación, por lo que no existe
+restricción de ventana de 24h.
+
+Flujo conversacional del bot:
+  1. Chófer escribe cualquier mensaje al bot → bot detecta intención de avería.
+  2. Bot hace las preguntas pertinentes campo a campo:
+       - Máquina / Centro de Gasto afectado.
+       - Síntoma o descripción de la avería.
+       - Ubicación.
+       - Urgencia.
+  3. Bot confirma los datos con el chófer.
+  4. Bot genera la tarjeta de avería y crea el BreakdownTicket en BD.
+  5. Bot envía la tarjeta al grupo WhatsApp pertinente (Taller Mecánico o
+     Taller Elevación) según el tipo de avería o sección del CdG.
+
+### 2.3. BreakdownTicket
+
+La generación de la tarjeta de avería por el bot crea automáticamente el
+BreakdownTicket en BD. Este ticket sigue el ciclo de vida ya implementado
+en el Hito 14: asignación a WORKSHOPBOSS, conversión a orden de reparación
+y cierre desde el panel.
+
+---
+
+## 3. Estado de Pasos — Implementación Original (S009)
 
 | Paso | Descripción | Estado |
 |------|-------------|--------|
-| 1 | Modelo `ChatRoom` y `ChatMessage` | COMPLETADO |
+| 1 | Modelo ChatRoom y ChatMessage | COMPLETADO |
 | 2 | Migración inicial chat | COMPLETADO |
 | 3 | Creación automática de salas por sección | COMPLETADO |
-| 4 | Vista `ChatRoomListView` | COMPLETADO |
-| 5 | Vista `ChatRoomView` | COMPLETADO |
-| 6 | Vista `ChatSendView` | COMPLETADO |
-| 7 | Template `chat_room_list.html` | COMPLETADO |
-| 8 | Template `chat_room.html` | COMPLETADO |
+| 4 | Vista ChatRoomListView | COMPLETADO |
+| 5 | Vista ChatRoomView | COMPLETADO |
+| 6 | Vista ChatSendView | COMPLETADO |
+| 7 | Template chat_room_list.html | COMPLETADO |
+| 8 | Template chat_room.html | COMPLETADO |
 | 9 | URLs chat | COMPLETADO |
 | 10 | Entrada sidebar Chat de Secciones | COMPLETADO |
 | 11 | Sala BREAKDOWNS — modelo y migración | COMPLETADO |
-| 12 | `BreakdownTicket` — modelo y migración | COMPLETADO |
-| 13 | `BreakdownRoomManageView` + template | COMPLETADO |
-| 14 | `BreakdownTicketListView` + template | COMPLETADO |
-| 15 | `BreakdownTicketDetailView` + template | COMPLETADO |
-| 16 | Rol `WORKSHOPBOSS` — implementación completa | COMPLETADO |
+| 12 | BreakdownTicket — modelo y migración | COMPLETADO |
+| 13 | BreakdownRoomManageView + template | COMPLETADO |
+| 14 | BreakdownTicketListView + template | COMPLETADO |
+| 15 | BreakdownTicketDetailView + template | COMPLETADO |
+| 16 | Rol WORKSHOPBOSS — implementación completa | COMPLETADO |
 
 ---
 
-## Arquitectura Técnica
+## 4. Pasos Nuevos — Rediseño S040+
 
-### Modelos (`chat/models.py`)
-
-- `ChatRoom`: sala IRC por sección. Campos: `company`, `section` (FK nullable), `room_type` (`SECTION`/`BREAKDOWNS`), `name`, `is_active`.
-- `ChatMessage`: mensaje en sala. Campos: `room` (FK), `sender_alias`, `body`, `created_at`.
-- `BreakdownTicket`: ticket de avería generado desde sala BREAKDOWNS. Campos: `room`, `contact`, `machine`, `section`, `status`, `is_repair_order`, `resolved_by`, `created_at`, `updated_at`.
-
-### Rol `WORKSHOPBOSS`
-
-- **Constante:** `CompanyUser.ROLE_WORKSHOPBOSS = "WORKSHOPBOSS"`.
-- **Display:** `"Jefe de taller"`.
-- **Migración:** `ivr_config/migrations/0025_workshopboss_role.py`.
-- **Tipo:** contacto interno (`is_internal=True`), provisionado por ADMIN/SUPERVISOR desde el panel.
-- **Sección asignada:** una sección, asignada por ADMIN desde el panel.
-
-### Matriz de Acceso `WORKSHOPBOSS`
-
-| Sección Panel | Acceso |
-|---|---|
-| Inicio (dashboard) | Sí |
-| Presencia (Mi estado) | Sí |
-| Taller (Nuevo parte + Historial operario) | No |
-| Administración (PDFs, Centros de gasto, Usuarios, Historial) | Sí |
-| Configuración de jornada | Sí |
-| Chat de Secciones (sala propia + BREAKDOWNS) | Sí |
-| Tickets de Avería (list + detail + acciones) | Sí |
-| Gestión membresía sala BREAKDOWNS | No (solo ADMIN) |
-| IVR / WhatsApp / Analítica | No |
-
-### Mixins afectados
-
-- `WorkshopRequiredMixin`: `WORKSHOP`, `WORKSHOPBOSS`, `ADMIN`.
-- `SupervisorAccessMixin`: `SUPERVISOR`, `WORKSHOPBOSS`, `ADMIN`.
-- `AdminRoleRequiredMixin`: `ADMIN` exclusivamente (sin cambio).
-
-### Archivos Modificados en S009
-
-- `ivr_config/models.py` — `ROLE_WORKSHOPBOSS`, `ROLE_CHOICES`, `help_text`.
-- `ivr_config/migrations/0025_workshopboss_role.py` — migración generada.
-- `panel/mixins.py` — `WorkshopRequiredMixin` y `SupervisorAccessMixin`.
-- `chat/views.py` — 7 guards de rol actualizados.
-- `panel/views.py` — `CompanyUserUpdateView.post` y `MachineAssetListView`.
-- `panel/templates/panel/_nav_items.html` — Inicio, Presencia, Taller, Administración, Configuración de jornada, Chat de Secciones, Tickets de Avería.
-- `panel/templates/panel/chat/breakdown_ticket_list.html` — botón Gestionar membresía oculto para no-ADMIN.
+| Paso | Descripción | Estado |
+|------|-------------|--------|
+| 17 | Definición de grupos WhatsApp y configuración en .env | PENDIENTE |
+| 18 | Flujo conversacional bot 1:1 chófer → avería | PENDIENTE |
+| 19 | Generación automática de BreakdownTicket desde conversación bot | PENDIENTE |
+| 20 | Entrega de tarjeta de avería al grupo WhatsApp pertinente | PENDIENTE |
+| 21 | Validación E2E flujo completo | PENDIENTE |
 
 ---
 
-## Nota de Cierre S009
+## 5. Hoja de Ruta para la Siguiente Sesión (S040)
 
-Todos los pasos del Hito 13 completados en S009 (2026-05-21).
-El sistema de gestión de tickets de avería y órdenes de reparación
-ha sido promovido a hito propio: **Hito 14**.
-Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md`.
+### Orden de trabajo S040
+
+PRIORIDAD 0 — Diseño técnico del flujo conversacional bot 1:1:
+  Antes de implementar nada, acordar con Miguel Ángel:
+    - ¿Cómo detecta el bot que el mensaje 1:1 de un chófer es una avería
+      y no otro tipo de mensaje (ayuda, consulta, etc.)?
+    - ¿El flujo conversacional de avería es lineal (pregunta a pregunta)
+      o puede el chófer enviar toda la información en un solo mensaje?
+    - ¿Qué campos son obligatorios para cerrar el ticket y cuáles opcionales?
+    - ¿Cómo determina el bot a qué grupo enviar la tarjeta (Taller Mecánico
+      o Taller Elevación)? ¿Por familia del CdG, por sección del chófer,
+      o por selección explícita del chófer?
+    - Formato exacto de la tarjeta de avería que se entrega en el grupo.
+
+  OBLIGATORIO: no implementar el Paso 18 sin haber acordado estas decisiones
+  con Miguel Ángel al inicio de la sesión.
+
+PRIORIDAD 1 — Configuración de grupos WhatsApp en .env:
+  Definir y añadir al .env las variables:
+    WHATSAPP_GROUP_TALLER_MECANICO=whatsapp:+34XXXXXXXXXXX (SID del grupo)
+    WHATSAPP_GROUP_TALLER_ELEVACION=whatsapp:+34XXXXXXXXXXX (SID del grupo)
+  Verificar que Twilio permite enviar mensajes a grupos WhatsApp desde la API.
+  Documentar el procedimiento de alta del bot en cada grupo.
+
+PRIORIDAD 2 — Implementación del flujo conversacional (tras acordar diseño):
+  Nueva función en chat/services.py: _handle_driver_breakdown_flow().
+  Gestión de estado conversacional por contacto (campo routing_state ya existe).
+  Preguntas secuenciales campo a campo con validación de respuesta.
+  Confirmación final antes de crear el ticket.
+  Creación de BreakdownTicket en BD al confirmar.
+  Envío de tarjeta al grupo WhatsApp pertinente.
