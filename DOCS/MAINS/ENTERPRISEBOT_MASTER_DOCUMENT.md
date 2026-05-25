@@ -160,7 +160,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Extracción desde documentos físicos existentes vía Gemini Vision si procede.
 - Integración con centros de gasto y módulo de Informes (Hito 9).
 
-### Hito 12: Gestión de Centros de Gasto y Reorganización del Panel (EN PROGRESO)
+### Hito 12: Gestión de Centros de Gasto y Reorganización del Panel (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md`)
 - Ampliacion del concepto MachineAsset a Centro de Gasto: maquinaria, administracion,
   almacen, alquiler, secciones externas y cualquier entidad facturable o asignable.
@@ -208,5 +208,12 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   de licencia). Si Power Automate es suficiente, configuración de flujos sin agente
   propio. Si no, construcción de agente Django + IA.
 - Actualización online obligatoria antes de implementar (Directriz 4.4).
+
+### Hito 16: Motor de Presupuestos para Sección ASISTENCIA (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V16.md`)
+- Skill de generación de presupuestos para la sección de Asistencia.
+- Tarifas configurables por compañía aseguradora.
+- Motor de cálculo basado en datos de entrada del operario y facturas de referencia.
+- Generación de documento de presupuesto exportable.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

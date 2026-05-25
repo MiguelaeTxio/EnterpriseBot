@@ -1,0 +1,173 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/analytics.html #}
+{#                                                                                         #}
+{# Analytics report for cost centres (MachineAsset).                                     #}
+{# Shows total hours worked and total work-order entry lines per asset.                  #}
+{# Filters: date range, family, active/inactive status.                                  #}
+{# CSV export via ?export=csv.                                                            #}
+{#                                                                                         #}
+{# Informe de actividad por centro de gasto (MachineAsset).                              #}
+{# Muestra el total de horas trabajadas y el total de líneas de parte por activo.        #}
+{# Filtros: rango de fechas, familia, estado activo/inactivo.                            #}
+{# Exportación CSV mediante ?export=csv.                                                  #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}Analítica de centros de gasto{% endblock %}
+{% block page_title %}Analítica de centros de gasto{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    {# ------------------------------------------------------------------ #}
+    {# Page header / Cabecera de página                                    #}
+    {# ------------------------------------------------------------------ #}
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <h5 class="mb-0 fw-semibold">Actividad por centro de gasto</h5>
+        <a href="{% url 'panel:fleet_analytics' %}?date_from={{ date_from }}&date_to={{ date_to }}&family={{ filter_family }}&is_active={{ filter_is_active }}&export=csv"
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Exportar CSV
+        </a>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Filter bar / Barra de filtros                                       #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card card-body mb-3 py-2">
+        <form method="get" action="{% url 'panel:fleet_analytics' %}" class="row g-2 align-items-end">
+            <div class="col-12 col-sm-6 col-md-3">
+                <label class="form-label form-label-sm mb-1">Desde</label>
+                <input type="date" name="date_from" class="form-control form-control-sm"
+                       value="{{ date_from }}">
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+                <label class="form-label form-label-sm mb-1">Hasta</label>
+                <input type="date" name="date_to" class="form-control form-control-sm"
+                       value="{{ date_to }}">
+            </div>
+            <div class="col-12 col-sm-6 col-md-2">
+                <label class="form-label form-label-sm mb-1">Familia</label>
+                <select name="family" class="form-select form-select-sm">
+                    <option value="">Todas</option>
+                    {% for fam in families %}
+                    <option value="{{ fam }}" {% if filter_family == fam %}selected{% endif %}>{{ fam }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-sm-6 col-md-2">
+                <label class="form-label form-label-sm mb-1">Estado</label>
+                <select name="is_active" class="form-select form-select-sm">
+                    <option value="1" {% if filter_is_active == '1' %}selected{% endif %}>Activos</option>
+                    <option value="0" {% if filter_is_active == '0' %}selected{% endif %}>Inactivos</option>
+                    <option value=""  {% if filter_is_active == ''  %}selected{% endif %}>Todos</option>
+                </select>
+            </div>
+            <div class="col-12 col-sm-auto">
+                <button type="submit" class="btn btn-sm btn-primary w-100">
+                    <i class="bi bi-funnel me-1"></i>Filtrar
+                </button>
+            </div>
+            {% if date_from or date_to or filter_family or filter_is_active != '1' %}
+            <div class="col-12 col-sm-auto">
+                <a href="{% url 'panel:fleet_analytics' %}" class="btn btn-sm btn-outline-secondary w-100">
+                    <i class="bi bi-x-circle me-1"></i>Limpiar
+                </a>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Summary badge / Resumen global                                      #}
+    {# ------------------------------------------------------------------ #}
+    {% if assets %}
+    <div class="d-flex gap-3 mb-3 flex-wrap">
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 fs-6">
+            <i class="bi bi-clock me-1"></i>
+            {{ total_hours_sum|floatformat:2 }} h totales
+        </span>
+        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-3 py-2 fs-6">
+            <i class="bi bi-list-check me-1"></i>
+            {{ assets|length }} centro{{ assets|length|pluralize }} de gasto
+        </span>
+    </div>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Results table / Tabla de resultados                                 #}
+    {# ------------------------------------------------------------------ #}
+    {% if assets %}
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Código</th>
+                    <th>Familia</th>
+                    <th>Marca / Modelo</th>
+                    <th>Matrícula</th>
+                    <th class="text-center">Estado</th>
+                    <th class="text-end">Total horas</th>
+                    <th class="text-end">Total partes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for asset in assets %}
+                <tr class="{% if not asset.is_active %}table-secondary text-muted{% endif %}">
+                    <td class="fw-semibold">
+                        <a href="{% url 'panel:fleet_list' %}?search={{ asset.code }}"
+                           class="text-decoration-none">{{ asset.code }}</a>
+                    </td>
+                    <td>{{ asset.family }}</td>
+                    <td>{{ asset.brand_model }}</td>
+                    <td>{{ asset.plate }}</td>
+                    <td class="text-center">
+                        {% if asset.is_active %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
+                        {% else %}
+                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactivo</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end fw-semibold">
+                        {% if asset.total_hours %}
+                        {{ asset.total_hours|floatformat:2 }} h
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if asset.total_entries %}
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ asset.total_entries }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-semibold">
+                <tr>
+                    <td colspan="5" class="text-end">Total</td>
+                    <td class="text-end">{{ total_hours_sum|floatformat:2 }} h</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <div class="text-muted small px-1 pt-2">
+        {{ assets|length }} centro{{ assets|length|pluralize }} de gasto
+        {% if date_from or date_to %}
+        <span class="ms-1">
+            {% if date_from %}desde {{ date_from }}{% endif %}
+            {% if date_to %}hasta {{ date_to }}{% endif %}
+        </span>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <div class="text-center text-muted py-5">
+        <i class="bi bi-bar-chart fs-1 d-block mb-2 opacity-25"></i>
+        <p class="mb-0">No hay datos para los filtros aplicados.</p>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

@@ -13469,10 +13469,12 @@ class MachineAssetListView(SupervisorAccessMixin, View):
     def _build_queryset(self, company, request):
         """
         Builds the filtered MachineAsset queryset from GET parameters.
-        Supported filters: family (str), is_active ('1'=active, '0'=inactive, ''=all).
+        Supported filters: family (str), is_active ('1'=active, '0'=inactive, ''=all),
+        search (str, case-insensitive icontains on code, brand_model and plate).
         ---
         Construye el queryset filtrado de MachineAsset desde los parámetros GET.
-        Filtros soportados: family (str), is_active ('1'=activo, '0'=inactivo, ''=todos).
+        Filtros soportados: family (str), is_active ('1'=activo, '0'=inactivo, ''=todos),
+        search (str, búsqueda icontains sobre code, brand_model y plate).
         """
         from fleet.models import MachineAsset
 
@@ -13489,6 +13491,16 @@ class MachineAssetListView(SupervisorAccessMixin, View):
             qs = qs.filter(is_active=True)
         elif active_filter == "0":
             qs = qs.filter(is_active=False)
+
+        # Free-text search — icontains across code, brand_model and plate.
+        # Búsqueda libre — icontains sobre code, brand_model y plate.
+        search_filter = request.GET.get("search", "").strip()
+        if search_filter:
+            qs = qs.filter(
+                Q(code__icontains=search_filter)
+                | Q(brand_model__icontains=search_filter)
+                | Q(plate__icontains=search_filter)
+            )
 
         return qs
 
@@ -13511,6 +13523,35 @@ class MachineAssetListView(SupervisorAccessMixin, View):
             .order_by("family")
         )
 
+    def _build_fragment_context(self, company, company_user, request):
+        """
+        Builds the shared context dict used by the table fragment.
+        Applies the active filters, annotates each asset with use_count
+        (number of associated WorkOrderEntryLine records) and preserves
+        the current filter state so HTMX mutations do not reset the UI.
+        ---
+        Construye el dict de contexto compartido para el fragmento de tabla.
+        Aplica los filtros activos, anota cada activo con use_count
+        (número de WorkOrderEntryLine asociadas) y preserva el estado de
+        filtros para que las mutaciones HTMX no reinicien la UI.
+        """
+        from django.db.models import Count
+
+        qs = self._build_queryset(company, request).annotate(
+            use_count=Count("work_order_lines", distinct=True)
+        )
+        families = self._get_families(company)
+
+        return {
+            "assets":           qs,
+            "families":         families,
+            "company":          company,
+            "company_user":     company_user,
+            "filter_family":    request.GET.get("family", ""),
+            "filter_is_active": request.GET.get("is_active", ""),
+            "filter_search":    request.GET.get("search", ""),
+        }
+
     def get(self, request, *args, **kwargs):
         """
         Renders the fleet list page or a partial HTMX table fragment.
@@ -13521,25 +13562,18 @@ class MachineAssetListView(SupervisorAccessMixin, View):
         Detecta peticiones HTMX via la cabecera HX-Request y devuelve solo
         el fragmento de tabla para actualizaciones parciales.
         """
-        from fleet.models import MachineAsset
         from panel.forms import MachineAssetForm
 
         company_user = request.user.company_user
         company      = company_user.company
-        qs           = self._build_queryset(company, request)
-        families     = self._get_families(company)
+        fragment_ctx = self._build_fragment_context(company, company_user, request)
         form         = MachineAssetForm()
 
         ctx = {
-            "company":      company,
-            "company_user": company_user,
+            **fragment_ctx,
             "own_presence": self._get_own_presence(company_user),
             "active_nav":   "fleet",
-            "assets":       qs,
-            "families":     families,
             "form":         form,
-            "filter_family":    request.GET.get("family", ""),
-            "filter_is_active": request.GET.get("is_active", ""),
         }
 
         if request.headers.get("HX-Request"):
@@ -13580,19 +13614,15 @@ class MachineAssetCreateView(AdminRoleRequiredMixin, View):
         company      = company_user.company
         form         = MachineAssetForm(request.POST)
 
+        list_view = MachineAssetListView()
+
         if form.is_valid():
             asset         = form.save(commit=False)
             asset.company = company
             asset.code    = asset.code.strip().upper()
             asset.save()
-            qs = MachineAsset.objects.filter(company=company).order_by(
-                "company_code", "family", "code"
-            )
-            return render(request, "panel/fleet/_table_fragment.html", {
-                "assets":       qs,
-                "company_user": company_user,
-                "company":      company,
-            })
+            fragment_ctx = list_view._build_fragment_context(company, company_user, request)
+            return render(request, "panel/fleet/_table_fragment.html", fragment_ctx)
 
         return render(request, "panel/fleet/_form_fragment.html", {
             "form":         form,
@@ -13672,18 +13702,14 @@ class MachineAssetUpdateView(AdminRoleRequiredMixin, View):
 
         form = MachineAssetForm(request.POST, instance=asset)
 
+        list_view = MachineAssetListView()
+
         if form.is_valid():
             updated       = form.save(commit=False)
             updated.code  = updated.code.strip().upper()
             updated.save()
-            qs = MachineAsset.objects.filter(company=company).order_by(
-                "company_code", "family", "code"
-            )
-            return render(request, "panel/fleet/_table_fragment.html", {
-                "assets":       qs,
-                "company_user": company_user,
-                "company":      company,
-            })
+            fragment_ctx = list_view._build_fragment_context(company, company_user, request)
+            return render(request, "panel/fleet/_table_fragment.html", fragment_ctx)
 
         return render(request, "panel/fleet/_form_fragment.html", {
             "form":         form,
@@ -13733,14 +13759,9 @@ class MachineAssetDeactivateView(AdminRoleRequiredMixin, View):
         asset.is_active = False
         asset.save(update_fields=["is_active"])
 
-        qs = MachineAsset.objects.filter(company=company).order_by(
-            "company_code", "family", "code"
-        )
-        return render(request, "panel/fleet/_table_fragment.html", {
-            "assets":       qs,
-            "company_user": company_user,
-            "company":      company,
-        })
+        list_view    = MachineAssetListView()
+        fragment_ctx = list_view._build_fragment_context(company, company_user, request)
+        return render(request, "panel/fleet/_table_fragment.html", fragment_ctx)
 
 
 class MachineAssetReactivateView(AdminRoleRequiredMixin, View):
@@ -13783,14 +13804,9 @@ class MachineAssetReactivateView(AdminRoleRequiredMixin, View):
         asset.is_active = True
         asset.save(update_fields=["is_active"])
 
-        qs = MachineAsset.objects.filter(company=company).order_by(
-            "company_code", "family", "code"
-        )
-        return render(request, "panel/fleet/_table_fragment.html", {
-            "assets":       qs,
-            "company_user": company_user,
-            "company":      company,
-        })
+        list_view    = MachineAssetListView()
+        fragment_ctx = list_view._build_fragment_context(company, company_user, request)
+        return render(request, "panel/fleet/_table_fragment.html", fragment_ctx)
 
 
 class MachineAssetDeleteView(AdminRoleRequiredMixin, View):
@@ -13849,14 +13865,9 @@ class MachineAssetDeleteView(AdminRoleRequiredMixin, View):
 
         asset.delete()
 
-        qs = MachineAsset.objects.filter(company=company).order_by(
-            "company_code", "family", "code"
-        )
-        return render(request, "panel/fleet/_table_fragment.html", {
-            "assets":       qs,
-            "company_user": company_user,
-            "company":      company,
-        })
+        list_view    = MachineAssetListView()
+        fragment_ctx = list_view._build_fragment_context(company, company_user, request)
+        return render(request, "panel/fleet/_table_fragment.html", fragment_ctx)
 
 
 class WorkshopAssetDetailView(WorkshopRequiredMixin, View):
@@ -14712,3 +14723,253 @@ class BotManagementView(CompanyUserRequiredMixin, View):
         # Acción desconocida — redirigir sin notificación.
         django_messages.warning(request, "Acción no reconocida.")
         return redirect("panel:bot_management")
+
+
+class MachineAssetAnalyticsView(AdminRoleRequiredMixin, View):
+    """
+    Displays an activity report grouped by cost centre (MachineAsset).
+    Aggregates total hours worked and total associated work-order entry lines
+    per asset, with optional filters for date range, family and active status.
+    Supports CSV export via the `export` GET parameter.
+    Only accessible to ADMIN and SUPERVISOR roles (AdminRoleRequiredMixin).
+
+    GET  /panel/fleet/analytics/
+    GET  /panel/fleet/analytics/?export=csv
+
+    ---
+
+    Muestra un informe de actividad agrupado por centro de gasto (MachineAsset).
+    Agrega el total de horas trabajadas y el total de líneas de parte asociadas
+    por activo, con filtros opcionales por rango de fechas, familia y estado.
+    Soporta exportación CSV mediante el parámetro GET `export`.
+    Solo accesible para los roles ADMIN y SUPERVISOR (AdminRoleRequiredMixin).
+
+    GET  /panel/fleet/analytics/
+    GET  /panel/fleet/analytics/?export=csv
+    """
+
+    template_name = "panel/fleet/analytics.html"
+
+    # ------------------------------------------------------------------
+    # Internal helpers / Auxiliares internos
+    # ------------------------------------------------------------------
+
+    def _get_own_presence(self, company_user):
+        """
+        Returns the current active PresenceStatus for the authenticated user.
+        ---
+        Retorna el PresenceStatus activo actual del usuario autenticado.
+        """
+        return PresenceStatus.objects.filter(
+            company_user=company_user,
+            starts_at__lte=now(),
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+        ).order_by("-starts_at").first()
+
+    def _parse_date(self, value):
+        """
+        Parses an ISO date string (YYYY-MM-DD) into a date object.
+        Returns None if the value is absent or malformed.
+        ---
+        Parsea una cadena de fecha ISO (YYYY-MM-DD) en un objeto date.
+        Devuelve None si el valor está ausente o mal formado.
+        """
+        from datetime import date as _date
+        if not value:
+            return None
+        try:
+            parts = value.strip().split("-")
+            return _date(int(parts[0]), int(parts[1]), int(parts[2]))
+        except (ValueError, IndexError, AttributeError):
+            return None
+
+    def _build_report(self, company, request):
+        """
+        Builds and returns the annotated analytics queryset and active
+        filter values from GET parameters.
+
+        Filters:
+          date_from / date_to  — filter by WorkOrderEntryLine entry work_date.
+          family               — exact match on MachineAsset.family.
+          is_active            — '1' active only, '0' inactive only, '' all.
+
+        Annotations per MachineAsset row:
+          total_hours   — SUM of delta_hours from associated WorkOrderEntryLine.
+          total_entries — COUNT of associated WorkOrderEntryLine (distinct).
+
+        ---
+
+        Construye y devuelve el queryset analítico anotado y los valores de
+        filtro activos desde los parámetros GET.
+
+        Filtros:
+          date_from / date_to  — filtrar por work_date de la entrada de la línea.
+          family               — coincidencia exacta con MachineAsset.family.
+          is_active            — '1' solo activos, '0' solo inactivos, '' todos.
+
+        Anotaciones por fila MachineAsset:
+          total_hours   — SUMA de delta_hours de las WorkOrderEntryLine asociadas.
+          total_entries — COUNT de WorkOrderEntryLine asociadas (distinct).
+        """
+        from fleet.models import MachineAsset
+        from django.db.models import Sum, Count, FloatField
+        from django.db.models.functions import Coalesce
+
+        # --- Active filter values from GET. ---
+        # --- Valores de filtro activos desde GET. ---
+        date_from_raw  = request.GET.get("date_from", "").strip()
+        date_to_raw    = request.GET.get("date_to", "").strip()
+        family_filter  = request.GET.get("family", "").strip()
+        active_filter  = request.GET.get("is_active", "1")
+
+        date_from = self._parse_date(date_from_raw)
+        date_to   = self._parse_date(date_to_raw)
+
+        # --- Base queryset: all assets of the company. ---
+        # --- Queryset base: todos los activos de la empresa. ---
+        qs = MachineAsset.objects.filter(company=company)
+
+        if family_filter:
+            qs = qs.filter(family__iexact=family_filter)
+
+        if active_filter == "1":
+            qs = qs.filter(is_active=True)
+        elif active_filter == "0":
+            qs = qs.filter(is_active=False)
+
+        # --- Build annotation filters for related work_order_lines. ---
+        # Lines are filtered by entry__work_date range when dates are provided.
+        # ---
+        # --- Construir filtros de anotación para work_order_lines relacionadas. ---
+        # Las líneas se filtran por entry__work_date cuando se proporcionan fechas.
+        line_filter_kwargs = {}
+        if date_from:
+            line_filter_kwargs["work_order_lines__entry__work_date__gte"] = date_from
+        if date_to:
+            line_filter_kwargs["work_order_lines__entry__work_date__lte"] = date_to
+
+        # --- Annotate with totals. ---
+        # Use Coalesce to return 0.0 / 0 when no lines match the filter.
+        # ---
+        # --- Anotar con totales. ---
+        # Coalesce devuelve 0.0 / 0 cuando ninguna línea coincide con el filtro.
+        if line_filter_kwargs:
+            qs = qs.annotate(
+                total_hours=Coalesce(
+                    Sum(
+                        "work_order_lines__delta_hours",
+                        filter=django_models.Q(**line_filter_kwargs),
+                    ),
+                    0.0,
+                    output_field=FloatField(),
+                ),
+                total_entries=Coalesce(
+                    Count(
+                        "work_order_lines",
+                        filter=django_models.Q(**line_filter_kwargs),
+                        distinct=True,
+                    ),
+                    0,
+                ),
+            )
+        else:
+            qs = qs.annotate(
+                total_hours=Coalesce(
+                    Sum("work_order_lines__delta_hours"),
+                    0.0,
+                    output_field=FloatField(),
+                ),
+                total_entries=Coalesce(
+                    Count("work_order_lines", distinct=True),
+                    0,
+                ),
+            )
+
+        qs = qs.order_by("-total_hours", "code")
+
+        return qs, {
+            "date_from":    date_from_raw,
+            "date_to":      date_to_raw,
+            "filter_family":    family_filter,
+            "filter_is_active": active_filter,
+        }
+
+    def _get_families(self, company):
+        """
+        Returns a sorted list of distinct family values for the company.
+        ---
+        Retorna una lista ordenada de valores de family distintos para la empresa.
+        """
+        from fleet.models import MachineAsset
+        return (
+            MachineAsset.objects
+            .filter(company=company)
+            .exclude(family="")
+            .values_list("family", flat=True)
+            .distinct()
+            .order_by("family")
+        )
+
+    # ------------------------------------------------------------------
+    # HTTP handlers / Manejadores HTTP
+    # ------------------------------------------------------------------
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the analytics page or exports a CSV file when
+        the `export=csv` GET parameter is present.
+        ---
+        Renderiza la página de analítica o exporta un CSV cuando
+        el parámetro GET `export=csv` está presente.
+        """
+        import csv
+        from django.http import HttpResponse
+
+        company_user = request.user.company_user
+        company      = company_user.company
+
+        qs, filters = self._build_report(company, request)
+
+        # --- CSV export branch. ---
+        # --- Rama de exportación CSV. ---
+        if request.GET.get("export") == "csv":
+            response = HttpResponse(content_type="text/csv; charset=utf-8")
+            response["Content-Disposition"] = (
+                'attachment; filename="centros_de_gasto_actividad.csv"'
+            )
+            # UTF-8 BOM so Excel opens the file correctly without import wizard.
+            # BOM UTF-8 para que Excel abra el archivo sin asistente de importación.
+            response.write("\ufeff")
+            writer = csv.writer(response, delimiter=";")
+            writer.writerow([
+                "Código", "Familia", "Marca / Modelo", "Matrícula",
+                "Estado", "Total horas", "Total partes",
+            ])
+            for asset in qs:
+                writer.writerow([
+                    asset.code,
+                    asset.family,
+                    asset.brand_model,
+                    asset.plate,
+                    "Activo" if asset.is_active else "Inactivo",
+                    f"{asset.total_hours:.2f}" if asset.total_hours else "0.00",
+                    asset.total_entries,
+                ])
+            return response
+
+        # --- HTML render branch. ---
+        # --- Rama de renderizado HTML. ---
+        ctx = {
+            "company":      company,
+            "company_user": company_user,
+            "own_presence": self._get_own_presence(company_user),
+            "active_nav":   "fleet_analytics",
+            "assets":       qs,
+            "families":     self._get_families(company),
+            "total_hours_sum": sum(
+                a.total_hours for a in qs if a.total_hours
+            ),
+            **filters,
+        }
+        return render(request, self.template_name, ctx)

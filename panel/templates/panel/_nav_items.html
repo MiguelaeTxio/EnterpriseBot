@@ -27,7 +27,8 @@
 {#   "bot_management"     → Gestión del bot (WhatsApp)        (ADMIN)               #}
 {#   "operator_dashboard" → Nuevo parte                      (WORKSHOP, ADMIN)     #}
 {#   "work_orders"        → PDFs                             (ADMIN, SUPERVISOR)    #}
-{#   "fleet"              → Centros de gasto                 (ADMIN, SUPERVISOR) — pendiente H12 P4 #}
+{#   "fleet"              → Centros de gasto                 (ADMIN, SUPERVISOR) #}
+{#   "fleet_analytics"    → Analítica de centros de gasto   (ADMIN, SUPERVISOR) #}
 {#   "users"              → Usuarios                         (ADMIN, SUPERVISOR)    #}
 {#   "analytics"          → Gráficas                         (ADMIN)               #}
 {#   "reports"            → Informes                         (ADMIN) — pendiente H9 #}
@@ -207,16 +208,27 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Analítica — solo ADMIN                                     #}
-    {# Section: Analytics — ADMIN only                                     #}
+    {# Sección: Analítica — ADMIN y SUPERVISOR                              #}
+    {# Section: Analytics — ADMIN and SUPERVISOR                           #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' %}
+    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
     <li><div class="sidebar-section-label">Analítica</div></li>
 
+    {# Gráficas — solo ADMIN / Charts — ADMIN only #}
+    {% if company_user.role == 'ADMIN' %}
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'analytics' %}active{% endif %}"
            href="{% url 'panel:analytics' %}">
             <i class="bi bi-bar-chart-line"></i>Gráficas
+        </a>
+    </li>
+    {% endif %}
+
+    {# Analítica CdG — ADMIN y SUPERVISOR / Cost-centre analytics — ADMIN and SUPERVISOR #}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'fleet_analytics' %}active{% endif %}"
+           href="{% url 'panel:fleet_analytics' %}">
+            <i class="bi bi-truck"></i>Analítica CdG
         </a>
     </li>
 

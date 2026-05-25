@@ -73,6 +73,7 @@ from panel.views import (
     WorkOrderAdminHistoryView,
     WorkerAbsenceCreateView,
     MachineAssetListView,
+    MachineAssetAnalyticsView,
     WorkOrderDescriptionAutocompleteView,
     MachineAssetCreateView,
     MachineAssetUpdateView,
@@ -326,6 +327,8 @@ urlpatterns = [
     path("fleet/<int:pk>/deactivate/", MachineAssetDeactivateView.as_view(), name="fleet_deactivate"),
     path("fleet/<int:pk>/reactivate/", MachineAssetReactivateView.as_view(), name="fleet_reactivate"),
     path("fleet/<int:pk>/delete/", MachineAssetDeleteView.as_view(), name="fleet_delete"),
+    # Fleet analytics — Hito 12 Paso PRIORIDAD 2
+    path("fleet/analytics/", MachineAssetAnalyticsView.as_view(), name="fleet_analytics"),
 
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),

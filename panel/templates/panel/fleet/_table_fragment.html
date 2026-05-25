@@ -9,6 +9,7 @@
                 <th>Marca / Modelo</th>
                 <th>Matrícula</th>
                 <th class="text-center">Estado</th>
+                <th class="text-center">Usos</th>
                 <th class="text-end">Acciones</th>
             </tr>
         </thead>
@@ -24,6 +25,14 @@
                     <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
                     {% else %}
                     <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactivo</span>
+                    {% endif %}
+                </td>
+                <td class="text-center">
+                    {% if asset.use_count %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle"
+                          title="{{ asset.use_count }} línea{{ asset.use_count|pluralize }} de parte asociada{{ asset.use_count|pluralize }}">{{ asset.use_count }}</span>
+                    {% else %}
+                    <span class="text-muted small">—</span>
                     {% endif %}
                 </td>
                 <td class="text-end">
@@ -75,6 +84,9 @@
 </div>
 <div class="text-muted small px-1 pt-2">
     {{ assets|length }} centro{{ assets|length|pluralize }} de gasto
+    {% if filter_search or filter_family or filter_is_active %}
+    <span class="ms-1">(filtrado{{ assets|length|pluralize }})</span>
+    {% endif %}
 </div>
 {% else %}
 <div class="text-center text-muted py-5">

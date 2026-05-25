@@ -46,6 +46,7 @@
 ./panel/templates/panel/whatsapp/template_list.html
 ./panel/templates/panel/voiceprofile/detail.html
 ./panel/templates/panel/fleet/list.html
+./panel/templates/panel/fleet/analytics.html
 ./panel/templates/panel/fleet/_form_fragment.html
 ./panel/templates/panel/fleet/_form_fields.html
 ./panel/templates/panel/fleet/_table_fragment.html
@@ -290,6 +291,7 @@
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md
+./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V16.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md

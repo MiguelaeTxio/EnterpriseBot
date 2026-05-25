@@ -19,12 +19,25 @@
 
     <div class="card card-body mb-3 py-2">
         <div class="row g-2 align-items-end">
+            <div class="col-12 col-sm">
+                <label class="form-label form-label-sm mb-1">Búsqueda</label>
+                <input id="filter-search"
+                       type="search"
+                       class="form-control form-control-sm"
+                       placeholder="Código, marca/modelo, matrícula…"
+                       name="search"
+                       value="{{ filter_search }}"
+                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#filter-search, #filter-family, #filter-is-active"
+                       hx-trigger="input changed delay:300ms, search">
+            </div>
             <div class="col-12 col-sm-auto">
                 <label class="form-label form-label-sm mb-1">Familia</label>
                 <select id="filter-family" class="form-select form-select-sm"
                         hx-get="{% url 'panel:fleet_list' %}"
                         hx-target="#fleet-table-container"
-                        hx-include="#filter-family, #filter-is-active"
+                        hx-include="#filter-search, #filter-family, #filter-is-active"
                         hx-trigger="change"
                         name="family">
                     <option value="">Todas</option>
@@ -38,7 +51,7 @@
                 <select id="filter-is-active" class="form-select form-select-sm"
                         hx-get="{% url 'panel:fleet_list' %}"
                         hx-target="#fleet-table-container"
-                        hx-include="#filter-family, #filter-is-active"
+                        hx-include="#filter-search, #filter-family, #filter-is-active"
                         hx-trigger="change"
                         name="is_active">
                     <option value="" {% if filter_is_active == '' %}selected{% endif %}>Todos</option>
