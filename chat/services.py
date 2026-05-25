@@ -1030,57 +1030,46 @@ def _provision_company_user(
 
 
 # ---------------------------------------------------------------------------
-# _HANDLE_BREAKDOWN_ROUTING
+# _HANDLE_BREAKDOWN_CONFIRM
 # ---------------------------------------------------------------------------
 
-def _handle_breakdown_routing(
-    contact: Contact,
-    section,
+def _handle_breakdown_confirm(
+    contact,
     body: str,
     from_number: str,
     to_number: str,
 ) -> bool:
     """
-    Sends the breakdown_routing Quick Reply and stores routing_state in DB.
+    Sends the breakdown confirmation Quick Reply to the contact and stores
+    routing_state=AWAITING_BREAKDOWN_CONFIRM and pending_routing_body in DB.
     Returns True (message consumed).
     ---
-    Envia el Quick Reply breakdown_routing y guarda routing_state en BD.
+    Envia el Quick Reply de confirmacion de averia al contacto y guarda
+    routing_state=AWAITING_BREAKDOWN_CONFIRM y pending_routing_body en BD.
     Devuelve True (mensaje consumido).
     """
-    from whatsapp.models import WhatsAppTemplate
     from whatsapp.services import WhatsAppChatService
 
-    contact.routing_state        = contact.ROUTING_STATE_AWAITING_ROUTE
+    contact.routing_state        = contact.ROUTING_STATE_AWAITING_BREAKDOWN_CONFIRM
     contact.pending_routing_body = body
     contact.save(update_fields=["routing_state", "pending_routing_body"])
 
+    _BREAKDOWN_CONFIRM_SID = "HX71d736523adabbd1e6d0fdf8acc2e99c"
+
     try:
-        _tpl = WhatsAppTemplate.objects.get(
-            company=contact.company,
-            name="breakdown_routing",
-            is_active=True,
-        )
         WhatsAppChatService.send_quick_reply(
             from_number=to_number,
             to_number=from_number,
-            content_sid=_tpl.content_sid,
-            content_variables={"1": section.name},
+            content_sid=_BREAKDOWN_CONFIRM_SID,
+            content_variables={},
         )
         logger.info(
-            "# [CHAT DISPATCH] Quick Reply breakdown_routing enviado a %s.",
+            "# [CHAT DISPATCH] Quick Reply de confirmacion de averia enviado a %s.",
             from_number,
         )
-    except WhatsAppTemplate.DoesNotExist:
-        logger.error(
-            "# [CHAT DISPATCH] Template breakdown_routing no encontrado empresa pk=%s.",
-            contact.company_id,
-        )
-        contact.routing_state        = contact.ROUTING_STATE_NONE
-        contact.pending_routing_body = ""
-        contact.save(update_fields=["routing_state", "pending_routing_body"])
     except Exception as exc:
         logger.error(
-            "# [CHAT DISPATCH] Error enviando breakdown_routing a %s: %s",
+            "# [CHAT DISPATCH] Error enviando Quick Reply de confirmacion a %s: %s",
             from_number, exc,
         )
         contact.routing_state        = contact.ROUTING_STATE_NONE
@@ -1091,77 +1080,62 @@ def _handle_breakdown_routing(
 
 
 # ---------------------------------------------------------------------------
-# _RESOLVE_PENDING_ROUTING
+# _RESOLVE_BREAKDOWN_CONFIRM
 # ---------------------------------------------------------------------------
 
-def _resolve_pending_routing(
-    contact: Contact,
-    section,
-    room,
-    breakdown_room,
+def _resolve_breakdown_confirm(
+    contact,
     body: str,
+    breakdown_room,
     from_number: str,
     to_number: str,
 ) -> bool:
     """
-    Processes the contact routing selection and routes the held message.
-    Button id "section" routes to SECTION room.
-    Button id "breakdowns" routes to BREAKDOWNS agent.
-    Unrecognised input re-sends the Quick Reply.
+    Processes the contact Yes/No response to the breakdown confirmation Quick Reply.
+    Yes   - activates Gemini breakdown agent.
+    No    - informs contact the channel is for breakdowns only, resets state.
+    Other - re-sends the Quick Reply.
+    Returns True (message consumed).
     ---
-    Procesa la seleccion de sala del contacto y enruta el mensaje retenido.
-    Id "section" -> sala SECTION. Id "breakdowns" -> agente BREAKDOWNS.
-    Entrada no reconocida reenvía el Quick Reply.
+    Procesa la respuesta Si/No del contacto al Quick Reply de confirmacion de averia.
+    Si    - activa el agente Gemini de averias.
+    No    - informa al contacto que el canal es exclusivo de averias, resetea estado.
+    Otro  - reenvía el Quick Reply.
+    Devuelve True (mensaje consumido).
     """
-    from whatsapp.models import WhatsAppTemplate
     from whatsapp.services import WhatsAppChatService
 
-    body_norm          = body.strip().lower()
-    pending_body       = contact.pending_routing_body
-    selected_section   = body_norm in ("mi seccion", "mi sección", "section", "1")
-    selected_breakdown = body_norm in ("sala de averias", "sala de averías", "breakdowns", "2")
+    body_norm    = body.strip().lower()
+    pending_body = contact.pending_routing_body
 
-    if selected_section:
-        contact.routing_state        = contact.ROUTING_STATE_NONE
-        contact.pending_routing_body = ""
-        contact.save(update_fields=["routing_state", "pending_routing_body"])
-        _persist_and_broadcast(room=room, contact=contact, body=pending_body)
-        logger.info(
-            "# [CHAT DISPATCH] Enrutamiento resuelto a SECTION para %s.",
-            from_number,
-        )
-        return True
+    affirmative = body_norm in (
+        "opt_in", "si", "s", "yes", "y",
+        "si, quiero recibirlos",
+    )
+    negative = body_norm in (
+        "opt_out", "no", "n",
+        "no, gracias",
+    )
 
-    if selected_breakdown:
-        contact.routing_state        = contact.ROUTING_STATE_NONE
+    if affirmative:
+        contact.routing_state        = contact.ROUTING_STATE_BREAKDOWN_IN_PROGRESS
         contact.pending_routing_body = ""
         contact.save(update_fields=["routing_state", "pending_routing_body"])
         if breakdown_room is not None:
-            # Send confirmation to the contact and invoke the Gemini breakdown agent.
-            # The broadcast to the BREAKDOWNS room is produced automatically by
-            # process_breakdown_turn when it detects the TICKET_COMPLETE marker
-            # and creates the ChatMessage(OUTBOUND) with the ticket summary.
-            # No additional broadcast call is needed here.
-            # ---
-            # Enviar confirmación al contacto e invocar el agente Gemini de averiás.
-            # El broadcast a la sala BREAKDOWNS lo produce automáticamente
-            # process_breakdown_turn al detectar el marcador TICKET_COMPLETE
-            # y crear el ChatMessage(OUTBOUND) con el resumen del ticket.
-            # No se necesita llamada adicional a broadcast en este punto.
-            from whatsapp.services import WhatsAppChatService as _WCS
+            _persist_inbound_only(room=breakdown_room, contact=contact, body=pending_body)
             try:
-                _WCS.send_reply(
+                WhatsAppChatService.send_reply(
                     from_number=to_number,
                     to_number=from_number,
                     reply_text=(
-                        "Vas a iniciar un ticket de avería. "
-                        "Descíbeme el problema y te iré guiando."
+                        "Vamos a registrar la averia. "
+                        "Describeme el problema con el mayor detalle posible."
                     ),
                 )
-            except Exception as _exc:
+            except Exception as exc:
                 logger.error(
-                    "# [CHAT DISPATCH] Error enviando confirmación de avería a %s: %s",
-                    from_number, _exc,
+                    "# [CHAT DISPATCH] Error enviando confirmacion de inicio de averia a %s: %s",
+                    from_number, exc,
                 )
             process_breakdown_turn(
                 contact=contact,
@@ -1170,40 +1144,51 @@ def _resolve_pending_routing(
                 to_number=to_number,
                 from_number=from_number,
             )
-        else:
-            logger.warning(
-                "# [CHAT DISPATCH] Sala BREAKDOWNS no encontrada para empresa. "
-                "Mensaje de %s descartado.",
-                from_number,
-            )
         logger.info(
-            "# [CHAT DISPATCH] Enrutamiento resuelto a BREAKDOWNS para %s "
-            "(agente Gemini activado).",
+            "# [CHAT DISPATCH] Averia confirmada para %s - agente Gemini activado.",
             from_number,
         )
         return True
 
-    # Unrecognised — re-send Quick Reply.
-    # No reconocido — reenviar Quick Reply.
+    if negative:
+        contact.routing_state        = contact.ROUTING_STATE_NONE
+        contact.pending_routing_body = ""
+        contact.save(update_fields=["routing_state", "pending_routing_body"])
+        try:
+            WhatsAppChatService.send_reply(
+                from_number=to_number,
+                to_number=from_number,
+                reply_text=(
+                    "Este canal es exclusivo para el reporte de averias. "
+                    "Si necesitas comunicar una averia, envia cualquier mensaje y te guiare."
+                ),
+            )
+        except Exception as exc:
+            logger.error(
+                "# [CHAT DISPATCH] Error enviando mensaje de canal exclusivo a %s: %s",
+                from_number, exc,
+            )
+        logger.info(
+            "# [CHAT DISPATCH] Averia denegada por %s - informado canal exclusivo.",
+            from_number,
+        )
+        return True
+
+    _BREAKDOWN_CONFIRM_SID = "HX71d736523adabbd1e6d0fdf8acc2e99c"
     logger.info(
-        "# [CHAT DISPATCH] Respuesta de enrutamiento no reconocida de %s: %r.",
+        "# [CHAT DISPATCH] Respuesta de confirmacion no reconocida de %s: %r.",
         from_number, body[:60],
     )
     try:
-        _tpl = WhatsAppTemplate.objects.get(
-            company=contact.company,
-            name="breakdown_routing",
-            is_active=True,
-        )
         WhatsAppChatService.send_quick_reply(
             from_number=to_number,
             to_number=from_number,
-            content_sid=_tpl.content_sid,
-            content_variables={"1": section.name},
+            content_sid=_BREAKDOWN_CONFIRM_SID,
+            content_variables={},
         )
     except Exception as exc:
         logger.error(
-            "# [CHAT DISPATCH] Error reenviando breakdown_routing a %s: %s",
+            "# [CHAT DISPATCH] Error reenviando Quick Reply de confirmacion a %s: %s",
             from_number, exc,
         )
     return True
@@ -1386,6 +1371,8 @@ def process_breakdown_turn(
                 from_number, exc,
             )
 
+        # Persist summary in BREAKDOWNS room as OUTBOUND for panel history.
+        # Persistir resumen en sala BREAKDOWNS como OUTBOUND para historial del panel.
         from chat.models import ChatMessage as _CM
         supervisor_body = (
             "Nuevo ticket de averia #" + str(ticket.ticket_number) + " | "
@@ -1399,6 +1386,21 @@ def process_breakdown_turn(
             room=room, direction=_CM.DIRECTION_OUTBOUND,
             body=supervisor_body, whatsapp_sid="",
         )
+
+        # Reset routing_state — contact returns to idle after ticket completion.
+        # Resetear routing_state — el contacto vuelve a estado idle tras completar el ticket.
+        contact.routing_state        = contact.ROUTING_STATE_NONE
+        contact.pending_routing_body = ""
+        contact.save(update_fields=["routing_state", "pending_routing_body"])
+
+        # Dispatch breakdown card 1:1 to all workshop section members.
+        # Despachar tarjeta de averia 1:1 a todos los miembros de la seccion de taller.
+        _dispatch_breakdown_card(
+            ticket=ticket,
+            contact=contact,
+            to_number=to_number,
+        )
+
         logger.info(
             "# [BREAKDOWN] Ticket pk=%s #%s finalizado para contacto pk=%s.",
             ticket.pk, ticket.ticket_number, contact.pk,
@@ -1476,4 +1478,133 @@ def _persist_and_broadcast(room: ChatRoom, contact: Contact, body: str) -> None:
             "# [CHAT DISPATCH] Error encolando broadcast para ChatMessage pk=%s: %s",
             chat_message.pk,
             exc,
+        )
+
+
+def _persist_inbound_only(room: ChatRoom, contact: Contact, body: str) -> None:
+    """
+    Creates a ChatMessage(INBOUND) in the BREAKDOWNS room without enqueuing
+    any broadcast task. Used for driver messages that are stored as individual
+    history in the panel but not relayed to other contacts.
+    ---
+    Crea un ChatMessage(INBOUND) en la sala BREAKDOWNS sin encolar ninguna
+    tarea de broadcast. Usado para mensajes de choferes que se almacenan como
+    historial individual en el panel sin reenvio a otros contactos.
+    """
+    panel_body = f"{_resolve_alias(contact)}: {body}"
+    ChatMessage.objects.create(
+        room=room,
+        direction=ChatMessage.DIRECTION_INBOUND,
+        sender_contact=contact,
+        body=panel_body,
+        whatsapp_sid="",
+    )
+    logger.info(
+        "# [CHAT DISPATCH] ChatMessage(INBOUND) persistido sin broadcast en sala '%s'.",
+        room.name,
+    )
+
+
+def _dispatch_breakdown_card(ticket, contact, to_number: str) -> None:
+    """
+    Sends the breakdown card 1:1 to all active CompanyUser members of the
+    workshop ChatRoom (SECTION) that matches the ticket machine family via
+    WorkshopFamilyMapping. Falls back to all SECTION rooms if no mapping found.
+    Each member receives an individual WhatsApp message from the bot number.
+    ---
+    Envia la tarjeta de averia 1:1 a todos los CompanyUser activos del ChatRoom
+    de taller (SECTION) que corresponde a la familia de la maquina del ticket
+    segun WorkshopFamilyMapping. Si no hay mapeo, envia a todas las salas SECTION.
+    Cada miembro recibe un mensaje individual de WhatsApp desde el numero del bot.
+    """
+    from whatsapp.services import WhatsAppChatService
+    from ivr_config.models import CompanyUser, Contact as _Contact
+
+    company = contact.company
+
+    # Resolve target workshop ChatRoom via WorkshopFamilyMapping.
+    # Resolver ChatRoom de taller destino via WorkshopFamilyMapping.
+    target_room = None
+    if ticket.machine and ticket.machine.family:
+        try:
+            from ivr_config.models import WorkshopFamilyMapping
+            mapping = WorkshopFamilyMapping.objects.filter(
+                company=company,
+                catalogue_family__iexact=ticket.machine.family,
+            ).first()
+            if mapping:
+                target_room = ChatRoom.objects.filter(
+                    company=company,
+                    room_type=ChatRoom.ROOM_TYPE_SECTION,
+                    section__companyuser__workshop_family=mapping.workshop_family,
+                    is_active=True,
+                ).first()
+        except Exception as exc:
+            logger.warning(
+                "# [BREAKDOWN CARD] Error resolviendo WorkshopFamilyMapping: %s", exc,
+            )
+
+    # Fallback: all active SECTION rooms.
+    # Fallback: todas las salas SECTION activas.
+    if target_room is None:
+        rooms = ChatRoom.objects.filter(
+            company=company,
+            room_type=ChatRoom.ROOM_TYPE_SECTION,
+            is_active=True,
+        )
+    else:
+        rooms = [target_room]
+
+    # Build card text.
+    # Construir texto de la tarjeta.
+    card_text = (
+        "Averia #" + str(ticket.ticket_number) + "\n"
+        "Maquina: " + (ticket.machine_raw or "Sin identificar") + "\n"
+        "Problema: " + (ticket.fault_summary or "-") + "\n"
+        "Ubicacion: " + (ticket.location or "-") + "\n"
+        "Urgencia: " + ticket.get_urgency_display() + "\n"
+        "Reportado por: " + (_resolve_alias(contact) or contact.name)
+    )
+
+    # Dispatch 1:1 to all CompanyUser members of target rooms.
+    # Despachar 1:1 a todos los CompanyUser miembros de las salas destino.
+    sent_pks = set()
+    for room in rooms:
+        members = CompanyUser.objects.filter(
+            company=company,
+            sections__chat_rooms=room,
+            is_active=True,
+        ).exclude(pk__in=sent_pks).select_related("contact")
+
+        for cu in members:
+            member_contact = _Contact.objects.filter(
+                company=company,
+                company_user=cu,
+            ).first()
+            if member_contact is None or not member_contact.phone_number:
+                continue
+            try:
+                WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=member_contact.phone_number,
+                    reply_text=card_text,
+                )
+                sent_pks.add(cu.pk)
+                logger.info(
+                    "# [BREAKDOWN CARD] Tarjeta enviada a CompanyUser pk=%s (%s).",
+                    cu.pk, member_contact.phone_number,
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [BREAKDOWN CARD] Error enviando tarjeta a CompanyUser pk=%s: %s",
+                    cu.pk, exc,
+                )
+
+        # Persist card as OUTBOUND in room for panel history.
+        # Persistir tarjeta como OUTBOUND en la sala para historial del panel.
+        ChatMessage.objects.create(
+            room=room,
+            direction=ChatMessage.DIRECTION_OUTBOUND,
+            body=card_text,
+            whatsapp_sid="",
         )

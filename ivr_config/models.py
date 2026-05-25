@@ -752,25 +752,26 @@ class Contact(models.Model):
             "broadcast en ChatSendView."
         ),
     )
-    # --- Breakdown routing state — Paso 12 (sala BREAKDOWNS). ---
-    # --- Estado de enrutamiento a averías — Paso 12 (sala BREAKDOWNS). ---
-    ROUTING_STATE_NONE           = "NONE"
-    ROUTING_STATE_AWAITING_ROUTE = "AWAITING_ROUTE"
-    ROUTING_STATE_CHOICES        = [
-        (ROUTING_STATE_NONE,           "Sin enrutamiento pendiente"),
-        (ROUTING_STATE_AWAITING_ROUTE, "Esperando selección de sala"),
+    # --- Breakdown routing state — Paso 13 (flujo de averia). ---
+    # --- Estado del flujo de averia — Paso 13. ---
+    ROUTING_STATE_NONE                      = "NONE"
+    ROUTING_STATE_AWAITING_BREAKDOWN_CONFIRM = "AWAITING_BREAKDOWN_CONFIRM"
+    ROUTING_STATE_BREAKDOWN_IN_PROGRESS      = "BREAKDOWN_IN_PROGRESS"
+    ROUTING_STATE_CHOICES                   = [
+        (ROUTING_STATE_NONE,                       "Sin flujo activo"),
+        (ROUTING_STATE_AWAITING_BREAKDOWN_CONFIRM, "Esperando confirmacion de averia"),
+        (ROUTING_STATE_BREAKDOWN_IN_PROGRESS,      "Recogida de averia en curso"),
     ]
     routing_state = models.CharField(
-        max_length=20,
+        max_length=30,
         choices=ROUTING_STATE_CHOICES,
         default=ROUTING_STATE_NONE,
         verbose_name="Estado de enrutamiento",
         help_text=(
-            "Estado del diálogo de enrutamiento dinámico para contactos con "
-            "sección y acceso a la sala BREAKDOWNS. "
-            "NONE: sin diálogo activo. "
-            "AWAITING_ROUTE: se ha enviado el Quick Reply de selección de sala "
-            "y se espera la respuesta del contacto."
+            "Estado del flujo de averia del contacto. "
+            "NONE: sin flujo activo. "
+            "AWAITING_BREAKDOWN_CONFIRM: se ha enviado el Quick Reply Si/No. "
+            "BREAKDOWN_IN_PROGRESS: el agente Gemini esta recogiendo los datos."
         ),
     )
     pending_routing_body = models.TextField(

@@ -1,108 +1,95 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V13.md
 
 # ENTERPRISEBOT — ANEXO HITO 13
-## Salas de Chat IRC por Sección (WhatsApp → Panel) — REDISEÑO ESTRATÉGICO S040
+## Salas de Chat IRC por Sección (WhatsApp -> Panel) — REDISENO ESTRATEGICO S041
 
 ---
 
-## 1. Contexto del Rediseño
+## 1. Contexto del Rediseno
 
-El planteamiento original del Hito 13 (salas IRC por sección con polling HTMX,
-replicación de mensajes WhatsApp en el panel y agente Gemini en sala BREAKDOWNS)
-quedó completado en S009 (2026-05-21) y promovido parcialmente al Hito 14.
-
-En la sesión S039 (2026-05-23) se acordó un cambio estratégico completo en el
-modelo de gestión de averías y comunicación por WhatsApp. El nuevo enfoque
-elimina la sala BREAKDOWNS como canal de entrada y redefine el rol del bot.
-
-En la sesión S040 (2026-05-24) se acordó adicionalmente la migración completa
-del canal WhatsApp de Twilio a Meta Cloud API directa, y se diseñó e implementó
-la infraestructura base del sistema de gestión del bot en el panel.
+El planteamiento original del Hito 13 quedó completado en S009 (2026-05-21).
+En S039 se acordó un cambio estratégico completo. En S040 se diseñó la
+infraestructura base del sistema de gestión del bot. En S041 se investigó
+la Groups API de Meta, se detectaron premisas incorrectas de S039/S040 y
+se rediseñó completamente la arquitectura con el enfoque híbrido definitivo.
 
 ---
 
-## 2. Nueva Arquitectura Estratégica
+## 2. Arquitectura Definitiva (S041)
 
-### 2.1. Grupos WhatsApp con Bot
+### 2.1. Canal WhatsApp — Decisión Definitiva
 
-Se crean dos grupos WhatsApp reales de menos de 8 miembros (máximo 8 incluyendo
-el bot, según límite de la Groups API de Meta), cada uno con el bot como
-participante administrador:
+Twilio se mantiene como único proveedor para mensajería WhatsApp y voz/IVR.
+La migración a Meta Cloud API directa queda descartada.
+Los Pasos 17e y 17f quedan eliminados de la hoja de ruta.
+La Groups API de Meta requiere OBA (tick verde) — actualmente en tramitación.
 
-  - Grupo Taller Mecánico: mecánicos de la sección de mecánica + bot.
-  - Grupo Taller Elevación: mecánicos de la sección de elevación + bot.
+### 2.2. Grupos Virtuales y Flujo de Mensajes
 
-El bot participa en estos grupos únicamente como receptor de la tarjeta de
-avería generada — no gestiona conversaciones en el grupo. Los mecánicos se
-comunican directamente entre ellos y con el chófer sin intervención del bot.
+Sala BREAKDOWNS (choferes / personal sin sección de taller):
+- Mensajes 1:1 estrictos — ningún otro chofer los recibe.
+- Visor del panel: historial agregado sin reenvío a nadie.
+- Tarjeta de ticket: despachada 1:1 a miembros del ChatRoom de taller destino.
 
-Sin restricción de ventana de 24h en grupos: el bot puede entregar tarjetas
-en cualquier momento independientemente de la actividad del grupo.
+Salas SECTION (secciones de taller):
+- Todos los mensajes de integrantes se replican 1:1 a todos los miembros vía Celery.
+- Tarjetas de avería entrantes también se despachan 1:1 a todos los miembros.
+- Visor del panel refleja todo el tráfico.
 
-### 2.2. Flujo de Avería 1:1 Chófer → Bot
+Circulares:
+- Alcance definido por el remitente: toda la empresa, sección concreta o combinación.
+- Todos los usuarios de Grupo Álvarez son destinatarios potenciales.
 
-Los chóferes reportan averías enviando un mensaje directo (1:1) al bot de
-WhatsApp. El chófer siempre inicia la conversación, por lo que no existe
-restricción de ventana de 24h.
+### 2.3. Flujo de Avería — Bot 1:1 con Chofer
 
-Flujo conversacional del bot (ESTRICTAMENTE SECUENCIAL — campo a campo):
-  1. Cualquier mensaje entrante de cualquier miembro del Grupo Álvarez →
-     bot responde que el canal es exclusivo de averías y ofrece abrir ticket
-     con reply buttons: [1 - Sí] [2 - No].
-  2. Si Sí → bot pregunta máquina / centro de gasto afectado (texto libre).
-  3. Bot instruye al chófer a describir la avería con detalle: elemento
-     afectado + posición exacta (ej: "gato hidráulico trasero izquierdo").
-  4. Bot pregunta: ¿puede el vehículo llegar al taller?
-     Reply buttons: [Sí] [No].
-     - Si No → bot solicita ubicación exacta (texto libre).
-  5. Bot pregunta urgencia con lista numerada (4 opciones — supera límite
-     de 3 botones de WhatsApp, se envía como texto):
-       1. El vehículo funciona pero con alguna limitación → LOW
-       2. El vehículo está parado pero la faena continúa → MEDIUM
-       3. La faena está parada por esta avería → HIGH
-       4. Hay riesgo para personas o para la máquina → CRITICAL
-  6. Bot resume todos los datos y pide confirmación: [Sí, confirmar] [No, corregir].
-  7. Al confirmar → bot crea BreakdownTicket en BD y envía tarjeta al grupo
-     de taller pertinente vía Meta Cloud API Groups API.
+Estados en Contact.routing_state:
 
-### 2.3. BreakdownTicket
+ROUTING_STATE_NONE
+  cualquier mensaje entrante
+  -> Quick Reply breakdown_confirm (SID: HX71d736523adabbd1e6d0fdf8acc2e99c)
+  -> persiste en BREAKDOWNS sin broadcast
 
-La generación de la tarjeta de avería por el bot crea automáticamente el
-BreakdownTicket en BD. Este ticket sigue el ciclo de vida ya implementado
-en el Hito 14: asignación a WORKSHOPBOSS, conversión a orden de reparación
-y cierre desde el panel.
+ROUTING_STATE_AWAITING_BREAKDOWN_CONFIRM
+  opt_in / afirmativo -> ROUTING_STATE_BREAKDOWN_IN_PROGRESS
+                      -> persiste mensaje en BREAKDOWNS
+                      -> invoca process_breakdown_turn()
+  opt_out / negativo  -> ROUTING_STATE_NONE
+                      -> informa canal exclusivo de averias
+  no reconocido       -> reenvía Quick Reply
 
-### 2.4. Routing al Grupo de Taller
+ROUTING_STATE_BREAKDOWN_IN_PROGRESS
+  todos los mensajes -> process_breakdown_turn() directo
+                     -> persisten en BREAKDOWNS sin broadcast
+  al detectar TICKET_COMPLETE:
+    -> guarda BreakdownTicket en BD
+    -> resetea ROUTING_STATE_NONE
+    -> llama _dispatch_breakdown_card()
 
-El routing es automático por familia del catálogo de MachineAsset, configurable
-desde Django Admin sin cambios de código mediante el modelo WorkshopFamilyMapping
-(implementado en S040). El campo MachineAsset.family determina el grupo destino.
-Fallback: MECHANICAL si la familia no está mapeada.
+### 2.4. Despacho de Tarjeta (_dispatch_breakdown_card)
 
-Los WORKSHOPBOSS pueden aceptar o redirigir tickets desde el panel si el routing
-automático fue incorrecto.
+Resolución ChatRoom destino:
+1. MachineAsset.family -> WorkshopFamilyMapping -> workshop_family
+2. ChatRoom SECTION cuya sección tiene CompanyUser con ese workshop_family
+3. Fallback: todas las salas SECTION activas
 
-### 2.5. Formato de Tarjeta de Avería (grupo WhatsApp)
+Envío: 1:1 a cada CompanyUser activo del ChatRoom destino con phone_number.
+Registro: ChatMessage(OUTBOUND) en sala de taller para historial del panel.
 
-  🔧 NUEVA AVERÍA — #EB-{id}
+Formato de tarjeta:
+  Averia #N
+  Maquina: {machine_raw}
+  Problema: {fault_summary}
+  Ubicacion: {location}
+  Urgencia: {display}
+  Reportado por: {alias}
 
-  🚗 Máquina: {nombre del CostCenter}
-  📋 Descripción: {síntoma}
-  📍 Ubicación: {taller / ubicación exacta}
-  ⚡ Urgencia: {nivel con texto}
-  👤 Reportado por: {alias del chófer}
-  🕐 Hora: {timestamp}
+### 2.5. Template breakdown_confirm
 
-### 2.6. Arquitectura WhatsApp — Migración a Meta Cloud API Directa
-
-En S040 se acordó y documentó la migración completa del canal WhatsApp de
-Twilio a Meta Cloud API directa:
-
-  - Twilio NO soporta la Groups API de WhatsApp — incompatible con el Paso 20.
-  - Meta Cloud API directa soporta grupos nativos, reply buttons en 1:1,
-    y acceso prioritario a nuevas funcionalidades.
-  - Twilio se mantiene exclusivamente para telefonía/IVR (voz).
-  - La refactorización de whatsapp/services.py se realiza en S041.
+SID: HX71d736523adabbd1e6d0fdf8acc2e99c
+Nombre en BD: breakdown_confirm (WhatsAppTemplate pk=7)
+Body: "Este canal es exclusivo para averias. El mensaje que acabas de enviar, es una averia?"
+Botones: [opt_in: "Si, es una averia"] [opt_out: "No, es otro asunto"]
+Actualizado en Twilio y BD en S041.
 
 ---
 
@@ -129,7 +116,7 @@ Twilio a Meta Cloud API directa:
 
 ---
 
-## 4. Pasos Nuevos — Rediseño S040+
+## 4. Pasos Nuevos — Rediseno S040+
 
 | Paso | Descripción | Estado |
 |------|-------------|--------|
@@ -137,153 +124,125 @@ Twilio a Meta Cloud API directa:
 | 17b | WorkshopFamilyMappingAdmin en ivr_config/admin.py | COMPLETADO S040 |
 | 17c | BotManagementView en panel/views.py + urls.py + sidebar | COMPLETADO S040 |
 | 17d | Template panel/bot/dashboard.html | COMPLETADO S040 |
-| 17e | Migración completa WhatsApp Twilio → Meta Cloud API directa | PENDIENTE |
-| 17f | Configuración grupos de taller vía Groups API de Meta | PENDIENTE |
-| 18 | Flujo conversacional bot 1:1 chófer → avería en chat/services.py | PENDIENTE |
-| 19 | Generación automática de BreakdownTicket desde conversación bot | PENDIENTE |
-| 20 | Entrega de tarjeta de avería al grupo WhatsApp pertinente | PENDIENTE |
-| 21 | Validación E2E flujo completo | PENDIENTE |
+| 17e | Migración WhatsApp Twilio -> Meta Cloud API | CANCELADO |
+| 17f | Configuración grupos de taller vía Groups API de Meta | CANCELADO |
+| 18 | Flujo confirmación avería + agente Gemini en chat/services.py | COMPLETADO S041 |
+| 19 | Generación automática de BreakdownTicket desde conversación bot | COMPLETADO S041 |
+| 20 | Despacho tarjeta 1:1 a miembros de sala de taller | COMPLETADO S041 |
+| 21 | Correcciones BotManagementView POST + dashboard.html + E2E | PENDIENTE |
 
 ---
 
-## 5. Modelos Relevantes — Estado S040
+## 5. Modelos Relevantes — Estado S041
 
-### CompanyUser (ivr_config/models.py)
-Campo añadido en S040:
+### Contact (ivr_config/models.py) — MODIFICADO S041
+Migración 0028 aplicada. Nuevos estados routing_state:
+  ROUTING_STATE_NONE = "NONE"
+  ROUTING_STATE_AWAITING_BREAKDOWN_CONFIRM = "AWAITING_BREAKDOWN_CONFIRM"
+  ROUTING_STATE_BREAKDOWN_IN_PROGRESS = "BREAKDOWN_IN_PROGRESS"
+max_length del campo routing_state ampliado a 30.
 
-  WORKSHOP_FAMILY_MECHANICAL = "MECHANICAL"
-  WORKSHOP_FAMILY_ELEVATION  = "ELEVATION"
-  WORKSHOP_FAMILY_CHOICES = [
-      (WORKSHOP_FAMILY_MECHANICAL, "Taller Mecánico"),
-      (WORKSHOP_FAMILY_ELEVATION,  "Taller Elevación"),
-  ]
-  workshop_family = models.CharField(
-      max_length=20, choices=WORKSHOP_FAMILY_CHOICES,
-      null=True, blank=True
-  )
-
-Solo relevante para rol WORKSHOPBOSS.
-
-### WorkshopFamilyMapping (ivr_config/models.py) — NUEVO S040
-Mapea MachineAsset.family (string del catálogo) a MECHANICAL/ELEVATION.
-Configurable desde Django Admin sin cambios de código.
-Campos: company (FK), catalogue_family (CharField), workshop_family (choices),
-notes (CharField blank), created_at, updated_at.
-unique_together: (company, catalogue_family).
+### ChatRoom (chat/models.py) — SIN CAMBIOS
+ROOM_TYPE_SECTION: salas de taller — broadcast completo.
+ROOM_TYPE_BREAKDOWNS: sala de averías — historial individual sin broadcast.
 
 ### BreakdownTicket (chat/models.py) — SIN CAMBIOS
-Campos relevantes para el visor: room (FK→ChatRoom→company), machine (FK),
-contact (FK), assigned_to (FK), fault_summary, urgency, status.
-Estados: STATUS_OPEN, STATUS_IN_PROGRESS, STATUS_RESOLVED.
-NO tiene campo company directo — filtrar siempre por room__company.
+Campos relevantes: room, contact, machine, machine_raw, fault_summary,
+location, urgency, status, assigned_to, ticket_number.
+Filtrar siempre por room__company.
+
+### WorkshopFamilyMapping (ivr_config/models.py) — SIN CAMBIOS
+Mapea MachineAsset.family -> workshop_family (MECHANICAL/ELEVATION).
 
 ---
 
-## 6. Vista BotManagementView — Arquitectura S040
+## 6. Funciones chat/services.py — Estado S041
 
-Ubicación: panel/views.py
-Hereda de: CompanyUserRequiredMixin, View
-URL: /panel/bot/ (name="bot_management")
-Template: panel/templates/panel/bot/dashboard.html
+Funciones eliminadas:
+  _handle_breakdown_routing() — obsoleta
+  _resolve_pending_routing() — obsoleta
 
-Bloques funcionales:
-  - Bloque 1: Onboarding por sección (solo ADMIN) — selector de Section
-    sin filtro is_active (todas las secciones de la empresa).
-  - Bloque 2: Circular a grupos WhatsApp (solo ADMIN) — pendiente implementación POST.
-  - Bloque 3: Circular 1:1 (solo ADMIN) — pendiente implementación POST.
-  - Bloque 4: Visor de averías — visible para ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP.
+Funciones nuevas:
+  _handle_breakdown_confirm(contact, body, from_number, to_number)
+    Envía Quick Reply breakdown_confirm. Guarda AWAITING_BREAKDOWN_CONFIRM.
+  _resolve_breakdown_confirm(contact, body, breakdown_room, from_number, to_number)
+    Procesa respuesta Si/No. Activa agente Gemini o informa canal exclusivo.
+  _persist_inbound_only(room, contact, body)
+    Persiste ChatMessage(INBOUND) en sala BREAKDOWNS sin broadcast.
+  _dispatch_breakdown_card(ticket, contact, to_number)
+    Resuelve sala de taller destino y envía tarjeta 1:1 a todos sus miembros.
 
-Lógica de visibilidad del visor por rol:
-  - ADMIN/SUPERVISOR: ven todos los tickets, selector de familia por GET param.
-  - WORKSHOPBOSS: ve solo su workshop_family.
-  - WORKSHOP: hereda familia del WORKSHOPBOSS de su sección (cadena
-    SectionContact → Section → WORKSHOPBOSS → workshop_family).
-
-Routing del visor: WorkshopFamilyMapping.objects.filter(company, workshop_family)
-→ lista de catalogue_family → filtro machine__family__in.
+dispatch_inbound_message — Nueva Regla 5:
+  Regla 5a: sala SECTION -> _persist_and_broadcast()
+  Regla 5b: sala BREAKDOWNS ->
+    BREAKDOWN_IN_PROGRESS        -> process_breakdown_turn() directo
+    AWAITING_BREAKDOWN_CONFIRM   -> _resolve_breakdown_confirm()
+    NONE u otro                  -> _handle_breakdown_confirm()
 
 ---
 
-## 7. Hoja de Ruta para la Siguiente Sesión (S041)
+## 7. BotManagementView — Pendiente S042
 
-### PRIORIDAD 0 — Configuración inicial en Django Admin (obligatorio antes de S041)
-Miguel Ángel debe configurar antes de S041:
-  a. En Django Admin → WorkshopFamilyMapping: crear los mapeos de familias
-     del catálogo (PLATAFOR, CARR → ELEVATION; MOVILES, AUTOCARG, REMOLQUE,
-     TTE. → MECHANICAL).
-  b. En Django Admin → CompanyUser: asignar workshop_family a los WORKSHOPBOSS
-     existentes (Taller Mecánico → MECHANICAL, Taller Elevación → ELEVATION).
+Solo get() operativo. POST pendiente para onboarding y circulares.
+Errores de campos en dashboard.html identificados en S041:
+  ticket.machine_asset -> ticket.machine (con fallback ticket.machine_raw)
+  ticket.description   -> ticket.fault_summary
+  ticket.reported_by_contact -> ticket.contact
 
-### PRIORIDAD 1 — Migración WhatsApp Twilio → Meta Cloud API (Paso 17e)
+---
 
-#### 1.1. Actualización online obligatoria (Directriz 4.4)
-Antes de implementar, actualizar en línea:
-  - Meta Cloud API: endpoint de mensajes, autenticación (META_WHATSAPP_TOKEN,
-    META_PHONE_NUMBER_ID), formato de payload para reply buttons,
-    mensajes de texto y mensajes a grupos.
-  - Groups API: endpoint de creación de grupo, añadir participantes,
-    envío de mensajes a group_id.
+## 8. Hoja de Ruta para la Siguiente Sesión (S042)
 
-#### 1.2. Variables de entorno a añadir al .env
-  META_WHATSAPP_TOKEN=<token permanente de sistema de Meta>
-  META_PHONE_NUMBER_ID=<ID del número en Meta>
-  META_WABA_ID=<WhatsApp Business Account ID>
-  META_VERIFY_TOKEN=<token de verificación del webhook>
-  WHATSAPP_GROUP_TALLER_MECANICO=<group_id del grupo Taller Mecánico>
-  WHATSAPP_GROUP_TALLER_ELEVACION=<group_id del grupo Taller Elevación>
+### PRIORIDAD 1 — Correcciones dashboard.html
 
-#### 1.3. Refactorización whatsapp/services.py
-Eliminar toda dependencia de Twilio para mensajería WhatsApp.
-Implementar cliente Meta Cloud API directa:
-  - send_whatsapp_message(to, text) → POST a /messages con type="text".
-  - send_whatsapp_reply_buttons(to, body, buttons) → type="interactive",
-    interactive.type="button", máximo 3 botones.
-  - send_whatsapp_list_message(to, body, items) → type="interactive",
-    interactive.type="list" para listas de más de 3 opciones (urgencia).
-  - send_whatsapp_group_message(group_id, text) → POST a /messages con
-    to=group_id.
-Mantener Twilio exclusivamente para telefonía (voz/IVR) — no tocar vox_bridge.
+Corregir los tres campos erróneos en panel/bot/dashboard.html:
+  a. ticket.machine_asset -> ticket.machine.code si ticket.machine else ticket.machine_raw
+  b. ticket.description -> ticket.fault_summary
+  c. ticket.reported_by_contact -> ticket.contact, mostrar
+     ticket.contact.company_user.alias|default:ticket.contact.name
 
-#### 1.4. Refactorización del webhook
-El webhook de entrada de mensajes WhatsApp actualmente procesa el formato
-de Twilio. Debe adaptarse al formato de payload de Meta Cloud API:
-  - Verificación del webhook con META_VERIFY_TOKEN (GET challenge).
-  - Procesamiento del payload Meta (POST): extraer from, body, type,
-    interactive.button_reply.id para reply buttons.
-  - Mantener compatibilidad con el routing_state del Contact existente.
+Actualizar textos de Bloques 2 y 3 que mencionan Meta Cloud API:
+  Bloque 2 "Circular a grupos de taller": redisenar como circular 1:1
+    por sección de taller via Twilio. Selector de ChatRoom SECTION activos.
+    Eliminar referencias a Meta Cloud API y grupos WhatsApp.
+  Bloque 3 "Circular 1:1": actualizar descripción a Twilio.
 
-### PRIORIDAD 2 — Creación de grupos de taller vía Groups API (Paso 17f)
-Tras implementar el cliente Meta Cloud API:
-  - Documentar el procedimiento de creación de grupos vía API.
-  - Registrar los group_id obtenidos en el .env.
-  - Verificar que el bot puede enviar mensajes a los grupos.
+### PRIORIDAD 2 — POST de BotManagementView
 
-### PRIORIDAD 3 — Flujo conversacional bot 1:1 (Paso 18)
-Implementar _handle_driver_breakdown_flow() en chat/services.py.
-El flujo usa el campo routing_state del modelo Contact para gestionar
-el estado conversacional por contacto.
+Implementar post() en BotManagementView discriminado por campo oculto action:
 
-Estados del flujo (routing_state values):
-  - "idle" → cualquier mensaje → respuesta exclusivo averías + reply buttons Sí/No.
-  - "breakdown_confirm" → espera Sí/No.
-  - "breakdown_machine" → espera nombre de máquina/CdG.
-  - "breakdown_description" → espera descripción detallada.
-  - "breakdown_can_move" → espera Sí/No (¿puede llegar al taller?).
-  - "breakdown_location" → espera ubicación (solo si no puede llegar).
-  - "breakdown_urgency" → espera número 1-4.
-  - "breakdown_review" → espera confirmación final Sí/No.
+  action="onboarding":
+    Obtener Section por section_id (validar company).
+    Obtener Contact de esa Section sin onboarding completado:
+      alias_onboarding_step != ALIAS_STEP_NONE o company_user sin alias.
+    Enviar template chat_onboarding (SID: HX9c92dd8981366dda0764900958b7abbc)
+      variables: {"1": contact.name, "2": company.name}
+    via WhatsAppChatService.send_quick_reply() desde número del bot.
+    Redirigir con mensaje de éxito indicando cuántos contactos recibieron onboarding.
 
-Datos parciales del ticket se acumulan en un campo JSON del Contact
-(verificar Contact.metadata o similar en S041 — añadir si no existe).
+  action="group_broadcast":
+    Obtener secciones de taller seleccionadas por workshop_family.
+    Resolver ChatRoom SECTION via WorkshopFamilyMapping.
+    Para cada CompanyUser activo de esas salas obtener Contact y enviar
+      mensaje libre via WhatsAppChatService.send_reply().
+    Persistir ChatMessage(OUTBOUND) en cada sala afectada.
+    Redirigir con mensaje de éxito.
 
-### PRIORIDAD 4 — Generación de BreakdownTicket y entrega de tarjeta (Pasos 19-20)
-Al confirmar el chófer:
-  - Crear BreakdownTicket en BD con todos los campos recopilados.
-  - Resolver routing: MachineAsset.family → WorkshopFamilyMapping →
-    workshop_family → group_id del .env.
-  - Enviar tarjeta formateada al grupo vía send_whatsapp_group_message().
-  - Resetear routing_state del Contact a "idle".
+  action="direct_broadcast":
+    Obtener Contact activos de la company (filtrando por section_id si aplica).
+    Enviar mensaje libre 1:1 a cada uno via WhatsAppChatService.send_reply().
+    Redirigir con mensaje de éxito.
 
-### PRIORIDAD 5 — Validación E2E (Paso 21)
-Prueba completa del flujo: mensaje 1:1 chófer → conversación secuencial →
-BreakdownTicket en BD → tarjeta en grupo → visor en panel.
+  Añadir en cada formulario del template:
+    <input type="hidden" name="action" value="onboarding|group_broadcast|direct_broadcast">
+
+### PRIORIDAD 3 — Validación E2E
+
+  1. Chofer envía mensaje 1:1 al bot.
+  2. Bot responde con Quick Reply breakdown_confirm.
+  3. Chofer pulsa "Si, es una averia".
+  4. Agente Gemini recoge datos campo a campo.
+  5. Al completar: BreakdownTicket en BD, routing_state=NONE.
+  6. Tarjeta enviada 1:1 a todos los miembros del ChatRoom de taller destino.
+  7. Historial visible en visor sala BREAKDOWNS del panel.
+  8. Ticket visible en BotManagementView visor de averías.
