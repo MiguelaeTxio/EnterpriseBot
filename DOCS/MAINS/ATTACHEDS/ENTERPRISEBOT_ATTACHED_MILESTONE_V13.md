@@ -181,68 +181,47 @@ dispatch_inbound_message — Nueva Regla 5:
 
 ---
 
-## 7. BotManagementView — Pendiente S042
+## 7. BotManagementView — Estado S042
 
-Solo get() operativo. POST pendiente para onboarding y circulares.
-Errores de campos en dashboard.html identificados en S041:
-  ticket.machine_asset -> ticket.machine (con fallback ticket.machine_raw)
-  ticket.description   -> ticket.fault_summary
-  ticket.reported_by_contact -> ticket.contact
+post() implementado en S042. Los tres handlers están operativos:
+  action=onboarding: lanza chat_onboarding a contactos sin alias completado.
+  action=group_broadcast: circular 1:1 a salas SECTION de taller via Twilio.
+  action=direct_broadcast: circular 1:1 a contactos activos de la empresa.
+Número del bot resuelto desde PhoneNumber activo con capabilities WHATSAPP/BOTH.
+Campos corregidos en dashboard.html:
+  ticket.machine / ticket.machine_raw, ticket.fault_summary, ticket.contact.
+Referencias a Meta Cloud API eliminadas de Bloques 2 y 3.
+Acceso por rol en ChatRoomListView y ChatRoomView actualizado:
+  WORKSHOPBOSS ve SECTION + BREAKDOWNS.
+  WORKSHOP y DRIVER ven solo su sala SECTION.
+  Sala BREAKDOWNS es can_send=False para todos los roles del panel.
 
 ---
 
-## 8. Hoja de Ruta para la Siguiente Sesión (S042)
+## 8. Hoja de Ruta para la Siguiente Sesión (S043)
 
-### PRIORIDAD 1 — Correcciones dashboard.html
+### PRIORIDAD Única — Validación E2E en producción y cierre del Paso 21
 
-Corregir los tres campos erróneos en panel/bot/dashboard.html:
-  a. ticket.machine_asset -> ticket.machine.code si ticket.machine else ticket.machine_raw
-  b. ticket.description -> ticket.fault_summary
-  c. ticket.reported_by_contact -> ticket.contact, mostrar
-     ticket.contact.company_user.alias|default:ticket.contact.name
-
-Actualizar textos de Bloques 2 y 3 que mencionan Meta Cloud API:
-  Bloque 2 "Circular a grupos de taller": redisenar como circular 1:1
-    por sección de taller via Twilio. Selector de ChatRoom SECTION activos.
-    Eliminar referencias a Meta Cloud API y grupos WhatsApp.
-  Bloque 3 "Circular 1:1": actualizar descripción a Twilio.
-
-### PRIORIDAD 2 — POST de BotManagementView
-
-Implementar post() en BotManagementView discriminado por campo oculto action:
-
-  action="onboarding":
-    Obtener Section por section_id (validar company).
-    Obtener Contact de esa Section sin onboarding completado:
-      alias_onboarding_step != ALIAS_STEP_NONE o company_user sin alias.
-    Enviar template chat_onboarding (SID: HX9c92dd8981366dda0764900958b7abbc)
-      variables: {"1": contact.name, "2": company.name}
-    via WhatsAppChatService.send_quick_reply() desde número del bot.
-    Redirigir con mensaje de éxito indicando cuántos contactos recibieron onboarding.
-
-  action="group_broadcast":
-    Obtener secciones de taller seleccionadas por workshop_family.
-    Resolver ChatRoom SECTION via WorkshopFamilyMapping.
-    Para cada CompanyUser activo de esas salas obtener Contact y enviar
-      mensaje libre via WhatsAppChatService.send_reply().
-    Persistir ChatMessage(OUTBOUND) en cada sala afectada.
-    Redirigir con mensaje de éxito.
-
-  action="direct_broadcast":
-    Obtener Contact activos de la company (filtrando por section_id si aplica).
-    Enviar mensaje libre 1:1 a cada uno via WhatsAppChatService.send_reply().
-    Redirigir con mensaje de éxito.
-
-  Añadir en cada formulario del template:
-    <input type="hidden" name="action" value="onboarding|group_broadcast|direct_broadcast">
-
-### PRIORIDAD 3 — Validación E2E
+Ejecutar la validación E2E completa del flujo de avería con los compañeros
+en el entorno de producción. Secuencia a verificar:
 
   1. Chofer envía mensaje 1:1 al bot.
-  2. Bot responde con Quick Reply breakdown_confirm.
-  3. Chofer pulsa "Si, es una averia".
-  4. Agente Gemini recoge datos campo a campo.
-  5. Al completar: BreakdownTicket en BD, routing_state=NONE.
-  6. Tarjeta enviada 1:1 a todos los miembros del ChatRoom de taller destino.
-  7. Historial visible en visor sala BREAKDOWNS del panel.
-  8. Ticket visible en BotManagementView visor de averías.
+  2. Bot responde con Quick Reply breakdown_confirm
+     (SID: HX71d736523adabbd1e6d0fdf8acc2e99c).
+  3. Chofer pulsa 'Si, es una averia'.
+  4. Agente Gemini recoge datos campo a campo hasta TICKET_COMPLETE.
+  5. BreakdownTicket guardado en BD con routing_state reseteado a NONE.
+  6. Tarjeta de avería despachada 1:1 a todos los CompanyUser activos
+     del ChatRoom SECTION de taller destino (resolución via WorkshopFamilyMapping).
+  7. Historial del chofer visible en visor sala BREAKDOWNS del panel.
+  8. Ticket visible y correcto en BotManagementView (campos machine, fault_summary,
+     contact con alias resuelto).
+  9. WORKSHOPBOSS puede ver sala BREAKDOWNS en ChatRoomListView.
+ 10. WORKSHOP y DRIVER NO ven sala BREAKDOWNS en ChatRoomListView.
+ 11. Nadie puede enviar mensajes desde el panel en la sala BREAKDOWNS (can_send=False).
+ 12. Los tres formularios del dashboard del bot (onboarding, group_broadcast,
+     direct_broadcast) funcionan correctamente con sus respectivos action.
+
+Si todos los puntos se validan sin errores: cerrar el Paso 21 en este anexo
+marcando su estado como COMPLETADO en la tabla de pasos.
+A continuación actualizar el MASTER_DOCUMENT para cerrar formalmente el Hito 13.

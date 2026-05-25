@@ -129,16 +129,22 @@ class ChatRoomView(CompanyUserRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
-        # All roles can send messages in their accessible rooms.
-        # Todos los roles con acceso a salas pueden enviar mensajes.
-        # All roles with room access are allowed to send messages.
-        can_send = company_user.role in (
-            company_user.ROLE_ADMIN,
-            company_user.ROLE_SUPERVISOR,
-            company_user.ROLE_WORKSHOPBOSS,
-            company_user.ROLE_WORKSHOP,
-            company_user.ROLE_DRIVER,
-        )
+        # BREAKDOWNS room is a read-only admin visor for all panel roles.
+        # The bot-to-driver 1:1 conversation flow writes to it automatically.
+        # In SECTION rooms all authorised roles may send panel messages.
+        # La sala BREAKDOWNS es un visor de solo lectura para todos los roles
+        # del panel — el flujo 1:1 bot-chofer escribe en ella automaticamente.
+        # En salas SECTION todos los roles autorizados pueden enviar mensajes.
+        if room.room_type == ChatRoom.ROOM_TYPE_BREAKDOWNS:
+            can_send = False
+        else:
+            can_send = company_user.role in (
+                company_user.ROLE_ADMIN,
+                company_user.ROLE_SUPERVISOR,
+                company_user.ROLE_WORKSHOPBOSS,
+                company_user.ROLE_WORKSHOP,
+                company_user.ROLE_DRIVER,
+            )
 
         # Detect missing alias — modal will be shown in the template.
         # Detectar alias ausente — se mostrará el modal en la plantilla.
@@ -317,8 +323,13 @@ class ChatRoomListView(CompanyUserRequiredMixin, View):
             )
         else:
             # Resolve the section assigned to this WORKSHOPBOSS/WORKSHOP/DRIVER contact.
+            # WORKSHOPBOSS sees their own SECTION room plus the BREAKDOWNS room.
+            # WORKSHOP and DRIVER see only their own SECTION room.
             # Resolver la seccion asignada al contacto WORKSHOPBOSS/WORKSHOP/DRIVER.
+            # WORKSHOPBOSS ve su sala SECTION y la sala BREAKDOWNS.
+            # WORKSHOP y DRIVER ven solo su sala SECTION.
             from ivr_config.models import Contact
+            from django.db.models import Q
             _contact = Contact.objects.filter(
                 company=company,
                 company_user=company_user,
@@ -327,20 +338,31 @@ class ChatRoomListView(CompanyUserRequiredMixin, View):
                 _contact.sections.filter(company=company).first()
                 if _contact else None
             )
-            from django.db.models import Q
-            rooms = (
-                ChatRoom.objects
-                .filter(
-                    company=company,
-                    is_active=True,
+            if company_user.role == company_user.ROLE_WORKSHOPBOSS:
+                rooms = (
+                    ChatRoom.objects
+                    .filter(company=company, is_active=True)
+                    .filter(
+                        Q(room_type=ChatRoom.ROOM_TYPE_BREAKDOWNS) |
+                        Q(room_type=ChatRoom.ROOM_TYPE_SECTION, section=_section)
+                    )
+                    .select_related("section")
+                    .order_by("room_type", "name")
                 )
-                .filter(
-                    Q(room_type=ChatRoom.ROOM_TYPE_BREAKDOWNS) |
-                    Q(room_type=ChatRoom.ROOM_TYPE_SECTION, section=_section)
+            else:
+                # WORKSHOP and DRIVER — own SECTION room only.
+                # WORKSHOP y DRIVER — solo su sala SECTION.
+                rooms = (
+                    ChatRoom.objects
+                    .filter(
+                        company=company,
+                        is_active=True,
+                        room_type=ChatRoom.ROOM_TYPE_SECTION,
+                        section=_section,
+                    )
+                    .select_related("section")
+                    .order_by("name")
                 )
-                .select_related("section")
-                .order_by("room_type", "name")
-            )
 
         own_presence = PresenceStatus.objects.filter(
             company_user=company_user,

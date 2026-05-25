@@ -14249,9 +14249,9 @@ class BotManagementView(CompanyUserRequiredMixin, View):
          Contacts in a selected Section that have not yet completed it.
       2. Group broadcast — sends a free-form message to one or both
          WhatsApp workshop groups (Mechanical / Elevation) via the
-         Meta Cloud API Groups API.
+         workshop ChatRoom SECTION rooms via Twilio WhatsApp.
       3. 1-to-1 broadcast — sends a free-form message individually
-         to a selected set of Contacts via the Meta Cloud API.
+         to all active Contacts of the company via Twilio WhatsApp.
       4. Breakdown ticket viewer — lists active BreakdownTickets filtered
          by the authenticated user's workshop family. ADMIN and SUPERVISOR
          see all tickets with a family selector. WORKSHOPBOSS sees only
@@ -14265,9 +14265,9 @@ class BotManagementView(CompanyUserRequiredMixin, View):
       1. Onboarding por sección — dispara el flujo de onboarding para todos
          los Contacts de una Section seleccionada que no lo hayan completado.
       2. Circular a grupos — envía un mensaje libre a uno o ambos grupos
-         WhatsApp de taller (Mecánico / Elevación) via Meta Cloud API Groups API.
+         salas ChatRoom SECTION de taller via Twilio WhatsApp.
       3. Circular 1:1 — envía un mensaje libre individualmente a un conjunto
-         de Contacts seleccionados via Meta Cloud API.
+         de Contacts activos de la empresa via Twilio WhatsApp.
       4. Visor de averías — lista los BreakdownTickets activos filtrados
          por la familia de taller del usuario autenticado. ADMIN y SUPERVISOR
          ven todos los tickets con selector de familia. WORKSHOPBOSS ve solo
@@ -14433,3 +14433,282 @@ class BotManagementView(CompanyUserRequiredMixin, View):
             "company_user":      company_user,
         })
 
+    def post(self, request, *args, **kwargs):
+        """
+        Handles the three bot management actions dispatched from the dashboard
+        form via the hidden 'action' field:
+          - onboarding: triggers the chat_onboarding quick-reply template for
+            all contacts in a selected section that have not yet completed the
+            alias onboarding flow.
+          - group_broadcast: sends a free-form message 1:1 to all active
+            CompanyUser members of one or both workshop ChatRoom SECTION rooms,
+            resolved via WorkshopFamilyMapping. Persists a ChatMessage(OUTBOUND)
+            in each affected room for panel history.
+          - direct_broadcast: sends a free-form message 1:1 to all active
+            Contacts of the company, optionally filtered by section.
+        Only ADMIN role may reach this handler (can_manage guard).
+        ---
+        Gestiona las tres acciones de administración del bot despachadas desde
+        el formulario del dashboard mediante el campo oculto 'action':
+          - onboarding: lanza la plantilla quick-reply chat_onboarding para
+            todos los contactos de una sección seleccionada que no hayan
+            completado el flujo de alias onboarding.
+          - group_broadcast: envía un mensaje libre 1:1 a todos los CompanyUser
+            activos de una o ambas salas ChatRoom SECTION de taller, resueltas
+            via WorkshopFamilyMapping. Persiste un ChatMessage(OUTBOUND) en
+            cada sala afectada para el historial del panel.
+          - direct_broadcast: envía un mensaje libre 1:1 a todos los Contacts
+            activos de la empresa, opcionalmente filtrados por sección.
+        Solo el rol ADMIN puede alcanzar este handler (guardia can_manage).
+        """
+        from whatsapp.services import WhatsAppChatService
+        from whatsapp.models import WhatsAppTemplate
+        from chat.models import ChatRoom, ChatMessage
+        from ivr_config.models import Section, Contact, WorkshopFamilyMapping
+
+        company_user = request.user.company_user
+        is_admin = company_user.role == CompanyUser.ROLE_ADMIN
+        if not is_admin:
+            return redirect("panel:bot_management")
+
+        company = company_user.company
+        action = request.POST.get("action", "")
+
+        # Resolve the bot WhatsApp number from the active PhoneNumber records.
+        # Resolver el número WhatsApp del bot desde los registros PhoneNumber activos.
+        bot_number = (
+            PhoneNumber.objects
+            .filter(
+                company=company,
+                capabilities__in=[
+                    PhoneNumber.CAPABILITY_WHATSAPP,
+                    PhoneNumber.CAPABILITY_BOTH,
+                ],
+                is_active=True,
+            )
+            .values_list("number", flat=True)
+            .first()
+        )
+        if not bot_number:
+            django_messages.error(
+                request,
+                "No se encontró ningún número WhatsApp activo para esta empresa.",
+            )
+            return redirect("panel:bot_management")
+
+        # --------------------------------------------------------------
+        # ACTION: onboarding
+        # Launch the chat_onboarding quick-reply for all contacts in the
+        # selected section that have not yet completed alias onboarding.
+        # Lanzar el quick-reply chat_onboarding para todos los contactos
+        # de la sección seleccionada sin onboarding completado.
+        # --------------------------------------------------------------
+        if action == "onboarding":
+            section_id = request.POST.get("section_id")
+            if not section_id:
+                django_messages.error(request, "Debes seleccionar una sección.")
+                return redirect("panel:bot_management")
+            try:
+                section = Section.objects.get(pk=section_id, company=company)
+            except Section.DoesNotExist:
+                django_messages.error(request, "Sección no válida.")
+                return redirect("panel:bot_management")
+
+            # Fetch the chat_onboarding template SID from DB.
+            # Obtener el SID del template chat_onboarding desde BD.
+            try:
+                onboarding_template = WhatsAppTemplate.objects.get(
+                    name="chat_onboarding",
+                    company=company,
+                )
+                template_sid = onboarding_template.content_sid
+            except WhatsAppTemplate.DoesNotExist:
+                django_messages.error(
+                    request,
+                    "No se encontró el template chat_onboarding en la base de datos.",
+                )
+                return redirect("panel:bot_management")
+
+            # Resolve contacts without completed onboarding.
+            # Resolver contactos sin onboarding completado.
+            pending_contacts = (
+                Contact.objects
+                .filter(
+                    company=company,
+                    section_contacts__section=section,
+                )
+                .exclude(alias_onboarding_step=Contact.ALIAS_STEP_NONE)
+                .exclude(
+                    company_user__isnull=False,
+                    company_user__alias__isnull=False,
+                )
+                .exclude(phone_number="")
+                .distinct()
+            )
+
+            sent_count = 0
+            for contact in pending_contacts:
+                if not contact.phone_number:
+                    continue
+                try:
+                    WhatsAppChatService.send_quick_reply(
+                        from_number=bot_number,
+                        to_number=contact.phone_number,
+                        content_sid=template_sid,
+                        content_variables={
+                            "1": contact.name,
+                            "2": company.name,
+                        },
+                    )
+                    sent_count += 1
+                except Exception as exc:
+                    logger.error(
+                        "# [BOT MGMT] Error enviando onboarding a %s: %s",
+                        contact.phone_number, exc,
+                    )
+
+            django_messages.success(
+                request,
+                f"Onboarding lanzado a {sent_count} contacto(s) de la sección '{section.name}'.",
+            )
+            return redirect("panel:bot_management")
+
+        # --------------------------------------------------------------
+        # ACTION: group_broadcast
+        # Sends a free-form message 1:1 to all active CompanyUser members
+        # of the ChatRoom SECTION rooms matching the selected workshop
+        # families, resolved via WorkshopFamilyMapping.
+        # Envía un mensaje libre 1:1 a todos los CompanyUser activos de
+        # las salas ChatRoom SECTION que corresponden a las familias de
+        # taller seleccionadas, resueltas via WorkshopFamilyMapping.
+        # --------------------------------------------------------------
+        if action == "group_broadcast":
+            selected_families = request.POST.getlist("groups")
+            message_body = request.POST.get("message", "").strip()
+            if not selected_families or not message_body:
+                django_messages.error(
+                    request,
+                    "Debes seleccionar al menos un taller y escribir un mensaje.",
+                )
+                return redirect("panel:bot_management")
+
+            valid_families = {CompanyUser.WORKSHOP_FAMILY_MECHANICAL, CompanyUser.WORKSHOP_FAMILY_ELEVATION}
+            selected_families = [f for f in selected_families if f in valid_families]
+            if not selected_families:
+                django_messages.error(request, "Familia de taller no válida.")
+                return redirect("panel:bot_management")
+
+            total_sent = 0
+            for workshop_family in selected_families:
+                # Resolve ChatRoom SECTION for this workshop family.
+                # Resolver ChatRoom SECTION para esta familia de taller.
+                target_rooms = ChatRoom.objects.filter(
+                    company=company,
+                    room_type=ChatRoom.ROOM_TYPE_SECTION,
+                    section__companyuser__workshop_family=workshop_family,
+                    is_active=True,
+                ).distinct()
+
+                for room in target_rooms:
+                    # Resolve active CompanyUser members with a linked Contact.
+                    # Resolver CompanyUser activos con Contact vinculado.
+                    members = (
+                        CompanyUser.objects
+                        .filter(
+                            company=company,
+                            sections__chat_rooms=room,
+                            is_active=True,
+                        )
+                        .select_related("contact")
+                        .distinct()
+                    )
+
+                    room_sent = 0
+                    for cu in members:
+                        member_contact = (
+                            Contact.objects
+                            .filter(company=company, company_user=cu)
+                            .first()
+                        )
+                        if not member_contact or not member_contact.phone_number:
+                            continue
+                        try:
+                            WhatsAppChatService.send_reply(
+                                from_number=bot_number,
+                                to_number=member_contact.phone_number,
+                                reply_text=message_body,
+                            )
+                            room_sent += 1
+                            total_sent += 1
+                        except Exception as exc:
+                            logger.error(
+                                "# [BOT MGMT] Error en group_broadcast a %s: %s",
+                                member_contact.phone_number, exc,
+                            )
+
+                    # Persist broadcast as OUTBOUND in the room for panel history.
+                    # Persistir el broadcast como OUTBOUND en la sala para historial del panel.
+                    if room_sent > 0:
+                        ChatMessage.objects.create(
+                            room=room,
+                            direction=ChatMessage.DIRECTION_OUTBOUND,
+                            body=message_body,
+                            whatsapp_sid="",
+                        )
+
+            django_messages.success(
+                request,
+                f"Circular enviada a {total_sent} miembro(s) de los talleres seleccionados.",
+            )
+            return redirect("panel:bot_management")
+
+        # --------------------------------------------------------------
+        # ACTION: direct_broadcast
+        # Sends a free-form message 1:1 to all active Contacts of the
+        # company, optionally filtered by section.
+        # Envía un mensaje libre 1:1 a todos los Contacts activos de la
+        # empresa, opcionalmente filtrados por sección.
+        # --------------------------------------------------------------
+        if action == "direct_broadcast":
+            message_body = request.POST.get("message", "").strip()
+            section_id = request.POST.get("section_id", "").strip()
+            if not message_body:
+                django_messages.error(request, "Debes escribir un mensaje.")
+                return redirect("panel:bot_management")
+
+            contacts_qs = Contact.objects.filter(
+                company=company,
+                opt_out_broadcast=False,
+            ).exclude(phone_number="")
+
+            if section_id:
+                contacts_qs = contacts_qs.filter(
+                    section_contacts__section_id=section_id,
+                    section_contacts__section__company=company,
+                )
+
+            sent_count = 0
+            for contact in contacts_qs.distinct():
+                try:
+                    WhatsAppChatService.send_reply(
+                        from_number=bot_number,
+                        to_number=contact.phone_number,
+                        reply_text=message_body,
+                    )
+                    sent_count += 1
+                except Exception as exc:
+                    logger.error(
+                        "# [BOT MGMT] Error en direct_broadcast a %s: %s",
+                        contact.phone_number, exc,
+                    )
+
+            django_messages.success(
+                request,
+                f"Circular 1:1 enviada a {sent_count} contacto(s).",
+            )
+            return redirect("panel:bot_management")
+
+        # Unknown action — redirect silently.
+        # Acción desconocida — redirigir sin notificación.
+        django_messages.warning(request, "Acción no reconocida.")
+        return redirect("panel:bot_management")

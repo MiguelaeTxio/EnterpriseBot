@@ -28,6 +28,7 @@
       </p>
       <form method="post" action="{% url 'panel:bot_management' %}">
         {% csrf_token %}
+        <input type="hidden" name="action" value="onboarding">
         <div class="row g-2 align-items-end">
           <div class="col-md-5">
             <label for="onboarding_section" class="form-label">Sección</label>
@@ -49,21 +50,23 @@
   </div>
 
   {# ------------------------------------------------------------------ #}
-  {# BLOQUE 2 — Circular a grupos WhatsApp (solo ADMIN)                  #}
-  {# BLOCK 2 — Group broadcast (ADMIN only)                              #}
+  {# BLOQUE 2 — Circular a salas de taller via Twilio (solo ADMIN)       #}
+  {# BLOCK 2 — Workshop section broadcast via Twilio (ADMIN only)         #}
   {# ------------------------------------------------------------------ #}
   <div class="card mb-4">
     <div class="card-header fw-semibold">
-      <i class="bi bi-broadcast me-2"></i>Circular a grupos de taller
+      <i class="bi bi-broadcast me-2"></i>Circular a salas de taller
     </div>
     <div class="card-body">
       <p class="text-muted small mb-3">
-        Envía un mensaje a uno o ambos grupos WhatsApp de taller vía Meta Cloud API.
+        Envía un mensaje 1:1 a todos los miembros de uno o ambos talleres
+        vía Twilio WhatsApp. El mensaje se registra en el historial de cada sala.
       </p>
       <form method="post" action="{% url 'panel:bot_management' %}">
         {% csrf_token %}
+        <input type="hidden" name="action" value="group_broadcast">
         <div class="mb-3">
-          <label class="form-label">Grupos destinatarios</label>
+          <label class="form-label">Talleres destinatarios</label>
           <div class="form-check">
             <input class="form-check-input" type="checkbox" name="groups" value="MECHANICAL" id="grp_mechanical">
             <label class="form-check-label" for="grp_mechanical">Taller Mecánico</label>
@@ -76,18 +79,18 @@
         <div class="mb-3">
           <label for="group_message" class="form-label">Mensaje</label>
           <textarea name="message" id="group_message" class="form-control" rows="3"
-                    placeholder="Escribe el mensaje para el grupo..." required></textarea>
+                    placeholder="Escribe el mensaje para el taller..." required></textarea>
         </div>
         <button type="submit" class="btn btn-primary">
-          <i class="bi bi-send me-1"></i>Enviar al grupo
+          <i class="bi bi-send me-1"></i>Enviar al taller
         </button>
       </form>
     </div>
   </div>
 
   {# ------------------------------------------------------------------ #}
-  {# BLOQUE 3 — Circular 1:1 (solo ADMIN)                               #}
-  {# BLOCK 3 — 1-to-1 broadcast (ADMIN only)                            #}
+  {# BLOQUE 3 — Circular 1:1 via Twilio (solo ADMIN)                    #}
+  {# BLOCK 3 — 1-to-1 broadcast via Twilio (ADMIN only)                 #}
   {# ------------------------------------------------------------------ #}
   <div class="card mb-4">
     <div class="card-header fw-semibold">
@@ -95,10 +98,12 @@
     </div>
     <div class="card-body">
       <p class="text-muted small mb-3">
-        Envía un mensaje individual a uno o varios contactos vía Meta Cloud API.
+        Envía un mensaje individual a uno o varios contactos vía Twilio WhatsApp.
+        Filtra por sección o envía a todos los contactos activos de la empresa.
       </p>
       <form method="post" action="{% url 'panel:bot_management' %}">
         {% csrf_token %}
+        <input type="hidden" name="action" value="direct_broadcast">
         <div class="mb-3">
           <label for="direct_section" class="form-label">Filtrar por sección</label>
           <select name="section_id" id="direct_section" class="form-select">
@@ -164,13 +169,15 @@
             <tr>
               <td class="text-muted small">{{ ticket.pk }}</td>
               <td>
-                {% if ticket.machine_asset %}
-                  {{ ticket.machine_asset.code }}
+                {% if ticket.machine %}
+                  {{ ticket.machine.code }}
+                {% elif ticket.machine_raw %}
+                  {{ ticket.machine_raw }}
                 {% else %}
                   <span class="text-muted">—</span>
                 {% endif %}
               </td>
-              <td class="small">{{ ticket.description|truncatechars:60 }}</td>
+              <td class="small">{{ ticket.fault_summary|truncatechars:60 }}</td>
               <td>
                 <span class="badge
                   {% if ticket.urgency == 'CRITICAL' %}bg-danger
@@ -181,8 +188,8 @@
                 </span>
               </td>
               <td class="small">
-                {% if ticket.reported_by_contact %}
-                  {{ ticket.reported_by_contact.alias|default:ticket.reported_by_contact.name }}
+                {% if ticket.contact %}
+                  {{ ticket.contact.company_user.alias|default:ticket.contact.name }}
                 {% else %}
                   <span class="text-muted">—</span>
                 {% endif %}
