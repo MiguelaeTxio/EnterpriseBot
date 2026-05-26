@@ -125,6 +125,13 @@ class CompanyUser(models.Model):
     # No access to the inline editor or the rest of the IVR configuration panel.
     ROLE_SUPERVISOR   = "SUPERVISOR"
     ROLE_DRIVER       = "DRIVER"
+    # ASSISTANCE: operario de la seccion ASISTENCIA. Acceso exclusivo
+    # al modulo de presupuestos. Sin acceso a IVR, WhatsApp, partes
+    # ni ninguna otra seccion del panel.
+    # ASSISTANCE: ASISTENCIA section operator. Exclusive access to the
+    # budgets module. No access to IVR, WhatsApp, work orders or any
+    # other panel section.
+    ROLE_ASSISTANCE   = "ASSISTANCE"
     ROLE_CHOICES      = [
         (ROLE_ADMIN,         "Administrador"),
         (ROLE_OPERATOR,      "Operador"),
@@ -132,6 +139,7 @@ class CompanyUser(models.Model):
         (ROLE_WORKSHOPBOSS,  "Jefe de taller"),
         (ROLE_SUPERVISOR,    "Supervisor"),
         (ROLE_DRIVER,        "Chófer"),
+        (ROLE_ASSISTANCE,    "Operario de Asistencia"),
     ]
 
     company = models.ForeignKey(
@@ -160,7 +168,8 @@ class CompanyUser(models.Model):
             "WORKSHOPBOSS: jefe de taller — tickets de avería, sala BREAKDOWNS y sección propia, "
             "más acceso equivalente a SUPERVISOR en Taller, Administración y jornada. "
             "SUPERVISOR: revisión y exportación de partes PDF. "
-            "DRIVER: reservado."
+            "DRIVER: reservado. "
+            "ASSISTANCE: operario de Asistencia — solo modulo de presupuestos."
         ),
     )
     is_active = models.BooleanField(

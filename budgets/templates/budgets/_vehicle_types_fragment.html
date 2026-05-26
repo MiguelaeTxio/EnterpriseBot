@@ -1,0 +1,21 @@
+{# budgets/_vehicle_types_fragment.html                                        #}
+{# HTMX partial — vehicle type dropdown for the selected insurer.              #}
+{# Parcial HTMX — desplegable de tipo de vehiculo para la aseguradora elegida. #}
+<div class="card mb-3" id="step-vehicle-type">
+  <div class="card-body">
+    <label class="form-label fw-semibold" for="id_vehicle_type">
+      2. Tipo de vehículo
+    </label>
+    <select
+      class="form-select"
+      name="vehicle_type_id"
+      id="id_vehicle_type"
+      required
+    >
+      <option value="">— Selecciona el tipo de vehículo —</option>
+      {% for vt in vehicle_types %}
+      <option value="{{ vt.pk }}">{{ vt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>

@@ -73,6 +73,8 @@ INSTALLED_APPS = [
     'fleet',
     # IRC-style section chat rooms and breakdown agent — salas de chat IRC y agente de averías.
     'chat',
+    # ASISTENCIA budget engine — motor de presupuestos ASISTENCIA.
+    'budgets',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.

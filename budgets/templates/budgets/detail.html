@@ -1,0 +1,138 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/detail.html #}
+{#                                                                                   #}
+{# Budget detail — ADMIN only. Full calculation breakdown for audit purposes.        #}
+{# Detalle de presupuesto — solo ADMIN. Desglose completo del calculo para auditoria.#}
+{% extends "panel/base.html" %}
+
+{% block title %}Desglose presupuesto #{{ budget.pk }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+
+      <div class="d-flex align-items-center gap-3 mb-4">
+        <a href="{% url 'budgets:history' %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-arrow-left"></i>
+        </a>
+        <h4 class="mb-0">
+          <i class="bi bi-receipt-cutoff me-2"></i>
+          Desglose presupuesto #{{ budget.pk }}
+        </h4>
+      </div>
+
+      {# Summary card #}
+      <div class="card mb-4">
+        <div class="card-body">
+          <div class="row g-2 small">
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Compañía:</span>
+              <strong>{{ budget.insurer.name }}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Vehículo:</span>
+              <strong>{{ budget.vehicle_type.name }}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Tarifa:</span>
+              <strong>{{ budget.tariff }}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Fecha servicio:</span>
+              <strong>{{ budget.service_date|date:"d/m/Y" }}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Operario:</span>
+              <strong>{{ budget.operator.user.username }}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Estado:</span>
+              {% if budget.status == 'ACCEPTED' %}
+              <span class="badge bg-success">Aceptado</span>
+              {% elif budget.status == 'REJECTED' %}
+              <span class="badge bg-danger">Rechazado</span>
+              {% else %}
+              <span class="badge bg-secondary">Borrador</span>
+              {% endif %}
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Km totales:</span>
+              <strong>{{ budget.km_total }} km</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Pernocta:</span>
+              <strong>{% if budget.is_overnight %}Sí{% else %}No{% endif %}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Desbloqueo:</span>
+              <strong>{% if budget.has_unlock %}Sí{% else %}No{% endif %}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Nocturno/Festivo:</span>
+              <strong>
+                {% if budget.is_night_or_holiday %}Sí{% else %}No{% endif %}
+              </strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted">Vehículo cargado:</span>
+              <strong>{% if budget.is_loaded %}Sí{% else %}No{% endif %}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# Breakdown table #}
+      <div class="card mb-4">
+        <div class="card-header fw-semibold small">
+          Desglose del cálculo
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Concepto</th>
+                <th class="text-end">Unidades</th>
+                <th class="text-end">Precio unit.</th>
+                <th class="text-end">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for line in lines %}
+              <tr {% if line.is_surcharge %}class="table-warning"{% endif %}>
+                <td>
+                  {{ line.concept_label }}
+                  {% if line.is_surcharge %}
+                  <span class="badge bg-warning text-dark ms-1 small">
+                    Recargo
+                  </span>
+                  {% endif %}
+                </td>
+                <td class="text-end">{{ line.units }}</td>
+                <td class="text-end">{{ line.unit_price }} €</td>
+                <td class="text-end fw-semibold">{{ line.subtotal }} €</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot class="table-light">
+              <tr>
+                <td colspan="3" class="text-end fw-bold">TOTAL</td>
+                <td class="text-end fw-bold fs-5 text-primary">
+                  {{ budget.total_amount }} €
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      {% if budget.extra_notes %}
+      <div class="card mb-4">
+        <div class="card-header fw-semibold small">Notas</div>
+        <div class="card-body small">{{ budget.extra_notes }}</div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+{% endblock %}

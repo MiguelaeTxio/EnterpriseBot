@@ -52,11 +52,12 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Mi perfil — todos los roles con acceso al panel            #}
+    {# Sección: Mi perfil — todos los roles excepto ASSISTANCE            #}
     {# Mi estado (Presencia) incluido aquí — ADMIN, SUPERVISOR, WORKSHOPBOSS #}
-    {# Section: My profile — all roles with panel access                  #}
+    {# Section: My profile — all roles except ASSISTANCE                 #}
     {# Presence status included here — ADMIN, SUPERVISOR, WORKSHOPBOSS    #}
     {# ------------------------------------------------------------------ #}
+    {% if company_user.role != 'ASSISTANCE' %}
     <li><div class="sidebar-section-label">Mi perfil</div></li>
 
     <li class="nav-item">
@@ -65,6 +66,7 @@
             <i class="bi bi-person-circle"></i>Mi perfil
         </a>
     </li>
+    {% endif %}
 
     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
     <li class="nav-item">
@@ -260,10 +262,11 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Operarios — todos los roles con acceso al panel            #}
+    {# Sección: Operarios — todos los roles excepto ASSISTANCE             #}
     {# Incluye: Nuevo parte, Historial, Partes digitales                   #}
-    {# Section: Operators — all roles with panel access                    #}
+    {# Section: Operators — all roles except ASSISTANCE                    #}
     {# ------------------------------------------------------------------ #}
+    {% if company_user.role != 'ASSISTANCE' %}
     <li><div class="sidebar-section-label">Operarios</div></li>
 
     <li class="nav-item">
@@ -292,6 +295,7 @@
         </a>
     </li>
     {% endif %}
+    {% endif %}
 
     {# ------------------------------------------------------------------ #}
     {# Sección: Tickets de Avería — ADMIN, SUPERVISOR, WORKSHOPBOSS        #}
@@ -307,6 +311,32 @@
             <i class="bi bi-exclamation-triangle"></i>Tickets de avería
         </a>
     </li>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Sección: Presupuestos ASISTENCIA — rol ASSISTANCE y ADMIN          #}
+    {# Section: ASISTENCIA Budgets — ASSISTANCE and ADMIN roles            #}
+    {# Hito 16 (2026-05-26)                                               #}
+    {# ------------------------------------------------------------------ #}
+    {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ADMIN' %}
+    <li><div class="sidebar-section-label">Presupuestos</div></li>
+
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
+           href="{% url 'budgets:wizard' %}">
+            <i class="bi bi-calculator"></i>Nuevo presupuesto
+        </a>
+    </li>
+
+    {# Historial — solo ADMIN / History — ADMIN only #}
+    {% if company_user.role == 'ADMIN' %}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'budgets_history' %}active{% endif %}"
+           href="{% url 'budgets:history' %}">
+            <i class="bi bi-clock-history"></i>Historial presupuestos
+        </a>
+    </li>
+    {% endif %}
     {% endif %}
 
 </ul>

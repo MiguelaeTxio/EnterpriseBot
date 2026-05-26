@@ -34,158 +34,165 @@ que permita:
 
 ## 2. Arquitectura Técnica
 
-### 2.1. Fase 0 — Construcción de la Skill
+### 2.1. App Django `budgets`
 
-Antes de escribir ningún modelo Django ni ninguna vista, se construye una skill
-de referencia que documente:
+App creada y operativa en producción desde la sesión 001. Modelos:
 
-- **Esquema de tarifas**: estructura de datos de la tarifa de cada aseguradora.
-  Conceptos mínimos esperados: kilómetros (precio/km con tramos si aplica),
-  servicio base (precio fijo por activación), espera (precio/hora o fracción),
-  recargo nocturno (porcentaje o importe fijo), recargo festivo, recargo en
-  autopista, servicios especiales (vehículo pesado, 4×4, embarcación, etc.).
-- **Campos de entrada del presupuesto**: datos que el operario introduce para
-  generar el presupuesto (aseguradora, tipo de vehículo asistido, kilómetros
-  recorridos, hora del servicio, duración de la espera, condiciones especiales).
-- **Reglas de cálculo**: lógica de aplicación de cada concepto de tarifa sobre
-  los datos de entrada, incluyendo tramos, topes y exclusiones.
-- **Estructura de factura de referencia**: campos extraídos de las facturas de
-  ejemplo entregadas por el cliente para validar que el motor reproduce los
-  importes correctamente.
+- `Insurer`: compañía aseguradora. FK Company. Campos: name, code, is_active,
+  management_fee_percent, surcharges_cumulative, notes.
+- `VehicleType`: tipo de vehículo con nomenclatura propia de cada aseguradora.
+  FK Insurer. Campos: name, sort_order, is_active.
+- `InsurerTariff`: tarifa vigente con histórico. FK Insurer. Campos: year,
+  valid_from, valid_to (null = activa), notes.
+- `TariffLine`: línea de concepto de tarifa. FK InsurerTariff + VehicleType
+  (nullable = concepto genérico). Conceptos: DEPARTURE, SERVICE_LOCAL,
+  KM_NORMAL, KM_LONG, UNLOCK, RESCUE_HOUR, WAIT_HOUR, WORKER_HOUR,
+  ASSISTANT_HOUR, CUSTODY_DAY, NYF_PERCENT, LOADED_PERCENT.
+- `Budget`: presupuesto generado. FK Company, Insurer, InsurerTariff,
+  CompanyUser, VehicleType. Campos: is_overnight, km_phase1, km_phase2,
+  km_total, has_unlock, is_night_or_holiday, is_loaded, wait_hours,
+  rescue_hours, assistant_hours, worker_hours, custody_days,
+  total_amount, status (DRAFT/ACCEPTED/REJECTED).
+- `BudgetLine`: desglose de cálculo. FK Budget. Solo visible para ADMIN.
 
-La skill se construye iterativamente: el cliente entrega datos (tarifas en PDF/Excel,
-facturas de ejemplo) y el modelo los procesa y estructura en la skill hasta que
-Miguel Ángel valida que el esquema es correcto y completo.
+### 2.2. Motor de cálculo (`budgets/services.py`)
 
-### 2.2. Fase 1 — Modelos Django
+Función `calculate_budget(budget)` idempotente:
+1. Resuelve la `InsurerTariff` activa (valid_to=None).
+2. Calcula km_total = km_phase1 + km_phase2 (antes del save).
+3. Aplica salidas (1 o 2 si pernocta).
+4. Aplica km (KM_NORMAL o KM_LONG según umbral km_threshold).
+5. Aplica desbloqueo si has_unlock.
+6. Aplica conceptos opcionales (rescate, espera, MO, ayudante, custodia)
+   respetando min_units.
+7. Aplica recargos (NYF, cargado) según surcharges_cumulative de Insurer.
+8. Aplica management_fee si procede (solo COVEI 5%).
+9. Devuelve lista de BudgetLine sin guardar. El caller persiste atómicamente.
 
-Nueva app Django `budgets` con los siguientes modelos (sujetos a ajuste tras
-la skill):
+### 2.3. Rol y usuario
 
-- `Insurer`: compañía aseguradora. Campos: company (FK), name, code, is_active.
-- `InsurerTariff`: tarifa vigente de una aseguradora. Campos: insurer (FK),
-  valid_from, valid_to (nullable), notes.
-- `TariffLine`: línea de concepto de tarifa. Campos: tariff (FK), concept_code,
-  concept_name, unit (KM, HOUR, FIXED, PERCENT), price, min_units, max_units
-  (tramos), applies_condition (nullable, ej: NIGHT, HOLIDAY, HIGHWAY).
-- `Budget`: presupuesto generado. Campos: company (FK), insurer (FK),
-  tariff (FK), operator (FK CompanyUser), created_at, service_date,
-  vehicle_type, km_total, wait_hours, conditions (JSON), status
-  (DRAFT/CONFIRMED/BILLED), total_amount.
-- `BudgetLine`: línea de desglose del presupuesto. Campos: budget (FK),
-  tariff_line (FK nullable), concept_name, units, unit_price, subtotal, notes.
+- Rol `ROLE_ASSISTANCE` = "ASSISTANCE" añadido a CompanyUser.
+- Usuario `asistencia` / `1234` creado con must_change_password=False.
+- Mixin `AssistanceRequiredMixin` en panel/mixins.py.
+- Sidebar: rol ASSISTANCE ve solo "Presupuestos → Nuevo presupuesto".
+  Rol ADMIN ve además "Historial presupuestos".
 
-### 2.3. Fase 2 — Vistas y Panel
+### 2.4. Tarifas cargadas
 
-- CRUD de aseguradoras y tarifas desde el panel (AdminRoleRequiredMixin).
-- Formulario de generación de presupuesto (SupervisorAccessMixin).
-- Vista de listado de presupuestos con filtros por aseguradora, fecha y estado.
-- Vista de detalle / edición de presupuesto (añadir/quitar líneas manualmente).
-- Exportación PDF o Excel del presupuesto con membrete.
+23 aseguradoras, 188 tipos de vehículo, 550 líneas de tarifa cargadas
+mediante `python manage.py seed_insurer_tariffs` (idempotente, con --dry-run).
 
-### 2.4. Fase 3 — Exportación
+Aseguradoras: Transsorual/Mondial, Europ Assistance, ARAG, Avinatan/ATE,
+IMA Ibérica, Treasca, Asitur, TAI 2026, RACE, Mapfre, Inter Partner/AXA,
+Servireac (SVR), Grúas Alvarez (tarifa propia), MAN Truck, Petit Forestier,
+COVEI, TVA (ALSA), Scora y Selltruck (Ford), Veinluc, UTE Envases Ligeros,
+Prosegur, F.C.C., Angal Truck.
 
-Motor de exportación del presupuesto a PDF (usando la librería ya disponible
-en el entorno) o Excel (openpyxl / xlsxwriter según lo disponible). El documento
-exportado replica el formato de las facturas de referencia entregadas por el cliente.
+### 2.5. URLs
+
+Registradas en `enterprise_core/urls.py`:
+`path('panel/budgets/', include('budgets.urls', namespace='budgets'))`
+
+Endpoints: wizard, vehicle_types (HTMX), optional_concepts (HTMX),
+result, status_update, history (ADMIN), detail (ADMIN).
 
 ---
 
 ## 3. Hoja de Ruta
 
 ### Paso 1 — Recopilación de datos y construcción de la skill
-- Solicitar al cliente: tarifas por aseguradora (PDF, Excel o imagen),
-  facturas de ejemplo emitidas (mínimo 3 por aseguradora).
-- Procesar cada tarifa y extraer: conceptos, unidades, precios, tramos,
-  recargos y condiciones especiales.
-- Procesar cada factura de ejemplo y extraer: campos de cabecera, líneas
-  de desglose, importes y condiciones aplicadas.
-- Redactar la skill con el esquema validado.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (S001 — integrado directamente en la app)
 
 ### Paso 2 — Validación de la skill con Miguel Ángel
-- Revisión conjunta del esquema de tarifas y reglas de cálculo.
-- Ajustes hasta que el esquema reproduzca correctamente los importes
-  de las facturas de ejemplo.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (S001 — diseño validado iterativamente)
 
 ### Paso 3 — Modelo de datos Django (app budgets)
-- Crear app budgets con modelos Insurer, InsurerTariff, TariffLine,
-  Budget, BudgetLine.
-- Migraciones generadas y aplicadas en producción.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (S001 — migración 0001_initial aplicada en producción)
 
 ### Paso 4 — CRUD de aseguradoras y tarifas en el panel
-- Vistas de alta, edición y baja de aseguradoras.
-- Vistas de gestión de líneas de tarifa por aseguradora.
-- Estado: PENDIENTE
+- Estado: PENDIENTE — actualmente solo via Django Admin y management command.
+  Futura mejora: formularios en el panel para gestión de tarifas sin admin.
 
 ### Paso 5 — Motor de generación de presupuestos
-- Formulario de entrada de datos del servicio.
-- Lógica de aplicación de tarifa y generación de BudgetLine por concepto.
-- Vista de revisión y edición manual del presupuesto generado.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (S001 — formulario secuencial HTMX operativo)
 
 ### Paso 6 — Exportación del presupuesto
-- Motor de exportación a PDF/Excel con formato de factura de referencia.
 - Estado: PENDIENTE
 
 ### Paso 7 — Integración en sidebar del panel
-- Nueva sección "Presupuestos" visible para ADMIN y SUPERVISOR.
-- Estado: PENDIENTE
+- Estado: COMPLETADO (S001)
 
 ---
 
 ## 4. Registro de Sesiones
 
-| Sesión | Fecha | Pasos trabajados | Resumen |
-|--------|-------|-----------------|---------|
-| —      | —     | —               | Hito inaugurado. Skill pendiente de datos del cliente. |
+| Sesión | Fecha      | Pasos trabajados | Resumen |
+|--------|------------|-----------------|---------|
+| S001   | 2026-05-26 | 1–5, 7          | Implementación completa de la app budgets: modelos, motor de cálculo, vistas, templates, rol ASSISTANCE, usuario asistencia, 23 tarifas 2026 cargadas en BD (550 líneas). Formulario secuencial HTMX operativo. Vista de desglose ADMIN. Sidebar adaptado por rol. Directriz PEP8 añadida al SYSTEM_PROMPTS_NEW.md. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesión (001)
+## 5. Hoja de Ruta para la Siguiente Sesión (002)
 
-### Objetivo de la sesión 001
+### Contexto
 
-Construir la skill de referencia del motor de presupuestos a partir de los
-datos reales entregados por el cliente.
+La app `budgets` está operativa en producción y validada visualmente.
+La siguiente sesión debe centrarse en mejoras de UX y funcionalidad
+identificadas durante las pruebas de la sesión 001.
 
 ### Orden de trabajo
 
-PASO 0 — Entrega de datos por el cliente:
-  Miguel Ángel entrega en la sesión 001 los siguientes materiales:
-    - Tarifas de cada aseguradora en el formato disponible (PDF, Excel, imagen,
-      texto libre). Mínimo una tarifa completa para arrancar.
-    - Facturas de ejemplo emitidas (mínimo 2-3 por aseguradora entregada).
-  El modelo los procesa uno a uno y construye el esquema de la skill.
+**MEJORA 1 — Marcar presupuestos como Aceptado/Rechazado desde el historial:**
+  Actualmente el cambio de estado solo es posible desde la vista de resultado
+  (`/panel/budgets/<pk>/result/`). El historial (`/panel/budgets/history/`)
+  muestra el estado pero no permite cambiarlo. Añadir en cada fila del
+  historial los botones Aceptar/Rechazar para presupuestos en estado DRAFT,
+  usando HTMX para actualizar el badge de estado sin recargar la página.
 
-PASO 1 — Extracción de conceptos de tarifa:
-  Para cada tarifa entregada:
-    - Identificar todos los conceptos facturables (servicio base, km, espera,
-      recargos, especiales).
-    - Determinar la unidad de cada concepto (fijo, por km, por hora, porcentaje).
-    - Extraer los precios y tramos si los hay.
-    - Documentar las condiciones de aplicación (nocturno, festivo, autopista, etc.).
+  Implementación:
+  - Añadir endpoint HTMX en `budgets/urls.py`:
+    `path("<int:pk>/status/htmx/", BudgetStatusHTMXView.as_view(), name="status_htmx")`
+  - Crear `BudgetStatusHTMXView` en `views.py` (POST, devuelve fragmento badge).
+  - Modificar `history.html`: añadir botones inline condicionados a `b.status == 'DRAFT'`.
+  - Añadir fragmento `_status_badge_fragment.html` para el swap HTMX.
 
-PASO 2 — Extracción de estructura de facturas de referencia:
-  Para cada factura de ejemplo:
-    - Identificar los campos de cabecera (aseguradora, número de expediente,
-      fecha, datos del vehículo asistido, operario).
-    - Extraer las líneas de desglose con concepto, unidades, precio unitario
-      e importe.
-    - Verificar que los importes son reproducibles con los conceptos de tarifa
-      extraídos en el Paso 1.
+**MEJORA 2 — Validación del motor contra factura real AXA (C/260178):**
+  La factura de referencia tiene: 1 salida B35 (184,10€), desbloqueo/enganche
+  (62,80€), 115 km a 1,95€/km (224,25€), recargo nocturno/festivo (235,58€).
+  Total sin descuento: 706,73€. Con descuento 2%: 692,60€.
+  La tarifa AXA en BD (código AXA / Inter Partner) usa km a 1,91€ para el
+  tramo De 6.001 hasta 10.000 kg. Verificar que el motor reproduce el importe
+  y si hay diferencia, identificar si es por tramo de peso distinto o por
+  precio de km distinto en la tarifa cargada.
 
-PASO 3 — Redacción de la skill:
-  Redactar el archivo de skill con:
-    - Sección de esquema de tarifa (estructura de datos).
-    - Sección de campos de entrada del presupuesto.
-    - Sección de reglas de cálculo con ejemplos concretos de los datos reales.
-    - Sección de estructura de factura de referencia.
-  La skill se guarda en /mnt/skills/user/ con nombre budgets-asistencia.
+**MEJORA 3 — Valores tope de presupuesto por aseguradora:**
+  Algunas aseguradoras tienen un importe máximo autorizable sin llamada previa
+  a la central (ej: la factura AXA indica "Gastos autorizados: 706,73€ sin IVA").
+  Añadir campo `max_authorized_amount` (DecimalField, nullable) en el modelo
+  `Insurer`. Si el total calculado supera este tope, mostrar advertencia visual
+  al operario en la pantalla de resultado (no bloquear, solo avisar).
 
-CRITERIO DE ÉXITO:
-  La skill permite que en la sesión 002 el modelo implemente el modelo de datos
-  Django sin necesidad de que Miguel Ángel explique de nuevo la lógica de negocio.
-  El esquema reproduce correctamente los importes de las facturas de ejemplo.
+  Implementación:
+  - PMA en `budgets/models.py`: añadir campo `max_authorized_amount`.
+  - `makemigrations budgets` + `migrate`.
+  - PMA en `budgets/views.py` `BudgetResultView.get`: calcular si
+    `budget.total_amount > insurer.max_authorized_amount` e inyectar
+    `over_limit=True` en el contexto.
+  - PMA en `result.html`: mostrar alerta Bootstrap warning si `over_limit`.
+  - Actualizar el management command `seed_insurer_tariffs` con los topes
+    conocidos (AXA: 706,73€ según factura de referencia).
+
+**MEJORA 4 — Google Maps API para cálculo automático de kilómetros:**
+  Añadir campos de ubicación al formulario de presupuesto:
+  origen (dirección del siniestro) y destino (taller destino).
+  Usar la Google Maps Distance Matrix API para calcular km reales de conducción
+  (ida + vuelta). El operario puede aceptar el valor calculado o editarlo.
+  Requiere `GOOGLE_MAPS_API_KEY` en el `.env` y actualización online previa
+  (Directriz 4.4 del MASTER_DOCUMENT).
+
+**MEJORA 5 — Exportación del presupuesto a PDF (Paso 6 del hito):**
+  Generar un documento PDF del presupuesto con membrete.
+  Usar la librería disponible en el entorno (verificar con
+  `pip list | grep -i pdf` antes de implementar).
+  El PDF debe incluir: datos del servicio, total, aseguradora, fecha,
+  operario. Sin desglose de líneas (el desglose es solo para ADMIN).

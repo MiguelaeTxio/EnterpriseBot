@@ -1,0 +1,120 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/history.html #}
+{#                                                                                    #}
+{# Budget history — ADMIN only. Lists all budgets with filters.                      #}
+{# Historial de presupuestos — solo ADMIN. Lista todos con filtros.                  #}
+{% extends "panel/base.html" %}
+
+{% block title %}Historial de presupuestos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+
+  <h4 class="mb-4">
+    <i class="bi bi-clock-history me-2"></i>Historial de presupuestos
+  </h4>
+
+  {# Filters #}
+  <form method="get" class="row g-2 mb-4">
+    <div class="col-12 col-sm-6 col-md-3">
+      <select class="form-select form-select-sm" name="insurer">
+        <option value="">— Todas las compañías —</option>
+        {% for ins in insurers %}
+        <option
+          value="{{ ins.pk }}"
+          {% if filters.insurer == ins.pk|stringformat:"s" %}selected{% endif %}
+        >{{ ins.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-sm-6 col-md-2">
+      <select class="form-select form-select-sm" name="status">
+        <option value="">— Todos los estados —</option>
+        {% for val, label in status_choices %}
+        <option
+          value="{{ val }}"
+          {% if filters.status == val %}selected{% endif %}
+        >{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <input
+        type="date"
+        class="form-control form-control-sm"
+        name="date_from"
+        value="{{ filters.date_from|default:'' }}"
+        placeholder="Desde"
+      >
+    </div>
+    <div class="col-6 col-md-2">
+      <input
+        type="date"
+        class="form-control form-control-sm"
+        name="date_to"
+        value="{{ filters.date_to|default:'' }}"
+        placeholder="Hasta"
+      >
+    </div>
+    <div class="col-12 col-md-auto">
+      <button type="submit" class="btn btn-sm btn-primary w-100">
+        Filtrar
+      </button>
+    </div>
+    <div class="col-12 col-md-auto">
+      <a href="{% url 'budgets:history' %}" class="btn btn-sm btn-outline-secondary w-100">
+        Limpiar
+      </a>
+    </div>
+  </form>
+
+  {% if budgets %}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Fecha servicio</th>
+          <th>Compañía</th>
+          <th>Vehículo</th>
+          <th>Operario</th>
+          <th class="text-end">Total</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in budgets %}
+        <tr>
+          <td class="text-muted small">{{ b.pk }}</td>
+          <td>{{ b.service_date|date:"d/m/Y" }}</td>
+          <td>{{ b.insurer.name }}</td>
+          <td class="small">{{ b.vehicle_type.name }}</td>
+          <td class="small">{{ b.operator.user.username }}</td>
+          <td class="text-end fw-semibold">{{ b.total_amount }} €</td>
+          <td>
+            {% if b.status == 'ACCEPTED' %}
+            <span class="badge bg-success">Aceptado</span>
+            {% elif b.status == 'REJECTED' %}
+            <span class="badge bg-danger">Rechazado</span>
+            {% else %}
+            <span class="badge bg-secondary">Borrador</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'budgets:detail' b.pk %}"
+               class="btn btn-outline-secondary btn-sm"
+            >Desglose</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    No hay presupuestos que coincidan con los filtros seleccionados.
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

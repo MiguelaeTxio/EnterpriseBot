@@ -168,6 +168,50 @@ class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
         return response
 
 
+class AssistanceRequiredMixin(CompanyUserRequiredMixin):
+    """
+    Mixin that grants access to CompanyUsers with the ASSISTANCE or ADMIN role.
+    Introduced in Hito 16 for the ASISTENCIA budget wizard.
+    Any other role receives a redirect to the dashboard with an error message.
+    ---
+    Mixin que concede acceso a CompanyUsers con rol ASSISTANCE o ADMIN.
+    Introducido en el Hito 16 para el asistente de presupuestos de ASISTENCIA.
+    Cualquier otro rol recibe una redireccion al dashboard con mensaje de error.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Verify that the authenticated CompanyUser holds the ASSISTANCE
+        or ADMIN role. Delegates to parent for authentication and
+        CompanyUser checks first.
+        ---
+        Verifica que el CompanyUser autenticado posee el rol ASSISTANCE
+        o ADMIN. Delega al padre las comprobaciones de autenticacion
+        y CompanyUser primero.
+        """
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+
+        company_user = getattr(request.user, "company_user", None)
+        if company_user is None:
+            return response
+
+        allowed_roles = {
+            CompanyUser.ROLE_ASSISTANCE,
+            CompanyUser.ROLE_ADMIN,
+        }
+        if company_user.role not in allowed_roles:
+            messages.error(
+                request,
+                "Acceso denegado. Esta seccion requiere el rol de "
+                "Operario de Asistencia o Administrador.",
+            )
+            return redirect("/panel/")
+
+        return response
+
+
 class SupervisorAccessMixin(CompanyUserRequiredMixin):
     """
     Mixin that grants access to CompanyUsers with the SUPERVISOR or ADMIN role.
