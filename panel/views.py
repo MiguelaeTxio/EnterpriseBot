@@ -4473,7 +4473,7 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
         return redirect("panel:work_order_list")
 
 
-class WorkOrderEditView(AdminRoleRequiredMixin, View):
+class WorkOrderEditView(SupervisorAccessMixin, View):
     """
     Displays and processes inline edits for all WorkOrderEntryLine records
     belonging to a given WorkOrder. Lines are grouped by their parent
@@ -4787,7 +4787,7 @@ class WorkOrderEditView(AdminRoleRequiredMixin, View):
 
 
 
-class WorkOrderStatusFragmentView(AdminRoleRequiredMixin, View):
+class WorkOrderStatusFragmentView(SupervisorAccessMixin, View):
     """
     Returns the HTML status fragment for a single WorkOrder, used by HTMX polling.
 
@@ -4838,7 +4838,7 @@ class WorkOrderStatusFragmentView(AdminRoleRequiredMixin, View):
         )
 
 
-class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
+class WorkOrderLineSaveView(SupervisorAccessMixin, View):
     """
     HTMX endpoint that saves a single WorkOrderEntryLine and returns the updated
     <tr> row as an HTML fragment consumed by the inline editor.
@@ -4987,7 +4987,7 @@ class WorkOrderLineSaveView(AdminRoleRequiredMixin, View):
         )
 
 
-class WorkOrderLineInsertView(AdminRoleRequiredMixin, View):
+class WorkOrderLineInsertView(SupervisorAccessMixin, View):
     """
     Creates a new empty WorkOrderEntryLine after a given line within the same
     WorkOrderEntry group and returns the new row as an HTMX fragment.
@@ -5100,7 +5100,7 @@ class WorkOrderLineInsertView(AdminRoleRequiredMixin, View):
         )
 
 
-class WorkOrderLineReorderView(AdminRoleRequiredMixin, View):
+class WorkOrderLineReorderView(SupervisorAccessMixin, View):
     """
     Accepts a new ordering for WorkOrderEntryLine records within a single
     WorkOrderEntry group and persists the updated line_number values.
@@ -5188,7 +5188,7 @@ class WorkOrderLineReorderView(AdminRoleRequiredMixin, View):
         return JsonResponse({"ok": True})
 
 
-class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
+class WorkOrderLineRestoreView(SupervisorAccessMixin, View):
     """
     Restores a single WorkOrderEntryLine to its original Gemini-extracted
     values by looking up the corresponding block in the parent WorkOrderEntry's
@@ -5341,7 +5341,7 @@ class WorkOrderLineRestoreView(AdminRoleRequiredMixin, View):
         )
 
 
-class WorkOrderLineDeleteView(AdminRoleRequiredMixin, View):
+class WorkOrderLineDeleteView(SupervisorAccessMixin, View):
     """
     Deletes a single WorkOrderEntryLine identified by line_pk, scoped to the
     authenticated company. Returns an empty HTTP 200 response so that HTMX
@@ -5387,7 +5387,7 @@ class WorkOrderLineDeleteView(AdminRoleRequiredMixin, View):
         return HttpResponse("")
 
 
-class WorkOrderDeleteView(AdminRoleRequiredMixin, View):
+class WorkOrderDeleteView(SupervisorAccessMixin, View):
     """
     Deletes a WorkOrder and all its cascade-deleted children (WorkOrderEntry,
     WorkOrderEntryLine, source PDF file, Excel file) scoped to the authenticated
@@ -6073,7 +6073,7 @@ class WorkOrderDuplicateSearchView(SupervisorAccessMixin, View):
         )
 
 
-class WorkOrderDuplicateDeleteView(AdminRoleRequiredMixin, View):
+class WorkOrderDuplicateDeleteView(SupervisorAccessMixin, View):
     """
     HTMX endpoint that deletes a single WorkOrder identified by pk, scoped
     to the authenticated company. Intended for use in the duplicates panel:
@@ -6495,7 +6495,7 @@ class WorkshopAssetAutocompleteView(WorkshopRequiredMixin, View):
         return JsonResponse({"assets": assets})
 
 
-class WorkOrderEntryUploadView(WorkshopRequiredMixin, View):
+class WorkOrderEntryUploadView(SupervisorAccessMixin, View):
     """
     Handles the operator Upload path (Via C) for new work orders.
     Accepts a photo or PDF file, rasterises it and sends it to Gemini Vision
@@ -6970,7 +6970,7 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
     return spare_parts_data
 
 
-class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
+class WorkOrderEntryConfirmView(SupervisorAccessMixin, View):
     """
     Confirmation and persistence view for the operator Upload path (Via C).
     Reads the extraction result stored in the session by WorkOrderEntryUploadView,
@@ -8067,7 +8067,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         return redirect("/panel/work-orders/")
 
 
-class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
+class WorkOrderEntryFormView(SupervisorAccessMixin, View):
     """
     Structured web form entry path for work orders (Via A).
     Allows WORKSHOP and ADMIN users to submit a daily work-order part
@@ -9270,7 +9270,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         return redirect("/panel/work-orders/")
 
 
-class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
+class WorkOrderEntryHistoryView(SupervisorAccessMixin, View):
     """
     Four-tab personal history view for WORKSHOP role operators.
     ADMIN and SUPERVISOR are automatically redirected to WorkOrderAdminHistoryView.
@@ -10294,7 +10294,7 @@ def _detect_overlaps(existing_lines, new_lines):
     return conflicts
 
 
-class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
+class WorkOrderEntryMergeView(SupervisorAccessMixin, View):
     """
     Merge view for resolving conflicts when an operator tries to submit
     a new work order on a date that already has an unreviewed digital or
@@ -11014,7 +11014,7 @@ class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
         return redirect(reverse("panel:operator_history"))
 
 
-class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
+class WorkdayGapResolutionView(SupervisorAccessMixin, View):
     """
     Allows a WORKSHOP operator to justify each workday gap detected by Gate 4
     before the draft work order is promoted from PENDING_GAPS to DONE.
@@ -14070,7 +14070,7 @@ class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
 
 
 
-class WorkOrderDescriptionAutocompleteView(WorkshopRequiredMixin, View):
+class WorkOrderDescriptionAutocompleteView(SupervisorAccessMixin, View):
     """
     Returns up to 8 unique values from WorkOrderEntryLine.fault_description
     or WorkOrderEntryLine.repair_notes that contain the query string (case-

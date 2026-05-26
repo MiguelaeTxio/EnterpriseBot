@@ -1071,9 +1071,85 @@ BLOQUE 2 — Dispositivo de confianza (incidencia S038, fuera de hoja de ruta or
   payload {uid, tok} firmado con django.core.signing.
   La cookie se emite ÚNICAMENTE en el primer cambio obligatorio de contraseña
   (_was_forced=True). Para usuarios que ya establecieron contraseña en el pasado
-  existe una tarea pendiente en S039 (ver PRIORIDAD 1 abajo).
+  existe una tarea pendiente en S039 (ver PRIORIDAD 3 abajo).
 
-### PRIORIDAD 0 — Validación E2E del menú de ayuda WhatsApp
+### PRIORIDAD 0 — Corrección botón "Atrás" en WorkOrderEditView desde digital_list
+
+  Bug: cuando el supervisor llega a WorkOrderEditView (panel/work_orders/edit.html)
+  desde la vista de partes digitales (digital_list, URL work-orders/digital/), el
+  botón "Atrás" o enlace de retorno redirige a la lista de partes PDF
+  (work_order_admin_history o work_orders_list) en lugar de volver a digital_list.
+
+  Causa esperada: el enlace de retorno en edit.html tiene la URL hardcodeada o
+  usa HTTP_REFERER sin preservarlo correctamente al entrar en la vista.
+
+  Solución aprobada:
+    - Inspeccionar WorkOrderEditView.get() en panel/views.py y el template edit.html
+      para identificar cómo se construye el enlace de retorno.
+    - Si el enlace está hardcodeado: sustituirlo por {{ back_url }} pasado en contexto.
+    - WorkOrderEditView.get() resuelve back_url con prioridad:
+        1. Parámetro GET ?next= en la URL de entrada (más robusto).
+        2. HTTP_REFERER si apunta a una URL del panel conocida.
+        3. Fallback: URL de work_order_admin_history (comportamiento actual).
+    - digital_list.html: el enlace/botón "Editar" que apunta a WorkOrderEditView
+      debe incluir ?next={{ request.path }} o equivalente para que la vista
+      pueda resolver el retorno correcto.
+
+  Archivos a inspeccionar y modificar:
+    - panel/views.py — WorkOrderEditView.get(): añadir resolución de back_url.
+    - panel/templates/panel/work_orders/edit.html: sustituir enlace de retorno
+      hardcodeado por {{ back_url }}.
+    - panel/templates/panel/work_orders/digital_list.html: añadir ?next= al
+      enlace de edición.
+
+  Criterio de éxito: desde digital_list → Editar → edit.html → Atrás → vuelve
+  a digital_list. Desde list.html (PDF) → Editar → edit.html → Atrás → vuelve
+  a list.html (PDF). El comportamiento es correcto en ambos orígenes.
+
+### PRIORIDAD 1 — Descarga de Excel desde la vista de partes digitales
+
+  La vista digital_list ya tiene un botón de descarga Excel en la pestaña
+  Revisados (implementado en S027, Paso 5). Es necesario auditar su estado
+  actual y completar o corregir lo que falte:
+
+    - Inspeccionar DigitalWorkOrderListView en panel/views.py: verificar si
+      existe lógica de exportación Excel o si solo está el botón en el template.
+    - Inspeccionar digital_list.html: estado actual del botón de descarga,
+      qué endpoint invoca, qué parámetros envía.
+    - Inspeccionar generate_period_excel en tasks.py: verificar si genera
+      un Excel diferenciado para partes digitales o si es el mismo que el
+      pipeline PDF.
+    - Diseño acordado (S025): la descarga Excel de partes digitales se activa
+      al cerrar un WorkPeriod (generate_period_excel encolado en WorkPeriodCloseView).
+      En S039 se valida si ese flujo está completo o requiere ajustes para
+      partes digitales (columnas correctas, hoja Repuestos, fuente DIGITAL/GENERATED).
+    - Si el flujo no está completo: implementar la descarga síncrona desde
+      digital_list para los partes seleccionados o del periodo activo,
+      reutilizando o adaptando generate_work_order_excel() de services.py.
+
+  Criterio de éxito: desde digital_list pestaña Revisados, el supervisor puede
+  descargar un Excel con los partes digitales revisados del periodo, con el
+  formato correcto (columnas de parte digital, hoja Repuestos si aplica).
+
+### PRIORIDAD 2 — Sistema de revisados completo en partes digitales
+
+  Auditar el estado actual del sistema de revisados en digital_list:
+
+    - Verificar que el botón "Marcar revisado" y "Desmarcar revisado" funcionan
+      correctamente desde digital_list (HTMX hx-post a work_order_review).
+    - Verificar que el badge de revisado en digital_list se actualiza sin recarga
+      completa de página (hx-target + hx-swap outerHTML sobre el fragment correcto).
+    - Verificar que un parte revisado en digital_list queda bloqueado para
+      edición y merge (reviewed=True impide Gate 0 y operator_form_edit).
+    - Verificar coherencia entre pestañas Pendiente/Revisados de digital_list:
+      al marcar revisado, el parte debe desaparecer de Pendiente y aparecer
+      en Revisados sin recarga completa si es posible.
+    - Implementar o corregir cualquier punto que no funcione correctamente.
+
+  Criterio de éxito: el flujo completo marcar → desmarcar revisado funciona
+  desde digital_list con actualización visual correcta y coherencia de pestañas.
+
+### PRIORIDAD 3 — Validación E2E del menú de ayuda WhatsApp
 
   Validar en producción el flujo completo del menú de ayuda:
   1. Un contacto de sección escribe "ayuda" (y al menos dos variantes: "halluda",
@@ -1086,7 +1162,7 @@ BLOQUE 2 — Dispositivo de confianza (incidencia S038, fuera de hoja de ruta or
   la opción elegida) NO está implementada aún — queda para una sesión futura.
   En S039 solo se valida que el menú se envía y los ids se reciben.
 
-### PRIORIDAD 1 — Dispositivo de confianza: checkbox en cambio voluntario de contraseña
+### PRIORIDAD 4 — Dispositivo de confianza: checkbox en cambio voluntario de contraseña
 
   Los usuarios que establecieron su contraseña antes de S038 tienen
   trusted_device_token=None y nunca pasarán por el flujo _was_forced=True.

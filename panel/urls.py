@@ -266,6 +266,7 @@ urlpatterns = [
     # WorkOrder review toggle — Marcar/desmarcar revisión HTMX (rol SUPERVISOR y ADMIN).
     # Paso 7 — Hito 8 (2026-04-28)
     path("work-orders/<int:pk>/review/", WorkOrderMarkReviewedView.as_view(), name="work_order_review"),
+    path("work-orders/<int:pk>/review-badge/", WorkOrderMarkReviewedView.as_view(), name="work_order_review_badge"),
 
     # WorkOrder duplicate search — Búsqueda HTMX de duplicados (rol SUPERVISOR y ADMIN).
     # Paso 13 — Hito 8 (2026-04-29)
