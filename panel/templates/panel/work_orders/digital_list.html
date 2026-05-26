@@ -129,12 +129,7 @@
                             </td>
                             <td class="text-sm text-muted">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
                             <td class="text-sm">
-                                <span class="badge bg-warning text-dark"
-                                      hx-get="{% url 'panel:work_order_review_badge' wo.pk %}"
-                                      hx-trigger="load"
-                                      hx-swap="outerHTML">
-                                    Pendiente
-                                </span>
+                                {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
                             </td>
                             <td class="text-sm">
                                 <div class="dropdown">
@@ -145,7 +140,7 @@
                                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                         <li>
                                             <a class="dropdown-item text-sm"
-                                               href="{% url 'panel:work_order_edit' wo.pk %}">
+                                               href="{% url 'panel:work_order_edit' wo.pk %}?from=digital">
                                                 <i class="bi bi-pencil me-2"></i>Editar
                                             </a>
                                         </li>
@@ -169,15 +164,24 @@
         <div class="tab-pane fade" id="pane-reviewed" role="tabpanel" aria-labelledby="tab-reviewed">
 
             {# Cabecera de tab con botón descargar selección — Directriz Alejandro #}
+            {# El botón abre el modal de configuración de exportación. El formulario #}
+            {# real se construye y submite desde JS al confirmar en el modal.        #}
             <div class="d-flex justify-content-end mb-2">
-                <form method="get" action="{% url 'panel:work_order_admin_export' %}"
-                      id="formExportSelection">
-                    <button type="submit" class="btn btn-outline-success btn-sm px-3"
-                            id="btnDownloadSelection" disabled>
-                        <i class="bi bi-file-earmark-excel me-1"></i>Descargar selección
-                    </button>
-                </form>
+                <button type="button" class="btn btn-outline-success btn-sm px-3"
+                        id="btnDownloadSelection"
+                        data-bs-toggle="modal"
+                        data-bs-target="#exportConfigModal"
+                        disabled>
+                    <i class="bi bi-file-earmark-excel me-1"></i>Descargar selección
+                </button>
             </div>
+            {# Formulario oculto — se rellena y submite desde JS al confirmar el modal #}
+            <form method="post" action="{% url 'panel:work_order_admin_export' %}"
+                  id="formExportSelection" class="d-none">
+                {% csrf_token %}
+                <input type="hidden" name="export_mode" id="hiddenExportMode" value="digital_full">
+                <input type="hidden" name="operator_pk" id="hiddenOperatorPk" value="">
+            </form>
 
             {% if wo_reviewed %}
             <div class="table-responsive">
@@ -214,7 +218,7 @@
                             </td>
                             <td class="text-sm text-muted">{{ wo.upload_date|date:"d/m/Y H:i" }}</td>
                             <td class="text-sm">
-                                <span class="badge bg-success">Revisado</span>
+                                {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
                             </td>
                             <td class="text-sm">
                                 <div class="dropdown">
@@ -225,7 +229,7 @@
                                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                         <li>
                                             <a class="dropdown-item text-sm"
-                                               href="{% url 'panel:work_order_edit' wo.pk %}">
+                                               href="{% url 'panel:work_order_edit' wo.pk %}?from=digital">
                                                 <i class="bi bi-pencil me-2"></i>Editar
                                             </a>
                                         </li>
@@ -323,6 +327,103 @@
 {% endblock %}
 
 {# ------------------------------------------------------------------ #}
+{# Modal — Configuración de exportación Excel                          #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="exportConfigModal" tabindex="-1"
+     aria-labelledby="exportConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="exportConfigModalLabel">
+                    <i class="bi bi-file-earmark-excel me-2 text-success"></i>Configurar exportación Excel
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+
+                {# Sección 1 — Operarios #}
+                <div class="mb-4">
+                    <label class="form-label fw-semibold text-sm mb-2">Operarios</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="radio" name="exportOperator"
+                               id="exportOpAll" value="" checked>
+                        <label class="form-check-label text-sm" for="exportOpAll">
+                            Todos los operarios seleccionados
+                        </label>
+                    </div>
+                    {% for op in operators %}
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="radio" name="exportOperator"
+                               id="exportOp{{ op.pk }}" value="{{ op.pk }}">
+                        <label class="form-check-label text-sm" for="exportOp{{ op.pk }}">
+                            {{ op.user.get_full_name|default:op.user.username }}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {# Sección 2 — Formato #}
+                <div class="mb-4">
+                    <label class="form-label fw-semibold text-sm mb-2">Formato de exportación</label>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="exportMode"
+                               id="exportModeDigitalFull" value="digital_full" checked>
+                        <label class="form-check-label text-sm" for="exportModeDigitalFull">
+                            <span class="fw-semibold">Completo (3 hojas)</span>
+                            <small class="d-block text-muted">Tareas · Repuestos · Incidencias de jornada</small>
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="exportMode"
+                               id="exportModeMulti" value="multi_sheet">
+                        <label class="form-check-label text-sm" for="exportModeMulti">
+                            <span class="fw-semibold">Tareas por operario (multi-hoja)</span>
+                            <small class="d-block text-muted">Una hoja por operario, solo tareas</small>
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="exportMode"
+                               id="exportModeSingle" value="single_sheet">
+                        <label class="form-check-label text-sm" for="exportModeSingle">
+                            <span class="fw-semibold">Tareas consolidadas (una hoja)</span>
+                            <small class="d-block text-muted">Todos los operarios en una sola hoja, solo tareas</small>
+                        </label>
+                    </div>
+                </div>
+
+                {# Sección 3 — Partes a incluir #}
+                <div class="mb-2">
+                    <label class="form-label fw-semibold text-sm mb-2">Partes a incluir</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="radio" name="exportScope"
+                               id="exportScopeSelection" value="selection" checked>
+                        <label class="form-check-label text-sm" for="exportScopeSelection">
+                            Solo los partes marcados en la tabla
+                        </label>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="radio" name="exportScope"
+                               id="exportScopeAll" value="all">
+                        <label class="form-check-label text-sm" for="exportScopeAll">
+                            Todos los revisados del filtro actual
+                        </label>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success btn-sm px-4"
+                        id="btnConfirmExport">
+                    <i class="bi bi-download me-1"></i>Descargar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
 {# Modal — Ver log de incidencia                                       #}
 {# ------------------------------------------------------------------ #}
 <div class="modal fade" id="incidenceModal" tabindex="-1"
@@ -382,12 +483,19 @@
 {% block extra_scripts %}
 <script>
 /* digital_list.html — Tab activation, select-all checkbox, download button state,
-   incidence modal population, delete modal population.
+   export config modal, incidence modal population, delete modal population.
    ---
    digital_list.html — Activación de pestaña, checkbox seleccionar todos, estado
-   botón descarga, relleno modal incidencia, relleno modal eliminación. */
+   botón descarga, modal de configuración de exportación, relleno modal incidencia,
+   relleno modal eliminación. */
 (function () {
     "use strict";
+
+    /* All PKs of reviewed work orders rendered in the template, used when
+       the user selects "all reviewed" scope in the export modal.
+       Todos los PKs de partes revisados renderizados en el template, usados
+       cuando el usuario selecciona "todos los revisados" en el modal de exportación. */
+    var ALL_REVIEWED_PKS = [{% for wo in wo_reviewed %}{{ wo.pk }}{% if not forloop.last %},{% endif %}{% endfor %}];
 
     document.addEventListener("DOMContentLoaded", function () {
 
@@ -403,13 +511,18 @@
 
         /* ---- Select-all checkbox in Reviewed tab
                Checkbox seleccionar todos en pestaña Revisados ---- */
-        var chkAll = document.getElementById("chkSelectAll");
+        var chkAll     = document.getElementById("chkSelectAll");
         var btnDownload = document.getElementById("btnDownloadSelection");
 
+        function getCheckedPks() {
+            return Array.from(
+                document.querySelectorAll(".chk-wo:checked")
+            ).map(function (chk) { return chk.value; });
+        }
+
         function updateDownloadBtn() {
-            var checked = document.querySelectorAll(".chk-wo:checked");
             if (btnDownload) {
-                btnDownload.disabled = checked.length === 0;
+                btnDownload.disabled = getCheckedPks().length === 0;
             }
         }
 
@@ -425,6 +538,60 @@
         document.querySelectorAll(".chk-wo").forEach(function (chk) {
             chk.addEventListener("change", updateDownloadBtn);
         });
+
+        /* ---- Export config modal — confirm button submits hidden form
+               Modal configuración exportación — botón confirmar submite formulario oculto ---- */
+        var btnConfirmExport = document.getElementById("btnConfirmExport");
+        if (btnConfirmExport) {
+            btnConfirmExport.addEventListener("click", function () {
+
+                /* 1. Resolve export_mode from modal radio.
+                      Resolver export_mode del radio del modal. */
+                var modeEl = document.querySelector("input[name='exportMode']:checked");
+                var mode   = modeEl ? modeEl.value : "digital_full";
+
+                /* 2. Resolve operator_pk from modal radio.
+                      Resolver operator_pk del radio del modal. */
+                var opEl = document.querySelector("input[name='exportOperator']:checked");
+                var opPk = opEl ? opEl.value : "";
+
+                /* 3. Resolve pks from scope radio.
+                      Resolver pks del radio de ámbito. */
+                var scopeEl = document.querySelector("input[name='exportScope']:checked");
+                var scope   = scopeEl ? scopeEl.value : "selection";
+                var pks     = scope === "all" ? ALL_REVIEWED_PKS : getCheckedPks();
+
+                /* 4. Build and submit the hidden form.
+                      Construir y enviar el formulario oculto. */
+                var form = document.getElementById("formExportSelection");
+                if (!form) { return; }
+
+                /* Set export_mode and operator_pk hidden fields.
+                   Establecer campos ocultos export_mode y operator_pk. */
+                document.getElementById("hiddenExportMode").value = mode;
+                document.getElementById("hiddenOperatorPk").value = opPk;
+
+                /* Remove any previously injected pk inputs, then add fresh ones.
+                   Eliminar inputs pk inyectados previamente y añadir los nuevos. */
+                form.querySelectorAll("input[name='pks']").forEach(function (el) {
+                    el.remove();
+                });
+                pks.forEach(function (pk) {
+                    var inp   = document.createElement("input");
+                    inp.type  = "hidden";
+                    inp.name  = "pks";
+                    inp.value = pk;
+                    form.appendChild(inp);
+                });
+
+                /* Close modal and submit.
+                   Cerrar modal y enviar. */
+                var modalEl  = document.getElementById("exportConfigModal");
+                var bsModal  = bootstrap.Modal.getInstance(modalEl);
+                if (bsModal) { bsModal.hide(); }
+                form.submit();
+            });
+        }
 
         /* ---- Incidence modal — populate log content
                Modal incidencia — rellenar contenido del log ---- */

@@ -1028,7 +1028,76 @@ BLOQUE 2 — Dispositivo de confianza (incidencia S038, fuera de hoja de ruta or
 
 ---
 
-## 6. Hoja de Ruta para la Siguiente Sesión (S039)
+## 5. Registro de Sesión S039 (2026-05-26)
+
+### Ejecutado en S039
+
+**S039 — Corrección navegación digital_list, Excel partes digitales y sistema de revisados**
+
+BLOQUE 0 — PCH de apertura: pivote desde H16 (Motor de Presupuestos pausado por falta
+  de documentación del cliente) a H7. MASTER_DOCUMENT actualizado: H16 → PAUSADO,
+  H7 → EN PROGRESO. Hoja de ruta S039 redactada con tres prioridades nuevas (P0/P1/P2)
+  antepuestas a las heredadas de S038 (P3/P4). PCVA intermedio ejecutado para
+  preservar los cambios documentales antes de continuar con el trabajo técnico.
+  Adicionalmente: auditoría completa de botones "Atrás" en toda la plataforma —
+  ningún otro template presenta el mismo problema que WorkOrderEditView.
+
+BLOQUE 1 — PRIORIDAD 0 — Corrección botón "Atrás" en WorkOrderEditView (COMPLETADO):
+  Diagnóstico: WorkOrderEditView.get() resolvía back_url únicamente con
+  from_param == "taller" → admin_history o fallback → work_order_list (PDF).
+  Los enlaces Editar de digital_list.html no pasaban ningún parámetro ?from=,
+  por lo que el botón Atrás siempre redirigía a la lista PDF.
+  Corrección:
+    - panel/views.py (PMA script SWAP): nuevo caso from_param == "digital" →
+      back_url = reverse("panel:digital_work_order_list"). Comentarios bilingües
+      actualizados para los tres casos (digital / taller / default).
+    - digital_list.html (PMA script SWAP): ?from=digital añadido a los dos
+      enlaces Editar (pestañas Pendiente y Revisados). 0 errores djlint.
+
+BLOQUE 2 — PRIORIDAD 1 — Excel partes digitales (COMPLETADO):
+  Diagnóstico: formulario de descarga en digital_list.html usaba method="get"
+  — los pks nunca llegaban al endpoint POST WorkOrderAdminExportView. Además
+  faltaba export_mode y CSRF token.
+  Implementación:
+    - panel/views.py (PMA script SWAP): nuevo modo digital_full en
+      WorkOrderAdminExportView.post() + método _build_digital_full_excel()
+      con tres hojas: Tareas (14 columnas incluyendo OR, odómetro, horómetros,
+      tipología Gemini), Repuestos (9 columnas con precio unitario y proveedor),
+      Incidencias de jornada (11 columnas con resolución LUNCH_BREAK). Queries
+      optimizadas con select_related y prefetch_related. Autofit de columnas.
+    - digital_list.html (PMA script SWAP + correcciones H021):
+      Botón de descarga sustituido por disparador de modal de configuración.
+      Modal exportConfigModal con tres secciones: operarios (radio por operario
+      de la lista, opción "todos"), formato (digital_full / multi_sheet /
+      single_sheet con descripción), ámbito (selección actual / todos los
+      revisados del filtro). Formulario oculto POST con CSRF rellenado y
+      submiteado desde JS al confirmar. style inline → clase d-none (H021
+      resuelto). 0 errores djlint.
+
+BLOQUE 3 — PRIORIDAD 2 — Sistema de revisados en digital_list (COMPLETADO):
+  Diagnóstico: pestaña Pendiente tenía badge con polling hx-get sin botón
+  toggle. Pestaña Revisados tenía badge estático hardcodeado sin botón
+  de desmarcar. Ninguna pestaña tenía el toggle HTMX funcional.
+  Corrección (PMA script SWAP): ambos badges sustituidos por
+  {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
+  en pestañas Pendiente y Revisados. El fragmento ya incluye el div wrapper
+  con id único, badge de estado y botones toggle HTMX (hx-post, hx-target,
+  hx-swap outerHTML, X-CSRFToken). 0 errores djlint.
+
+PRIORIDADES 3 y 4 diferidas — no alcanzadas en S039. Pasan a S040 como P0 y P1.
+
+### Estado de archivos modificados en S039
+
+| Archivo | Tipo de cambio |
+|---|---|
+| DOCS/MAINS/ENTERPRISEBOT_MASTER_DOCUMENT.md | PCH apertura + PCH cierre (H16↔H7) |
+| DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md | Hoja de ruta S039→S040 + registro S039 |
+| panel/views.py | ?from=digital en WorkOrderEditView + digital_full en WorkOrderAdminExportView |
+| panel/templates/panel/work_orders/digital_list.html | ?from=digital en enlaces Editar + modal exportación + badges revisado HTMX |
+
+---
+
+## 6. Hoja de Ruta para la Siguiente Sesión (S040)
 
 ### ADVERTENCIAS CRÍTICAS — mantener siempre presentes
 
@@ -1071,85 +1140,20 @@ BLOQUE 2 — Dispositivo de confianza (incidencia S038, fuera de hoja de ruta or
   payload {uid, tok} firmado con django.core.signing.
   La cookie se emite ÚNICAMENTE en el primer cambio obligatorio de contraseña
   (_was_forced=True). Para usuarios que ya establecieron contraseña en el pasado
-  existe una tarea pendiente en S039 (ver PRIORIDAD 3 abajo).
+  existe una tarea pendiente en S040 (ver PRIORIDAD 0 abajo).
 
-### PRIORIDAD 0 — Corrección botón "Atrás" en WorkOrderEditView desde digital_list
+  WorkOrderAdminExportView — nuevo modo digital_full implementado en S039:
+  método _build_digital_full_excel() genera Excel de tres hojas (Tareas,
+  Repuestos, Incidencias de jornada) con todos los campos exclusivos de
+  partes digitales. Modal de configuración en digital_list.html con selección
+  de operarios, formato (digital_full / multi_sheet / single_sheet) y ámbito
+  (selección / todos los revisados). Formulario POST con CSRF correcto.
 
-  Bug: cuando el supervisor llega a WorkOrderEditView (panel/work_orders/edit.html)
-  desde la vista de partes digitales (digital_list, URL work-orders/digital/), el
-  botón "Atrás" o enlace de retorno redirige a la lista de partes PDF
-  (work_order_admin_history o work_orders_list) en lugar de volver a digital_list.
+  WorkOrderEditView.get() — parámetro ?from=digital resuelve back_url a
+  digital_work_order_list. Los enlaces Editar de digital_list.html incluyen
+  ?from=digital. Parámetro ?from=taller sigue funcionando para admin_history.
 
-  Causa esperada: el enlace de retorno en edit.html tiene la URL hardcodeada o
-  usa HTTP_REFERER sin preservarlo correctamente al entrar en la vista.
-
-  Solución aprobada:
-    - Inspeccionar WorkOrderEditView.get() en panel/views.py y el template edit.html
-      para identificar cómo se construye el enlace de retorno.
-    - Si el enlace está hardcodeado: sustituirlo por {{ back_url }} pasado en contexto.
-    - WorkOrderEditView.get() resuelve back_url con prioridad:
-        1. Parámetro GET ?next= en la URL de entrada (más robusto).
-        2. HTTP_REFERER si apunta a una URL del panel conocida.
-        3. Fallback: URL de work_order_admin_history (comportamiento actual).
-    - digital_list.html: el enlace/botón "Editar" que apunta a WorkOrderEditView
-      debe incluir ?next={{ request.path }} o equivalente para que la vista
-      pueda resolver el retorno correcto.
-
-  Archivos a inspeccionar y modificar:
-    - panel/views.py — WorkOrderEditView.get(): añadir resolución de back_url.
-    - panel/templates/panel/work_orders/edit.html: sustituir enlace de retorno
-      hardcodeado por {{ back_url }}.
-    - panel/templates/panel/work_orders/digital_list.html: añadir ?next= al
-      enlace de edición.
-
-  Criterio de éxito: desde digital_list → Editar → edit.html → Atrás → vuelve
-  a digital_list. Desde list.html (PDF) → Editar → edit.html → Atrás → vuelve
-  a list.html (PDF). El comportamiento es correcto en ambos orígenes.
-
-### PRIORIDAD 1 — Descarga de Excel desde la vista de partes digitales
-
-  La vista digital_list ya tiene un botón de descarga Excel en la pestaña
-  Revisados (implementado en S027, Paso 5). Es necesario auditar su estado
-  actual y completar o corregir lo que falte:
-
-    - Inspeccionar DigitalWorkOrderListView en panel/views.py: verificar si
-      existe lógica de exportación Excel o si solo está el botón en el template.
-    - Inspeccionar digital_list.html: estado actual del botón de descarga,
-      qué endpoint invoca, qué parámetros envía.
-    - Inspeccionar generate_period_excel en tasks.py: verificar si genera
-      un Excel diferenciado para partes digitales o si es el mismo que el
-      pipeline PDF.
-    - Diseño acordado (S025): la descarga Excel de partes digitales se activa
-      al cerrar un WorkPeriod (generate_period_excel encolado en WorkPeriodCloseView).
-      En S039 se valida si ese flujo está completo o requiere ajustes para
-      partes digitales (columnas correctas, hoja Repuestos, fuente DIGITAL/GENERATED).
-    - Si el flujo no está completo: implementar la descarga síncrona desde
-      digital_list para los partes seleccionados o del periodo activo,
-      reutilizando o adaptando generate_work_order_excel() de services.py.
-
-  Criterio de éxito: desde digital_list pestaña Revisados, el supervisor puede
-  descargar un Excel con los partes digitales revisados del periodo, con el
-  formato correcto (columnas de parte digital, hoja Repuestos si aplica).
-
-### PRIORIDAD 2 — Sistema de revisados completo en partes digitales
-
-  Auditar el estado actual del sistema de revisados en digital_list:
-
-    - Verificar que el botón "Marcar revisado" y "Desmarcar revisado" funcionan
-      correctamente desde digital_list (HTMX hx-post a work_order_review).
-    - Verificar que el badge de revisado en digital_list se actualiza sin recarga
-      completa de página (hx-target + hx-swap outerHTML sobre el fragment correcto).
-    - Verificar que un parte revisado en digital_list queda bloqueado para
-      edición y merge (reviewed=True impide Gate 0 y operator_form_edit).
-    - Verificar coherencia entre pestañas Pendiente/Revisados de digital_list:
-      al marcar revisado, el parte debe desaparecer de Pendiente y aparecer
-      en Revisados sin recarga completa si es posible.
-    - Implementar o corregir cualquier punto que no funcione correctamente.
-
-  Criterio de éxito: el flujo completo marcar → desmarcar revisado funciona
-  desde digital_list con actualización visual correcta y coherencia de pestañas.
-
-### PRIORIDAD 3 — Validación E2E del menú de ayuda WhatsApp
+### PRIORIDAD 0 — Validación E2E del menú de ayuda WhatsApp
 
   Validar en producción el flujo completo del menú de ayuda:
   1. Un contacto de sección escribe "ayuda" (y al menos dos variantes: "halluda",
@@ -1160,9 +1164,9 @@ BLOQUE 2 — Dispositivo de confianza (incidencia S038, fuera de hoja de ruta or
      ("help_schedules" / "help_agent") llega correctamente al webhook.
   Nota: la gestión de la respuesta al botón (enrutamiento posterior según
   la opción elegida) NO está implementada aún — queda para una sesión futura.
-  En S039 solo se valida que el menú se envía y los ids se reciben.
+  En S040 solo se valida que el menú se envía y los ids se reciben.
 
-### PRIORIDAD 4 — Dispositivo de confianza: checkbox en cambio voluntario de contraseña
+### PRIORIDAD 1 — Dispositivo de confianza: checkbox en cambio voluntario de contraseña
 
   Los usuarios que establecieron su contraseña antes de S038 tienen
   trusted_device_token=None y nunca pasarán por el flujo _was_forced=True.

@@ -4625,14 +4625,19 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
         groups = self._build_groups(work_order)
 
         # Resolve back URL from optional ?from GET parameter.
-        # "taller" — comes from WorkOrderAdminHistoryView (operator parts).
-        # Default — returns to the PDF pipeline list (WorkOrderListView).
+        # "digital" — comes from DigitalWorkOrderListView (digital parts).
+        # "taller"  — comes from WorkOrderAdminHistoryView (operator parts).
+        # Default   — returns to the PDF pipeline list (WorkOrderListView).
         #
-        # Resolver URL de retorno desde el parámetro GET opcional ?from.
-        # "taller" — proviene de WorkOrderAdminHistoryView (partes de operarios).
+        # Resolver URL de retorno desde el parametro GET opcional ?from.
+        # "digital" — proviene de DigitalWorkOrderListView (partes digitales).
+        # "taller"  — proviene de WorkOrderAdminHistoryView (partes de operarios).
         # Por defecto — vuelve a la lista del pipeline PDF (WorkOrderListView).
         from_param = request.GET.get("from", "")
-        if from_param == "taller":
+        if from_param == "digital":
+            from django.urls import reverse
+            back_url = reverse("panel:digital_work_order_list")
+        elif from_param == "taller":
             from django.urls import reverse
             back_url = reverse("panel:work_order_admin_history") + "?tab=pending"
         else:
@@ -13083,10 +13088,19 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
         # Validar export_mode.
         # ------------------------------------------------------------------
         export_mode = request.POST.get("export_mode", "single_sheet").strip()
-        if export_mode not in ("single_sheet", "multi_sheet"):
+        if export_mode not in ("single_sheet", "multi_sheet", "digital_full"):
             return HttpResponseBadRequest(
                 f"# [ADMIN EXPORT] Modo de exportación desconocido: {export_mode!r}."
             )
+
+        # ------------------------------------------------------------------
+        # MODE: digital_full — Three-sheet Excel specific to digital parts.
+        # Hoja 1: Tareas (WorkOrderEntryLine). Hoja 2: Repuestos (SparePartLine).
+        # Hoja 3: Incidencias de jornada (WorkdayGap).
+        # MODO: digital_full — Excel de tres hojas especifico para partes digitales.
+        # ------------------------------------------------------------------
+        if export_mode == "digital_full":
+            return self._build_digital_full_excel(request, company, pk_list, operator_filter)
 
         # ------------------------------------------------------------------
         # Collect and validate requested pks.
@@ -13379,6 +13393,283 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
         buf.seek(0)
 
         filename = f"partes_digitales_multi_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        response = HttpResponse(
+            buf.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+    def _build_digital_full_excel(self, request, company, pk_list, operator_filter):
+        """
+        Builds a three-sheet Excel file for digital and generated work orders.
+
+        Sheet 1 — Tareas: one row per WorkOrderEntryLine with all digital fields.
+        Sheet 2 — Repuestos: one row per SparePartLine with supplier and price data.
+        Sheet 3 — Incidencias de jornada: one row per WorkdayGap with resolution detail.
+
+        Returns HttpResponse with Content-Disposition attachment (xlsx).
+        Returns HTTP 400 if no valid digital/generated work orders are found.
+        ---
+        Construye un Excel de tres hojas para partes digitales y generados.
+
+        Hoja 1 — Tareas: una fila por WorkOrderEntryLine con todos los campos digitales.
+        Hoja 2 — Repuestos: una fila por SparePartLine con datos de proveedor y precio.
+        Hoja 3 — Incidencias de jornada: una fila por WorkdayGap con detalle de resolucion.
+
+        Devuelve HttpResponse con Content-Disposition attachment (xlsx).
+        Devuelve HTTP 400 si no se encuentran partes digitales/generados validos.
+        """
+        import io
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.models import (
+            WorkOrderEntry, WorkOrderEntryLine, SparePartLine, WorkdayGap,
+        )
+
+        # Retrieve DONE + reviewed DIGITAL/GENERATED WorkOrders scoped to company.
+        # Obtener partes DONE + revisados DIGITAL/GENERATED acotados a la empresa.
+        qs = WorkOrder.objects.filter(
+            pk__in=pk_list,
+            company=company,
+            status=WorkOrder.Status.DONE,
+            reviewed=True,
+            source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+        ).order_by("pk")
+
+        if operator_filter:
+            qs = qs.filter(uploaded_by__pk=operator_filter)
+
+        work_orders = list(qs)
+
+        if not work_orders:
+            return HttpResponseBadRequest(
+                "# [DIGITAL FULL EXPORT] Ninguno de los partes seleccionados es "
+                "digital/generado, esta revisado y en estado DONE."
+            )
+
+        wo_pks = [wo.pk for wo in work_orders]
+
+        # Helper — operator display name.
+        # Auxiliar — nombre visible del operario.
+        def _op_name(wo):
+            if wo.uploaded_by:
+                return (
+                    wo.uploaded_by.user.get_full_name()
+                    or wo.uploaded_by.user.username
+                )
+            return f"Operario #{wo.pk}"
+
+        # Helper — format time field.
+        # Auxiliar — formatear campo TimeField.
+        def _fmt_time(t):
+            return t.strftime("%H:%M") if t else ""
+
+        # Helper — format date field.
+        # Auxiliar — formatear campo DateField.
+        def _fmt_date(d):
+            return d.strftime("%d/%m/%Y") if d else ""
+
+        # Build WorkOrder lookup map: pk -> (wo, entry).
+        # Construir mapa de busqueda WorkOrder: pk -> (wo, entry).
+        wo_map = {}
+        entries = (
+            WorkOrderEntry.objects
+            .filter(work_order__in=wo_pks)
+            .select_related("work_order__uploaded_by__user")
+        )
+        for entry in entries:
+            wo_map[entry.work_order_id] = (entry.work_order, entry)
+
+        # Shared header style — Estilo de cabecera compartido.
+        header_fill = PatternFill("solid", fgColor="1F4E79")
+        header_font = Font(bold=True, color="FFFFFF", size=10)
+
+        def _apply_header(ws, headers):
+            for col_idx, h in enumerate(headers, start=1):
+                cell           = ws.cell(row=1, column=col_idx, value=h)
+                cell.fill      = header_fill
+                cell.font      = header_font
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[1].height = 18
+
+        def _autofit(ws):
+            for col in ws.columns:
+                max_len = max(
+                    (len(str(cell.value)) for cell in col if cell.value),
+                    default=10,
+                )
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 60)
+
+        wb = openpyxl.Workbook()
+
+        # ==============================================================
+        # Sheet 1 — Tareas (WorkOrderEntryLine)
+        # ==============================================================
+        ws_tasks = wb.active
+        ws_tasks.title = "Tareas"
+        task_headers = [
+            "Operario", "Fecha", "Maquina / CdG", "O.R.",
+            "Descripcion averia", "Notas reparacion",
+            "H. inicio", "H. fin", "Delta Horas",
+            "Km (odometro)", "Horometro motor", "Horometro grua",
+            "Categoria averia", "Subcategoria averia",
+        ]
+        _apply_header(ws_tasks, task_headers)
+
+        lines = (
+            WorkOrderEntryLine.objects
+            .filter(entry__work_order__in=wo_pks)
+            .select_related(
+                "entry__work_order__uploaded_by__user",
+                "machine_asset",
+            )
+            .order_by(
+                "entry__work_order__uploaded_by__user__last_name",
+                "entry__work_date",
+                "line_number",
+            )
+        )
+
+        row = 2
+        for line in lines:
+            entry = line.entry
+            wo    = entry.work_order
+            ws_tasks.cell(row=row, column=1,  value=_op_name(wo))
+            ws_tasks.cell(row=row, column=2,  value=_fmt_date(entry.work_date))
+            ws_tasks.cell(row=row, column=3,
+                value=line.machine_asset.code if line.machine_asset else line.machine_raw or "")
+            ws_tasks.cell(row=row, column=4,  value=line.or_val or "")
+            ws_tasks.cell(row=row, column=5,  value=line.fault_description or "")
+            ws_tasks.cell(row=row, column=6,  value=line.repair_notes or "")
+            ws_tasks.cell(row=row, column=7,  value=_fmt_time(line.hc))
+            ws_tasks.cell(row=row, column=8,  value=_fmt_time(line.hf))
+            ws_tasks.cell(row=row, column=9,
+                value=float(line.delta_hours) if line.delta_hours is not None else "")
+            ws_tasks.cell(row=row, column=10,
+                value=float(line.odometer_reading) if line.odometer_reading is not None else "")
+            ws_tasks.cell(row=row, column=11,
+                value=float(line.engine_hours_reading) if line.engine_hours_reading is not None else "")
+            ws_tasks.cell(row=row, column=12,
+                value=float(line.crane_hours_reading) if line.crane_hours_reading is not None else "")
+            ws_tasks.cell(row=row, column=13,
+                value=line.get_fault_category_display() if line.fault_category else "")
+            ws_tasks.cell(row=row, column=14,
+                value=line.get_fault_subcategory_display() if line.fault_subcategory else "")
+            row += 1
+
+        _autofit(ws_tasks)
+
+        # ==============================================================
+        # Sheet 2 — Repuestos (SparePartLine)
+        # ==============================================================
+        ws_parts = wb.create_sheet(title="Repuestos")
+        parts_headers = [
+            "Operario", "Fecha", "Maquina / CdG",
+            "Referencia", "Material", "Cantidad",
+            "Procedencia", "Proveedor", "Precio unitario",
+        ]
+        _apply_header(ws_parts, parts_headers)
+
+        spare_lines = (
+            SparePartLine.objects
+            .filter(entry_line__entry__work_order__in=wo_pks)
+            .select_related(
+                "entry_line__entry__work_order__uploaded_by__user",
+                "entry_line__machine_asset",
+                "vehicle",
+            )
+            .order_by(
+                "entry_line__entry__work_order__uploaded_by__user__last_name",
+                "entry_line__entry__work_date",
+                "entry_line__line_number",
+                "line_number",
+            )
+        )
+
+        row = 2
+        for spare in spare_lines:
+            line  = spare.entry_line
+            entry = line.entry
+            wo    = entry.work_order
+            ws_parts.cell(row=row, column=1, value=_op_name(wo))
+            ws_parts.cell(row=row, column=2, value=_fmt_date(entry.work_date))
+            ws_parts.cell(row=row, column=3,
+                value=line.machine_asset.code if line.machine_asset else line.machine_raw or "")
+            ws_parts.cell(row=row, column=4, value=spare.reference or "")
+            ws_parts.cell(row=row, column=5, value=spare.material or "")
+            ws_parts.cell(row=row, column=6,
+                value=float(spare.quantity) if spare.quantity is not None else "")
+            ws_parts.cell(row=row, column=7, value=spare.get_source_display())
+            ws_parts.cell(row=row, column=8, value=spare.supplier or "")
+            ws_parts.cell(row=row, column=9,
+                value=float(spare.unit_price) if spare.unit_price is not None else "")
+            row += 1
+
+        _autofit(ws_parts)
+
+        # ==============================================================
+        # Sheet 3 — Incidencias de jornada (WorkdayGap)
+        # ==============================================================
+        ws_gaps = wb.create_sheet(title="Incidencias de jornada")
+        gaps_headers = [
+            "Operario", "Fecha", "Tipo", "Inicio", "Fin",
+            "Duracion (min)", "Categoria ausencia",
+            "Ha comido", "Hora comida", "Nota", "Resuelto",
+        ]
+        _apply_header(ws_gaps, gaps_headers)
+
+        gaps = (
+            WorkdayGap.objects
+            .filter(work_order__in=wo_pks)
+            .select_related(
+                "work_order__uploaded_by__user",
+                "work_order__entries",
+                "absence_category",
+            )
+            .prefetch_related("work_order__entries")
+            .order_by(
+                "work_order__uploaded_by__user__last_name",
+                "gap_start",
+            )
+        )
+
+        row = 2
+        for gap in gaps:
+            wo    = gap.work_order
+            entry = wo.entries.first()
+            ws_gaps.cell(row=row, column=1,  value=_op_name(wo))
+            ws_gaps.cell(row=row, column=2,
+                value=_fmt_date(entry.work_date) if entry else "")
+            ws_gaps.cell(row=row, column=3,  value=gap.get_gap_type_display())
+            ws_gaps.cell(row=row, column=4,  value=_fmt_time(gap.gap_start))
+            ws_gaps.cell(row=row, column=5,  value=_fmt_time(gap.gap_end))
+            ws_gaps.cell(row=row, column=6,  value=gap.duration_minutes)
+            ws_gaps.cell(row=row, column=7,
+                value=gap.absence_category.label if gap.absence_category else "")
+            # lunch_had: only meaningful for LUNCH_BREAK gaps.
+            # lunch_had: solo significativo para gaps de tipo LUNCH_BREAK.
+            if gap.gap_type == WorkdayGap.GapType.LUNCH_BREAK:
+                ws_gaps.cell(row=row, column=8,
+                    value="Si" if gap.lunch_had else ("No" if gap.lunch_had is False else ""))
+                ws_gaps.cell(row=row, column=9, value=_fmt_time(gap.lunch_time))
+            else:
+                ws_gaps.cell(row=row, column=8, value="")
+                ws_gaps.cell(row=row, column=9, value="")
+            ws_gaps.cell(row=row, column=10, value=gap.note or "")
+            ws_gaps.cell(row=row, column=11, value="Si" if gap.resolved else "No")
+            row += 1
+
+        _autofit(ws_gaps)
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        filename = f"partes_digitales_completo_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         response = HttpResponse(
             buf.read(),
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
