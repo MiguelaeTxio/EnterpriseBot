@@ -66,6 +66,9 @@ este documento y las aplica sin excepción.
 - **Entorno virtual:** `EnterpriseBot_venv`
 - **Base de datos:** MySQL — `MiguelAeTxio$enterprisebot`
 - **Gestión de dependencias:** `pip-tools` (requirements.in → requirements.txt)
+- **Log de acceso:** `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.access.log`
+- **Log de errores:** `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log`
+- **Log de servidor:** `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.server.log`
 
 ### 4.5. Gestión de Hitos
 Ningún hito se marca como COMPLETADO. Los hitos oscilan únicamente entre
