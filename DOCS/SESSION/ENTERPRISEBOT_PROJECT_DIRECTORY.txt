@@ -302,9 +302,16 @@
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V03/V03DOC_TRANSFER_ARCHITECTURE.md
 ./budgets/urls.py
 ./budgets/templates/budgets/history.html
+./budgets/templates/budgets/_insurer_table_fragment.html
+./budgets/templates/budgets/_insurer_badge_fragment.html
 ./budgets/templates/budgets/wizard.html
 ./budgets/templates/budgets/detail.html
+./budgets/templates/budgets/_insurer_fields_partial.html
+./budgets/templates/budgets/insurer_list.html
+./budgets/templates/budgets/insurer_form.html
+./budgets/templates/budgets/_tariff_line_row_fragment.html
 ./budgets/templates/budgets/result.html
+./budgets/templates/budgets/_tariff_line_add_form_fragment.html
 ./budgets/templates/budgets/_vehicle_types_fragment.html
 ./budgets/templates/budgets/_optional_concepts_fragment.html
 ./budgets/admin.py

@@ -10,9 +10,10 @@ visualizacion de resultado, actualizacion de estado y vistas de historial
 y detalle exclusivas para ADMIN.
 """
 
+from django import forms as django_forms
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.timezone import now
@@ -20,7 +21,9 @@ from django.views import View
 
 from budgets.models import (
     Budget,
+    BudgetLine,
     Insurer,
+    InsurerTariff,
     TariffLine,
     VehicleType,
 )
@@ -632,3 +635,698 @@ class BudgetDetailView(AdminRoleRequiredMixin, View):
             "active_nav": "budgets_history",
         })
         return render(request, self.template_name, ctx)
+
+
+# ---------------------------------------------------------------------------
+# Insurer management views — ADMIN only
+# Vistas de gestion de aseguradoras — solo ADMIN
+# ---------------------------------------------------------------------------
+
+
+class InsurerForm(django_forms.ModelForm):
+    """
+    ModelForm for the Insurer model. Used by InsurerCreateView and
+    InsurerUpdateView. Scopes the queryset to the company of the
+    authenticated CompanyUser — unique_together validation is handled
+    by the model itself.
+    ---
+    ModelForm para el modelo Insurer. Usado por InsurerCreateView e
+    InsurerUpdateView. No expone el campo company en el formulario —
+    se asigna automaticamente en la vista desde el CompanyUser autenticado.
+    La validacion unique_together la gestiona el propio modelo.
+    """
+
+    class Meta:
+        model = Insurer
+        fields = [
+            "name",
+            "code",
+            "management_fee_percent",
+            "surcharges_are_cumulative",
+            "is_active",
+            "notes",
+        ]
+
+    def clean_code(self):
+        """
+        Normalise the code field to uppercase and strip whitespace.
+        ---
+        Normaliza el campo code a mayusculas y elimina espacios.
+        """
+        return self.cleaned_data.get("code", "").strip().upper()
+
+
+def _insurer_list_qs(company):
+    """
+    Return the annotated Insurer queryset for the given company,
+    including vehicle_type_count and tariff_count annotations.
+    ---
+    Devuelve el queryset de Insurer anotado para la empresa dada,
+    incluyendo las anotaciones vehicle_type_count y tariff_count.
+    """
+    return (
+        Insurer.objects.filter(company=company)
+        .annotate(
+            vehicle_type_count=Count("vehicle_types", distinct=True),
+            tariff_count=Count("tariffs", distinct=True),
+        )
+        .order_by("name")
+    )
+
+
+class InsurerListView(AdminRoleRequiredMixin, View):
+    """
+    Lists all insurers for the company. Supports live HTMX search by
+    name/code and filter by active/inactive status.
+    On HTMX request: returns only the table fragment partial.
+    On full request: returns the full page.
+    ---
+    Lista todas las aseguradoras de la empresa. Soporta busqueda live
+    HTMX por nombre/codigo y filtro por estado activa/inactiva.
+    En peticion HTMX: devuelve solo el parcial de tabla.
+    En peticion completa: devuelve la pagina completa.
+    """
+
+    template_name = "budgets/insurer_list.html"
+    partial_template = "budgets/_insurer_table_fragment.html"
+
+    def get(self, request):
+        """
+        Render the insurer list with optional search and status filters.
+        ---
+        Renderiza el listado de aseguradoras con filtros opcionales de
+        busqueda y estado.
+        """
+        company_user = _get_company_user(request)
+        qs = _insurer_list_qs(company_user.company)
+
+        # Apply search filter.
+        # Aplicar filtro de busqueda.
+        q = request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q) | Q(code__icontains=q)
+            )
+
+        # Apply status filter.
+        # Aplicar filtro de estado.
+        status = request.GET.get("status", "")
+        if status == "active":
+            qs = qs.filter(is_active=True)
+        elif status == "inactive":
+            qs = qs.filter(is_active=False)
+
+        ctx = _build_base_context(request, {
+            "insurers": qs,
+            "active_nav": "budgets_insurers",
+        })
+
+        # HTMX partial swap — return only the table fragment.
+        # Swap parcial HTMX — devolver solo el fragmento de tabla.
+        if request.headers.get("HX-Request"):
+            return render(request, self.partial_template, ctx)
+
+        return render(request, self.template_name, ctx)
+
+
+class InsurerCreateView(AdminRoleRequiredMixin, View):
+    """
+    Renders and processes the insurer creation form.
+    On GET: renders an empty InsurerForm.
+    On POST: validates, assigns company from the authenticated user
+    and saves. Redirects to insurer list on success.
+    ---
+    Renderiza y procesa el formulario de creacion de aseguradora.
+    En GET: renderiza un InsurerForm vacio.
+    En POST: valida, asigna la company del usuario autenticado
+    y guarda. Redirige al listado en caso de exito.
+    """
+
+    template_name = "budgets/insurer_form.html"
+
+    def get(self, request):
+        """
+        Render the empty creation form.
+        ---
+        Renderiza el formulario de creacion vacio.
+        """
+        form = InsurerForm()
+        ctx = _build_base_context(request, {
+            "form": form,
+            "mode": "create",
+            "active_nav": "budgets_insurers",
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request):
+        """
+        Validate and save the new insurer bound to the company.
+        ---
+        Valida y guarda la nueva aseguradora vinculada a la empresa.
+        """
+        company_user = _get_company_user(request)
+        form = InsurerForm(request.POST)
+        if form.is_valid():
+            insurer = form.save(commit=False)
+            insurer.company = company_user.company
+            try:
+                insurer.save()
+                messages.success(
+                    request,
+                    f"Aseguradora '{insurer.name}' creada correctamente.",
+                )
+                return redirect("budgets:insurer_list")
+            except Exception:
+                messages.error(
+                    request,
+                    "El codigo introducido ya existe para esta empresa. "
+                    "Usa un codigo diferente.",
+                )
+        ctx = _build_base_context(request, {
+            "form": form,
+            "mode": "create",
+            "active_nav": "budgets_insurers",
+        })
+        return render(request, self.template_name, ctx)
+
+
+class InsurerUpdateView(AdminRoleRequiredMixin, View):
+    """
+    Renders and processes the insurer edit form for an existing insurer.
+    On GET: renders InsurerForm pre-filled with the insurer data.
+    On POST: validates and saves. Redirects to insurer list on success.
+    ---
+    Renderiza y procesa el formulario de edicion de una aseguradora existente.
+    En GET: renderiza el InsurerForm con los datos de la aseguradora.
+    En POST: valida y guarda. Redirige al listado en caso de exito.
+    """
+
+    template_name = "budgets/insurer_form.html"
+
+    def _build_edit_context(self, request, insurer, form):
+        """
+        Build the full accordion context for the edit view:
+        active tariff, tariff history with line counts, tariff line groups
+        and choice lists for the inline editing selects.
+        ---
+        Construye el contexto completo del acordeon para la vista de edicion:
+        tarifa activa, historial de tarifas con conteo de lineas, grupos de
+        lineas de tarifa y listas de choices para los selects de edicion inline.
+        """
+        from budgets.models import InsurerTariff
+        from django.db.models import Count as _Count
+
+        # Resolve active tariff (valid_to=None).
+        # Resolver tarifa activa (valid_to=None).
+        active_tariff = (
+            InsurerTariff.objects
+            .filter(insurer=insurer, valid_to__isnull=True)
+            .first()
+        )
+
+        # Tariff version history (all non-active versions).
+        # Historial de versiones de tarifa (todas las versiones no activas).
+        tariff_history = (
+            InsurerTariff.objects
+            .filter(insurer=insurer, valid_to__isnull=False)
+            .annotate(line_count=_Count('lines'))
+            .order_by('-valid_from')
+        )
+
+        # Tariff lines grouped by vehicle type for accordion Panel 3.
+        # Lineas de tarifa agrupadas por tipo de vehiculo para Panel 3.
+        tariff_line_groups = []
+        vehicle_types = []
+        if active_tariff:
+            lines = (
+                active_tariff.lines
+                .select_related('vehicle_type')
+                .order_by('vehicle_type__sort_order', 'vehicle_type__name', 'concept')
+            )
+            vehicle_types = (
+                insurer.vehicle_types
+                .filter(is_active=True)
+                .order_by('sort_order', 'name')
+            )
+            # Group lines by vehicle_type (None = general concepts).
+            # Agrupar lineas por vehicle_type (None = conceptos generales).
+            groups_dict = {}
+            for line in lines:
+                key = line.vehicle_type
+                if key not in groups_dict:
+                    groups_dict[key] = []
+                groups_dict[key].append(line)
+            # None (general) first, then sorted by vehicle type name.
+            # None (general) primero, luego ordenado por nombre de tipo.
+            if None in groups_dict:
+                tariff_line_groups.append({
+                    'vehicle_type': None,
+                    'lines': groups_dict.pop(None),
+                })
+            for vt, vt_lines in groups_dict.items():
+                tariff_line_groups.append({
+                    'vehicle_type': vt,
+                    'lines': vt_lines,
+                })
+
+        return _build_base_context(request, {
+            'form': form,
+            'insurer': insurer,
+            'mode': 'edit',
+            'active_nav': 'budgets_insurers',
+            'active_tariff': active_tariff,
+            'tariff_history': tariff_history,
+            'tariff_line_groups': tariff_line_groups,
+            'vehicle_types': vehicle_types,
+            'concept_choices': TariffLine.CONCEPT_CHOICES,
+            'unit_choices': TariffLine.UNIT_CHOICES,
+        })
+
+    def get(self, request, pk):
+        """
+        Render the edit form pre-filled with the insurer instance data.
+        ---
+        Renderiza el formulario de edicion con los datos de la instancia.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+        form = InsurerForm(instance=insurer)
+        ctx = self._build_edit_context(request, insurer, form)
+        return render(request, self.template_name, ctx)
+
+    def post(self, request, pk):
+        """
+        Validate and save the updated insurer data.
+        On success redirects back to the edit view (not to the list)
+        so the user can continue editing tariff and lines.
+        ---
+        Valida y guarda los datos actualizados de la aseguradora.
+        En caso de exito redirige de vuelta a la vista de edicion (no al listado)
+        para que el usuario pueda continuar editando tarifa y lineas.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+        form = InsurerForm(request.POST, instance=insurer)
+        if form.is_valid():
+            try:
+                form.save()
+                messages.success(
+                    request,
+                    f"Aseguradora '{insurer.name}' actualizada correctamente.",
+                )
+                return redirect('budgets:insurer_update', pk=insurer.pk)
+            except Exception:
+                messages.error(
+                    request,
+                    "El codigo introducido ya existe para esta empresa. "
+                    "Usa un codigo diferente.",
+                )
+        ctx = self._build_edit_context(request, insurer, form)
+        return render(request, self.template_name, ctx)
+
+
+class InsurerToggleView(AdminRoleRequiredMixin, View):
+    """
+    HTMX endpoint. Toggles the is_active flag of an insurer and returns
+    the updated badge fragment for inline swap in the list table.
+    ---
+    Endpoint HTMX. Alterna el flag is_active de una aseguradora y devuelve
+    el fragmento de badge actualizado para swap inline en la tabla del listado.
+    """
+
+    def post(self, request, pk):
+        """
+        Toggle is_active and return the badge partial.
+        ---
+        Alterna is_active y devuelve el parcial del badge.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+        insurer.is_active = not insurer.is_active
+        insurer.save(update_fields=["is_active", "updated_at"])
+        return render(
+            request,
+            "budgets/_insurer_badge_fragment.html",
+            {"insurer": insurer},
+        )
+
+
+class InsurerDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes an insurer and all its related data (vehicle types, tariffs,
+    tariff lines) via CASCADE. Redirects to insurer list with a success
+    or error message.
+    ---
+    Elimina una aseguradora y todos sus datos relacionados (tipos de vehiculo,
+    tarifas, lineas de tarifa) via CASCADE. Redirige al listado con un mensaje
+    de exito o error.
+    """
+
+    def post(self, request, pk):
+        """
+        Delete the insurer instance. Redirect to insurer list.
+        ---
+        Elimina la instancia de aseguradora. Redirige al listado.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+        name = insurer.name
+        try:
+            insurer.delete()
+            messages.success(
+                request,
+                f"Aseguradora '{name}' eliminada correctamente.",
+            )
+        except Exception as exc:
+            messages.error(
+                request,
+                f"No se pudo eliminar la aseguradora '{name}': {exc}",
+            )
+        return redirect("budgets:insurer_list")
+
+
+# ---------------------------------------------------------------------------
+# Tariff line inline save — HTMX POST, saves a single field change and
+# returns the updated row fragment.
+# Guardado inline de linea de tarifa — HTMX POST, guarda un cambio de campo
+# y devuelve el fragmento de fila actualizado.
+# ---------------------------------------------------------------------------
+
+
+class TariffLineSaveView(AdminRoleRequiredMixin, View):
+    """
+    HTMX endpoint. Receives a POST with the full row field values for a
+    TariffLine, saves them and returns the updated row fragment for swap.
+    ---
+    Endpoint HTMX. Recibe un POST con todos los valores de campo de la fila
+    de una TariffLine, los guarda y devuelve el fragmento de fila actualizado.
+    """
+
+    def post(self, request, pk):
+        """
+        Save TariffLine fields from POST and return updated row fragment.
+        ---
+        Guarda los campos de TariffLine desde POST y devuelve el fragmento
+        de fila actualizado.
+        """
+        from budgets.models import InsurerTariff
+        company_user = _get_company_user(request)
+        line = get_object_or_404(
+            TariffLine,
+            pk=pk,
+            tariff__insurer__company=company_user.company,
+        )
+        data = request.POST
+
+        # Update all editable fields atomically.
+        # Actualizar todos los campos editables de forma atomica.
+        line.concept = data.get("concept", line.concept)
+        line.unit = data.get("unit", line.unit)
+        line.price = data.get("price", line.price) or 0
+        km_threshold = data.get("km_threshold", "").strip()
+        line.km_threshold = int(km_threshold) if km_threshold else None
+        min_units = data.get("min_units", "").strip()
+        line.min_units = float(min_units) if min_units else None
+        # Checkbox: present in POST = checked, absent = unchecked.
+        # Checkbox: presente en POST = marcado, ausente = desmarcado.
+        line.requires_authorization = "requires_authorization" in data
+        line.save()
+
+        ctx = {
+            "line": line,
+            "concept_choices": TariffLine.CONCEPT_CHOICES,
+            "unit_choices": TariffLine.UNIT_CHOICES,
+            "csrf_token": request.META.get("CSRF_COOKIE", ""),
+        }
+        return render(
+            request,
+            "budgets/_tariff_line_row_fragment.html",
+            ctx,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tariff line delete — HTMX POST, deletes the line and returns empty string
+# so the row is removed from the DOM.
+# Eliminacion de linea de tarifa — HTMX POST, elimina la linea y devuelve
+# cadena vacia para que la fila desaparezca del DOM.
+# ---------------------------------------------------------------------------
+
+
+class TariffLineDeleteView(AdminRoleRequiredMixin, View):
+    """
+    HTMX endpoint. Deletes a TariffLine and returns an empty response
+    so HTMX replaces the row with nothing (outerHTML swap).
+    ---
+    Endpoint HTMX. Elimina una TariffLine y devuelve una respuesta vacia
+    para que HTMX sustituya la fila por nada (swap outerHTML).
+    """
+
+    def post(self, request, pk):
+        """
+        Delete the TariffLine and return empty 200 response.
+        ---
+        Elimina la TariffLine y devuelve respuesta 200 vacia.
+        """
+        company_user = _get_company_user(request)
+        line = get_object_or_404(
+            TariffLine,
+            pk=pk,
+            tariff__insurer__company=company_user.company,
+        )
+        line.delete()
+        from django.http import HttpResponse
+        return HttpResponse("")
+
+
+# ---------------------------------------------------------------------------
+# Tariff line add form — HTMX GET, returns the add-line inline form fragment.
+# Formulario de adicion de linea — HTMX GET, devuelve el fragmento del
+# formulario inline de nueva linea.
+# ---------------------------------------------------------------------------
+
+
+class TariffLineAddFormView(AdminRoleRequiredMixin, View):
+    """
+    HTMX GET endpoint. Returns the inline add-line form fragment for the
+    given active tariff. The form is injected into #new-line-row.
+    ---
+    Endpoint HTMX GET. Devuelve el fragmento de formulario inline de nueva
+    linea para la tarifa activa dada. El formulario se inyecta en #new-line-row.
+    """
+
+    def get(self, request, pk):
+        """
+        Return the add-line form fragment for the given tariff pk.
+        ---
+        Devuelve el fragmento de formulario de nueva linea para el pk de tarifa.
+        """
+        from budgets.models import InsurerTariff
+        company_user = _get_company_user(request)
+        tariff = get_object_or_404(
+            InsurerTariff,
+            pk=pk,
+            insurer__company=company_user.company,
+        )
+        vehicle_types = (
+            tariff.insurer.vehicle_types
+            .filter(is_active=True)
+            .order_by("sort_order", "name")
+        )
+        ctx = {
+            "tariff": tariff,
+            "vehicle_types": vehicle_types,
+            "concept_choices": TariffLine.CONCEPT_CHOICES,
+            "unit_choices": TariffLine.UNIT_CHOICES,
+        }
+        return render(
+            request,
+            "budgets/_tariff_line_add_form_fragment.html",
+            ctx,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tariff line add — HTMX POST, creates a new TariffLine and returns the
+# new row fragment inserted at the top of the table.
+# Adicion de linea — HTMX POST, crea una nueva TariffLine y devuelve el
+# fragmento de fila nuevo insertado en la tabla.
+# ---------------------------------------------------------------------------
+
+
+class TariffLineAddView(AdminRoleRequiredMixin, View):
+    """
+    HTMX POST endpoint. Creates a new TariffLine for the given active tariff
+    and returns the new row fragment. Also clears the add form by returning
+    an empty string swapped into #new-line-row.
+    ---
+    Endpoint HTMX POST. Crea una nueva TariffLine para la tarifa activa dada
+    y devuelve el fragmento de fila nuevo. Tambien limpia el formulario de
+    adicion devolviendo cadena vacia en #new-line-row.
+    """
+
+    def post(self, request, pk):
+        """
+        Create a new TariffLine from POST data and return updated row.
+        ---
+        Crea una nueva TariffLine desde los datos POST y devuelve la fila.
+        """
+        from budgets.models import InsurerTariff
+        from django.http import HttpResponse
+        company_user = _get_company_user(request)
+        tariff = get_object_or_404(
+            InsurerTariff,
+            pk=pk,
+            insurer__company=company_user.company,
+        )
+        data = request.POST
+        vehicle_type_id = data.get("vehicle_type_id", "").strip()
+        vehicle_type = None
+        if vehicle_type_id:
+            vehicle_type = get_object_or_404(
+                VehicleType,
+                pk=int(vehicle_type_id),
+                insurer=tariff.insurer,
+            )
+        km_threshold = data.get("km_threshold", "").strip()
+        min_units = data.get("min_units", "").strip()
+        line = TariffLine.objects.create(
+            tariff=tariff,
+            vehicle_type=vehicle_type,
+            concept=data.get("concept", TariffLine.CONCEPT_DEPARTURE),
+            unit=data.get("unit", TariffLine.UNIT_FIXED),
+            price=data.get("price", 0) or 0,
+            km_threshold=int(km_threshold) if km_threshold else None,
+            min_units=float(min_units) if min_units else None,
+            requires_authorization="requires_authorization" in data,
+        )
+        ctx = {
+            "line": line,
+            "concept_choices": TariffLine.CONCEPT_CHOICES,
+            "unit_choices": TariffLine.UNIT_CHOICES,
+            "csrf_token": request.META.get("CSRF_COOKIE", ""),
+        }
+        return render(
+            request,
+            "budgets/_tariff_line_row_fragment.html",
+            ctx,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Insurer tariff create — creates a new tariff version, closes the active one.
+# Creacion de nueva version de tarifa — crea una nueva version y cierra la activa.
+# ---------------------------------------------------------------------------
+
+
+class InsurerTariffCreateView(AdminRoleRequiredMixin, View):
+    """
+    Creates a new InsurerTariff version for the given insurer.
+    Closes the currently active tariff (valid_to = valid_from - 1 day).
+    Redirects back to the insurer edit view.
+    ---
+    Crea una nueva version de InsurerTariff para la aseguradora dada.
+    Cierra la tarifa actualmente activa (valid_to = valid_from - 1 dia).
+    Redirige de vuelta a la vista de edicion de la aseguradora.
+    """
+
+    def post(self, request, pk):
+        """
+        Create the new tariff version and close the previous active one.
+        ---
+        Crea la nueva version de tarifa y cierra la anterior activa.
+        """
+        from budgets.models import InsurerTariff
+        from datetime import date, timedelta
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+        year_raw = request.POST.get("year", "").strip()
+        valid_from_raw = request.POST.get("valid_from", "").strip()
+        if not year_raw or not valid_from_raw:
+            messages.error(request, "El ano y la fecha de inicio son obligatorios.")
+            return redirect("budgets:insurer_update", pk=pk)
+        try:
+            year = int(year_raw)
+            valid_from = date.fromisoformat(valid_from_raw)
+        except ValueError:
+            messages.error(request, "Formato de ano o fecha invalido.")
+            return redirect("budgets:insurer_update", pk=pk)
+
+        with transaction.atomic():
+            # Close the current active tariff.
+            # Cerrar la tarifa activa actual.
+            active = InsurerTariff.objects.filter(
+                insurer=insurer,
+                valid_to__isnull=True,
+            ).first()
+            if active:
+                active.valid_to = valid_from - timedelta(days=1)
+                active.save(update_fields=["valid_to"])
+            # Create the new tariff version.
+            # Crear la nueva version de tarifa.
+            InsurerTariff.objects.create(
+                insurer=insurer,
+                year=year,
+                valid_from=valid_from,
+                valid_to=None,
+                notes="",
+            )
+        messages.success(
+            request,
+            f"Nueva version de tarifa {year} creada correctamente.",
+        )
+        return redirect("budgets:insurer_update", pk=pk)
+
+
+# ---------------------------------------------------------------------------
+# Tariff notes save — saves the notes field of the active tariff.
+# Guardado de notas de tarifa — guarda el campo notes de la tarifa activa.
+# ---------------------------------------------------------------------------
+
+
+class TariffSaveNotesView(AdminRoleRequiredMixin, View):
+    """
+    Saves the notes field of an InsurerTariff. Redirects back to the
+    insurer edit view.
+    ---
+    Guarda el campo notes de un InsurerTariff. Redirige de vuelta a la
+    vista de edicion de la aseguradora.
+    """
+
+    def post(self, request, pk):
+        """
+        Save tariff notes and redirect to insurer edit view.
+        ---
+        Guarda las notas de la tarifa y redirige a la vista de edicion.
+        """
+        from budgets.models import InsurerTariff
+        company_user = _get_company_user(request)
+        tariff = get_object_or_404(
+            InsurerTariff,
+            pk=pk,
+            insurer__company=company_user.company,
+        )
+        tariff.notes = request.POST.get("notes", "").strip()
+        tariff.save(update_fields=["notes"])
+        messages.success(request, "Notas de la tarifa guardadas.")
+        return redirect("budgets:insurer_update", pk=tariff.insurer.pk)

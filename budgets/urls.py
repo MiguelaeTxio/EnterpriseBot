@@ -75,4 +75,102 @@ urlpatterns = [
         views.BudgetDetailView.as_view(),
         name="detail",
     ),
+
+    # ---------------------------------------------------------------------------
+    # Insurer management routes — ADMIN only
+    # Rutas de gestion de aseguradoras — solo ADMIN
+    # ---------------------------------------------------------------------------
+
+    # Insurer list — listado con busqueda live HTMX y filtro de estado.
+    # Insurer list — list with HTMX live search and status filter.
+    path(
+        "insurers/",
+        views.InsurerListView.as_view(),
+        name="insurer_list",
+    ),
+
+    # Insurer create — formulario de alta de nueva aseguradora.
+    # Insurer create — new insurer creation form.
+    path(
+        "insurers/new/",
+        views.InsurerCreateView.as_view(),
+        name="insurer_create",
+    ),
+
+    # Insurer update — formulario de edicion de aseguradora existente.
+    # Insurer update — edit form for an existing insurer.
+    path(
+        "insurers/<int:pk>/edit/",
+        views.InsurerUpdateView.as_view(),
+        name="insurer_update",
+    ),
+
+    # Insurer toggle — HTMX POST, alterna is_active, devuelve badge.
+    # Insurer toggle — HTMX POST, toggles is_active, returns badge fragment.
+    path(
+        "insurers/<int:pk>/toggle/",
+        views.InsurerToggleView.as_view(),
+        name="insurer_toggle",
+    ),
+
+    # Insurer delete — POST con confirmacion modal, elimina en cascada.
+    # Insurer delete — POST with modal confirmation, deletes via CASCADE.
+    path(
+        "insurers/<int:pk>/delete/",
+        views.InsurerDeleteView.as_view(),
+        name="insurer_delete",
+    ),
+
+    # ---------------------------------------------------------------------------
+    # Tariff management routes — ADMIN only
+    # Rutas de gestion de tarifas y lineas — solo ADMIN
+    # ---------------------------------------------------------------------------
+
+    # Insurer tariff create — crea nueva version de tarifa, cierra la activa.
+    # Insurer tariff create — creates new tariff version, closes active one.
+    path(
+        "insurers/<int:pk>/tariffs/new/",
+        views.InsurerTariffCreateView.as_view(),
+        name="tariff_create",
+    ),
+
+    # Tariff save notes — guarda el campo notes de la tarifa activa.
+    # Tariff save notes — saves the notes field of the active tariff.
+    path(
+        "tariffs/<int:pk>/notes/",
+        views.TariffSaveNotesView.as_view(),
+        name="tariff_save_notes",
+    ),
+
+    # Tariff line add form — HTMX GET, devuelve formulario inline de nueva linea.
+    # Tariff line add form — HTMX GET, returns inline add-line form fragment.
+    path(
+        "tariffs/<int:pk>/lines/add-form/",
+        views.TariffLineAddFormView.as_view(),
+        name="tariff_line_add_form",
+    ),
+
+    # Tariff line add — HTMX POST, crea nueva linea y devuelve fragmento de fila.
+    # Tariff line add — HTMX POST, creates new line and returns row fragment.
+    path(
+        "tariffs/<int:pk>/lines/add/",
+        views.TariffLineAddView.as_view(),
+        name="tariff_line_add",
+    ),
+
+    # Tariff line save — HTMX POST, guarda campo editado y devuelve fila.
+    # Tariff line save — HTMX POST, saves edited field and returns row fragment.
+    path(
+        "lines/<int:pk>/save/",
+        views.TariffLineSaveView.as_view(),
+        name="tariff_line_save",
+    ),
+
+    # Tariff line delete — HTMX POST, elimina linea y devuelve respuesta vacia.
+    # Tariff line delete — HTMX POST, deletes line and returns empty response.
+    path(
+        "lines/<int:pk>/delete/",
+        views.TariffLineDeleteView.as_view(),
+        name="tariff_line_delete",
+    ),
 ]

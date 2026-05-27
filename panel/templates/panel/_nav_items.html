@@ -341,6 +341,14 @@
             <i class="bi bi-clock-history"></i>Historial presupuestos
         </a>
     </li>
+
+    {# Aseguradoras — solo ADMIN / Insurers — ADMIN only #}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'budgets_insurers' %}active{% endif %}"
+           href="{% url 'budgets:insurer_list' %}">
+            <i class="bi bi-building"></i>Aseguradoras
+        </a>
+    </li>
     {% endif %}
     {% endif %}
 

@@ -1212,3 +1212,39 @@ Adicionalmente se reorganizó el sidebar (_nav_items.html):
   obligar al cambio) su contraseña y el dispositivo queda como de confianza
   — accede al panel sin formulario de login en la siguiente visita.
 
+### PRIORIDAD 2 — Incidencia: bloques mañana/tarde generan GAP erróneo (hora de comida)
+
+  CONTEXTO: Gate 4 detecta laguna (GAP) entre bloque mañana y bloque tarde cuando el operario introduce dos bloques separados (ej: 08:00-14:00 + 15:00-18:00) en lugar de un único bloque (08:00-18:00). El sistema descuenta correctamente la pausa en el bloque único, pero con dos bloques detecta la separación como GAP sin justificar, lo cual es erróneo: la separación ES la pausa de comida ya contemplada en el WorkdaySchedule.
+
+  CAUSA RAÍZ: _detect_workday_gaps() en panel/views.py compara cada par consecutivo (hf[i], hc[i+1]) y registra GAP si la diferencia supera tolerance_minutes, sin verificar si el intervalo coincide con la ventana lunch_break_start / lunch_break_end del WorkdaySchedule.
+
+  SOLUCIÓN: En _detect_workday_gaps(), antes de registrar un GAP entre dos bloques consecutivos, verificar si el intervalo [hf[i], hc[i+1]] está contenido dentro de la ventana de pausa de comida del WorkdaySchedule (lunch_break_start / lunch_break_end). Si el hueco queda dentro de la ventana de pausa (con tolerancia), no registrar GAP.
+
+  Archivo a modificar:
+    - panel/views.py: _detect_workday_gaps() — añadir parámetros lunch_break_start y lunch_break_end (nullable). Si ambos presentes, suprimir el GAP cuando [hf[i], hc[i+1]] solapa con la ventana de pausa. Actualizar todas las llamadas al helper para pasar estos campos desde el WorkdaySchedule resuelto. Compatibilidad total si son None.
+
+  Criterio de éxito: operario que introduce dos bloques (mañana + tarde) separados exactamente por la pausa configurada en el horario puede persistir el parte sin que Gate 4 lo intercepte como incidencia de laguna.
+
+### PRIORIDAD 3 — Marca de verificación en partes de operario
+
+  Pendiente de definición detallada con Miguel Ángel al inicio de S040. Describir el alcance exacto del campo de verificación antes de implementar.
+
+### PRIORIDAD 4 (ex-P0) — Validación E2E del menú de ayuda WhatsApp
+
+  Validar en producción el flujo completo del menú de ayuda:
+  1. Un contacto de sección escribe "ayuda" (y variantes: "halluda", "ayuuda").
+  2. El sistema responde con el quick-reply de dos botones sin disparar alias collection ni breakdown routing.
+  3. El contacto pulsa cada botón y se verifica que el id devuelto ("help_schedules" / "help_agent") llega correctamente al webhook.
+  La gestión de la respuesta al botón NO está implementada aún.
+
+### PRIORIDAD 5 (ex-P1) — Dispositivo de confianza: checkbox en cambio voluntario de contraseña
+
+  Los usuarios que establecieron contraseña antes de S038 tienen trusted_device_token=None. Añadir checkbox opcional "Recordar este dispositivo" en PanelPasswordChangeView (rama is_forced=False).
+
+  Archivos a modificar:
+    - panel/views.py: PanelPasswordChangeView.post() — si not _was_forced y POST contiene "trust_device"=on: generar UUID4, persistir en trusted_device_token y emitir cookie con la misma lógica forzada.
+    - panel/templates/panel/password/change.html: checkbox "Recordar este dispositivo" visible solo cuando is_forced=False.
+
+  Criterio de éxito: usuario con contraseña ya establecida marca el checkbox y el dispositivo queda como de confianza — accede al panel sin login en la siguiente visita.
+
+

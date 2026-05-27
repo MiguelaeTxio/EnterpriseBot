@@ -121,7 +121,7 @@ result, status_update, history (ADMIN), detail (ADMIN).
 - Estado: COMPLETADO (S001 — migración 0001_initial aplicada en producción)
 
 ### Paso 4 — Panel de gestión de aseguradoras y tarifas
-- Estado: PENDIENTE — ver hoja de ruta S003.
+- Estado: EN CURSO — visor de tarifas implementado en S003 (listado, acordeon, edicion inline HTMX).
 
 ### Paso 5 — Motor de generación de presupuestos
 - Estado: COMPLETADO (S001 — formulario secuencial HTMX operativo)
@@ -132,6 +132,36 @@ result, status_update, history (ADMIN), detail (ADMIN).
 ### Paso 7 — Integración en sidebar del panel
 - Estado: COMPLETADO (S001)
 
+### Paso 8 — Ampliación del modelo Company: bases de operación y calendario laboral
+- Estado: PENDIENTE
+- Añadir campo `operation_bases` (TextField, bases desde donde opera la empresa,
+  p.ej. localidades de cobertura) al modelo Company de ivr_config.
+- Añadir campo `labor_calendar` (TextField o JSONField) con el calendario laboral
+  de la empresa (festivos locales, nacionales, horario nocturno de referencia).
+- Migración nueva en ivr_config.
+- Exponer ambos campos en el formulario de edición de empresa del panel (ADMIN).
+- Estos campos alimentarán el motor de cálculo de presupuestos para aplicar
+  correctamente los recargos nocturnos y festivos según el calendario real.
+
+### Paso 9 — Flag compañía/particular en aseguradora (Insurer)
+- Estado: PENDIENTE
+- Añadir campo BooleanField `is_insurance_company` (default=True) al modelo Insurer.
+  True = compañía aseguradora. False = cliente particular con tarifa propia.
+- Migración nueva en budgets.
+- Exponer el campo en el formulario de edición de aseguradora (Panel 1 del acordeón).
+- El wizard de presupuestos mostrará el label adecuado según el flag
+  ('Aseguradora' vs 'Cliente particular') en el desplegable de selección.
+
+### Paso 10 — Corrección banner residual 'Acceso denegado' en OperatorDashboardView
+- Estado: PENDIENTE
+- El template operator/dashboard.html muestra mensajes Django del framework al
+  inicio de la página. Tras la corrección de mixins de S002 (H16), un mensaje
+  residual de sesión anterior aparece en la primera carga del dashboard del operario.
+- Investigar si el mensaje proviene de {% if messages %} en base.html o dashboard.html.
+- Añadir lógica para suprimir mensajes de tipo 'error' en la vista del operario
+  si el usuario tiene rol WORKSHOP, o limpiar la cola de mensajes al inicio
+  de OperatorDashboardView.get().
+
 ---
 
 ## 4. Registro de Sesiones
@@ -139,7 +169,8 @@ result, status_update, history (ADMIN), detail (ADMIN).
 | Sesión | Fecha      | Pasos trabajados | Resumen |
 |--------|------------|-----------------|---------|
 | S001   | 2026-05-26 | 1–5, 7          | Implementación completa de la app budgets: modelos, motor de cálculo, vistas, templates, rol ASSISTANCE, usuario asistencia, 23 tarifas 2026 cargadas en BD (550 líneas). Formulario secuencial HTMX operativo. Vista de desglose ADMIN. Sidebar adaptado por rol. |
-| S002   | 2026-05-27 | 4 (parcial)     | IVA: campo apply_iva (BooleanField, default False) añadido al modelo Budget (migración 0002). Constante IVA_PERCENT = Decimal("21.00") en services.py. Paso 8 en motor de cálculo: aplica IVA sobre total_amount cuando apply_iva=True, asigna total_amount_with_iva como atributo de instancia. Paso IVA añadido al wizard (paso 8, entre NYF y fecha). result.html muestra base imponible + total con IVA cuando apply_iva=True. Documentación de rutas de log PythonAnywhere añadida a sección 4.3 del MASTER_DOCUMENT. Reorganización sidebar: Historial restringido a WORKSHOP/WORKSHOPBOSS en sección Operarios; Historial admin añadido en sección Operarios para ADMIN/SUPERVISOR apuntando a work_order_admin_history; Partes digitales eliminado del sidebar. |
+| S002   | 2026-05-27 | 4 (parcial)     | IVA: campo apply_iva
+| S003   | 2026-05-27 | 4 (visor)       | Panel de gestion de aseguradoras: listado con busqueda live HTMX, filtro estado, toggle activa, modal eliminacion. Vista edicion con acordeon 3 paneles independientes (datos generales, tarifa activa + historial, lineas tarifa inline HTMX). Vistas TariffLineSaveView, TariffLineDeleteView, TariffLineAddFormView, TariffLineAddView, InsurerTariffCreateView, TariffSaveNotesView. Correccion inputs type=number a type=text inputmode=decimal (locale ES). Nuevos pasos 8, 9 y 10 incorporados a hoja de ruta del hito. | (BooleanField, default False) añadido al modelo Budget (migración 0002). Constante IVA_PERCENT = Decimal("21.00") en services.py. Paso 8 en motor de cálculo: aplica IVA sobre total_amount cuando apply_iva=True, asigna total_amount_with_iva como atributo de instancia. Paso IVA añadido al wizard (paso 8, entre NYF y fecha). result.html muestra base imponible + total con IVA cuando apply_iva=True. Documentación de rutas de log PythonAnywhere añadida a sección 4.3 del MASTER_DOCUMENT. Reorganización sidebar: Historial restringido a WORKSHOP/WORKSHOPBOSS en sección Operarios; Historial admin añadido en sección Operarios para ADMIN/SUPERVISOR apuntando a work_order_admin_history; Partes digitales eliminado del sidebar. |
 
 ---
 
@@ -238,6 +269,8 @@ Antes de implementar: actualización online obligatoria de la API de Django
 y HTMX (Directriz 4.4 del MASTER_DOCUMENT).
 
 ### PRIORIDAD 1 — Corrección banner "Acceso denegado" residual en OperatorDashboardView
+
+> MOVIDO a Paso 10 de la hoja de ruta del hito. Ver sección 3.
 
 El template `operator/dashboard.html` muestra los mensajes Django del framework
 al inicio de la página. Tras la corrección de mixins de S002, un mensaje

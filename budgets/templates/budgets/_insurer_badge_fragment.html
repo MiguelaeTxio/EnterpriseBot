@@ -1,0 +1,18 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_insurer_badge_fragment.html #}
+{#                                                                                                   #}
+{# HTMX partial: active/inactive status badge for an insurer row.                                   #}
+{# Swapped in by InsurerToggleView after toggling is_active.                                         #}
+{# Also used inline from _insurer_table_fragment.html on full page load.                             #}
+{#                                                                                                   #}
+{# Parcial HTMX: badge de estado activa/inactiva de una fila de aseguradora.                        #}
+{# Sustituido por InsurerToggleView tras el toggle de is_active.                                     #}
+{# Tambien usado inline desde _insurer_table_fragment.html en carga completa.                        #}
+{% if insurer.is_active %}
+<span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2">
+  <i class="bi bi-check-circle-fill me-1"></i>Activa
+</span>
+{% else %}
+<span class="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle px-2">
+  <i class="bi bi-dash-circle me-1"></i>Inactiva
+</span>
+{% endif %}

@@ -1,0 +1,77 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_tariff_line_add_form_fragment.html #}
+{#                                                                                                                   #}
+{# HTMX partial: inline form to add a new tariff line to the active tariff.                                          #}
+{# Injected into #new-line-row by the add line button.                                                               #}
+{# Receives: tariff (InsurerTariff), vehicle_types, concept_choices, unit_choices, csrf_token.                       #}
+{#                                                                                                                   #}
+{# Parcial HTMX: formulario inline para agregar una nueva linea de tarifa a la tarifa activa.                       #}
+{# Inyectado en #new-line-row por el boton de anadir linea.                                                         #}
+{# Recibe: tariff (InsurerTariff), vehicle_types, concept_choices, unit_choices, csrf_token.                        #}
+<div class="card border-success mb-3">
+  <div class="card-header bg-success-subtle py-2 small fw-semibold">
+    <i class="bi bi-plus-circle me-1"></i>Nueva linea de tarifa
+  </div>
+  <div class="card-body py-2">
+    <form hx-post="{% url 'budgets:tariff_line_add' tariff.pk %}"
+          hx-target="#new-line-row"
+          hx-swap="innerHTML"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+      {% csrf_token %}
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label form-label-sm mb-1">Tipo de vehiculo</label>
+          <select name="vehicle_type_id" class="form-select form-select-sm">
+            <option value="">General (sin tipo de vehiculo)</option>
+            {% for vt in vehicle_types %}
+            <option value="{{ vt.pk }}">{{ vt.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm mb-1">Concepto</label>
+          <select name="concept" class="form-select form-select-sm">
+            {% for val, label in concept_choices %}
+            <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm mb-1">Unidad</label>
+          <select name="unit" class="form-select form-select-sm">
+            {% for val, label in unit_choices %}
+            <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-1">
+          <label class="form-label form-label-sm mb-1">Precio</label>
+          <input type="number" name="price" step="0.01" min="0" value="0.00"
+                 class="form-control form-control-sm" required>
+        </div>
+        <div class="col-md-1">
+          <label class="form-label form-label-sm mb-1">Umbral km</label>
+          <input type="number" name="km_threshold" step="1" min="0"
+                 class="form-control form-control-sm" placeholder="—">
+        </div>
+        <div class="col-md-1">
+          <label class="form-label form-label-sm mb-1">Min. fact.</label>
+          <input type="number" name="min_units" step="0.01" min="0"
+                 class="form-control form-control-sm" placeholder="—">
+        </div>
+        <div class="col-md-1 text-center">
+          <label class="form-label form-label-sm mb-1 d-block">Req. aut.</label>
+          <input type="checkbox" name="requires_authorization" class="form-check-input">
+        </div>
+        <div class="col-md-1 d-flex gap-1">
+          <button type="submit" class="btn btn-success btn-sm">
+            <i class="bi bi-floppy"></i>
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm"
+                  hx-get="" hx-target="#new-line-row" hx-swap="innerHTML">
+            <i class="bi bi-x"></i>
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>

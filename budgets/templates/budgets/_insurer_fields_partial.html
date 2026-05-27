@@ -1,0 +1,126 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_insurer_fields_partial.html #}
+{#                                                                                                              #}
+{# Partial: shared Insurer model fields. Included from insurer_form.html in both create and edit modes.        #}
+{# Receives: form (InsurerForm instance).                                                                       #}
+{#                                                                                                              #}
+{# Parcial: campos compartidos del modelo Insurer. Incluido desde insurer_form.html en ambos modos.           #}
+{# Recibe: form (instancia de InsurerForm).                                                                    #}
+
+{# --- name --- #}
+<div class="mb-3">
+  <label for="id_name" class="form-label">
+    Nombre <span class="text-danger">*</span>
+  </label>
+  <input
+    type="text"
+    id="id_name"
+    name="name"
+    class="form-control {% if form.name.errors %}is-invalid{% endif %}"
+    value="{{ form.name.value|default_if_none:'' }}"
+    maxlength="200"
+    required
+    autofocus
+  >
+  <div class="form-text text-muted small">Nombre comercial (ej: AXA Assistance, RACE, Mapfre).</div>
+  {% for error in form.name.errors %}
+  <div class="invalid-feedback">{{ error }}</div>
+  {% endfor %}
+</div>
+
+{# --- code --- #}
+<div class="mb-3">
+  <label for="id_code" class="form-label">
+    Codigo interno <span class="text-danger">*</span>
+  </label>
+  <input
+    type="text"
+    id="id_code"
+    name="code"
+    class="form-control font-monospace {% if form.code.errors %}is-invalid{% endif %}"
+    value="{{ form.code.value|default_if_none:'' }}"
+    maxlength="50"
+    required
+  >
+  <div class="form-text text-muted small">Identificador sin espacios (ej: AXA, RACE, MAPFRE). Unico por empresa.</div>
+  {% for error in form.code.errors %}
+  <div class="invalid-feedback">{{ error }}</div>
+  {% endfor %}
+</div>
+
+{# --- management_fee_percent --- #}
+<div class="mb-3">
+  <label for="id_management_fee_percent" class="form-label">Gastos de gestion (%)</label>
+  <input
+    type="text" inputmode="decimal"
+    id="id_management_fee_percent"
+    name="management_fee_percent"
+    class="form-control {% if form.management_fee_percent.errors %}is-invalid{% endif %}"
+    value="{{ form.management_fee_percent.value|default_if_none:'0' }}"
+    min="0"
+    max="100"
+    step="0.01"
+  >
+  <div class="form-text text-muted small">Porcentaje aplicado sobre el total. 0 si no aplica. Ejemplo: COVEI usa 5%.</div>
+  {% for error in form.management_fee_percent.errors %}
+  <div class="invalid-feedback">{{ error }}</div>
+  {% endfor %}
+</div>
+
+{# --- surcharges_are_cumulative --- #}
+<div class="mb-3">
+  <div class="form-check form-switch">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      role="switch"
+      id="id_surcharges_are_cumulative"
+      name="surcharges_are_cumulative"
+      {% if form.surcharges_are_cumulative.value %}checked{% endif %}
+    >
+    <label class="form-check-label" for="id_surcharges_are_cumulative">
+      Recargos acumulables
+    </label>
+  </div>
+  <div class="form-text text-muted small">
+    Si esta activo, el recargo nocturno/festivo y el recargo por vehiculo cargado se suman.
+    Si esta desactivado (por defecto), se aplica solo el mayor de los dos.
+  </div>
+</div>
+
+{# --- is_active --- #}
+<div class="mb-3">
+  <div class="form-check form-switch">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      role="switch"
+      id="id_is_active"
+      name="is_active"
+      {% if form.is_active.value != False %}checked{% endif %}
+    >
+    <label class="form-check-label" for="id_is_active">
+      Activa
+    </label>
+  </div>
+  <div class="form-text text-muted small">
+    Una aseguradora inactiva no aparece en el asistente de presupuestos.
+  </div>
+</div>
+
+{# --- notes --- #}
+<div class="mb-3">
+  <label for="id_notes" class="form-label">Notas internas</label>
+  <textarea
+    id="id_notes"
+    name="notes"
+    class="form-control {% if form.notes.errors %}is-invalid{% endif %}"
+    rows="3"
+    placeholder="Anotaciones libres sobre esta aseguradora. Los datos estructurados (precios, recargos) estan en las lineas de tarifa."
+  >{{ form.notes.value|default_if_none:'' }}</textarea>
+  <div class="form-text text-muted small">
+    Campo de anotacion libre. No visible para el operario. Los datos de tarifa se gestionan en el Panel 3.
+  </div>
+  {% for error in form.notes.errors %}
+  <div class="invalid-feedback">{{ error }}</div>
+  {% endfor %}
+</div>

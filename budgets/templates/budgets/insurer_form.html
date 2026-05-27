@@ -1,0 +1,424 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/insurer_form.html #}
+{#                                                                                        #}
+{# Unified create / edit form for Insurer model. ADMIN only.                              #}
+{# Mode 'create': single card with Insurer fields.                                        #}
+{# Mode 'edit':   accordion with 3 independent panels:                                    #}
+{#     Panel 1 — Insurer general data (expanded by default).                              #}
+{#     Panel 2 — Active tariff header + version history.                                  #}
+{#     Panel 3 — Tariff lines grouped by vehicle type, inline HTMX editing.               #}
+{#                                                                                        #}
+{# Formulario unificado de creacion / edicion del modelo Insurer. Solo ADMIN.            #}
+{# Modo 'create': tarjeta unica con campos de Insurer.                                   #}
+{# Modo 'edit':   acordeon con 3 paneles independientes:                                  #}
+{#     Panel 1 — Datos generales de la aseguradora (expandido por defecto).              #}
+{#     Panel 2 — Cabecera de tarifa activa + historial de versiones.                     #}
+{#     Panel 3 — Lineas de tarifa agrupadas por tipo de vehiculo, edicion inline HTMX.  #}
+{% extends "panel/base.html" %}
+
+{% block title %}
+  {% if mode == 'create' %}Nueva aseguradora{% else %}Editar: {{ insurer.name }}{% endif %} — {{ company.name }}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  {# ------------------------------------------------------------------ #}
+  {# Breadcrumb                                                          #}
+  {# ------------------------------------------------------------------ #}
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item">
+        <a href="{% url 'budgets:insurer_list' %}">Aseguradoras</a>
+      </li>
+      <li class="breadcrumb-item active">
+        {% if mode == 'create' %}Nueva aseguradora{% else %}{{ insurer.name }}{% endif %}
+      </li>
+    </ol>
+  </nav>
+
+  {# ================================================================== #}
+  {# MODE: CREATE — single card                                          #}
+  {# MODO: CREAR — tarjeta unica                                        #}
+  {# ================================================================== #}
+  {% if mode == 'create' %}
+  <div class="row">
+    <div class="col-xl-7 col-lg-9">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-transparent border-bottom py-3">
+          <h5 class="mb-0">
+            <i class="bi bi-building me-2"></i>Nueva aseguradora
+          </h5>
+        </div>
+        <div class="card-body">
+          {% if form.errors %}
+          <div class="alert alert-danger py-2 small">
+            <i class="bi bi-exclamation-circle me-1"></i>
+            Revisa los errores indicados en el formulario antes de guardar.
+          </div>
+          {% endif %}
+          <form method="post" novalidate>
+            {% csrf_token %}
+            {% include "budgets/_insurer_fields_partial.html" with form=form %}
+            <div class="d-flex gap-2 mt-3">
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-floppy me-1"></i>Crear aseguradora
+              </button>
+              <a href="{% url 'budgets:insurer_list' %}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ================================================================== #}
+  {# MODE: EDIT — independent accordion                                  #}
+  {# MODO: EDITAR — acordeon independiente                              #}
+  {# ================================================================== #}
+  {% else %}
+
+  {# Page header #}
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0">
+      <i class="bi bi-building me-2"></i>{{ insurer.name }}
+      {% if insurer.is_active %}
+        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill ms-2 fs-6">Activa</span>
+      {% else %}
+        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill ms-2 fs-6">Inactiva</span>
+      {% endif %}
+    </h4>
+    <a href="{% url 'budgets:insurer_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Volver al listado
+    </a>
+  </div>
+
+  {# Django messages #}
+  {% for message in messages %}
+  <div class="alert alert-{{ message.tags }} alert-dismissible fade show py-2 small" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+
+  {# Accordion — NO data-bs-parent so panels are independent #}
+  {# Acordeon sin data-bs-parent — los paneles son independientes #}
+  <div class="accordion" id="insurerAccordion">
+
+    {# ------------------------------------------------------------------ #}
+    {# PANEL 1 — Datos generales de la aseguradora                        #}
+    {# PANEL 1 — Insurer general data                                     #}
+    {# ------------------------------------------------------------------ #}
+    <div class="accordion-item border-0 shadow-sm mb-3 rounded">
+      <h2 class="accordion-header" id="headingGeneral">
+        <button class="accordion-button rounded" type="button"
+                data-bs-toggle="collapse" data-bs-target="#collapseGeneral"
+                aria-expanded="true" aria-controls="collapseGeneral">
+          <i class="bi bi-building me-2"></i>
+          <strong>Datos generales</strong>
+          <span class="ms-2 text-muted fw-normal small">{{ insurer.code }}</span>
+        </button>
+      </h2>
+      <div id="collapseGeneral" class="accordion-collapse collapse show"
+           aria-labelledby="headingGeneral">
+        <div class="accordion-body">
+          {% if form.errors %}
+          <div class="alert alert-danger py-2 small">
+            <i class="bi bi-exclamation-circle me-1"></i>
+            Revisa los errores indicados en el formulario antes de guardar.
+          </div>
+          {% endif %}
+          <form method="post" action="{% url 'budgets:insurer_update' insurer.pk %}" novalidate>
+            {% csrf_token %}
+            {% include "budgets/_insurer_fields_partial.html" with form=form %}
+            <div class="d-flex gap-2 mt-3">
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-floppy me-1"></i>Guardar cambios
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# PANEL 2 — Tarifa activa e historial de versiones                   #}
+    {# PANEL 2 — Active tariff and version history                        #}
+    {# ------------------------------------------------------------------ #}
+    <div class="accordion-item border-0 shadow-sm mb-3 rounded">
+      <h2 class="accordion-header" id="headingTariff">
+        <button class="accordion-button collapsed rounded" type="button"
+                data-bs-toggle="collapse" data-bs-target="#collapseTariff"
+                aria-expanded="false" aria-controls="collapseTariff">
+          <i class="bi bi-calendar-check me-2"></i>
+          <strong>Tarifa activa</strong>
+          {% if active_tariff %}
+            <span class="ms-2 text-muted fw-normal small">
+              {{ active_tariff.year }} — vigente desde {{ active_tariff.valid_from }}
+            </span>
+          {% else %}
+            <span class="ms-2 text-warning fw-normal small">Sin tarifa activa</span>
+          {% endif %}
+        </button>
+      </h2>
+      <div id="collapseTariff" class="accordion-collapse collapse"
+           aria-labelledby="headingTariff">
+        <div class="accordion-body">
+
+          {% if active_tariff %}
+          {# Active tariff details — read only header, editable notes #}
+          {# Cabecera de tarifa activa — solo lectura, notas editables #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-2">
+              <label class="form-label form-label-sm">Áño</label>
+              <input type="text" class="form-control form-control-sm" value="{{ active_tariff.year }}" readonly>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label form-label-sm">Válida desde</label>
+              <input type="text" class="form-control form-control-sm" value="{{ active_tariff.valid_from }}" readonly>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label form-label-sm">Válida hasta</label>
+              <input type="text" class="form-control form-control-sm"
+                     value="{% if active_tariff.valid_to %}{{ active_tariff.valid_to }}{% else %}En vigor (activa){% endif %}" readonly>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label form-label-sm">Notas de la tarifa</label>
+            <form method="post" action="{% url 'budgets:tariff_save_notes' active_tariff.pk %}">
+              {% csrf_token %}
+              <div class="input-group input-group-sm">
+                <textarea name="notes" class="form-control form-control-sm" rows="2">{{ active_tariff.notes }}</textarea>
+                <button type="submit" class="btn btn-outline-primary btn-sm align-self-end ms-2">
+                  <i class="bi bi-floppy"></i>
+                </button>
+              </div>
+            </form>
+          </div>
+          {% else %}
+          <div class="alert alert-warning py-2 small">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Esta aseguradora no tiene ninguna tarifa activa. Crea una nueva version de tarifa para poder gestionar las lineas.
+          </div>
+          {% endif %}
+
+          {# New tariff version button #}
+          {# Boton nueva version de tarifa #}
+          <form method="post" action="{% url 'budgets:tariff_create' insurer.pk %}" class="d-flex gap-2 align-items-end mb-4">
+            {% csrf_token %}
+            <div>
+              <label class="form-label form-label-sm mb-1">Áño</label>
+              <input type="number" name="year" class="form-control form-control-sm"
+                     value="{{ active_tariff.year|add:1 }}" min="2020" max="2099" required>
+            </div>
+            <div>
+              <label class="form-label form-label-sm mb-1">Válida desde</label>
+              <input type="date" name="valid_from" class="form-control form-control-sm" required>
+            </div>
+            <button type="submit" class="btn btn-outline-success btn-sm">
+              <i class="bi bi-plus-lg me-1"></i>Nueva versión de tarifa
+            </button>
+          </form>
+
+          {# Tariff version history #}
+          {# Historial de versiones de tarifa #}
+          {% if tariff_history %}
+          <h6 class="text-muted small mb-2">Historial de versiones</h6>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0 small">
+              <thead class="table-light">
+                <tr>
+                  <th>Áño</th>
+                  <th>Válida desde</th>
+                  <th>Válida hasta</th>
+                  <th>Notas</th>
+                  <th class="text-center">Líneas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for t in tariff_history %}
+                <tr>
+                  <td>{{ t.year }}</td>
+                  <td>{{ t.valid_from }}</td>
+                  <td>{{ t.valid_to|default:"—" }}</td>
+                  <td class="text-muted">{{ t.notes|truncatechars:60 }}</td>
+                  <td class="text-center"><span class="badge bg-secondary">{{ t.line_count }}</span></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+
+        </div>
+      </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# PANEL 3 — Lineas de tarifa (activa) agrupadas por tipo de vehiculo #}
+    {# PANEL 3 — Active tariff lines grouped by vehicle type              #}
+    {# ------------------------------------------------------------------ #}
+    <div class="accordion-item border-0 shadow-sm mb-3 rounded">
+      <h2 class="accordion-header" id="headingLines">
+        <button class="accordion-button collapsed rounded" type="button"
+                data-bs-toggle="collapse" data-bs-target="#collapseLines"
+                aria-expanded="false" aria-controls="collapseLines">
+          <i class="bi bi-table me-2"></i>
+          <strong>Líneas de tarifa</strong>
+          {% if active_tariff %}
+            <span class="ms-2 text-muted fw-normal small">{{ active_tariff.lines.count }} líneas</span>
+          {% endif %}
+        </button>
+      </h2>
+      <div id="collapseLines" class="accordion-collapse collapse"
+           aria-labelledby="headingLines">
+        <div class="accordion-body p-0">
+
+          {% if not active_tariff %}
+          <div class="alert alert-warning py-2 small m-3">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Crea primero una tarifa activa para gestionar sus lineas.
+          </div>
+          {% else %}
+
+          {# Add new line button #}
+          {# Boton añadir nueva linea #}
+          <div class="d-flex justify-content-end p-3 pb-2">
+            <button class="btn btn-outline-success btn-sm"
+                    hx-get="{% url 'budgets:tariff_line_add_form' active_tariff.pk %}"
+                    hx-target="#new-line-row"
+                    hx-swap="innerHTML">
+              <i class="bi bi-plus-lg me-1"></i>Añadir línea
+            </button>
+          </div>
+          <div id="new-line-row" class="px-3 pb-2"></div>
+
+          {# Lines table grouped by vehicle type #}
+          {# Tabla de lineas agrupada por tipo de vehiculo #}
+          {% for group in tariff_line_groups %}
+          <div class="mb-0">
+            <div class="px-3 py-2 bg-light border-bottom border-top">
+              <span class="fw-semibold small">
+                {% if group.vehicle_type %}
+                  <i class="bi bi-truck me-1 text-muted"></i>{{ group.vehicle_type }}
+                {% else %}
+                  <i class="bi bi-grid me-1 text-muted"></i>Conceptos generales
+                {% endif %}
+              </span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover align-middle mb-0 small">
+                <thead class="table-light">
+                  <tr>
+                    <th class="ps-3">Concepto</th>
+                    <th>Unidad</th>
+                    <th class="text-end">Precio</th>
+                    <th class="text-end">Umbral km</th>
+                    <th class="text-end">Mín. facturable</th>
+                    <th class="text-center">Req. autorización</th>
+                    <th class="text-end pe-3">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for line in group.lines %}
+                  <tr id="tariff-line-{{ line.pk }}">
+                    <td class="ps-3">
+                      <select name="concept"
+                              class="form-select form-select-sm"
+                              hx-post="{% url 'budgets:tariff_line_save' line.pk %}"
+                              hx-trigger="change"
+                              hx-target="#tariff-line-{{ line.pk }}"
+                              hx-swap="outerHTML"
+                              hx-include="#tariff-line-{{ line.pk }} [name]"
+                              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                        {% for val, label in concept_choices %}
+                        <option value="{{ val }}" {% if line.concept == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td>
+                      <select name="unit"
+                              class="form-select form-select-sm"
+                              hx-post="{% url 'budgets:tariff_line_save' line.pk %}"
+                              hx-trigger="change"
+                              hx-target="#tariff-line-{{ line.pk }}"
+                              hx-swap="outerHTML"
+                              hx-include="#tariff-line-{{ line.pk }} [name]"
+                              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                        {% for val, label in unit_choices %}
+                        <option value="{{ val }}" {% if line.unit == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td class="text-end">
+                      <input type="text" inputmode="decimal" name="price"
+                             class="form-control form-control-sm text-end"
+                             value="{{ line.price }}"
+                             hx-post="{% url 'budgets:tariff_line_save' line.pk %}"
+                             hx-trigger="change"
+                             hx-target="#tariff-line-{{ line.pk }}"
+                             hx-swap="outerHTML"
+                             hx-include="#tariff-line-{{ line.pk }} [name]"
+                             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                    </td>
+                    <td class="text-end">
+                      <input type="text" inputmode="numeric" name="km_threshold"
+                             class="form-control form-control-sm text-end"
+                             value="{{ line.km_threshold|default_if_none:'' }}"
+                             hx-post="{% url 'budgets:tariff_line_save' line.pk %}"
+                             hx-trigger="change"
+                             hx-target="#tariff-line-{{ line.pk }}"
+                             hx-swap="outerHTML"
+                             hx-include="#tariff-line-{{ line.pk }} [name]"
+                             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                    </td>
+                    <td class="text-end">
+                      <input type="text" inputmode="decimal" name="min_units"
+                             class="form-control form-control-sm text-end"
+                             value="{{ line.min_units|default_if_none:'' }}"
+                             hx-post="{% url 'budgets:tariff_line_save' line.pk %}"
+                             hx-trigger="change"
+                             hx-target="#tariff-line-{{ line.pk }}"
+                             hx-swap="outerHTML"
+                             hx-include="#tariff-line-{{ line.pk }} [name]"
+                             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                    </td>
+                    <td class="text-center">
+                      <input type="checkbox" name="requires_authorization"
+                             class="form-check-input"
+                             {% if line.requires_authorization %}checked{% endif %}
+                             hx-post="{% url 'budgets:tariff_line_save' line.pk %}"
+                             hx-trigger="change"
+                             hx-target="#tariff-line-{{ line.pk }}"
+                             hx-swap="outerHTML"
+                             hx-include="#tariff-line-{{ line.pk }} [name]"
+                             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                    </td>
+                    <td class="text-end pe-3">
+                      <button class="btn btn-outline-danger btn-sm"
+                              title="Eliminar linea"
+                              hx-post="{% url 'budgets:tariff_line_delete' line.pk %}"
+                              hx-target="#tariff-line-{{ line.pk }}"
+                              hx-swap="outerHTML"
+                              hx-confirm="Eliminar esta linea de tarifa?"
+                              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endfor %}
+
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>{# /accordion #}
+  {% endif %}{# /mode edit #}
+
+</div>
+{% endblock %}

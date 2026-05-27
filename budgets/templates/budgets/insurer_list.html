@@ -1,0 +1,100 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/insurer_list.html #}
+{#                                                                                        #}
+{# Insurer list view for ADMIN role.                                                      #}
+{# Displays all insurers for the company with search, status filter and CRUD actions.     #}
+{# HTMX live search + toggle active/inactive badge.                                       #}
+{#                                                                                        #}
+{# Listado de aseguradoras para el rol ADMIN.                                             #}
+{# Muestra todas las aseguradoras de la empresa con buscador, filtro de estado            #}
+{# y acciones CRUD. Busqueda live HTMX + toggle activa/inactiva del badge.                #}
+{% extends "panel/base.html" %}
+{% load i18n %}
+
+{% block title %}Aseguradoras — {{ company.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  {# ------------------------------------------------------------------ #}
+  {# Header row: title + new insurer button                              #}
+  {# Fila de cabecera: titulo + boton nueva aseguradora                 #}
+  {# ------------------------------------------------------------------ #}
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0">
+      <i class="bi bi-building me-2"></i>Aseguradoras
+    </h4>
+    <a href="{% url 'budgets:insurer_create' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>Nueva aseguradora
+    </a>
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  {# Django messages                                                     #}
+  {# ------------------------------------------------------------------ #}
+  {% for message in messages %}
+  <div class="alert alert-{{ message.tags }} alert-dismissible fade show py-2" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+
+  {# ------------------------------------------------------------------ #}
+  {# Search bar — HTMX live search                                       #}
+  {# Barra de busqueda — busqueda live HTMX                             #}
+  {# ------------------------------------------------------------------ #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-5">
+          <label class="form-label form-label-sm mb-1">Buscar por nombre o codigo</label>
+          <input
+            type="text"
+            id="insurer-search"
+            name="q"
+            class="form-control form-control-sm"
+            placeholder="Escribe para filtrar..."
+            value="{{ request.GET.q }}"
+            hx-get="{% url 'budgets:insurer_list' %}"
+            hx-trigger="input changed delay:300ms, search"
+            hx-target="#insurer-table-wrapper"
+            hx-include="#filter-status"
+            hx-push-url="false"
+            autocomplete="off"
+          >
+        </div>
+        <div class="col-md-3">
+          <label class="form-label form-label-sm mb-1">Estado</label>
+          <select
+            id="filter-status"
+            name="status"
+            class="form-select form-select-sm"
+            hx-get="{% url 'budgets:insurer_list' %}"
+            hx-trigger="change"
+            hx-target="#insurer-table-wrapper"
+            hx-include="#insurer-search"
+            hx-push-url="false"
+          >
+            <option value="" {% if not request.GET.status %}selected{% endif %}>Todas</option>
+            <option value="active"   {% if request.GET.status == 'active'   %}selected{% endif %}>Activas</option>
+            <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactivas</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <a href="{% url 'budgets:insurer_list' %}" class="btn btn-outline-secondary btn-sm w-100">
+            <i class="bi bi-x-circle me-1"></i>Limpiar
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  {# Table wrapper — target for HTMX partial reloads                    #}
+  {# Contenedor tabla — destino de recargas parciales HTMX              #}
+  {# ------------------------------------------------------------------ #}
+  <div id="insurer-table-wrapper">
+    {% include "budgets/_insurer_table_fragment.html" %}
+  </div>
+
+</div>
+{% endblock %}

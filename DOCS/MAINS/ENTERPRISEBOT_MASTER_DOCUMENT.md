@@ -114,7 +114,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -212,7 +212,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   propio. Si no, construcción de agente Django + IA.
 - Actualización online obligatoria antes de implementar (Directriz 4.4).
 
-### Hito 16: Motor de Presupuestos para Sección ASISTENCIA (EN PROGRESO)
+### Hito 16: Motor de Presupuestos para Sección ASISTENCIA (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V16.md`)
 - Skill de generación de presupuestos para la sección de Asistencia.
 - Tarifas configurables por compañía aseguradora.

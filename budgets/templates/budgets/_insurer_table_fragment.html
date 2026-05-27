@@ -1,0 +1,152 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_insurer_table_fragment.html #}
+{#                                                                                                   #}
+{# HTMX partial: insurer table rows. Swapped in by the live search input and status filter.          #}
+{# Rendered directly on full page load too (included from insurer_list.html).                        #}
+{#                                                                                                   #}
+{# Parcial HTMX: filas de la tabla de aseguradoras. Sustituido por el buscador live                  #}
+{# y el filtro de estado. Tambien renderizado en la carga completa de pagina                         #}
+{# (incluido desde insurer_list.html).                                                               #}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    {% if insurers %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-3">Nombre</th>
+            <th>Codigo</th>
+            <th class="text-center">Estado</th>
+            <th class="text-end">Gastos gest. (%)</th>
+            <th class="text-center">Recargos acum.</th>
+            <th class="text-center">Tipos vehiculo</th>
+            <th class="text-center">Tarifas</th>
+            <th class="text-end pe-3">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for insurer in insurers %}
+          <tr id="insurer-row-{{ insurer.pk }}">
+            <td class="ps-3 fw-semibold">{{ insurer.name }}</td>
+            <td><code class="small">{{ insurer.code }}</code></td>
+            <td class="text-center" id="badge-insurer-{{ insurer.pk }}">
+              {% include "budgets/_insurer_badge_fragment.html" with insurer=insurer %}
+            </td>
+            <td class="text-end">
+              {% if insurer.management_fee_percent %}
+                {{ insurer.management_fee_percent }}%
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if insurer.surcharges_are_cumulative %}
+                <i class="bi bi-check-circle-fill text-success"></i>
+              {% else %}
+                <i class="bi bi-dash-circle text-secondary"></i>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <span class="badge bg-secondary">{{ insurer.vehicle_type_count }}</span>
+            </td>
+            <td class="text-center">
+              <span class="badge bg-secondary">{{ insurer.tariff_count }}</span>
+            </td>
+            <td class="text-end pe-3">
+              {# Toggle active button — HTMX POST #}
+              {# Boton toggle activa — HTMX POST #}
+              <button
+                class="btn btn-outline-secondary btn-sm me-1"
+                title="{% if insurer.is_active %}Desactivar{% else %}Activar{% endif %}"
+                hx-post="{% url 'budgets:insurer_toggle' insurer.pk %}"
+                hx-target="#badge-insurer-{{ insurer.pk }}"
+                hx-swap="innerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+              >
+                {% if insurer.is_active %}
+                  <i class="bi bi-toggle-on text-success"></i>
+                {% else %}
+                  <i class="bi bi-toggle-off text-secondary"></i>
+                {% endif %}
+              </button>
+              {# Edit button #}
+              {# Boton editar #}
+              <a href="{% url 'budgets:insurer_update' insurer.pk %}" class="btn btn-outline-primary btn-sm me-1" title="Editar">
+                <i class="bi bi-pencil"></i>
+              </a>
+              {# Delete button — triggers confirmation modal #}
+              {# Boton eliminar — activa modal de confirmacion #}
+              <button
+                class="btn btn-outline-danger btn-sm"
+                title="Eliminar"
+                data-bs-toggle="modal"
+                data-bs-target="#deleteModal"
+                data-insurer-pk="{{ insurer.pk }}"
+                data-insurer-name="{{ insurer.name }}"
+              >
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-building display-6 d-block mb-2"></i>
+      No se encontraron aseguradoras con los filtros aplicados.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Delete confirmation modal                                           #}
+{# Modal de confirmacion de eliminacion                               #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger" id="deleteModalLabel">
+          <i class="bi bi-exclamation-triangle me-2"></i>Eliminar aseguradora
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Vas a eliminar la aseguradora <strong id="delete-insurer-name"></strong>.</p>
+        <p class="text-danger small mb-0">
+          <i class="bi bi-exclamation-circle me-1"></i>
+          Esta accion eliminara tambien todos sus tipos de vehiculo, tarifas y lineas de tarifa asociadas. Esta accion no se puede deshacer.
+        </p>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <form id="delete-insurer-form" method="post" action="" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger btn-sm">
+            <i class="bi bi-trash me-1"></i>Eliminar
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Wire delete modal with the correct insurer pk and name on show.
+  // Conectar el modal de eliminacion con el pk y nombre correctos al mostrarse.
+  document.addEventListener('DOMContentLoaded', function () {
+    var deleteModal = document.getElementById('deleteModal');
+    if (deleteModal) {
+      deleteModal.addEventListener('show.bs.modal', function (event) {
+        var btn = event.relatedTarget;
+        var pk   = btn.getAttribute('data-insurer-pk');
+        var name = btn.getAttribute('data-insurer-name');
+        document.getElementById('delete-insurer-name').textContent = name;
+        var form = document.getElementById('delete-insurer-form');
+        form.action = '/panel/budgets/insurers/' + pk + '/delete/';
+      });
+    }
+  });
+</script>
