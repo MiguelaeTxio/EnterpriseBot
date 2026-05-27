@@ -212,11 +212,11 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   propio. Si no, construcción de agente Django + IA.
 - Actualización online obligatoria antes de implementar (Directriz 4.4).
 
-### Hito 16: Motor de Presupuestos para Sección ASISTENCIA (PAUSADO)
+### Hito 16: Motor de Presupuestos para Sección ASISTENCIA (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V16.md`)
 - Skill de generación de presupuestos para la sección de Asistencia.
 - Tarifas configurables por compañía aseguradora.
 - Motor de cálculo basado en datos de entrada del operario y facturas de referencia.
 - Generación de documento de presupuesto exportable.
 
-## 5. Sistema de Ruegos y Preguntas (Stand-by) (EN PROGRESO)
+## 5. Sistema de Ruegos y Preguntas (Stand-by)

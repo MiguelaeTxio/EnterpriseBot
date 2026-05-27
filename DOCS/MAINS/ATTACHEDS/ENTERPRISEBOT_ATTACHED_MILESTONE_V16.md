@@ -51,7 +51,7 @@ App creada y operativa en producción desde la sesión 001. Modelos:
 - `Budget`: presupuesto generado. FK Company, Insurer, InsurerTariff,
   CompanyUser, VehicleType. Campos: is_overnight, km_phase1, km_phase2,
   km_total, has_unlock, is_night_or_holiday, is_loaded, wait_hours,
-  rescue_hours, assistant_hours, worker_hours, custody_days,
+  rescue_hours, assistant_hours, worker_hours, custody_days, apply_iva,
   total_amount, status (DRAFT/ACCEPTED/REJECTED).
 - `BudgetLine`: desglose de cálculo. FK Budget. Solo visible para ADMIN.
 
@@ -67,7 +67,13 @@ Función `calculate_budget(budget)` idempotente:
    respetando min_units.
 7. Aplica recargos (NYF, cargado) según surcharges_cumulative de Insurer.
 8. Aplica management_fee si procede (solo COVEI 5%).
-9. Devuelve lista de BudgetLine sin guardar. El caller persiste atómicamente.
+9. Si apply_iva: aplica IVA_PERCENT (constante en services.py, actualmente 21%)
+   sobre total_amount. Asigna total_amount_with_iva como atributo de instancia
+   (no persistido en BD).
+10. Devuelve lista de BudgetLine sin guardar. El caller persiste atómicamente.
+
+Constante fiscal: `IVA_PERCENT = Decimal("21.00")` en budgets/services.py.
+Para cambiar el IVA, modificar directamente esta constante.
 
 ### 2.3. Rol y usuario
 
@@ -96,6 +102,11 @@ Registradas en `enterprise_core/urls.py`:
 Endpoints: wizard, vehicle_types (HTMX), optional_concepts (HTMX),
 result, status_update, history (ADMIN), detail (ADMIN).
 
+### 2.6. Migraciones aplicadas en producción
+
+- `budgets/migrations/0001_initial` — S001: modelos completos.
+- `budgets/migrations/0002_budget_apply_iva` — S002: campo apply_iva en Budget.
+
 ---
 
 ## 3. Hoja de Ruta
@@ -109,9 +120,8 @@ result, status_update, history (ADMIN), detail (ADMIN).
 ### Paso 3 — Modelo de datos Django (app budgets)
 - Estado: COMPLETADO (S001 — migración 0001_initial aplicada en producción)
 
-### Paso 4 — CRUD de aseguradoras y tarifas en el panel
-- Estado: PENDIENTE — actualmente solo via Django Admin y management command.
-  Futura mejora: formularios en el panel para gestión de tarifas sin admin.
+### Paso 4 — Panel de gestión de aseguradoras y tarifas
+- Estado: PENDIENTE — ver hoja de ruta S003.
 
 ### Paso 5 — Motor de generación de presupuestos
 - Estado: COMPLETADO (S001 — formulario secuencial HTMX operativo)
@@ -128,71 +138,111 @@ result, status_update, history (ADMIN), detail (ADMIN).
 
 | Sesión | Fecha      | Pasos trabajados | Resumen |
 |--------|------------|-----------------|---------|
-| S001   | 2026-05-26 | 1–5, 7          | Implementación completa de la app budgets: modelos, motor de cálculo, vistas, templates, rol ASSISTANCE, usuario asistencia, 23 tarifas 2026 cargadas en BD (550 líneas). Formulario secuencial HTMX operativo. Vista de desglose ADMIN. Sidebar adaptado por rol. Directriz PEP8 añadida al SYSTEM_PROMPTS_NEW.md. |
+| S001   | 2026-05-26 | 1–5, 7          | Implementación completa de la app budgets: modelos, motor de cálculo, vistas, templates, rol ASSISTANCE, usuario asistencia, 23 tarifas 2026 cargadas en BD (550 líneas). Formulario secuencial HTMX operativo. Vista de desglose ADMIN. Sidebar adaptado por rol. |
+| S002   | 2026-05-27 | 4 (parcial)     | IVA: campo apply_iva (BooleanField, default False) añadido al modelo Budget (migración 0002). Constante IVA_PERCENT = Decimal("21.00") en services.py. Paso 8 en motor de cálculo: aplica IVA sobre total_amount cuando apply_iva=True, asigna total_amount_with_iva como atributo de instancia. Paso IVA añadido al wizard (paso 8, entre NYF y fecha). result.html muestra base imponible + total con IVA cuando apply_iva=True. Documentación de rutas de log PythonAnywhere añadida a sección 4.3 del MASTER_DOCUMENT. Reorganización sidebar: Historial restringido a WORKSHOP/WORKSHOPBOSS en sección Operarios; Historial admin añadido en sección Operarios para ADMIN/SUPERVISOR apuntando a work_order_admin_history; Partes digitales eliminado del sidebar. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesión (002)
+## 5. Hoja de Ruta para la Siguiente Sesión (S003)
 
 ### Contexto
 
-La app `budgets` está operativa en producción y validada visualmente.
-La siguiente sesión debe centrarse en mejoras de UX y funcionalidad
-identificadas durante las pruebas de la sesión 001.
+La app `budgets` está operativa con el motor de cálculo completo y el campo
+IVA funcionando. La siguiente sesión implementa el panel de gestión de
+aseguradoras y sus tarifas, actualmente solo gestionables via Django Admin
+y management command.
 
-### Orden de trabajo
+### ADVERTENCIAS CRÍTICAS
 
-**MEJORA 1 — Marcar presupuestos como Aceptado/Rechazado desde el historial:**
-  Actualmente el cambio de estado solo es posible desde la vista de resultado
-  (`/panel/budgets/<pk>/result/`). El historial (`/panel/budgets/history/`)
-  muestra el estado pero no permite cambiarlo. Añadir en cada fila del
-  historial los botones Aceptar/Rechazar para presupuestos en estado DRAFT,
-  usando HTMX para actualizar el badge de estado sin recargar la página.
+- `IVA_PERCENT = Decimal("21.00")` en `budgets/services.py` — constante de
+  modificación directa. No mover a BD ni a settings.
+- La migración `0002_budget_apply_iva` fue creada manualmente (no con
+  makemigrations) y ya está aplicada en producción. No regenerar.
+- El campo `total_amount_with_iva` NO está en BD — es atributo de instancia
+  asignado por el motor. No añadir al modelo sin consenso explícito.
+- `budgets/migrations/0001_initial` tiene dependencia en
+  `ivr_config.0029_alter_companyuser_role` — no reordenar migraciones.
 
-  Implementación:
-  - Añadir endpoint HTMX en `budgets/urls.py`:
-    `path("<int:pk>/status/htmx/", BudgetStatusHTMXView.as_view(), name="status_htmx")`
-  - Crear `BudgetStatusHTMXView` en `views.py` (POST, devuelve fragmento badge).
-  - Modificar `history.html`: añadir botones inline condicionados a `b.status == 'DRAFT'`.
-  - Añadir fragmento `_status_badge_fragment.html` para el swap HTMX.
+### PRIORIDAD 0 — Panel de gestión de aseguradoras
 
-**MEJORA 2 — Validación del motor contra factura real AXA (C/260178):**
-  La factura de referencia tiene: 1 salida B35 (184,10€), desbloqueo/enganche
-  (62,80€), 115 km a 1,95€/km (224,25€), recargo nocturno/festivo (235,58€).
-  Total sin descuento: 706,73€. Con descuento 2%: 692,60€.
-  La tarifa AXA en BD (código AXA / Inter Partner) usa km a 1,91€ para el
-  tramo De 6.001 hasta 10.000 kg. Verificar que el motor reproduce el importe
-  y si hay diferencia, identificar si es por tramo de peso distinto o por
-  precio de km distinto en la tarifa cargada.
+Implementar un panel de gestión completo para las entidades `Insurer`,
+`VehicleType`, `InsurerTariff` y `TariffLine` accesible desde el panel
+de EnterpriseBot para el rol ADMIN, sin necesidad de acceder al Django Admin.
 
-**MEJORA 3 — Valores tope de presupuesto por aseguradora:**
-  Algunas aseguradoras tienen un importe máximo autorizable sin llamada previa
-  a la central (ej: la factura AXA indica "Gastos autorizados: 706,73€ sin IVA").
-  Añadir campo `max_authorized_amount` (DecimalField, nullable) en el modelo
-  `Insurer`. Si el total calculado supera este tope, mostrar advertencia visual
-  al operario en la pantalla de resultado (no bloquear, solo avisar).
+#### Alcance funcional
 
-  Implementación:
-  - PMA en `budgets/models.py`: añadir campo `max_authorized_amount`.
-  - `makemigrations budgets` + `migrate`.
-  - PMA en `budgets/views.py` `BudgetResultView.get`: calcular si
-    `budget.total_amount > insurer.max_authorized_amount` e inyectar
-    `over_limit=True` en el contexto.
-  - PMA en `result.html`: mostrar alerta Bootstrap warning si `over_limit`.
-  - Actualizar el management command `seed_insurer_tariffs` con los topes
-    conocidos (AXA: 706,73€ según factura de referencia).
+**Listado de aseguradoras** (`/panel/budgets/insurers/`):
+- Tabla con columnas: Nombre, Código, Activa (badge), Gastos gestión (%),
+  Recargos acumulables, Nº tarifas, Acciones (Editar, Activar/Desactivar,
+  Eliminar con confirmación).
+- Filtro por nombre/código (búsqueda live HTMX).
+- Botón "Nueva aseguradora".
+- Solo visible para ADMIN.
 
-**MEJORA 4 — Google Maps API para cálculo automático de kilómetros:**
-  Añadir campos de ubicación al formulario de presupuesto:
-  origen (dirección del siniestro) y destino (taller destino).
-  Usar la Google Maps Distance Matrix API para calcular km reales de conducción
-  (ida + vuelta). El operario puede aceptar el valor calculado o editarlo.
-  Requiere `GOOGLE_MAPS_API_KEY` en el `.env` y actualización online previa
-  (Directriz 4.4 del MASTER_DOCUMENT).
+**Formulario de aseguradora** (crear/editar):
+- Campos: name, code, management_fee_percent, surcharges_are_cumulative,
+  is_active, notes.
+- Validación: code único por empresa (unique_together con company).
+- Tras guardar: redirige al listado con mensaje de éxito.
 
-**MEJORA 5 — Exportación del presupuesto a PDF (Paso 6 del hito):**
-  Generar un documento PDF del presupuesto con membrete.
-  Usar la librería disponible en el entorno (verificar con
-  `pip list | grep -i pdf` antes de implementar).
-  El PDF debe incluir: datos del servicio, total, aseguradora, fecha,
-  operario. Sin desglose de líneas (el desglose es solo para ADMIN).
+**Activar/Desactivar aseguradora** (toggle HTMX):
+- Endpoint POST `/panel/budgets/insurers/<pk>/toggle/`.
+- Devuelve fragmento badge actualizado. Sin recarga de página.
+- Una aseguradora inactiva no aparece en el wizard de presupuestos.
+
+**Gestión de tipos de vehículo** (`/panel/budgets/insurers/<pk>/vehicles/`):
+- Listado inline dentro de la vista de edición de aseguradora.
+- CRUD completo: añadir, editar nombre/sort_order/is_active, eliminar.
+- HTMX para añadir/eliminar sin recarga.
+
+**Gestión de tarifas** (`/panel/budgets/insurers/<pk>/tariffs/`):
+- Listado de versiones de tarifa (año, valid_from, valid_to, estado activa/histórica).
+- Crear nueva tarifa: año + valid_from. Al crear, cierra la tarifa activa anterior
+  estableciendo su valid_to = today - 1 día.
+- Ver/editar líneas de tarifa de una versión concreta.
+
+**Gestión de líneas de tarifa** (`/panel/budgets/tariffs/<pk>/lines/`):
+- Tabla editable inline con todas las TariffLine de la tarifa.
+- Columnas: concepto, tipo de vehículo (nullable), unidad, precio,
+  umbral km (nullable), mínimo facturable (nullable), requiere autorización.
+- Añadir línea, editar precio/campos inline (HTMX), eliminar línea.
+- Guardado automático por campo via HTMX (hx-trigger="change").
+
+#### Implementación
+
+Nuevas vistas en `budgets/views.py` (todas con `AdminRoleRequiredMixin`):
+- `InsurerListView`
+- `InsurerCreateView`
+- `InsurerUpdateView`
+- `InsurerToggleView` (HTMX)
+- `InsurerDeleteView`
+- `VehicleTypeListView` (inline en InsurerUpdateView)
+- `VehicleTypeCreateView`, `VehicleTypeUpdateView`, `VehicleTypeDeleteView`
+- `InsurerTariffListView`, `InsurerTariffCreateView`
+- `TariffLineListView`, `TariffLineSaveView` (HTMX), `TariffLineDeleteView`
+
+Nuevas URLs en `budgets/urls.py` bajo prefijo `insurers/`.
+
+Nuevos templates en `budgets/templates/budgets/`:
+- `insurer_list.html`
+- `insurer_form.html`
+- `insurer_tariff_list.html`
+- `tariff_line_list.html`
+- `_insurer_badge_fragment.html` (HTMX toggle activa)
+
+Nuevo ítem en sidebar `_nav_items.html` para ADMIN bajo sección Presupuestos:
+`<i class="bi bi-building"></i>Aseguradoras`
+→ `{% url 'budgets:insurer_list' %}`
+
+Antes de implementar: actualización online obligatoria de la API de Django
+y HTMX (Directriz 4.4 del MASTER_DOCUMENT).
+
+### PRIORIDAD 1 — Corrección banner "Acceso denegado" residual en OperatorDashboardView
+
+El template `operator/dashboard.html` muestra los mensajes Django del framework
+al inicio de la página. Tras la corrección de mixins de S002, un mensaje
+residual de sesión anterior aparece en la primera carga del dashboard del
+operario. Investigar si el mensaje proviene de un {% if messages %} en
+`base.html` o `dashboard.html` y añadir lógica para suprimir mensajes de
+tipo "error" en la vista del operario si el usuario tiene rol WORKSHOP,
+o limpiar la cola de mensajes al inicio de `OperatorDashboardView.get()`.

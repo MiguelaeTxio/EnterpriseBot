@@ -169,7 +169,28 @@
         {# ── PASO 7: Conceptos opcionales (cargado via HTMX) ───────────── #}
         <div id="optional-concepts-section"></div>
 
-        {# ── PASO 8: Fecha del servicio ─────────────────────────────────── #}
+        {# ── PASO 8: IVA ─────────────────────────────────────────────────── #}
+        <div class="card mb-3 wizard-step d-none" id="step-iva">
+          <div class="card-body">
+            <div class="form-check form-switch">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                name="apply_iva"
+                id="id_apply_iva"
+                value="1"
+              >
+              <label class="form-check-label fw-semibold" for="id_apply_iva">
+                8. ¿Aplicar IVA (21%)?
+              </label>
+            </div>
+            <div class="form-text text-muted mt-1">
+              Marcar cuando la aseguradora o cliente requiera factura con IVA incluido.
+            </div>
+          </div>
+        </div>
+
+        {# ── PASO 9: Fecha del servicio ─────────────────────────────────── #}
         <div class="card mb-3 wizard-step d-none" id="step-date">
           <div class="card-body">
             <label class="form-label fw-semibold" for="id_service_date">
@@ -231,7 +252,7 @@
     if (evt.detail.target.id === 'vehicle-type-section') {
       const stepsToShow = [
         'step-overnight', 'step-km', 'step-unlock',
-        'step-nyf', 'step-date', 'step-submit'
+        'step-nyf', 'step-iva', 'step-date', 'step-submit'
       ];
       stepsToShow.forEach(showStep);
 

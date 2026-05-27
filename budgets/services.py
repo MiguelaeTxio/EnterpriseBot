@@ -20,6 +20,12 @@ from budgets.models import (
     VehicleType,
 )
 
+# ---------------------------------------------------------------------------
+# TAX CONSTANT — modify directly in this file when the VAT rate changes.
+# CONSTANTE FISCAL — modificar directamente en este archivo cuando cambie el IVA.
+# ---------------------------------------------------------------------------
+IVA_PERCENT = Decimal("21.00")
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -357,8 +363,28 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         )
 
     # ------------------------------------------------------------------
-    # 7. TOTAL
+    # 7. TOTAL (base, before IVA)
     # ------------------------------------------------------------------
     budget.total_amount = _round2(subtotal_after_surcharges + management_fee_total)
+
+    # ------------------------------------------------------------------
+    # 8. IVA (optional — controlled by budget.apply_iva)
+    # Applied over total_amount. Result stored as instance attribute
+    # total_amount_with_iva (not persisted in DB).
+    # Aplicado sobre total_amount. Resultado almacenado como atributo de
+    # instancia total_amount_with_iva (no persistido en BD).
+    # ------------------------------------------------------------------
+    if budget.apply_iva:
+        iva_amount = _round2(budget.total_amount * IVA_PERCENT / Decimal("100"))
+        _add_line(
+            "IVA",
+            f"IVA ({IVA_PERCENT}%)",
+            budget.total_amount,
+            IVA_PERCENT / Decimal("100"),
+            is_surcharge=True,
+        )
+        budget.total_amount_with_iva = _round2(budget.total_amount + iva_amount)
+    else:
+        budget.total_amount_with_iva = None
 
     return result_lines

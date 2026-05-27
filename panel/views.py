@@ -6500,7 +6500,7 @@ class WorkshopAssetAutocompleteView(WorkshopRequiredMixin, View):
         return JsonResponse({"assets": assets})
 
 
-class WorkOrderEntryUploadView(SupervisorAccessMixin, View):
+class WorkOrderEntryUploadView(WorkshopRequiredMixin, View):
     """
     Handles the operator Upload path (Via C) for new work orders.
     Accepts a photo or PDF file, rasterises it and sends it to Gemini Vision
@@ -6975,7 +6975,7 @@ def _parse_spare_parts_from_post(POST, company, entry_lines_data=None):
     return spare_parts_data
 
 
-class WorkOrderEntryConfirmView(SupervisorAccessMixin, View):
+class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
     """
     Confirmation and persistence view for the operator Upload path (Via C).
     Reads the extraction result stored in the session by WorkOrderEntryUploadView,
@@ -8072,7 +8072,7 @@ class WorkOrderEntryConfirmView(SupervisorAccessMixin, View):
         return redirect("/panel/work-orders/")
 
 
-class WorkOrderEntryFormView(SupervisorAccessMixin, View):
+class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
     """
     Structured web form entry path for work orders (Via A).
     Allows WORKSHOP and ADMIN users to submit a daily work-order part
@@ -9275,7 +9275,7 @@ class WorkOrderEntryFormView(SupervisorAccessMixin, View):
         return redirect("/panel/work-orders/")
 
 
-class WorkOrderEntryHistoryView(SupervisorAccessMixin, View):
+class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
     """
     Four-tab personal history view for WORKSHOP role operators.
     ADMIN and SUPERVISOR are automatically redirected to WorkOrderAdminHistoryView.
@@ -10299,7 +10299,7 @@ def _detect_overlaps(existing_lines, new_lines):
     return conflicts
 
 
-class WorkOrderEntryMergeView(SupervisorAccessMixin, View):
+class WorkOrderEntryMergeView(WorkshopRequiredMixin, View):
     """
     Merge view for resolving conflicts when an operator tries to submit
     a new work order on a date that already has an unreviewed digital or
@@ -11019,7 +11019,7 @@ class WorkOrderEntryMergeView(SupervisorAccessMixin, View):
         return redirect(reverse("panel:operator_history"))
 
 
-class WorkdayGapResolutionView(SupervisorAccessMixin, View):
+class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
     """
     Allows a WORKSHOP operator to justify each workday gap detected by Gate 4
     before the draft work order is promoted from PENDING_GAPS to DONE.
@@ -14361,7 +14361,7 @@ class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
 
 
 
-class WorkOrderDescriptionAutocompleteView(SupervisorAccessMixin, View):
+class WorkOrderDescriptionAutocompleteView(WorkshopRequiredMixin, View):
     """
     Returns up to 8 unique values from WorkOrderEntryLine.fault_description
     or WorkOrderEntryLine.repair_notes that contain the query string (case-

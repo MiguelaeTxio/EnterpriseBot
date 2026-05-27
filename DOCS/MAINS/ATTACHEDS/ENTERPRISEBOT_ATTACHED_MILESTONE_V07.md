@@ -1086,6 +1086,31 @@ BLOQUE 3 — PRIORIDAD 2 — Sistema de revisados en digital_list (COMPLETADO):
 
 PRIORIDADES 3 y 4 diferidas — no alcanzadas en S039. Pasan a S040 como P0 y P1.
 
+### Correcciones aplicadas fuera de sesión de hito (2026-05-27 — S002 Stand-by)
+
+Durante la sesión S002 del Sistema de Ruegos y Preguntas se corrigieron los
+permisos de acceso del flujo de entrada de partes digitales del operario.
+Las siguientes vistas tenían incorrectamente asignado SupervisorAccessMixin
+en lugar de WorkshopRequiredMixin, impidiendo a los operarios WORKSHOP
+introducir partes por cualquier vía:
+
+- WorkOrderEntryHistoryView (panel/views.py:9278)
+- WorkOrderEntryUploadView (panel/views.py:6503)
+- WorkOrderEntryConfirmView (panel/views.py:6978)
+- WorkOrderEntryFormView (panel/views.py:8075)
+- WorkOrderEntryMergeView (panel/views.py:10302)
+- WorkdayGapResolutionView (panel/views.py:11022)
+- WorkOrderDescriptionAutocompleteView (panel/views.py:14364)
+
+Todas corregidas a WorkshopRequiredMixin. Sintaxis validada. Reload aplicado.
+El operario miguel-loja confirmó acceso y persistencia de partes correctos
+tras la corrección.
+
+Adicionalmente se reorganizó el sidebar (_nav_items.html):
+- Ítem "Historial" en sección Operarios restringido a WORKSHOP y WORKSHOPBOSS.
+- Ítem "Historial" para ADMIN/SUPERVISOR apunta a work_order_admin_history.
+- Ítem "Partes digitales" eliminado del sidebar (accesible via URL directa).
+
 ### Estado de archivos modificados en S039
 
 | Archivo | Tipo de cambio |

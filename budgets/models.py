@@ -544,6 +544,16 @@ class Budget(models.Model):
         verbose_name="Notas adicionales",
         help_text="Observaciones libres del operario sobre este presupuesto. Uso interno.",
     )
+    # Whether IVA should be applied to the total amount.
+    # Si el IVA debe aplicarse al importe total.
+    apply_iva = models.BooleanField(
+        default=False,
+        verbose_name="Aplicar IVA",
+        help_text=(
+            "Indica si se debe aplicar el IVA vigente sobre el importe base del presupuesto. "
+            "El porcentaje de IVA se define como constante IVA_PERCENT en budgets/services.py."
+        ),
+    )
     total_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
