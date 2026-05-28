@@ -306,7 +306,9 @@
      * Construye un nodo DOM de bloque de trabajo para el idx dado.
      * Replica los nombres de campo esperados por WorkOrderEntryFormView.post().
      */
-    function _buildBlockRow(idx) {
+    function _buildBlockRow(idx, initHc, initHf) {
+        initHc = initHc || "";
+        initHf = initHf || "";
         var div = document.createElement("div");
         div.className = "confirm-block mb-4 pb-4 border-bottom extra-block-row";
         div.id = "block-" + idx;
@@ -322,18 +324,18 @@
                     '<label class="form-label fw-medium">Máquina o Sección <span class="text-danger">*</span></label>' +
                     '<div class="position-relative">' +
                         '<input type="text" name="entrada_' + idx + '_machine_raw" ' +
-                               'class="form-control asset-search" ' +
+                               'class="form-control asset-search eb-field" ' +
                                'placeholder="Código de máquina" autocomplete="off">' +
                         '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
                     '</div>' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">H.C. <span class="text-danger">*</span></label>' +
-                    '<input type="time" step="1800" name="entrada_' + idx + '_hc" class="form-control">' +
+                    '<input type="time" step="1800" name="entrada_' + idx + '_hc" class="form-control eb-field" value="' + initHc + '">' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">H.F. <span class="text-danger">*</span></label>' +
-                    '<input type="time" step="1800" name="entrada_' + idx + '_hf" class="form-control">' +
+                    '<input type="time" step="1800" name="entrada_' + idx + '_hf" class="form-control eb-field" value="' + initHf + '">' +
                 '</div>' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">O.R.</label>' +
@@ -356,14 +358,14 @@
                 '<div class="col-12 col-md-6">' +
                     '<label class="form-label fw-medium">Descripción avería <span class="text-danger">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_fault_description" ' +
-                              'class="form-control desc-search" rows="3" ' +
+                              'class="form-control desc-search eb-field" rows="3" ' +
                               'data-desc-field="fault_description" ' +
                               'placeholder="Descripción de la avería o tarea"></textarea>' +
                 '</div>' +
                 '<div class="col-12 col-md-6">' +
                     '<label class="form-label fw-medium">Reparación realizada <span class=\"text-danger\">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_repair_notes" ' +
-                              'class="form-control desc-search field-flagged" rows="3" ' +
+                              'class="form-control desc-search eb-field" rows="3" ' +
                               'data-desc-field="repair_notes" ' +
                               'placeholder="Descripción de la reparación"></textarea>' +
                 '</div>' +
@@ -474,8 +476,21 @@
             var current = parseInt(numEntradasInput.value, 10) || 1;
             var nextIdx = current + 1;
             numEntradasInput.value = nextIdx;
-            var row = _buildBlockRow(nextIdx);
+            /* Pre-fill HC/HF before appendChild so TimePicker reads the value on init.
+               Prerrellenar HC/HF antes de appendChild para que TimePicker lea el valor al inicializar. */
+            var endTimeMorning   = (window.EB_CONFIG && window.EB_CONFIG.endTimeMorning)   || "";
+            var endTimeAfternoon = (window.EB_CONFIG && window.EB_CONFIG.endTimeAfternoon) || "";
+            var prevHfInput = document.querySelector('[name="entrada_' + current + '_hf"]');
+            var suggestedHc = prevHfInput ? prevHfInput.value : "";
+            var suggestedHf = "";
+            if (suggestedHc && endTimeMorning && suggestedHc < endTimeMorning) {
+                suggestedHf = endTimeMorning;
+            } else if (endTimeAfternoon) {
+                suggestedHf = endTimeAfternoon;
+            }
+            var row = _buildBlockRow(nextIdx, suggestedHc, suggestedHf);
             extraBlocksCont.appendChild(row);
+
             // Attach autocomplete to new input.
             // Asociar autocompletado al nuevo input.
             var newInput = row.querySelector(".asset-search");

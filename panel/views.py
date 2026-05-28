@@ -7476,8 +7476,10 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         # ------------------------------------------------------------------
         # Save confirmation gate — form must have been confirmed via modal.
         # Gate de confirmacion — el formulario debe haber pasado por modal.
+        # Skipped for save_blocks — progressive save does not use the modal.
+        # Se omite en save_blocks — el guardado progresivo no usa el modal.
         # ------------------------------------------------------------------
-        if not POST.get("save_confirmed"):
+        if not POST.get("save_confirmed") and _form_action != "save_blocks":
             entradas_enriched_post = [
                 {
                     "idx":               ld["line_number"],
@@ -7534,7 +7536,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         _blocks = parse_blocks_from_post(POST, num_entradas_post, entry_lines_data=entry_lines_data)
         _intra  = run_intra_part_validation(_blocks)
 
-        if not _intra.ok:
+        if not _intra.ok and _form_action != "save_blocks":
             entradas_enriched_post = [
                 {
                     "idx":               ld["line_number"],
@@ -7852,12 +7854,14 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         # The total delta_hours across all work blocks must sum to >= 8h,
         # OR the operator must have an active WorkerAbsence for work_date.
         # If neither condition is met, the part is rejected with a clear error.
+        # Skipped for save_blocks — partial saves are always allowed.
         #
         # La suma de delta_hours de todos los bloques debe ser >= 8h,
         # O el operario debe tener una WorkerAbsence activa para work_date.
         # Si no se cumple ninguna condición, el parte se rechaza con error claro.
+        # Se omite en save_blocks — los guardados parciales siempre están permitidos.
         # ------------------------------------------------------------------
-        if work_date is not None:
+        if work_date is not None and _form_action != "save_blocks":
             from decimal import Decimal as _Dec_C2
             from ivr_config.models import WorkerAbsence as _WA_C2
             _total_hours_c2 = sum(
@@ -8255,24 +8259,31 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                         })
                         ridx += 1
 
-            # Resolve lunch break for edit mode: use stored values if present,
-            # otherwise fall back to the operator's effective schedule.
-            # Resolver pausa de comida en modo edicion: usar valores guardados
-            # si existen, si no usar el horario efectivo del operario.
+            # Lunch break always from schedule — schedule is the source of truth.
+            # La pausa de comida siempre viene del horario — el horario es la fuente de verdad.
             _schedule_edit = _resolve_operator_schedule(cu, company)
             _lunch_start_edit = ""
             _lunch_end_edit   = ""
             _first_hc_edit    = ""
-            if first_entry and first_entry.lunch_break_start:
-                _lunch_start_edit = first_entry.lunch_break_start.strftime("%H:%M")
-            elif _schedule_edit and not _schedule_edit.is_intensive and _schedule_edit.end_time_morning:
-                _lunch_start_edit = _schedule_edit.end_time_morning.strftime("%H:%M")
-            if first_entry and first_entry.lunch_break_end:
-                _lunch_end_edit = first_entry.lunch_break_end.strftime("%H:%M")
-            elif _schedule_edit and not _schedule_edit.is_intensive and _schedule_edit.start_time_afternoon:
-                _lunch_end_edit = _schedule_edit.start_time_afternoon.strftime("%H:%M")
+            _show_lunch_edit  = False
+            _end_time_morning_edit    = ""
+            _end_time_afternoon_edit  = ""
+            if _schedule_edit and not _schedule_edit.is_intensive:
+                _show_lunch_edit = True
+                if _schedule_edit.end_time_morning:
+                    _lunch_start_edit = _schedule_edit.end_time_morning.strftime("%H:%M")
+                    _end_time_morning_edit = _lunch_start_edit
+                if _schedule_edit.start_time_afternoon:
+                    _lunch_end_edit = _schedule_edit.start_time_afternoon.strftime("%H:%M")
+            if _schedule_edit and _schedule_edit.end_time_afternoon:
+                _end_time_afternoon_edit = _schedule_edit.end_time_afternoon.strftime("%H:%M")
+            elif _schedule_edit and _schedule_edit.is_intensive and _schedule_edit.end_time_morning:
+                _end_time_afternoon_edit = _schedule_edit.end_time_morning.strftime("%H:%M")
             if _schedule_edit and _schedule_edit.start_time_morning:
                 _first_hc_edit = _schedule_edit.start_time_morning.strftime("%H:%M")
+            # first_block_hf: end_time_morning for split shift, end_time_afternoon for intensive.
+            # first_block_hf: end_time_morning en jornada partida, end_time_afternoon en intensiva.
+            _first_hf_edit = _end_time_morning_edit if _end_time_morning_edit else _end_time_afternoon_edit
 
             context = self._get_context_base(request)
             context.update({
@@ -8287,6 +8298,10 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "lunch_break_start":   _lunch_start_edit,
                 "lunch_break_end":     _lunch_end_edit,
                 "first_block_hc":      _first_hc_edit,
+                "first_block_hf":      _first_hf_edit,
+                "show_lunch_break":    _show_lunch_edit,
+                "end_time_morning":    _end_time_morning_edit,
+                "end_time_afternoon":  _end_time_afternoon_edit,
             })
             return render(request, self.template_name, context)
 
@@ -8344,21 +8359,39 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                             "flags":         _ip_spare.flags or [],
                         })
                         _ip_ridx += 1
+            # Lunch break always from schedule — schedule is the source of truth.
+            # La pausa de comida siempre viene del horario — el horario es la fuente de verdad.
             _schedule_ip = _resolve_operator_schedule(cu, company)
             _ip_lunch_start = ""
             _ip_lunch_end   = ""
             _ip_first_hc    = ""
-            if _ip_first_entry and _ip_first_entry.lunch_break_start:
-                _ip_lunch_start = _ip_first_entry.lunch_break_start.strftime("%H:%M")
-            elif _schedule_ip and not _schedule_ip.is_intensive and _schedule_ip.end_time_morning:
-                _ip_lunch_start = _schedule_ip.end_time_morning.strftime("%H:%M")
-            if _ip_first_entry and _ip_first_entry.lunch_break_end:
-                _ip_lunch_end = _ip_first_entry.lunch_break_end.strftime("%H:%M")
-            elif _schedule_ip and not _schedule_ip.is_intensive and _schedule_ip.start_time_afternoon:
-                _ip_lunch_end = _schedule_ip.start_time_afternoon.strftime("%H:%M")
+            _ip_show_lunch  = False
+            _ip_end_time_morning   = ""
+            _ip_end_time_afternoon = ""
+            if _schedule_ip and not _schedule_ip.is_intensive:
+                _ip_show_lunch = True
+                if _schedule_ip.end_time_morning:
+                    _ip_lunch_start = _schedule_ip.end_time_morning.strftime("%H:%M")
+                    _ip_end_time_morning = _ip_lunch_start
+                if _schedule_ip.start_time_afternoon:
+                    _ip_lunch_end = _schedule_ip.start_time_afternoon.strftime("%H:%M")
+            if _schedule_ip and _schedule_ip.end_time_afternoon:
+                _ip_end_time_afternoon = _schedule_ip.end_time_afternoon.strftime("%H:%M")
+            elif _schedule_ip and _schedule_ip.is_intensive and _schedule_ip.end_time_morning:
+                _ip_end_time_afternoon = _schedule_ip.end_time_morning.strftime("%H:%M")
             if _schedule_ip and _schedule_ip.start_time_morning:
                 _ip_first_hc = _schedule_ip.start_time_morning.strftime("%H:%M")
+            _ip_first_hf = _ip_end_time_morning if _ip_end_time_morning else _ip_end_time_afternoon
             _ip_no_lunch = _ip_first_entry.no_lunch_break if _ip_first_entry else False
+            logger.info(
+                "# [I2-DIAG-GET] _ip_first_entry=%r lb_start_bd=%r lb_end_bd=%r "
+                "no_lunch_bd=%r _ip_lunch_start=%r _ip_lunch_end=%r",
+                _ip_first_entry,
+                _ip_first_entry.lunch_break_start if _ip_first_entry else None,
+                _ip_first_entry.lunch_break_end   if _ip_first_entry else None,
+                _ip_first_entry.no_lunch_break    if _ip_first_entry else None,
+                _ip_lunch_start, _ip_lunch_end,
+            )
             context = self._get_context_base(request)
             context.update({
                 "in_progress_mode": True,
@@ -8369,10 +8402,14 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "entradas_enriched": _ip_entradas,
                 "repuestos_enriched": _ip_repuestos,
                 "min_date":          min_date.isoformat() if min_date else "",
-                "lunch_break_start": _ip_lunch_start,
-                "lunch_break_end":   _ip_lunch_end,
+                "lunch_break_start": "XX:XX",
+                "lunch_break_end":   "XX:XX",
                 "first_block_hc":    _ip_first_hc,
+                "first_block_hf":    _ip_first_hf,
                 "no_lunch_break":    _ip_no_lunch,
+                "show_lunch_break":  _ip_show_lunch,
+                "end_time_morning":  _ip_end_time_morning,
+                "end_time_afternoon": _ip_end_time_afternoon,
             })
             return render(request, self.template_name, context)
 
@@ -8387,6 +8424,8 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         _lunch_start = ""
         _lunch_end   = ""
         _first_hc    = ""
+        _end_time_morning_create   = ""
+        _end_time_afternoon_create = ""
         if _schedule_create is not None:
             if not _schedule_create.is_intensive:
                 # Split shift — pre-fill lunch break from schedule.
@@ -8399,6 +8438,12 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             # Prerrellenar HC del primer bloque desde inicio de mañana del horario.
             if _schedule_create.start_time_morning:
                 _first_hc = _schedule_create.start_time_morning.strftime("%H:%M")
+            if not _schedule_create.is_intensive and _schedule_create.end_time_morning:
+                _end_time_morning_create = _schedule_create.end_time_morning.strftime("%H:%M")
+            if _schedule_create.end_time_afternoon:
+                _end_time_afternoon_create = _schedule_create.end_time_afternoon.strftime("%H:%M")
+            elif _schedule_create.is_intensive and _schedule_create.end_time_morning:
+                _end_time_afternoon_create = _schedule_create.end_time_morning.strftime("%H:%M")
 
         context = self._get_context_base(request)
         context.update({
@@ -8409,7 +8454,11 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             "lunch_break_start": _lunch_start,
             "lunch_break_end":   _lunch_end,
             "first_block_hc":    _first_hc,
+            "first_block_hf":    _end_time_morning_create if _end_time_morning_create else _end_time_afternoon_create,
             "no_lunch_break":    False,
+            "show_lunch_break":  bool(_lunch_start),
+            "end_time_morning":  _end_time_morning_create,
+            "end_time_afternoon": _end_time_afternoon_create,
         })
         return render(request, self.template_name, context)
 
@@ -8469,6 +8518,27 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         # no_lunch_break — operator did not stop for lunch.
         # no_lunch_break — el operario no ha parado a comer.
         _no_lunch_break  = POST.get("no_lunch_break", "") == "1"
+        # Read form_action early — used in gate bypasses below.
+        # Leer form_action al inicio — usado en los bypasses de gates.
+        _form_action = POST.get("form_action", "close_order").strip()
+        # Build lunch break context from schedule — used in all POST error renders.
+        # Construir contexto de pausa desde horario — usado en todos los renders de error del POST.
+        _post_schedule   = _resolve_operator_schedule(cu, company)
+        _post_lb_start   = ""
+        _post_lb_end     = ""
+        _post_show_lunch = False
+        if _post_schedule and not _post_schedule.is_intensive:
+            _post_show_lunch = True
+            if _post_schedule.end_time_morning:
+                _post_lb_start = _post_schedule.end_time_morning.strftime("%H:%M")
+            if _post_schedule.start_time_afternoon:
+                _post_lb_end = _post_schedule.start_time_afternoon.strftime("%H:%M")
+        logger.info(
+            "# [I2-DIAG] lunch_break_start_raw=%r lb_start=%r "
+            "lunch_break_end_raw=%r lb_end=%r no_lunch_break=%r form_action=%r",
+            _lb_start_raw, _lb_start, _lb_end_raw, _lb_end,
+            _no_lunch_break, POST.get("form_action", ""),
+        )
 
         # ------------------------------------------------------------------
         # Parse work date / Parsear fecha del parte.
@@ -8489,8 +8559,16 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         # Barrera de fecha minima — work_date debe ser estrictamente posterior
         # al ultimo parte revisado del operario.
         # ------------------------------------------------------------------
+        logger.info(
+            "# [I2-DIAG-WORKDATE] work_date=%r form_action=%r",
+            work_date, _form_action,
+        )
         if work_date is not None:
             _min_date = _get_min_allowed_date(cu)
+            logger.info(
+                "# [I2-DIAG-MINDATE] work_date=%r _min_date=%r form_action=%r",
+                work_date, _min_date, _form_action,
+            )
             if _min_date is not None and work_date < _min_date:
                 from datetime import timedelta as _td_fd
                 _last_rev = _min_date - _td_fd(days=1)
@@ -8510,6 +8588,9 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     "num_entradas":       1,
                     "num_repuestos":      0,
                     "min_date":           _min_date.isoformat(),
+                    "lunch_break_start":  _post_lb_start,
+                    "lunch_break_end":    _post_lb_end,
+                    "show_lunch_break":   _post_show_lunch,
                 })
                 return render(request, self.template_name, context)
 
@@ -8583,6 +8664,11 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     and _existing_entry0.work_order.uploaded_by_id == cu.pk
                 )
                 if not _is_own_in_progress:
+                    logger.info(
+                        "# [I2-DIAG-GATE0] duplicado detectado. form_action=%r "
+                        "existing_entry0_pk=%r is_own_in_progress=%r",
+                        _form_action, _existing_entry0.pk, _is_own_in_progress,
+                    )
                     # Unreviewed duplicate — parse lines, serialise and redirect to merge view.
                     # Duplicado sin revisar — parsear lineas, serializar y redirigir a merge view.
                     _gate0_lines = _parse_entry_lines_from_post(POST, company)
@@ -8708,6 +8794,11 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 integrity_errors.append(f"{rep}: las unidades deben ser un numero positivo.")
 
         if integrity_errors:
+            logger.info(
+                "# [I2-DIAG-INTEGRITY] form_action=%r errors=%r",
+                _form_action if "_form_action" in dir() else POST.get("form_action",""),
+                integrity_errors,
+            )
             entradas_post = [
                 {
                     "idx":               ld["line_number"],
@@ -8744,6 +8835,9 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "repuestos_enriched": repuestos_post,
                 "num_entradas":       len(entry_lines_data),
                 "num_repuestos":      len(spare_parts_data),
+                "lunch_break_start":  _post_lb_start,
+                "lunch_break_end":    _post_lb_end,
+                "show_lunch_break":   _post_show_lunch,
             })
             return render(request, self.template_name, context)
 
@@ -8788,6 +8882,9 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "repuestos_enriched": repuestos_post,
                 "num_entradas":       len(entry_lines_data),
                 "num_repuestos":      len(spare_parts_data),
+                "lunch_break_start":  _post_lb_start,
+                "lunch_break_end":    _post_lb_end,
+                "show_lunch_break":   _post_show_lunch,
             })
             return render(request, self.template_name, context)
 
@@ -8848,6 +8945,9 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "repuestos_enriched": repuestos_post,
                 "num_entradas":       len(entry_lines_data),
                 "num_repuestos":      len(spare_parts_data),
+                "lunch_break_start":  _post_lb_start,
+                "lunch_break_end":    _post_lb_end,
+                "show_lunch_break":   _post_show_lunch,
             })
             return render(request, self.template_name, context)
 
@@ -8933,8 +9033,10 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         #
         # Same logic as WorkOrderEntryConfirmView Gate 4.
         # Misma lógica que Gate 4 de WorkOrderEntryConfirmView.
+        # Gate 4 is skipped for save_blocks — only applied on close_order.
+        # Gate 4 se omite en save_blocks — solo se aplica en close_order.
         # ------------------------------------------------------------------
-        if work_date is not None:
+        if work_date is not None and _form_action != "save_blocks":
             from ivr_config.models import WorkdaySchedule as _WDS_FA
             from django.urls import reverse as _rev_g4fa
             _schedule_g4fa = (
@@ -9054,15 +9156,21 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
         # blocks into an IN_PROGRESS WorkOrder (creating it on first save)
         # and redirect back to the form so they can add more blocks.
         # Gate 4 is NOT applied here — only on close_order.
+        # _form_action already read above (early assignment).
         #
         # Cuando el operario pulsa "Guardar bloques", persiste los bloques
         # enviados en un WorkOrder IN_PROGRESS (creándolo en el primer
         # guardado) y redirige al formulario para añadir más bloques.
         # Gate 4 NO se aplica aquí — solo en close_order.
+        # _form_action ya leido arriba (asignación temprana).
         # ------------------------------------------------------------------
-        _form_action = POST.get("form_action", "close_order").strip()
-
         if _form_action == "save_blocks":
+            logger.info(
+                "# [I2-DIAG-PRE] entrando en save_blocks. work_date=%r "
+                "num_entry_lines=%r _lb_start=%r _lb_end=%r",
+                work_date, len(entry_lines_data) if entry_lines_data else -1,
+                _lb_start, _lb_end,
+            )
             from django.db import transaction as _tx_ip
             from work_order_processor.models import (
                 WorkOrder as _WO_IP2,
@@ -9214,8 +9322,12 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
 
                 logger.info(
                     "# [FormView/save_blocks] WorkOrder IN_PROGRESS #%d actualizado. "
-                    "Bloques guardados: %d.",
+                    "Bloques guardados: %d. entry_pk=%r lb_start=%r lb_end=%r no_lunch=%r",
                     _ip_wo.pk, len(entry_lines_data),
+                    _ip_entry.pk,
+                    _ip_entry.lunch_break_start,
+                    _ip_entry.lunch_break_end,
+                    _ip_entry.no_lunch_break,
                 )
             except Exception as _exc_ip:
                 logger.error(

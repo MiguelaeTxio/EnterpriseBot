@@ -174,7 +174,7 @@ result, status_update, history (ADMIN), detail (ADMIN).
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesión (S003)
+## 5. Hoja de Ruta para la Siguiente Sesión (S042)
 
 ### Contexto
 

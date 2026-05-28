@@ -128,7 +128,7 @@
                             type="date"
                             id="id_fecha"
                             name="fecha"
-                            class="form-control {% if not fecha %}field-flagged{% endif %}"
+                            class="form-control eb-field"
                             value="{{ fecha }}"
                             {% if min_date %}min="{{ min_date }}"{% endif %}
                             autocomplete="off"
@@ -160,7 +160,7 @@
                     </h6>
                 </div>
                 <div class="card-body p-4">
-                    {% if lunch_break_start %}
+                    {% if show_lunch_break %}
                     {# Split shift only: show "no lunch" checkbox. #}
                     {# Solo jornada partida: mostrar checkbox sin pausa. #}
                     <div class="form-check mb-3" id="no-lunch-check-wrapper">
@@ -180,7 +180,7 @@
                     {% endif %}
                     <p class="text-muted small mb-3">
                         Indica la hora de inicio y fin de tu pausa de comida.
-                        {% if not lunch_break_start %}
+                        {% if not show_lunch_break %}
                         Si no has parado a comer, deja estos campos vacíos.
                         {% endif %}
                         El sistema descontará automáticamente la pausa de las
@@ -192,7 +192,7 @@
                             <input type="time" step="1800"
                                    id="id_lunch_break_start"
                                    name="lunch_break_start"
-                                   class="form-control"
+                                   class="form-control eb-field"
                                    value="{{ lunch_break_start }}">
                         </div>
                         <div class="col-6 col-md-2">
@@ -200,7 +200,7 @@
                             <input type="time" step="1800"
                                    id="id_lunch_break_end"
                                    name="lunch_break_end"
-                                   class="form-control"
+                                   class="form-control eb-field"
                                    value="{{ lunch_break_end }}">
                         </div>
                     </div>
@@ -243,7 +243,7 @@
                                     <div class="position-relative">
                                         <input type="text"
                                                name="entrada_{{ entrada.idx }}_machine_raw"
-                                               class="form-control asset-search {% if not entrada.machine_raw %}field-flagged{% endif %}"
+                                               class="form-control asset-search eb-field {% if not entrada.machine_raw %}field-flagged{% endif %}"
                                                value="{{ entrada.machine_raw }}"
                                                placeholder="Código de máquina"
                                                autocomplete="off">
@@ -257,7 +257,7 @@
                                     <input type="time"
                                            step="1800"
                                            name="entrada_{{ entrada.idx }}_hc"
-                                           class="form-control {% if not entrada.hc %}field-flagged{% endif %}"
+                                           class="form-control eb-field {% if not entrada.hc %}field-flagged{% endif %}"
                                            value="{{ entrada.hc }}">
                                 </div>
                                 <div class="col-6 col-md-2">
@@ -267,7 +267,7 @@
                                     <input type="time"
                                            step="1800"
                                            name="entrada_{{ entrada.idx }}_hf"
-                                           class="form-control {% if not entrada.hf %}field-flagged{% endif %}"
+                                           class="form-control eb-field {% if not entrada.hf %}field-flagged{% endif %}"
                                            value="{{ entrada.hf }}">
                                 </div>
                                 <div class="col-12 col-md-4">
@@ -305,7 +305,7 @@
                                         Descripción avería <span class="text-danger">*</span>
                                     </label>
                                     <textarea name="entrada_{{ entrada.idx }}_fault_description"
-                                              class="form-control desc-search {% if not entrada.fault_description %}field-flagged{% endif %}"
+                                              class="form-control desc-search eb-field {% if not entrada.fault_description %}field-flagged{% endif %}"
                                               rows="3"
                                               placeholder="Descripción de la avería o tarea"
                                               data-desc-field="fault_description">{{ entrada.fault_description }}</textarea>
@@ -313,7 +313,7 @@
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-medium">Reparación realizada <span class="text-danger">*</span></label>
                                     <textarea name="entrada_{{ entrada.idx }}_repair_notes"
-                                              class="form-control desc-search field-flagged"
+                                              class="form-control desc-search eb-field {% if not entrada.repair_notes %}field-flagged{% endif %}"
                                               rows="3"
                                               placeholder="Descripción de la reparación"
                                               data-desc-field="repair_notes">{{ entrada.repair_notes }}</textarea>
@@ -335,7 +335,7 @@
                                 <div class="position-relative">
                                     <input type="text"
                                            name="entrada_1_machine_raw"
-                                           class="form-control asset-search field-flagged"
+                                           class="form-control asset-search eb-field"
                                            value=""
                                            placeholder="Código de máquina"
                                            autocomplete="off">
@@ -349,7 +349,7 @@
                                 <input type="time"
                                        step="1800"
                                        name="entrada_1_hc"
-                                       class="form-control field-flagged"
+                                       class="form-control eb-field"
                                        value="{{ first_block_hc }}">
                             </div>
                             <div class="col-6 col-md-2">
@@ -359,8 +359,8 @@
                                 <input type="time"
                                        step="1800"
                                        name="entrada_1_hf"
-                                       class="form-control field-flagged"
-                                       value="">
+                                       class="form-control eb-field"
+                                       value="{{ first_block_hf }}">
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">O.R.</label>
@@ -397,7 +397,7 @@
                                     Descripción avería <span class="text-danger">*</span>
                                 </label>
                                 <textarea name="entrada_1_fault_description"
-                                          class="form-control desc-search field-flagged"
+                                          class="form-control desc-search eb-field"
                                           rows="3"
                                           placeholder="Descripción de la avería o tarea"
                                           data-desc-field="fault_description"></textarea>
@@ -405,7 +405,7 @@
                             <div class="col-12 col-md-6">
                                 <label class="form-label fw-medium">Reparación realizada <span class="text-danger">*</span></label>
                                 <textarea name="entrada_1_repair_notes"
-                                          class="form-control desc-search field-flagged"
+                                          class="form-control desc-search eb-field"
                                           rows="3"
                                           placeholder="Descripción de la reparación"
                                           data-desc-field="repair_notes"></textarea>
@@ -584,9 +584,11 @@ window.EB_CONFIG = {
     assetsUrl:       "{% url 'panel:operator_assets' %}",
     assetDetailUrl:  "{% url 'panel:operator_asset_detail' %}",
     descriptionsUrl: "{% url 'panel:operator_descriptions' %}",
-    lunchBreakStart: "{{ lunch_break_start }}",
-    lunchBreakEnd:   "{{ lunch_break_end }}",
-    noLunchBreak:    false
+    lunchBreakStart:    "{{ lunch_break_start }}",
+    lunchBreakEnd:      "{{ lunch_break_end }}",
+    noLunchBreak:       false,
+    endTimeMorning:     "{{ end_time_morning }}",
+    endTimeAfternoon:   "{{ end_time_afternoon }}"
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>

@@ -371,7 +371,14 @@
            _syncFromInput — lee el valor del input oculto y actualiza la UI.
         ------------------------------------------------------------------ */
         function _syncFromInput() {
-            var parsed = _parseValue(input.value);
+            /* Read property value first; fall back to HTML attribute.
+               Leer la propiedad value primero; usar el atributo HTML como fallback.
+               input[type="time"] may have the attribute set but property empty
+               when the widget initialises before the browser normalises the value.
+               El atributo puede estar definido pero la propiedad vacia al inicializar
+               el widget antes de que el navegador normalice el valor. */
+            var _rawVal = input.value || input.getAttribute("value") || "";
+            var parsed = _parseValue(_rawVal);
             if (parsed) {
                 state.h = _pad(parsed.h);
                 state.m = _pad(parsed.m);

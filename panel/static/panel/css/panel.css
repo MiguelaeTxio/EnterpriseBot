@@ -272,17 +272,20 @@ body {
    Applied permanently to every input, textarea and select in the form
    regardless of whether it has a value or not. This is the resting state.
    Neutralises the browser native red :invalid border on time inputs.
+   :valid selector added to override Chrome native background on filled time inputs.
 
    Estilo naranja base para todos los campos del formulario de partes.
    Se aplica permanentemente a todos los inputs, textareas y selects
    del formulario independientemente de si tienen valor o no.
    Este es el estado en reposo. Neutraliza el borde rojo nativo :invalid
-   en inputs de hora. */
+   en inputs de hora. Selector :valid anadido para sobreescribir el fondo
+   nativo de Chrome en inputs de hora con valor. */
 .eb-field,
 .eb-field.form-control,
 .eb-field.form-select,
 input[type="time"].eb-field,
-input[type="time"].eb-field:invalid {
+input[type="time"].eb-field:invalid,
+input[type="time"].eb-field:valid {
     border-color: #fd7e14 !important;
     background-color: rgba(255, 165, 0, 0.06) !important;
     box-shadow: 0 0 0 0.15rem rgba(253, 126, 20, 0.10) !important;
@@ -292,16 +295,29 @@ input[type="time"].eb-field:invalid {
    Added by _markField(name, true) when client-side validation fails.
    Removed by _markField(name, false) when the field is valid.
    Always overrides eb-field when present.
+   :valid selector added to override Chrome native background on filled time inputs.
+   .eb-field.field-flagged added to guarantee override when both classes coexist.
 
    Estado de error: borde rojo y fondo rojo tenue.
    Aniadido por _markField(name, true) cuando falla la validacion.
    Eliminado por _markField(name, false) cuando el campo es valido.
-   Siempre sobreescribe eb-field cuando esta presente. */
+   Siempre sobreescribe eb-field cuando esta presente.
+   Selector :valid anadido para sobreescribir el fondo nativo de Chrome
+   en inputs de hora con valor.
+   .eb-field.field-flagged anadido para garantizar la sobreescritura
+   cuando ambas clases coexisten en el mismo elemento. */
 .field-flagged,
 .field-flagged.form-control,
 .field-flagged.form-select,
+.eb-field.field-flagged,
+.eb-field.field-flagged.form-control,
+.eb-field.field-flagged.form-select,
 input[type="time"].field-flagged,
-input[type="time"].field-flagged:invalid {
+input[type="time"].field-flagged:invalid,
+input[type="time"].field-flagged:valid,
+input[type="time"].eb-field.field-flagged,
+input[type="time"].eb-field.field-flagged:invalid,
+input[type="time"].eb-field.field-flagged:valid {
     border-color: #dc3545 !important;
     background-color: rgba(220, 53, 69, 0.06) !important;
     box-shadow: 0 0 0 0.15rem rgba(220, 53, 69, 0.20) !important;
