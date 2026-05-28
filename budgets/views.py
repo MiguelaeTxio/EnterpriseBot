@@ -664,6 +664,7 @@ class InsurerForm(django_forms.ModelForm):
             "management_fee_percent",
             "surcharges_are_cumulative",
             "is_active",
+            "is_insurance_company",
             "notes",
         ]
 

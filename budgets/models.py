@@ -76,6 +76,17 @@ class Insurer(models.Model):
         verbose_name="Activa",
         help_text="Indica si esta aseguradora está disponible para generar presupuestos.",
     )
+    # Distinguishes insurance companies from direct clients with a custom tariff.
+    # Distingue compañías aseguradoras de clientes directos con tarifa propia.
+    is_insurance_company = models.BooleanField(
+        default=True,
+        verbose_name="Es compañía aseguradora",
+        help_text=(
+            "True: compañía aseguradora. "
+            "False: cliente particular con tarifa propia. "
+            "Controla el label mostrado en el desplegable del asistente de presupuestos."
+        ),
+    )
     notes = models.TextField(
         blank=True,
         default="",

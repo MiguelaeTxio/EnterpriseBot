@@ -107,6 +107,27 @@
   </div>
 </div>
 
+{# --- is_insurance_company --- #}
+<div class="mb-3">
+  <div class="form-check form-switch">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      role="switch"
+      id="id_is_insurance_company"
+      name="is_insurance_company"
+      {% if form.is_insurance_company.value != False %}checked{% endif %}
+    >
+    <label class="form-check-label" for="id_is_insurance_company">
+      Compañía aseguradora
+    </label>
+  </div>
+  <div class="form-text text-muted small">
+    Activo: compañía aseguradora. Desactivado: cliente particular con tarifa propia.
+    El asistente de presupuestos mostará el label adecuado en el desplegable de selección.
+  </div>
+</div>
+
 {# --- notes --- #}
 <div class="mb-3">
   <label for="id_notes" class="form-label">Notas internas</label>

@@ -67,6 +67,30 @@ class Company(models.Model):
         auto_now=True,
         verbose_name="Fecha de modificación",
     )
+    # Operational bases of the company (localities, coverage areas).
+    # Bases de operación de la empresa (localidades, zonas de cobertura).
+    operation_bases = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Bases de operación",
+        help_text=(
+            "Localidades o zonas desde donde opera la empresa. "
+            "Alimenta el motor de cálculo de presupuestos para determinar "
+            "el punto de origen del servicio."
+        ),
+    )
+    # Labour calendar: local/national holidays and night-time reference hours.
+    # Calendario laboral: festivos locales/nacionales y horario nocturno de referencia.
+    labor_calendar = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Calendario laboral",
+        help_text=(
+            "Festivos locales, nacionales y horario nocturno de referencia. "
+            "Alimenta el motor de cálculo de presupuestos para aplicar "
+            "correctamente los recargos nocturnos y festivos según el calendario real."
+        ),
+    )
 
     class Meta:
         verbose_name = "Empresa"

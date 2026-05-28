@@ -100,15 +100,36 @@ class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         """
         Build context with company, company_user and own_presence for the operator dashboard.
+        Clears any residual error messages left in the session by access-control mixins
+        when the authenticated user has the WORKSHOP role — these messages are artefacts
+        of prior failed access attempts and are not meaningful to the operator.
         ---
         Construye el contexto con company, company_user y own_presence para el dashboard
         del operario de taller.
+        Limpia los mensajes de error residuales dejados en la sesión por los mixins de
+        control de acceso cuando el usuario autenticado tiene rol WORKSHOP — estos mensajes
+        son artefactos de intentos de acceso previos fallidos y no son significativos
+        para el operario.
         """
         context = super().get_context_data(**kwargs)
 
         # CompanyUserRequiredMixin guarantees company_user exists at this point.
         # CompanyUserRequiredMixin garantiza que company_user existe en este punto.
         company_user = self.request.user.company_user
+
+        # Drain residual error messages for WORKSHOP users.
+        # The access-control mixin may have queued an 'Acceso denegado' error message
+        # during a prior request (e.g. a redirect loop after login). Consuming those
+        # messages here prevents them from surfacing on the operator dashboard.
+        # Vaciar mensajes de error residuales para usuarios WORKSHOP.
+        # El mixin de control de acceso puede haber encolado un mensaje de error
+        # 'Acceso denegado' durante una petición anterior (p.ej. un bucle de
+        # redirección tras el login). Consumirlos aquí evita que aparezcan en el
+        # dashboard del operario.
+        if company_user.role == "WORKSHOP":
+            from django.contrib.messages import get_messages as _get_messages
+            storage = _get_messages(self.request)
+            storage.used = True
         company      = company_user.company
 
         # Retrieve current active presence status for the authenticated user.
