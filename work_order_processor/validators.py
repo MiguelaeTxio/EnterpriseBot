@@ -269,32 +269,36 @@ def validate_hf_after_hc(blocks: List[TimeBlock]) -> List[ValidationError]:
 # ---------------------------------------------------------------------------
 
 # Lunch break window boundaries (minutes since midnight).
+# The gap between consecutive blocks is tolerated (single use per part)
+# when it falls entirely within this window, regardless of its duration.
+# This matches the configurable WorkdaySchedule split-shift window used by
+# Gate 4 in panel/views.py — no hardcoded duration or minimum-hours check.
+#
 # Límites de la franja horaria de comida (minutos desde medianoche).
+# La laguna entre bloques consecutivos se tolera (uso único por parte)
+# cuando cae completamente dentro de esta ventana, sin importar su duración.
+# Coincide con la ventana de turno partido del WorkdaySchedule configurable
+# usado por Gate 4 en panel/views.py — sin duración fija ni mínimo de horas.
 _LUNCH_WINDOW_START_MIN = 13 * 60        # 13:00
 _LUNCH_WINDOW_END_MIN   = 15 * 60 + 30  # 15:30
-# Exact duration of a tolerated lunch break (minutes).
-# Duración exacta de una pausa de comida tolerada (minutos).
-_LUNCH_BREAK_DURATION_MIN = 60
-# Minimum total worked hours for the lunch exception to apply.
-# Horas totales mínimas trabajadas para que aplique la excepción de comida.
-_LUNCH_MIN_WORKED_HOURS = 8
 
 
 def _is_lunch_gap(gap_start_min: int, gap_end_min: int) -> bool:
     """
-    Returns True when the gap is exactly _LUNCH_BREAK_DURATION_MIN minutes
-    long and falls entirely within the tolerated lunch window
-    [_LUNCH_WINDOW_START_MIN, _LUNCH_WINDOW_END_MIN].
+    Returns True when the gap falls entirely within the tolerated lunch
+    window [_LUNCH_WINDOW_START_MIN, _LUNCH_WINDOW_END_MIN].
+    No duration restriction is applied — the window boundaries are the
+    only criterion, matching the configurable WorkdaySchedule split-shift
+    window used by Gate 4.
 
     ---
 
-    Devuelve True cuando la laguna tiene exactamente _LUNCH_BREAK_DURATION_MIN
-    minutos de duración y cae completamente dentro de la franja de comida
-    tolerada [_LUNCH_WINDOW_START_MIN, _LUNCH_WINDOW_END_MIN].
+    Devuelve True cuando la laguna cae completamente dentro de la ventana
+    de comida tolerada [_LUNCH_WINDOW_START_MIN, _LUNCH_WINDOW_END_MIN].
+    No se aplica restricción de duración — los límites de la ventana son
+    el único criterio, alineado con la ventana de turno partido del
+    WorkdaySchedule configurable usado por Gate 4.
     """
-    duration = gap_end_min - gap_start_min
-    if duration != _LUNCH_BREAK_DURATION_MIN:
-        return False
     return (
         gap_start_min >= _LUNCH_WINDOW_START_MIN
         and gap_end_min <= _LUNCH_WINDOW_END_MIN
@@ -307,13 +311,13 @@ def validate_intra_gaps(blocks: List[TimeBlock]) -> List[ValidationError]:
     when sorted by start time. A gap means no block covers the time interval
     [hf_prev, hc_next).
 
-    Regla A — Lunch break exception: a single gap of exactly 60 minutes falling
-    entirely within the 13:00–15:30 window is tolerated WITHOUT error when the
-    total worked hours across all blocks is >= _LUNCH_MIN_WORKED_HOURS (8h).
-    The lunch gap does NOT count as worked time.
+    Regla A — Lunch break exception: a single gap falling entirely within the
+    lunch window [_LUNCH_WINDOW_START_MIN, _LUNCH_WINDOW_END_MIN] is tolerated
+    without error (single use per part). No duration restriction or minimum
+    worked-hours check is applied.
 
-    The operator must fill any other gap with an AUSENCIA JUSTIFICADA or AUSENCIA
-    NO JUSTIFICADA block before the part can be saved.
+    The operator must fill any other gap with an AUSENCIA JUSTIFICADA or
+    AUSENCIA NO JUSTIFICADA block before the part can be saved.
 
     Returns a list of ValidationError(rule='R3', ...) for each gap found.
 
@@ -323,10 +327,10 @@ def validate_intra_gaps(blocks: List[TimeBlock]) -> List[ValidationError]:
     consecutivos ordenados por hora de inicio. Una laguna significa que ningún
     bloque cubre el intervalo [hf_prev, hc_next).
 
-    Regla A — Excepción de comida: una única laguna de exactamente 60 minutos
-    que cae completamente en la franja 13:00–15:30 se tolera SIN error cuando
-    la suma de horas trabajadas en todos los bloques es >= _LUNCH_MIN_WORKED_HOURS
-    (8h). La pausa de comida NO cuenta como tiempo trabajado.
+    Regla A — Excepción de comida: una única laguna que cae completamente
+    dentro de la ventana de comida [_LUNCH_WINDOW_START_MIN,
+    _LUNCH_WINDOW_END_MIN] se tolera sin error (uso único por parte). No se
+    aplica restricción de duración ni mínimo de horas trabajadas.
 
     El operario debe rellenar cualquier otra laguna con un bloque de AUSENCIA
     JUSTIFICADA o AUSENCIA NO JUSTIFICADA antes de poder guardar el parte.
@@ -338,15 +342,6 @@ def validate_intra_gaps(blocks: List[TimeBlock]) -> List[ValidationError]:
         return errors
 
     sorted_blocks = sorted(blocks, key=lambda b: _to_minutes(b.hc))
-
-    # Compute total worked minutes across all blocks for the lunch exception.
-    # Calcular minutos totales trabajados en todos los bloques para la excepción de comida.
-    total_worked_min = sum(
-        _to_minutes(b.hf) - _to_minutes(b.hc)
-        for b in sorted_blocks
-        if _to_minutes(b.hf) > _to_minutes(b.hc)
-    )
-    has_enough_hours = total_worked_min >= (_LUNCH_MIN_WORKED_HOURS * 60)
 
     # Track whether the lunch exception has already been consumed for this part.
     # Registrar si la excepción de comida ya fue consumida para este parte.
@@ -364,11 +359,7 @@ def validate_intra_gaps(blocks: List[TimeBlock]) -> List[ValidationError]:
 
         # Regla A — Lunch break exception (single use per part).
         # Regla A — Excepción de pausa de comida (uso único por parte).
-        if (
-            not lunch_exception_used
-            and has_enough_hours
-            and _is_lunch_gap(hf_curr, hc_next)
-        ):
+        if not lunch_exception_used and _is_lunch_gap(hf_curr, hc_next):
             lunch_exception_used = True
             continue
 

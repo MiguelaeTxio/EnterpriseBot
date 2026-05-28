@@ -8290,6 +8290,92 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             })
             return render(request, self.template_name, context)
 
+        # Resume mode — check for an IN_PROGRESS part for today.
+        # Modo retomar — comprobar si hay un parte IN_PROGRESS para hoy.
+        from datetime import date as _date_ip
+        from work_order_processor.models import WorkOrder as _WO_IP, SparePartLine as _SPL_IP
+        _today_ip = _date_ip.today()
+        _in_progress_wo = _WO_IP.objects.filter(
+            company=company,
+            uploaded_by=cu,
+            source=_WO_IP.Source.DIGITAL,
+            status=_WO_IP.Status.IN_PROGRESS,
+        ).order_by("-upload_date").first()
+
+        if _in_progress_wo is not None:
+            # Resume mode — load saved blocks and render form with them.
+            # Modo retomar — cargar bloques guardados y renderizar con ellos.
+            _ip_entries = list(_in_progress_wo.entries.prefetch_related("lines").all())
+            _ip_first_entry = _ip_entries[0] if _ip_entries else None
+            _ip_fecha_str = (
+                _ip_first_entry.work_date.strftime("%Y-%m-%d")
+                if _ip_first_entry and _ip_first_entry.work_date else ""
+            )
+            _ip_entradas = []
+            _ip_repuestos = []
+            _ip_ridx = 1
+            for _ip_entry in _ip_entries:
+                for _ip_line in _ip_entry.lines.order_by("line_number"):
+                    _ip_entradas.append({
+                        "idx":               len(_ip_entradas) + 1,
+                        "machine_raw":       _ip_line.machine_raw or "",
+                        "machine_asset":     _ip_line.machine_asset,
+                        "fault_description": _ip_line.fault_description or "",
+                        "repair_notes":      _ip_line.repair_notes or "",
+                        "hc":  _ip_line.hc.strftime("%H:%M") if _ip_line.hc else "",
+                        "hf":  _ip_line.hf.strftime("%H:%M") if _ip_line.hf else "",
+                        "or_val":            _ip_line.or_val or "",
+                        "flags":             _ip_line.flags or [],
+                        "odometer_reading":     float(_ip_line.odometer_reading) if _ip_line.odometer_reading is not None else "",
+                        "engine_hours_reading": float(_ip_line.engine_hours_reading) if _ip_line.engine_hours_reading is not None else "",
+                        "crane_hours_reading":  float(_ip_line.crane_hours_reading) if _ip_line.crane_hours_reading is not None else "",
+                    })
+                    for _ip_spare in _SPL_IP.objects.filter(entry_line=_ip_line).order_by("line_number"):
+                        _ip_repuestos.append({
+                            "ridx":          _ip_ridx,
+                            "referencia":    _ip_spare.reference or "",
+                            "vehiculo_raw":  "",
+                            "vehicle_asset": _ip_spare.vehicle,
+                            "material":      _ip_spare.material or "",
+                            "unidades":      str(_ip_spare.quantity) if _ip_spare.quantity is not None else "",
+                            "origen":        _ip_spare.source or "WAREHOUSE",
+                            "proveedor":     _ip_spare.supplier or "",
+                            "unit_price":    str(_ip_spare.unit_price) if _ip_spare.unit_price is not None else "",
+                            "flags":         _ip_spare.flags or [],
+                        })
+                        _ip_ridx += 1
+            _schedule_ip = _resolve_operator_schedule(cu, company)
+            _ip_lunch_start = ""
+            _ip_lunch_end   = ""
+            _ip_first_hc    = ""
+            if _ip_first_entry and _ip_first_entry.lunch_break_start:
+                _ip_lunch_start = _ip_first_entry.lunch_break_start.strftime("%H:%M")
+            elif _schedule_ip and not _schedule_ip.is_intensive and _schedule_ip.end_time_morning:
+                _ip_lunch_start = _schedule_ip.end_time_morning.strftime("%H:%M")
+            if _ip_first_entry and _ip_first_entry.lunch_break_end:
+                _ip_lunch_end = _ip_first_entry.lunch_break_end.strftime("%H:%M")
+            elif _schedule_ip and not _schedule_ip.is_intensive and _schedule_ip.start_time_afternoon:
+                _ip_lunch_end = _schedule_ip.start_time_afternoon.strftime("%H:%M")
+            if _schedule_ip and _schedule_ip.start_time_morning:
+                _ip_first_hc = _schedule_ip.start_time_morning.strftime("%H:%M")
+            _ip_no_lunch = _ip_first_entry.no_lunch_break if _ip_first_entry else False
+            context = self._get_context_base(request)
+            context.update({
+                "in_progress_mode": True,
+                "in_progress_wo_pk": _in_progress_wo.pk,
+                "num_entradas":      len(_ip_entradas),
+                "num_repuestos":     len(_ip_repuestos),
+                "fecha":             _ip_fecha_str,
+                "entradas_enriched": _ip_entradas,
+                "repuestos_enriched": _ip_repuestos,
+                "min_date":          min_date.isoformat() if min_date else "",
+                "lunch_break_start": _ip_lunch_start,
+                "lunch_break_end":   _ip_lunch_end,
+                "first_block_hc":    _ip_first_hc,
+                "no_lunch_break":    _ip_no_lunch,
+            })
+            return render(request, self.template_name, context)
+
         # Create mode — empty form.
         # Modo creacion — formulario vacio.
         #
@@ -8323,6 +8409,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             "lunch_break_start": _lunch_start,
             "lunch_break_end":   _lunch_end,
             "first_block_hc":    _first_hc,
+            "no_lunch_break":    False,
         })
         return render(request, self.template_name, context)
 
@@ -8375,10 +8462,13 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             except (ValueError, IndexError):
                 return None
 
-        _lb_start_raw = POST.get("lunch_break_start", "").strip()
-        _lb_end_raw   = POST.get("lunch_break_end",   "").strip()
-        _lb_start     = _parse_time_field(_lb_start_raw)
-        _lb_end       = _parse_time_field(_lb_end_raw)
+        _lb_start_raw    = POST.get("lunch_break_start", "").strip()
+        _lb_end_raw      = POST.get("lunch_break_end",   "").strip()
+        _lb_start        = _parse_time_field(_lb_start_raw)
+        _lb_end          = _parse_time_field(_lb_end_raw)
+        # no_lunch_break — operator did not stop for lunch.
+        # no_lunch_break — el operario no ha parado a comer.
+        _no_lunch_break  = POST.get("no_lunch_break", "") == "1"
 
         # ------------------------------------------------------------------
         # Parse work date / Parsear fecha del parte.
@@ -8479,21 +8569,35 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             ).select_related("work_order").first()
 
             if _existing_entry0 is not None:
-                # Unreviewed duplicate — parse lines, serialise and redirect to merge view.
-                # Duplicado sin revisar — parsear lineas, serializar y redirigir a merge view.
-                _gate0_lines = _parse_entry_lines_from_post(POST, company)
-                _gate0_spare = _parse_spare_parts_from_post(
-                    POST, company, entry_lines_data=_gate0_lines
+                # If the existing part is IN_PROGRESS and belongs to this
+                # operator, it is the current progressive-save session —
+                # do NOT trigger merge. The POST handler will attach the
+                # new blocks to it.
+                #
+                # Si el parte existente es IN_PROGRESS y pertenece a este
+                # operario, es la sesión de guardado progresivo en curso
+                # — NO disparar merge. El handler POST añadirá los nuevos
+                # bloques sobre él.
+                _is_own_in_progress = (
+                    _existing_entry0.work_order.status == _WO0.Status.IN_PROGRESS
+                    and _existing_entry0.work_order.uploaded_by_id == cu.pk
                 )
-                request.session["pending_merge_lines"] = _serialize_pending_lines(
-                    _gate0_lines, _gate0_spare, work_date
-                )
-                return redirect(
-                    _rev0(
-                        "panel:operator_merge",
-                        kwargs={"entry_pk": _existing_entry0.pk},
+                if not _is_own_in_progress:
+                    # Unreviewed duplicate — parse lines, serialise and redirect to merge view.
+                    # Duplicado sin revisar — parsear lineas, serializar y redirigir a merge view.
+                    _gate0_lines = _parse_entry_lines_from_post(POST, company)
+                    _gate0_spare = _parse_spare_parts_from_post(
+                        POST, company, entry_lines_data=_gate0_lines
                     )
-                )
+                    request.session["pending_merge_lines"] = _serialize_pending_lines(
+                        _gate0_lines, _gate0_spare, work_date
+                    )
+                    return redirect(
+                        _rev0(
+                            "panel:operator_merge",
+                            kwargs={"entry_pk": _existing_entry0.pk},
+                        )
+                    )
 
         # ------------------------------------------------------------------
         # Parse and resolve entry lines and spare parts from POST.
@@ -8863,7 +8967,11 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     company=company, is_default=True
                 ).first()
             )
-            _gaps_g4fa = _detect_workday_gaps(
+            # When the operator skips lunch, Gate 4 LUNCH_BREAK
+            # detection is bypassed entirely.
+            # Cuando el operario no para a comer, se omite la
+            # detección de LUNCH_BREAK en Gate 4.
+            _gaps_g4fa = [] if _no_lunch_break else _detect_workday_gaps(
                 entry_lines_data, _schedule_g4fa, work_date
             )
             if _gaps_g4fa:
@@ -8938,11 +9046,221 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 )
 
         # ------------------------------------------------------------------
+        # ------------------------------------------------------------------
+        # Progressive save — save_blocks action.
+        # Guardado progresivo — accion save_blocks.
+        #
+        # When the operator clicks "Guardar bloques", persist the submitted
+        # blocks into an IN_PROGRESS WorkOrder (creating it on first save)
+        # and redirect back to the form so they can add more blocks.
+        # Gate 4 is NOT applied here — only on close_order.
+        #
+        # Cuando el operario pulsa "Guardar bloques", persiste los bloques
+        # enviados en un WorkOrder IN_PROGRESS (creándolo en el primer
+        # guardado) y redirige al formulario para añadir más bloques.
+        # Gate 4 NO se aplica aquí — solo en close_order.
+        # ------------------------------------------------------------------
+        _form_action = POST.get("form_action", "close_order").strip()
+
+        if _form_action == "save_blocks":
+            from django.db import transaction as _tx_ip
+            from work_order_processor.models import (
+                WorkOrder as _WO_IP2,
+                WorkOrderEntry as _WOE_IP2,
+                WorkOrderEntryLine as _WOEL_IP2,
+                SparePartLine as _SPL_IP2,
+            )
+            _ip_wo_pk_post = POST.get("in_progress_wo_pk", "").strip()
+            try:
+                with _tx_ip.atomic():
+                    _worker_name_ip = (
+                        cu.user.get_full_name() or cu.user.username
+                    ).upper()
+                    _date_tag_ip = (
+                        work_date.strftime("%d-%m-%Y") if work_date else "SIN-FECHA"
+                    )
+                    _synth_ip = f"{_worker_name_ip}_{_date_tag_ip}.pdf"
+
+                    # Get or create the IN_PROGRESS WorkOrder.
+                    # Obtener o crear el WorkOrder IN_PROGRESS.
+                    if _ip_wo_pk_post:
+                        try:
+                            _ip_wo = _WO_IP2.objects.get(
+                                pk=int(_ip_wo_pk_post),
+                                company=company,
+                                uploaded_by=cu,
+                                status=_WO_IP2.Status.IN_PROGRESS,
+                            )
+                        except (_WO_IP2.DoesNotExist, ValueError):
+                            _ip_wo = None
+                    else:
+                        _ip_wo = _WO_IP2.objects.filter(
+                            company=company,
+                            uploaded_by=cu,
+                            status=_WO_IP2.Status.IN_PROGRESS,
+                        ).first()
+
+                    if _ip_wo is None:
+                        # First save — create the IN_PROGRESS WorkOrder.
+                        # Primer guardado — crear WorkOrder IN_PROGRESS.
+                        _ip_wo = _WO_IP2(
+                            company         = company,
+                            uploaded_by     = cu,
+                            source          = _WO_IP2.Source.DIGITAL,
+                            status          = _WO_IP2.Status.IN_PROGRESS,
+                            total_pages     = 1,
+                            processed_pages = 1,
+                            reviewed        = False,
+                        )
+                        _ip_wo.source_pdf.name = _synth_ip
+                        _ip_wo.save()
+                        _ip_entry = _WOE_IP2.objects.create(
+                            work_order            = _ip_wo,
+                            page_number           = 1,
+                            worker_name           = _worker_name_ip,
+                            work_date             = work_date,
+                            uncertain_date        = False,
+                            extraction_confidence = _WOE_IP2.Confidence.HIGH,
+                            raw_gemini_response   = None,
+                            lunch_break_start     = None if _no_lunch_break else _lb_start,
+                            lunch_break_end       = None if _no_lunch_break else _lb_end,
+                            no_lunch_break        = _no_lunch_break,
+                        )
+                    else:
+                        # Subsequent save — get existing entry and delete all
+                        # its lines to replace with the full submitted set.
+                        # Guardado posterior — obtener entrada existente y borrar
+                        # todas sus lineas para sustituirlas por el conjunto enviado.
+                        _ip_entry = _ip_wo.entries.first()
+                        if _ip_entry is None:
+                            _ip_entry = _WOE_IP2.objects.create(
+                                work_order            = _ip_wo,
+                                page_number           = 1,
+                                worker_name           = _worker_name_ip,
+                                work_date             = work_date,
+                                uncertain_date        = False,
+                                extraction_confidence = _WOE_IP2.Confidence.HIGH,
+                                raw_gemini_response   = None,
+                                lunch_break_start     = None if _no_lunch_break else _lb_start,
+                                lunch_break_end       = None if _no_lunch_break else _lb_end,
+                                no_lunch_break        = _no_lunch_break,
+                            )
+                        else:
+                            # Update lunch/no_lunch fields in case operator changed them.
+                            # Actualizar campos de comida por si el operario los modificó.
+                            _ip_entry.lunch_break_start = None if _no_lunch_break else _lb_start
+                            _ip_entry.lunch_break_end   = None if _no_lunch_break else _lb_end
+                            _ip_entry.no_lunch_break    = _no_lunch_break
+                            _ip_entry.save(update_fields=[
+                                "lunch_break_start", "lunch_break_end", "no_lunch_break"
+                            ])
+                        # Delete existing lines — full replacement strategy.
+                        # Eliminar lineas existentes — estrategia de sustitución completa.
+                        _ip_entry.lines.all().delete()
+
+                    # Persist the submitted lines.
+                    # Persistir las lineas enviadas.
+                    from decimal import Decimal as _Dec_ip
+                    _ip_created_lines = {}
+                    for _ip_ld in entry_lines_data:
+                        _ip_line_num    = _ip_ld["line_number"]
+                        _ip_overlap_raw = POST.get(f"lunch_overlap_{_ip_line_num}", "0").strip()
+                        try:
+                            _ip_overlap_min = int(_ip_overlap_raw)
+                        except (ValueError, TypeError):
+                            _ip_overlap_min = 0
+                        _ip_delta_raw = _ip_ld["delta_hours"]
+                        if _ip_delta_raw is not None and _ip_overlap_min > 0:
+                            _ip_delta_net = _Dec_ip(str(_ip_delta_raw)) - _Dec_ip(_ip_overlap_min) / _Dec_ip("60")
+                            _ip_delta_net = max(_Dec_ip("0"), _ip_delta_net)
+                        else:
+                            _ip_delta_net = _ip_delta_raw
+                        _ip_line_obj = _WOEL_IP2.objects.create(
+                            entry                = _ip_entry,
+                            line_number          = _ip_line_num,
+                            machine_asset        = _ip_ld.get("machine_asset"),
+                            machine_raw          = _ip_ld.get("machine_raw", ""),
+                            machine_norm         = _ip_ld.get("machine_norm", ""),
+                            fault_description    = _ip_ld.get("fault_description", ""),
+                            repair_notes         = _ip_ld.get("repair_notes", ""),
+                            hc                   = _ip_ld.get("hc"),
+                            hf                   = _ip_ld.get("hf"),
+                            or_val               = _ip_ld.get("or_val", ""),
+                            delta_hours          = _ip_delta_net,
+                            flags                = [],
+                            odometer_reading     = _ip_ld.get("odometer_reading"),
+                            engine_hours_reading = _ip_ld.get("engine_hours_reading"),
+                            crane_hours_reading  = _ip_ld.get("crane_hours_reading"),
+                        )
+                        _ip_created_lines[_ip_line_num] = _ip_line_obj
+
+                    # Persist spare parts.
+                    # Persistir repuestos.
+                    for _ip_spd in spare_parts_data:
+                        _ip_target = next(iter(_ip_created_lines.values()), None)
+                        if _ip_target is None:
+                            continue
+                        _SPL_IP2.objects.create(
+                            entry_line  = _ip_target,
+                            line_number = _ip_spd["line_number"],
+                            reference   = _ip_spd["referencia"],
+                            vehicle     = _ip_spd["vehicle_asset"],
+                            material    = _ip_spd["material"],
+                            quantity    = _ip_spd["quantity"],
+                            source      = _ip_spd["source"],
+                            supplier    = _ip_spd["supplier"],
+                            flags       = _ip_spd["flags"],
+                        )
+
+                logger.info(
+                    "# [FormView/save_blocks] WorkOrder IN_PROGRESS #%d actualizado. "
+                    "Bloques guardados: %d.",
+                    _ip_wo.pk, len(entry_lines_data),
+                )
+            except Exception as _exc_ip:
+                logger.error(
+                    "# [FormView/save_blocks] Error en persistencia: %s",
+                    _exc_ip, exc_info=True,
+                )
+                context = self._get_context_base(request)
+                context["error"] = (
+                    f"Error al guardar los bloques: {_exc_ip}. "
+                    "Por favor, inténtalo de nuevo."
+                )
+                return render(request, self.template_name, context)
+
+            django_messages.success(
+                request,
+                f"{len(entry_lines_data)} bloque(s) guardado(s). "
+                "Puedes añadir más bloques o cerrar el parte cuando termines."
+            )
+            return redirect("/panel/operator/form/")
+
+        # ------------------------------------------------------------------
+        # close_order action — promote IN_PROGRESS to DONE via Gate 4.
+        # Accion close_order — promover IN_PROGRESS a DONE via Gate 4.
+        #
+        # If the operator has an IN_PROGRESS part, use its pk as edit_wo_pk
+        # so the atomic block deletes it and creates the final DONE part.
+        # Si el operario tiene un parte IN_PROGRESS, usar su pk como
+        # edit_wo_pk para que el bloque atomico lo elimine y cree el DONE.
+        # ------------------------------------------------------------------
+        _ip_wo_pk_close = POST.get("in_progress_wo_pk", "").strip()
+        if not _ip_wo_pk_close:
+            from work_order_processor.models import WorkOrder as _WO_CL
+            _ip_wo_close = _WO_CL.objects.filter(
+                company=company,
+                uploaded_by=cu,
+                status=_WO_CL.Status.IN_PROGRESS,
+            ).first()
+            if _ip_wo_close:
+                _ip_wo_pk_close = str(_ip_wo_close.pk)
+
         # Atomic persistence / Persistencia atomica.
         # ------------------------------------------------------------------
         # Edit mode — delete original WorkOrder before creating the new one.
         # Modo edicion — eliminar WorkOrder original antes de crear el nuevo.
-        edit_wo_pk = POST.get("edit_wo_pk", "").strip()
+        edit_wo_pk = POST.get("edit_wo_pk", "").strip() or _ip_wo_pk_close
         if edit_wo_pk:
             try:
                 _wo_orig = WorkOrder.objects.get(
@@ -9001,8 +9319,9 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                     uncertain_date        = False,
                     extraction_confidence = WorkOrderEntry.Confidence.HIGH,
                     raw_gemini_response   = None,
-                    lunch_break_start     = _lb_start,
-                    lunch_break_end       = _lb_end,
+                    lunch_break_start     = None if _no_lunch_break else _lb_start,
+                    lunch_break_end       = None if _no_lunch_break else _lb_end,
+                    no_lunch_break        = _no_lunch_break,
                 )
 
                 created_lines    = {}
@@ -9525,7 +9844,12 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
             )
         else:
             # Fallback: use earliest work-order date for this operator.
+            # If the operator has no work orders at all, skip the overtime
+            # calculation entirely to avoid a negative result.
+            #
             # Fallback: usar la fecha del parte mas antiguo del operario.
+            # Si el operario no tiene ningun parte, omitir el calculo de
+            # horas extra para evitar un resultado negativo.
             from work_order_processor.models import WorkOrderEntry as _WOE_OT
             earliest = (
                 _WOE_OT.objects
@@ -9534,7 +9858,30 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
                 .values_list("work_date", flat=True)
                 .first()
             )
-            period_start_for_calc = earliest if earliest else today
+            if earliest is None:
+                # No work orders — overtime calculation not applicable.
+                # Sin partes — calculo de horas extra no aplicable.
+                working_days_count = 0
+                overtime_hours     = Decimal("0")
+                # Skip the common calculation block below.
+                # Saltar el bloque de calculo comun a continuacion.
+                context = {
+                    "company":               company,
+                    "company_user":          cu,
+                    "own_presence":          self._get_own_presence(cu),
+                    "active_nav":            "operator_history",
+                    "active_tab":            active_tab,
+                    "active_period":         active_period,
+                    "current_period_list":   current_period_list,
+                    "current_period_hours":  current_period_hours,
+                    "period_groups":         period_groups,
+                    "working_days_count":    0,
+                    "overtime_hours":        Decimal("0"),
+                    "overtime_worked_hours": Decimal("0"),
+                    "absences":              WorkerAbsence.objects.filter(company_user=cu).order_by("-start_date"),
+                }
+                return render(request, self.template_name, context)
+            period_start_for_calc = earliest
             period_end_for_calc   = today
 
         working_days_count = self._count_working_days(
@@ -10190,7 +10537,7 @@ def _detect_workday_gaps(entry_lines, schedule, work_date):
         # A block covers the lunch window if it overlaps [end_morning, start_afternoon].
         # Un bloque cubre la ventana de comida si solapa [end_morning, start_afternoon].
         lunch_covered = any(
-            _mins(hf) > lunch_start_m and _mins(hc) < lunch_end_m
+            _mins(hf) >= lunch_start_m and _mins(hc) <= lunch_end_m
             for hc, hf in valid_blocks
         )
         if not lunch_covered:

@@ -55,6 +55,12 @@
             {% if edit_mode %}
             <input type="hidden" name="edit_wo_pk" value="{{ edit_wo_pk }}">
             {% endif %}
+            {# Progressive save: form_action (save_blocks / close_order) and IN_PROGRESS pk. #}
+            {# Guardado progresivo: form_action y pk del parte IN_PROGRESS.                  #}
+            <input type="hidden" id="form-action-input" name="form_action" value="close_order">
+            {% if in_progress_mode %}
+            <input type="hidden" name="in_progress_wo_pk" value="{{ in_progress_wo_pk }}">
+            {% endif %}
 
             {# ================================================================ #}
             {# SECTION 0 — Repair order selector / Selector de OT             #}
@@ -154,13 +160,33 @@
                     </h6>
                 </div>
                 <div class="card-body p-4">
+                    {% if lunch_break_start %}
+                    {# Split shift only: show "no lunch" checkbox. #}
+                    {# Solo jornada partida: mostrar checkbox sin pausa. #}
+                    <div class="form-check mb-3" id="no-lunch-check-wrapper">
+                        <input class="form-check-input" type="checkbox"
+                               id="id_no_lunch_toggle">
+                        <input type="hidden" id="id_no_lunch_break_value"
+                               name="no_lunch_break" value="0">
+                        <label class="form-check-label fw-medium" for="id_no_lunch_toggle">
+                            No he parado a comer
+                        </label>
+                        <div class="form-text">
+                            Marca esta casilla si no has hecho pausa de comida.
+                            El sistema contará todas tus horas como trabajadas
+                            y no validará la ventana de mediodía.
+                        </div>
+                    </div>
+                    {% endif %}
                     <p class="text-muted small mb-3">
                         Indica la hora de inicio y fin de tu pausa de comida.
+                        {% if not lunch_break_start %}
                         Si no has parado a comer, deja estos campos vacíos.
+                        {% endif %}
                         El sistema descontará automáticamente la pausa de las
                         tareas que la cubran.
                     </p>
-                    <div class="row g-3">
+                    <div class="row g-3" id="lunch-break-times">
                         <div class="col-6 col-md-2">
                             <label class="form-label fw-medium">Inicio pausa</label>
                             <input type="time" step="1800"
@@ -525,10 +551,19 @@
                    class="btn btn-outline-secondary">
                     <i class="bi bi-x-lg me-1"></i>Cancelar
                 </a>
-                {# Button triggers modal flow instead of submitting directly. #}
-                {# El botón dispara el flujo modal en lugar de enviar directamente. #}
+                {% if not edit_mode %}
+                {# Progressive save: save blocks and continue adding more. #}
+                {# Guardado progresivo: guardar bloques y continuar añadiendo. #}
+                <button type="button" id="btn-save-blocks"
+                        class="btn btn-outline-primary px-4">
+                    <i class="bi bi-floppy me-1"></i>Guardar bloques
+                </button>
+                {% endif %}
+                {# Close order: apply Gate 4 and finalise the part. #}
+                {# Cerrar parte: aplicar Gate 4 y finalizar el parte. #}
                 <button type="button" id="btn-form-submit" class="btn btn-success px-4">
-                    <i class="bi bi-check-lg me-1"></i>Guardar parte
+                    <i class="bi bi-check-lg me-1"></i>
+                    {% if edit_mode %}Guardar parte{% else %}Cerrar parte{% endif %}
                 </button>
             </div>
 
@@ -550,7 +585,8 @@ window.EB_CONFIG = {
     assetDetailUrl:  "{% url 'panel:operator_asset_detail' %}",
     descriptionsUrl: "{% url 'panel:operator_descriptions' %}",
     lunchBreakStart: "{{ lunch_break_start }}",
-    lunchBreakEnd:   "{{ lunch_break_end }}"
+    lunchBreakEnd:   "{{ lunch_break_end }}",
+    noLunchBreak:    false
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>

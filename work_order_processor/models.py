@@ -213,6 +213,7 @@ class WorkOrder(models.Model):
         DONE         = "DONE",         _("Completado")
         ERROR        = "ERROR",        _("Error")
         PENDING_GAPS = "PENDING_GAPS", _("Pendiente de justificación de jornada")
+        IN_PROGRESS  = "IN_PROGRESS",  _("En curso (guardado progresivo)")
 
     # ------------------------------------------------------------------
     # Source choices — origin classification (Hito 7 / S016)
@@ -667,6 +668,32 @@ class WorkOrderEntry(models.Model):
             "Hora de fin de la pausa de comida del operario. "
             "Prerrellenada desde el WorkdaySchedule (start_time_afternoon) "
             "cuando la jornada es partida. Nula si no ha parado a comer."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # No lunch break flag / Indicador de no pausa de comida
+    #
+    # Set by the operator when they did not stop for lunch. When True:
+    #   - Gate 4 (_detect_workday_gaps) skips LUNCH_BREAK detection.
+    #   - validators.py (validate_intra_gaps) skips the lunch exception.
+    #   - lunch_break_start / lunch_break_end are ignored for delta_hours.
+    #   - EARLY_END check still applies against the full workday end time.
+    #
+    # Activado por el operario cuando no ha parado a comer. Cuando True:
+    #   - Gate 4 (_detect_workday_gaps) omite la detección de LUNCH_BREAK.
+    #   - validators.py (validate_intra_gaps) omite la excepción de comida.
+    #   - lunch_break_start / lunch_break_end se ignoran para delta_hours.
+    #   - La comprobación EARLY_END sigue aplicando sobre la hora fin real.
+    # ------------------------------------------------------------------
+    no_lunch_break = models.BooleanField(
+        _("No he parado a comer"),
+        default=False,
+        help_text=_(
+            "Indica que el operario no ha realizado pausa de comida. "
+            "Cuando está activo, el sistema no descuenta la pausa de comida "
+            "del cálculo de horas ni valida la ventana de mediodía como "
+            "laguna de jornada."
         ),
     )
 

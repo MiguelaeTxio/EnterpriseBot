@@ -607,8 +607,16 @@
 
             /* Read lunch break from form fields (operator may have modified them). */
             /* Leer pausa de comida desde los campos del formulario (el operario pudo modificarlos). */
-            var lunchStart = _val("lunch_break_start") || LUNCH_BREAK_START;
-            var lunchEnd   = _val("lunch_break_end")   || LUNCH_BREAK_END;
+            /*
+             * no_lunch_break: when checked, lunch overlap is forced to 0
+             * and the backend skips Gate 4 LUNCH_BREAK detection.
+             * no_lunch_break: cuando marcado, el solapamiento de comida es 0
+             * y el backend omite la deteccion de LUNCH_BREAK en Gate 4.
+             */
+            var noLunchEl  = document.getElementById("id_no_lunch_break_value");
+            var noLunch    = noLunchEl && noLunchEl.value === "1";
+            var lunchStart = noLunch ? "" : (_val("lunch_break_start") || LUNCH_BREAK_START);
+            var lunchEnd   = noLunch ? "" : (_val("lunch_break_end")   || LUNCH_BREAK_END);
 
             for (var i = 1; i <= numEntradas; i++) {
                 var blk  = "Bloque " + i;
@@ -676,6 +684,87 @@
                 _showAlert(errors.join(" | "));
             }
         });
+    }
+
+    // ==================================================================
+    // No-lunch-break toggle / Toggle sin pausa de comida
+    // Only present in split-shift mode (when #lunch-break-times exists).
+    // Solo en jornada partida (cuando existe #lunch-break-times).
+    // ==================================================================
+    var noLunchToggle  = document.getElementById("id_no_lunch_toggle");
+    var noLunchHidden  = document.getElementById("id_no_lunch_break_value");
+    var lunchTimesDiv  = document.getElementById("lunch-break-times");
+    var lbStartInput   = document.getElementById("id_lunch_break_start");
+    var lbEndInput     = document.getElementById("id_lunch_break_end");
+
+    if (noLunchToggle && noLunchHidden && lunchTimesDiv) {
+        noLunchToggle.addEventListener("change", function () {
+            if (noLunchToggle.checked) {
+                lunchTimesDiv.classList.add("d-none");
+                noLunchHidden.value = "1";
+                if (lbStartInput) { lbStartInput.value = ""; }
+                if (lbEndInput)   { lbEndInput.value   = ""; }
+            } else {
+                lunchTimesDiv.classList.remove("d-none");
+                noLunchHidden.value = "0";
+                if (lbStartInput && window.EB_CONFIG && window.EB_CONFIG.lunchBreakStart) {
+                    lbStartInput.value = window.EB_CONFIG.lunchBreakStart;
+                }
+                if (lbEndInput && window.EB_CONFIG && window.EB_CONFIG.lunchBreakEnd) {
+                    lbEndInput.value = window.EB_CONFIG.lunchBreakEnd;
+                }
+            }
+        });
+    }
+
+    // Progressive save: "Guardar bloques" button.
+    // Guardado progresivo: boton Guardar bloques.
+    var btnSaveBlocks   = document.getElementById("btn-save-blocks");
+    var formActionInput = document.getElementById("form-action-input");
+
+    if (btnSaveBlocks && formActionInput && form) {
+        btnSaveBlocks.addEventListener("click", function () {
+            _clearAlert();
+            var sbErrors = [];
+            var sbNum = parseInt(_val("num_entradas"), 10) || 1;
+            var sbFecha = _val("fecha");
+            if (!sbFecha) {
+                _showAlert("La fecha del parte es obligatoria antes de guardar bloques.");
+                return;
+            }
+            for (var sb = 1; sb <= sbNum; sb++) {
+                var sbLabel = "Bloque " + sb;
+                var sbMaq   = _val("entrada_" + sb + "_machine_raw");
+                var sbHc    = _val("entrada_" + sb + "_hc");
+                var sbHf    = _val("entrada_" + sb + "_hf");
+                var sbDesc  = _val("entrada_" + sb + "_fault_description");
+                var sbNotes = _val("entrada_" + sb + "_repair_notes");
+                _markField("entrada_" + sb + "_machine_raw",       !sbMaq);
+                _markField("entrada_" + sb + "_hc",                !sbHc);
+                _markField("entrada_" + sb + "_hf",                !sbHf);
+                _markField("entrada_" + sb + "_fault_description", !sbDesc);
+                _markField("entrada_" + sb + "_repair_notes",      !sbNotes);
+                if (!sbMaq)   { sbErrors.push(sbLabel + ": codigo de maquina obligatorio."); }
+                if (!sbHc)    { sbErrors.push(sbLabel + ": H.C. obligatoria."); }
+                if (!sbHf)    { sbErrors.push(sbLabel + ": H.F. obligatoria."); }
+                if (!sbDesc)  { sbErrors.push(sbLabel + ": descripcion de averia obligatoria."); }
+                if (!sbNotes) { sbErrors.push(sbLabel + ": descripcion de reparacion obligatoria."); }
+                if (sbHc && sbHf && sbHf <= sbHc) {
+                    _markField("entrada_" + sb + "_hf", true);
+                    sbErrors.push(sbLabel + ": H.F. debe ser posterior a H.C.");
+                }
+            }
+            if (sbErrors.length > 0) {
+                _showAlert(sbErrors.join(" | "));
+                return;
+            }
+            formActionInput.value = "save_blocks";
+            form.submit();
+        });
+    }
+
+    if (formActionInput) {
+        formActionInput.value = "close_order";
     }
 
 }());

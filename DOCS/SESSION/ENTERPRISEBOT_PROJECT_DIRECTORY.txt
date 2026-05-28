@@ -380,7 +380,9 @@
 ./work_order_processor/migrations/0019_add_lunch_break_to_workorderentry.py
 ./work_order_processor/migrations/0005_add_spare_part_line.py
 ./work_order_processor/migrations/0011_sparepartline_unit_price.py
+./work_order_processor/migrations/0020_add_no_lunch_break_to_workorderentry.py
 ./work_order_processor/migrations/0014_workorderentryline_fault_category_and_more.py
+./work_order_processor/migrations/0021_add_in_progress_status.py
 ./work_order_processor/migrations/0018_workdaygap_lunch_break.py
 ./work_order_processor/migrations/0006_workorder_unique_pdf_hash_per_company.py
 ./work_order_processor/migrations/0008_workorder_has_overlap_incident.py

@@ -60,3 +60,4 @@ djlint
 openpyxl
 plotly
 pdf2image
+cssutils

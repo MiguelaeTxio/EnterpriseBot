@@ -1,1250 +1,180 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md
 
-# Anexo de Hito V07 — Partes Diarios de Reparación: Entrada Digital desde el Panel
-# Proyecto: EnterpriseBot
-# Estado: EN PROGRESO
-# Fecha de inicio: 2026-04-27
+# Hito 7 — Partes Diarios de Reparación — Entrada Digital desde el Panel
+
+## Estado General
+Implementación avanzada. Múltiples vías de entrada operativas. En curso.
 
 ---
 
-## 1. Vision General del Hito
+## Arquitectura Consolidada
 
-El Hito 7 digitaliza el origen de los partes de reparacion. Hasta ahora el flujo
-exigia que un encargado escaneara los partes manuscritos en papel y los subiera
-como PDF para que Gemini Vision los procesara. Este hito elimina el papel como
-origen obligatorio: el propio operario de taller rellena su parte directamente
-desde el panel de EnterpriseBot, eligiendo la via que mejor se adapta a su
-contexto en cada momento.
+### Vía A — Formulario Web Estructurado
+**Estado:** COMPLETADO
 
-El objetivo estrategico es la adopcion organica del formulario web estructurado
-(Form) como via principal, sin imponer nada. La friccion deliberada del flujo
-Upload (validacion campo a campo de datos ilegibles) y la comodidad del dictado
-por voz (STT) actuan como catalizadores naturales del abandono progresivo del
-manuscrito en papel.
+Formulario multi-bloque con validación client-side (Gates 1-3) y server-side (Gate 4).
+Flujo modal de confirmación. Clasificación automática de averías via Celery + Gemini.
+
+### Vía B — STT
+**Estado:** ABANDONADO DEFINITIVAMENTE (S022)
+
+### Vía C — Upload Gemini Vision
+**Estado:** COMPLETADO (S033)
+
+Upload de PDF escaneado procesado por Gemini Vision. Flujo de merge con Vía A.
 
 ---
 
-## 2. Arquitectura Tecnica
-
-### 2.1. Roles de CompanyUser ampliados
-
-Los siguientes roles fueron anadidos a CompanyUser.role (TextChoices) en sesion 002:
-- WORKSHOP — Operario de taller: acceso exclusivo a la entrada de partes.
-- DRIVER   — Chofer: reservado para uso futuro.
-- SUPERVISOR ya existia; se completo su soporte en el listado de usuarios (H7, sesion 003).
-
-El mixin WorkshopRequiredMixin (panel/mixins.py) restringe el acceso a las
-vistas de operario a los roles WORKSHOP y ADMIN.
-
-### 2.2. Tres vias de entrada convergentes
-
-Las tres vias prerellenan el mismo formulario de confirmacion. El formulario
-de confirmacion es el unico punto de persistencia en BD.
-
-#### Via A — Form (formulario web estructurado)
-Estado: COMPLETADO (sesion 004).
-
-#### Via B — STT (Speech-to-Text via Web Speech API)
-Estado: PENDIENTE REDISENO (S021) — arquitectura de dictado global descartada.
-Ver seccion 2.37 para el nuevo diseno aprobado.
-
-#### Via C — Upload (foto/PDF manuscrito con Gemini Vision)
-Estado: COMPLETADO (S033).
-- WorkOrderEntryUploadView: rasteriza la imagen/PDF y llama a
-  extract_work_order_page_full() (prompt completo, cara delantera + trasera).
-- WorkOrderEntryConfirmView: formulario de confirmacion completo con
-  validacion campo a campo. Persiste WorkOrder sintetico (status=DONE,
-  source_pdf en blanco) + WorkOrderEntry + WorkOrderEntryLine + SparePartLine.
-- Templates: panel/operator/upload_entry.html, panel/operator/confirm_entry.html.
-- Endpoint de autocompletado: GET /panel/operator/assets/ (WorkshopAssetAutocompleteView).
-- repair_notes obligatorio en todas las vias desde S032: Gate 2 server-side en
-  WorkOrderEntryConfirmView.post() y WorkOrderEntryFormView.post(); Gate 2
-  client-side en confirm_entry.html y form_entry_assets.js.
-- Validacion client-side de confirm_entry.html completamente alineada con
-  form_entry.html (S033): field-optional en or_val, asterisco en label de
-  fault_description, asterisco y field-flagged en repair_notes, Gate 2
-  repair_notes en submit JS. Texto de ayuda por campo (small.text-warning)
-  cuando Gemini asigna flag al campo — senaliza baja confianza de extraccion
-  directamente sobre el input afectado.
-- Prompt de extraccion unificado en S032: extract_work_order_page() pasa a usar
-  _EXTRACTION_PROMPT_FULL. Pipeline PDF historico e igual calidad de extraccion
-  que Via C desde S032.
-
-### 2.3. Modelo SparePartLine
-
-Nuevo modelo en work_order_processor/models.py. Representa una linea de
-repuesto/material consumido durante un bloque de trabajo (WorkOrderEntryLine).
-Migrado en 0005_add_spare_part_line.
-
-Campos: entry_line (FK WorkOrderEntryLine CASCADE), line_number, reference,
-material, vehicle (FK MachineAsset SET_NULL), quantity (DecimalField),
-source (SUPPLIER/WAREHOUSE), supplier, flags (JSONField).
-
-### 2.4. Prompt Gemini ampliado
-
-_EXTRACTION_PROMPT_FULL en work_order_processor/services.py: extrae tanto
-la cara delantera (bloques de trabajo) como la trasera (tabla de repuestos)
-en una unica llamada API.
-
-Funcion publica: extract_work_order_page_full(image_bytes) -> dict.
-JSON de respuesta incluye clave "repuestos": [{referencia, vehiculo_raw,
-material, unidades, origen, proveedor, flags}].
-
-Nota S032 — Unificacion de prompt: extract_work_order_page() (pipeline PDF
-historico) unificada a _EXTRACTION_PROMPT_FULL. Ambas rutas (pipeline PDF y
-Via C) usan ahora el mismo prompt de maxima calidad desde S032. _EXTRACTION_PROMPT
-queda obsoleto en la practica aunque se conserva por compatibilidad.
-
-Nota S033 — Uso de flags en confirm_entry.html: los flags devueltos por Gemini
-por campo (MAQUINA, H.C., H.F., DESCRIPCION, REFERENCIA, MATERIAL, UNIDADES,
-PROCEDENCIA) se usan ahora para mostrar un texto de ayuda contextual bajo cada
-input afectado, indicando al operario que ese campo no pudo leerse con certeza.
-La senalizacion visual (field-flagged + small.text-warning) opera de forma
-independiente para campo vacio (solo field-flagged) y campo con flag Gemini
-(field-flagged + texto de ayuda).
-
-### 2.5. Correccion multiempresa en _resolve_machine_asset
-
-Se anodio parametro company=None a _resolve_machine_asset() en services.py.
-Todas las llamadas desde panel/views.py pasan company=company. El pipeline
-historico (tasks.py) mantiene compatibilidad al no pasar company.
-
-### 2.6. Correccion HTMX _line_row.html
-
-Bug: Django filter add con entero produce suma aritmetica en lugar de
-concatenacion de cadena, generando row_class vacio y selector CSS invalido
-('.') que bloqueaba todo el guardado HTMX. Corregido usando
-{% with pk_str=line.pk|stringformat:"s" %} + {% with row_class="line-row-"|add:pk_str %}.
-URL de guardado construida con {% url %} tag en lugar de concatenacion manual.
-
-### 2.7. Correccion WorkOrderLineRestoreView
-
-Anadida ruta alternativa para partes digitales (raw_gemini_response=None):
-re-resolucion de machine_asset desde maquina_raw almacenado y recalculo
-de delta_horas desde hc/hf. Los partes historicos siguen usando la ruta
-original desde raw_gemini_response.
-
-### 2.8. Stack tecnologico
-
-- Web Speech API (nativa en Chrome/Edge) — STT sin coste ni dependencias.
-- google-genai 1.69.0 / Vertex AI — Gemini Vision para Via C.
-- pdf2image 1.x + Pillow 12.2.0 + poppler 0.86.1 — rasterizacion de PDF.
-- openpyxl — generacion Excel sincrona postpersistencia con hoja Repuestos.
-- Django 5.2.12 — vistas sincronas estandar (sin Celery para Vias A y B).
-- Bootstrap 5.3 + Bootstrap Icons — UI del formulario de confirmacion.
-
-### 2.9. Correccion race condition en WorkOrderUploadView
-
-Bug: dos POSTs concurrentes del mismo PDF eludian el Nivel 1 de deteccion
-de duplicados creando dos WorkOrder identicos (mismo hash SHA-256).
-Correccion: bloque transaction.atomic() + select_for_update() en Step 4
-de WorkOrderUploadView.post() en panel/views.py.
-Complemento: UniqueConstraint parcial sobre (company, source_pdf_hash).
-Migracion: 0006_workorder_unique_pdf_hash_per_company.
-
-### 2.10. Barrera de integridad sine qua non en Vias A y C
-
-Toda persistencia de parte digital requiere superar una barrera de integridad
-obligatoria antes del INSERT. Los datos deben estar completos al 100%.
-
-Barrera server-side en WorkOrderEntryConfirmView.post() y WorkOrderEntryFormView.post():
-  Gate 1: fecha presente y parseable (DD/MM/AAAA o YYYY-MM-DD).
-  Gate 2: cada bloque tiene machine_raw, machine_asset, hc, hf, delta_hours
-          positivo, fault_description y repair_notes no vacios.
-          (repair_notes anadido como campo obligatorio en S032.)
-  Gate 3: cada repuesto tiene material no vacio y quantity positiva.
-
-Barrera client-side en confirm_entry.html y form_entry.html replica las tres gates.
-confirm_entry.html completamente alineada con form_entry.html en S033:
-  - field-optional en or_val.
-  - field-flagged en repair_notes + asterisco en label.
-  - asterisco en label de fault_description (campo obligatorio Gate 2).
-  - Gate 2 repair_notes en submit JS.
-  - Texto de ayuda small.text-warning bajo cada campo con flag Gemini,
-    independiente de la senalizacion por campo vacio.
-
-### 2.11. Correccion identificadores Regla de Oro del Idioma (sesion 008)
-
-Mapa de renombrado aplicado en templates y panel/views.py:
-  machine_raw, fault_description, repair_notes, uncertain_date → EN.
-
-### 2.12. Widget TimePicker custom (sesion 008)
-
-Partial: panel/templates/panel/_time_picker_widget.html
-Selector custom de dos columnas (horas 00-23 / minutos 00|30).
-MutationObserver para inputs anadidos dinamicamente. Compatible HTMX.
-
-### 2.13. Restriccion de minutos a 00/30 con step="1800"
-
-Anadido a todos los input[type="time"] de form_entry.html, stt_entry.html
-y _line_row.html.
-
-### 2.14. Fix WorkshopAssetAutocompleteView (sesion 008)
-
-Bug: code__icontains. Corregido en panel/views.py.
-
-### 2.15. Tercer Fleco — Typeahead de descripciones (sesion 009)
-
-Endpoint GET /panel/operator/descriptions/?field=fault_description&q=XXX
-(WorkOrderDescriptionAutocompleteView). Partial _description_typeahead.html.
-
-### 2.16. Validaciones de integridad temporal (sesion 009)
-
-work_order_processor/validators.py — R1 a R5 implementadas.
-Campo WorkOrder.has_overlap_incident. Partial _overlap_incident_modal.html.
-
-### 2.17. Refactor UI repuestos — vehicle field (sesion 009)
-
-Campo Vehiculo eliminado del formulario del operario.
-_parse_spare_parts_from_post() rellena vehiculo_raw automaticamente.
-
-### 2.18. Nuevo campo WorkOrder.has_cg_incident — PENDIENTE IMPLEMENTACION
-
-Identificado en sesion 009. Implementacion diferida.
-
-### 2.46. Sistema de Validacion de Jornada Completa — IMPLEMENTADO (S029)
-
-DECISION DE DISENO aprobada en sesion 027. Implementado integro en S029.
-
-El sistema valida la jornada como un todo respecto al horario de referencia
-de la empresa, detectando lagunas sin justificar (GAP), inicios tardios
-(LATE_START) y cierres anticipados (EARLY_END). El parte no puede persistirse
-como DONE si tiene gaps sin justificar — Gate 4 lo detiene y redirige al
-operario a WorkdayGapResolutionView.
-
-DECISION DE DISENO S029 — WorkdaySchedule multiperfile:
-  El modelo original era OneToOneField(Company) — un unico horario por empresa.
-  En S029 se amplio a ForeignKey(Company) con campo label y flag is_default
-  para soportar multiples perfiles de turno por empresa (mecanicos, choferes
-  de grua, choferes de asistencia, administracion, etc.).
-  Cadena de resolucion Gate 4:
-    1. cu.workday_schedule (especifico del operario, maxima prioridad).
-    2. WorkdaySchedule con is_default=True de la empresa (fallback).
-    3. None → Gate 4 se omite completamente.
-  El supervisor asigna el horario a cada operario desde el panel via
-  CompanyUser.workday_schedule FK (SET_NULL).
-
-#### Modelo WorkdaySchedule (ivr_config/models.py)
-
-ForeignKey(Company, CASCADE). Campos:
-  company           — FK(Company, CASCADE), related_name="workday_schedules"
-  label             — CharField(max_length=100, default="") — nombre del perfil
-  start_time        — TimeField (hora de entrada ordinaria)
-  end_time          — TimeField (hora de salida ordinaria)
-  tolerance_minutes — PositiveSmallIntegerField (default=15)
-  is_default        — BooleanField(default=False) — fallback para operarios sin
-                      horario asignado; solo uno activo por empresa (invariante
-                      en save(): limpiar is_default en otros horarios de la empresa)
-  created_at        — DateTimeField auto_now_add
-  updated_at        — DateTimeField auto_now
-
-FK en CompanyUser:
-  workday_schedule  — FK(WorkdaySchedule, SET_NULL, null=True, blank=True)
-
-Si no existe WorkdaySchedule para la empresa, Gate 4 se omite completamente.
-Migraciones aplicadas: ivr_config 0016_workdayschedule_absencecategory +
-                       ivr_config 0017_workdayschedule_refactor_multiprofile.
-
-#### Modelo AbsenceCategory (nuevo — ivr_config/models.py)
-
-Catalogo de motivos de ausencia/incidencia gestionado por el supervisor. Campos:
-  company          — FK(Company, CASCADE)
-  code             — CharField(max_length=40)
-  label            — CharField(max_length=100) — texto visible para el operario
-  requires_note    — BooleanField(default=False)
-  is_justified     — BooleanField(default=True)
-  is_active        — BooleanField(default=True)
-  order            — PositiveSmallIntegerField(default=0)
-
-Categorias estandar precargadas via comando seed_absence_categories:
-  MEDICAL          — Medico (justified=True, requires_note=False)
-  PERSONAL_MATTERS — Asuntos propios (justified=True, requires_note=False)
-  VEHICLE_BREAKDOWN— Averia del vehiculo (justified=False, requires_note=True)
-  UNJUSTIFIED      — Falta sin justificante (justified=False, requires_note=True)
-  SICK_LEAVE       — Baja medica (justified=True, requires_note=False)
-  DAY_OFF          — Dia libre (justified=True, requires_note=False)
-  OTHER            — Otro (justified=False, requires_note=True)
-
-Migracion aplicada: ivr_config 0016_workdayschedule_absencecategory
-          (consolidada junto con WorkdaySchedule en una unica migracion).
-
-#### Modelo WorkdayGap (nuevo — work_order_processor/models.py)
-
-Representa cada laguna o desviacion detectada en un parte digital y su
-justificacion. Campos:
-  work_order        — FK(WorkOrder, CASCADE)
-  gap_type          — CharField choices: GAP / LATE_START / EARLY_END
-                        GAP        — hueco entre dos bloques de trabajo
-                        LATE_START — primera tarea empieza tarde
-                        EARLY_END  — ultima tarea termina pronto
-  gap_start         — TimeField
-  gap_end           — TimeField
-  duration_minutes  — PositiveSmallIntegerField (calculado, no editable)
-  absence_category  — FK(AbsenceCategory, SET_NULL, null=True, blank=True)
-  note              — TextField(blank=True, default="")
-  resolved          — BooleanField(default=False)
-
-Nuevo choice en WorkOrder.Status: PENDING_GAPS.
-Migracion aplicada: work_order_processor 0017_workdaygap_pending_gaps.
-
-#### Helper _detect_workday_gaps() (panel/views.py)
-
-_detect_workday_gaps(entry_lines, schedule, work_date) -> list[dict]
-
-Parametros:
-  entry_lines — lista de dicts con hc y hf (objetos time o strings HH:MM).
-  schedule    — instancia WorkdaySchedule o None.
-  work_date   — date del parte.
-
-Retorna lista de dicts por laguna/desviacion:
-  {"gap_type": str, "gap_start": time, "gap_end": time, "duration_minutes": int}
-
-Algoritmo:
-  1. Ordenar entry_lines por hc ascendente.
-  2. Si schedule existe:
-     a. LATE_START: si hc[0] > start_time + tolerance_minutes → registrar.
-     b. EARLY_END:  si hf[-1] < end_time - tolerance_minutes → registrar.
-  3. Para cada par consecutivo (linea[i], linea[i+1]):
-     si hf[i] < hc[i+1] y diferencia > tolerance_minutes → registrar GAP.
-  4. Ignorar lineas con hc o hf nulos.
-
-#### Gate 4 — Validacion de jornada completa
-
-Insertado en WorkOrderEntryFormView.post() (Via A),
-WorkOrderEntryConfirmView.post() (Via C) y
-WorkOrderEntryMergeView.post() (acciones discard_existing y merge),
-inmediatamente antes del INSERT atomico, tras superar Gates 1-3 y Regla C:
-
-  1. Resolver schedule con cadena de prioridad:
-       cu.workday_schedule → is_default=True de empresa → None.
-  2. Llamar a _detect_workday_gaps(parsed_lines, schedule, parsed_date).
-  3. Si gaps detectados:
-     a. Persistir WorkOrder draft con status=PENDING_GAPS (atomico).
-     b. Persistir WorkdayGap por cada gap detectado.
-     c. Guardar pk del draft en request.session["pending_gaps_wo_pk"].
-     d. Redirigir a WorkdayGapResolutionView con wo_draft_pk.
-  4. Si sin gaps → flujo normal, continuar con INSERT.
-
-#### Vista WorkdayGapResolutionView (panel/views.py)
-
-WorkdayGapResolutionView(WorkshopRequiredMixin, View)
-GET  /panel/operator/gaps/<int:wo_draft_pk>/
-POST /panel/operator/gaps/<int:wo_draft_pk>/
-
-GET:
-  Recuperar WorkdayGap pendientes del draft por pk de URL.
-  Recuperar entry_lines del draft para mostrar resumen cronologico de
-  jornada (bloques HC-HF con indicadores de laguna entre bloques).
-  Renderizar gap_resolution.html con gaps, entry_lines y selector
-  AbsenceCategory por cada gap.
-
-POST (justificacion):
-  Validar que absence_category presente por cada gap.
-  Si absence_category.requires_note: validar note no vacia.
-  Persistir AbsenceCategory + note en cada WorkdayGap. resolved=True.
-  Promover WorkOrder de PENDING_GAPS a DONE (atomico).
-  Limpiar request.session["pending_gaps_wo_pk"].
-  Encolar classify_fault_line por cada linea del entry.
-  Generar Excel sincrono.
-  Redirigir a operator_history con mensaje de exito.
-
-POST (back_to_form=1):
-  Descartar draft WorkOrder (CASCADE). Limpiar sesion.
-  Redirigir a operator_dashboard para reenvio con horas corregidas.
-
-Template: panel/templates/panel/operator/gap_resolution.html (S029).
-  Incluye resumen cronologico de jornada con bloques e indicadores
-  de laguna para que el operario identifique cada hueco.
-
-#### Vistas de gestion para SUPERVISOR
-
-WorkdayScheduleView — GET/POST /panel/workday-schedule/
-  Vista multi-registro: lista todos los WorkdaySchedule de la empresa,
-  permite crear nuevos horarios, editar existentes y eliminarlos.
-  La eliminacion limpia la FK workday_schedule en los CompanyUser asignados.
-
-AbsenceCategoryListView   — GET  /panel/absence-categories/
-AbsenceCategoryCreateView — POST /panel/absence-categories/create/
-AbsenceCategoryUpdateView — POST /panel/absence-categories/<pk>/update/
-AbsenceCategoryToggleView — POST /panel/absence-categories/<pk>/toggle/
-
-Integradas en navegacion del panel bajo nueva seccion "Configuracion de jornada".
-
-#### Reporting en WorkOrderEditView (panel/work_orders/edit.html)
-
-Seccion "Incidencias de jornada" anadida al final de edit.html,
-condicionada a workday_gaps no vacio (solo partes DIGITAL/GENERATED).
-Muestra por cada WorkdayGap: tipo (badge), inicio, fin, duracion,
-categoria de ausencia (verde=justificada, rojo=no justificada), nota
-y estado (Resuelto/Pendiente).
-WorkOrderEditView.get() ampliado para pasar workday_gaps al contexto.
-
-#### Comando seed_absence_categories
-
-work_order_processor/management/commands/seed_absence_categories.py
-Argumento obligatorio: --company-pk
-Precarga las siete categorias estandar definidas arriba.
-Idempotente: no duplica si ya existen (get_or_create por code + company).
-
-### 2.19. Dropdown CdG con opcion Otro — PENDIENTE IMPLEMENTACION
-
-Identificado en sesion 009. Implementacion diferida.
-
-### 2.20. Horometros y odometro en bloques de trabajo — COMPLETADO (sesiones 011-014)
-
-Campos en WorkOrderEntryLine: odometer_reading, engine_hours_reading,
-crane_hours_reading (DecimalField null=True, blank=True).
-Campos en MachineAsset: has_odometer, has_engine_hours, has_crane_hours
-(BooleanField default=False).
-Validaciones R6, R7, R8 en validators.py.
-Migracion fleet 0005, work_order_processor 0010.
-
-### 2.21. Campo unit_price en SparePartLine (sesion 012)
-
-unit_price = DecimalField(max_digits=10, decimal_places=2, null=True, blank=True).
-Migracion: 0011_sparepartline_unit_price.
-
-### 2.22. Refactor UX operario — repuestos y etiquetas (sesion 012)
-
-Etiquetas "Bloques de trabajo"→"Tareas", "Centro de Gasto"→"Maquina o Seccion".
-_parse_spare_parts_from_post() sin entry_idx.
-
-### 2.23. Auto-registro publico de operarios — WorkerSignupView (sesion 015)
-
-Campos phone y dni en CompanyUser. WorkerSignupForm. WorkerSignupView publica.
-Migracion: 0014_companyuser_dni_companyuser_phone.
-
-### 2.24. WorkOrderEntryHistoryView — fix related_name (sesion 015)
-
-entry.entry_lines → entry.lines. Template history.html creado.
-
-### 2.25. Campo WorkOrder.source — segregacion de origen (sesion 016)
-
-Nuevo campo WorkOrder.source (CharField choices):
-  PDF_UPLOAD / DIGITAL / GENERATED.
-Migracion: 0013_workorder_source.
-
-### 2.26. Modelos WorkerAbsence y WorkPeriod (sesion 016)
-
-Nuevos modelos en ivr_config/models.py. Migracion: 0015_workerabsence_workperiod.
-
-### 2.27. WorkOrderAdminHistoryView y gestion de ausencias/periodos (sesiones 016-017)
-
-WorkOrderAdminHistoryView (SupervisorAccessMixin, View).
-Endpoint: GET/POST /panel/work-orders/history/ (name=work_order_admin_history).
-Cinco pestanas: Pendientes / Revisados / Historico / Ausencias / Periodos.
-
-WorkerAbsenceCreateView — POST /panel/worker-absences/create/
-WorkerAbsenceUpdateView — POST /panel/worker-absences/<pk>/update/
-WorkerAbsenceDeleteView — POST /panel/worker-absences/<pk>/delete/
-WorkPeriodListView      — GET  /panel/work-periods/
-WorkPeriodCreateView    — POST /panel/work-periods/create/
-WorkPeriodCloseView     — POST /panel/work-periods/<pk>/close/
-
-Nuevo campo WorkOrder.generated_by FK(CompanyUser, SET_NULL).
-Migracion: 0012_workorder_generated_by.
-
-### 2.28. Refactor WorkOrderEntryHistoryView para WORKSHOP (sesion 016)
-
-Vista exclusiva para rol WORKSHOP. Cuatro pestanas: Periodo actual /
-Historico / Horas extra / Ausencias. Fallback sin WorkPeriod activo.
-
-### 2.29. JS estatico en admin_history (sesion 016)
-
-panel/static/panel/js/admin_history.js extraido del template.
-
-### 2.30. Auditorias Regla de Oro del Idioma (sesion 016)
-
-tasks.py, views.py (AnalyticsDataView), signals.py corregidos.
-
-### 2.31. Fix NameError WorkOrderAdminHistoryView (sesion 017)
-
-Variable period_operator_groups referenciada sin estar definida en get().
-Correccion via PMA quirurgico eliminando la linea del contexto.
-
-### 2.32. WorkPeriod CRUD para SUPERVISOR validado (sesion 017)
-
-WorkPeriodListView, WorkPeriodCreateView, WorkPeriodCloseView validadas.
-Pestana Periodos integrada en admin_history.html.
-
-### 2.33. WorkerAbsence edicion y baja — template (sesion 017)
-
-Modal modalAbsenceEdit anadido a admin_history.html.
-Botones Editar y Eliminar en cada fila de la tabla de ausencias.
-
-### 2.34. Bootstrap alojado localmente en staticfiles (sesion 017)
-
-bootstrap.min.css y bootstrap.bundle.min.js (v5.3.3) descargados a
-panel/static/panel/vendor/. Tags CDN sustituidos en base.html por
-{% static %}. collectstatic ejecutado.
-
-### 2.35. Rediseno conceptual — Un parte por operario por fecha (S018)
-
-DECISION DE DISENO CRITICA tomada en sesion 017.
-
-#### Problema detectado
-
-El modelo actual permite multiples WorkOrder con la misma work_date para
-el mismo operario. Esto es conceptualmente incorrecto: un operario tiene
-un unico parte por dia con todas sus tareas agrupadas. La deteccion de
-solapamiento posterior (has_overlap_incident) es un parche sobre un error
-de concepto.
-
-#### Jerarquia correcta del modelo
-
-Pipeline PDF:
-  WorkOrder → periodo completo
-    WorkOrderEntry → parte diario (pagina del PDF)
-      WorkOrderEntryLine → tarea
-
-Pipeline Digital:
-  WorkOrder → parte del dia (1:1 con WorkOrderEntry)
-    WorkOrderEntry → el parte (work_date = fecha del dia)
-      WorkOrderEntryLine → tarea
-
-Regla invariante: un operario NO puede tener dos WorkOrderEntry con la
-misma work_date. Si lo intenta, se activa el flujo de merge.
-
-#### Flujo de merge
-
-Gate 0 en WorkOrderEntryConfirmView.post() antes de cualquier INSERT:
-
-  existing_entry = WorkOrderEntry.objects.filter(
-      work_order__company=company,
-      work_order__uploaded_by=cu,
-      work_order__source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
-      work_order__reviewed=False,
-      work_date=parsed_date,
-  ).select_related("work_order").first()
-
-  Si no existe → flujo normal.
-  Si existe y reviewed=True → error, redirigir a historial.
-  Si existe y reviewed=False → serializar lineas nuevas en sesion,
-    redirigir a WorkOrderEntryMergeView.
-
-Serializacion en request.session["pending_merge_lines"] como lista de dicts:
-  machine_raw, machine_asset_pk, fault_description, repair_notes,
-  hc ("HH:MM"), hf ("HH:MM"), delta_hours, odometer_reading,
-  engine_hours_reading, crane_hours_reading, repuestos:[{material,
-  reference, quantity, source, supplier, unit_price}]
-
-WorkOrderEntryMergeView (WorkshopRequiredMixin, View):
-  GET  /panel/operator/merge/<int:entry_pk>/
-  POST /panel/operator/merge/<int:entry_pk>/
-
-  Acciones POST (merge_action):
-    "discard_new"      — limpiar sesion, conservar existente.
-    "discard_existing" — eliminar WorkOrder existente (CASCADE), crear nuevo.
-    "merge"            — anadir WorkOrderEntryLine nuevas al WorkOrderEntry
-                         existente. Sin nuevo WorkOrder. Solo si sin solapamientos.
-
-Deteccion de solapamiento (_detect_overlaps):
-  Para cada par (linea_existente, linea_nueva):
-    solapamiento = hc_e < hf_n AND hc_n < hf_e
-  Ignorar lineas con hc o hf nulos.
-  Output: lista de tuplas (idx_e, idx_n, hc_e, hf_e, hc_n, hf_n).
-
-El operario puede editar hc/hf de cualquier linea (existente o nueva)
-en merge_entry.html. JS recalcula solapamientos en tiempo real.
-
-Partes revisados (reviewed=True): bloqueados para merge sin excepcion.
-
-#### Excel por periodo — rediseno (pendiente sesion posterior)
-
-### 2.36. Flujo de merge implementado — S018
-
-Gate 0 insertado en WorkOrderEntryConfirmView.post() antes de cualquier
-INSERT. Detecta WorkOrderEntry preexistente no revisado para la misma
-fecha y operario. En caso de conflicto serializa las lineas entrantes en
-request.session["pending_merge_lines"] y redirige a WorkOrderEntryMergeView.
-
-Helpers de modulo anadidos a panel/views.py:
-  _serialize_pending_lines(parsed_lines, parsed_repuestos, parsed_date)
-    Produce dict JSON-safe almacenable en sesion Django.
-  _detect_overlaps(existing_lines, new_lines)
-    Condicion: hc_e < hf_n AND hc_n < hf_e (intervalos abiertos).
-    Devuelve lista de tuplas (idx_e, idx_n, hc_e, hf_e, hc_n, hf_n).
-
-WorkOrderEntryMergeView (WorkshopRequiredMixin, View) anadida a panel/views.py.
-Tres acciones POST: discard_new, discard_existing, merge.
-El operario puede editar hc/hf antes de elegir accion; JS recalcula
-solapamientos en tiempo real sin recargar pagina.
-
-Template: panel/templates/panel/operator/merge_entry.html (PEA, 0 errores djlint).
-Ruta: operator/merge/<int:entry_pk>/ (name=operator_merge) en panel/urls.py.
-
-Bug resuelto en S019: boton Desmarcar anadido a la pestana Revisados
-de admin_history.html con hx-post apuntando a work_order_review,
-hx-target a #review-badge-{{ wo.pk }} y hx-swap outerHTML.
-
-La generacion de Excel pasa a ser responsabilidad del supervisor al
-cerrar un WorkPeriod. Se implementa en S023.
-
-### 2.37. Rediseno Via B — Dialogo progresivo con TTS nativo (S021)
-
-DECISION DE DISENO aprobada en S019.
-
-El enfoque anterior de dictado global del parte completo en un unico
-bloque de audio es fragil: un error de reconocimiento en cualquier punto
-invalida todo el dictado. Se reemplaza por un dialogo progresivo campo
-a campo usando speechSynthesis nativo del navegador (coste cero,
-sin dependencias externas, Chrome/Edge).
-
-Flujo aprobado:
-  1. El sistema sintetiza en voz la pregunta para cada campo.
-     Ejemplo: "Diga la fecha por favor."
-  2. El operario pulsa el boton de micro y dicta la respuesta.
-  3. Web Speech API transcribe la respuesta.
-  4. El sistema valida el campo 1:1 antes de avanzar al siguiente.
-  5. Si la validacion falla, el sistema repite la pregunta con
-     indicacion del error.
-  6. Flujo de tareas: el sistema pregunta campo a campo para cada
-     WorkOrderEntryLine (maquina, HC, HF, averia, notas).
-  7. Al completar una tarea: "Desea anadir otra tarea?"
-     Si el operario dice "Si" → nueva tarea.
-     Si dice "No" → convergencia al formulario de Via A.
-  8. El resultado prerellena form_entry.html como punto de convergencia.
-     WorkOrderEntrySTTExtractView queda obsoleta y se retira.
-
-Archivos afectados: panel/views.py (WorkOrderEntrySTTView refactor),
-panel/templates/panel/operator/stt_entry.html (rediseno completo).
-
-### 2.38. Gate 0 en WorkOrderEntryFormView.post() — S019
-
-El Gate 0 (un parte por operario por fecha) solo existia en
-WorkOrderEntryConfirmView.post() (Via C). Se detecto en S019 que
-WorkOrderEntryFormView.post() (Via A) no lo tenia, permitiendo
-duplicados al usar el formulario web.
-Correccion: bloque Gate 0 identico anadido en WorkOrderEntryFormView.post()
-inmediatamente antes del parseo de lineas.
-
-### 2.39. Barrera de fecha minima — _get_min_allowed_date() — S019
-
-Helper de modulo _get_min_allowed_date(cu) anadido a panel/views.py.
-Regla: work_date > fecha del ultimo WorkOrderEntry con reviewed=True
-del mismo operario. Si no hay partes revisados, sin restriccion.
-
-Barrera server-side insertada en:
-  WorkOrderEntryFormView.post() — antes del Gate 0.
-  WorkOrderEntryConfirmView.post() — dentro del bloque if _gate0_work_date.
-
-Barrera client-side:
-  form_entry.html y stt_entry.html: atributo min="{{ min_date }}" en
-  el input type=date.
-  confirm_entry.html: atributo data-min-date y texto de ayuda (type=text,
-  no admite min nativo).
-
-min_date se pasa al contexto desde get() de FormView y ConfirmView.
-
-### 2.40. Fix JS merge_entry.html — habilitacion boton Fusionar — S019
-
-Bug: al editar los inputs HC/HF en merge_entry.html, el boton Fusionar
-no se habilitaba aunque los solapamientos quedaran resueltos.
-Causa: el TimePicker custom escribe input.value directamente via JS
-sin disparar eventos nativos change/input.
-Correccion: anadido listener blur + MutationObserver sobre atributo
-value + polling de 300ms como fallback. Los tres mecanismos garantizan
-que onTimeInputChange dispara independientemente del metodo de edicion.
-
-### 2.41. Horas extra sin periodo activo — WorkOrderEntryHistoryView — S019
-
-Tab 3 (Horas extra) mostraba bloqueo cuando no habia periodo activo.
-Nuevo calculo con prioridad de cuatro casos:
-  Caso 1: periodo activo → start=period.start_date, fin=hoy.
-  Caso 2: sin activo, hay periodos cerrados → start=ultimo_cerrado.end_date+1.
-  Caso 3: sin periodos → start=primer WorkOrderEntry del operario.
-  Caso 4: sin partes → ceros, mensaje informativo.
-Variable overtime_period_label anadida al contexto para mostrar el
-rango calculado en el banner informativo del template.
-Template history.html actualizado: el bloqueo {% if active_period %}
-sustituido por {% if working_days_count or overtime_worked_hours %}.
-
-### 2.42. Edicion de partes no revisados desde Mi historial — S019
-
-El operario puede editar sus partes digitales no revisados desde la
-pestana Periodo actual de history.html.
-
-Implementacion:
-  Nueva ruta: operator/form/<int:wo_pk>/edit/ (name=operator_form_edit)
-  en panel/urls.py apuntando a WorkOrderEntryFormView.
-
-  WorkOrderEntryFormView.get() ampliado con modo edicion:
-    Si wo_pk en kwargs: carga el WorkOrder, verifica uploaded_by=cu y
-    reviewed=False, prerellena entradas_enriched y repuestos_enriched
-    desde los modelos existentes, pasa edit_mode=True y edit_wo_pk al
-    contexto.
-
-  WorkOrderEntryFormView.post() ampliado:
-    Si edit_wo_pk en POST: elimina el WorkOrder original (CASCADE)
-    antes del INSERT atomico del nuevo.
-
-  form_entry.html: input oculto <input type=hidden name=edit_wo_pk>
-  renderizado solo cuando edit_mode=True.
-
-  history.html: boton Editar en columna Acciones (Tab 1) apunta a
-  operator_form_edit con wo.pk. Visible solo si not wo.reviewed.
-
-### 2.43. Campo source en dict enriquecido de _enrich_work_orders_for_period — S019
-
-Anadido "source": wo.source al dict devuelto por
-_enrich_work_orders_for_period(). Necesario para que history.html
-npueda discriminar partes digitales de PDF en la columna Acciones.
-
-### 2.44. Eliminacion Via B — Abandono definitivo (S022/S023)
-
-La Via B (dictado por voz via STT) queda eliminada definitivamente del flujo
-de entrada del operario. Motivo: baja funcionalidad practica y nula mejora
-real respecto a las Vias A y C. Decision tomada en S022, eliminacion fisica
-ejecutada en S023.
-
-Acciones ejecutadas (S023):
-  - Clases WorkOrderEntrySTTView y WorkOrderEntrySTTExtractView eliminadas de
-    panel/views.py. Docstrings de modulo y de OperatorDashboardView actualizados.
-    Comentario de helpers compartidos actualizado.
-  - Rutas operator/stt/ y operator/stt/extract/ eliminadas de panel/urls.py.
-    Imports de ambas vistas eliminados.
-  - Boton Via B (tarjeta col-md-4 completa) eliminado de dashboard.html.
-    Comentarios de cabecera y paso del tour Driver.js correspondiente eliminados.
-  - Template panel/templates/panel/operator/stt_entry.html eliminado del servidor.
-  - La Via C se mantiene con validacion reforzada: el parte no se persiste si
-    Gemini Vision no puede leer con certeza todos los campos obligatorios.
-
-### 2.45. Tipologia de Averias — Arquitectura aprobada (S022)
-
-Decision de diseno tomada en S022. La clasificacion automatica de averias
-se integrara en este hito como cierre final del mismo.
-
-#### Modelo de datos
-
-Dos nuevos campos en WorkOrderEntryLine (work_order_processor/models.py):
-  fault_category    — CharField(max_length=40, choices=FaultCategory.choices, blank=True, default="")
-  fault_subcategory — CharField(max_length=60, choices=FaultSubcategory.choices, blank=True, default="")
-
-Clases de choices definidas como TextChoices en el mismo modulo.
-
-#### Taxonomia de grupos y subgrupos
-
-Grupos (8):
-  ENGINE_TRANSMISSION        — Motor y transmision
-  HYDRAULIC                  — Sistema hidraulico
-  ELECTRICAL_ELECTRONIC      — Electrico y electronico
-  BRAKES_STEERING_SUSPENSION — Frenos, direccion y suspension
-  TYRES_RUNNING_GEAR         — Neumaticos y rodadura
-  LIFTING_STRUCTURE          — Estructura y sistemas de elevacion
-  BODYWORK_CHASSIS           — Carroceria y chasis
-  OTHER                      — Otras averias
-
-Subgrupos por grupo (~30 totales):
-  ENGINE_TRANSMISSION:        ET_ENGINE, ET_TRANSMISSION, ET_PTO, ET_COOLING, ET_FUEL
-  HYDRAULIC:                  HY_PUMP, HY_CYLINDERS, HY_VALVES, HY_OIL, HY_CENTRAL
-  ELECTRICAL_ELECTRONIC:      EE_WIRING, EE_SENSORS, EE_CONTROLS, EE_LIGHTS, EE_BATTERY
-  BRAKES_STEERING_SUSPENSION: BSS_BRAKES, BSS_STEERING, BSS_SUSPENSION
-  TYRES_RUNNING_GEAR:         TRG_TYRES, TRG_AXLES, TRG_TRACKS
-  LIFTING_STRUCTURE:          LS_BOOM, LS_HOOK_PULLEYS, LS_CABLE, LS_ROTATION,
-                              LS_STABILIZERS, LS_MAST, LS_PLATFORM,
-                              LS_FIFTH_WHEEL, LS_CHASSIS_TRAILER
-  BODYWORK_CHASSIS:           BC_BODYWORK, BC_CHASSIS
-  OTHER:                      OT_OTHER
-
-#### Clasificacion automatica — arquitectura Celery (IMPLEMENTADO S023)
-
-Helper classify_fault(fault_description: str, repair_notes: str) -> tuple[str, str]
-en work_order_processor/services.py:
-  - Llama a Gemini Flash (_GEMINI_MODEL, Vertex AI).
-  - response_mime_type application/json, response_schema con dos campos.
-  - thinking_budget=0, temperature=0.0, max_output_tokens=64, timeout=30s.
-  - Valida que los codigos devueltos pertenezcan a la taxonomia definida.
-  - Devuelve (fault_category, fault_subcategory) o ("", "") en caso de error.
-
-Helper find_cached_classification(fault_description, repair_notes, company)
--> tuple[str, str] | None en work_order_processor/services.py:
-  - Pre-consulta dentro de la misma empresa antes de encolar.
-  - Busca WorkOrderEntryLine con fault_description + repair_notes identicos
-    (LOWER + TRIM) y fault_category no vacio.
-  - Scope limitado a la misma empresa (taxonomia varia entre empresas).
-  - Si encuentra coincidencia: devuelve (category, subcategory).
-  - Si no encuentra o error de BD: devuelve None.
-
-Tarea Celery classify_fault_line(entry_line_pk: int) en tasks.py:
-  - @app.task(base=DjangoTask, bind=True, max_retries=3, default_retry_delay=60,
-    queue="work_orders")
-  - Recupera WorkOrderEntryLine por pk. Si no existe, return silencioso.
-  - Guardia de idempotencia: si ambos campos ya estan rellenos, return.
-  - Llama a classify_fault(). Persiste via save(update_fields=[...]).
-  - Reintenta en 429/RESOURCE_EXHAUSTED con countdown=60s.
-
-Encolado con gate de cache previa en los tres puntos de INSERT:
-  1. find_cached_classification() — si coincidencia: copiar directamente.
-  2. Si no: classify_fault_line.apply_async(args=[pk], queue="work_orders").
-Puntos implementados:
-  WorkOrderEntryFormView.post() — Via A
-  WorkOrderEntryConfirmView.post() — Via C
-  WorkOrderEntryMergeView.post() — discard_existing y merge
-
-#### Backfill de historicos (COMPLETADO — S024)
-
-Comando: work_order_processor/management/commands/classify_entry_lines.py
-  - Itera WorkOrderEntryLine.objects.filter(fault_category="") en batches.
-  - Llama a find_cached_classification() primero; si no: classify_fault().
-  - Persiste los dos campos. Imprime progreso. Idempotente.
-  - Ejecucion real S024: 390 lineas procesadas, 75 por cache, 315 por Gemini,
-    0 omitidas, 0 errores.
-  - Estado: COMPLETADO (S024).
-
-#### Clasificacion en pipeline PDF (COMPLETADO — S024)
-
-Actualizados _EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL en services.py para
-incluir fault_category y fault_subcategory en el JSON de respuesta. Persistencia
-en el propio pipeline (tasks.py) via defaults del update_or_create, con validacion
-contra taxonomia antes de persistir. Correccion adicional: llaves literales del
-bloque JSON de _CLASSIFY_PROMPT escapadas ({{ }}) para evitar KeyError en
-_CLASSIFY_PROMPT.format().
-  - Estado: COMPLETADO (S024).
-
-#### Solo para analitica y filtrado
-
-Los campos fault_category y fault_subcategory son exclusivamente para
-analitica y filtrado. No se muestran al operario en ningun formulario ni vista.
+## Funcionalidades Completadas
+
+| Funcionalidad | Sesión | Estado |
+|---|---|---|
+| Formulario multi-bloque Vía A | S016 | COMPLETADO |
+| Gate 4 — validación de jornada | S018 | COMPLETADO |
+| Flujo de merge Gate 0 | S020 | COMPLETADO |
+| Clasificación tipología averías Celery+Gemini | S024 | COMPLETADO |
+| Vistas supervisor — períodos, ausencias, horarios | S028 | COMPLETADO |
+| Historial operario — 4 pestañas | S030 | COMPLETADO |
+| Dispositivo de confianza — flujo forzado | S038 | COMPLETADO |
+| Menú ayuda WhatsApp (implementado, pendiente E2E) | S039 | PARCIAL |
+| Correcciones navegación digital, Excel digital | S039 | COMPLETADO |
+| WorkshopRequiredMixin permisos | S002-SB | COMPLETADO |
+| Fix GAP falso positivo mañana+tarde (validators.py + views.py) | S040 | COMPLETADO |
+| Fix horas extra negativas operario sin partes | S040 | COMPLETADO |
+| Campo no_lunch_break en WorkOrderEntry (migración 0020) | S040 | COMPLETADO |
+| Checkbox No he parado a comer en formulario (jornada partida) | S040 | COMPLETADO |
+| Estado IN_PROGRESS en WorkOrder.Status (migración 0021) | S040 | COMPLETADO |
+| Guardado progresivo por bloques — save_blocks / close_order | S040 | COMPLETADO |
+| Retomar parte IN_PROGRESS al acceder al formulario | S040 | COMPLETADO |
+| Gate 0 — excluir IN_PROGRESS propio del flujo de merge | S040 | COMPLETADO |
 
 ---
 
-## 3. Hoja de Ruta
+## Incidencias Pendientes al Cierre de S040
 
-### Paso 1 — Nuevo rol OPERATOR/WORKSHOP en CompanyUser
-Estado: COMPLETADO (2026-04-28).
+### I1 — Colores de campos del formulario (CSS)
+**Causa raíz identificada:** La clase `field-flagged` actúa simultáneamente como
+estado base naranja Y estado de error, en lugar de estar separadas. Los inputs de
+hora vacíos reciben el rojo nativo `:invalid` del browser porque `field-flagged`
+no siempre se aplica. Los campos opcionales quedan blancos en algunos contextos.
 
-### Paso 2 — Mixin y navegacion restringida del operario
-Estado: COMPLETADO (2026-04-28).
+**Solución diseñada — NO IMPLEMENTADA por cierre de sesión:**
 
-### Paso 3 — Modelo SparePartLine + migracion
-Estado: COMPLETADO (2026-04-30).
+1. `panel/static/panel/css/panel.css`:
+   - Nueva clase `eb-field`: fondo + borde naranja permanente para todos los campos.
+   - `field-flagged` pasa a ser ÚNICAMENTE estado de error (borde rojo, fondo rojo tenue).
+   - `field-optional` pasa a ser alias de `eb-field`.
+   - Ancla OLD verificada en workspace. Caracteres Unicode `\u2014` (`—`) presentes.
+   - **MÉTODO OBLIGATORIO:** script Python en SWAP (NO heredoc, NO python3 -c inline).
+     El script debe escribirse con `cat << 'SCRIPT_EOF' > /home/MiguelAeTxio/SWAP/patch_panel_css_ebfield.py`
+     usando concatenación de strings Python con `\n` explícitos para el OLD/NEW.
+   - Barrera de fuego: `cssutils` (ya instalado en EnterpriseBot_venv).
 
-### Paso 4 — Prompt Gemini ampliado + extract_work_order_page_full()
-Estado: COMPLETADO (2026-04-30).
+2. `panel/templates/panel/operator/form_entry.html`:
+   - Todos los inputs del primer bloque (renderizados desde template): añadir clase `eb-field`.
+   - Los campos de hora: `class="form-control eb-field"` siempre, sin condicional.
+   - `field-flagged` solo cuando el campo está vacío al renderizar.
 
-### Paso 5 — Via C: Upload con confirmacion total + repuestos
-Estado: COMPLETADO (2026-04-30).
+3. `panel/static/panel/js/form_entry_assets.js`:
+   - Nuevos bloques generados por JS: inputs de hora nacen con clase `eb-field`.
+   - `_markField(name, bad)`: cuando `bad=true` añade `field-flagged`; cuando `bad=false`
+     elimina `field-flagged`. La clase `eb-field` NUNCA se toca.
+   - Barrera de fuego: `esprima` (ya instalado).
 
-### Paso 6 — Excel ampliado: hoja Repuestos en generate_work_order_excel()
-Estado: COMPLETADO (2026-04-30).
+**ADVERTENCIA CRÍTICA PARA S041:**
+Esta incidencia se intentó resolver en S040 pero se abortó por errores reiterados
+debidos a incumplimiento del PED. El modelo S041 DEBE:
+- Escribir SIEMPRE el script en SWAP con `cat << 'SCRIPT_EOF' > /ruta/script.py`
+- NUNCA usar `python3 -c` inline para patchers con Unicode
+- NUNCA usar heredoc con comillas/backticks/caracteres especiales en el OLD/NEW
+- Leer la sección 4 del PED antes de redactar cualquier patcher
+- La barrera de fuego CSS es: `python3 -c "import cssutils, logging; cssutils.log.setLevel(logging.CRITICAL); cssutils.parseFile('/ruta/archivo.css'); print('# [SYNTAX OK]')"`
 
-### Paso 7 — Via A: formulario web estructurado (Form)
-Estado: COMPLETADO (2026-04-30).
+### I2 — Pausa de comida desaparece en modo retomar (IN_PROGRESS)
+**Descripción:** Al guardar bloques (acción save_blocks) y recargar el formulario
+en modo retomar, los campos `lunch_break_start` y `lunch_break_end` aparecen vacíos
+aunque fueron enviados en el POST.
+**Causa probable:** El POST save_blocks persiste `_lb_start/_lb_end` en `WorkOrderEntry`
+pero el GET en modo retomar los lee de `_ip_first_entry.lunch_break_start/end` —
+verificar que el save_blocks efectivamente persiste estos valores en la entry.
+**Pendiente diagnóstico y fix en S041.**
 
-### Paso 8 — Via B: dictado por voz (STT)
-Estado: ABANDONADO (S022) — eliminada definitivamente. Ver seccion 2.44.
-
-### Paso 9 — Validacion E2E de las tres vias
-Estado: EN PROGRESO.
-
-### Paso 10 — Vistas de historial y gestion de presencia/ausencia
-Estado: COMPLETADO (sesiones 015-017).
-
-
----
-
-## 4. Registro de Sesiones
-
-| Sesion | Fecha      | Pasos trabajados  | Resumen |
-|--------|------------|-------------------|---------|
-| 001    | 2026-04-27 | —                 | Creacion del anexo. Inicio formal del hito. |
-| 002    | 2026-04-28 | Pasos 1 y 2       | Roles WORKSHOP y DRIVER anadidos. WorkshopRequiredMixin. OperatorDashboardView. Template operator/dashboard.html. Usuario taller_test_01 validado E2E. Hito pausado para H8. |
-| 003    | 2026-04-30 | Pasos 3-5 + fixes | SparePartLine creado y migrado (0005). Prompt Gemini ampliado. Via C implementada. Fix multiempresa _resolve_machine_asset. Fix HTMX _line_row.html. Fix WorkOrderLineRestoreView. Fix doble form users/form.html. |
-| 004    | 2026-04-30 | Pasos 6-7 + fixes | Race condition upload: select_for_update + UniqueConstraint (0006). Barrera integridad sine qua non Vias A y C. Boton Anadir repuesto dinamico. Hoja Repuestos Excel. WorkOrderEntryFormView (Via A). |
-| 005    | 2026-04-30 | Paso 8 (parcial)  | WorkOrderEntrySTTView. stt_entry.html. Via B activada. |
-| 006    | 2026-04-30 | Paso 8 + fixes    | Fix CSS H021. Nombre sintetico source_pdf. Fix autocomplete mobile. Refactor DRY STTView→FormView. Motor STT: Web Speech API → MediaRecorder + Gemini audio. WorkOrderEntrySTTExtractView. Via A validada E2E. |
-| 007    | 2026-05-01 | —                 | Hito pausado para H8. |
-| 008    | 2026-05-05 | Flecos + fixes    | Correccion atomica identificadores Regla de Oro. Widget TimePicker custom. Fix WorkshopAssetAutocompleteView. |
-| 009    | 2026-05-06 | Flecos + refactor | Typeahead descripciones. Validaciones R1-R5 validators.py. Refactor UI repuestos: campo Vehiculo eliminado. |
-| 011    | 2026-05-06 | SEGUNDA ACCION    | validators.py R6/R7/R8. WorkshopAssetDetailView. _parse_entry_lines_from_post con contadores. Templates con .meter-field. Migraciones fleet 0005 y work_order_processor 0010. |
-| 012    | 2026-05-07 | unit_price + UX   | SparePartLine.unit_price (migr. 0011). Refactor etiquetas y repuestos. Bug UI repuestos activo al cierre. |
-| 013    | 2026-05-07 | Diagnostico bugs  | Bug UI repuestos resuelto (_buildRepuestoRow JS). Bug persistencia SparePartLine diagnosticado. |
-| 014    | 2026-05-07 | Bugs criticos     | Fix validators.py (entries__lines). Fix confirm_entry.html Gate 2b. Fix guard code vacio tres templates. Fix services.py (mileage/hours). E2E Via A con contadores superada. |
-| 014b   | 2026-05-08 | Fix pre-relleno   | _applyMeterFields() en tres templates. form_entry.html: parche data-ref-value. |
-| 015    | 2026-05-08 | Auto-registro + historial | WorkerSignupView publica. Campos phone/dni (migr. 0014). Fix WorkOrderEntryHistoryView (entry.lines). Template history.html. |
-| 016    | 2026-05-08 | Historial admin completo | Modelos WorkerAbsence/WorkPeriod (migr. 0015). WorkOrderAdminHistoryView 5 pestanas. WorkOrder.generated_by (migr. 0012). WorkOrder.source (migr. 0013). WorkerAbsenceCreateView. Refactor WorkOrderEntryHistoryView WORKSHOP. Acciones bulk. JS → admin_history.js estatico. Auditorias idioma: tasks.py, views.py, signals.py. |
-| 017    | 2026-05-08 | Fix NameError + validacion CRUD + Bootstrap local + diseno merge | Fix NameError period_operator_groups (PMA). WorkPeriod CRUD validado. Modal modalAbsenceEdit + botones Editar/Eliminar ausencias (PMA). Bootstrap 5.3.3 migrado a staticfiles locales. Diseno completo flujo merge documentado en seccion 2.35. |
-| 018    | 2026-05-11 | Flujo merge completo | Gate 0 en WorkOrderEntryConfirmView.post(). Helpers _serialize_pending_lines y _detect_overlaps. WorkOrderEntryMergeView (discard_new / discard_existing / merge). Template merge_entry.html (0 errores djlint). Ruta operator_merge en urls.py. Bug detectado: boton demarcar ausente en pestana Revisados de admin_history.html. |
-| 019    | 2026-05-11 | Bugs + mejoras UX + barrera fecha | Boton Desmarcar en pestana Revisados (admin_history.html). Gate 0 anadido a Via A (WorkOrderEntryFormView.post()). Fix JS merge_entry.html (MutationObserver + polling). Barrera fecha minima _get_min_allowed_date() server-side + client-side tres templates. Horas extra sin periodo activo (Tab 3 history.html). Edicion partes no revisados desde Mi historial (operator_form_edit). Diseno Via B dialogo progresivo TTS aprobado. Hoja de ruta S020-S023 definida. |
-| 020    | 2026-05-11 | Validacion E2E + bugs merge + tour guiado | Validacion E2E flujos merge (7 escenarios superados), edicion desde historial, barrera fecha minima y Via C. Bugs resueltos: btn Fusionar no se habilitaba (removeAttribute disabled + bloque extra_scripts), TimePicker sin restriccion 30min en merge_entry.html (include _time_picker_widget + step=1800), edicion desde historial activaba Gate 0 sobre el original (pre-eliminacion antes de Gate 0 en WorkOrderEntryFormView.post()). Sistema de visita guiada Driver.js implementado en todas las vistas WORKSHOP: _tour_driver_cdn.html, _tour_workshop.html (motor EbTour), boton Ayuda en base.html, tours en dashboard/form/stt/upload/confirm/history. |
-| 021    | 2026-05-12 | Bugs S021 + Reglas jornada + Exportacion admin | PRIMERA ACCION: corrección posicionamiento popover Driver.js (onHighlightStarted + scrollIntoView). SEGUNDA ACCION: entrada por teclado en TimePicker (_openTextEntry + overlay input texto). TERCERA ACCION: Regla B ya correcta; Regla A (excepcion comida 60min 13:00-15:30) en validators.py; Regla C (cobertura minima 8h con excepcion WorkerAbsence) en views.py. CUARTA ACCION Bug A: formulario exportacion admin_history.html corregido (POST + work_order_admin_export + pks explicitos). CUARTA ACCION Bug B: nuevo endpoint WorkOrderMachineFilterView + ruta urls.py + admin_history.js apunta al nuevo endpoint. QUINTA ACCION: overtime_worked_hours anadido al contexto de WorkOrderEntryHistoryView. Incidencia: TimePicker entrada teclado no operativa en produccion; desplegable dinamico maquina no visible en UI. |
-| 022    | 2026-05-12 | S022 completo — pendientes S021 + incidencias + tipologia | PRIMERA ACCION: _time_picker_widget.html corregido. SEGUNDA ACCION: admin_history.js showDropdown desanclado al body; WorkOrderMachineFilterView duplicada eliminada; parametro q anadido con filtro icontains. TERCERA ACCION: textos botones historial admin (Editar / Revisar, Marcar revisado). CUARTA ACCION: modal Nuevo periodo rediseñado — selector operario eliminado, end_date opcional, pre-relleno automatico. WorkPeriodCreateView.post() actualizado. QUINTA ACCION: titulo modal ausencia cambiado a Ausencia. DECISION VINCULANTE: periodo global para todos los operarios. Via B abandonada definitivamente. Arquitectura tipologia aprobada: 8 grupos + 30 subgrupos, Celery high_priority, fault_category/fault_subcategory en WorkOrderEntryLine, solo analitica. |
-| 023    | 2026-05-13 | Tipologia de Averias — Implementacion parcial (acciones 1-5) | PRIMERA ACCION: Via B eliminada — WorkOrderEntrySTTView, WorkOrderEntrySTTExtractView, rutas STT, boton dashboard, stt_entry.html. SEGUNDA ACCION: FaultCategory y FaultSubcategory (8 grupos, 30 subgrupos) en models.py. Campos fault_category/fault_subcategory en WorkOrderEntryLine. Migracion 0014 aplicada. TERCERA ACCION: classify_fault() en services.py (Gemini Flash, response_schema, thinking_budget=0, validacion taxonomia). CUARTA ACCION: classify_fault_line() en tasks.py (retry 429 countdown=60s, idempotencia, best-effort). QUINTA ACCION: find_cached_classification() en services.py + encolado con gate en tres puntos INSERT de views.py (Via A, Via C, MergeView). Skill pea-pma corregida: AUTORIZADO va directo al mv. Pendientes: PRIMERA ACCION S024 (classify_entry_lines) y SEGUNDA ACCION S024 (_EXTRACTION_PROMPT pipeline PDF). |
-| 024    | 2026-05-13 | Tipologia de Averias — Backfill + pipeline PDF (acciones 1-2) | PRIMERA ACCION: neonato classify_entry_lines.py (PEA). Comando de backfill con --batch-size y --dry-run, progreso cada 10 lineas, consulta cache antes de Gemini. Bugs resueltos durante diagnostico: KeyError en _CLASSIFY_PROMPT.format() por llaves literales no escapadas ({{ }}) en bloque JSON de ejemplo — corregido via PMP. Ejecucion real: 390 lineas, 75 cache, 315 Gemini, 0 errores. SEGUNDA ACCION: PMA sobre services.py (_EXTRACTION_PROMPT y _EXTRACTION_PROMPT_FULL ampliados con fault_category/fault_subcategory y taxonomia completa embebida). PMA sobre tasks.py (defaults update_or_create ampliado con _fault_cat/_fault_subcat, validacion contra _VALID_CATEGORIES/_VALID_SUBCATEGORIES, import interno en bloque de persistencia). |
-| 025    | 2026-05-13 | Excel consolidado al cerrar WorkPeriod + vista digital — Diseno completo | Sesion de diseno y analisis. Sin implementacion de codigo. TLA extensa: periodo global empresa (21-20), cierre global de todos los WorkPeriod abiertos, Opcion A (reviewed=True en bloque al cerrar), dos vistas separadas PDF vs Digital, control de acceso por rol y estado periodo, persistencia del periodo por defecto. Diseno tecnico completo de 6 bloques aprobado. Archivos inspeccionados: panel/views.py, ivr_config/models.py, work_order_processor/services.py, tasks.py, work_period_list.html, work_orders/list.html, panel/urls.py. Implementacion diferida a S026. |
-| 026    | 2026-05-13 | Excel por periodo + Vista Partes Digitales — Implementacion parcial (Pasos 1-3) | VERIFICACION: generate_period_excel ya implementada en tasks.py (S024) — Paso 1 completado sin intervencion. PASO 2 (PMA panel/views.py): WorkPeriodCloseView refactorizada a cierre global por company (sin pk), marcado reviewed=True en bloque, encolado generate_period_excel por WorkOrder. WorkPeriodListView.get() ampliado con suggested_start/suggested_end (logica periodo anterior + fallback Gruas Alvarez dia 21-20) y has_open_periods. Nueva DigitalWorkOrderListView insertada (tres querysets DIGITAL+GENERATED, filtros operator_pk/period_pk, contexto completo). Import generate_period_excel anadido al bloque de tasks. PASO 3 (PMA panel/urls.py): import DigitalWorkOrderListView, URL work_period_close sin pk, ruta work-orders/digital/. Error en primer intento (OLD_BLOCK construido desde concatenado en lugar del archivo real SFTP). Corregido tras nueva descarga. Pendientes: Paso 4 (work_period_list.html PMA) y Paso 5 (digital_list.html PEA). Incidencia de sesion: limpieza completa de memoria de interfaz de Claude (todas las entradas eliminadas) — el sistema de sesiones es la unica fuente de contexto. |
-| 029    | 2026-05-14 | Sistema de Validacion de Jornada Completa — Implementacion integra (Pasos A-J) | AUDITORIA PREVIA S029: Puntos 1-3 resueltos (exportacion admin history, preservacion datos formulario, historial operario Tabs 1-2). Regla A (comida) y Regla C (cobertura minima) ya implementadas. DECISION DE DISENO S029: WorkdaySchedule refactorizado de OneToOneField a ForeignKey multiperfile con label + is_default + FK workday_schedule en CompanyUser — soporta multiples perfiles de turno por empresa (mecanicos, choferes grua, administracion, etc.). PASO A: migraciones ivr_config 0016/0017 + work_order_processor 0017 aplicadas. PASO B: helper _detect_workday_gaps() insertado en panel/views.py. PASO C: Gate 4 en tres puntos INSERT (FormView/ConfirmView/MergeView) — persiste borrador PENDING_GAPS + WorkdayGap + sesion + redirect. PASO D: WorkdayGapResolutionView con resumen cronologico de jornada (entry_lines) para contexto del operario. PASO E: ruta operator_gap_resolution en panel/urls.py. PASO F: template gap_resolution.html con linea de tiempo de bloques e indicadores de laguna. PASO G: WorkdayScheduleView + AbsenceCategoryListView/Create/Update/Toggle en views.py + urls.py. PASO H: templates workday/schedule_form.html + workday/absence_category_list.html (0 errores djlint). PASO I: comando seed_absence_categories (idempotente, --company-pk). PASO J: seccion "Incidencias de jornada" en edit.html + contexto workday_gaps en WorkOrderEditView. Puntos diferidos a S030: Via C unificar parseo con pipeline PDF; Via C captura directa camara (capture=environment); asignacion WorkdaySchedule a operarios desde panel; seed en produccion; validacion E2E Gate 4. |
-| 030    | 2026-05-14 | Seed ausencias, Sidebar jornada, WorkdaySchedule turno partido, WorkdayGap LUNCH_BREAK | SEGUNDA ACCION completada: seed_absence_categories refactorizado (taxonomia Grupo Alvarez — 6 justificables + 1 injustificable). Categorias erroneas eliminadas y 7 nuevas creadas en produccion. Sidebar _nav_items.html: nueva seccion "Configuracion de jornada" con entradas Horarios de jornada y Categorias de ausencia (ADMIN+SUPERVISOR). SEXTA ACCION — Modelo WorkdaySchedule refactorizado a turno partido por temporada: season (WINTER/SUMMER), is_intensive, start_time_morning, end_time_morning, start_time_afternoon (null), end_time_afternoon (null), clean()/save() con invariantes. Migracion ivr_config 0018_workdayschedule_season_split_times aplicada. WorkdayGap.GapType ampliado con LUNCH_BREAK + campos lunch_had (BooleanField null) y lunch_time (TimeField null). Migracion work_order_processor 0018_workdaygap_lunch_break aplicada. _detect_workday_gaps() refactorizado: compatibilidad backward con start_time/end_time, soporte turno partido (LATE_START/EARLY_END/GAP/LUNCH_BREAK), ventana de mediodía excluida de GAP. WorkdayScheduleView.post() actualizado: parseo de todos los campos nuevos + validacion tramo tarde. WorkdayGapResolutionView.post() actualizado: ruta diferenciada LUNCH_BREAK (lunch_had + lunch_time + note). schedule_form.html reescrito (PEA): tabla con columnas Temporada/Manana/Tarde, formulario con season/is_intensive/tramos, modal edicion, JS toggle tramo tarde. gap_resolution.html PMA: badge LUNCH_BREAK, tarjeta diferenciada con radio Si/No + hora opcional + nota obligatoria si No, script JS ampliado. PENDIENTE al cierre: gap_resolution.html patcher 2/2 no aplicado (bloque extra_head sin ancla correcta tras patcher 1). Primera Accion (E2E Gate 4), Tercera Accion (asignacion WorkdaySchedule operarios), Cuarta Accion (capture=environment), Quinta Accion (unificar parseo Via C) todas pendientes de S031. |
-| 028    | 2026-05-14 | Incidencia critica pipeline PDF + UX carga PDFs + Acciones en lote | BLOQUE 1 — Incidencia critica: diagnostico completo del pipeline PDF_UPLOAD. Causa raiz: tres claves JSON obsoletas en tasks.py (maquina_raw, descripcion_averia, reparacion) que vaciaban machine_raw/fault_description/repair_notes en todos los partes procesados desde S011. PMP tasks.py: tres sustituciones atomicas restaurando claves a machine_raw/fault_description/repair_notes. Segunda causa: source_pdf borrado por Celery tras procesamiento sin persistir el nombre — PMA models.py: campo source_pdf_name (CharField max_length=255, blank, default='') + pdf_display_name actualizado con prioridad source_pdf_name > source_pdf > fallback. PMA views.py: source_pdf_name=incoming_name en WorkOrderUploadView.create(). PEA migracion 0016_workorder_source_pdf_name aplicada. Script backfill SWAP: 18 registros actualizados (8 CASO A desde source_pdf, 10 CASO B desde worker_name). BLOQUE 2 — UX carga PDFs: PEA upload.html reescritura completa — selector modo individual/lote, modal de progreso XHR con btn-close manual (evita conflicto doble instancia Bootstrap), log de resultados por fichero en lote (encolado/omitido duplicado/error de red), nota pie para sobrescritura individual. PMA _status_fragment.html: barra Celery con fase A indeterminada (total_pages==0) y fase B determinada (widthratio processed_pages/total_pages). BLOQUE 3 — Acciones en lote list.html: PEA list.html reescritura — checkboxes por fila + select-all + barra de acciones en las 4 pestanas (En cola: Eliminar; Error: Eliminar; Pendiente revision: Marcar revisados + Eliminar; Revisados: Desmarcar revision + Eliminar). PMA views.py: metodo post en WorkOrderListView con bulk_op mark_reviewed/unmark_reviewed/delete, scoped a company PDF_UPLOAD. Estado migraciones al cierre: work_order_processor 0016_workorder_source_pdf_name, ivr_config 0015_workerabsence_workperiod. |
-| 027    | 2026-05-13 | Excel por periodo + Vista Partes Digitales — Pasos 4 y 5 + Diseno Validacion Jornada | PASO 4 (PMA work_period_list.html): cuatro cambios aplicados — boton Nuevo periodo envuelto en div flex con boton Cerrar periodo activo global (condicional has_open_periods), modal modalWorkPeriodCreate sin selector operario + campo end_date anadido con pre-relleno suggested_end + start_date con suggested_start, modal modalWorkPeriodClose con texto global y action fija sin JS dinamico, celda Acciones sustituida por indicador de estado badge/texto. Bloque script extra_head eliminado via fichero Python intermedio (heredoc con OLD_BLOCK multilinea). PASO 5 (PEA digital_list.html): neonato puro creado — tres pestanas Pendiente/Revisados/Error, filtros operator_pk/period_pk, descarga Excel exclusivamente en tab Revisados (Directriz Alejandro), modales incidenceModal y deleteModal, JS minimo activacion tab + checkbox seleccionar todos + boton descarga. Cuatro avisos H021 estilos inline resueltos via sed. DISENO: Sistema de Validacion de Jornada Completa aprobado — WorkdaySchedule, AbsenceCategory, WorkdayGap, Gate 4, WorkdayGapResolutionView, vistas supervisor, comando seed. Implementacion diferida a S028. Incidencia: tres errores PMA por OLD_BLOCKs construidos desde memoria en lugar del archivo real SFTP — diagnostico y correccion del proceso documentados. |
-
-| 031    | 2026-05-15 | gap_resolution.html patcher 2/2, Gate 4 E2E, asignacion WorkdaySchedule, extraccion JS form_entry | PRIMERA ACCION (PMA gap_resolution.html extra_head): CSS hover restaurado con box-shadow, JS de validacion client-side reparado (condiciones if faltantes: !sel.value, !lunchGroups[pk], !group.hasChecked, !allValid), extraccion completa a gap_resolution.js archivo estatico + collectstatic. MEJORAS UX Gate 4 (serie de PMPs): texto descriptivo contextual por tipo de gap (LATE_START/EARLY_END/GAP) en tarjeta estandar; bug timeline fix — indicador laguna usaba slice fragil en template, resuelto enriqueciendo entry_lines con next_gap y early_end_gap/late_start_gap en WorkdayGapResolutionView.get() (logica en view, no en template); boton Volver y editar corregido — onclick confirm() robaba foco antes del submit event, resuelto con type=button + createElement hidden + form.submit() programatico; Volver y editar redirigia al dashboard vacio — corregido promoviendo borrador PENDING_GAPS a DONE y redirigiendo a operator_form_edit para pre-rellenar el formulario. SEGUNDA ACCION (E2E Gate 4): validacion completa en produccion — LATE_START, EARLY_END, GAP, LUNCH_BREAK, Volver y editar, confirmacion y parte DONE en historial. Bug _compute_delta_hours devolvía 0.00 para bloques digitales: anadido parametro deduct_lunch=True/False — pipeline PDF mantiene deduccion 90min comida, partes digitales usan deduct_lunch=False en _parse_entry_lines_from_post, WorkOrderLineRestoreView digital y MergeView._create_lines_from_session. TERCERA ACCION (PMA views.py + form.html): CompanyUserUpdateView ampliado con workday_schedule en fields + get_form() con queryset restringido a empresa + widget form-select; form.html con bloque workday_schedule label/widget/helptext. EXTRACCION JS form_entry.html: tres bloques JS inline (604+138+74 lineas) extraidos a form_entry_assets.js, form_entry_modal.js, form_entry_tour.js; window.EB_CONFIG inyectado inline para URLs Django; correcciones acentos _buildBlockRow (Descripcion averia con acento, Reparacion con acento, Codigo de maquina, Descripcion del material) + badge Bloque N a Tarea N. |
-| 032    | 2026-05-15 | Via C camara directa, unificacion prompt extraccion, CSS naranja campos operario, repair_notes obligatorio | CUARTA ACCION: PMP capture=environment en upload_entry.html — activa camara trasera Android Chrome directamente. QUINTA ACCION: analisis comparativo WorkOrderEntryConfirmView / tasks.py / services.py — divergencias D1-D5 auditadas. Unificacion prompt: extract_work_order_page() pasa a usar _EXTRACTION_PROMPT_FULL (PMA services.py) — pipeline PDF historico e igual calidad de extraccion que Via C. Correcciones D4/D5 (PMA views.py): extraction_confidence ya no se hardcodea a HIGH sino que se lee desde sesion via _coerce_confidence(); uncertain_date ya no se hardcodea a False sino que se lee desde sesion. SEXTA ACCION: ampliacion .field-flagged en panel.css — cubre form-control, form-select, input[type=time] neutralizando :invalid nativo del browser; nueva clase .field-optional para campos no obligatorios con relleno tenue naranja. PMP form_entry.html y form_entry_assets.js (_buildBlockRow): or_val con field-optional, repair_notes con field-flagged. repair_notes OBLIGATORIO en todas las vias: Gate 2 server-side en WorkOrderEntryFormView y WorkOrderEntryConfirmView (PMA views.py); Gate 2 client-side en form_entry_assets.js; label asterisco en form_entry.html y _buildBlockRow. collectstatic en todos los pasos de estaticos. |
-| 035    | 2026-05-19 | Incidencias on-fly: gestión de trabajadores, secciones y usuarios | PRIORIDAD 1 resuelta: diagnóstico BD confirmó Contact pk=17 y pk=16 con secciones_M2M=[]. Backfill SectionContact pk=9 y pk=10 aplicado — worker_count=2 verificado en producción. Columna "Activo IVR" eliminada de sections/form.html (th, td, checkbox inline wk-ivr-active y JS ivrActive). Campo is_active oculto en users/form.html para roles WORKSHOP/DRIVER via guard {% if object.role not in ... %}. CompanyUserUpdateView.post() fuerza is_active=True para WORKSHOP/DRIVER antes de super().post(). Fix id duplicado form-force-reset → form-user-edit en users/form.html (campos Rol, Horario y Teléfono ahora editables). Enlace retorno hardcodeado → {{ next_url }} + texto "Volver atrás". Selector de sección añadido a users/form.html (field section_pk). CompanyUserUpdateView.get_context_data() añade sections y current_section_pk al contexto. CompanyUserUpdateView.post() gestiona cambio de sección: desvincula Contact de secciones actuales y vincula a la nueva via M2M. Panel inline de alta de trabajador en sections/form.html: selector wk-workday-schedule añadido. CompanyUserCreateView.post() asigna WorkdaySchedule desde workday_schedule_pk del POST (scoped a empresa). SectionUpdateView._form_valid() preserva contactos WORKSHOP/DRIVER en M2M tras form.save() capturando _worker_contacts antes y re-añadiéndolos después. PRIORIDAD 2 parcialmente validada en producción. |
-| 034    | 2026-05-19 | Incidencias on-fly: gestión de usuarios, contactos, secciones y horarios de trabajo | PRIORIDAD 1 completada: eliminación múltiple de CompanyUser con detección de riesgo IVR (CompanyUserBulkDeleteView + bulk_delete_confirm.html + users/list.html con checkboxes). Incidencia: eliminación de contactos desde el formulario de contacto (ContactDeleteView + contacts/confirm_delete.html + botoón en contacts/form.html). Incidencia: TemplateSyntaxError doble bloque extra_head en absence_category_list.html — fusionado en un único bloque (CSS + JS). Incidencia: contadores de secciones corregidos — SectionListView anotada con ivr_contact_count (excluye WORKSHOP/DRIVER) y worker_count (solo WORKSHOP/DRIVER). Incidencia: selector de horario de trabajo individual por trabajador desde el formulario de sección — WorkerScheduleUpdateView AJAX + columna Horario de trabajo en tabla de trabajadores. Incidencia: horario de trabajo por defecto de sección — FK Section.workday_schedule (ivr_config migración 0024), SectionForm ampliado, SectionCreateView/UpdateView con queryset restringido. Gate 4 actualizado con cadena de prioridad de tres niveles: CompanyUser.workday_schedule → primera sección activa con workday_schedule → WorkdaySchedule.is_default=True de empresa. Incidencia: bugs CompanyUserUpdateView — teléfono no persiste (post() actualiza Contact), redirección fija corregida con next_url resuelto en get_context_data (POST → GET → HTTP_REFERER → fallback). Incidencia pendiente para S035: contador de trabajadores en secciones no persiste (worker_count muestra 0 aunque existan trabajadores asignados). |
+### I3 — HC/HF por defecto en bloques nuevos
+**Descripción:** Al añadir un bloque nuevo, proponer como HC la HF del último
+bloque guardado, y como HF el `end_time_morning` del horario (o `end_time_afternoon`
+si la HC supera la comida).
+**Pendiente implementación en S041 — JS en form_entry_assets.js.**
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S033)
+## Directrices Técnicas Vinculantes
 
-### CONTEXTO
-
-S032 completo la CUARTA, QUINTA y SEXTA acciones de la hoja de ruta pendiente
-desde S031, mas la decision de hacer repair_notes obligatorio en todas las vias:
-
-CUARTA ACCION — capture=environment en upload_entry.html: completada.
-  PMP quirurgico. Activa camara trasera en Android Chrome sin afectar desktop.
-
-QUINTA ACCION — Unificacion prompt extraccion + correcciones D4/D5: completada.
-  extract_work_order_page() unificada a _EXTRACTION_PROMPT_FULL.
-  extraction_confidence y uncertain_date leidos desde sesion en ConfirmView.
-
-SEXTA ACCION — CSS naranja campos operario: completada.
-  .field-flagged ampliado en panel.css. .field-optional creada.
-  form_entry.html, form_entry_assets.js y _buildBlockRow actualizados.
-
-repair_notes OBLIGATORIO en todas las vias: completado.
-  Gate 2 server-side en WorkOrderEntryFormView y WorkOrderEntryConfirmView.
-  Gate 2 client-side en form_entry_assets.js.
-  Label con asterisco en form_entry.html y _buildBlockRow.
-
-ADVERTENCIAS CRITICAS — mantener siempre presentes:
-  El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
-  Usar siempre entry.lines.all() y prefetch_related("entries__lines").
-
-  _compute_delta_hours: siempre pasar deduct_lunch=False en partes digitales.
-  Pipeline PDF usa el valor por defecto True. NO cambiar el default.
-
-  form_entry_assets.js: URLs Django inyectadas via window.EB_CONFIG en el template.
-  Si se anaden nuevas URLs Django al JS, anadirlas primero al bloque EB_CONFIG.
-
-### REGISTRO DE SESION S033 (2026-05-19)
-
-PRIMERA ACCION completada — Rediseno validacion Via C (confirm_entry.html):
-  - Asterisco en label de fault_description (campo obligatorio Gate 2).
-  - small.text-warning bajo cada campo con flag Gemini (9 patchers):
-    MAQUINA, H.C., H.F., DESCRIPCION en entradas;
-    REFERENCIA, MATERIAL, UNIDADES, PROCEDENCIA en repuestos.
-  - Texto: 'Gemini no pudo leer este campo con certeza — revisa el valor
-    antes de guardar.' — aparece solo cuando el flag esta presente,
-    independientemente de si el campo esta vacio.
-  - djlint: 0 errores.
-
-SEGUNDA ACCION completada — Actualizacion tecnica del anexo V07:
-  - Seccion 2.2 Via C: estado COMPLETADO (S033), nota S033 sobre flags.
-  - Seccion 2.4: nota S033 sobre uso de flags en confirm_entry.html.
-  - Seccion 2.10: Gate 2 y alineacion client-side documentados al completo.
-
-Incidencias on-fly resueltas en S033 (fuera del H7):
-  H13 — Salas de chat no se creaban al crear seccion nueva:
-    chat/signals.py creado (signal post_save sobre Section).
-    chat/apps.py: ready() conecta la signal.
-    init_chat_rooms: filtro is_active=True eliminado de Section.
-    3 salas nuevas creadas: Asistencia, Elevacion, Taller Mecanico.
-  Panel — Gestion de trabajadores por seccion:
-    SectionUpdateView/form.html: boton desvincular trabajador de seccion.
-    CompanyUserSectionUnlinkView: POST /panel/users/<pk>/unlink-section/.
-    CompanyUserListView: filtro ?section=<pk> en lista de usuarios.
-    users/list.html: select de seccion con submit automatico.
-    CompanyUserCreateView: Contact creado siempre al asignar seccion
-      aunque no haya telefono (fix bug trabajadores sin Contact).
-    Contactos IVR: excluidos roles WORKSHOP y DRIVER de todos los
-      selectores de contacto en secciones y CallFlows.
-    CompanyUserUpdateView: campo telefono en formulario de edicion;
-      get_context_data pre-rellena desde Contact vinculado;
-      post() actualiza o crea Contact con nuevo phone_number.
-    chat/services.py: mensaje de bienvenida WhatsApp ampliado:
-      Rama A (CompanyUser ya existe): envia credenciales si
-        must_change_password=True, distinguiendo usuario del panel
-        de alias del chat.
-      Rama B (nuevo CompanyUser): mensaje mejorado con misma distincion.
-
-### Estado de migraciones al cierre de S033
-
-| App                  | Última migración aplicada                    |
-|----------------------|----------------------------------------------|
-| fleet                | 0005_add_first_repair_to_machineasset        |
-| work_order_processor | 0018_workdaygap_lunch_break                  |
-| ivr_config           | 0018_workdayschedule_season_split_times      |
-| panel                | 0001_initial (AnalyticsProfile)              |
-
-### Estado de migraciones al cierre de S034
-
-| App                  | Última migración aplicada                    |
-|----------------------|----------------------------------------------|
-| fleet                | 0005_add_first_repair_to_machineasset        |
-| work_order_processor | 0018_workdaygap_lunch_break                  |
-| ivr_config           | 0024_section_workday_schedule                |
-| panel                | 0001_initial (AnalyticsProfile)              |
+- **SDK IA:** `google-genai 1.69.0` — Modelo: `gemini-live-2.5-flash-native-audio` — Vertex AI
+- **Framework:** Django `5.2.12` — Servidor async: `aiohttp 3.13.5` — Puerto `8081`
+- **Twilio SDK:** `twilio 9.10.4` — Auth via API Key
+- **VAD servidor:** `disabled=True` — Voice: `Aoede`
+- **Entorno:** PythonAnywhere — Python `3.10.5` — `EnterpriseBot_venv`
+- **BD:** MySQL `MiguelAeTxio$enterprisebot`
+- Directriz 4.4 activa: actualización online obligatoria antes de implementar código con APIs externas.
+- `cssutils==2.15.0` instalado en `EnterpriseBot_venv` (añadido a requirements.in en S040).
 
 ---
 
-## 5. Registro de Sesión S038 (2026-05-22)
+## Migraciones Aplicadas en S040
 
-### Ejecutado en S038
-
-**S038 — Menú de Ayuda WhatsApp para Contactos de Sección + Dispositivo de Confianza**
-
-BLOQUE 1 — Menú de ayuda WhatsApp (PRIORIDAD 0 de S038):
-
-  - Diagnóstico de la Content API de Twilio: la autenticación correcta es
-    TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN (no API Key SID/Secret).
-    TWILIO_AUTH_TOKEN añadido al .env con valor correcto obtenido desde
-    la consola de Twilio.
-  - Plantilla `enterprisebot_help_menu` creada via Content API:
-      SID: HX60a55eb907abf6c06f4e825490ffd847
-      Tipo: twilio/quick-reply + twilio/text (fallback)
-      Cuerpo: "Hola 👋 ¿En qué podemos ayudarte?"
-      Botón 1 — id: help_schedules / título: "Ver horarios"
-      Botón 2 — id: help_agent   / título: "Hablar con alguien"
-      Estado WhatsApp: user-initiated OK (no requiere aprobación para nuestro caso).
-      TWILIO_HELP_MENU_TEMPLATE_SID añadido al .env.
-  - chat/services.py modificado (PMA):
-      Constante _HELP_VARIANTS (frozenset, O(1)) con variantes canónica,
-      duplicación vocal, transposición, fonética andaluza, puntuación,
-      inglés y sinónimos universales.
-      Helper _is_help_request(body) → bool.
-      Helper _send_help_menu(contact, from_number, to_number): envío
-      quick-reply via TWILIO_HELP_MENU_TEMPLATE_SID con fallback texto plano.
-      Regla 3b insertada en dispatch_inbound_message() entre Regla 3 y Regla 4:
-      intercepta la solicitud de ayuda antes de alias collection y breakdown
-      routing. Devuelve DispatchResult(consumed=True) inmediatamente.
-
-BLOQUE 2 — Dispositivo de confianza (incidencia S038, fuera de hoja de ruta original):
-
-  - ivr_config/models.py: campo trusted_device_token (UUIDField, null=True,
-    blank=True, default=None) añadido a CompanyUser.
-  - Migración ivr_config 0026_add_trusted_device_token aplicada en producción.
-  - panel/views.py modificado (PMA dos patchers):
-      PanelPasswordChangeView.post(): al limpiar must_change_password (_was_forced=True),
-      genera UUID4, lo persiste en CompanyUser.trusted_device_token y emite
-      cookie HttpOnly firmada "eb_trusted_device" (max_age=365 días, secure=True,
-      samesite=Lax) con payload {uid, tok} firmado via django.core.signing.
-      PanelLoginView.dispatch(): si el usuario no está autenticado y porta la
-      cookie "eb_trusted_device", valida firma, max_age, uid, tok contra BD
-      y autenticidad de CompanyUser (is_active=True, must_change_password=False,
-      trusted_device_token no nulo). Si válida, autentica directamente con
-      auth_login() y redirige al dashboard sin mostrar el formulario.
+| Número | Nombre | Descripción |
+|---|---|---|
+| 0020 | add_no_lunch_break_to_workorderentry | Campo BooleanField no_lunch_break en WorkOrderEntry |
+| 0021 | add_in_progress_status | Nuevo valor IN_PROGRESS en WorkOrder.Status.TextChoices |
 
 ---
 
-## 5. Registro de Sesión S039 (2026-05-26)
+## Hoja de Ruta para la Siguiente Sesión (S041)
 
-### Ejecutado en S039
+### Prioridad 0 — Fix CSS colores de campos (I1)
+Ver sección "Incidencias Pendientes" — descripción completa y método obligatorio detallados arriba.
+Ejecutar en este orden exacto: panel.css → form_entry.html → form_entry_assets.js.
+Recolectar estáticos y recargar servidor al finalizar los tres archivos.
 
-**S039 — Corrección navegación digital_list, Excel partes digitales y sistema de revisados**
+### Prioridad 1 — Diagnóstico y fix pausa de comida en modo retomar (I2)
+Añadir log en save_blocks POST para verificar que _lb_start/_lb_end llegan y se persisten.
+Si el problema es de parseo del POST: verificar que los campos lunch_break_start/end
+se incluyen en el submit de save_blocks (pueden estar dentro de #lunch-break-times
+que queda oculto si no_lunch_break está marcado — verificar que los inputs ocultos
+siguen enviándose al servidor aunque el div sea d-none).
 
-BLOQUE 0 — PCH de apertura: pivote desde H16 (Motor de Presupuestos pausado por falta
-  de documentación del cliente) a H7. MASTER_DOCUMENT actualizado: H16 → PAUSADO,
-  H7 → EN PROGRESO. Hoja de ruta S039 redactada con tres prioridades nuevas (P0/P1/P2)
-  antepuestas a las heredadas de S038 (P3/P4). PCVA intermedio ejecutado para
-  preservar los cambios documentales antes de continuar con el trabajo técnico.
-  Adicionalmente: auditoría completa de botones "Atrás" en toda la plataforma —
-  ningún otro template presenta el mismo problema que WorkOrderEditView.
+### Prioridad 2 — HC/HF por defecto en bloques nuevos (I3)
+En form_entry_assets.js, en la función que añade un bloque nuevo (addBlock o similar),
+leer la HF del último bloque visible y usarla como HC del nuevo bloque.
+Usar EB_CONFIG.lunchBreakStart y EB_CONFIG.lunchBreakEnd para determinar si
+el nuevo HC supera la comida y ajustar el HF sugerido al end_time_afternoon.
 
-BLOQUE 1 — PRIORIDAD 0 — Corrección botón "Atrás" en WorkOrderEditView (COMPLETADO):
-  Diagnóstico: WorkOrderEditView.get() resolvía back_url únicamente con
-  from_param == "taller" → admin_history o fallback → work_order_list (PDF).
-  Los enlaces Editar de digital_list.html no pasaban ningún parámetro ?from=,
-  por lo que el botón Atrás siempre redirigía a la lista PDF.
-  Corrección:
-    - panel/views.py (PMA script SWAP): nuevo caso from_param == "digital" →
-      back_url = reverse("panel:digital_work_order_list"). Comentarios bilingües
-      actualizados para los tres casos (digital / taller / default).
-    - digital_list.html (PMA script SWAP): ?from=digital añadido a los dos
-      enlaces Editar (pestañas Pendiente y Revisados). 0 errores djlint.
+### Prioridad 3 — Bloque 3: campo in_situ + location_description
+BooleanField `in_situ` y CharField `location_description` en WorkOrderEntry.
+Migración, formulario (checkbox + textarea condicional), views y template.
+JS: si in_situ=True mostrar textarea de ubicación; si False ocultarlo y limpiar valor.
 
-BLOQUE 2 — PRIORIDAD 1 — Excel partes digitales (COMPLETADO):
-  Diagnóstico: formulario de descarga en digital_list.html usaba method="get"
-  — los pks nunca llegaban al endpoint POST WorkOrderAdminExportView. Además
-  faltaba export_mode y CSRF token.
-  Implementación:
-    - panel/views.py (PMA script SWAP): nuevo modo digital_full en
-      WorkOrderAdminExportView.post() + método _build_digital_full_excel()
-      con tres hojas: Tareas (14 columnas incluyendo OR, odómetro, horómetros,
-      tipología Gemini), Repuestos (9 columnas con precio unitario y proveedor),
-      Incidencias de jornada (11 columnas con resolución LUNCH_BREAK). Queries
-      optimizadas con select_related y prefetch_related. Autofit de columnas.
-    - digital_list.html (PMA script SWAP + correcciones H021):
-      Botón de descarga sustituido por disparador de modal de configuración.
-      Modal exportConfigModal con tres secciones: operarios (radio por operario
-      de la lista, opción "todos"), formato (digital_full / multi_sheet /
-      single_sheet con descripción), ámbito (selección actual / todos los
-      revisados del filtro). Formulario oculto POST con CSRF rellenado y
-      submiteado desde JS al confirmar. style inline → clase d-none (H021
-      resuelto). 0 errores djlint.
-
-BLOQUE 3 — PRIORIDAD 2 — Sistema de revisados en digital_list (COMPLETADO):
-  Diagnóstico: pestaña Pendiente tenía badge con polling hx-get sin botón
-  toggle. Pestaña Revisados tenía badge estático hardcodeado sin botón
-  de desmarcar. Ninguna pestaña tenía el toggle HTMX funcional.
-  Corrección (PMA script SWAP): ambos badges sustituidos por
-  {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
-  en pestañas Pendiente y Revisados. El fragmento ya incluye el div wrapper
-  con id único, badge de estado y botones toggle HTMX (hx-post, hx-target,
-  hx-swap outerHTML, X-CSRFToken). 0 errores djlint.
-
-PRIORIDADES 3 y 4 diferidas — no alcanzadas en S039. Pasan a S040 como P0 y P1.
-
-### Correcciones aplicadas fuera de sesión de hito (2026-05-27 — S002 Stand-by)
-
-Durante la sesión S002 del Sistema de Ruegos y Preguntas se corrigieron los
-permisos de acceso del flujo de entrada de partes digitales del operario.
-Las siguientes vistas tenían incorrectamente asignado SupervisorAccessMixin
-en lugar de WorkshopRequiredMixin, impidiendo a los operarios WORKSHOP
-introducir partes por cualquier vía:
-
-- WorkOrderEntryHistoryView (panel/views.py:9278)
-- WorkOrderEntryUploadView (panel/views.py:6503)
-- WorkOrderEntryConfirmView (panel/views.py:6978)
-- WorkOrderEntryFormView (panel/views.py:8075)
-- WorkOrderEntryMergeView (panel/views.py:10302)
-- WorkdayGapResolutionView (panel/views.py:11022)
-- WorkOrderDescriptionAutocompleteView (panel/views.py:14364)
-
-Todas corregidas a WorkshopRequiredMixin. Sintaxis validada. Reload aplicado.
-El operario miguel-loja confirmó acceso y persistencia de partes correctos
-tras la corrección.
-
-Adicionalmente se reorganizó el sidebar (_nav_items.html):
-- Ítem "Historial" en sección Operarios restringido a WORKSHOP y WORKSHOPBOSS.
-- Ítem "Historial" para ADMIN/SUPERVISOR apunta a work_order_admin_history.
-- Ítem "Partes digitales" eliminado del sidebar (accesible via URL directa).
-
-### Estado de archivos modificados en S039
-
-| Archivo | Tipo de cambio |
-|---|---|
-| DOCS/MAINS/ENTERPRISEBOT_MASTER_DOCUMENT.md | PCH apertura + PCH cierre (H16↔H7) |
-| DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md | Hoja de ruta S039→S040 + registro S039 |
-| panel/views.py | ?from=digital en WorkOrderEditView + digital_full en WorkOrderAdminExportView |
-| panel/templates/panel/work_orders/digital_list.html | ?from=digital en enlaces Editar + modal exportación + badges revisado HTMX |
+### Prioridad 4 — Validación E2E menú de ayuda WhatsApp (P0 del anexo)
+Pendiente desde S039. Requiere contacto real escribiendo variantes de "ayuda".
+Verificar que quick-reply llega con ids correctos: help_schedules y help_agent.
 
 ---
 
-## 6. Hoja de Ruta para la Siguiente Sesión (S040)
+## Registro de Sesiones
 
-### ADVERTENCIAS CRÍTICAS — mantener siempre presentes
+### S001 — S039
+[Historial anterior preservado — ver versiones anteriores del anexo]
 
-  El FK WorkOrderEntryLine.entry tiene related_name="lines" (NO "entry_lines").
-  Usar siempre entry.lines.all() y prefetch_related("entries__lines").
-
-  _compute_delta_hours: siempre pasar deduct_lunch=False en partes digitales.
-  Pipeline PDF usa el valor por defecto True. NO cambiar el default.
-
-  form_entry_assets.js: URLs Django inyectadas via window.EB_CONFIG en el template.
-  Si se añaden nuevas URLs Django al JS, añadirlas primero al bloque EB_CONFIG.
-  Desde S036: lunchBreakStart y lunchBreakEnd también se inyectan via EB_CONFIG.
-
-  Section.workday_schedule: FK(WorkdaySchedule, SET_NULL, null=True, blank=True)
-  añadida en S034 (migración ivr_config 0024_section_workday_schedule).
-  Cadena de prioridad Gate 4:
-    1. CompanyUser.workday_schedule (individual, máxima prioridad).
-    2. Primera sección activa del operario con workday_schedule asignado.
-    3. WorkdaySchedule con is_default=True de empresa (fallback global).
-    4. None → Gate 4 se omite completamente.
-
-  WorkOrderEntry.lunch_break_start / lunch_break_end: campos TimeField nullable
-  añadidos en S036 (migración work_order_processor 0019_add_lunch_break_to_workorderentry).
-  El descuento de pausa se aplica por bloque (overlap con [lunch_break_start, lunch_break_end]).
-  El JS precalcula el overlap en minutos (lunch_overlap_N) y el backend lo aplica al delta_hours.
-
-  _resolve_operator_schedule(cu, company): helper de módulo en panel/views.py
-  que resuelve la cadena de prioridad Gate 4. Usar en lugar de duplicar la lógica inline.
-
-  SectionUpdateView._form_valid() preserva contactos WORKSHOP/DRIVER en M2M:
-  _worker_contacts se captura antes de form.save() y se re-añade después.
-  No eliminar esta lógica bajo ningún concepto.
-
-  CompanyUserUpdateView.post(): fuerza is_active=True para WORKSHOP/DRIVER
-  antes de super().post(). No revertir.
-
-  trusted_device_token (UUIDField, null=True) en CompanyUser — migración
-  ivr_config 0026_add_trusted_device_token aplicada.
-  Cookie "eb_trusted_device": HttpOnly, secure, samesite=Lax, max_age=365 días,
-  payload {uid, tok} firmado con django.core.signing.
-  La cookie se emite ÚNICAMENTE en el primer cambio obligatorio de contraseña
-  (_was_forced=True). Para usuarios que ya establecieron contraseña en el pasado
-  existe una tarea pendiente en S040 (ver PRIORIDAD 0 abajo).
-
-  WorkOrderAdminExportView — nuevo modo digital_full implementado en S039:
-  método _build_digital_full_excel() genera Excel de tres hojas (Tareas,
-  Repuestos, Incidencias de jornada) con todos los campos exclusivos de
-  partes digitales. Modal de configuración en digital_list.html con selección
-  de operarios, formato (digital_full / multi_sheet / single_sheet) y ámbito
-  (selección / todos los revisados). Formulario POST con CSRF correcto.
-
-  WorkOrderEditView.get() — parámetro ?from=digital resuelve back_url a
-  digital_work_order_list. Los enlaces Editar de digital_list.html incluyen
-  ?from=digital. Parámetro ?from=taller sigue funcionando para admin_history.
-
-### PRIORIDAD 0 — Validación E2E del menú de ayuda WhatsApp
-
-  Validar en producción el flujo completo del menú de ayuda:
-  1. Un contacto de sección escribe "ayuda" (y al menos dos variantes: "halluda",
-     "ayuuda") desde WhatsApp.
-  2. El sistema responde con el quick-reply de dos botones sin disparar el
-     flujo de alias collection ni breakdown routing.
-  3. El contacto pulsa cada botón y se verifica que el id devuelto
-     ("help_schedules" / "help_agent") llega correctamente al webhook.
-  Nota: la gestión de la respuesta al botón (enrutamiento posterior según
-  la opción elegida) NO está implementada aún — queda para una sesión futura.
-  En S040 solo se valida que el menú se envía y los ids se reciben.
-
-### PRIORIDAD 1 — Dispositivo de confianza: checkbox en cambio voluntario de contraseña
-
-  Los usuarios que establecieron su contraseña antes de S038 tienen
-  trusted_device_token=None y nunca pasarán por el flujo _was_forced=True.
-  Para que puedan marcar su dispositivo actual como de confianza se añade
-  un checkbox opcional "Recordar este dispositivo" en el formulario de cambio
-  voluntario de contraseña (PanelPasswordChangeView, rama is_forced=False).
-
-  Archivos a modificar:
-    - panel/views.py: PanelPasswordChangeView.post() — si el formulario es
-      voluntario (not _was_forced) y el POST contiene "trust_device"=on,
-      generar UUID4, persistir en trusted_device_token y emitir la cookie
-      con la misma lógica que el flujo forzado.
-    - panel/templates/panel/password/change.html: añadir checkbox
-      "Recordar este dispositivo" visible únicamente cuando is_forced=False.
-
-  Criterio de éxito: un usuario con contraseña ya establecida marca el
-  checkbox, cambia (o no cambia, si se decide exponer el checkbox sin
-  obligar al cambio) su contraseña y el dispositivo queda como de confianza
-  — accede al panel sin formulario de login en la siguiente visita.
-
-### PRIORIDAD 2 — Incidencia: bloques mañana/tarde generan GAP erróneo (hora de comida)
-
-  CONTEXTO: Gate 4 detecta laguna (GAP) entre bloque mañana y bloque tarde cuando el operario introduce dos bloques separados (ej: 08:00-14:00 + 15:00-18:00) en lugar de un único bloque (08:00-18:00). El sistema descuenta correctamente la pausa en el bloque único, pero con dos bloques detecta la separación como GAP sin justificar, lo cual es erróneo: la separación ES la pausa de comida ya contemplada en el WorkdaySchedule.
-
-  CAUSA RAÍZ: _detect_workday_gaps() en panel/views.py compara cada par consecutivo (hf[i], hc[i+1]) y registra GAP si la diferencia supera tolerance_minutes, sin verificar si el intervalo coincide con la ventana lunch_break_start / lunch_break_end del WorkdaySchedule.
-
-  SOLUCIÓN: En _detect_workday_gaps(), antes de registrar un GAP entre dos bloques consecutivos, verificar si el intervalo [hf[i], hc[i+1]] está contenido dentro de la ventana de pausa de comida del WorkdaySchedule (lunch_break_start / lunch_break_end). Si el hueco queda dentro de la ventana de pausa (con tolerancia), no registrar GAP.
-
-  Archivo a modificar:
-    - panel/views.py: _detect_workday_gaps() — añadir parámetros lunch_break_start y lunch_break_end (nullable). Si ambos presentes, suprimir el GAP cuando [hf[i], hc[i+1]] solapa con la ventana de pausa. Actualizar todas las llamadas al helper para pasar estos campos desde el WorkdaySchedule resuelto. Compatibilidad total si son None.
-
-  Criterio de éxito: operario que introduce dos bloques (mañana + tarde) separados exactamente por la pausa configurada en el horario puede persistir el parte sin que Gate 4 lo intercepte como incidencia de laguna.
-
-### PRIORIDAD 3 — Marca de verificación en partes de operario
-
-  Pendiente de definición detallada con Miguel Ángel al inicio de S040. Describir el alcance exacto del campo de verificación antes de implementar.
-
-### PRIORIDAD 4 (ex-P0) — Validación E2E del menú de ayuda WhatsApp
-
-  Validar en producción el flujo completo del menú de ayuda:
-  1. Un contacto de sección escribe "ayuda" (y variantes: "halluda", "ayuuda").
-  2. El sistema responde con el quick-reply de dos botones sin disparar alias collection ni breakdown routing.
-  3. El contacto pulsa cada botón y se verifica que el id devuelto ("help_schedules" / "help_agent") llega correctamente al webhook.
-  La gestión de la respuesta al botón NO está implementada aún.
-
-### PRIORIDAD 5 (ex-P1) — Dispositivo de confianza: checkbox en cambio voluntario de contraseña
-
-  Los usuarios que establecieron contraseña antes de S038 tienen trusted_device_token=None. Añadir checkbox opcional "Recordar este dispositivo" en PanelPasswordChangeView (rama is_forced=False).
-
-  Archivos a modificar:
-    - panel/views.py: PanelPasswordChangeView.post() — si not _was_forced y POST contiene "trust_device"=on: generar UUID4, persistir en trusted_device_token y emitir cookie con la misma lógica forzada.
-    - panel/templates/panel/password/change.html: checkbox "Recordar este dispositivo" visible solo cuando is_forced=False.
-
-  Criterio de éxito: usuario con contraseña ya establecida marca el checkbox y el dispositivo queda como de confianza — accede al panel sin login en la siguiente visita.
-
-
+### S040 — 2026-05-27
+**Título:** Fix GAP comida, horas negativas, no_lunch_break y guardado progresivo por bloques
+**Descripción:** Sesión S040 del Hito 7. Se resolvieron cuatro incidencias principales:
+corrección del bug de GAP falso positivo entre bloques mañana+tarde (validators.py +
+views.py, comparadores >= y <=, eliminación de constantes hardcodeadas de duración);
+corrección de horas extra negativas en operario sin partes (WorkOrderEntryHistoryView,
+cortocircuito cuando earliest=None); implementación completa del campo no_lunch_break
+en WorkOrderEntry (modelo, migración 0020, views, template, JS) con checkbox visible
+solo en jornada partida y toggle de campos de hora; implementación del guardado
+progresivo por bloques con estado IN_PROGRESS (migración 0021, rediseño de
+WorkOrderEntryFormView GET/POST, Gate 0 actualizado, template con dos botones).
+La sesión se cerró con la incidencia de colores CSS sin resolver por errores
+reiterados de incumplimiento del PED por parte del modelo.
