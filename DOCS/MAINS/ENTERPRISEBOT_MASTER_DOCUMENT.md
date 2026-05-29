@@ -219,4 +219,13 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Motor de cálculo basado en datos de entrada del operario y facturas de referencia.
 - Generación de documento de presupuesto exportable.
 
+### Hito 17: Albaranes y Órdenes de Trabajo ASISTENCIA (PENDIENTE)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`)
+- Generación de órdenes de trabajo desde presupuesto aceptado o entrada directa.
+- Albarán digital prellenado enviado al operario vía notificación WhatsApp.
+- Interfaz móvil optimizada para operario: casillas, desplegables, conceptos adicionales.
+- Firma digital del cliente en pantalla táctil del móvil del operario.
+- Modo offline PWA con sincronización automática al recuperar cobertura.
+- Albarán cerrado exportable para revisión y facturación.
+
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)
