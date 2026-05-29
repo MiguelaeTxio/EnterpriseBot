@@ -63,6 +63,7 @@
 ./panel/templates/panel/dashboard.html
 ./panel/templates/panel/presence/status.html
 ./panel/templates/panel/profile/own_profile.html
+./panel/templates/panel/company/settings.html
 ./panel/templates/panel/password/change.html
 ./panel/templates/panel/password/_field_pw.html
 ./panel/templates/panel/phonenumbers/list.html
@@ -309,6 +310,7 @@
 ./budgets/templates/budgets/_insurer_fields_partial.html
 ./budgets/templates/budgets/insurer_list.html
 ./budgets/templates/budgets/insurer_form.html
+./budgets/templates/budgets/insurer_detail.html
 ./budgets/templates/budgets/_tariff_line_row_fragment.html
 ./budgets/templates/budgets/result.html
 ./budgets/templates/budgets/_tariff_line_add_form_fragment.html
@@ -319,10 +321,15 @@
 ./budgets/views.py
 ./budgets/apps.py
 ./budgets/models.py
+./budgets/migrations/0005_budget_total_amount_with_iva.py
 ./budgets/migrations/__init__.py
 ./budgets/migrations/0003_insurer_is_insurance_company.py
+./budgets/migrations/0004_insurer_company_and_service_name.py
 ./budgets/migrations/0002_budget_apply_iva.py
 ./budgets/migrations/0001_initial.py
+./budgets/migrations/0006_insurer_iva_special_rate_tariff.py
+./budgets/templatetags/__init__.py
+./budgets/templatetags/budgets_extras.py
 ./budgets/management/commands/__init__.py
 ./budgets/management/commands/seed_insurer_tariffs.py
 ./budgets/management/__init__.py

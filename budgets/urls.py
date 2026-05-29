@@ -68,6 +68,16 @@ urlpatterns = [
         name="history",
     ),
 
+    # Budget bulk delete — elimina multiples presupuestos seleccionados. Solo ADMIN.
+    # Excluye presupuestos en estado ACCEPTED.
+    # Budget bulk delete — deletes multiple selected budgets. ADMIN only.
+    # Excludes budgets with ACCEPTED status.
+    path(
+        "history/bulk-delete/",
+        views.BudgetBulkDeleteView.as_view(),
+        name="budget_bulk_delete",
+    ),
+
     # Budget detail — desglose completo de un presupuesto. Solo ADMIN.
     # Budget detail — full breakdown of a budget. ADMIN only.
     path(
@@ -95,6 +105,14 @@ urlpatterns = [
         "insurers/new/",
         views.InsurerCreateView.as_view(),
         name="insurer_create",
+    ),
+
+    # Insurer detail — vista de solo lectura de tarifa completa. Solo ADMIN.
+    # Insurer detail — read-only full tariff view. ADMIN only.
+    path(
+        "insurers/<int:pk>/detail/",
+        views.InsurerDetailView.as_view(),
+        name="insurer_detail",
     ),
 
     # Insurer update — formulario de edicion de aseguradora existente.

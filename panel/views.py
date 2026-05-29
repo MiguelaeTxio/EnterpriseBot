@@ -15744,3 +15744,64 @@ class MachineAssetAnalyticsView(AdminRoleRequiredMixin, View):
             **filters,
         }
         return render(request, self.template_name, ctx)
+
+
+# ---------------------------------------------------------------------------
+# Company settings — expose operation_bases and labor_calendar to ADMIN
+# Configuración de empresa — expone bases de operación y calendario laboral a ADMIN
+# Hito 16 Paso 8 (2026-05-28)
+# ---------------------------------------------------------------------------
+
+class CompanySettingsView(AdminRoleRequiredMixin, View):
+    """
+    Allows ADMIN users to edit the company-level text fields
+    operation_bases and labor_calendar on the Company model.
+    GET: renders the settings form pre-populated with the current values.
+    POST: validates and saves both fields, then redirects back with a
+    success message.
+    ---
+    Permite a los usuarios ADMIN editar los campos de texto de nivel empresa
+    operation_bases y labor_calendar del modelo Company.
+    GET: renderiza el formulario de configuración con los valores actuales.
+    POST: valida y guarda ambos campos, luego redirige con mensaje de éxito.
+    """
+
+    template_name = "panel/company/settings.html"
+
+    def get(self, request):
+        """
+        Render the company settings form with current field values.
+        ---
+        Renderiza el formulario de configuración con los valores actuales.
+        """
+        from ivr_config.models import Company
+        company_user = request.user.company_user
+        company = company_user.company
+        ctx = {
+            "company": company,
+            "company_user": company_user,
+            "own_presence": PresenceStatus.objects.filter(
+                company_user=company_user,
+                starts_at__lte=now(),
+            ).filter(
+                Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+            ).order_by("-starts_at").first(),
+            "active_nav": "company_settings",
+        }
+        return render(request, self.template_name, ctx)
+
+    def post(self, request):
+        """
+        Save operation_bases and labor_calendar fields to the Company instance.
+        Redirect back to the settings view with a success message.
+        ---
+        Guarda los campos operation_bases y labor_calendar en la instancia Company.
+        Redirige de vuelta a la vista de configuración con mensaje de éxito.
+        """
+        company_user = request.user.company_user
+        company = company_user.company
+        company.operation_bases = request.POST.get("operation_bases", "").strip()
+        company.labor_calendar = request.POST.get("labor_calendar", "").strip()
+        company.save(update_fields=["operation_bases", "labor_calendar"])
+        django_messages.success(request, "Configuración de empresa guardada correctamente.")
+        return redirect("panel:company_settings")

@@ -40,7 +40,38 @@ class Insurer(models.Model):
     name = models.CharField(
         max_length=200,
         verbose_name="Nombre",
-        help_text="Nombre comercial de la aseguradora (ej: AXA Assistance, RACE, Mapfre).",
+        help_text=(
+            "Nombre combinado visible en el wizard: "
+            "'<Aseguradora> / <Empresa prestadora>' "
+            "(ej: 'Europ Assistance / Transgrual')."
+        ),
+    )
+    # Pure insurance company name, without the service company.
+    # Nombre puro de la aseguradora, sin la empresa prestadora.
+    insurer_company_name = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        verbose_name="Nombre aseguradora",
+        help_text=(
+            "Nombre de la compañía aseguradora pura "
+            "(ej: 'Europ Assistance', 'ARAG', 'Mapfre'). "
+            "Permite agrupar y filtrar tarifas de la misma aseguradora "
+            "atendidas por distintas empresas prestadoras."
+        ),
+    )
+    # Name of the company that actually delivers the service.
+    # Nombre de la empresa que presta el servicio en campo.
+    service_company_name = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        verbose_name="Empresa prestadora",
+        help_text=(
+            "Empresa que presta el servicio en campo "
+            "(ej: 'Transgrual', 'Grúas Alvarez', 'Asistencia y Grúas Granada'). "
+            "Junto con insurer_company_name conforma el name combinado del wizard."
+        ),
     )
     code = models.CharField(
         max_length=50,
@@ -85,6 +116,36 @@ class Insurer(models.Model):
             "True: compañía aseguradora. "
             "False: cliente particular con tarifa propia. "
             "Controla el label mostrado en el desplegable del asistente de presupuestos."
+        ),
+    )
+    # When True, IVA is always applied on budgets for this insurer.
+    # The wizard marks apply_iva automatically and does not allow the
+    # operator to uncheck it.
+    # Cuando es True, el IVA se aplica siempre en los presupuestos de
+    # esta aseguradora. El wizard marca apply_iva automaticamente y no
+    # permite al operario desmarcarlo.
+    always_apply_iva = models.BooleanField(
+        default=False,
+        verbose_name="Aplicar IVA siempre",
+        help_text=(
+            "Si está activo, el IVA se aplica obligatoriamente en todos los "
+            "presupuestos de esta aseguradora. El operario no puede desmarcarlo."
+        ),
+    )
+    # When True, this insurer has a special rate table for night/holiday
+    # services instead of a simple percentage surcharge.
+    # The engine resolves SpecialRateTariff linked to the active InsurerTariff.
+    # Cuando es True, esta aseguradora tiene una tabla de tarifas especiales
+    # para servicios nocturnos/festivos en lugar de un recargo porcentual simple.
+    # El motor resuelve el SpecialRateTariff vinculado a la InsurerTariff activa.
+    special_night_holiday_tariff = models.BooleanField(
+        default=False,
+        verbose_name="Tarifa especial nocturno/festivo",
+        help_text=(
+            "Si está activo, el motor usa la tabla SpecialRateTariff vinculada "
+            "a la tarifa activa en lugar del recargo porcentual estándar. "
+            "Aplicable a aseguradoras como RACC/Zurich con precios diferenciados "
+            "por franja horaria."
         ),
     )
     notes = models.TextField(
@@ -571,6 +632,22 @@ class Budget(models.Model):
         verbose_name="Total presupuesto",
         help_text="Importe total calculado por el motor. Es la unica cifra visible para el operario.",
     )
+    # Total amount including IVA. Null when apply_iva is False.
+    # Persisted in DB so the result view does not need to recalculate.
+    # Importe total con IVA incluido. Nulo cuando apply_iva es False.
+    # Persistido en BD para que la vista de resultado no necesite recalcular.
+    total_amount_with_iva = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Total con IVA",
+        help_text=(
+            "Importe total del presupuesto con IVA incluido. "
+            "Solo se rellena cuando apply_iva es True. "
+            "El porcentaje de IVA aplicado se define en IVA_PERCENT en budgets/services.py."
+        ),
+    )
     status = models.CharField(
         max_length=10,
         choices=STATUS_CHOICES,
@@ -682,4 +759,152 @@ class BudgetLine(models.Model):
         return (
             f"Presupuesto #{self.budget_id} — "
             f"{self.concept_label} — {self.units} x {self.unit_price} = {self.subtotal}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 7. SPECIAL RATE TARIFF — Night/holiday special rate table for an insurer.
+#    Tabla de tarifas especiales nocturno/festivo vinculada a una InsurerTariff.
+# ---------------------------------------------------------------------------
+
+class SpecialRateTariff(models.Model):
+    """
+    Stores the night/holiday special rate table for an insurer that uses
+    differentiated pricing instead of a flat percentage surcharge.
+    Linked to the active InsurerTariff via a OneToOneField so there is
+    exactly one special rate table per tariff version.
+    When the insurer.special_night_holiday_tariff flag is True and a
+    SpecialRateTariff exists for the active tariff, the engine uses
+    SpecialRateLine records instead of applying NIGHT_HOLIDAY_PERCENT.
+    ---
+    Almacena la tabla de tarifas especiales nocturno/festivo para una
+    aseguradora con precios diferenciados en lugar de recargo porcentual plano.
+    Vinculada a la InsurerTariff activa mediante OneToOneField para garantizar
+    exactamente una tabla especial por versión de tarifa.
+    Cuando el flag insurer.special_night_holiday_tariff es True y existe un
+    SpecialRateTariff para la tarifa activa, el motor usa los registros
+    SpecialRateLine en lugar de aplicar NIGHT_HOLIDAY_PERCENT.
+    """
+
+    insurer_tariff = models.OneToOneField(
+        InsurerTariff,
+        on_delete=models.PROTECT,
+        related_name="special_rate",
+        verbose_name="Tarifa base",
+        help_text=(
+            "Tarifa activa de la aseguradora a la que está vinculada "
+            "esta tabla de precios especiales nocturno/festivo."
+        ),
+    )
+    notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Notas internas",
+        help_text="Observaciones internas sobre esta tabla de tarifas especiales.",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Tarifa especial nocturno/festivo"
+        verbose_name_plural = "Tarifas especiales nocturno/festivo"
+
+    def __str__(self):
+        return f"Tarifa especial nocturno/festivo — {self.insurer_tariff}"
+
+
+# ---------------------------------------------------------------------------
+# 8. SPECIAL RATE LINE — Individual price line for the special rate table.
+#    Línea de precio individual de la tabla de tarifas especiales.
+# ---------------------------------------------------------------------------
+
+class SpecialRateLine(models.Model):
+    """
+    Stores one price line within a SpecialRateTariff. Mirrors the structure
+    of TariffLine (concept, unit, price, vehicle_type) but applies exclusively
+    to night/holiday service conditions.
+    When vehicle_type is None, the line applies to all vehicle types
+    (generic concepts such as WAIT_HOUR, RESCUE_HOUR, UNLOCK).
+    ---
+    Almacena una línea de precio dentro de un SpecialRateTariff. Replica la
+    estructura de TariffLine (concepto, unidad, precio, tipo de vehículo) pero
+    aplica exclusivamente a condiciones de servicio nocturno/festivo.
+    Cuando vehicle_type es None, la línea aplica a todos los tipos de vehículo
+    (conceptos genéricos como WAIT_HOUR, RESCUE_HOUR, UNLOCK).
+    """
+
+    special_rate_tariff = models.ForeignKey(
+        SpecialRateTariff,
+        on_delete=models.CASCADE,
+        related_name="lines",
+        verbose_name="Tarifa especial",
+        help_text="Tabla de tarifas especiales a la que pertenece esta línea.",
+    )
+    vehicle_type = models.ForeignKey(
+        VehicleType,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="special_rate_lines",
+        verbose_name="Tipo de vehículo",
+        help_text=(
+            "Tipo de vehículo al que aplica esta línea. "
+            "Null indica que aplica a todos los tipos (concepto genérico)."
+        ),
+    )
+    concept = models.CharField(
+        max_length=30,
+        verbose_name="Concepto",
+        help_text="Código del concepto (DEPARTURE, KM_NORMAL, KM_LONG, SERVICE_LOCAL, etc.).",
+    )
+    unit = models.CharField(
+        max_length=10,
+        verbose_name="Unidad",
+        help_text="Unidad de medida del concepto (FIXED, PER_KM, PERCENT).",
+    )
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name="Precio",
+        help_text="Precio unitario para condiciones nocturnas/festivas.",
+    )
+    km_threshold = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Umbral km",
+        help_text=(
+            "Umbral de km a partir del cual se aplica la tarifa de largo recorrido. "
+            "Solo relevante para conceptos KM_NORMAL que coexisten con KM_LONG."
+        ),
+    )
+    min_units = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Unidades mínimas",
+        help_text=(
+            "Unidades mínimas facturables para este concepto. "
+            "Ej: rescate mínimo 2 horas."
+        ),
+    )
+
+    class Meta:
+        verbose_name = "Línea de tarifa especial"
+        verbose_name_plural = "Líneas de tarifa especial"
+        ordering = ["special_rate_tariff", "vehicle_type__sort_order", "concept"]
+
+    def __str__(self):
+        vt = self.vehicle_type.name if self.vehicle_type else "Genérico"
+        return (
+            f"{self.special_rate_tariff} — "
+            f"{vt} — {self.concept} — {self.price}"
         )

@@ -21,8 +21,46 @@
     required
     autofocus
   >
-  <div class="form-text text-muted small">Nombre comercial (ej: AXA Assistance, RACE, Mapfre).</div>
+  <div class="form-text text-muted small">Nombre combinado visible en el wizard: '&lt;Aseguradora&gt; / &lt;Empresa prestadora&gt;' (ej: 'Europ Assistance / Transgrual').</div>
   {% for error in form.name.errors %}
+  <div class="invalid-feedback">{{ error }}</div>
+  {% endfor %}
+</div>
+
+{# --- insurer_company_name --- #}
+<div class="mb-3">
+  <label for="id_insurer_company_name" class="form-label">
+    Aseguradora
+  </label>
+  <input
+    type="text"
+    id="id_insurer_company_name"
+    name="insurer_company_name"
+    class="form-control {% if form.insurer_company_name.errors %}is-invalid{% endif %}"
+    value="{{ form.insurer_company_name.value|default_if_none:'' }}"
+    maxlength="150"
+  >
+  <div class="form-text text-muted small">Nombre puro de la compañía aseguradora (ej: 'Europ Assistance', 'ARAG', 'Mapfre'). Permite agrupar y filtrar tarifas.</div>
+  {% for error in form.insurer_company_name.errors %}
+  <div class="invalid-feedback">{{ error }}</div>
+  {% endfor %}
+</div>
+
+{# --- service_company_name --- #}
+<div class="mb-3">
+  <label for="id_service_company_name" class="form-label">
+    Empresa prestadora
+  </label>
+  <input
+    type="text"
+    id="id_service_company_name"
+    name="service_company_name"
+    class="form-control {% if form.service_company_name.errors %}is-invalid{% endif %}"
+    value="{{ form.service_company_name.value|default_if_none:'' }}"
+    maxlength="150"
+  >
+  <div class="form-text text-muted small">Empresa que presta el servicio en campo (ej: 'Transgrual', 'Grúas Alvarez', 'Asistencia y Grúas Granada').</div>
+  {% for error in form.service_company_name.errors %}
   <div class="invalid-feedback">{{ error }}</div>
   {% endfor %}
 </div>
@@ -125,6 +163,49 @@
   <div class="form-text text-muted small">
     Activo: compañía aseguradora. Desactivado: cliente particular con tarifa propia.
     El asistente de presupuestos mostará el label adecuado en el desplegable de selección.
+  </div>
+</div>
+
+{# --- always_apply_iva --- #}
+<div class="mb-3">
+  <div class="form-check form-switch">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      role="switch"
+      id="id_always_apply_iva"
+      name="always_apply_iva"
+      {% if form.always_apply_iva.value %}checked{% endif %}
+    >
+    <label class="form-check-label" for="id_always_apply_iva">
+      Aplicar IVA siempre
+    </label>
+  </div>
+  <div class="form-text text-muted small">
+    Si está activo, el IVA se aplica obligatoriamente en todos los presupuestos
+    de esta aseguradora. El operario no podrá desmarcar la casilla de IVA.
+  </div>
+</div>
+
+{# --- special_night_holiday_tariff --- #}
+<div class="mb-3">
+  <div class="form-check form-switch">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      role="switch"
+      id="id_special_night_holiday_tariff"
+      name="special_night_holiday_tariff"
+      {% if form.special_night_holiday_tariff.value %}checked{% endif %}
+    >
+    <label class="form-check-label" for="id_special_night_holiday_tariff">
+      Tarifa especial nocturno/festivo
+    </label>
+  </div>
+  <div class="form-text text-muted small">
+    Si está activo, el motor usará la tabla de precios especiales nocturno/festivo
+    en lugar del recargo porcentual estándar. Requiere configurar la tabla
+    SpecialRateTariff vinculada a la tarifa activa.
   </div>
 </div>
 

@@ -155,6 +155,14 @@ TIME_ZONE = 'Europe/Madrid'
 USE_I18N = True
 USE_TZ = True
 
+# Locale settings — decimal separator for ES locale.
+# Configuracion de locale — separador decimal para locale ES.
+# DecimalField inputs accept comma as decimal separator (e.g. '5,00').
+# Los campos DecimalField aceptan coma como separador decimal (ej: '5,00').
+USE_L10N = True
+DECIMAL_SEPARATOR = ','
+USE_THOUSAND_SEPARATOR = False
+
 # 6. ARCHIVOS ESTÁTICOS / STATIC FILES
 # Path definition for static asset management.
 # Definición de rutas para la gestión de activos estáticos.

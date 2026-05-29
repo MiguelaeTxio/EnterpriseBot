@@ -98,6 +98,7 @@
             </thead>
             <tbody>
               {% for line in lines %}
+              {% if line.concept_code != 'IVA' %}
               <tr {% if line.is_surcharge %}class="table-warning"{% endif %}>
                 <td>
                   {{ line.concept_label }}
@@ -111,15 +112,33 @@
                 <td class="text-end">{{ line.unit_price }} €</td>
                 <td class="text-end fw-semibold">{{ line.subtotal }} €</td>
               </tr>
+              {% endif %}
               {% endfor %}
             </tbody>
             <tfoot class="table-light">
+              {% if budget.apply_iva %}
+              <tr class="text-muted small">
+                <td colspan="3" class="text-end">Base imponible</td>
+                <td class="text-end">{{ budget.total_amount }} €</td>
+              </tr>
+              <tr class="text-muted small">
+                <td colspan="3" class="text-end">IVA (21%)</td>
+                <td class="text-end">{{ iva_amount }} €</td>
+              </tr>
+              <tr class="table-primary">
+                <td colspan="3" class="text-end fw-bold">TOTAL CON IVA</td>
+                <td class="text-end fw-bold fs-5 text-primary">
+                  {{ budget.total_amount_with_iva }} €
+                </td>
+              </tr>
+              {% else %}
               <tr>
                 <td colspan="3" class="text-end fw-bold">TOTAL</td>
                 <td class="text-end fw-bold fs-5 text-primary">
                   {{ budget.total_amount }} €
                 </td>
               </tr>
+              {% endif %}
             </tfoot>
           </table>
         </div>

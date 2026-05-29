@@ -207,6 +207,16 @@
         </a>
     </li>
 
+    {# Configuración empresa — solo ADMIN / Company settings — ADMIN only #}
+    {% if company_user.role == 'ADMIN' %}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'company_settings' %}active{% endif %}"
+           href="{% url 'panel:company_settings' %}">
+            <i class="bi bi-gear"></i>Configuración empresa
+        </a>
+    </li>
+    {% endif %}
+
     {% endif %}
 
     {# ------------------------------------------------------------------ #}

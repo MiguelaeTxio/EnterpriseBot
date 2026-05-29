@@ -68,6 +68,11 @@
                   <i class="bi bi-toggle-off text-secondary"></i>
                 {% endif %}
               </button>
+              {# Detail button #}
+              {# Boton detalle #}
+              <a href="{% url 'budgets:insurer_detail' insurer.pk %}" class="btn btn-outline-secondary btn-sm me-1" title="Ver detalle">
+                <i class="bi bi-eye"></i>
+              </a>
               {# Edit button #}
               {# Boton editar #}
               <a href="{% url 'budgets:insurer_update' insurer.pk %}" class="btn btn-outline-primary btn-sm me-1" title="Editar">

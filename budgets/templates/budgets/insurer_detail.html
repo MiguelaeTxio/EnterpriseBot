@@ -1,0 +1,284 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/insurer_detail.html #}
+{#                                                                                           #}
+{# Insurer detail — read-only full tariff view. ADMIN only.                                 #}
+{# Shows general data, flags, vehicle types and all tariff lines. No editing.               #}
+{#                                                                                           #}
+{# Detalle de aseguradora — vista de solo lectura. Solo ADMIN.                              #}
+{# Muestra datos generales, flags, tipos de vehiculo y lineas de tarifa. Sin edicion.       #}
+{% extends "panel/base.html" %}
+{% load budgets_extras %}
+
+{% block title %}{{ insurer.name }} — Detalle de tarifa{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-10">
+
+      {# ── Cabecera ─────────────────────────────────────────────────── #}
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div class="d-flex align-items-center gap-3">
+          <a href="{% url 'budgets:insurer_list' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i>
+          </a>
+          <h4 class="mb-0">
+            <i class="bi bi-eye me-2"></i>{{ insurer.name }}
+          </h4>
+          {% if insurer.is_active %}
+          <span class="badge bg-success">Activa</span>
+          {% else %}
+          <span class="badge bg-secondary">Inactiva</span>
+          {% endif %}
+        </div>
+        <a href="{% url 'budgets:insurer_update' insurer.pk %}" class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-pencil me-1"></i>Editar
+        </a>
+      </div>
+
+      {# ── Datos generales ──────────────────────────────────────────── #}
+      <div class="card mb-4">
+        <div class="card-header fw-semibold small">
+          Datos generales
+          <code class="ms-2 text-muted">{{ insurer.code }}</code>
+        </div>
+        <div class="card-body">
+          <div class="row g-3 small">
+            <div class="col-6 col-md-4">
+              <span class="text-muted d-block">Aseguradora</span>
+              <strong>{{ insurer.insurer_company_name|default:"—" }}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted d-block">Empresa prestadora</span>
+              <strong>{{ insurer.service_company_name|default:"—" }}</strong>
+            </div>
+            <div class="col-6 col-md-4">
+              <span class="text-muted d-block">Gastos de gestión</span>
+              <strong>
+                {% if insurer.management_fee_percent %}
+                  {{ insurer.management_fee_percent }}%
+                {% else %}
+                  —
+                {% endif %}
+              </strong>
+            </div>
+            <div class="col-6 col-md-3">
+              <span class="text-muted d-block">Compañía aseguradora</span>
+              {% if insurer.is_insurance_company %}
+              <i class="bi bi-check-circle-fill text-success"></i> Sí
+              {% else %}
+              <i class="bi bi-dash-circle text-secondary"></i> Cliente particular
+              {% endif %}
+            </div>
+            <div class="col-6 col-md-3">
+              <span class="text-muted d-block">Recargos acumulables</span>
+              {% if insurer.surcharges_are_cumulative %}
+              <i class="bi bi-check-circle-fill text-success"></i> Sí
+              {% else %}
+              <i class="bi bi-dash-circle text-secondary"></i> No
+              {% endif %}
+            </div>
+            <div class="col-6 col-md-3">
+              <span class="text-muted d-block">IVA siempre</span>
+              {% if insurer.always_apply_iva %}
+              <i class="bi bi-check-circle-fill text-success"></i> Sí
+              {% else %}
+              <i class="bi bi-dash-circle text-secondary"></i> No
+              {% endif %}
+            </div>
+            <div class="col-6 col-md-3">
+              <span class="text-muted d-block">Tarifa especial nocturno/festivo</span>
+              {% if insurer.special_night_holiday_tariff %}
+              <i class="bi bi-check-circle-fill text-success"></i> Sí
+              {% else %}
+              <i class="bi bi-dash-circle text-secondary"></i> No
+              {% endif %}
+            </div>
+            {% if insurer.notes %}
+            <div class="col-12">
+              <span class="text-muted d-block">Notas internas</span>
+              <span class="small">{{ insurer.notes }}</span>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if tariff %}
+
+      {# ── Tarifa activa ────────────────────────────────────────────── #}
+      <div class="card mb-3">
+        <div class="card-header fw-semibold small">
+          Tarifa activa — {{ tariff.year }}
+          {% if tariff.notes %}
+          <span class="text-muted ms-2 fw-normal">{{ tariff.notes }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── Líneas por tipo de vehículo ──────────────────────────────── #}
+      {% for vt_entry in vehicle_types %}
+      <div class="card mb-3">
+        <div class="card-header small fw-semibold bg-light">
+          {{ vt_entry.vehicle_type.name }}
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Concepto</th>
+                <th>Unidad</th>
+                <th class="text-end">Precio</th>
+                <th class="text-end">Umbral km</th>
+                <th class="text-end">Min. unidades</th>
+                <th class="text-center">Autorización</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for line in vt_entry.lines %}
+              <tr>
+                <td>{{ line.concept|concept_label }}</td>
+                <td class="small text-muted">{{ line.unit|unit_label }}</td>
+                <td class="text-end fw-semibold">{{ line.price }} €</td>
+                <td class="text-end text-muted small">{{ line.km_threshold|default:"—" }}</td>
+                <td class="text-end text-muted small">{{ line.min_units|default:"—" }}</td>
+                <td class="text-center">
+                  {% if line.requires_authorization %}
+                  <i class="bi bi-lock-fill text-warning" title="Requiere autorización"></i>
+                  {% else %}
+                  <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+
+      {# ── Líneas genéricas ─────────────────────────────────────────── #}
+      {% if generic_lines %}
+      <div class="card mb-3">
+        <div class="card-header small fw-semibold bg-light">
+          Conceptos genéricos (aplican a todos los tipos de vehículo)
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Concepto</th>
+                <th>Unidad</th>
+                <th class="text-end">Precio</th>
+                <th class="text-end">Umbral km</th>
+                <th class="text-end">Min. unidades</th>
+                <th class="text-center">Autorización</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for line in generic_lines %}
+              <tr>
+                <td>{{ line.concept|concept_label }}</td>
+                <td class="small text-muted">{{ line.unit|unit_label }}</td>
+                <td class="text-end fw-semibold">{{ line.price }} €</td>
+                <td class="text-end text-muted small">{{ line.km_threshold|default:"—" }}</td>
+                <td class="text-end text-muted small">{{ line.min_units|default:"—" }}</td>
+                <td class="text-center">
+                  {% if line.requires_authorization %}
+                  <i class="bi bi-lock-fill text-warning" title="Requiere autorización"></i>
+                  {% else %}
+                  <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Tarifa especial nocturno/festivo ─────────────────────────── #}
+      {% if special_rate %}
+      <div class="card mb-3 border-warning">
+        <div class="card-header fw-semibold small bg-warning bg-opacity-10">
+          <i class="bi bi-moon-stars me-2"></i>Tarifa especial nocturno/festivo
+          {% if special_rate.notes %}
+          <span class="text-muted ms-2 fw-normal">{{ special_rate.notes }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      {% for vt_entry in special_vehicle_types %}
+      <div class="card mb-3 border-warning border-opacity-50">
+        <div class="card-header small fw-semibold bg-warning bg-opacity-10">
+          {{ vt_entry.vehicle_type.name }}
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Concepto</th>
+                <th>Unidad</th>
+                <th class="text-end">Precio nocturno/festivo</th>
+                <th class="text-end">Umbral km</th>
+                <th class="text-end">Min. unidades</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for line in vt_entry.lines %}
+              <tr>
+                <td>{{ line.concept|concept_label }}</td>
+                <td class="small text-muted">{{ line.unit|unit_label }}</td>
+                <td class="text-end fw-semibold text-warning">{{ line.price }} €</td>
+                <td class="text-end text-muted small">{{ line.km_threshold|default:"—" }}</td>
+                <td class="text-end text-muted small">{{ line.min_units|default:"—" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if special_generic_lines %}
+      <div class="card mb-3 border-warning border-opacity-50">
+        <div class="card-header small fw-semibold bg-warning bg-opacity-10">
+          Conceptos genéricos nocturno/festivo
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Concepto</th>
+                <th>Unidad</th>
+                <th class="text-end">Precio nocturno/festivo</th>
+                <th class="text-end">Min. unidades</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for line in special_generic_lines %}
+              <tr>
+                <td>{{ line.concept|concept_label }}</td>
+                <td class="small text-muted">{{ line.unit|unit_label }}</td>
+                <td class="text-end fw-semibold text-warning">{{ line.price }} €</td>
+                <td class="text-end text-muted small">{{ line.min_units|default:"—" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+      {% endif %}
+
+      {% else %}
+      <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Esta aseguradora no tiene ninguna tarifa activa configurada.
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+{% endblock %}

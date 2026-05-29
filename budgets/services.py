@@ -16,6 +16,7 @@ from budgets.models import (
     Budget,
     BudgetLine,
     InsurerTariff,
+    SpecialRateTariff,
     TariffLine,
     VehicleType,
 )
@@ -92,6 +93,34 @@ def _get_tariff_lines(tariff: InsurerTariff, vehicle_type: VehicleType) -> dict:
     return lines
 
 
+def _get_special_rate_lines(
+    tariff: InsurerTariff,
+    vehicle_type: VehicleType,
+) -> dict | None:
+    """
+    Return a concept-keyed dict of SpecialRateLine objects for the given
+    tariff and vehicle type, or None if no SpecialRateTariff exists.
+    Generic lines (vehicle_type=None) are included and overridden by
+    vehicle-specific lines if both exist.
+    ---
+    Devuelve un dict clave-concepto de objetos SpecialRateLine para la
+    tarifa y tipo de vehiculo dados, o None si no existe SpecialRateTariff.
+    Las lineas genericas (vehicle_type=None) se incluyen y son sobreescritas
+    por lineas especificas si existen ambas.
+    """
+    try:
+        srt = tariff.special_rate
+    except SpecialRateTariff.DoesNotExist:
+        return None
+
+    lines = {}
+    for line in srt.lines.filter(vehicle_type__isnull=True):
+        lines[line.concept] = line
+    for line in srt.lines.filter(vehicle_type=vehicle_type):
+        lines[line.concept] = line
+    return lines
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -138,7 +167,27 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         + Decimal(str(budget.km_phase2 or 0))
     )
 
+    # Force apply_iva if the insurer always requires IVA.
+    # Forzar apply_iva si la aseguradora siempre requiere IVA.
+    if insurer.always_apply_iva:
+        budget.apply_iva = True
+
     lines_map = _get_tariff_lines(tariff, vehicle_type)
+
+    # Resolve special night/holiday rate lines if applicable.
+    # When is_night_or_holiday=True and the insurer has a SpecialRateTariff,
+    # use those lines for base concepts instead of the standard lines_map.
+    # Resolver lineas de tarifa especial nocturno/festivo si aplica.
+    # Cuando is_night_or_holiday=True y la aseguradora tiene SpecialRateTariff,
+    # usar esas lineas para conceptos base en lugar del lines_map estandar.
+    active_lines_map = lines_map
+    using_special_rate = False
+    if budget.is_night_or_holiday and insurer.special_night_holiday_tariff:
+        special_map = _get_special_rate_lines(tariff, vehicle_type)
+        if special_map:
+            active_lines_map = special_map
+            using_special_rate = True
+
     result_lines: list[BudgetLine] = []
     sort_order = 0
 
@@ -171,8 +220,8 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     # If overnight: 2 departures (one per phase). Otherwise: 1.
     # Si pernocta: 2 salidas (una por fase). Si no: 1.
     # ------------------------------------------------------------------
-    departure_line = lines_map.get(TariffLine.CONCEPT_DEPARTURE)
-    service_local_line = lines_map.get(TariffLine.CONCEPT_SERVICE_LOCAL)
+    departure_line = active_lines_map.get(TariffLine.CONCEPT_DEPARTURE)
+    service_local_line = active_lines_map.get(TariffLine.CONCEPT_SERVICE_LOCAL)
 
     if departure_line:
         num_departures = Decimal("2") if budget.is_overnight else Decimal("1")
@@ -200,8 +249,8 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     # ------------------------------------------------------------------
     km_total = Decimal(str(budget.km_total))
 
-    km_long_line = lines_map.get(TariffLine.CONCEPT_KM_LONG)
-    km_normal_line = lines_map.get(TariffLine.CONCEPT_KM_NORMAL)
+    km_long_line = active_lines_map.get(TariffLine.CONCEPT_KM_LONG)
+    km_normal_line = active_lines_map.get(TariffLine.CONCEPT_KM_NORMAL)
 
     km_line_to_use = None
     if km_long_line and km_long_line.km_threshold is not None:
@@ -230,7 +279,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     # Solo si has_unlock y la tarifa incluye una linea UNLOCK.
     # ------------------------------------------------------------------
     if budget.has_unlock:
-        unlock_line = lines_map.get(TariffLine.CONCEPT_UNLOCK)
+        unlock_line = active_lines_map.get(TariffLine.CONCEPT_UNLOCK)
         if unlock_line:
             base_total += _add_line(
                 TariffLine.CONCEPT_UNLOCK,
@@ -257,7 +306,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     for raw_value, concept_code, label in optional_map:
         if not raw_value:
             continue
-        opt_line = lines_map.get(concept_code)
+        opt_line = active_lines_map.get(concept_code)
         if not opt_line:
             continue
         units = Decimal(str(raw_value))
@@ -289,7 +338,11 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     nyf_line = lines_map.get(TariffLine.CONCEPT_NYF_PERCENT)
     loaded_line = lines_map.get(TariffLine.CONCEPT_LOADED_PERCENT)
 
-    if budget.is_night_or_holiday and nyf_line:
+    # When using special night/holiday rates, skip the percentage surcharge.
+    # The special tariff already prices night/holiday conditions directly.
+    # Cuando se usa la tarifa especial nocturno/festivo, omitir el recargo
+    # porcentual. La tarifa especial ya incorpora los precios diferenciados.
+    if budget.is_night_or_holiday and nyf_line and not using_special_rate:
         nyf_percent = Decimal(str(nyf_line.price))
 
     if budget.is_loaded and loaded_line:

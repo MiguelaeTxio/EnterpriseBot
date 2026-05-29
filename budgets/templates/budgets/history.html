@@ -68,16 +68,35 @@
   </form>
 
   {% if budgets %}
+  <form method="post" action="{% url 'budgets:budget_bulk_delete' %}" id="bulk-delete-form">
+    {% csrf_token %}
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <button
+      type="button"
+      class="btn btn-sm btn-danger"
+      id="btn-bulk-delete"
+      disabled
+      data-bs-toggle="modal"
+      data-bs-target="#modal-confirm-delete"
+    >
+      <i class="bi bi-trash me-1"></i>Eliminar seleccionados
+    </button>
+    <span class="text-muted small" id="selected-count"></span>
+  </div>
   <div class="table-responsive">
     <table class="table table-sm table-hover align-middle">
       <thead class="table-light">
         <tr>
+          <th>
+            <input type="checkbox" id="check-all" class="form-check-input">
+          </th>
           <th>#</th>
           <th>Fecha servicio</th>
           <th>Compañía</th>
           <th>Vehículo</th>
           <th>Operario</th>
           <th class="text-end">Total</th>
+          <th class="text-end">IVA</th>
           <th>Estado</th>
           <th></th>
         </tr>
@@ -85,12 +104,29 @@
       <tbody>
         {% for b in budgets %}
         <tr>
+          <td>
+            {% if b.status == 'ACCEPTED' %}
+            <input type="checkbox" name="budget_ids" value="{{ b.pk }}"
+              class="form-check-input budget-checkbox"
+              disabled title="Los presupuestos aceptados no se pueden eliminar">
+            {% else %}
+            <input type="checkbox" name="budget_ids" value="{{ b.pk }}"
+              class="form-check-input budget-checkbox">
+            {% endif %}
+          </td>
           <td class="text-muted small">{{ b.pk }}</td>
           <td>{{ b.service_date|date:"d/m/Y" }}</td>
           <td>{{ b.insurer.name }}</td>
           <td class="small">{{ b.vehicle_type.name }}</td>
           <td class="small">{{ b.operator.user.username }}</td>
           <td class="text-end fw-semibold">{{ b.total_amount }} €</td>
+          <td class="text-end">
+            {% if b.apply_iva and b.total_amount_with_iva %}
+            <span class="fw-semibold text-primary">{{ b.iva_amount }} €</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
           <td>
             {% if b.status == 'ACCEPTED' %}
             <span class="badge bg-success">Aceptado</span>
@@ -110,6 +146,34 @@
       </tbody>
     </table>
   </div>
+  </form>
+
+  {# Modal de confirmacion de eliminacion masiva #}
+  <div class="modal fade" id="modal-confirm-delete" tabindex="-1"
+       aria-labelledby="modal-confirm-delete-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modal-confirm-delete-label">
+            <i class="bi bi-exclamation-triangle text-danger me-2"></i>
+            Confirmar eliminación
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Se eliminarán definitivamente los presupuestos seleccionados.</p>
+          <p class="text-muted small mb-0">Esta acción no se puede deshacer.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary"
+                  data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-danger"
+                  id="btn-confirm-delete">Eliminar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   {% else %}
   <div class="alert alert-info">
     No hay presupuestos que coincidan con los filtros seleccionados.
@@ -117,4 +181,39 @@
   {% endif %}
 
 </div>
+
+{% block extra_js %}
+<script>
+  (function () {
+    const checkAll    = document.getElementById('check-all');
+    const btnDelete   = document.getElementById('btn-bulk-delete');
+    const btnConfirm  = document.getElementById('btn-confirm-delete');
+    const countLabel  = document.getElementById('selected-count');
+    const form        = document.getElementById('bulk-delete-form');
+
+    function updateState() {
+      const checked = document.querySelectorAll('.budget-checkbox:not([disabled]):checked');
+      btnDelete.disabled = checked.length === 0;
+      countLabel.textContent = checked.length > 0
+        ? checked.length + ' seleccionado' + (checked.length > 1 ? 's' : '')
+        : '';
+    }
+
+    checkAll.addEventListener('change', function () {
+      document.querySelectorAll('.budget-checkbox:not([disabled])').forEach(
+        cb => { cb.checked = checkAll.checked; }
+      );
+      updateState();
+    });
+
+    document.querySelectorAll('.budget-checkbox').forEach(
+      cb => cb.addEventListener('change', updateState)
+    );
+
+    btnConfirm.addEventListener('click', function () {
+      form.submit();
+    });
+  })();
+</script>
+{% endblock %}
 {% endblock %}

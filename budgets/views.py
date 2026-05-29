@@ -13,6 +13,7 @@ y detalle exclusivas para ADMIN.
 from django import forms as django_forms
 from django.contrib import messages
 from django.db import transaction
+from django.db.models import DecimalField, ExpressionWrapper, F
 from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
@@ -249,17 +250,48 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
     def get(self, request):
         """
         Render the wizard with active insurers for the operator's company.
+        Calculates insurer_label dynamically based on the mix of
+        is_insurance_company flags in the active insurer queryset.
         ---
         Renderiza el asistente con las aseguradoras activas de la empresa
-        del operario.
+        del operario. Calcula insurer_label de forma dinámica según
+        la mezcla de flags is_insurance_company en el queryset activo.
         """
         company_user = _get_company_user(request)
         insurers = Insurer.objects.filter(
             company=company_user.company,
             is_active=True,
         ).order_by("name")
+        # Resolve the label for the insurer dropdown based on the mix of
+        # is_insurance_company flags in the active queryset.
+        # Resuelve el label del desplegable según la mezcla de flags
+        # is_insurance_company en el queryset activo.
+        insurer_flags = list(
+            insurers.values_list("is_insurance_company", flat=True)
+        )
+        has_insurance = any(insurer_flags)
+        has_particular = not all(insurer_flags)
+        if has_insurance and has_particular:
+            insurer_label = "Aseguradora / Cliente"
+        elif has_particular:
+            insurer_label = "Cliente particular"
+        else:
+            insurer_label = "Aseguradora"
+        # Build a pk->always_apply_iva map for the JS layer.
+        # The template uses it to auto-check and lock the IVA checkbox
+        # when the operator selects an insurer with always_apply_iva=True.
+        # Construye un mapa pk->always_apply_iva para la capa JS.
+        # El template lo usa para marcar y bloquear el checkbox de IVA
+        # cuando el operario selecciona una aseguradora con always_apply_iva=True.
+        import json
+        always_iva_map = json.dumps({
+            str(ins.pk): ins.always_apply_iva
+            for ins in insurers
+        })
         ctx = _build_base_context(request, {
             "insurers": insurers,
+            "insurer_label": insurer_label,
+            "always_iva_map": always_iva_map,
             "active_nav": "budgets_wizard",
         })
         return render(request, self.template_name, ctx)
@@ -340,9 +372,11 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             worker_hours=_parse_optional(data.get("worker_hours")),
             custody_days=_parse_optional(data.get("custody_days")),
             extra_notes=data.get("extra_notes", "").strip(),
+            apply_iva=data.get("apply_iva") == "1",
             # Placeholders — set by the engine before save.
             # Valores provisionales — el motor los establece antes de guardar.
             total_amount=0,
+            total_amount_with_iva=None,
             tariff_id=None,
         )
 
@@ -361,6 +395,19 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             return redirect("budgets:wizard")
 
         return redirect("budgets:result", pk=budget.pk)
+
+
+def _parse_decimal(raw, default="0"):
+    """
+    Normalise a raw decimal string from POST, replacing comma with period
+    before conversion. Returns the normalised string for DB assignment.
+    ---
+    Normaliza una cadena decimal cruda del POST, sustituyendo la coma por
+    punto antes de la conversion. Devuelve la cadena normalizada para BD.
+    """
+    if not raw:
+        return default
+    return str(raw).strip().replace(",", ".")
 
 
 def _parse_optional(raw):
@@ -563,6 +610,11 @@ class BudgetHistoryView(AdminRoleRequiredMixin, View):
             "vehicle_type",
             "operator__user",
             "tariff",
+        ).annotate(
+            iva_amount=ExpressionWrapper(
+                F("total_amount_with_iva") - F("total_amount"),
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            )
         ).order_by("-created_at")
 
         # Optional filters from GET params.
@@ -628,10 +680,21 @@ class BudgetDetailView(AdminRoleRequiredMixin, View):
             pk=pk,
             company=company_user.company,
         )
-        lines = budget.lines.order_by("sort_order")
+        lines = budget.lines.exclude(concept_code="IVA").order_by("sort_order")
+        # Calculate iva_amount for the fiscal summary in the tfoot.
+        # Only populated when apply_iva is True and total_amount_with_iva is set.
+        # Calcula iva_amount para el resumen fiscal en el tfoot.
+        # Solo se rellena cuando apply_iva es True y total_amount_with_iva esta establecido.
+        from decimal import Decimal
+        iva_amount = None
+        if budget.apply_iva and budget.total_amount_with_iva is not None:
+            iva_amount = (budget.total_amount_with_iva - budget.total_amount).quantize(
+                Decimal("0.01")
+            )
         ctx = _build_base_context(request, {
             "budget": budget,
             "lines": lines,
+            "iva_amount": iva_amount,
             "active_nav": "budgets_history",
         })
         return render(request, self.template_name, ctx)
@@ -656,15 +719,36 @@ class InsurerForm(django_forms.ModelForm):
     La validacion unique_together la gestiona el propio modelo.
     """
 
+    # Declare management_fee_percent with localize=True so Django uses
+    # DECIMAL_SEPARATOR from settings (comma for ES locale).
+    # Declarar management_fee_percent con localize=True para que Django use
+    # DECIMAL_SEPARATOR de settings (coma para locale ES).
+    management_fee_percent = django_forms.DecimalField(
+        localize=True,
+        required=False,
+        initial=0,
+        max_digits=5,
+        decimal_places=2,
+        label="Gastos de gestión (%)",
+        help_text=(
+            "Porcentaje de gastos de gestión aplicado sobre el total del presupuesto. "
+            "0 si la aseguradora no aplica este concepto. Ejemplo: COVEI aplica 5%."
+        ),
+    )
+
     class Meta:
         model = Insurer
         fields = [
             "name",
+            "insurer_company_name",
+            "service_company_name",
             "code",
             "management_fee_percent",
             "surcharges_are_cumulative",
             "is_active",
             "is_insurance_company",
+            "always_apply_iva",
+            "special_night_holiday_tariff",
             "notes",
         ]
 
@@ -675,6 +759,7 @@ class InsurerForm(django_forms.ModelForm):
         Normaliza el campo code a mayusculas y elimina espacios.
         """
         return self.cleaned_data.get("code", "").strip().upper()
+
 
 
 def _insurer_list_qs(company):
@@ -1059,11 +1144,11 @@ class TariffLineSaveView(AdminRoleRequiredMixin, View):
         # Actualizar todos los campos editables de forma atomica.
         line.concept = data.get("concept", line.concept)
         line.unit = data.get("unit", line.unit)
-        line.price = data.get("price", line.price) or 0
-        km_threshold = data.get("km_threshold", "").strip()
-        line.km_threshold = int(km_threshold) if km_threshold else None
-        min_units = data.get("min_units", "").strip()
-        line.min_units = float(min_units) if min_units else None
+        line.price = _parse_decimal(data.get("price", ""), default="0")
+        km_threshold_raw = data.get("km_threshold", "").strip().replace(",", ".")
+        line.km_threshold = km_threshold_raw if km_threshold_raw else None
+        min_units_raw = data.get("min_units", "").strip().replace(",", ".")
+        line.min_units = min_units_raw if min_units_raw else None
         # Checkbox: present in POST = checked, absent = unchecked.
         # Checkbox: presente en POST = marcado, ausente = desmarcado.
         line.requires_authorization = "requires_authorization" in data
@@ -1212,9 +1297,13 @@ class TariffLineAddView(AdminRoleRequiredMixin, View):
             vehicle_type=vehicle_type,
             concept=data.get("concept", TariffLine.CONCEPT_DEPARTURE),
             unit=data.get("unit", TariffLine.UNIT_FIXED),
-            price=data.get("price", 0) or 0,
-            km_threshold=int(km_threshold) if km_threshold else None,
-            min_units=float(min_units) if min_units else None,
+            price=_parse_decimal(data.get("price", ""), default="0"),
+            km_threshold=(
+                _parse_decimal(km_threshold) if km_threshold else None
+            ),
+            min_units=(
+                _parse_decimal(min_units) if min_units else None
+            ),
             requires_authorization="requires_authorization" in data,
         )
         ctx = {
@@ -1331,3 +1420,172 @@ class TariffSaveNotesView(AdminRoleRequiredMixin, View):
         tariff.save(update_fields=["notes"])
         messages.success(request, "Notas de la tarifa guardadas.")
         return redirect("budgets:insurer_update", pk=tariff.insurer.pk)
+
+
+# ---------------------------------------------------------------------------
+# Budget bulk delete — ADMIN only
+# Eliminacion masiva de presupuestos — solo ADMIN
+# ---------------------------------------------------------------------------
+
+class BudgetBulkDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes multiple budgets selected from the history list.
+    Only DRAFT and REJECTED budgets can be deleted.
+    ACCEPTED budgets are silently skipped even if their pk is submitted.
+    Redirects back to the history view with a summary message.
+    ---
+    Elimina multiples presupuestos seleccionados desde el listado de historial.
+    Solo se pueden eliminar presupuestos en estado DRAFT o REJECTED.
+    Los presupuestos ACCEPTED se omiten silenciosamente aunque su pk sea enviado.
+    Redirige de vuelta al historial con un mensaje resumen.
+    """
+
+    def post(self, request):
+        """
+        Process the bulk delete POST request.
+        ---
+        Procesa la peticion POST de eliminacion masiva.
+        """
+        company_user = _get_company_user(request)
+        raw_ids = request.POST.getlist("budget_ids")
+
+        # Parse and validate submitted pk values.
+        # Parsear y validar los valores pk enviados.
+        try:
+            pk_list = [int(pk) for pk in raw_ids if pk.strip().isdigit()]
+        except (ValueError, AttributeError):
+            pk_list = []
+
+        if not pk_list:
+            messages.warning(request, "No se ha seleccionado ningún presupuesto.")
+            return redirect("budgets:history")
+
+        # Filter to company scope and exclude ACCEPTED budgets.
+        # Filtrar al ambito de la empresa y excluir presupuestos ACCEPTED.
+        qs = Budget.objects.filter(
+            pk__in=pk_list,
+            company=company_user.company,
+        ).exclude(status=Budget.STATUS_ACCEPTED)
+
+        count = qs.count()
+        qs.delete()
+
+        if count == 0:
+            messages.warning(
+                request,
+                "Ninguno de los presupuestos seleccionados puede eliminarse. "
+                "Los presupuestos aceptados no se pueden borrar.",
+            )
+        elif count == 1:
+            messages.success(request, "1 presupuesto eliminado correctamente.")
+        else:
+            messages.success(
+                request,
+                f"{count} presupuestos eliminados correctamente.",
+            )
+
+        return redirect("budgets:history")
+
+
+# ---------------------------------------------------------------------------
+# Insurer detail — read-only tariff view. ADMIN only.
+# Vista de detalle de aseguradora — solo lectura. Solo ADMIN.
+# ---------------------------------------------------------------------------
+
+class InsurerDetailView(AdminRoleRequiredMixin, View):
+    """
+    Read-only view showing the full tariff detail for an insurer.
+    Displays general data, vehicle types and all tariff lines grouped
+    by vehicle type. No editing allowed from this view.
+    ---
+    Vista de solo lectura que muestra el detalle completo de tarifa
+    de una aseguradora. Muestra datos generales, tipos de vehiculo y
+    todas las lineas de tarifa agrupadas por tipo de vehiculo.
+    No se permite edicion desde esta vista.
+    """
+
+    template_name = "budgets/insurer_detail.html"
+
+    def get(self, request, pk):
+        """
+        Render the insurer detail view for the given pk.
+        ---
+        Renderiza la vista de detalle de aseguradora para el pk dado.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+        # Resolve active tariff.
+        # Resolver tarifa activa.
+        from budgets.models import InsurerTariff
+        tariff = InsurerTariff.objects.filter(
+            insurer=insurer,
+            valid_to__isnull=True,
+        ).prefetch_related(
+            "lines__vehicle_type",
+        ).first()
+
+        # Build vehicle_type -> lines mapping for clean template rendering.
+        # Construir mapa tipo_vehiculo -> lineas para renderizado limpio en template.
+        vehicle_types = []
+        generic_lines = []
+        if tariff:
+            vt_map = {}
+            for line in tariff.lines.order_by(
+                "vehicle_type__sort_order", "concept"
+            ):
+                if line.vehicle_type is None:
+                    generic_lines.append(line)
+                else:
+                    vt_key = line.vehicle_type.pk
+                    if vt_key not in vt_map:
+                        vt_map[vt_key] = {
+                            "vehicle_type": line.vehicle_type,
+                            "lines": [],
+                        }
+                    vt_map[vt_key]["lines"].append(line)
+            vehicle_types = list(vt_map.values())
+
+        # Resolve SpecialRateTariff if the insurer has one.
+        # Build the same vt->lines structure for the special rate table.
+        # Resolver SpecialRateTariff si la aseguradora tiene una.
+        # Construir la misma estructura vt->lineas para la tabla especial.
+        from budgets.models import SpecialRateTariff
+        special_rate = None
+        special_vehicle_types = []
+        special_generic_lines = []
+        if tariff and insurer.special_night_holiday_tariff:
+            try:
+                special_rate = tariff.special_rate
+                srt_vt_map = {}
+                for line in special_rate.lines.order_by(
+                    "vehicle_type__sort_order", "concept"
+                ):
+                    if line.vehicle_type is None:
+                        special_generic_lines.append(line)
+                    else:
+                        vt_key = line.vehicle_type.pk
+                        if vt_key not in srt_vt_map:
+                            srt_vt_map[vt_key] = {
+                                "vehicle_type": line.vehicle_type,
+                                "lines": [],
+                            }
+                        srt_vt_map[vt_key]["lines"].append(line)
+                special_vehicle_types = list(srt_vt_map.values())
+            except SpecialRateTariff.DoesNotExist:
+                pass
+
+        ctx = _build_base_context(request, {
+            "insurer": insurer,
+            "tariff": tariff,
+            "vehicle_types": vehicle_types,
+            "generic_lines": generic_lines,
+            "special_rate": special_rate,
+            "special_vehicle_types": special_vehicle_types,
+            "special_generic_lines": special_generic_lines,
+            "active_nav": "insurer_list",
+        })
+        return render(request, self.template_name, ctx)

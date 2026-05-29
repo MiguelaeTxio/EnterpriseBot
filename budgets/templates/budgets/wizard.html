@@ -23,11 +23,15 @@
       <form method="post" action="{% url 'budgets:wizard' %}" id="budget-form">
         {% csrf_token %}
 
-        {# ── PASO 1: Aseguradora ────────────────────────────────────────── #}
+        {# ── PASO 1: Aseguradora / Cliente ────────────────────────────────────── #}
+        {# Label dinámico: 'Aseguradora', 'Cliente particular' o               #}
+        {# 'Aseguradora / Cliente' según la mezcla de is_insurance_company.    #}
+        {# Cada <option> muestra el sufijo '(Particular)' cuando el flag       #}
+        {# is_insurance_company es False.                                       #}
         <div class="card mb-3">
           <div class="card-body">
             <label class="form-label fw-semibold">
-              1. Compañía aseguradora
+              1. {{ insurer_label }}
             </label>
             <select
               class="form-select"
@@ -39,9 +43,13 @@
               hx-trigger="change"
               hx-include="#id_insurer"
             >
-              <option value="">— Selecciona una compañía —</option>
+              <option value="">— Selecciona —</option>
               {% for ins in insurers %}
+              {% if ins.is_insurance_company %}
               <option value="{{ ins.pk }}">{{ ins.name }}</option>
+              {% else %}
+              <option value="{{ ins.pk }}">{{ ins.name }} (Particular)</option>
+              {% endif %}
               {% endfor %}
             </select>
           </div>
@@ -184,8 +192,11 @@
                 8. ¿Aplicar IVA (21%)?
               </label>
             </div>
-            <div class="form-text text-muted mt-1">
+            <div class="form-text text-muted mt-1" id="iva-hint">
               Marcar cuando la aseguradora o cliente requiera factura con IVA incluido.
+            </div>
+            <div class="form-text text-danger mt-1 d-none" id="iva-required-hint">
+              Esta aseguradora requiere IVA obligatoriamente.
             </div>
           </div>
         </div>
@@ -272,5 +283,39 @@
       }
     }
   });
+
+  // always_apply_iva logic
+  // When the selected insurer requires IVA always, auto-check and
+  // disable the IVA checkbox so the operator cannot uncheck it.
+  // Logica always_apply_iva
+  // Cuando la aseguradora seleccionada requiere IVA siempre, marcar
+  // y deshabilitar el checkbox de IVA para que el operario no pueda desmarcarlo.
+  (function () {
+    const alwaysIvaMap = {{ always_iva_map|safe }};
+    const insurerSelect = document.getElementById('id_insurer');
+    const ivaCheckbox   = document.getElementById('id_apply_iva');
+    const ivaHint       = document.getElementById('iva-hint');
+    const ivaRequired   = document.getElementById('iva-required-hint');
+
+    function updateIvaState() {
+      const pk = insurerSelect ? insurerSelect.value : '';
+      const required = pk && alwaysIvaMap[pk] === true;
+      if (required) {
+        ivaCheckbox.checked  = true;
+        ivaCheckbox.disabled = true;
+        ivaHint.classList.add('d-none');
+        ivaRequired.classList.remove('d-none');
+      } else {
+        ivaCheckbox.disabled = false;
+        ivaHint.classList.remove('d-none');
+        ivaRequired.classList.add('d-none');
+      }
+    }
+
+    if (insurerSelect) {
+      insurerSelect.addEventListener('change', updateIvaState);
+      updateIvaState();
+    }
+  })();
 </script>
 {% endblock %}

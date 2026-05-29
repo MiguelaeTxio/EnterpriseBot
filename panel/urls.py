@@ -100,6 +100,7 @@ from panel.views import (
     TrustDeviceView,
     TrustDeviceToggleView,
     TrustDeviceQuickLoginView,
+    CompanySettingsView,
 )
 
 from chat.views import (
@@ -362,4 +363,8 @@ urlpatterns = [
 
     # Bot management — Panel de gestión del bot WhatsApp (Hito 13 Paso 17+).
     path("bot/", BotManagementView.as_view(), name="bot_management"),
+
+    # Company settings — Configuración de empresa (bases operación, calendario laboral).
+    # Hito 16 Paso 8 (2026-05-28)
+    path("company/settings/", CompanySettingsView.as_view(), name="company_settings"),
 ]

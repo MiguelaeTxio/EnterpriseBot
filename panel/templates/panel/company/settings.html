@@ -1,0 +1,82 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/company/settings.html #}
+{#                                                                                         #}
+{# Company settings form — exposes operation_bases and labor_calendar to ADMIN.           #}
+{# Formulario de configuración de empresa — expone bases de operación y                  #}
+{# calendario laboral al rol ADMIN.                                                       #}
+{# Hito 16 Paso 8 (2026-05-28)                                                           #}
+{% extends "panel/base.html" %}
+
+{% block title %}Configuración de empresa{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+  <div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+
+      <h4 class="mb-4">
+        <i class="bi bi-gear me-2"></i>Configuración de empresa
+      </h4>
+
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      <form method="post" action="{% url 'panel:company_settings' %}">
+        {% csrf_token %}
+
+        {# ── Bases de operación ──────────────────────────────────────────── #}
+        <div class="card mb-3">
+          <div class="card-body">
+            <label class="form-label fw-semibold" for="id_operation_bases">
+              Bases de operación
+            </label>
+            <textarea
+              class="form-control"
+              name="operation_bases"
+              id="id_operation_bases"
+              rows="4"
+              placeholder="Localidades o zonas de cobertura (ej: Valladolid, Arroyo de la Encomienda, Simancas...)"
+            >{{ company.operation_bases }}</textarea>
+            <div class="form-text text-muted mt-1">
+              Localidades, zonas o bases desde las que opera la empresa de asistencia.
+            </div>
+          </div>
+        </div>
+
+        {# ── Calendario laboral ──────────────────────────────────────────── #}
+        <div class="card mb-3">
+          <div class="card-body">
+            <label class="form-label fw-semibold" for="id_labor_calendar">
+              Calendario laboral
+            </label>
+            <textarea
+              class="form-control"
+              name="labor_calendar"
+              id="id_labor_calendar"
+              rows="5"
+              placeholder="Festivos locales, nacionales y horario nocturno de referencia (ej: 1 ene, 6 ene... nocturno: 22:00–06:00)"
+            >{{ company.labor_calendar }}</textarea>
+            <div class="form-text text-muted mt-1">
+              Festivos locales y nacionales, y franja horaria nocturna de referencia para el cálculo de recargos.
+            </div>
+          </div>
+        </div>
+
+        {# ── Guardar ─────────────────────────────────────────────────────── #}
+        <div class="d-grid mt-2">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-floppy me-2"></i>Guardar configuración
+          </button>
+        </div>
+
+      </form>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
