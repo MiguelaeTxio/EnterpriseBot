@@ -42,7 +42,7 @@ de desarrollo del proyecto. El modelo las carga al inicio de sesión desde
 este documento y las aplica sin excepción.
 
 ### 4.1. Inteligencia Artificial
-- **SDK:** `google-genai 1.69.0`
+- **SDK:** `google-genai 1.69.0 (PENDIENTE actualizacion a 2.x — ver Paso 0 Anexo V16)`
 - **Modelo IVR Conversacional:** `gemini-live-2.5-flash-native-audio`
 - **Plataforma:** Vertex AI — autenticación via Service Account JSON
 - **Variables de entorno:** `GCP_CREDENTIALS_PATH`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`
@@ -50,7 +50,7 @@ este documento y las aplica sin excepción.
 - **Voice:** `Aoede` — obligatorio en `speech_config` para modelo de audio nativo
 - **VAD servidor:** `disabled=True` (obligatorio para puentes de telefonía)
 - **Greeting:** `await session.send_client_content(turns=..., turn_complete=True)`
-- **Firma audio SDK 1.69.0:** `await session.send_realtime_input(audio=types.Blob(data=..., mime_type='audio/pcm;rate=16000'))`
+- **Firma audio SDK 1.69.0 (verificar compatibilidad tras actualizacion):** `await session.send_realtime_input(audio=types.Blob(data=..., mime_type='audio/pcm;rate=16000'))`
 
 ### 4.2. Telefonía
 - **Twilio SDK Python:** `twilio 9.10.4`

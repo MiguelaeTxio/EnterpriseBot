@@ -188,6 +188,9 @@ company_settings (ADMIN).
 ### Paso 10 — Corrección banner residual 'Acceso denegado'
 - Estado: COMPLETADO (S004)
 
+### Paso 0 — Actualización SDK google-genai a versión 2.6.0+
+- Estado: PENDIENTE (S006)
+
 ### Paso 11 — Exportaciones del panel de aseguradoras
 - Estado: PENDIENTE (S006)
 - Alcance: botones de exportación en InsurerListView (PDF, Excel, Word, CSV).
@@ -232,21 +235,45 @@ company_settings (ADMIN).
 ### Contexto
 
 S005 completó los pasos centrales del motor y la gestión de aseguradoras.
-S006 cierra los pasos pendientes de interfaz y acomete la integración con
-Google Maps y el calendario laboral. El orden de prioridad es:
+S006 arranca con la actualización del SDK google-genai como prioridad máxima
+y absoluta — hay un deadline de eliminación de módulos Vertex AI el 24 de
+junio de 2026. A continuación cierra los pasos pendientes de interfaz y
+acomete la integración con Google Maps y el calendario laboral.
 
 ### ADVERTENCIAS CRÍTICAS
 
-- `IVA_PERCENT = Decimal("21.00")` en `budgets/services.py` — constante de
+- **DEADLINE CRÍTICO 24/06/2026:** Google elimina definitivamente los módulos
+  vertexai.generative_models, vertexai.language_models, vertexai.vision_models,
+  vertexai.tuning y vertexai.caching. EnterpriseBot usa Vertex AI con Service
+  Account. Verificar imports antes de actualizar el SDK.
+- **SDK instalado:** google-genai==1.69.0. Versión objetivo: verificar la más
+  reciente con pip index versions google-genai antes de fijar en requirements.in.
+  El salto 1.x a 2.x es un cambio de versión mayor — auditar breaking changes
+  antes de aplicar en producción.
+- IVA_PERCENT = Decimal("21.00") en budgets/services.py — constante de
   modificación directa. No mover a BD ni a settings.
-- La migración `0002_budget_apply_iva` fue creada manualmente. No regenerar.
-- `budgets/migrations/0001_initial` tiene dependencia en
-  `ivr_config.0029_alter_companyuser_role` — no reordenar migraciones.
-- El script `seed_special_rate_tariffs.py` está en SWAP. Si hay reseed total
-  de aseguradoras, ejecutarlo después de `seed_insurer_tariffs`.
-- `USE_L10N = True` y `DECIMAL_SEPARATOR = ','` en settings — todos los
-  DecimalField de formularios deben tener `localize=True` si se declaran
+- La migración 0002_budget_apply_iva fue creada manualmente. No regenerar.
+- budgets/migrations/0001_initial tiene dependencia en
+  ivr_config.0029_alter_companyuser_role — no reordenar migraciones.
+- El script seed_special_rate_tariffs.py está en SWAP. Si hay reseed total
+  de aseguradoras, ejecutarlo después de seed_insurer_tariffs.
+- USE_L10N = True y DECIMAL_SEPARATOR coma en settings — todos los
+  DecimalField de formularios deben tener localize=True si se declaran
   explícitamente.
+
+### PRIORIDAD -1 (MÁXIMA) — Paso 0: actualización SDK google-genai
+
+1. Verificar versión disponible: pip index versions google-genai
+2. Auditar imports: grep -r "vertexai" --include="*.py" --exclude-dir=__pycache__
+3. Revisar breaking changes 1.x a 2.x en https://github.com/googleapis/python-genai/releases
+   Prestar especial atención a voice_orchestrator.py, vox_bridge/services.py
+   y cualquier uso de client.aio.live.connect.
+4. Verificar que el modelo gemini-live-2.5-flash-native-audio sigue siendo válido.
+5. Actualizar requirements.in con la versión verificada.
+6. pip-compile requirements.in
+7. pip install -r requirements.txt --break-system-packages
+8. Verificar arranque y ausencia de ImportError en logs.
+9. Actualizar Directriz Técnica 4.1 del MASTER_DOCUMENT con la nueva versión.
 
 ### PRIORIDAD 0 — Paso 11: exportaciones del panel de aseguradoras
 
