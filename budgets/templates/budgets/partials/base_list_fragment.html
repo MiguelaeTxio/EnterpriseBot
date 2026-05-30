@@ -1,0 +1,78 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/base_list_fragment.html #}
+{# HTMX fragment — base list for an insurer. Replaces #base-list-container.                            #}
+{# Fragmento HTMX — lista de bases de una aseguradora. Reemplaza #base-list-container.                 #}
+
+<div id="base-list-container">
+
+  {% if bases %}
+  <table class="table table-sm small mb-3">
+    <thead class="table-light">
+      <tr>
+        <th>Nombre</th>
+        <th>Municipio</th>
+        <th>Coordenadas</th>
+        <th>Calendario</th>
+        <th>Estado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for base in bases %}
+      {% include "budgets/partials/base_row_fragment.html" %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted small mb-3">No hay bases registradas para esta aseguradora.</p>
+  {% endif %}
+
+  {# ── Formulario alta nueva base ──────────────────────────────────── #}
+  <div class="border rounded p-3 bg-light">
+    <p class="fw-semibold small mb-2">
+      <i class="bi bi-plus-circle me-1"></i>Nueva base
+    </p>
+    <form
+      hx-post="{% url 'budgets:base_create' insurer.pk %}"
+      hx-target="#base-list-container"
+      hx-swap="outerHTML"
+    >
+      {% csrf_token %}
+      <div class="row g-2">
+        <div class="col-12 col-md-4">
+          <label class="form-label small mb-1">Nombre</label>
+          {{ base_form.name }}
+          {% if base_form.name.errors %}
+          <div class="text-danger small">{{ base_form.name.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label small mb-1">Municipio</label>
+          {{ base_form.municipality }}
+          {% if base_form.municipality.errors %}
+          <div class="text-danger small">{{ base_form.municipality.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Latitud</label>
+          {{ base_form.latitude }}
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Longitud</label>
+          {{ base_form.longitude }}
+        </div>
+        <div class="col-12 d-flex align-items-center gap-2 mt-1">
+          <div class="form-check">
+            {{ base_form.is_active }}
+            <label class="form-check-label small" for="{{ base_form.is_active.id_for_label }}">
+              Activa
+            </label>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary ms-auto">
+            <i class="bi bi-plus me-1"></i>Añadir base
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+</div>

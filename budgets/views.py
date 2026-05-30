@@ -20,7 +20,17 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.timezone import now
 from django.views import View
 
+import csv
+import io
+
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+import weasyprint
+from docx import Document
+from docx.shared import Pt, RGBColor
+
 from budgets.models import (
+    Base,
     Budget,
     BudgetLine,
     Insurer,
@@ -288,10 +298,21 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             str(ins.pk): ins.always_apply_iva
             for ins in insurers
         })
+        import json as _json
+        bases_map = _json.dumps({
+            str(ins.pk): [
+                {"pk": b.pk, "name": b.name}
+                for b in Base.objects.filter(
+                    insurer=ins, is_active=True
+                ).order_by("name")
+            ]
+            for ins in insurers
+        })
         ctx = _build_base_context(request, {
             "insurers": insurers,
             "insurer_label": insurer_label,
             "always_iva_map": always_iva_map,
+            "bases_map": bases_map,
             "active_nav": "budgets_wizard",
         })
         return render(request, self.template_name, ctx)
@@ -314,11 +335,16 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             insurer_id = int(data["insurer_id"])
             vehicle_type_id = int(data["vehicle_type_id"])
             km_phase1 = float(data["km_phase1"])
-            service_date = data["service_date"]
+            service_date_str = data["service_date"]
+            import datetime as _dt
+            service_date = _dt.date.fromisoformat(service_date_str)
             is_overnight = data.get("is_overnight") == "1"
             has_unlock = data.get("has_unlock") == "1"
-            is_night_or_holiday = data.get("is_night_or_holiday") == "1"
+            is_night = data.get("is_night") == "1"
             is_loaded = data.get("is_loaded") == "1"
+            base_id = data.get("base_id") or None
+            if base_id:
+                base_id = int(base_id)
         except (KeyError, ValueError):
             messages.error(
                 request,
@@ -364,8 +390,12 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             km_phase1=km_phase1,
             km_phase2=km_phase2,
             has_unlock=has_unlock,
-            is_night_or_holiday=is_night_or_holiday,
+            is_night=is_night,
             is_loaded=is_loaded,
+            base=Base.objects.filter(
+                pk=base_id,
+                insurer=insurer,
+            ).first() if base_id else None,
             wait_hours=_parse_optional(data.get("wait_hours")),
             rescue_hours=_parse_optional(data.get("rescue_hours")),
             assistant_hours=_parse_optional(data.get("assistant_hours")),
@@ -458,6 +488,46 @@ class BudgetVehicleTypesView(AssistanceRequiredMixin, View):
         ).order_by("sort_order", "name")
         return render(request, self.template_name, {
             "vehicle_types": vehicle_types,
+        })
+
+
+# ---------------------------------------------------------------------------
+# HTMX partial — base selector for selected insurer
+# ---------------------------------------------------------------------------
+
+class BudgetBasesView(AssistanceRequiredMixin, View):
+    """
+    HTMX partial view. Returns the base selector fragment for the insurer
+    selected in step 1 of the wizard. If the insurer has exactly one active
+    base, returns a hidden input with that base pk. If it has more than one,
+    returns a visible dropdown. If it has none, returns an empty fragment.
+    ---
+    Vista parcial HTMX. Devuelve el fragmento de selector de base para la
+    aseguradora seleccionada en el paso 1 del asistente. Si la aseguradora
+    tiene exactamente una base activa, devuelve un input oculto con ese pk.
+    Si tiene mas de una, devuelve un desplegable visible. Si no tiene ninguna,
+    devuelve un fragmento vacio.
+    """
+
+    template_name = "budgets/_base_selector_fragment.html"
+
+    def get(self, request):
+        """
+        Return base selector fragment for the given insurer_id query parameter.
+        ---
+        Devuelve el fragmento de selector de base para el parametro insurer_id.
+        """
+        company_user = _get_company_user(request)
+        insurer_id = request.GET.get("insurer_id")
+        if not insurer_id:
+            return HttpResponseBadRequest("insurer_id requerido.")
+        bases = Base.objects.filter(
+            insurer_id=insurer_id,
+            insurer__company=company_user.company,
+            is_active=True,
+        ).order_by("name")
+        return render(request, self.template_name, {
+            "bases": bases,
         })
 
 
@@ -1578,6 +1648,8 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
             except SpecialRateTariff.DoesNotExist:
                 pass
 
+        bases = Base.objects.filter(insurer=insurer).order_by("name")
+        base_form = BaseForm()
         ctx = _build_base_context(request, {
             "insurer": insurer,
             "tariff": tariff,
@@ -1586,6 +1658,682 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
             "special_rate": special_rate,
             "special_vehicle_types": special_vehicle_types,
             "special_generic_lines": special_generic_lines,
+            "bases": bases,
+            "base_form": base_form,
             "active_nav": "insurer_list",
         })
         return render(request, self.template_name, ctx)
+
+# ---------------------------------------------------------------------------
+# Base management views — CRUD for service bases linked to insurers
+# Vistas de gestion de bases — CRUD para bases de servicio vinculadas a aseguradoras
+# ---------------------------------------------------------------------------
+
+
+class BaseForm(django_forms.ModelForm):
+    """
+    ModelForm for creating and editing Base records.
+    ---
+    ModelForm para crear y editar registros Base.
+    """
+
+    class Meta:
+        model = Base
+        fields = [
+            "name",
+            "municipality",
+            "latitude",
+            "longitude",
+            "labor_calendar",
+            "is_active",
+        ]
+        widgets = {
+            "name": django_forms.TextInput(attrs={"class": "form-control form-control-sm"}),
+            "municipality": django_forms.TextInput(attrs={"class": "form-control form-control-sm"}),
+            "latitude": django_forms.NumberInput(attrs={"class": "form-control form-control-sm", "step": "0.000001"}),
+            "longitude": django_forms.NumberInput(attrs={"class": "form-control form-control-sm", "step": "0.000001"}),
+            "labor_calendar": django_forms.Textarea(attrs={"class": "form-control form-control-sm", "rows": 4, "readonly": True}),
+            "is_active": django_forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+        labels = {
+            "name": "Nombre de la base",
+            "municipality": "Municipio",
+            "latitude": "Latitud",
+            "longitude": "Longitud",
+            "labor_calendar": "Calendario laboral (JSON — gestionado automaticamente)",
+            "is_active": "Activa",
+        }
+
+
+class BaseCreateView(AdminRoleRequiredMixin, View):
+    """
+    Creates a new Base for the given insurer.
+    Accepts POST only. Returns HTMX fragment with updated base list on success.
+    ---
+    Crea una nueva Base para la aseguradora dada.
+    Solo acepta POST. Devuelve fragmento HTMX con la lista actualizada en exito.
+    """
+
+    def post(self, request, pk):
+        """
+        Validate form and create Base. Returns HTMX fragment or error response.
+        ---
+        Valida el formulario y crea la Base. Devuelve fragmento HTMX o respuesta de error.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        form = BaseForm(request.POST)
+        if form.is_valid():
+            base = form.save(commit=False)
+            base.insurer = insurer
+            base.save()
+            bases = Base.objects.filter(insurer=insurer).order_by("name")
+            return render(
+                request,
+                "budgets/partials/base_list_fragment.html",
+                {"insurer": insurer, "bases": bases},
+            )
+        bases = Base.objects.filter(insurer=insurer).order_by("name")
+        return render(
+            request,
+            "budgets/partials/base_list_fragment.html",
+            {"insurer": insurer, "bases": bases, "base_form": form, "form_errors": True},
+        )
+
+
+class BaseUpdateView(AdminRoleRequiredMixin, View):
+    """
+    Updates an existing Base record.
+    GET returns the edit form fragment. POST saves and returns the updated row.
+    ---
+    Actualiza un registro Base existente.
+    GET devuelve el fragmento de formulario de edicion. POST guarda y devuelve la fila actualizada.
+    """
+
+    def get(self, request, pk):
+        """
+        Return the edit form fragment for the given base pk.
+        ---
+        Devuelve el fragmento de formulario de edicion para el pk de base dado.
+        """
+        company_user = _get_company_user(request)
+        base = get_object_or_404(Base, pk=pk, insurer__company=company_user.company)
+        form = BaseForm(instance=base)
+        return render(
+            request,
+            "budgets/partials/base_edit_fragment.html",
+            {"base": base, "base_form": form},
+        )
+
+    def post(self, request, pk):
+        """
+        Save the updated base and return the updated row fragment.
+        ---
+        Guarda la base actualizada y devuelve el fragmento de fila actualizado.
+        """
+        company_user = _get_company_user(request)
+        base = get_object_or_404(Base, pk=pk, insurer__company=company_user.company)
+        form = BaseForm(request.POST, instance=base)
+        if form.is_valid():
+            form.save()
+            return render(
+                request,
+                "budgets/partials/base_row_fragment.html",
+                {"base": base},
+            )
+        return render(
+            request,
+            "budgets/partials/base_edit_fragment.html",
+            {"base": base, "base_form": form},
+        )
+
+
+class BaseToggleView(AdminRoleRequiredMixin, View):
+    """
+    Toggles the is_active flag of a Base record via HTMX POST.
+    Returns the updated row fragment.
+    ---
+    Alterna el flag is_active de un registro Base via HTMX POST.
+    Devuelve el fragmento de fila actualizado.
+    """
+
+    def post(self, request, pk):
+        """
+        Toggle is_active and return the updated row fragment.
+        ---
+        Alterna is_active y devuelve el fragmento de fila actualizado.
+        """
+        company_user = _get_company_user(request)
+        base = get_object_or_404(Base, pk=pk, insurer__company=company_user.company)
+        base.is_active = not base.is_active
+        base.save(update_fields=["is_active"])
+        return render(
+            request,
+            "budgets/partials/base_row_fragment.html",
+            {"base": base},
+        )
+
+
+class BaseDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes a Base record via POST with modal confirmation.
+    Returns empty 200 response for HTMX swap-oob removal.
+    ---
+    Elimina un registro Base via POST con confirmacion modal.
+    Devuelve respuesta 200 vacia para eliminacion HTMX swap-oob.
+    """
+
+    def post(self, request, pk):
+        """
+        Delete the base and return empty response.
+        ---
+        Elimina la base y devuelve respuesta vacia.
+        """
+        company_user = _get_company_user(request)
+        base = get_object_or_404(Base, pk=pk, insurer__company=company_user.company)
+        # Guard: do not delete bases linked to existing budgets.
+        # Guardia: no eliminar bases vinculadas a presupuestos existentes.
+        if base.budgets.exists():
+            return HttpResponseBadRequest(
+                "No se puede eliminar una base con presupuestos asociados."
+            )
+        base.delete()
+        from django.http import HttpResponse
+        return HttpResponse(status=200)
+
+
+# ---------------------------------------------------------------------------
+# Export views — Insurer tariff and budget history exports (CSV, Excel, PDF, Word)
+# Vistas de exportacion — tarifas de aseguradora e historial de presupuestos
+# ---------------------------------------------------------------------------
+
+from django.http import HttpResponse
+
+
+def _insurer_tariff_rows(insurer, tariff):
+    """
+    Build a flat list of row dicts for insurer tariff export.
+    Each row represents one TariffLine with its full context.
+    ---
+    Construye una lista plana de filas dict para exportacion de tarifas.
+    Cada fila representa una TariffLine con su contexto completo.
+    """
+    rows = []
+    if not tariff:
+        return rows
+    lines = tariff.lines.select_related("vehicle_type").order_by(
+        "vehicle_type__sort_order", "vehicle_type__name", "concept"
+    )
+    for line in lines:
+        rows.append({
+            "Aseguradora": insurer.insurer_company_name or insurer.name,
+            "Empresa prestadora": insurer.service_company_name,
+            "Codigo": insurer.code,
+            "Ano tarifa": tariff.year,
+            "Valida desde": tariff.valid_from.strftime("%d/%m/%Y"),
+            "Valida hasta": tariff.valid_to.strftime("%d/%m/%Y") if tariff.valid_to else "Activa",
+            "Tipo de vehiculo": line.vehicle_type.name if line.vehicle_type else "General",
+            "Concepto": line.get_concept_display(),
+            "Unidad": line.get_unit_display(),
+            "Precio": str(line.price),
+            "Umbral km": str(line.km_threshold) if line.km_threshold is not None else "",
+            "Unidades minimas": str(line.min_units) if line.min_units is not None else "",
+        })
+    return rows
+
+
+def _budget_rows(qs):
+    """
+    Build a flat list of row dicts for budget history export.
+    Each row represents one Budget with its BudgetLine breakdown.
+    ---
+    Construye una lista plana de filas dict para exportacion de historial.
+    Cada fila representa un Budget con su desglose BudgetLine.
+    """
+    rows = []
+    for budget in qs.prefetch_related("lines"):
+        base = {
+            "ID": budget.pk,
+            "Fecha servicio": budget.service_date.strftime("%d/%m/%Y") if budget.service_date else "",
+            "Fecha creacion": budget.created_at.strftime("%d/%m/%Y %H:%M"),
+            "Aseguradora": budget.insurer.name,
+            "Tipo de vehiculo": budget.vehicle_type.name,
+            "Km totales": str(budget.km_total),
+            "Nocturno/Festivo": "Si" if budget.is_night_or_holiday else "No",
+            "Cargado": "Si" if budget.is_loaded else "No",
+            "Total": str(budget.total_amount),
+            "IVA aplicado": "Si" if budget.apply_iva else "No",
+            "Total con IVA": str(budget.total_amount_with_iva) if budget.total_amount_with_iva else "",
+            "Estado": budget.get_status_display(),
+        }
+        lines = budget.lines.exclude(concept_code="IVA").order_by("sort_order")
+        if lines.exists():
+            for line in lines:
+                row = dict(base)
+                row["Concepto desglose"] = line.concept_label
+                row["Unidades desglose"] = str(line.units)
+                row["Precio unitario desglose"] = str(line.unit_price)
+                row["Subtotal desglose"] = str(line.subtotal)
+                rows.append(row)
+        else:
+            base["Concepto desglose"] = ""
+            base["Unidades desglose"] = ""
+            base["Precio unitario desglose"] = ""
+            base["Subtotal desglose"] = ""
+            rows.append(base)
+    return rows
+
+
+def _build_tariff_qs(insurer):
+    """
+    Return the active InsurerTariff for the given insurer, or None.
+    ---
+    Devuelve la InsurerTariff activa para la aseguradora dada, o None.
+    """
+    from budgets.models import InsurerTariff
+    return InsurerTariff.objects.filter(
+        insurer=insurer,
+        valid_to__isnull=True,
+    ).prefetch_related("lines__vehicle_type").first()
+
+
+def _build_budget_qs(request, company):
+    """
+    Replicate BudgetHistoryView filters from GET params and return queryset.
+    ---
+    Replica los filtros de BudgetHistoryView desde GET params y devuelve el queryset.
+    """
+    qs = Budget.objects.filter(company=company).select_related(
+        "insurer", "vehicle_type", "operator__user", "tariff",
+    ).order_by("-created_at")
+    insurer_id = request.GET.get("insurer")
+    status = request.GET.get("status")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    if insurer_id:
+        qs = qs.filter(insurer_id=insurer_id)
+    if status:
+        qs = qs.filter(status=status)
+    if date_from:
+        qs = qs.filter(service_date__gte=date_from)
+    if date_to:
+        qs = qs.filter(service_date__lte=date_to)
+    return qs
+
+
+class InsurerTariffExportCsvView(AdminRoleRequiredMixin, View):
+    """
+    Exports the active tariff of an insurer as a CSV file.
+    ---
+    Exporta la tarifa activa de una aseguradora como archivo CSV.
+    """
+
+    def get(self, request, pk):
+        """
+        Build and return the CSV response for the insurer tariff.
+        ---
+        Construye y devuelve la respuesta CSV para la tarifa de la aseguradora.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        tariff = _build_tariff_qs(insurer)
+        rows = _insurer_tariff_rows(insurer, tariff)
+
+        response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
+        filename = f"tarifa_{insurer.code}_{tariff.year if tariff else 'sin_tarifa'}.csv"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+        if not rows:
+            response.write("Sin datos de tarifa disponibles.")
+            return response
+
+        writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+        return response
+
+
+class InsurerTariffExportExcelView(AdminRoleRequiredMixin, View):
+    """
+    Exports the active tariff of an insurer as an Excel file.
+    ---
+    Exporta la tarifa activa de una aseguradora como archivo Excel.
+    """
+
+    def get(self, request, pk):
+        """
+        Build and return the Excel response for the insurer tariff.
+        ---
+        Construye y devuelve la respuesta Excel para la tarifa de la aseguradora.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        tariff = _build_tariff_qs(insurer)
+        rows = _insurer_tariff_rows(insurer, tariff)
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Tarifa"
+
+        header_font = Font(bold=True, color="FFFFFF", size=10)
+        header_fill = PatternFill(fill_type="solid", fgColor="1F4E79")
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        if not rows:
+            ws.append(["Sin datos de tarifa disponibles."])
+        else:
+            headers = list(rows[0].keys())
+            ws.append(headers)
+            for col_idx, _ in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+            for row in rows:
+                ws.append(list(row.values()))
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        filename = f"tarifa_{insurer.code}_{tariff.year if tariff else 'sin_tarifa'}.xlsx"
+        response = HttpResponse(
+            buffer.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+class InsurerTariffExportPdfView(AdminRoleRequiredMixin, View):
+    """
+    Exports the active tariff of an insurer as a PDF file via WeasyPrint.
+    ---
+    Exporta la tarifa activa de una aseguradora como PDF via WeasyPrint.
+    """
+
+    def get(self, request, pk):
+        """
+        Build and return the PDF response for the insurer tariff.
+        ---
+        Construye y devuelve la respuesta PDF para la tarifa de la aseguradora.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        tariff = _build_tariff_qs(insurer)
+        rows = _insurer_tariff_rows(insurer, tariff)
+
+        title = f"Tarifa {insurer.name} - {tariff.year if tariff else 'Sin tarifa activa'}"
+        if rows:
+            headers = list(rows[0].keys())
+            thead = "".join(f"<th>{h}</th>" for h in headers)
+            tbody = ""
+            for i, row in enumerate(rows):
+                bg = "#f0f4f8" if i % 2 == 0 else "#ffffff"
+                cells = "".join(f"<td>{v}</td>" for v in row.values())
+                tbody += f"<tr style='background:{bg}'>{cells}</tr>"
+            table_html = f"<table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>"
+        else:
+            table_html = "<p>Sin datos de tarifa disponibles.</p>"
+
+        html_content = (
+            "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
+            "<style>"
+            "body{font-family:Arial,sans-serif;font-size:8pt;margin:20px}"
+            "h1{color:#1F4E79;font-size:12pt;margin-bottom:10px}"
+            "table{width:100%;border-collapse:collapse}"
+            "th{background:#1F4E79;color:white;padding:4px 6px;font-size:7pt;text-align:left}"
+            "td{padding:3px 6px;font-size:7pt;border-bottom:1px solid #e0e0e0}"
+            "</style></head><body>"
+            f"<h1>{title}</h1>{table_html}"
+            "</body></html>"
+        )
+
+        pdf_file = weasyprint.HTML(string=html_content).write_pdf()
+        filename = f"tarifa_{insurer.code}_{tariff.year if tariff else 'sin_tarifa'}.pdf"
+        response = HttpResponse(pdf_file, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class InsurerTariffExportWordView(AdminRoleRequiredMixin, View):
+    """
+    Exports the active tariff of an insurer as a Word (.docx) file.
+    ---
+    Exporta la tarifa activa de una aseguradora como archivo Word (.docx).
+    """
+
+    def get(self, request, pk):
+        """
+        Build and return the Word response for the insurer tariff.
+        ---
+        Construye y devuelve la respuesta Word para la tarifa de la aseguradora.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        tariff = _build_tariff_qs(insurer)
+        rows = _insurer_tariff_rows(insurer, tariff)
+
+        doc = Document()
+        title_para = doc.add_heading(level=1)
+        title_run = title_para.add_run(
+            f"Tarifa {insurer.name} - {tariff.year if tariff else 'Sin tarifa activa'}"
+        )
+        title_run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+
+        if not rows:
+            doc.add_paragraph("Sin datos de tarifa disponibles.")
+        else:
+            headers = list(rows[0].keys())
+            table = doc.add_table(rows=1, cols=len(headers))
+            table.style = "Table Grid"
+            hdr_cells = table.rows[0].cells
+            for i, h in enumerate(headers):
+                hdr_cells[i].text = h
+                run = hdr_cells[i].paragraphs[0].runs[0]
+                run.font.bold = True
+                run.font.size = Pt(8)
+                run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+            for row in rows:
+                row_cells = table.add_row().cells
+                for i, v in enumerate(row.values()):
+                    row_cells[i].text = str(v)
+                    row_cells[i].paragraphs[0].runs[0].font.size = Pt(8)
+
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+
+        filename = f"tarifa_{insurer.code}_{tariff.year if tariff else 'sin_tarifa'}.docx"
+        response = HttpResponse(
+            buffer.read(),
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class BudgetExportCsvView(AdminRoleRequiredMixin, View):
+    """
+    Exports the filtered budget history as a CSV file.
+    ---
+    Exporta el historial de presupuestos filtrado como archivo CSV.
+    """
+
+    def get(self, request):
+        """
+        Build and return the CSV response for the budget history.
+        ---
+        Construye y devuelve la respuesta CSV para el historial de presupuestos.
+        """
+        company_user = _get_company_user(request)
+        qs = _build_budget_qs(request, company_user.company)
+        rows = _budget_rows(qs)
+
+        response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
+        response["Content-Disposition"] = 'attachment; filename="presupuestos.csv"'
+
+        if not rows:
+            response.write("Sin presupuestos para los filtros seleccionados.")
+            return response
+
+        writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+        return response
+
+
+class BudgetExportExcelView(AdminRoleRequiredMixin, View):
+    """
+    Exports the filtered budget history as an Excel file.
+    ---
+    Exporta el historial de presupuestos filtrado como archivo Excel.
+    """
+
+    def get(self, request):
+        """
+        Build and return the Excel response for the budget history.
+        ---
+        Construye y devuelve la respuesta Excel para el historial de presupuestos.
+        """
+        company_user = _get_company_user(request)
+        qs = _build_budget_qs(request, company_user.company)
+        rows = _budget_rows(qs)
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Presupuestos"
+
+        header_font = Font(bold=True, color="FFFFFF", size=10)
+        header_fill = PatternFill(fill_type="solid", fgColor="1F4E79")
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        if not rows:
+            ws.append(["Sin presupuestos para los filtros seleccionados."])
+        else:
+            headers = list(rows[0].keys())
+            ws.append(headers)
+            for col_idx, _ in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+            for row in rows:
+                ws.append(list(row.values()))
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        response = HttpResponse(
+            buffer.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="presupuestos.xlsx"'
+        return response
+
+
+class BudgetExportPdfView(AdminRoleRequiredMixin, View):
+    """
+    Exports the filtered budget history as a PDF file via WeasyPrint.
+    ---
+    Exporta el historial de presupuestos filtrado como PDF via WeasyPrint.
+    """
+
+    def get(self, request):
+        """
+        Build and return the PDF response for the budget history.
+        ---
+        Construye y devuelve la respuesta PDF para el historial de presupuestos.
+        """
+        company_user = _get_company_user(request)
+        qs = _build_budget_qs(request, company_user.company)
+        rows = _budget_rows(qs)
+
+        if rows:
+            headers = list(rows[0].keys())
+            thead = "".join(f"<th>{h}</th>" for h in headers)
+            tbody = ""
+            for i, row in enumerate(rows):
+                bg = "#f0f4f8" if i % 2 == 0 else "#ffffff"
+                cells = "".join(f"<td>{v}</td>" for v in row.values())
+                tbody += f"<tr style='background:{bg}'>{cells}</tr>"
+            table_html = f"<table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>"
+        else:
+            table_html = "<p>Sin presupuestos para los filtros seleccionados.</p>"
+
+        html_content = (
+            "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
+            "<style>"
+            "body{font-family:Arial,sans-serif;font-size:8pt;margin:20px}"
+            "h1{color:#1F4E79;font-size:12pt;margin-bottom:10px}"
+            "table{width:100%;border-collapse:collapse}"
+            "th{background:#1F4E79;color:white;padding:4px 6px;font-size:7pt;text-align:left}"
+            "td{padding:3px 6px;font-size:7pt;border-bottom:1px solid #e0e0e0}"
+            "</style></head><body>"
+            f"<h1>Historial de presupuestos</h1>{table_html}"
+            "</body></html>"
+        )
+
+        pdf_file = weasyprint.HTML(string=html_content).write_pdf()
+        response = HttpResponse(pdf_file, content_type="application/pdf")
+        response["Content-Disposition"] = 'attachment; filename="presupuestos.pdf"'
+        return response
+
+
+class BudgetExportWordView(AdminRoleRequiredMixin, View):
+    """
+    Exports the filtered budget history as a Word (.docx) file.
+    ---
+    Exporta el historial de presupuestos filtrado como archivo Word (.docx).
+    """
+
+    def get(self, request):
+        """
+        Build and return the Word response for the budget history.
+        ---
+        Construye y devuelve la respuesta Word para el historial de presupuestos.
+        """
+        company_user = _get_company_user(request)
+        qs = _build_budget_qs(request, company_user.company)
+        rows = _budget_rows(qs)
+
+        doc = Document()
+        title_para = doc.add_heading(level=1)
+        title_run = title_para.add_run("Historial de presupuestos")
+        title_run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+
+        if not rows:
+            doc.add_paragraph("Sin presupuestos para los filtros seleccionados.")
+        else:
+            headers = list(rows[0].keys())
+            table = doc.add_table(rows=1, cols=len(headers))
+            table.style = "Table Grid"
+            hdr_cells = table.rows[0].cells
+            for i, h in enumerate(headers):
+                hdr_cells[i].text = h
+                run = hdr_cells[i].paragraphs[0].runs[0]
+                run.font.bold = True
+                run.font.size = Pt(8)
+                run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+            for row in rows:
+                row_cells = table.add_row().cells
+                for i, v in enumerate(row.values()):
+                    row_cells[i].text = str(v)
+                    row_cells[i].paragraphs[0].runs[0].font.size = Pt(8)
+
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+
+        response = HttpResponse(
+            buffer.read(),
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        response["Content-Disposition"] = 'attachment; filename="presupuestos.docx"'
+        return response

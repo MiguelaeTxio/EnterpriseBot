@@ -33,6 +33,15 @@ urlpatterns = [
         name="vehicle_types",
     ),
 
+    # HTMX endpoint — devuelve el selector de bases para la aseguradora
+    # seleccionada en el paso 1. Usado por el formulario secuencial.
+    # HTMX endpoint — returns base selector for the selected insurer (step 1).
+    path(
+        "bases/",
+        views.BudgetBasesView.as_view(),
+        name="bases",
+    ),
+
     # HTMX endpoint — devuelve los conceptos opcionales disponibles para la
     # combinacion aseguradora + tipo de vehiculo seleccionados.
     # HTMX endpoint — returns available optional concepts for the selected
@@ -190,5 +199,92 @@ urlpatterns = [
         "lines/<int:pk>/delete/",
         views.TariffLineDeleteView.as_view(),
         name="tariff_line_delete",
+    ),
+
+    # ---------------------------------------------------------------------------
+    # Base management routes — ADMIN only
+    # Rutas de gestion de bases — solo ADMIN
+    # ---------------------------------------------------------------------------
+
+    # Base create — nueva base para una aseguradora.
+    # Base create — new base for an insurer.
+    path(
+        "insurers/<int:pk>/bases/new/",
+        views.BaseCreateView.as_view(),
+        name="base_create",
+    ),
+
+    # Base update — edicion de base existente (GET form + POST save).
+    # Base update — edit existing base (GET form + POST save).
+    path(
+        "bases/<int:pk>/edit/",
+        views.BaseUpdateView.as_view(),
+        name="base_update",
+    ),
+
+    # Base toggle — HTMX POST, alterna is_active, devuelve fila.
+    # Base toggle — HTMX POST, toggles is_active, returns row fragment.
+    path(
+        "bases/<int:pk>/toggle/",
+        views.BaseToggleView.as_view(),
+        name="base_toggle",
+    ),
+
+    # Base delete — POST con confirmacion modal, elimina si no hay presupuestos.
+    # Base delete — POST with modal confirmation, deletes if no linked budgets.
+    path(
+        "bases/<int:pk>/delete/",
+        views.BaseDeleteView.as_view(),
+        name="base_delete",
+    ),
+
+    # ---------------------------------------------------------------------------
+    # Export routes — Insurer tariff and budget history exports
+    # Rutas de exportacion — tarifas de aseguradora e historial de presupuestos
+    # ---------------------------------------------------------------------------
+
+    # Insurer tariff exports — CSV, Excel, PDF, Word. ADMIN only.
+    path(
+        "insurers/<int:pk>/export/tariff/csv/",
+        views.InsurerTariffExportCsvView.as_view(),
+        name="insurer_tariff_export_csv",
+    ),
+    path(
+        "insurers/<int:pk>/export/tariff/excel/",
+        views.InsurerTariffExportExcelView.as_view(),
+        name="insurer_tariff_export_excel",
+    ),
+    path(
+        "insurers/<int:pk>/export/tariff/pdf/",
+        views.InsurerTariffExportPdfView.as_view(),
+        name="insurer_tariff_export_pdf",
+    ),
+    path(
+        "insurers/<int:pk>/export/tariff/word/",
+        views.InsurerTariffExportWordView.as_view(),
+        name="insurer_tariff_export_word",
+    ),
+
+    # Budget history exports — CSV, Excel, PDF, Word. ADMIN only.
+    # Respetan los mismos filtros GET que BudgetHistoryView.
+    path(
+        "history/export/csv/",
+        views.BudgetExportCsvView.as_view(),
+        name="budget_export_csv",
+    ),
+    path(
+        "history/export/excel/",
+        views.BudgetExportExcelView.as_view(),
+        name="budget_export_excel",
+    ),
+    path(
+        "history/export/pdf/",
+        views.BudgetExportPdfView.as_view(),
+        name="budget_export_pdf",
+    ),
+    path(
+        "history/export/word/",
+        views.BudgetExportWordView.as_view(),
+        name="budget_export_word",
     ),
 ]

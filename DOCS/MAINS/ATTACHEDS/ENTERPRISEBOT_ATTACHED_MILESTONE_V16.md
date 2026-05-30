@@ -24,11 +24,10 @@ que permita:
    (tipo de servicio, kilómetros, esperas, condiciones especiales) el motor
    aplica la tarifa vigente de la aseguradora correspondiente y genera el
    presupuesto desglosado.
-3. **Exportar listado de aseguradoras**: PDF, Excel, Word y CSV desde el panel.
+3. **Exportar tarifas y presupuestos**: PDF, Excel, Word y CSV desde el panel.
 4. **Skill de referencia**: antes de implementar nada, se construye una skill
    que documente el esquema de tarifas, los campos de entrada y las reglas de
-   cálculo, derivada de los datos reales entregados por el cliente (tarifas por
-   aseguradora, facturas de ejemplo).
+   cálculo, derivada de los datos reales entregados por el cliente.
 
 ---
 
@@ -47,305 +46,170 @@ App creada y operativa en producción. Modelos actuales:
 - `InsurerTariff`: tarifa vigente con histórico. FK Insurer. Campos: year,
   valid_from, valid_to (null = activa), notes.
 - `TariffLine`: línea de concepto de tarifa. FK InsurerTariff + VehicleType
-  (nullable = concepto genérico). Conceptos: DEPARTURE, SERVICE_LOCAL,
-  KM_NORMAL, KM_LONG, UNLOCK, RESCUE_HOUR, WAIT_HOUR, WORKER_HOUR,
-  ASSISTANT_HOUR, CUSTODY_DAY, NYF_PERCENT, LOADED_PERCENT.
-- `Budget`: presupuesto generado. FK Company, Insurer, InsurerTariff,
-  CompanyUser, VehicleType. Campos: is_overnight, km_phase1, km_phase2,
-  km_total, has_unlock, is_night_or_holiday, is_loaded, wait_hours,
-  rescue_hours, assistant_hours, worker_hours, custody_days, apply_iva,
-  total_amount, total_amount_with_iva (persistido en BD), status (DRAFT/ACCEPTED/REJECTED).
+  (nullable = concepto genérico).
+- `Budget`: presupuesto generado. FK Company, Insurer, InsurerTariff, CompanyUser,
+  VehicleType, Base (nullable). Campos: is_overnight, km_phase1, km_phase2,
+  km_total, has_unlock, is_night (operario), is_night_or_holiday (calculado),
+  is_loaded, wait_hours, rescue_hours, assistant_hours, worker_hours, custody_days,
+  apply_iva, total_amount, total_amount_with_iva, status, service_date.
 - `BudgetLine`: desglose de cálculo. FK Budget. Solo visible para ADMIN.
-- `SpecialRateTariff`: tabla de tarifas especiales nocturno/festivo. OneToOneField
-  a InsurerTariff. Vinculada cuando Insurer.special_night_holiday_tariff=True.
-- `SpecialRateLine`: línea de precio especial. FK SpecialRateTariff + VehicleType
-  (nullable). Misma estructura que TariffLine.
+- `SpecialRateTariff`: tabla de tarifas especiales nocturno/festivo.
+- `SpecialRateLine`: línea de precio especial.
+- `Base`: base fisica de servicio. FK Insurer. Campos: name, municipality,
+  latitude, longitude (nullable), labor_calendar (JSON ISO dates), calendar_synced_at,
+  is_active. 74 bases sembradas via seed_bases (idempotente).
 
 ### 2.2. Motor de cálculo (`budgets/services.py`)
 
 Función `calculate_budget(budget)` idempotente:
 1. Resuelve la `InsurerTariff` activa (valid_to=None).
-2. Fuerza apply_iva=True si insurer.always_apply_iva=True.
-3. Calcula km_total = km_phase1 + km_phase2 (antes del save).
-4. Resuelve SpecialRateTariff si is_night_or_holiday=True y
-   insurer.special_night_holiday_tariff=True. Si existe, usa SpecialRateLine
-   para pasos 4-7. Si no, usa TariffLine estándar.
-5. Aplica salidas (1 o 2 si pernocta).
-6. Aplica km (KM_NORMAL o KM_LONG según umbral km_threshold).
-7. Aplica desbloqueo si has_unlock.
-8. Aplica conceptos opcionales (rescate, espera, MO, ayudante, custodia)
-   respetando min_units.
-9. Aplica recargos (NYF_PERCENT, LOADED_PERCENT) según surcharges_are_cumulative.
-   OMITIDO si using_special_rate=True.
-10. Aplica management_fee si procede (solo COVEI 5%).
-11. Si apply_iva: aplica IVA_PERCENT sobre total_amount. Persiste
-    total_amount_with_iva en BD (migración 0005).
-12. Devuelve lista de BudgetLine sin guardar. El caller persiste atómicamente.
+2. Calcula `is_holiday = _is_holiday(budget.service_date, budget.base)`.
+   `_is_holiday()` parsea `base.labor_calendar` (JSON list de fechas ISO).
+   Detecta sabados, domingos y festivos locales. Si base es None, solo fin de semana.
+3. Calcula `budget.is_night_or_holiday = budget.is_night OR is_holiday`.
+4. Fuerza apply_iva=True si insurer.always_apply_iva=True.
+5. Calcula km_total = km_phase1 + km_phase2.
+6. Resuelve SpecialRateTariff si is_night_or_holiday=True y
+   insurer.special_night_holiday_tariff=True.
+7-12. Aplica conceptos, recargos, management_fee, IVA segun logica previa.
 
-Constante fiscal: `IVA_PERCENT = Decimal("21.00")` en budgets/services.py.
+Constante fiscal: `IVA_PERCENT = Decimal("21.00")` — no mover.
 
-### 2.3. Rol y usuario
+### 2.3. Sincronizacion de calendarios laborales
 
-- Rol `ROLE_ASSISTANCE` = "ASSISTANCE" en CompanyUser.
-- Usuario `asistencia` / `1234` creado con must_change_password=False.
-- Mixin `AssistanceRequiredMixin` en panel/mixins.py.
-- Sidebar: rol ASSISTANCE ve solo "Presupuestos → Nuevo presupuesto".
-  Rol ADMIN ve además "Historial presupuestos" y "Configuración empresa".
+Comando `python manage.py sync_base_calendars`:
+- Fuente: API publica calendariosnacionales.com (sin API key, sin limites).
+- Endpoint: `https://calendariosnacionales.com/es/v1/{anio}/localidades/{ccaa}/{provincia}/{municipio}.json`
+- Popula `base.labor_calendar` como JSON list de fechas ISO.
+- Soporta `--year`, `--base-id`, `--dry-run`, `--force`.
+- MUNICIPALITY_MAP en `sync_base_calendars.py` — ampliar si se añaden municipios nuevos.
+- Ejecutar anualmente en Q4 para el siguiente año.
 
-### 2.4. Tarifas cargadas (S005)
+### 2.4. Exportaciones (S006)
 
-32 aseguradoras, 250 tipos de vehículo, 798 líneas de tarifa cargadas
-mediante `python manage.py seed_insurer_tariffs` (idempotente, con --dry-run).
-Nombres en formato "Aseguradora / Empresa prestadora" con campos
-insurer_company_name y service_company_name separados.
+8 vistas de exportacion en `budgets/views.py`:
+- Familia A (tarifas por aseguradora): InsurerTariffExportCsvView,
+  InsurerTariffExportExcelView, InsurerTariffExportPdfView, InsurerTariffExportWordView.
+  Ancladas en InsurerDetailView. Dropdown "Exportar tarifa" en cabecera.
+- Familia B (historial presupuestos): BudgetExportCsvView, BudgetExportExcelView,
+  BudgetExportPdfView, BudgetExportWordView.
+  Ancladas en BudgetHistoryView. Dropdown "Exportar" en cabecera. Respetan filtros GET.
 
-4 SpecialRateTariff cargadas (RACC/Zurich variantes Transgrual y AGG),
-25 líneas especiales cada una, mediante script
-`/home/MiguelAeTxio/SWAP/seed_special_rate_tariffs.py` (ya ejecutado,
-conservar en SWAP para reutilizar si hay reseed).
+Librerias: openpyxl, weasyprint 68.1, python-docx 1.2.0. En requirements.in.
 
-### 2.5. URLs
+### 2.5. Panel de bases (S006)
 
-Registradas en `enterprise_core/urls.py`:
-`path('panel/budgets/', include('budgets.urls', namespace='budgets'))`
+CRUD completo de bases en InsurerDetailView:
+- Vistas: BaseCreateView, BaseUpdateView, BaseToggleView, BaseDeleteView.
+- Templates parciales HTMX: base_list_fragment.html, base_row_fragment.html,
+  base_edit_fragment.html en budgets/templates/budgets/partials/.
+- BaseDeleteView rechaza eliminacion si la base tiene presupuestos asociados.
 
-Endpoints activos: wizard, vehicle_types (HTMX), optional_concepts (HTMX),
-result, status_update, history (ADMIN), detail (ADMIN), budget_bulk_delete,
-insurer_list, insurer_create, insurer_update, insurer_detail, insurer_toggle,
-insurer_delete, tariff_create, tariff_save_notes, tariff_line_add_form,
-tariff_line_add, tariff_line_save, tariff_line_delete,
-company_settings (ADMIN).
+### 2.6. Wizard actualizado (S006)
 
-### 2.6. Migraciones aplicadas en producción
+- Paso 1b: selector HTMX de base (BudgetBasesView). Si 1 base activa: input
+  oculto automatico. Si >1: desplegable visible. Si 0: sin campo.
+- Paso 6: casilla "Nocturno" (is_night, operario). Festivo calculado automaticamente
+  por el motor segun service_date y base.labor_calendar.
+- POST wizard: service_date se convierte a datetime.date antes de pasar al motor.
 
-- `budgets/migrations/0001_initial` — S001: modelos completos.
-- `budgets/migrations/0002_budget_apply_iva` — S002: campo apply_iva en Budget.
-  CREADA MANUALMENTE — no regenerar.
-- `budgets/migrations/0003_insurer_is_insurance_company` — S004.
-- `budgets/migrations/0004_insurer_company_and_service_name` — S005:
-  campos insurer_company_name y service_company_name en Insurer.
-- `budgets/migrations/0005_budget_total_amount_with_iva` — S005:
-  campo total_amount_with_iva en Budget.
-- `budgets/migrations/0006_insurer_iva_special_rate_tariff` — S005:
-  campos always_apply_iva y special_night_holiday_tariff en Insurer,
-  modelos SpecialRateTariff y SpecialRateLine.
-- `ivr_config/migrations/0030_company_labor_calendar_company_operation_bases`
-  — S004.
+### 2.7. SDK actualizado (S006)
 
-### 2.7. Template tags
+- google-genai: 1.69.0 → 2.7.0. Sin breaking changes en el codigo del proyecto.
+- requirements.in: google-genai==2.7.0, weasyprint, python-docx añadidos.
 
-- `budgets/templatetags/budgets_extras.py`: filtros `concept_label` y
-  `unit_label` que traducen códigos internos (DEPARTURE, FIXED, etc.)
-  a etiquetas legibles en castellano para la interfaz.
+### 2.8. Migraciones aplicadas en produccion
 
-### 2.8. Locale decimal (S005)
+- 0001_initial, 0002_budget_apply_iva (manual), 0003-0006 (S003-S005).
+- 0007_budget_is_night — S006: campo is_night en Budget.
+- 0008_base_model — S006: modelo Base.
+- 0009_budget_base_fk — S006: FK base en Budget.
 
-- `enterprise_core/settings.py`: añadidos `USE_L10N = True`,
-  `DECIMAL_SEPARATOR = ','`, `USE_THOUSAND_SEPARATOR = False`.
-- `InsurerForm`: campo `management_fee_percent` declarado explícitamente
-  con `localize=True`.
-- Helper `_parse_decimal()` en `budgets/views.py`: normaliza coma→punto
-  en campos decimales de vistas HTMX (TariffLineSaveView, TariffLineAddView).
+### 2.9. Comandos de gestion disponibles
+
+- `seed_insurer_tariffs` — carga tarifas 2026 (idempotente).
+- `seed_bases` — crea registros Base desde Insurer.notes (idempotente, 74 bases).
+- `sync_base_calendars` — sincroniza calendarios desde calendariosnacionales.com.
+- Script SWAP: `seed_special_rate_tariffs.py` — tarifas especiales RACC/Zurich.
+  Ejecutar tras reseed total de aseguradoras.
+
+### 2.10. URLs activas
+
+Wizard, vehicle_types, bases (HTMX), optional_concepts, result, status_update,
+history, detail, budget_bulk_delete, insurer_list, insurer_create, insurer_update,
+insurer_detail, insurer_toggle, insurer_delete, tariff_create, tariff_save_notes,
+tariff_line_add_form, tariff_line_add, tariff_line_save, tariff_line_delete,
+base_create, base_update, base_toggle, base_delete,
+insurer_tariff_export_csv/excel/pdf/word, budget_export_csv/excel/pdf/word.
 
 ---
 
 ## 3. Hoja de Ruta
 
-### Paso 1 — Recopilación de datos y construcción de la skill
+### Paso 0 — Actualizacion SDK google-genai a 2.7.0
+- Estado: COMPLETADO (S006 — google-genai 1.69.0 → 2.7.0, sin breaking changes)
+
+### Paso 1 — Recopilacion de datos y construccion de la skill
 - Estado: COMPLETADO (S001)
 
-### Paso 2 — Validación de la skill con Miguel Ángel
+### Paso 2 — Validacion de la skill con Miguel Angel
 - Estado: COMPLETADO (S001)
 
 ### Paso 3 — Modelo de datos Django (app budgets)
-- Estado: COMPLETADO (S001 — migración 0001_initial)
+- Estado: COMPLETADO (S001 — migracion 0001_initial)
 
-### Paso 4 — Panel de gestión de aseguradoras y tarifas
-- Estado: COMPLETADO (S003/S004/S005 — listado, acordeón, edición inline HTMX,
-  toggle, eliminación modal, campos insurer_company_name/service_company_name,
-  always_apply_iva, special_night_holiday_tariff, vista de detalle solo lectura).
+### Paso 4 — Panel de gestion de aseguradoras y tarifas
+- Estado: COMPLETADO (S003/S004/S005 — listado, acordeon, edicion inline HTMX,
+  toggle, eliminacion modal, campos insurer_company_name/service_company_name,
+  always_apply_iva, special_night_holiday_tariff, vista de detalle solo lectura)
 
-### Paso 5 — Motor de generación de presupuestos
-- Estado: COMPLETADO (S001/S005 — formulario secuencial HTMX operativo,
-  IVA persistido en BD, tarifa especial nocturno/festivo operativa,
-  always_apply_iva forzado en motor).
+### Paso 5 — Motor de generacion de presupuestos
+- Estado: COMPLETADO (S001/S002/S005 — calculo completo, IVA persistido,
+  SpecialRateTariff, always_apply_iva, surcharges_are_cumulative)
 
-### Paso 6 — Exportación del presupuesto individual
-- Estado: DESCARTADO — Los presupuestos se comunican verbalmente por teléfono.
-  No existe caso de uso real. Decisión tomada en S005 (2026-05-29).
+### Paso 6 — Wizard de presupuestos
+- Estado: COMPLETADO (S001/S005/S006 — selector base HTMX, is_night separado
+  de festivo automatico, service_date como datetime.date en motor)
 
-### Paso 7 — Integración en sidebar del panel
-- Estado: COMPLETADO (S001)
+### Paso 7 — Vista de resultado y estados
+- Estado: COMPLETADO (S001/S002)
 
-### Paso 8 — Ampliación del modelo Company: bases de operación y calendario laboral
-- Estado: COMPLETADO (S005 — CompanySettingsView, template company/settings.html,
-  ruta panel/company/settings/, enlace sidebar ADMIN).
+### Paso 8 — Configuracion de empresa (CompanySettingsView)
+- Estado: COMPLETADO (S005)
 
-### Paso 9 — Label dinámico en wizard de presupuestos
-- Estado: COMPLETADO (S005 — insurer_label calculado dinámicamente en
-  BudgetWizardView.get(), sufijo '(Particular)' en opciones del desplegable).
+### Paso 9 — Label dinamico wizard y mejoras UX
+- Estado: COMPLETADO (S005)
 
-### Paso 10 — Corrección banner residual 'Acceso denegado'
+### Paso 10 — Correcciones y ajustes menores
 - Estado: COMPLETADO (S004)
 
-### Paso 0 — Actualización SDK google-genai a versión 2.6.0+
-- Estado: PENDIENTE (S006)
-
 ### Paso 11 — Exportaciones del panel de aseguradoras
-- Estado: PENDIENTE (S006)
-- Alcance: botones de exportación en InsurerListView (PDF, Excel, Word, CSV).
-  Librería recomendada para PDF: weasyprint. Para Excel: openpyxl.
-  Para Word: python-docx. Para CSV: csv stdlib.
-  Verificar disponibilidad de librerías antes de implementar.
+- Estado: COMPLETADO (S006 — CSV, Excel, PDF, Word para tarifas e historial)
 
 ### Paso 12 — Calendario laboral en presupuestos
-- Estado: PENDIENTE (S006)
-- Alcance: parsear Company.labor_calendar para detectar festivos.
-  La casilla "Nocturno/Festivo" del wizard se divide en solo "Nocturno"
-  (marcada por el operario). "Festivo" lo determina el sistema según la
-  fecha del servicio: sábado, domingo, o fecha presente en labor_calendar.
-  Si es nocturno Y festivo → se aplica un solo recargo (el mayor, regla
-  ya implementada en el motor).
+- Estado: COMPLETADO (S006 — modelo Base, is_night, _is_holiday JSON,
+  sync_base_calendars, seed_bases, 74 bases sembradas)
 
-### Paso 13 — Integración Google Maps Routes API
-- Estado: PENDIENTE (S006)
-- Alcance: cálculo de ruta y peajes desde la base del operario hasta
-  la ubicación del cliente. Dos modos de entrada:
-  1. Coordenadas GPS recibidas por WhatsApp.
-  2. Referencia textual (pueblo + km aproximados) geocodificada con
-     Geocoding API.
-  API key pendiente de confirmar. Peajes como concepto adicional en presupuesto.
+### Paso 13 — Integracion Google Maps Routes API
+- Estado: PENDIENTE — movido a Hito 18 (Gestion de Mapas y Geolocalizacion)
 
 ---
 
 ## 4. Registro de Sesiones
 
-| Sesión | Fecha      | Pasos trabajados | Resumen |
+| Sesion | Fecha      | Pasos trabajados | Resumen |
 |--------|------------|-----------------|---------|
-| S001   | 2026-05-26 | 1-5, 7          | Implementación completa app budgets: modelos, motor, vistas, templates, rol ASSISTANCE, 23 tarifas 2026. |
-| S002   | 2026-05-27 | 4 (parcial)     | IVA: apply_iva en Budget (migración 0002 manual). Motor paso 8. result.html muestra base + total IVA. |
-| S003   | 2026-05-27 | 4 (visor)       | Panel aseguradoras: listado HTMX, acordeón edición, vistas tarifa inline. Corrección inputs decimal. |
-| S004   | 2026-05-28 | 8 (parcial), 9 (parcial), 10 | is_insurance_company, operation_bases, labor_calendar migrados. Corrección banner WORKSHOP. |
-| S005   | 2026-05-29 | 8, 9, 11 (parcial), nuevos pasos | Label dinámico wizard (Paso 9). CompanySettingsView (Paso 8). Reseed completo 32 aseguradoras con insurer_company_name/service_company_name. Modelos SpecialRateTariff/SpecialRateLine (migración 0006). Seed tarifas especiales RACC/Zurich (4 tablas x 25 líneas). Motor actualizado: always_apply_iva, special_night_holiday_tariff, _get_special_rate_lines. IVA persistido en BD (migración 0005). Eliminación masiva presupuestos (BudgetBulkDeleteView). Vista detalle solo lectura aseguradora (InsurerDetailView). Template tags budgets_extras (concept_label, unit_label). Locale decimal ES (settings + InsurerForm + _parse_decimal). Skill PED actualizada (salvaguarda U+2500). Skill session-standards actualizada (tee + reglas entorno sftp). |
+| S001   | 2026-05-26 | 1-5, 7          | Implementacion completa app budgets: modelos, motor, vistas, templates, rol ASSISTANCE, 23 tarifas 2026. |
+| S002   | 2026-05-27 | 4 (parcial)     | IVA: apply_iva en Budget (migracion 0002 manual). Motor paso 8. result.html muestra base + total IVA. |
+| S003   | 2026-05-27 | 4 (visor)       | Panel aseguradoras: listado HTMX, acordeon edicion, vistas tarifa inline. Correccion inputs decimal. |
+| S004   | 2026-05-28 | 8 (parcial), 9 (parcial), 10 | is_insurance_company, operation_bases, labor_calendar migrados. Correccion banner WORKSHOP. |
+| S005   | 2026-05-29 | 8, 9, 11 (parcial), nuevos pasos | Label dinamico wizard. CompanySettingsView. Reseed 32 aseguradoras. SpecialRateTariff/SpecialRateLine. Seed tarifas especiales RACC/Zurich. Motor: always_apply_iva, special_night_holiday_tariff. IVA persistido. BudgetBulkDeleteView. InsurerDetailView. Template tags. Locale decimal ES. |
+| S006   | 2026-05-30 | 0, 11, 12       | SDK google-genai 1.69.0 → 2.7.0. Exportaciones CSV/Excel/PDF/Word tarifas e historial. Modelo Base (migraciones 007-009). Panel CRUD bases en InsurerDetailView. BudgetBasesView HTMX. Wizard: selector base + is_night separado. seed_bases (74 bases). sync_base_calendars. _is_holiday JSON. Paso 13 movido a Hito 18. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesión (S006)
+## 5. Hoja de Ruta para la Siguiente Sesion
 
-### Contexto
-
-S005 completó los pasos centrales del motor y la gestión de aseguradoras.
-S006 arranca con la actualización del SDK google-genai como prioridad máxima
-y absoluta — hay un deadline de eliminación de módulos Vertex AI el 24 de
-junio de 2026. A continuación cierra los pasos pendientes de interfaz y
-acomete la integración con Google Maps y el calendario laboral.
-
-### ADVERTENCIAS CRÍTICAS
-
-- **DEADLINE CRÍTICO 24/06/2026:** Google elimina definitivamente los módulos
-  vertexai.generative_models, vertexai.language_models, vertexai.vision_models,
-  vertexai.tuning y vertexai.caching. EnterpriseBot usa Vertex AI con Service
-  Account. Verificar imports antes de actualizar el SDK.
-- **SDK instalado:** google-genai==1.69.0. Versión objetivo: verificar la más
-  reciente con pip index versions google-genai antes de fijar en requirements.in.
-  El salto 1.x a 2.x es un cambio de versión mayor — auditar breaking changes
-  antes de aplicar en producción.
-- IVA_PERCENT = Decimal("21.00") en budgets/services.py — constante de
-  modificación directa. No mover a BD ni a settings.
-- La migración 0002_budget_apply_iva fue creada manualmente. No regenerar.
-- budgets/migrations/0001_initial tiene dependencia en
-  ivr_config.0029_alter_companyuser_role — no reordenar migraciones.
-- El script seed_special_rate_tariffs.py está en SWAP. Si hay reseed total
-  de aseguradoras, ejecutarlo después de seed_insurer_tariffs.
-- USE_L10N = True y DECIMAL_SEPARATOR coma en settings — todos los
-  DecimalField de formularios deben tener localize=True si se declaran
-  explícitamente.
-
-### PRIORIDAD -1 (MÁXIMA) — Paso 0: actualización SDK google-genai
-
-1. Verificar versión disponible: pip index versions google-genai
-2. Auditar imports: grep -r "vertexai" --include="*.py" --exclude-dir=__pycache__
-3. Revisar breaking changes 1.x a 2.x en https://github.com/googleapis/python-genai/releases
-   Prestar especial atención a voice_orchestrator.py, vox_bridge/services.py
-   y cualquier uso de client.aio.live.connect.
-4. Verificar que el modelo gemini-live-2.5-flash-native-audio sigue siendo válido.
-5. Actualizar requirements.in con la versión verificada.
-6. pip-compile requirements.in
-7. pip install -r requirements.txt --break-system-packages
-8. Verificar arranque y ausencia de ImportError en logs.
-9. Actualizar Directriz Técnica 4.1 del MASTER_DOCUMENT con la nueva versión.
-
-### PRIORIDAD 0 — Paso 11: exportaciones del panel de aseguradoras
-
-Añadir botones de exportación al listado de aseguradoras (`InsurerListView`,
-`budgets/views.py`) y a la vista de detalle (`InsurerDetailView`).
-
-#### Alcance técnico
-
-- **CSV**: stdlib `csv`. Sin dependencias adicionales.
-- **Excel**: `openpyxl`. Verificar disponibilidad: `python -c "import openpyxl"`.
-- **PDF**: `weasyprint`. Verificar disponibilidad: `python -c "import weasyprint"`.
-- **Word**: `python-docx`. Verificar disponibilidad: `python -c "import docx"`.
-- Si alguna librería no está disponible, instalar con `pip install --break-system-packages`.
-- Nuevos endpoints en `budgets/urls.py`:
-  - `insurers/export/csv/` → `InsurerExportCsvView`
-  - `insurers/export/excel/` → `InsurerExportExcelView`
-  - `insurers/export/pdf/` → `InsurerExportPdfView`
-  - `insurers/export/word/` → `InsurerExportWordView`
-- Cada vista exporta el queryset filtrado actual (mismos filtros que el listado).
-- Botones de exportación añadidos a `insurer_list.html` junto al botón
-  "Nueva aseguradora".
-
-### PRIORIDAD 1 — Paso 12: calendario laboral en presupuestos
-
-#### Alcance técnico
-
-**Modelo**: ningún cambio de modelo necesario. `Company.labor_calendar`
-(TextField) ya existe. Formato libre de texto — el parser debe ser tolerante.
-
-**Parser `budgets/services.py`**: nueva función `_is_holiday(date, company)`
-que:
-1. Lee `company.labor_calendar` (texto libre con festivos: "1 ene, 6 ene,
-   25 dic... nocturno: 22:00-06:00").
-2. Parsea líneas con formato "DD MMM" o "DD/MM" en español.
-3. Devuelve True si la fecha es sábado, domingo, o coincide con algún festivo.
-
-**Wizard (`budgets/views.py` y `wizard.html`)**:
-- La casilla actual "Nocturno/Festivo" (`is_night_or_holiday`) se divide en:
-  - `is_night` (BooleanField nuevo en Budget) — marcada por el operario.
-  - `is_holiday` — calculado automáticamente por el sistema según la fecha
-    del servicio y `_is_holiday()`.
-- El campo `is_night_or_holiday` pasa a ser calculado: True si is_night OR is_holiday.
-- **Migración necesaria**: añadir `is_night` (BooleanField, default False) a Budget.
-  `is_night_or_holiday` se mantiene como campo calculado (no se elimina — compatibilidad).
-
-**ADVERTENCIA**: solicitar al inicio de S006 el estado actual de
-`wizard.html` y `Budget` model desde disco antes de parchear.
-
-### PRIORIDAD 2 — Paso 13: integración Google Maps Routes API
-
-#### Alcance técnico
-
-**API key**: configurar en `.env` como `GOOGLE_MAPS_API_KEY`.
-
-**Nueva función `budgets/services.py`**: `calculate_route(origin, destination)`
-que llama a Google Maps Routes API y devuelve:
-- `distance_km`: distancia real por carretera.
-- `toll_cost`: coste de peajes (si Routes API devuelve `computeTollInfo`).
-
-**Dos modos de entrada en wizard (nuevo paso HTMX)**:
-1. **Coordenadas GPS**: input lat/lng directo (recibido de WhatsApp).
-2. **Referencia textual**: nombre de municipio + km aproximados.
-   Geocodificar el municipio con Geocoding API, tomar como punto de
-   referencia y sumar km indicados.
-
-**Origen**: base más cercana del insurer (campo `notes` de Insurer contiene
-las bases — parsear para extraer municipios).
-
-**Integración en wizard**: nuevo paso opcional entre paso 1 (aseguradora)
-y paso 2 (tipo de vehículo). Si el operario introduce ubicación, km_phase1
-se precalcula automáticamente y los peajes se añaden como concepto adicional
-en `calculate_budget()`.
-
-**ADVERTENCIA**: antes de implementar, verificar disponibilidad de
-`googlemaps` package: `python -c "import googlemaps"`. Instalar si necesario.
+Este hito queda COMPLETADO en todos sus pasos implementables.
+El Paso 13 (Google Maps Routes API) se traslada integro al Hito 18.
+No hay trabajo pendiente en este hito.

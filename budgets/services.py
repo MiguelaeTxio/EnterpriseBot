@@ -10,6 +10,9 @@ del operario y produce un importe total mas un desglose BudgetLine
 completo para auditoria ADMIN.
 """
 
+import datetime
+import json
+
 from decimal import Decimal, ROUND_HALF_UP
 
 from budgets.models import (
@@ -122,6 +125,48 @@ def _get_special_rate_lines(
 
 
 # ---------------------------------------------------------------------------
+# Holiday / night helper
+# ---------------------------------------------------------------------------
+
+def _is_holiday(date: datetime.date, base) -> bool:
+    """
+    Return True if the given date is a Saturday, Sunday, or a public holiday
+    listed in base.labor_calendar. The calendar is stored as a JSON list of
+    ISO date strings populated by the sync_base_calendars management command.
+    If base is None or labor_calendar is empty, only weekend detection applies.
+    ---
+    Devuelve True si la fecha dada es sabado, domingo o festivo listado en
+    base.labor_calendar. El calendario se almacena como lista JSON de fechas
+    ISO poblada por el comando de gestion sync_base_calendars.
+    Si base es None o labor_calendar esta vacio, solo se aplica la deteccion
+    de fin de semana.
+    """
+    # Weekend check.
+    # Comprobacion de fin de semana.
+    if date.weekday() in (5, 6):
+        return True
+
+    if base is None:
+        return False
+
+    calendar_json = (base.labor_calendar or "").strip()
+    if not calendar_json:
+        return False
+
+    try:
+        holidays: list[str] = json.loads(calendar_json)
+    except (json.JSONDecodeError, TypeError):
+        # Malformed calendar — degrade gracefully to weekend-only detection.
+        # Calendario malformado — degradar a deteccion solo de fin de semana.
+        return False
+
+    # ISO date string for the given date: 'YYYY-MM-DD'.
+    # Cadena de fecha ISO para la fecha dada: 'YYYY-MM-DD'.
+    date_iso = date.isoformat()
+    return date_iso in holidays
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -166,6 +211,17 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         Decimal(str(budget.km_phase1 or 0))
         + Decimal(str(budget.km_phase2 or 0))
     )
+
+    # Calculate is_night_or_holiday from is_night (operator) and
+    # is_holiday (automatic from labor_calendar + weekends).
+    # Calcular is_night_or_holiday desde is_night (operario) e
+    # is_holiday (automatico desde labor_calendar + fines de semana).
+    is_holiday = (
+        _is_holiday(budget.service_date, budget.base)
+        if budget.service_date
+        else False
+    )
+    budget.is_night_or_holiday = budget.is_night or is_holiday
 
     # Force apply_iva if the insurer always requires IVA.
     # Forzar apply_iva si la aseguradora siempre requiere IVA.

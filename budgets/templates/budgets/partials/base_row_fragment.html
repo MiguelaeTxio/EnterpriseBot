@@ -1,0 +1,65 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/base_row_fragment.html #}
+{# HTMX fragment — single base row. Used by base_list_fragment and toggle/update responses.            #}
+{# Fragmento HTMX — fila de base individual. Usado por base_list_fragment y respuestas toggle/update.  #}
+
+<tr id="base-row-{{ base.pk }}">
+  <td class="align-middle">{{ base.name }}</td>
+  <td class="align-middle">{{ base.municipality }}</td>
+  <td class="align-middle text-muted">
+    {% if base.latitude and base.longitude %}
+    <span class="badge bg-light text-dark border">
+      {{ base.latitude }}, {{ base.longitude }}
+    </span>
+    {% else %}
+    <span class="text-muted">—</span>
+    {% endif %}
+  </td>
+  <td class="align-middle">
+    {% if base.calendar_synced_at %}
+    <span class="badge bg-success-subtle text-success border border-success-subtle">
+      <i class="bi bi-check2 me-1"></i>Sincronizado
+    </span>
+    <span class="text-muted small ms-1">{{ base.calendar_synced_at|date:"d/m/Y" }}</span>
+    {% else %}
+    <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
+      <i class="bi bi-exclamation-triangle me-1"></i>Sin sincronizar
+    </span>
+    {% endif %}
+  </td>
+  <td class="align-middle">
+    <button
+      class="btn btn-sm {% if base.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}"
+      hx-post="{% url 'budgets:base_toggle' base.pk %}"
+      hx-target="#base-row-{{ base.pk }}"
+      hx-swap="outerHTML"
+      title="{% if base.is_active %}Desactivar{% else %}Activar{% endif %}"
+    >
+      {% if base.is_active %}
+      <i class="bi bi-toggle-on"></i>
+      {% else %}
+      <i class="bi bi-toggle-off"></i>
+      {% endif %}
+    </button>
+  </td>
+  <td class="align-middle text-end">
+    <button
+      class="btn btn-sm btn-outline-secondary me-1"
+      hx-get="{% url 'budgets:base_update' base.pk %}"
+      hx-target="#base-row-{{ base.pk }}"
+      hx-swap="outerHTML"
+      title="Editar"
+    >
+      <i class="bi bi-pencil"></i>
+    </button>
+    <button
+      class="btn btn-sm btn-outline-danger"
+      hx-post="{% url 'budgets:base_delete' base.pk %}"
+      hx-target="#base-row-{{ base.pk }}"
+      hx-swap="outerHTML"
+      hx-confirm="¿Eliminar la base '{{ base.name }}'? Esta acción no se puede deshacer."
+      title="Eliminar"
+    >
+      <i class="bi bi-trash"></i>
+    </button>
+  </td>
+</tr>

@@ -41,7 +41,7 @@ psutil==7.2.2
 # AI Orchestration (Standard 1.4) / Orquestación de IA (Estándar 1.4)
 # Explicit version for Google GenAI SDK (v1beta integration).
 # Versión explícita para el SDK de Google GenAI (integración v1beta).
-google-genai==1.69.0
+google-genai==2.7.0
 
 # Task Queue / Cola de Tareas Asíncronas
 # Required for background task processing and scheduled jobs (presence reminders, etc.).
@@ -58,6 +58,10 @@ redis
 esprima
 djlint
 openpyxl
+weasyprint
+python-docx
+weasyprint
+python-docx
 plotly
 pdf2image
 cssutils

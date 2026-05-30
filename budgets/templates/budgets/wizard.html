@@ -55,6 +55,12 @@
           </div>
         </div>
 
+        {# ── PASO 1b: Base de servicio (cargado via HTMX) ───────────────── #}
+        {# Si la aseguradora tiene 1 base: input oculto automatico.          #}
+        {# Si tiene mas de 1: desplegable visible.                           #}
+        {# Si no tiene ninguna: fragmento vacio.                             #}
+        <div id="base-selector-section"></div>
+
         {# ── PASO 2: Tipo de vehículo (cargado via HTMX) ────────────────── #}
         <div id="vehicle-type-section"></div>
 
@@ -156,20 +162,27 @@
           </div>
         </div>
 
-        {# ── PASO 6: Nocturno / Festivo ─────────────────────────────────── #}
+        {# ── PASO 6: Nocturno ─────────────────────────────────────────── #}
+        {# El operario marca si el servicio es nocturno (horario nocturno). #}
+        {# El festivo se detecta automaticamente por el motor segun la      #}
+        {# fecha del servicio y el calendario laboral de la base.           #}
         <div class="card mb-3 wizard-step d-none" id="step-nyf">
           <div class="card-body">
             <div class="form-check form-switch">
               <input
                 class="form-check-input"
                 type="checkbox"
-                name="is_night_or_holiday"
-                id="id_nyf"
+                name="is_night"
+                id="id_is_night"
                 value="1"
               >
-              <label class="form-check-label fw-semibold" for="id_nyf">
-                6. ¿Servicio nocturno o festivo?
+              <label class="form-check-label fw-semibold" for="id_is_night">
+                6. ¿Servicio nocturno?
               </label>
+            </div>
+            <div class="form-text text-muted mt-1">
+              Los festivos se detectan automaticamente segun la fecha del servicio
+              y el calendario laboral de la base seleccionada.
             </div>
           </div>
         </div>
@@ -256,6 +269,26 @@
       }
     }
   }
+
+  // Load base selector when insurer changes.
+  // Carga el selector de base cuando cambia la aseguradora.
+  (function () {
+    const insurerSelect = document.getElementById('id_insurer');
+    if (insurerSelect) {
+      insurerSelect.addEventListener('change', function () {
+        const insurerId = this.value;
+        if (!insurerId) {
+          document.getElementById('base-selector-section').innerHTML = '';
+          return;
+        }
+        htmx.ajax('GET', '{% url "budgets:bases" %}', {
+          target: '#base-selector-section',
+          swap: 'innerHTML',
+          values: {insurer_id: insurerId}
+        });
+      });
+    }
+  })();
 
   // Activate steps 3-8 and submit once vehicle type is selected.
   // Activa los pasos 3-8 y el boton submit cuando se selecciona tipo de vehiculo.

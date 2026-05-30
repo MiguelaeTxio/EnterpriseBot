@@ -42,7 +42,7 @@ de desarrollo del proyecto. El modelo las carga al inicio de sesión desde
 este documento y las aplica sin excepción.
 
 ### 4.1. Inteligencia Artificial
-- **SDK:** `google-genai 1.69.0 (PENDIENTE actualizacion a 2.x — ver Paso 0 Anexo V16)`
+- **SDK:** `google-genai 2.7.0`
 - **Modelo IVR Conversacional:** `gemini-live-2.5-flash-native-audio`
 - **Plataforma:** Vertex AI — autenticación via Service Account JSON
 - **Variables de entorno:** `GCP_CREDENTIALS_PATH`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`
@@ -50,7 +50,7 @@ este documento y las aplica sin excepción.
 - **Voice:** `Aoede` — obligatorio en `speech_config` para modelo de audio nativo
 - **VAD servidor:** `disabled=True` (obligatorio para puentes de telefonía)
 - **Greeting:** `await session.send_client_content(turns=..., turn_complete=True)`
-- **Firma audio SDK 1.69.0 (verificar compatibilidad tras actualizacion):** `await session.send_realtime_input(audio=types.Blob(data=..., mime_type='audio/pcm;rate=16000'))`
+- **Firma audio SDK 2.7.0:** `await session.send_realtime_input(audio=types.Blob(data=..., mime_type='audio/pcm;rate=16000'))`
 
 ### 4.2. Telefonía
 - **Twilio SDK Python:** `twilio 9.10.4`
@@ -212,7 +212,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   propio. Si no, construcción de agente Django + IA.
 - Actualización online obligatoria antes de implementar (Directriz 4.4).
 
-### Hito 16: Motor de Presupuestos para Sección ASISTENCIA (EN PROGRESO)
+### Hito 16: Motor de Presupuestos para Sección ASISTENCIA (COMPLETADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V16.md`)
 - Skill de generación de presupuestos para la sección de Asistencia.
 - Tarifas configurables por compañía aseguradora.
@@ -227,5 +227,13 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Firma digital del cliente en pantalla táctil del móvil del operario.
 - Modo offline PWA con sincronización automática al recuperar cobertura.
 - Albarán cerrado exportable para revisión y facturación.
+
+### Hito 18: Gestión de Mapas y Geolocalización (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V18.md`)
+- Geocodificación de bases desde el panel: Leaflet.js + Nominatim, pin draggable.
+- Coordenadas persistidas en Base.latitude/longitude.
+- Cálculo de ruta en wizard: carretera + PK → Google Routes API → km real + peajes.
+- Campos de ruta en Budget: road_name, pk_km, route_distance_km, route_toll_cost.
+- Peajes como concepto adicional en calculate_budget().
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

@@ -509,6 +509,24 @@ class Budget(models.Model):
         verbose_name="Tipo de vehiculo",
         help_text="Tipo de vehiculo asistido segun la nomenclatura de la aseguradora.",
     )
+    # Service base — selected from the insurer's active bases in the wizard.
+    # When the insurer has exactly one active base, it is assigned automatically.
+    # Base de servicio — seleccionada entre las bases activas de la aseguradora.
+    # Cuando la aseguradora tiene exactamente una base activa, se asigna automaticamente.
+    base = models.ForeignKey(
+        "Base",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="budgets",
+        verbose_name="Base",
+        help_text=(
+            "Base de servicio desde la que se realiza el servicio. "
+            "Determina el calendario laboral para la deteccion automatica "
+            "de festivos. Nullable para compatibilidad con presupuestos "
+            "anteriores a la implementacion del modelo Base."
+        ),
+    )
     # Overnight service: two departures + two km phases.
     # Servicio de pernocta: dos salidas + dos fases de kilometros.
     is_overnight = models.BooleanField(
@@ -554,12 +572,27 @@ class Budget(models.Model):
             "No aplica a remolques (se desenganchan/enganchan directamente en la quinta rueda)."
         ),
     )
+    # Marked manually by the operator when the service is performed at night.
+    # Independently of is_holiday, which is calculated automatically by the engine.
+    # Marcado manualmente por el operario cuando el servicio es nocturno.
+    # Independiente de is_holiday, calculado automaticamente por el motor.
+    is_night = models.BooleanField(
+        default=False,
+        verbose_name="Nocturno",
+        help_text=(
+            "Indica si el servicio se realiza en horario nocturno. "
+            "Marcado manualmente por el operario en el wizard. "
+            "Independiente de is_holiday, que es calculado automaticamente "
+            "por el motor segun la fecha del servicio y el calendario laboral."
+        ),
+    )
     is_night_or_holiday = models.BooleanField(
         default=False,
         verbose_name="Nocturno / Festivo",
         help_text=(
-            "Indica si el servicio se realiza en horario nocturno o en festivo. "
-            "Activa el recargo NYF de la tarifa de la aseguradora."
+            "Calculado automaticamente por el motor: True si is_night OR is_holiday. "
+            "Activa el recargo NYF de la tarifa de la aseguradora. "
+            "No editar directamente — se recalcula en cada llamada a calculate_budget()."
         ),
     )
     is_loaded = models.BooleanField(
@@ -908,3 +941,147 @@ class SpecialRateLine(models.Model):
             f"{self.special_rate_tariff} — "
             f"{vt} — {self.concept} — {self.price}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 9. BASE — Physical service base linked to an insurer/provider pair.
+#    Base fisica de servicio vinculada a un par aseguradora/prestadora.
+# ---------------------------------------------------------------------------
+
+class Base(models.Model):
+    """
+    Represents a physical service base for a specific insurer/provider pair.
+    Each Insurer (which encapsulates one aseguradora+prestadora combination)
+    may have one or more active bases. When more than one active base exists
+    for the selected insurer, the wizard presents a dropdown to the operator.
+    When exactly one active base exists, it is assigned automatically.
+
+    Coordinates (latitude/longitude) are used as the route origin in the
+    Google Maps Routes API call (future Hito). If specific coordinates are
+    not provided, the municipality field is used for geocoding. Once geocoded,
+    the result is persisted back to latitude/longitude so subsequent calls
+    do not hit the geocoding API again.
+
+    The labor_calendar field stores the public holidays for the base locality
+    in JSON format, populated automatically by the scraper command
+    `sync_base_calendars` which calls the calendariosnacionales.com public API.
+    The _is_holiday() engine function reads this field to determine whether
+    a given service date triggers the NYF surcharge.
+    ---
+    Representa una base fisica de servicio para un par aseguradora/prestadora.
+    Cada Insurer (que encapsula una combinacion aseguradora+prestadora) puede
+    tener una o mas bases activas. Cuando existe mas de una base activa para
+    la aseguradora seleccionada, el wizard presenta un desplegable al operario.
+    Cuando existe exactamente una base activa, se asigna automaticamente.
+
+    Las coordenadas (latitud/longitud) se usan como origen de ruta en la llamada
+    a la Routes API de Google Maps (hito futuro). Si no se dan coordenadas
+    especificas, el campo municipality se usa para geocodificar. Una vez
+    geocodificado, el resultado se persiste en latitud/longitud para que las
+    llamadas posteriores no vuelvan a llamar a la API de geocodificacion.
+
+    El campo labor_calendar almacena los festivos de la localidad de la base
+    en formato JSON, poblado automaticamente por el comando scraper
+    `sync_base_calendars` que llama a la API publica de calendariosnacionales.com.
+    La funcion del motor _is_holiday() lee este campo para determinar si una
+    fecha de servicio dada activa el recargo NYF.
+    """
+
+    insurer = models.ForeignKey(
+        Insurer,
+        on_delete=models.CASCADE,
+        related_name="bases",
+        verbose_name="Aseguradora",
+        help_text=(
+            "Par aseguradora/prestadora al que pertenece esta base. "
+            "Una misma prestadora puede tener bases distintas por cada par."
+        ),
+    )
+    name = models.CharField(
+        max_length=150,
+        verbose_name="Nombre de la base",
+        help_text="Nombre identificativo de la base (ej: 'Sevilla', 'Granada Norte').",
+    )
+    municipality = models.CharField(
+        max_length=150,
+        verbose_name="Municipio",
+        help_text=(
+            "Municipio donde se ubica la base. Se usa para geocodificar las "
+            "coordenadas y para consultar el calendario laboral local via API. "
+            "Debe coincidir con el nombre oficial del municipio en espanol "
+            "(ej: 'Sevilla', 'Granada', 'Jerez de la Frontera')."
+        ),
+    )
+    # Optional precise coordinates. Populated by the geocoding pipeline
+    # or entered manually from the panel. When null, municipality is used
+    # as the geocoding source and the result is stored here on first call.
+    # Coordenadas precisas opcionales. Pobladas por el pipeline de geocodificacion
+    # o introducidas manualmente desde el panel. Cuando son nulas, municipality
+    # se usa como fuente de geocodificacion y el resultado se almacena aqui.
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Latitud",
+        help_text=(
+            "Latitud de la base en grados decimales. "
+            "Si es nula, se geocodifica el municipio en la primera llamada "
+            "y se persiste el resultado aqui automaticamente."
+        ),
+    )
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Longitud",
+        help_text=(
+            "Longitud de la base en grados decimales. "
+            "Si es nula, se geocodifica el municipio en la primera llamada "
+            "y se persiste el resultado aqui automaticamente."
+        ),
+    )
+    # Public holiday calendar for this base locality in JSON format.
+    # Populated by the management command sync_base_calendars.
+    # Format: list of ISO date strings, e.g. ["2026-01-01", "2026-01-06", ...]
+    # Calendario de festivos publicos de la localidad de la base en formato JSON.
+    # Poblado por el comando de gestion sync_base_calendars.
+    # Formato: lista de cadenas de fecha ISO, ej: ["2026-01-01", "2026-01-06", ...]
+    labor_calendar = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Calendario laboral",
+        help_text=(
+            "Festivos locales de la base en formato JSON (lista de fechas ISO). "
+            "Poblado automaticamente por el comando sync_base_calendars. "
+            "Incluye festivos nacionales, autonomicos y locales del municipio."
+        ),
+    )
+    # Calendar last synced timestamp — used to detect stale calendars.
+    # Timestamp de ultima sincronizacion del calendario — detecta calendarios obsoletos.
+    calendar_synced_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Ultimo sync de calendario",
+        help_text=(
+            "Fecha y hora de la ultima sincronizacion del calendario laboral "
+            "con la API de calendariosnacionales.com. Null si nunca se ha sincronizado."
+        ),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activa",
+        help_text="Indica si esta base esta disponible para seleccion en el wizard.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creacion")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificacion")
+
+    class Meta:
+        verbose_name = "Base"
+        verbose_name_plural = "Bases"
+        ordering = ["insurer__name", "name"]
+        unique_together = [("insurer", "name")]
+
+    def __str__(self):
+        return f"{self.insurer.name} — {self.name}"

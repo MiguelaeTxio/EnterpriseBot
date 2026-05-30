@@ -1,0 +1,60 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/base_edit_fragment.html #}
+{# HTMX fragment — inline edit form for a base row.                                                     #}
+{# Fragmento HTMX — formulario de edicion inline para una fila de base.                                 #}
+
+<tr id="base-row-{{ base.pk }}">
+  <td colspan="6">
+    <form
+      hx-post="{% url 'budgets:base_update' base.pk %}"
+      hx-target="#base-row-{{ base.pk }}"
+      hx-swap="outerHTML"
+      class="row g-2 align-items-end p-1"
+    >
+      {% csrf_token %}
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-1">Nombre</label>
+        {{ base_form.name }}
+        {% if base_form.name.errors %}
+        <div class="text-danger small">{{ base_form.name.errors|join:", " }}</div>
+        {% endif %}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-1">Municipio</label>
+        {{ base_form.municipality }}
+        {% if base_form.municipality.errors %}
+        <div class="text-danger small">{{ base_form.municipality.errors|join:", " }}</div>
+        {% endif %}
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Latitud</label>
+        {{ base_form.latitude }}
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Longitud</label>
+        {{ base_form.longitude }}
+      </div>
+      <div class="col-12 col-md-2 d-flex align-items-center gap-2">
+        <div class="form-check">
+          {{ base_form.is_active }}
+          <label class="form-check-label small" for="{{ base_form.is_active.id_for_label }}">
+            Activa
+          </label>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary ms-auto">
+          <i class="bi bi-check2"></i>
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          hx-get="{% url 'budgets:base_update' base.pk %}"
+          hx-target="#base-row-{{ base.pk }}"
+          hx-swap="outerHTML"
+          title="Cancelar"
+          onclick="htmx.ajax('GET', '{% url 'budgets:insurer_detail' base.insurer.pk %}', {target: '#base-row-{{ base.pk }}', swap: 'none'}); location.reload();"
+        >
+          <i class="bi bi-x"></i>
+        </button>
+      </div>
+    </form>
+  </td>
+</tr>
