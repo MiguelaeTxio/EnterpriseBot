@@ -1,0 +1,142 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/bases.html #}
+{#                                                                                  #}
+{# Base management view — full CRUD for service bases of an insurer. ADMIN only.   #}
+{# Lists all bases, inline edit with Google Maps, create form, toggle, delete.     #}
+{#                                                                                  #}
+{# Vista de gestión de bases — CRUD completo de bases de servicio. Solo ADMIN.    #}
+{# Lista todas las bases, edición inline con Google Maps, alta, toggle, baja.     #}
+{% extends "panel/base.html" %}
+
+{% block title %}Bases — {{ insurer.name }} — {{ company.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  {# ── Breadcrumb ──────────────────────────────────────────────────── #}
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item">
+        <a href="{% url 'budgets:insurer_list' %}">Aseguradoras</a>
+      </li>
+      <li class="breadcrumb-item">
+        <a href="{% url 'budgets:insurer_detail' insurer.pk %}">{{ insurer.name }}</a>
+      </li>
+      <li class="breadcrumb-item active">Bases de servicio</li>
+    </ol>
+  </nav>
+
+  {# ── Cabecera ────────────────────────────────────────────────────── #}
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0">
+      <i class="bi bi-geo-alt-fill me-2 text-danger"></i>
+      Bases de servicio
+      <span class="text-muted fw-normal fs-6 ms-2">{{ insurer.name }}</span>
+    </h4>
+    <a href="{% url 'budgets:insurer_detail' insurer.pk %}"
+       class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Volver al detalle
+    </a>
+  </div>
+
+  {# ── Django messages ─────────────────────────────────────────────── #}
+  {% for message in messages %}
+  <div class="alert alert-{{ message.tags }} alert-dismissible fade show py-2 small" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+
+  {# ── Tabla de bases ──────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-transparent border-bottom py-2 d-flex align-items-center justify-content-between">
+      <span class="fw-semibold small">
+        <i class="bi bi-list-ul me-1"></i>Bases registradas
+        <span class="badge bg-secondary ms-1">{{ bases.count }}</span>
+      </span>
+    </div>
+    <div class="card-body p-0">
+      {% if bases %}
+      <div class="table-responsive">
+        <table class="table table-sm small align-middle mb-0" id="bases-table">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3">Nombre</th>
+              <th>Municipio</th>
+              <th>Coordenadas</th>
+              <th>Calendario</th>
+              <th class="text-center">Estado</th>
+              <th class="text-end pe-3">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for base in bases %}
+            {% include "budgets/partials/base_row_fragment.html" %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-4 text-center text-muted small">
+        <i class="bi bi-geo-alt fs-3 d-block mb-2 opacity-50"></i>
+        No hay bases registradas para esta aseguradora. Añade la primera base usando el formulario de abajo.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Formulario alta nueva base ──────────────────────────────────── #}
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-transparent border-bottom py-2">
+      <span class="fw-semibold small">
+        <i class="bi bi-plus-circle me-1 text-success"></i>Nueva base
+      </span>
+    </div>
+    <div class="card-body">
+      <form
+        hx-post="{% url 'budgets:base_create' insurer.pk %}"
+        hx-target="#bases-table tbody"
+        hx-swap="beforeend"
+        hx-on::after-request="if(event.detail.successful){ this.reset(); }"
+      >
+        {% csrf_token %}
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-3">
+            <label class="form-label small mb-1">Nombre <span class="text-danger">*</span></label>
+            {{ base_form.name }}
+            {% if base_form.name.errors %}
+            <div class="text-danger small">{{ base_form.name.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label small mb-1">Municipio <span class="text-danger">*</span></label>
+            {{ base_form.municipality }}
+            {% if base_form.municipality.errors %}
+            <div class="text-danger small">{{ base_form.municipality.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Latitud</label>
+            {{ base_form.latitude }}
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Longitud</label>
+            {{ base_form.longitude }}
+          </div>
+          <div class="col-12 col-md-2 d-flex align-items-center gap-2">
+            <div class="form-check">
+              {{ base_form.is_active }}
+              <label class="form-check-label small" for="{{ base_form.is_active.id_for_label }}">
+                Activa
+              </label>
+            </div>
+            <button type="submit" class="btn btn-sm btn-success ms-auto">
+              <i class="bi bi-plus me-1"></i>Añadir
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

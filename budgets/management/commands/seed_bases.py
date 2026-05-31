@@ -2,18 +2,20 @@
 """
 Management command: seed_bases.
 Parses the notes field of every active Insurer and creates Base records
-for each locality found. Bases are extracted from the pattern:
+for each locality found, then links them via InsurerBase.
+Bases are extracted from the pattern:
   "Base: X." or "Bases: X, Y, Z."
 Idempotent: safe to run multiple times. Uses get_or_create so existing
-bases are not duplicated.
+bases and relations are not duplicated.
 Supports --dry-run flag to preview changes without writing to the database.
 ---
 Comando de gestion: seed_bases.
 Parsea el campo notes de cada Insurer activo y crea registros Base
-para cada localidad encontrada. Las bases se extraen del patron:
+para cada localidad encontrada, luego los vincula via InsurerBase.
+Las bases se extraen del patron:
   "Base: X." o "Bases: X, Y, Z."
 Idempotente: seguro para ejecutar multiples veces. Usa get_or_create
-para no duplicar bases existentes.
+para no duplicar bases ni relaciones existentes.
 Soporta el flag --dry-run para previsualizar sin escribir en la BD.
 """
 
@@ -22,7 +24,7 @@ import re
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from budgets.models import Base, Insurer
+from budgets.models import Base, Insurer, InsurerBase
 
 
 # ---------------------------------------------------------------------------
@@ -69,13 +71,14 @@ def _parse_bases(notes: str) -> list[str]:
 
 class Command(BaseCommand):
     """
-    Seed Base records from Insurer.notes field.
+    Seed Base records from Insurer.notes field and link them via InsurerBase.
     ---
-    Sembrar registros Base desde el campo Insurer.notes.
+    Sembrar registros Base desde el campo Insurer.notes y vincularlos via InsurerBase.
     """
 
     help = (
-        "Crea registros Base parseando el campo notes de cada Insurer activo. "
+        "Crea registros Base parseando el campo notes de cada Insurer activo "
+        "y los vincula a cada aseguradora via InsurerBase. "
         "Idempotente. Usa --dry-run para previsualizar sin escribir."
     )
 
@@ -95,25 +98,28 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """
-        Main handler. Iterates active insurers, parses bases from notes
-        and creates Base records via get_or_create.
+        Main handler. Iterates active insurers, parses bases from notes,
+        creates Base records scoped to company and creates InsurerBase relations.
         ---
-        Manejador principal. Itera aseguradoras activas, parsea bases de notes
-        y crea registros Base via get_or_create.
+        Manejador principal. Itera aseguradoras activas, parsea bases de notes,
+        crea registros Base con ambito de empresa y crea relaciones InsurerBase.
         """
         dry_run = options["dry_run"]
 
         if dry_run:
             self.stdout.write("# MODO DRY-RUN — no se escribira en la base de datos.")
 
-        insurers = Insurer.objects.filter(is_active=True).order_by("code")
+        insurers = Insurer.objects.filter(
+            is_active=True,
+        ).select_related("company").order_by("code")
         total = insurers.count()
         self.stdout.write(f"# Procesando {total} aseguradoras activas...")
 
-        created_count = 0
-        skipped_count = 0
-        unknown_count = 0
-        error_count = 0
+        bases_created      = 0
+        bases_skipped      = 0
+        relations_created  = 0
+        relations_skipped  = 0
+        unknown_count      = 0
 
         try:
             with transaction.atomic():
@@ -135,30 +141,53 @@ class Command(BaseCommand):
                             unknown_count += 1
                             municipality = locality
 
-                        if not dry_run:
-                            _, base_created = Base.objects.get_or_create(
-                                insurer=insurer,
-                                name=locality,
-                                defaults={
-                                    "municipality": municipality,
-                                    "is_active": True,
-                                },
-                            )
-                            if base_created:
-                                created_count += 1
-                                self.stdout.write(
-                                    f"  [CREADA] {insurer.code} — {locality} ({municipality})"
-                                )
-                            else:
-                                skipped_count += 1
-                                self.stdout.write(
-                                    f"  [EXISTE]  {insurer.code} — {locality}"
-                                )
-                        else:
+                        if dry_run:
                             self.stdout.write(
-                                f"  [DRY-RUN] {insurer.code} — {locality} ({municipality})"
+                                f"  [DRY-RUN] {insurer.code} — Base '{locality}' "
+                                f"({municipality}) + InsurerBase"
                             )
-                            created_count += 1
+                            bases_created += 1
+                            relations_created += 1
+                            continue
+
+                        # Step 1 — Get or create the Base entity scoped to company.
+                        # Paso 1 — Obtener o crear la entidad Base con ambito de empresa.
+                        base, base_created = Base.objects.get_or_create(
+                            company=insurer.company,
+                            name=locality,
+                            defaults={
+                                "municipality": municipality,
+                                "is_active": True,
+                            },
+                        )
+                        if base_created:
+                            bases_created += 1
+                            self.stdout.write(
+                                f"  [BASE CREADA]    {insurer.code} — '{locality}' ({municipality})"
+                            )
+                        else:
+                            bases_skipped += 1
+                            self.stdout.write(
+                                f"  [BASE EXISTE]    {insurer.code} — '{locality}'"
+                            )
+
+                        # Step 2 — Get or create the InsurerBase relation.
+                        # Paso 2 — Obtener o crear la relacion InsurerBase.
+                        _, ib_created = InsurerBase.objects.get_or_create(
+                            insurer=insurer,
+                            base=base,
+                            defaults={"is_active": True},
+                        )
+                        if ib_created:
+                            relations_created += 1
+                            self.stdout.write(
+                                f"  [RELACION CREADA] {insurer.code} <-> '{locality}'"
+                            )
+                        else:
+                            relations_skipped += 1
+                            self.stdout.write(
+                                f"  [RELACION EXISTE] {insurer.code} <-> '{locality}'"
+                            )
 
                 if dry_run:
                     raise _DryRunRollback()
@@ -171,8 +200,10 @@ class Command(BaseCommand):
 
         self.stdout.write("")
         self.stdout.write("# --- RESUMEN ---")
-        self.stdout.write(f"# Bases creadas:      {created_count}")
-        self.stdout.write(f"# Bases ya existentes: {skipped_count}")
+        self.stdout.write(f"# Bases creadas:            {bases_created}")
+        self.stdout.write(f"# Bases ya existentes:      {bases_skipped}")
+        self.stdout.write(f"# Relaciones creadas:       {relations_created}")
+        self.stdout.write(f"# Relaciones ya existentes: {relations_skipped}")
         self.stdout.write(f"# Localidades desconocidas: {unknown_count}")
         if not dry_run:
             self.stdout.write("# Sembrado completado correctamente.")

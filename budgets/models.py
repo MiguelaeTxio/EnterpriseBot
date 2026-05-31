@@ -944,58 +944,54 @@ class SpecialRateLine(models.Model):
 
 
 # ---------------------------------------------------------------------------
-# 9. BASE — Physical service base linked to an insurer/provider pair.
-#    Base fisica de servicio vinculada a un par aseguradora/prestadora.
+# 9. BASE — Physical service base. Company-scoped, insurer-independent.
+#    Base fisica de servicio. Con ambito de empresa, independiente de aseguradora.
 # ---------------------------------------------------------------------------
 
 class Base(models.Model):
     """
-    Represents a physical service base for a specific insurer/provider pair.
-    Each Insurer (which encapsulates one aseguradora+prestadora combination)
-    may have one or more active bases. When more than one active base exists
-    for the selected insurer, the wizard presents a dropdown to the operator.
-    When exactly one active base exists, it is assigned automatically.
+    Represents a physical service base scoped to a company.
+    A base is an independent entity — not linked to a specific insurer.
+    The relationship between bases and insurers is managed via InsurerBase,
+    which allows the same physical base to be assigned to multiple insurers
+    with individual active/inactive flags per insurer.
 
     Coordinates (latitude/longitude) are used as the route origin in the
-    Google Maps Routes API call (future Hito). If specific coordinates are
-    not provided, the municipality field is used for geocoding. Once geocoded,
-    the result is persisted back to latitude/longitude so subsequent calls
-    do not hit the geocoding API again.
+    Google Maps Routes API call. If not provided, municipality is used for
+    geocoding and the result is persisted back on first call.
 
-    The labor_calendar field stores the public holidays for the base locality
-    in JSON format, populated automatically by the scraper command
-    `sync_base_calendars` which calls the calendariosnacionales.com public API.
+    The labor_calendar field stores public holidays for the base locality
+    in JSON format, populated by the sync_base_calendars management command.
     The _is_holiday() engine function reads this field to determine whether
     a given service date triggers the NYF surcharge.
     ---
-    Representa una base fisica de servicio para un par aseguradora/prestadora.
-    Cada Insurer (que encapsula una combinacion aseguradora+prestadora) puede
-    tener una o mas bases activas. Cuando existe mas de una base activa para
-    la aseguradora seleccionada, el wizard presenta un desplegable al operario.
-    Cuando existe exactamente una base activa, se asigna automaticamente.
+    Representa una base fisica de servicio con ambito de empresa.
+    Una base es una entidad independiente — no vinculada a una aseguradora
+    especifica. La relacion entre bases y aseguradoras se gestiona via
+    InsurerBase, que permite asignar la misma base fisica a multiples
+    aseguradoras con flags activa/inactiva individuales por aseguradora.
 
-    Las coordenadas (latitud/longitud) se usan como origen de ruta en la llamada
-    a la Routes API de Google Maps (hito futuro). Si no se dan coordenadas
-    especificas, el campo municipality se usa para geocodificar. Una vez
-    geocodificado, el resultado se persiste en latitud/longitud para que las
-    llamadas posteriores no vuelvan a llamar a la API de geocodificacion.
+    Las coordenadas se usan como origen en la llamada a Routes API de Google
+    Maps. Si no se dan, se geocodifica el municipio y se persiste en la primera
+    llamada.
 
-    El campo labor_calendar almacena los festivos de la localidad de la base
-    en formato JSON, poblado automaticamente por el comando scraper
-    `sync_base_calendars` que llama a la API publica de calendariosnacionales.com.
-    La funcion del motor _is_holiday() lee este campo para determinar si una
-    fecha de servicio dada activa el recargo NYF.
+    El campo labor_calendar almacena los festivos de la localidad en formato
+    JSON, poblado por el comando sync_base_calendars. La funcion _is_holiday()
+    lo lee para determinar si una fecha activa el recargo NYF.
     """
 
-    insurer = models.ForeignKey(
-        Insurer,
+    # Temporarily nullable to allow migration of existing rows.
+    # Will be made NOT NULL in a follow-up data migration once populated.
+    # Temporalmente nullable para permitir la migracion de filas existentes.
+    # Se hara NOT NULL en una migracion de datos posterior una vez poblado.
+    company = models.ForeignKey(
+        Company,
         on_delete=models.CASCADE,
         related_name="bases",
-        verbose_name="Aseguradora",
-        help_text=(
-            "Par aseguradora/prestadora al que pertenece esta base. "
-            "Una misma prestadora puede tener bases distintas por cada par."
-        ),
+        null=True,
+        blank=True,
+        verbose_name="Empresa",
+        help_text="Empresa a la que pertenece esta base.",
     )
     name = models.CharField(
         max_length=150,
@@ -1069,10 +1065,16 @@ class Base(models.Model):
             "con la API de calendariosnacionales.com. Null si nunca se ha sincronizado."
         ),
     )
+    # Global active flag — when False, the base cannot be used by any insurer.
+    # Flag activa global — cuando es False, ninguna aseguradora puede usar la base.
     is_active = models.BooleanField(
         default=True,
-        verbose_name="Activa",
-        help_text="Indica si esta base esta disponible para seleccion en el wizard.",
+        verbose_name="Activa globalmente",
+        help_text=(
+            "Indica si esta base esta disponible globalmente. "
+            "Cuando es False, no puede usarse en ningun presupuesto "
+            "independientemente de su configuracion por aseguradora."
+        ),
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creacion")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificacion")
@@ -1080,8 +1082,77 @@ class Base(models.Model):
     class Meta:
         verbose_name = "Base"
         verbose_name_plural = "Bases"
-        ordering = ["insurer__name", "name"]
-        unique_together = [("insurer", "name")]
+        ordering = ["company__name", "name"]
+        unique_together = [("company", "name")]
 
     def __str__(self):
-        return f"{self.insurer.name} — {self.name}"
+        return f"{self.company.name} — {self.name}"
+
+
+# ---------------------------------------------------------------------------
+# 10. INSURER BASE — Many-to-many relation between Insurer and Base.
+#     Relacion many-to-many entre Insurer y Base.
+# ---------------------------------------------------------------------------
+
+class InsurerBase(models.Model):
+    """
+    Links a Base to an Insurer with an individual active/inactive flag.
+    This allows the same physical base to be assigned to multiple insurers
+    and activated/deactivated independently per insurer without duplicating
+    the base entity or its coordinates and labor calendar.
+
+    When is_active is True and the global Base.is_active is also True,
+    the base appears in the wizard dropdown for the operator.
+    When the insurer has exactly one active InsurerBase, the base is
+    assigned automatically without showing a dropdown.
+    ---
+    Vincula una Base a un Insurer con un flag activa/inactiva individual.
+    Esto permite asignar la misma base fisica a multiples aseguradoras y
+    activarla/desactivarla de forma independiente por aseguradora sin
+    duplicar la entidad base ni sus coordenadas ni calendario laboral.
+
+    Cuando is_active es True y el flag global Base.is_active tambien es True,
+    la base aparece en el desplegable del wizard para el operario.
+    Cuando la aseguradora tiene exactamente un InsurerBase activo, la base
+    se asigna automaticamente sin mostrar desplegable.
+    """
+
+    insurer = models.ForeignKey(
+        Insurer,
+        on_delete=models.CASCADE,
+        related_name="insurer_bases",
+        verbose_name="Aseguradora",
+        help_text="Aseguradora a la que se asigna esta base.",
+    )
+    base = models.ForeignKey(
+        Base,
+        on_delete=models.CASCADE,
+        related_name="insurer_bases",
+        verbose_name="Base",
+        help_text="Base fisica asignada a esta aseguradora.",
+    )
+    # Per-insurer active flag — independent of the global Base.is_active.
+    # Flag activa por aseguradora — independiente del global Base.is_active.
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activa para esta aseguradora",
+        help_text=(
+            "Indica si esta base esta activa para esta aseguradora. "
+            "Una base puede estar activa para una aseguradora e inactiva "
+            "para otra. El flag global Base.is_active tiene precedencia: "
+            "si es False, la base no aparece en el wizard aunque este "
+            "flag sea True."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creacion")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificacion")
+
+    class Meta:
+        verbose_name = "Base de aseguradora"
+        verbose_name_plural = "Bases de aseguradora"
+        ordering = ["insurer__name", "base__name"]
+        unique_together = [("insurer", "base")]
+
+    def __str__(self):
+        status = "activa" if self.is_active else "inactiva"
+        return f"{self.insurer.name} — {self.base.name} ({status})"

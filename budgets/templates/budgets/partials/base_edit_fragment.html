@@ -1,10 +1,11 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/base_edit_fragment.html #}
-{# HTMX fragment — inline edit form for a base row.                                                     #}
-{# Fragmento HTMX — formulario de edicion inline para una fila de base.                                 #}
+{# HTMX fragment — inline edit form for a base row with Google Maps geolocation.                         #}
+{# Fragmento HTMX — formulario de edicion inline con geolocalizacion Google Maps.                        #}
 
 <tr id="base-row-{{ base.pk }}">
   <td colspan="6">
     <form
+      id="base-edit-form-{{ base.pk }}"
       hx-post="{% url 'budgets:base_update' base.pk %}"
       hx-target="#base-row-{{ base.pk }}"
       hx-swap="outerHTML"
@@ -50,11 +51,194 @@
           hx-target="#base-row-{{ base.pk }}"
           hx-swap="outerHTML"
           title="Cancelar"
-          onclick="htmx.ajax('GET', '{% url 'budgets:insurer_detail' base.insurer.pk %}', {target: '#base-row-{{ base.pk }}', swap: 'none'}); location.reload();"
+          onclick="htmx.ajax('GET', '{% url 'budgets:base_manage' base.insurer.pk %}', {target: '#base-row-{{ base.pk }}', swap: 'none'}); location.reload();"
         >
           <i class="bi bi-x"></i>
         </button>
       </div>
+
+      {# ------------------------------------------------------------------ #}
+      {# GEOLOCATION PANEL — Google Maps + PlaceAutocomplete                 #}
+      {# PANEL DE GEOLOCALIZACION — Google Maps + PlaceAutocomplete          #}
+      {# ------------------------------------------------------------------ #}
+      <div class="col-12 mt-2">
+        <div class="card border-secondary">
+          <div class="card-header py-1 px-2 bg-light d-flex align-items-center gap-2">
+            <i class="bi bi-geo-alt-fill text-danger"></i>
+            <span class="small fw-semibold">Geolocalización</span>
+            <span class="text-muted small ms-1">— busca una dirección o arrastra el pin</span>
+          </div>
+          <div class="card-body p-2">
+            {# Search input — PlaceAutocompleteElement injected here by JS   #}
+            {# Input de búsqueda — PlaceAutocompleteElement inyectado por JS #}
+            <div id="place-autocomplete-container-{{ base.pk }}" class="mb-2"></div>
+            {# Map container                                                  #}
+            {# Contenedor del mapa                                            #}
+            <div
+              id="base-map-{{ base.pk }}"
+              style="width:100%;height:320px;border-radius:6px;border:1px solid #dee2e6;"
+            ></div>
+            <div class="text-muted small mt-1">
+              <i class="bi bi-info-circle"></i>
+              Las coordenadas se actualizan automáticamente al seleccionar un lugar o mover el pin.
+            </div>
+          </div>
+        </div>
+      </div>
+
     </form>
+
+    {# ------------------------------------------------------------------ #}
+    {# Google Maps JS — inline bootstrap loader (official Google pattern)  #}
+    {# importLibrary disponible inmediatamente via bootstrap loader oficial #}
+    {# ------------------------------------------------------------------ #}
+    <script>
+    (function () {
+      'use strict';
+
+      // Unique identifiers scoped to this base pk.
+      // Identificadores únicos con ámbito de pk de base.
+      var BASE_PK      = "{{ base.pk }}";
+      var MAP_DIV_ID   = "base-map-" + BASE_PK;
+      var AC_DIV_ID    = "place-autocomplete-container-" + BASE_PK;
+      var LAT_INPUT_ID = "{{ base_form.latitude.id_for_label }}";
+      var LNG_INPUT_ID = "{{ base_form.longitude.id_for_label }}";
+
+      // Initial coordinates — existing base coords or Andalusia centroid.
+      // Coordenadas iniciales — coords existentes o centroide de Andalucía.
+      var INIT_LAT  = {{ base.latitude|default:"37.3891" }};
+      var INIT_LNG  = {{ base.longitude|default:"-5.9845" }};
+      var HAS_COORDS = {{ base.latitude|yesno:"true,false" }};
+      var MAPS_API_KEY = "{{ google_maps_api_key }}";
+
+      // Guard against double-initialisation.
+      // Protección contra doble inicialización.
+      if (document.getElementById(MAP_DIV_ID + "__init")) { return; }
+      var sentinel = document.createElement("span");
+      sentinel.id  = MAP_DIV_ID + "__init";
+      sentinel.style.display = "none";
+      document.getElementById(MAP_DIV_ID).appendChild(sentinel);
+
+      // ----------------------------------------------------------------
+      // Official inline bootstrap loader — makes importLibrary available
+      // immediately without waiting for the full API script to load.
+      // Bootstrap loader oficial inline — hace importLibrary disponible
+      // inmediatamente sin esperar a que cargue el script completo.
+      // ----------------------------------------------------------------
+      (function (g) {
+        var h, a, k,
+            p = "The Google Maps JavaScript API",
+            c = "google",
+            l = "importLibrary",
+            q = "__ib__",
+            m = document,
+            b = window;
+        b = b[c] || (b[c] = {});
+        var d = b.maps || (b.maps = {}),
+            r = new Set(),
+            e = new URLSearchParams(),
+            u = function () {
+              return h || (h = new Promise(function (f, n) {
+                a = m.createElement("script");
+                e.set("libraries", Array.from(r).join(","));
+                for (k in g) {
+                  e.set(
+                    k.replace(/[A-Z]/g, function (t) { return "_" + t[0].toLowerCase(); }),
+                    g[k]
+                  );
+                }
+                e.set("callback", c + ".maps." + q);
+                a.src = "https://maps." + c + "apis.com/maps/api/js?" + e.toString();
+                d[q] = f;
+                a.onerror = function () { h = n(new Error(p + " could not load.")); };
+                a.nonce = (m.querySelector("script[nonce]") || {}).nonce || "";
+                m.head.appendChild(a);
+              }));
+            };
+        d[l]
+          ? console.warn(p + " only loads once. Ignoring:", g)
+          : d[l] = function (f) {
+              r.add(f);
+              return u().then(function () { return d[l](f); });
+            };
+      })({ key: MAPS_API_KEY, v: "weekly" });
+
+      // ----------------------------------------------------------------
+      // initMap — called after bootstrap loader registers importLibrary.
+      // initMap — llamado tras registrar importLibrary con el bootstrap.
+      // ----------------------------------------------------------------
+      async function initMap() {
+        var MapsLib   = await google.maps.importLibrary("maps");
+        var MarkerLib = await google.maps.importLibrary("marker");
+        var PlacesLib = await google.maps.importLibrary("places");
+
+        // --- Map ---
+        var map = new MapsLib.Map(document.getElementById(MAP_DIV_ID), {
+          center: { lat: INIT_LAT, lng: INIT_LNG },
+          zoom: HAS_COORDS ? 15 : 8,
+          mapId: "base_map_" + BASE_PK,
+          disableDefaultUI: false,
+          zoomControl: true,
+          streetViewControl: false,
+          mapTypeControl: false,
+        });
+
+        // --- Draggable AdvancedMarkerElement ---
+        // --- AdvancedMarkerElement arrastrable ---
+        var marker = new MarkerLib.AdvancedMarkerElement({
+          map: map,
+          position: { lat: INIT_LAT, lng: INIT_LNG },
+          gmpDraggable: true,
+          title: "Arrastra para ajustar la posición",
+        });
+
+        // Helper: update lat/lng inputs from a LatLng-like object.
+        // Ayudante: actualiza inputs lat/lng desde un objeto tipo LatLng.
+        function updateInputs(latLng) {
+          var lat = (typeof latLng.lat === "function") ? latLng.lat() : latLng.lat;
+          var lng = (typeof latLng.lng === "function") ? latLng.lng() : latLng.lng;
+          document.getElementById(LAT_INPUT_ID).value = lat.toFixed(6);
+          document.getElementById(LNG_INPUT_ID).value = lng.toFixed(6);
+        }
+
+        // Update inputs when drag ends.
+        // Actualizar inputs al soltar el pin.
+        marker.addListener("dragend", function () {
+          updateInputs(marker.position);
+        });
+
+        // --- PlaceAutocompleteElement (Places API New) ---
+        // --- PlaceAutocompleteElement (Places API Nueva) ---
+        var autocomplete = new PlacesLib.PlaceAutocompleteElement({
+          componentRestrictions: { country: "es" },
+        });
+        autocomplete.style.width = "100%";
+        autocomplete.style.marginBottom = "0";
+        document.getElementById(AC_DIV_ID).appendChild(autocomplete);
+
+        // On place selection: move map and marker, update inputs.
+        // Al seleccionar lugar: mover mapa y pin, actualizar inputs.
+        autocomplete.addEventListener("gmp-select", function (event) {
+          var placePrediction = event.placePrediction;
+          placePrediction.toPlace().fetchFields({
+            fields: ["location", "displayName"],
+          }).then(function (result) {
+            var place = result.place;
+            if (!place.location) { return; }
+            map.setCenter(place.location);
+            map.setZoom(16);
+            marker.position = place.location;
+            updateInputs(place.location);
+          });
+        });
+      }
+
+      // Launch.
+      // Lanzar.
+      initMap();
+
+    })();
+    </script>
+
   </td>
 </tr>

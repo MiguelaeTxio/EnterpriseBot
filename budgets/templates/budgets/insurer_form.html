@@ -417,6 +417,69 @@
       </div>
     </div>
 
+    {# ------------------------------------------------------------------ #}
+    {# PANEL 4 — Bases de servicio                                        #}
+    {# PANEL 4 — Service bases                                            #}
+    {# ------------------------------------------------------------------ #}
+    <div class="accordion-item border-0 shadow-sm mb-3 rounded">
+      <h2 class="accordion-header" id="headingBases">
+        <button class="accordion-button collapsed rounded" type="button"
+                data-bs-toggle="collapse" data-bs-target="#collapseBases"
+                aria-expanded="false" aria-controls="collapseBases">
+          <i class="bi bi-geo-alt-fill me-2 text-danger"></i>
+          <strong>Bases de servicio</strong>
+          <span class="ms-2 text-muted fw-normal small">{{ insurer.bases.count }} base(s)</span>
+        </button>
+      </h2>
+      <div id="collapseBases" class="accordion-collapse collapse"
+           aria-labelledby="headingBases">
+        <div class="accordion-body">
+          {% if insurer.insurer_bases.all %}
+          <table class="table table-sm small mb-3">
+            <thead class="table-light">
+              <tr>
+                <th>Nombre</th>
+                <th>Municipio</th>
+                <th>Coordenadas</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for ib in insurer.insurer_bases.all %}
+              <tr>
+                <td class="align-middle">{{ ib.base.name }}</td>
+                <td class="align-middle">{{ ib.base.municipality }}</td>
+                <td class="align-middle text-muted">
+                  {% if ib.base.latitude and ib.base.longitude %}
+                  <span class="badge bg-light text-dark border">
+                    {{ ib.base.latitude }}, {{ ib.base.longitude }}
+                  </span>
+                  {% else %}
+                  <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td class="align-middle">
+                  {% if ib.is_active %}
+                  <span class="badge bg-success-subtle text-success border border-success-subtle">Activa</span>
+                  {% else %}
+                  <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactiva</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="text-muted small mb-3">No hay bases registradas para esta aseguradora.</p>
+          {% endif %}
+          <a href="{% url 'budgets:base_manage' insurer.pk %}"
+             class="btn btn-primary btn-sm">
+            <i class="bi bi-pencil-square me-1"></i>Gestionar bases
+          </a>
+        </div>
+      </div>
+    </div>
+
   </div>{# /accordion #}
   {% endif %}{# /mode edit #}
 

@@ -21,6 +21,7 @@ from django.utils.timezone import now
 from django.views import View
 
 import csv
+import os
 import io
 
 import openpyxl
@@ -34,6 +35,7 @@ from budgets.models import (
     Budget,
     BudgetLine,
     Insurer,
+    InsurerBase,
     InsurerTariff,
     TariffLine,
     VehicleType,
@@ -301,10 +303,12 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         import json as _json
         bases_map = _json.dumps({
             str(ins.pk): [
-                {"pk": b.pk, "name": b.name}
-                for b in Base.objects.filter(
-                    insurer=ins, is_active=True
-                ).order_by("name")
+                {"pk": ib.base.pk, "name": ib.base.name}
+                for ib in InsurerBase.objects.filter(
+                    insurer=ins,
+                    is_active=True,
+                    base__is_active=True,
+                ).select_related("base").order_by("base__name")
             ]
             for ins in insurers
         })
@@ -392,10 +396,15 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             has_unlock=has_unlock,
             is_night=is_night,
             is_loaded=is_loaded,
-            base=Base.objects.filter(
-                pk=base_id,
-                insurer=insurer,
-            ).first() if base_id else None,
+            base=(
+                InsurerBase.objects.filter(
+                    base_id=base_id,
+                    insurer=insurer,
+                    is_active=True,
+                    base__is_active=True,
+                ).select_related("base").first().base
+                if base_id else None
+            ),
             wait_hours=_parse_optional(data.get("wait_hours")),
             rescue_hours=_parse_optional(data.get("rescue_hours")),
             assistant_hours=_parse_optional(data.get("assistant_hours")),
@@ -521,11 +530,13 @@ class BudgetBasesView(AssistanceRequiredMixin, View):
         insurer_id = request.GET.get("insurer_id")
         if not insurer_id:
             return HttpResponseBadRequest("insurer_id requerido.")
-        bases = Base.objects.filter(
+        base_ids = InsurerBase.objects.filter(
             insurer_id=insurer_id,
             insurer__company=company_user.company,
             is_active=True,
-        ).order_by("name")
+            base__is_active=True,
+        ).values_list("base_id", flat=True)
+        bases = Base.objects.filter(pk__in=base_ids).order_by("name")
         return render(request, self.template_name, {
             "bases": bases,
         })
@@ -1648,10 +1659,13 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
             except SpecialRateTariff.DoesNotExist:
                 pass
 
-        bases = Base.objects.filter(insurer=insurer).order_by("name")
+        insurer_bases = InsurerBase.objects.filter(
+            insurer=insurer,
+        ).select_related("base").order_by("base__name")
         base_form = BaseForm()
         ctx = _build_base_context(request, {
             "insurer": insurer,
+            "insurer_bases": insurer_bases,
             "tariff": tariff,
             "vehicle_types": vehicle_types,
             "generic_lines": generic_lines,
@@ -1705,6 +1719,58 @@ class BaseForm(django_forms.ModelForm):
         }
 
 
+class BaseManageView(AdminRoleRequiredMixin, View):
+    """
+    Dedicated base management view for a given insurer.
+    Renders the full base management page with the base list, inline edit
+    with Google Maps geolocation, create form, toggle and delete actions.
+    ADMIN only.
+    ---
+    Vista dedicada de gestion de bases para una aseguradora dada.
+    Renderiza la pagina completa de gestion de bases con listado, edicion
+    inline con geolocalizacion Google Maps, formulario de alta, toggle y baja.
+    Solo ADMIN.
+    """
+
+    template_name = "budgets/bases.html"
+
+    def get(self, request, pk):
+        """
+        Render the base management page for the given insurer pk.
+        ---
+        Renderiza la pagina de gestion de bases para el pk de aseguradora dado.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+        company_bases = Base.objects.filter(
+            company=company_user.company,
+            is_active=True,
+        ).order_by("name")
+        insurer_bases = InsurerBase.objects.filter(
+            insurer=insurer,
+        ).select_related("base").order_by("base__name")
+        active_base_ids = set(
+            InsurerBase.objects.filter(
+                insurer=insurer, is_active=True
+            ).values_list("base_id", flat=True)
+        )
+        base_form = BaseForm()
+        ctx = _build_base_context(request, {
+            "insurer": insurer,
+            "company_bases": company_bases,
+            "insurer_bases": insurer_bases,
+            "active_base_ids": active_base_ids,
+            "base_form": base_form,
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "active_nav": "budgets_insurers",
+        })
+        return render(request, self.template_name, ctx)
+
+
 class BaseCreateView(AdminRoleRequiredMixin, View):
     """
     Creates a new Base for the given insurer.
@@ -1725,19 +1791,31 @@ class BaseCreateView(AdminRoleRequiredMixin, View):
         form = BaseForm(request.POST)
         if form.is_valid():
             base = form.save(commit=False)
-            base.insurer = insurer
+            # Assign company from the insurer — Base is no longer insurer-scoped.
+            # Asignar company desde la aseguradora — Base ya no tiene ambito de aseguradora.
+            base.company = insurer.company
             base.save()
-            bases = Base.objects.filter(insurer=insurer).order_by("name")
+            # Create the InsurerBase relation linking base to this insurer.
+            # Crear la relacion InsurerBase vinculando la base a esta aseguradora.
+            InsurerBase.objects.get_or_create(
+                insurer=insurer,
+                base=base,
+                defaults={"is_active": True},
+            )
+            # Return the new row fragment for HTMX beforeend swap.
+            # Devolver el fragmento de fila nueva para swap HTMX beforeend.
             return render(
                 request,
-                "budgets/partials/base_list_fragment.html",
-                {"insurer": insurer, "bases": bases},
+                "budgets/partials/base_row_fragment.html",
+                {"base": base},
             )
-        bases = Base.objects.filter(insurer=insurer).order_by("name")
+        company_bases = Base.objects.filter(
+            company=insurer.company, is_active=True
+        ).order_by("name")
         return render(
             request,
             "budgets/partials/base_list_fragment.html",
-            {"insurer": insurer, "bases": bases, "base_form": form, "form_errors": True},
+            {"insurer": insurer, "bases": company_bases, "base_form": form, "form_errors": True},
         )
 
 
@@ -1757,12 +1835,16 @@ class BaseUpdateView(AdminRoleRequiredMixin, View):
         Devuelve el fragmento de formulario de edicion para el pk de base dado.
         """
         company_user = _get_company_user(request)
-        base = get_object_or_404(Base, pk=pk, insurer__company=company_user.company)
+        base = get_object_or_404(Base, pk=pk, company=company_user.company)
         form = BaseForm(instance=base)
         return render(
             request,
             "budgets/partials/base_edit_fragment.html",
-            {"base": base, "base_form": form},
+            {
+                "base": base,
+                "base_form": form,
+                "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            },
         )
 
     def post(self, request, pk):
@@ -1772,7 +1854,7 @@ class BaseUpdateView(AdminRoleRequiredMixin, View):
         Guarda la base actualizada y devuelve el fragmento de fila actualizado.
         """
         company_user = _get_company_user(request)
-        base = get_object_or_404(Base, pk=pk, insurer__company=company_user.company)
+        base = get_object_or_404(Base, pk=pk, company=company_user.company)
         form = BaseForm(request.POST, instance=base)
         if form.is_valid():
             form.save()
@@ -1784,7 +1866,11 @@ class BaseUpdateView(AdminRoleRequiredMixin, View):
         return render(
             request,
             "budgets/partials/base_edit_fragment.html",
-            {"base": base, "base_form": form},
+            {
+                "base": base,
+                "base_form": form,
+                "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            },
         )
 
 
@@ -1804,9 +1890,11 @@ class BaseToggleView(AdminRoleRequiredMixin, View):
         Alterna is_active y devuelve el fragmento de fila actualizado.
         """
         company_user = _get_company_user(request)
-        base = get_object_or_404(Base, pk=pk, insurer__company=company_user.company)
+        base = get_object_or_404(Base, pk=pk, company=company_user.company)
+        # Toggle global Base.is_active flag.
+        # Alternar flag global Base.is_active.
         base.is_active = not base.is_active
-        base.save(update_fields=["is_active"])
+        base.save(update_fields=["is_active", "updated_at"])
         return render(
             request,
             "budgets/partials/base_row_fragment.html",
@@ -1830,7 +1918,7 @@ class BaseDeleteView(AdminRoleRequiredMixin, View):
         Elimina la base y devuelve respuesta vacia.
         """
         company_user = _get_company_user(request)
-        base = get_object_or_404(Base, pk=pk, insurer__company=company_user.company)
+        base = get_object_or_404(Base, pk=pk, company=company_user.company)
         # Guard: do not delete bases linked to existing budgets.
         # Guardia: no eliminar bases vinculadas a presupuestos existentes.
         if base.budgets.exists():

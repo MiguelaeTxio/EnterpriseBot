@@ -206,6 +206,14 @@ urlpatterns = [
     # Rutas de gestion de bases — solo ADMIN
     # ---------------------------------------------------------------------------
 
+    # Base manage — vista dedicada de gestion de bases de una aseguradora.
+    # Base manage — dedicated base management view for an insurer.
+    path(
+        "insurers/<int:pk>/bases/",
+        views.BaseManageView.as_view(),
+        name="base_manage",
+    ),
+
     # Base create — nueva base para una aseguradora.
     # Base create — new base for an insurer.
     path(

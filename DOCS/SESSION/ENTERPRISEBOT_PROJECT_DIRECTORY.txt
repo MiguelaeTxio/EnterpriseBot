@@ -317,6 +317,7 @@
 ./budgets/templates/budgets/partials/base_list_fragment.html
 ./budgets/templates/budgets/partials/base_row_fragment.html
 ./budgets/templates/budgets/partials/base_edit_fragment.html
+./budgets/templates/budgets/bases.html
 ./budgets/templates/budgets/result.html
 ./budgets/templates/budgets/_tariff_line_add_form_fragment.html
 ./budgets/templates/budgets/_base_selector_fragment.html
@@ -328,6 +329,7 @@
 ./budgets/apps.py
 ./budgets/models.py
 ./budgets/migrations/0007_budget_is_night.py
+./budgets/migrations/0010_base_insurerbase_refactor.py
 ./budgets/migrations/0008_base_model.py
 ./budgets/migrations/0009_budget_base_fk.py
 ./budgets/migrations/0005_budget_total_amount_with_iva.py
