@@ -334,7 +334,7 @@
     {# Hito 16 (2026-05-26)                                               #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ADMIN' %}
-    <li><div class="sidebar-section-label">Presupuestos</div></li>
+    <li><div class="sidebar-section-label">Asistencia</div></li>
 
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
@@ -357,6 +357,14 @@
         <a class="nav-link {% if active_nav == 'budgets_insurers' %}active{% endif %}"
            href="{% url 'budgets:insurer_list' %}">
             <i class="bi bi-building"></i>Aseguradoras
+        </a>
+    </li>
+
+    {# Bases — solo ADMIN / Service bases — ADMIN only #}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'budgets_bases' %}active{% endif %}"
+           href="{% url 'budgets:base_global' %}">
+            <i class="bi bi-geo-alt-fill"></i>Bases
         </a>
     </li>
     {% endif %}

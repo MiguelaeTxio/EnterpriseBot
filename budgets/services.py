@@ -167,6 +167,216 @@ def _is_holiday(date: datetime.date, base) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Route calculation — Google Routes API integration
+# Calculo de ruta — integracion con Google Routes API
+# ---------------------------------------------------------------------------
+
+
+class RouteCalculationError(Exception):
+    """
+    Raised when the Routes API call fails or returns an unexpected response.
+    ---
+    Se lanza cuando la llamada a la Routes API falla o devuelve una respuesta
+    inesperada.
+    """
+    pass
+
+
+def calculate_route(
+    base,
+    road_name: str,
+    pk_km: Decimal,
+    service_datetime: datetime.datetime,
+) -> dict:
+    """
+    Calculate the route from a service base to a kilometre marker on a road
+    using the Google Routes API. Returns a dict with distance_km, toll_cost
+    and mode='API'. Raises RouteCalculationError on any failure.
+
+    If base.latitude / base.longitude are null, geocodes the base municipality
+    via the Geocoding API and persists the result before calling Routes API.
+
+    The departureTime is built from service_datetime (UTC — PythonAnywhere
+    runs in UTC) to ensure toll costs are time-dependent.
+    ---
+    Calcula la ruta desde una base de servicio hasta un punto kilometrico en
+    una carretera usando la Google Routes API. Devuelve un dict con
+    distance_km, toll_cost y mode='API'. Lanza RouteCalculationError ante
+    cualquier fallo.
+
+    Si base.latitude / base.longitude son nulos, geocodifica el municipio
+    de la base via la Geocoding API y persiste el resultado antes de llamar
+    a la Routes API.
+
+    El departureTime se construye desde service_datetime (UTC — PythonAnywhere
+    opera en UTC) para que los peajes sean dependientes de la hora.
+    """
+    import os
+    import json
+    import urllib.request
+    import urllib.parse
+    import urllib.error
+
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    if not api_key:
+        raise RouteCalculationError(
+            "GOOGLE_MAPS_API_KEY no configurada en el entorno."
+        )
+
+    # ── Step 1: ensure base has coordinates ─────────────────────────────
+    # Paso 1: asegurar que la base tiene coordenadas.
+    if not base.latitude or not base.longitude:
+        # Geocode the base municipality and persist.
+        # Geocodificar el municipio de la base y persistir.
+        geocode_query = urllib.parse.urlencode({
+            "address": f"{base.municipality}, España",
+            "key": api_key,
+            "language": "es",
+            "region": "es",
+        })
+        geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?{geocode_query}"
+        try:
+            with urllib.request.urlopen(geocode_url, timeout=10) as resp:
+                geo_data = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise RouteCalculationError(
+                f"Geocoding API: error de red geocodificando la base '{base.name}': {exc}"
+            ) from exc
+        if geo_data.get("status") != "OK" or not geo_data.get("results"):
+            raise RouteCalculationError(
+                f"Geocoding API: no se encontraron coordenadas para "
+                f"'{base.municipality}' (status: {geo_data.get('status')})."
+            )
+        geo_loc = geo_data["results"][0]["geometry"]["location"]
+        base.latitude  = Decimal(str(geo_loc["lat"])).quantize(Decimal("0.000001"))
+        base.longitude = Decimal(str(geo_loc["lng"])).quantize(Decimal("0.000001"))
+        base.save(update_fields=["latitude", "longitude", "updated_at"])
+
+    origin_lat = float(base.latitude)
+    origin_lng = float(base.longitude)
+
+    # ── Step 2: geocode the kilometre marker on the road ─────────────────
+    # Paso 2: geocodificar el punto kilometrico en la carretera.
+    pk_int = int(pk_km)
+    dest_query_str = f"{road_name} km {pk_int} {base.municipality} España"
+    geocode_dest_query = urllib.parse.urlencode({
+        "address": dest_query_str,
+        "key": api_key,
+        "language": "es",
+        "region": "es",
+    })
+    geocode_dest_url = (
+        f"https://maps.googleapis.com/maps/api/geocode/json?{geocode_dest_query}"
+    )
+    try:
+        with urllib.request.urlopen(geocode_dest_url, timeout=10) as resp:
+            dest_data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        raise RouteCalculationError(
+            f"Geocoding API: error de red geocodificando el punto "
+            f"'{dest_query_str}': {exc}"
+        ) from exc
+    if dest_data.get("status") != "OK" or not dest_data.get("results"):
+        raise RouteCalculationError(
+            f"Geocoding API: no se encontraron coordenadas para "
+            f"'{dest_query_str}' (status: {dest_data.get('status')})."
+        )
+    dest_loc = dest_data["results"][0]["geometry"]["location"]
+    dest_lat = dest_loc["lat"]
+    dest_lng = dest_loc["lng"]
+
+    # ── Step 3: build departureTime in RFC 3339 UTC ───────────────────────
+    # Paso 3: construir departureTime en RFC 3339 UTC.
+    # PythonAnywhere operates in UTC — no conversion needed.
+    # PythonAnywhere opera en UTC — no se necesita conversion.
+    departure_time_str = service_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # ── Step 4: call Routes API ───────────────────────────────────────────
+    # Paso 4: llamar a la Routes API.
+    routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+    routes_payload = json.dumps({
+        "origin": {
+            "location": {
+                "latLng": {"latitude": origin_lat, "longitude": origin_lng}
+            }
+        },
+        "destination": {
+            "location": {
+                "latLng": {"latitude": dest_lat, "longitude": dest_lng}
+            }
+        },
+        "travelMode": "DRIVE",
+        "departureTime": departure_time_str,
+        "extraComputations": ["TOLLS"],
+    }).encode("utf-8")
+    routes_headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": (
+            "routes.distanceMeters,"
+            "routes.duration,"
+            "routes.travelAdvisory.tollInfo"
+        ),
+    }
+    routes_request = urllib.request.Request(
+        routes_url,
+        data=routes_payload,
+        headers=routes_headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(routes_request, timeout=15) as resp:
+            routes_data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RouteCalculationError(
+            f"Routes API: HTTP {exc.code} — {body[:300]}"
+        ) from exc
+    except Exception as exc:
+        raise RouteCalculationError(
+            f"Routes API: error de red — {exc}"
+        ) from exc
+
+    # ── Step 5: extract distance and tolls ───────────────────────────────
+    # Paso 5: extraer distancia y peajes.
+    routes = routes_data.get("routes", [])
+    if not routes:
+        raise RouteCalculationError(
+            "Routes API: la respuesta no contiene ninguna ruta. "
+            f"Respuesta completa: {str(routes_data)[:300]}"
+        )
+    route = routes[0]
+
+    distance_meters = route.get("distanceMeters", 0)
+    distance_km = _round2(Decimal(str(distance_meters)) / Decimal("1000"))
+
+    # Extract toll cost — estimatedPrice[0].units (integer EUR part).
+    # The 'nanos' field (fractional cents) is ignored for simplicity.
+    # Extraer coste de peajes — estimatedPrice[0].units (parte entera EUR).
+    # El campo 'nanos' (fracciones de centimo) se ignora por simplicidad.
+    toll_cost = Decimal("0")
+    try:
+        toll_info = route["travelAdvisory"]["tollInfo"]
+        estimated_prices = toll_info.get("estimatedPrice", [])
+        if estimated_prices:
+            units = estimated_prices[0].get("units", "0")
+            nanos = estimated_prices[0].get("nanos", 0)
+            toll_cost = Decimal(str(units)) + _round2(
+                Decimal(str(nanos)) / Decimal("1000000000")
+            )
+    except (KeyError, TypeError, IndexError):
+        # No toll info in response — keep toll_cost = 0.
+        # Sin informacion de peajes en la respuesta — mantener toll_cost = 0.
+        pass
+
+    return {
+        "distance_km": distance_km,
+        "toll_cost": _round2(toll_cost),
+        "mode": "API",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 

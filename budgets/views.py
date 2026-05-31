@@ -1722,13 +1722,15 @@ class BaseForm(django_forms.ModelForm):
 class BaseManageView(AdminRoleRequiredMixin, View):
     """
     Dedicated base management view for a given insurer.
-    Renders the full base management page with the base list, inline edit
-    with Google Maps geolocation, create form, toggle and delete actions.
+    Shows a read-only summary of active bases for the insurer at the top,
+    and a full list of all company bases with per-insurer InsurerBase toggle
+    at the bottom. Implements the design agreed in H18 S001 (annex section 2.7).
     ADMIN only.
     ---
     Vista dedicada de gestion de bases para una aseguradora dada.
-    Renderiza la pagina completa de gestion de bases con listado, edicion
-    inline con geolocalizacion Google Maps, formulario de alta, toggle y baja.
+    Muestra un resumen de solo lectura de las bases activas de la aseguradora
+    arriba, y el listado completo de bases de la empresa con toggle InsurerBase
+    por aseguradora abajo. Implementa el diseno acordado en H18 S001 (anexo 2.7).
     Solo ADMIN.
     """
 
@@ -1737,8 +1739,14 @@ class BaseManageView(AdminRoleRequiredMixin, View):
     def get(self, request, pk):
         """
         Render the base management page for the given insurer pk.
+        Builds two querysets:
+        - active_insurer_bases: InsurerBase records active for this insurer.
+        - all_company_bases: all company bases annotated with has_active_ib flag.
         ---
         Renderiza la pagina de gestion de bases para el pk de aseguradora dado.
+        Construye dos querysets:
+        - active_insurer_bases: registros InsurerBase activos para esta aseguradora.
+        - all_company_bases: todas las bases de la empresa con flag has_active_ib.
         """
         company_user = _get_company_user(request)
         insurer = get_object_or_404(
@@ -1746,29 +1754,99 @@ class BaseManageView(AdminRoleRequiredMixin, View):
             pk=pk,
             company=company_user.company,
         )
-        company_bases = Base.objects.filter(
-            company=company_user.company,
-            is_active=True,
-        ).order_by("name")
-        insurer_bases = InsurerBase.objects.filter(
-            insurer=insurer,
-        ).select_related("base").order_by("base__name")
-        active_base_ids = set(
+        # Top section: active bases for this insurer (read-only summary).
+        # Seccion superior: bases activas de esta aseguradora (resumen solo lectura).
+        active_insurer_bases = (
             InsurerBase.objects.filter(
-                insurer=insurer, is_active=True
-            ).values_list("base_id", flat=True)
+                insurer=insurer,
+                is_active=True,
+                base__is_active=True,
+            )
+            .select_related("base")
+            .order_by("base__name")
         )
+        # Bottom section: all company bases, annotated with per-insurer active flag.
+        # Build a dict {base_pk: InsurerBase} for efficient annotation.
+        # Seccion inferior: todas las bases de la empresa, anotadas con flag activa
+        # por aseguradora. Construir dict {base_pk: InsurerBase} para anotacion eficiente.
+        ib_map = {
+            ib.base_id: ib
+            for ib in InsurerBase.objects.filter(insurer=insurer).select_related("base")
+        }
+        all_company_bases_qs = (
+            Base.objects.filter(
+                company=company_user.company,
+                is_active=True,
+            )
+            .order_by("name")
+        )
+        # Annotate each base with its InsurerBase record (or None) for this insurer.
+        # Anotar cada base con su registro InsurerBase (o None) para esta aseguradora.
+        all_company_bases = []
+        for base in all_company_bases_qs:
+            ib = ib_map.get(base.pk)
+            base.insurer_base = ib
+            base.has_active_ib = bool(ib and ib.is_active)
+            all_company_bases.append(base)
         base_form = BaseForm()
         ctx = _build_base_context(request, {
             "insurer": insurer,
-            "company_bases": company_bases,
-            "insurer_bases": insurer_bases,
-            "active_base_ids": active_base_ids,
+            "active_insurer_bases": active_insurer_bases,
+            "all_company_bases": all_company_bases,
             "base_form": base_form,
             "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
             "active_nav": "budgets_insurers",
         })
         return render(request, self.template_name, ctx)
+
+
+class InsurerBaseToggleView(AdminRoleRequiredMixin, View):
+    """
+    HTMX endpoint. Toggles InsurerBase.is_active for a (insurer_pk, base_pk) pair.
+    Creates the InsurerBase record if it does not exist yet (first activation).
+    Returns the updated toggle button fragment for HTMX outerHTML swap.
+    ---
+    Endpoint HTMX. Alterna InsurerBase.is_active para el par (insurer_pk, base_pk).
+    Crea el registro InsurerBase si no existe (primera activacion).
+    Devuelve el fragmento del boton toggle actualizado para swap HTMX outerHTML.
+    """
+
+    def post(self, request, insurer_pk, base_pk):
+        """
+        Toggle InsurerBase.is_active and return the updated toggle fragment.
+        ---
+        Alterna InsurerBase.is_active y devuelve el fragmento toggle actualizado.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(
+            Insurer,
+            pk=insurer_pk,
+            company=company_user.company,
+        )
+        base = get_object_or_404(
+            Base,
+            pk=base_pk,
+            company=company_user.company,
+        )
+        # Get or create the InsurerBase relation; toggle is_active.
+        # Obtener o crear la relacion InsurerBase; alternar is_active.
+        ib, created = InsurerBase.objects.get_or_create(
+            insurer=insurer,
+            base=base,
+            defaults={"is_active": True},
+        )
+        if not created:
+            ib.is_active = not ib.is_active
+            ib.save(update_fields=["is_active", "updated_at"])
+        # Annotate base with the updated insurer_base for template rendering.
+        # Anotar base con insurer_base actualizado para el renderizado del template.
+        base.insurer_base = ib
+        base.has_active_ib = ib.is_active
+        return render(
+            request,
+            "budgets/partials/insurerbase_toggle_fragment.html",
+            {"base": base, "insurer": insurer},
+        )
 
 
 class BaseCreateView(AdminRoleRequiredMixin, View):
@@ -2425,3 +2503,134 @@ class BudgetExportWordView(AdminRoleRequiredMixin, View):
         )
         response["Content-Disposition"] = 'attachment; filename="presupuestos.docx"'
         return response
+
+
+# ---------------------------------------------------------------------------
+# Base global view — full company base list with filter by insurer. ADMIN only.
+# Vista global de bases — listado completo de bases de empresa con filtro por
+# aseguradora. Solo ADMIN.
+# ---------------------------------------------------------------------------
+
+
+class BaseGlobalView(AdminRoleRequiredMixin, View):
+    """
+    Lists all service bases for the company with optional filter by insurer.
+    Shows per-base coordinates, labor calendar sync status and global is_active
+    flag. Provides inline Google Maps edit, global Base.is_active toggle,
+    delete and a new-base creation form. ADMIN only.
+    ---
+    Lista todas las bases de servicio de la empresa con filtro opcional por
+    aseguradora. Muestra coordenadas, estado de sincronizacion del calendario
+    laboral y flag global is_active por base. Proporciona edicion inline con
+    Google Maps, toggle global Base.is_active, baja y formulario de alta.
+    Solo ADMIN.
+    """
+
+    template_name = "budgets/base_global.html"
+
+    def get(self, request):
+        """
+        Render the global base list for the company.
+        Accepts optional GET param insurer_id to filter by insurer.
+        ---
+        Renderiza el listado global de bases de la empresa.
+        Acepta parametro GET opcional insurer_id para filtrar por aseguradora.
+        """
+        company_user = _get_company_user(request)
+        company = company_user.company
+
+        # Optional insurer filter from GET param.
+        # Filtro opcional por aseguradora desde parametro GET.
+        insurer_id = request.GET.get("insurer_id", "").strip()
+        selected_insurer = None
+        bases_qs = Base.objects.filter(company=company).order_by("name")
+        if insurer_id:
+            try:
+                selected_insurer = Insurer.objects.get(
+                    pk=int(insurer_id), company=company
+                )
+                # Filter to bases linked to this insurer via InsurerBase.
+                # Filtrar a bases vinculadas a esta aseguradora via InsurerBase.
+                linked_base_ids = InsurerBase.objects.filter(
+                    insurer=selected_insurer
+                ).values_list("base_id", flat=True)
+                bases_qs = bases_qs.filter(pk__in=linked_base_ids)
+            except (ValueError, Insurer.DoesNotExist):
+                selected_insurer = None
+
+        # Annotate each base with its linked insurers and insurer count.
+        # Anotar cada base con sus aseguradoras vinculadas y el conteo.
+        ib_by_base = {}
+        for ib in InsurerBase.objects.filter(
+            base__company=company
+        ).select_related("insurer").order_by("insurer__name"):
+            ib_by_base.setdefault(ib.base_id, []).append(ib)
+
+        bases = []
+        for base in bases_qs:
+            base.linked_insurer_bases = ib_by_base.get(base.pk, [])
+            bases.append(base)
+
+        # All insurers for the filter dropdown.
+        # Todas las aseguradoras para el desplegable de filtro.
+        insurers = Insurer.objects.filter(
+            company=company
+        ).order_by("name")
+
+        base_form = BaseForm()
+        ctx = _build_base_context(request, {
+            "bases": bases,
+            "insurers": insurers,
+            "selected_insurer": selected_insurer,
+            "base_form": base_form,
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "active_nav": "budgets_bases",
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request):
+        """
+        Create a new Base for the company (no insurer association at creation).
+        Redirects to the global base list on success.
+        Re-renders the form with errors on failure.
+        ---
+        Crea una nueva Base para la empresa (sin aseguradora asociada en el alta).
+        Redirige al listado global en exito. Vuelve a renderizar el formulario
+        con errores en caso de fallo.
+        """
+        company_user = _get_company_user(request)
+        company = company_user.company
+        form = BaseForm(request.POST)
+        if form.is_valid():
+            base = form.save(commit=False)
+            base.company = company
+            base.save()
+            from django.contrib import messages as _messages
+            _messages.success(
+                request,
+                f"Base '{base.name}' creada correctamente. "
+                "Asignala a aseguradoras desde la vista de gestion de bases."
+            )
+            return redirect("budgets:base_global")
+        # Re-render with form errors.
+        # Volver a renderizar con errores de formulario.
+        bases_qs = Base.objects.filter(company=company).order_by("name")
+        ib_by_base = {}
+        for ib in InsurerBase.objects.filter(
+            base__company=company
+        ).select_related("insurer").order_by("insurer__name"):
+            ib_by_base.setdefault(ib.base_id, []).append(ib)
+        bases = []
+        for base in bases_qs:
+            base.linked_insurer_bases = ib_by_base.get(base.pk, [])
+            bases.append(base)
+        insurers = Insurer.objects.filter(company=company).order_by("name")
+        ctx = _build_base_context(request, {
+            "bases": bases,
+            "insurers": insurers,
+            "selected_insurer": None,
+            "base_form": form,
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "active_nav": "budgets_bases",
+        })
+        return render(request, self.template_name, ctx)

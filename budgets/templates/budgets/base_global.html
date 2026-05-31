@@ -1,41 +1,37 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/bases.html #}
-{#                                                                                  #}
-{# Base management view — full CRUD for service bases of an insurer. ADMIN only.   #}
-{# Lists all bases, inline edit with Google Maps, create form, toggle, delete.     #}
-{#                                                                                  #}
-{# Vista de gestión de bases — CRUD completo de bases de servicio. Solo ADMIN.    #}
-{# Lista todas las bases, edición inline con Google Maps, alta, toggle, baja.     #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/base_global.html #}
+{#                                                                                        #}
+{# Global base management view — lists ALL company bases with optional insurer filter.   #}
+{# Shows coordinates, labor calendar sync status, global is_active flag, linked          #}
+{# insurers, inline Google Maps edit, global toggle and delete. ADMIN only.              #}
+{#                                                                                        #}
+{# Vista global de bases — lista TODAS las bases de la empresa con filtro opcional       #}
+{# por aseguradora. Muestra coordenadas, estado de calendario laboral, flag global       #}
+{# is_active, aseguradoras vinculadas, edicion inline con Google Maps,                   #}
+{# toggle global y baja. Solo ADMIN.                                                     #}
 {% extends "panel/base.html" %}
 
-{% block title %}Bases — {{ insurer.name }} — {{ company.name }}{% endblock %}
+{% block title %}Bases de servicio — {{ company.name }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-3">
 
-  {# ── Breadcrumb ────────────────────────────────────────────────────── #}
+  {# ── Breadcrumb ──────────────────────────────────────────────────── #}
   <nav aria-label="breadcrumb" class="mb-3">
     <ol class="breadcrumb small">
       <li class="breadcrumb-item">
         <a href="{% url 'budgets:insurer_list' %}">Aseguradoras</a>
       </li>
-      <li class="breadcrumb-item">
-        <a href="{% url 'budgets:insurer_detail' insurer.pk %}">{{ insurer.name }}</a>
-      </li>
       <li class="breadcrumb-item active">Bases de servicio</li>
     </ol>
   </nav>
 
-  {# ── Cabecera ─────────────────────────────────────────────────────── #}
+  {# ── Cabecera ────────────────────────────────────────────────────── #}
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h4 class="mb-0">
       <i class="bi bi-geo-alt-fill me-2 text-danger"></i>
       Bases de servicio
-      <span class="text-muted fw-normal fs-6 ms-2">{{ insurer.name }}</span>
+      <span class="badge bg-secondary ms-2">{{ bases|length }}</span>
     </h4>
-    <a href="{% url 'budgets:insurer_detail' insurer.pk %}"
-       class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-arrow-left me-1"></i>Volver al detalle
-    </a>
   </div>
 
   {# ── Django messages ─────────────────────────────────────────────── #}
@@ -46,80 +42,53 @@
   </div>
   {% endfor %}
 
-  {# ================================================================== #}
-  {# SECCION SUPERIOR — Resumen solo lectura de bases activas           #}
-  {# para ESTA aseguradora. Badges verdes, sin botones de accion.       #}
-  {# UPPER SECTION — Read-only summary of active bases for THIS         #}
-  {# insurer. Green badges, no action buttons.                          #}
-  {# ================================================================== #}
-  <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-transparent border-bottom py-2">
-      <span class="fw-semibold small">
-        <i class="bi bi-check-circle-fill text-success me-1"></i>
-        Bases activas para {{ insurer.name }}
-        <span class="badge bg-success ms-1">{{ active_insurer_bases|length }}</span>
-      </span>
-    </div>
+  {# ── Filtro por aseguradora ──────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2 px-3">
-      {% if active_insurer_bases %}
-      <div class="d-flex flex-wrap gap-2">
-        {% for ib in active_insurer_bases %}
-        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-normal">
-          <i class="bi bi-geo-alt-fill me-1"></i>{{ ib.base.name }}
-          <span class="text-muted ms-1 small">({{ ib.base.municipality }})</span>
-          {% if ib.base.latitude and ib.base.longitude %}
-          <span class="ms-1 small opacity-75">
-            <i class="bi bi-pin-map"></i>
-          </span>
-          {% endif %}
-        </span>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="text-muted small mb-0 py-1">
-        <i class="bi bi-info-circle me-1"></i>
-        Ninguna base activa para esta aseguradora. Activa una o varias desde la tabla inferior.
-      </p>
-      {% endif %}
+      <form method="get" class="d-flex align-items-center gap-3 flex-wrap">
+        <label class="form-label small mb-0 fw-semibold">
+          <i class="bi bi-funnel me-1"></i>Filtrar por aseguradora:
+        </label>
+        <select name="insurer_id" class="form-select form-select-sm" style="max-width:280px;"
+                onchange="this.form.submit()">
+          <option value="">— Todas las bases —</option>
+          {% for ins in insurers %}
+          <option value="{{ ins.pk }}"
+            {% if selected_insurer and selected_insurer.pk == ins.pk %}selected{% endif %}>
+            {{ ins.name }}
+          </option>
+          {% endfor %}
+        </select>
+        {% if selected_insurer %}
+        <a href="{% url 'budgets:base_global' %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-x me-1"></i>Quitar filtro
+        </a>
+        {% endif %}
+      </form>
     </div>
   </div>
 
-  {# ================================================================== #}
-  {# SECCION INFERIOR — Listado completo de bases de la empresa         #}
-  {# con toggle InsurerBase.is_active por aseguradora via HTMX.        #}
-  {# LOWER SECTION — Full company base list with per-insurer            #}
-  {# InsurerBase.is_active toggle via HTMX.                            #}
-  {# ================================================================== #}
+  {# ── Tabla global de bases ───────────────────────────────────────── #}
   <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-transparent border-bottom py-2 d-flex align-items-center justify-content-between">
-      <span class="fw-semibold small">
-        <i class="bi bi-list-ul me-1"></i>Todas las bases de la empresa
-        <span class="badge bg-secondary ms-1">{{ all_company_bases|length }}</span>
-      </span>
-      <span class="text-muted small">
-        El toggle activa o desactiva la base
-        <strong>solo para {{ insurer.name }}</strong>
-      </span>
-    </div>
     <div class="card-body p-0">
-      {% if all_company_bases %}
+      {% if bases %}
       <div class="table-responsive">
-        <table class="table table-sm small align-middle mb-0" id="bases-table">
+        <table class="table table-sm small align-middle mb-0" id="bases-global-table">
           <thead class="table-light">
             <tr>
               <th class="ps-3">Nombre</th>
               <th>Municipio</th>
               <th>Coordenadas</th>
               <th>Calendario</th>
-              <th class="text-center">Activa para {{ insurer.name }}</th>
+              <th>Aseguradoras vinculadas</th>
               <th class="text-center">Activa globalmente</th>
               <th class="text-end pe-3">Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {% for base in all_company_bases %}
+            {% for base in bases %}
             <tr id="base-row-{{ base.pk }}">
-              <td class="ps-3 align-middle">{{ base.name }}</td>
+              <td class="ps-3 align-middle fw-semibold">{{ base.name }}</td>
               <td class="align-middle">{{ base.municipality }}</td>
               <td class="align-middle text-muted">
                 {% if base.latitude and base.longitude %}
@@ -142,22 +111,35 @@
                 </span>
                 {% endif %}
               </td>
-              {# Toggle InsurerBase.is_active — opera SOLO sobre la relacion #}
-              {# con esta aseguradora, no sobre el flag global Base.is_active #}
-              <td class="text-center align-middle" id="ib-toggle-{{ base.pk }}">
-                {% include "budgets/partials/insurerbase_toggle_fragment.html" with base=base insurer=insurer %}
-              </td>
-              {# Flag global Base.is_active — solo lectura en esta vista #}
-              <td class="text-center align-middle">
-                {% if base.is_active %}
-                <span class="badge bg-success-subtle text-success border border-success-subtle">
-                  <i class="bi bi-check2"></i>
-                </span>
+              <td class="align-middle">
+                {% if base.linked_insurer_bases %}
+                <div class="d-flex flex-wrap gap-1">
+                  {% for ib in base.linked_insurer_bases %}
+                  <span class="badge {% if ib.is_active %}bg-success-subtle text-success border border-success-subtle{% else %}bg-secondary-subtle text-secondary border border-secondary-subtle{% endif %}">
+                    {{ ib.insurer.name }}
+                  </span>
+                  {% endfor %}
+                </div>
                 {% else %}
-                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
-                  <i class="bi bi-dash"></i>
-                </span>
+                <span class="text-muted small">Sin aseguradoras</span>
                 {% endif %}
+              </td>
+              {# Toggle global Base.is_active — opera sobre el flag global de la base #}
+              <td class="text-center align-middle">
+                <button
+                  class="btn btn-sm {% if base.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                  hx-post="{% url 'budgets:base_toggle' base.pk %}"
+                  hx-target="#base-row-{{ base.pk }}"
+                  hx-swap="outerHTML"
+                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                  title="{% if base.is_active %}Desactivar globalmente{% else %}Activar globalmente{% endif %}"
+                >
+                  {% if base.is_active %}
+                  <i class="bi bi-toggle-on"></i>
+                  {% else %}
+                  <i class="bi bi-toggle-off"></i>
+                  {% endif %}
+                </button>
               </td>
               <td class="text-end pe-3 align-middle">
                 <button
@@ -175,6 +157,7 @@
                   hx-target="#base-row-{{ base.pk }}"
                   hx-swap="outerHTML"
                   hx-confirm="¿Eliminar la base '{{ base.name }}'? Esta acción no se puede deshacer."
+                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                   title="Eliminar"
                 >
                   <i class="bi bi-trash"></i>
@@ -188,7 +171,11 @@
       {% else %}
       <div class="p-4 text-center text-muted small">
         <i class="bi bi-geo-alt fs-3 d-block mb-2 opacity-50"></i>
+        {% if selected_insurer %}
+        No hay bases vinculadas a {{ selected_insurer.name }}.
+        {% else %}
         No hay bases registradas en esta empresa.
+        {% endif %}
       </div>
       {% endif %}
     </div>
@@ -199,15 +186,13 @@
     <div class="card-header bg-transparent border-bottom py-2">
       <span class="fw-semibold small">
         <i class="bi bi-plus-circle me-1 text-success"></i>Nueva base
+        <span class="text-muted fw-normal ms-1 small">
+          — se podrá asignar a aseguradoras desde la gestión de bases de cada aseguradora.
+        </span>
       </span>
     </div>
     <div class="card-body">
-      <form
-        hx-post="{% url 'budgets:base_create' insurer.pk %}"
-        hx-target="#bases-table tbody"
-        hx-swap="beforeend"
-        hx-on::after-request="if(event.detail.successful){ this.reset(); }"
-      >
+      <form method="post" novalidate>
         {% csrf_token %}
         <div class="row g-2 align-items-end">
           <div class="col-12 col-md-3">

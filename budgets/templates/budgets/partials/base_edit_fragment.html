@@ -51,7 +51,7 @@
           hx-target="#base-row-{{ base.pk }}"
           hx-swap="outerHTML"
           title="Cancelar"
-          onclick="htmx.ajax('GET', '{% url 'budgets:base_manage' base.insurer.pk %}', {target: '#base-row-{{ base.pk }}', swap: 'none'}); location.reload();"
+          onclick="location.reload();"
         >
           <i class="bi bi-x"></i>
         </button>
@@ -66,21 +66,57 @@
           <div class="card-header py-1 px-2 bg-light d-flex align-items-center gap-2">
             <i class="bi bi-geo-alt-fill text-danger"></i>
             <span class="small fw-semibold">Geolocalización</span>
-            <span class="text-muted small ms-1">— busca una dirección o arrastra el pin</span>
+            <span class="text-muted small ms-1">— busca una dirección o mueve el mapa hasta centrar el pin rojo</span>
           </div>
           <div class="card-body p-2">
             {# Search input — PlaceAutocompleteElement injected here by JS   #}
             {# Input de búsqueda — PlaceAutocompleteElement inyectado por JS #}
             <div id="place-autocomplete-container-{{ base.pk }}" class="mb-2"></div>
-            {# Map container                                                  #}
-            {# Contenedor del mapa                                            #}
-            <div
-              id="base-map-{{ base.pk }}"
-              style="width:100%;height:320px;border-radius:6px;border:1px solid #dee2e6;"
-            ></div>
+            {# Map container with fixed-center pin overlay and coordinates badge  #}
+            {# Contenedor del mapa con pin fijo en centro y badge de coordenadas  #}
+            <div style="position:relative;width:100%;height:320px;">
+              {# Mapa Google Maps                                                  #}
+              <div
+                id="base-map-{{ base.pk }}"
+                style="width:100%;height:100%;border-radius:6px;border:1px solid #dee2e6;"
+              ></div>
+              {# Pin SVG fijo en el centro — siempre visible, el usuario mueve el mapa bajo él #}
+              {# Fixed SVG pin at center — always visible, user moves the map underneath it    #}
+              <div id="center-pin-{{ base.pk }}" style="
+                position:absolute;
+                top:50%;
+                left:50%;
+                transform:translate(-50%, -100%);
+                pointer-events:none;
+                z-index:10;
+              ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="44" viewBox="0 0 32 44">
+                  <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 28 16 28S32 26 32 16C32 7.163 24.837 0 16 0z"
+                        fill="#dc3545" stroke="#fff" stroke-width="2"/>
+                  <circle cx="16" cy="16" r="6" fill="#fff"/>
+                </svg>
+              </div>
+              {# Badge de coordenadas en tiempo real — se actualiza con cada movimiento del mapa #}
+              {# Real-time coordinates badge — updates on every map movement                    #}
+              <div id="coords-badge-{{ base.pk }}" style="
+                position:absolute;
+                bottom:8px;
+                left:50%;
+                transform:translateX(-50%);
+                background:rgba(0,0,0,0.65);
+                color:#fff;
+                font-size:11px;
+                font-family:monospace;
+                padding:3px 10px;
+                border-radius:12px;
+                pointer-events:none;
+                z-index:10;
+                white-space:nowrap;
+              ">— mueve el mapa para posicionar —</div>
+            </div>
             <div class="text-muted small mt-1">
               <i class="bi bi-info-circle"></i>
-              Las coordenadas se actualizan automáticamente al seleccionar un lugar o mover el pin.
+              Mueve el mapa hasta que el pin rojo quede sobre la ubicación deseada. Las coordenadas se guardan al enviar el formulario.
             </div>
           </div>
         </div>
@@ -165,50 +201,84 @@
 
       // ----------------------------------------------------------------
       // initMap — called after bootstrap loader registers importLibrary.
+      // Uses classic google.maps.Marker (no mapId required — always
+      // renders the red pin). Map-center pattern for mobile UX:
+      // fixed SVG pin at center, user moves map underneath it.
+      // On idle: snap classic marker to center and update inputs + badge.
+      // ----------------------------------------------------------------
       // initMap — llamado tras registrar importLibrary con el bootstrap.
+      // Usa google.maps.Marker clásico (sin mapId requerido — siempre
+      // renderiza el pin rojo). Patrón centro de mapa para UX móvil:
+      // pin SVG fijo en el centro, el usuario mueve el mapa debajo.
+      // En idle: sincroniza el marker clásico al centro y actualiza inputs y badge.
       // ----------------------------------------------------------------
       async function initMap() {
         var MapsLib   = await google.maps.importLibrary("maps");
-        var MarkerLib = await google.maps.importLibrary("marker");
         var PlacesLib = await google.maps.importLibrary("places");
 
-        // --- Map ---
+        var coordsBadge = document.getElementById("coords-badge-" + BASE_PK);
+
+        // ── Map ──────────────────────────────────────────────────────────
+        // No mapId — classic Marker does not require it.
+        // Sin mapId — el Marker clásico no lo requiere.
         var map = new MapsLib.Map(document.getElementById(MAP_DIV_ID), {
           center: { lat: INIT_LAT, lng: INIT_LNG },
           zoom: HAS_COORDS ? 15 : 8,
-          mapId: "base_map_" + BASE_PK,
           disableDefaultUI: false,
           zoomControl: true,
           streetViewControl: false,
           mapTypeControl: false,
         });
 
-        // --- Draggable AdvancedMarkerElement ---
-        // --- AdvancedMarkerElement arrastrable ---
-        var marker = new MarkerLib.AdvancedMarkerElement({
+        // ── Classic Marker — red pin, always visible ──────────────────
+        // Hidden initially when there are no existing coords; becomes
+        // visible on first idle after user moves the map.
+        // ── Marker clásico — pin rojo, siempre visible ────────────────
+        // Oculto inicialmente si no hay coords; visible en el primer idle
+        // tras mover el mapa.
+        var marker = new google.maps.Marker({
           map: map,
           position: { lat: INIT_LAT, lng: INIT_LNG },
-          gmpDraggable: true,
-          title: "Arrastra para ajustar la posición",
+          visible: HAS_COORDS,
+          title: "Ubicación seleccionada",
+          animation: google.maps.Animation.DROP,
         });
 
-        // Helper: update lat/lng inputs from a LatLng-like object.
-        // Ayudante: actualiza inputs lat/lng desde un objeto tipo LatLng.
-        function updateInputs(latLng) {
-          var lat = (typeof latLng.lat === "function") ? latLng.lat() : latLng.lat;
-          var lng = (typeof latLng.lng === "function") ? latLng.lng() : latLng.lng;
-          document.getElementById(LAT_INPUT_ID).value = lat.toFixed(6);
-          document.getElementById(LNG_INPUT_ID).value = lng.toFixed(6);
+        // ── Helper: update inputs and badge ───────────────────────────
+        // Actualiza los inputs del formulario y el badge de coordenadas.
+        function updateInputsAndBadge(lat, lng) {
+          var latRounded = lat.toFixed(6);
+          var lngRounded = lng.toFixed(6);
+          document.getElementById(LAT_INPUT_ID).value = latRounded;
+          document.getElementById(LNG_INPUT_ID).value = lngRounded;
+          if (coordsBadge) {
+            coordsBadge.textContent = latRounded + ", " + lngRounded;
+          }
         }
 
-        // Update inputs when drag ends.
-        // Actualizar inputs al soltar el pin.
-        marker.addListener("dragend", function () {
-          updateInputs(marker.position);
+        // ── On map idle: snap marker to center, update inputs + badge ─
+        // Fires when the map stops moving (drag end, zoom change, etc.).
+        // Pattern used by Uber, Google Maps, Glovo for mobile accuracy.
+        // ── En idle: sincroniza el marker al centro, actualiza inputs ─
+        // Se dispara cuando el mapa deja de moverse (fin de drag, zoom...).
+        // Patrón empleado por Uber, Google Maps, Glovo para precisión móvil.
+        map.addListener("idle", function () {
+          var center = map.getCenter();
+          var lat = center.lat();
+          var lng = center.lng();
+          marker.setPosition(center);
+          if (!marker.getVisible()) { marker.setVisible(true); }
+          updateInputsAndBadge(lat, lng);
         });
 
-        // --- PlaceAutocompleteElement (Places API New) ---
-        // --- PlaceAutocompleteElement (Places API Nueva) ---
+        // ── Initial badge if coords already exist ─────────────────────
+        // Muestra coordenadas existentes en el badge al abrir el editor.
+        if (HAS_COORDS) {
+          updateInputsAndBadge(INIT_LAT, INIT_LNG);
+        }
+
+        // ── PlaceAutocompleteElement (Places API New) ─────────────────
+        // ── PlaceAutocompleteElement (Places API Nueva) ───────────────
         var autocomplete = new PlacesLib.PlaceAutocompleteElement({
           componentRestrictions: { country: "es" },
         });
@@ -216,8 +286,10 @@
         autocomplete.style.marginBottom = "0";
         document.getElementById(AC_DIV_ID).appendChild(autocomplete);
 
-        // On place selection: move map and marker, update inputs.
-        // Al seleccionar lugar: mover mapa y pin, actualizar inputs.
+        // On place selection: move map to place — idle fires automatically
+        // and handles marker + inputs + badge update.
+        // Al seleccionar lugar: centrar mapa en el lugar — idle se dispara
+        // automáticamente y gestiona marker + inputs + badge.
         autocomplete.addEventListener("gmp-select", function (event) {
           var placePrediction = event.placePrediction;
           placePrediction.toPlace().fetchFields({
@@ -227,8 +299,8 @@
             if (!place.location) { return; }
             map.setCenter(place.location);
             map.setZoom(16);
-            marker.position = place.location;
-            updateInputs(place.location);
+            // idle will fire after setCenter/setZoom and handle the rest.
+            // idle se disparará tras setCenter/setZoom y gestionará el resto.
           });
         });
       }

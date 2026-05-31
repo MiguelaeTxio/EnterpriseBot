@@ -564,6 +564,89 @@ class Budget(models.Model):
         verbose_name="Km totales",
         help_text="Suma de km_phase1 + km_phase2. Calculado automaticamente al guardar.",
     )
+
+    # ---------------------------------------------------------------------------
+    # Route calculation fields — populated by the Routes API integration.
+    # Campos de calculo de ruta — poblados por la integracion con Routes API.
+    # Added in migration 0011_budget_route_fields (H18 S002).
+    # ---------------------------------------------------------------------------
+
+    # Name of the road where the vehicle is located (e.g. A-45, N-331).
+    # Nombre de la via donde se encuentra el vehiculo averiado.
+    road_name = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Carretera",
+        help_text="Nombre de la via donde se encuentra el vehiculo (ej: A-45, N-331).",
+    )
+    # Kilometre marker on the road where the vehicle is located.
+    # Punto kilometrico de la via donde se encuentra el vehiculo.
+    pk_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        verbose_name="Punto kilometrico",
+        help_text="Punto kilometrico de la via donde se encuentra el vehiculo averiado.",
+    )
+    # Distance in km calculated by the Routes API for this service.
+    # Distancia en km calculada por la Routes API para este servicio.
+    route_distance_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        verbose_name="Distancia calculada (km)",
+        help_text=(
+            "Distancia en km calculada por la Routes API desde la base hasta "
+            "el punto kilometrico del vehiculo averiado."
+        ),
+    )
+    # Toll cost in EUR returned by the Routes API for this service.
+    # Coste de peajes en EUR devuelto por la Routes API para este servicio.
+    route_toll_cost = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Coste de peajes",
+        help_text=(
+            "Coste estimado de peajes en EUR devuelto por la Routes API. "
+            "Null cuando no hay peajes o el calculo es manual."
+        ),
+    )
+    # How km were calculated: MANUAL (operator input) or API (Routes API).
+    # Como se calcularon los km: MANUAL (entrada operario) o API (Routes API).
+    ROUTE_MODE_MANUAL = "MANUAL"
+    ROUTE_MODE_API    = "API"
+    ROUTE_MODE_CHOICES = [
+        (ROUTE_MODE_MANUAL, "Manual"),
+        (ROUTE_MODE_API,    "API Routes"),
+    ]
+    route_calculation_mode = models.CharField(
+        max_length=10,
+        choices=ROUTE_MODE_CHOICES,
+        default=ROUTE_MODE_MANUAL,
+        verbose_name="Modo de calculo km",
+        help_text=(
+            "MANUAL: el operario introduce los km directamente. "
+            "API: distancia calculada automaticamente por la Routes API de Google."
+        ),
+    )
+    # Time of service — used to build departureTime for toll calculation.
+    # Hora del servicio — usada para construir departureTime en el calculo de peajes.
+    service_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora del servicio",
+        help_text=(
+            "Hora en la que se realiza el servicio. Se combina con service_date "
+            "para construir el departureTime en la llamada a la Routes API, "
+            "necesario para el calculo de peajes con dependencia horaria."
+        ),
+    )
+
     has_unlock = models.BooleanField(
         default=False,
         verbose_name="Desbloqueo",

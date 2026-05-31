@@ -1,0 +1,28 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/insurerbase_toggle_fragment.html #}
+{#                                                                                                                 #}
+{# HTMX fragment — toggle button for InsurerBase.is_active of a base for a specific insurer.                     #}
+{# Rendered inline from bases.html and base_list_fragment.html inside #ib-toggle-{base.pk}.                      #}
+{# Swapped by InsurerBaseToggleView (POST insurers/<insurer_pk>/bases/<base_pk>/toggle/).                         #}
+{#                                                                                                                 #}
+{# Fragmento HTMX — boton toggle para InsurerBase.is_active de una base para una aseguradora concreta.           #}
+{# Renderizado inline desde bases.html y base_list_fragment.html dentro de #ib-toggle-{base.pk}.                 #}
+{# Sustituido por InsurerBaseToggleView (POST insurers/<insurer_pk>/bases/<base_pk>/toggle/).                     #}
+{#                                                                                                                 #}
+{# Contexto esperado / Expected context:                                                                          #}
+{#   base    — instancia Base anotada con base.has_active_ib (bool) y base.insurer_base (InsurerBase|None)        #}
+{#   insurer — instancia Insurer para la que se opera el toggle                                                   #}
+
+<button
+  class="btn btn-sm {% if base.has_active_ib %}btn-success{% else %}btn-outline-secondary{% endif %}"
+  hx-post="{% url 'budgets:insurerbase_toggle' insurer.pk base.pk %}"
+  hx-target="#ib-toggle-{{ base.pk }}"
+  hx-swap="innerHTML"
+  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+  title="{% if base.has_active_ib %}Desactivar para {{ insurer.name }}{% else %}Activar para {{ insurer.name }}{% endif %}"
+>
+  {% if base.has_active_ib %}
+  <i class="bi bi-toggle-on"></i>
+  {% else %}
+  <i class="bi bi-toggle-off"></i>
+  {% endif %}
+</button>

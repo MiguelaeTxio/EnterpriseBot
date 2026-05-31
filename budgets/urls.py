@@ -246,6 +246,22 @@ urlpatterns = [
         name="base_delete",
     ),
 
+    # InsurerBase toggle — HTMX POST, alterna InsurerBase.is_active por aseguradora.
+    # InsurerBase toggle — HTMX POST, toggles InsurerBase.is_active per insurer.
+    path(
+        "insurers/<int:insurer_pk>/bases/<int:base_pk>/toggle/",
+        views.InsurerBaseToggleView.as_view(),
+        name="insurerbase_toggle",
+    ),
+
+    # Base global — listado global de bases de la empresa. Solo ADMIN.
+    # Base global — global company base list. ADMIN only.
+    path(
+        "bases/global/",
+        views.BaseGlobalView.as_view(),
+        name="base_global",
+    ),
+
     # ---------------------------------------------------------------------------
     # Export routes — Insurer tariff and budget history exports
     # Rutas de exportacion — tarifas de aseguradora e historial de presupuestos
