@@ -32,6 +32,68 @@
       Bases de servicio
       <span class="badge bg-secondary ms-2">{{ bases|length }}</span>
     </h4>
+    <div class="d-flex align-items-center gap-2">
+      <button
+        class="btn btn-sm btn-outline-primary"
+        hx-post="{% url 'budgets:base_sync_calendars' %}"
+        hx-target="#sync-calendars-result"
+        hx-swap="innerHTML"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        hx-indicator="#sync-spinner"
+        title="Sincronizar calendarios laborales de todas las bases activas"
+      >
+        <i class="bi bi-arrow-repeat me-1"></i>Sincronizar calendarios
+        <span id="sync-spinner" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status"></span>
+      </button>
+      <button
+        id="btn-select-mode"
+        class="btn btn-sm btn-outline-secondary"
+        onclick="activarModoSeleccion()"
+        title="Seleccionar bases para limpiar coordenadas"
+      >
+        <i class="bi bi-cursor me-1"></i>Seleccionar bases
+      </button>
+    </div>
+  </div>
+  <div id="sync-calendars-result" class="mb-2"></div>
+  <div id="clear-coords-result" class="mb-2"></div>
+
+  {# ── Barra de acciones masivas — visible solo en modo seleccion ── #}
+  <div id="barra-seleccion" class="d-none mb-3">
+    <div class="card border-warning shadow-sm">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
+        <span class="small fw-semibold text-warning-emphasis">
+          <i class="bi bi-cursor-fill me-1"></i>
+          <span id="seleccion-contador">0</span> base(s) seleccionada(s)
+        </span>
+        <button
+          class="btn btn-sm btn-outline-warning"
+          onclick="seleccionarTodas()"
+        >
+          <i class="bi bi-check-all me-1"></i>Todas
+        </button>
+        <button
+          class="btn btn-sm btn-outline-secondary"
+          onclick="deseleccionarTodas()"
+        >
+          <i class="bi bi-x-square me-1"></i>Ninguna
+        </button>
+        <button
+          id="btn-limpiar-coords"
+          class="btn btn-sm btn-danger"
+          onclick="limpiarCoordenadas()"
+          disabled
+        >
+          <i class="bi bi-geo-alt me-1"></i>Limpiar coordenadas
+        </button>
+        <button
+          class="btn btn-sm btn-outline-secondary ms-auto"
+          onclick="cancelarModoSeleccion()"
+        >
+          <i class="bi bi-x me-1"></i>Cancelar
+        </button>
+      </div>
+    </div>
   </div>
 
   {# ── Django messages ─────────────────────────────────────────────── #}
@@ -76,18 +138,27 @@
         <table class="table table-sm small align-middle mb-0" id="bases-global-table">
           <thead class="table-light">
             <tr>
+              <th id="th-checkbox" class="ps-2 d-none" style="width:1%;white-space:nowrap;"></th>
               <th class="ps-3">Nombre</th>
               <th>Municipio</th>
               <th>Coordenadas</th>
               <th>Calendario</th>
               <th>Aseguradoras vinculadas</th>
-              <th class="text-center">Activa globalmente</th>
-              <th class="text-end pe-3">Acciones</th>
+              <th class="text-center" style="width:1%;white-space:nowrap;">Activa globalmente</th>
+              <th class="text-end pe-3" style="width:1%;white-space:nowrap;">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {% for base in bases %}
-            <tr id="base-row-{{ base.pk }}">
+            <tr id="base-row-{{ base.pk }}" data-base-pk="{{ base.pk }}">
+              <td class="ps-2 align-middle td-checkbox d-none">
+                <input
+                  type="checkbox"
+                  class="form-check-input base-checkbox"
+                  value="{{ base.pk }}"
+                  onchange="actualizarContador()"
+                >
+              </td>
               <td class="ps-3 align-middle fw-semibold">{{ base.name }}</td>
               <td class="align-middle">{{ base.municipality }}</td>
               <td class="align-middle text-muted">
@@ -141,27 +212,27 @@
                   {% endif %}
                 </button>
               </td>
-              <td class="text-end pe-3 align-middle">
-                <button
-                  class="btn btn-sm btn-outline-secondary me-1"
-                  hx-get="{% url 'budgets:base_update' base.pk %}"
-                  hx-target="#base-row-{{ base.pk }}"
-                  hx-swap="outerHTML"
-                  title="Editar"
-                >
-                  <i class="bi bi-pencil"></i>
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-danger"
-                  hx-post="{% url 'budgets:base_delete' base.pk %}"
-                  hx-target="#base-row-{{ base.pk }}"
-                  hx-swap="outerHTML"
-                  hx-confirm="¿Eliminar la base '{{ base.name }}'? Esta acción no se puede deshacer."
-                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                  title="Eliminar"
-                >
-                  <i class="bi bi-trash"></i>
-                </button>
+              <td class="text-end pe-3 align-middle" style="width:1%;white-space:nowrap;">
+                <div class="d-flex flex-row gap-1 justify-content-end">
+                  <a
+                    href="{% url 'budgets:base_update' base.pk %}"
+                    class="btn btn-sm btn-outline-secondary"
+                    title="Editar"
+                  >
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                  <button
+                    class="btn btn-sm btn-outline-danger"
+                    hx-post="{% url 'budgets:base_delete' base.pk %}"
+                    hx-target="#base-row-{{ base.pk }}"
+                    hx-swap="outerHTML"
+                    hx-confirm="¿Eliminar la base '{{ base.name }}'? Esta acción no se puede deshacer."
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                    title="Eliminar"
+                  >
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
               </td>
             </tr>
             {% endfor %}
@@ -234,4 +305,92 @@
   </div>
 
 </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var modoSeleccion = false;
+  var CSRF_TOKEN = "{{ csrf_token }}";
+  var URL_CLEAR  = "{% url 'budgets:base_clear_coords' %}";
+
+  function activarModoSeleccion() {
+    modoSeleccion = true;
+    document.getElementById("th-checkbox").classList.remove("d-none");
+    document.querySelectorAll(".td-checkbox").forEach(function(td) {
+      td.classList.remove("d-none");
+    });
+    document.getElementById("barra-seleccion").classList.remove("d-none");
+    document.getElementById("btn-select-mode").classList.add("d-none");
+    actualizarContador();
+  }
+
+  function cancelarModoSeleccion() {
+    modoSeleccion = false;
+    document.querySelectorAll(".base-checkbox").forEach(function(cb) {
+      cb.checked = false;
+    });
+    document.getElementById("th-checkbox").classList.add("d-none");
+    document.querySelectorAll(".td-checkbox").forEach(function(td) {
+      td.classList.add("d-none");
+    });
+    document.getElementById("barra-seleccion").classList.add("d-none");
+    document.getElementById("btn-select-mode").classList.remove("d-none");
+    actualizarContador();
+  }
+
+  function actualizarContador() {
+    var seleccionados = document.querySelectorAll(".base-checkbox:checked").length;
+    document.getElementById("seleccion-contador").textContent = seleccionados;
+    document.getElementById("btn-limpiar-coords").disabled = seleccionados === 0;
+  }
+
+  function seleccionarTodas() {
+    document.querySelectorAll(".base-checkbox").forEach(function(cb) {
+      cb.checked = true;
+    });
+    actualizarContador();
+  }
+
+  function deseleccionarTodas() {
+    document.querySelectorAll(".base-checkbox").forEach(function(cb) {
+      cb.checked = false;
+    });
+    actualizarContador();
+  }
+
+  function limpiarCoordenadas() {
+    var pks = Array.from(
+      document.querySelectorAll(".base-checkbox:checked")
+    ).map(function(cb) { return cb.value; });
+
+    if (pks.length === 0) { return; }
+
+    var formData = new FormData();
+    formData.append("csrfmiddlewaretoken", CSRF_TOKEN);
+    pks.forEach(function(pk) { formData.append("base_pks", pk); });
+
+    fetch(URL_CLEAR, { method: "POST", body: formData })
+      .then(function(r) { return r.text(); })
+      .then(function(html) {
+        document.getElementById("clear-coords-result").innerHTML = html;
+        cancelarModoSeleccion();
+      })
+      .catch(function() {
+        document.getElementById("clear-coords-result").innerHTML =
+          '<div class="alert alert-danger py-2 small mb-2">Error al comunicar con el servidor.</div>';
+      });
+  }
+
+  window.activarModoSeleccion  = activarModoSeleccion;
+  window.cancelarModoSeleccion = cancelarModoSeleccion;
+  window.actualizarContador    = actualizarContador;
+  window.seleccionarTodas      = seleccionarTodas;
+  window.deseleccionarTodas    = deseleccionarTodas;
+  window.limpiarCoordenadas    = limpiarCoordenadas;
+
+
+})();
+</script>
+
 {% endblock %}

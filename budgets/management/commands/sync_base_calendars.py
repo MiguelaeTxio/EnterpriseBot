@@ -73,6 +73,21 @@ MUNICIPALITY_MAP: dict[str, dict] = {
     "alcala de guadaira":   {"ccaa": "and", "provincia": "sevilla",  "municipio": "alcala-de-guadaira"},
     "linares":              {"ccaa": "and", "provincia": "jaen",     "municipio": "linares"},
     "el ejido":             {"ccaa": "and", "provincia": "almeria",  "municipio": "el-ejido"},
+    # Municipios incorporados en S004 (2026-06-01)
+    # Municipalities added in S004 (2026-06-01)
+    "antequera":            {"ccaa": "and", "provincia": "malaga",   "municipio": "antequera"},
+    "carratraca":           {"ccaa": "and", "provincia": "malaga",   "municipio": "carratraca"},
+    "coin":                 {"ccaa": "and", "provincia": "malaga",   "municipio": "coin"},
+    "fuengirola":           {"ccaa": "and", "provincia": "malaga",   "municipio": "fuengirola"},
+    "loja":                 {"ccaa": "and", "provincia": "granada",  "municipio": "loja"},
+    "moraleda de zafayona": {"ccaa": "and", "provincia": "granada",  "municipio": "moraleda-de-zafayona"},
+    "velez-malaga":         {"ccaa": "and", "provincia": "malaga",   "municipio": "velez-malaga"},
+    # Villanueva del Cauche es pedania de Antequera — se usa el municipio cabecera.
+    # Villanueva del Cauche is a hamlet of Antequera — uses the parent municipality.
+    "villanueva del cauche": {"ccaa": "and", "provincia": "malaga",  "municipio": "antequera"},
+    # La Roda de Andalucia no existe en la API — se usa Estepa como cabecera comarcal.
+    # La Roda de Andalucia not in API — Estepa used as comarca capital (same national/regional holidays).
+    "la roda de andalucia": {"ccaa": "and", "provincia": "sevilla",  "municipio": "estepa"},
 }
 
 
@@ -109,17 +124,37 @@ def _fetch_holidays(municipality: str, year: int) -> list[str]:
         )
 
     url = BASE_URL.format(year=year, **coords)
-    response = requests.get(url, timeout=10)
+    # Send browser-like headers to avoid 403 from PythonAnywhere IP.
+    # Enviar cabeceras de navegador para evitar el 403 desde PythonAnywhere.
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/124.0.0.0 Safari/537.36'
+        ),
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'es-ES,es;q=0.9',
+        'Referer': 'https://calendariosnacionales.com/',
+    }
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
     data = response.json()
-    # The API returns a list of holiday objects with a 'date' field (ISO format).
-    # La API devuelve una lista de objetos festivo con campo 'date' (formato ISO).
-    holidays = sorted(
+    # The API returns a nested object. The consolidated holiday list
+    # (national + regional + local, deduplicated by date) is in
+    # data['holidays']['calendar']. Dates may appear more than once
+    # (e.g. duplicate local entries from different sources) so we
+    # deduplicate using a set before sorting.
+    # La API devuelve un objeto anidado. La lista consolidada de festivos
+    # (nacionales + autonomicos + locales, sin duplicados por fecha) esta en
+    # data['holidays']['calendar']. Las fechas pueden aparecer mas de una vez
+    # (festivos locales de distintas fuentes) por lo que deduplicamos con set.
+    calendar_items = data.get("holidays", {}).get("calendar", [])
+    holidays = sorted({
         item["date"]
-        for item in data
+        for item in calendar_items
         if "date" in item
-    )
+    })
     return holidays
 
 
@@ -208,7 +243,7 @@ class Command(BaseCommand):
         ok_count = 0
         error_count = 0
 
-        for base in qs.select_related("insurer"):
+        for base in qs.select_related("company"):
             try:
                 holidays = _fetch_holidays(base.municipality, year)
                 self.stdout.write(

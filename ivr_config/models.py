@@ -91,6 +91,32 @@ class Company(models.Model):
             "correctamente los recargos nocturnos y festivos según el calendario real."
         ),
     )
+    # Night service start hour — configurable per company for the ASISTENCIA budget engine.
+    # Default: 22:00. Services starting at or after this hour are flagged as night service.
+    # Hora de inicio del servicio nocturno — configurable por empresa para el motor de presupuestos ASISTENCIA.
+    # Por defecto: 22:00. Los servicios que comiencen a esta hora o despues se marcan como nocturnos.
+    night_start = models.TimeField(
+        default="22:00",
+        verbose_name="Inicio franja nocturna",
+        help_text=(
+            "Hora de inicio de la franja nocturna para el módulo de presupuestos "
+            "ASISTENCIA. Los servicios a esta hora o después se marcan automáticamente "
+            "como nocturnos/festivos. Por defecto: 22:00."
+        ),
+    )
+    # Night service end hour — configurable per company for the ASISTENCIA budget engine.
+    # Default: 06:00. Services ending before this hour are flagged as night service.
+    # Hora de fin del servicio nocturno — configurable por empresa para el motor de presupuestos ASISTENCIA.
+    # Por defecto: 06:00. Los servicios que terminen antes de esta hora se marcan como nocturnos.
+    night_end = models.TimeField(
+        default="06:00",
+        verbose_name="Fin franja nocturna",
+        help_text=(
+            "Hora de fin de la franja nocturna para el módulo de presupuestos "
+            "ASISTENCIA. Los servicios antes de esta hora se marcan automáticamente "
+            "como nocturnos/festivos. Por defecto: 06:00."
+        ),
+    )
 
     class Meta:
         verbose_name = "Empresa"

@@ -67,6 +67,45 @@
           </div>
         </div>
 
+        {# ── Franja horaria nocturna (Asistencia) ───────────────────────── #}
+        <div class="card mb-3">
+          <div class="card-body">
+            <label class="form-label fw-semibold">
+              <i class="bi bi-moon-stars me-1 text-primary"></i>
+              Franja horaria nocturna <span class="text-muted fw-normal small">(módulo Asistencia)</span>
+            </label>
+            <div class="form-text text-muted mb-2">
+              Los servicios cuya hora esté dentro de esta franja se marcarán automáticamente
+              como nocturno/festivo en el motor de presupuestos.
+            </div>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small text-muted" for="id_night_start">Inicio</label>
+                <input
+                  type="time"
+                  class="form-control"
+                  name="night_start"
+                  id="id_night_start"
+                  value="{{ company.night_start|time:'H:i' }}"
+                >
+              </div>
+              <div class="col-6">
+                <label class="form-label small text-muted" for="id_night_end">Fin</label>
+                <input
+                  type="time"
+                  class="form-control"
+                  name="night_end"
+                  id="id_night_end"
+                  value="{{ company.night_end|time:'H:i' }}"
+                >
+              </div>
+            </div>
+            <div class="form-text text-muted mt-1">
+              Por defecto: 22:00 – 06:00. El intervalo puede cruzar la medianoche.
+            </div>
+          </div>
+        </div>
+
         {# ── Guardar ─────────────────────────────────────────────────────── #}
         <div class="d-grid mt-2">
           <button type="submit" class="btn btn-primary">

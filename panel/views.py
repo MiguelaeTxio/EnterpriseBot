@@ -15792,16 +15792,44 @@ class CompanySettingsView(AdminRoleRequiredMixin, View):
 
     def post(self, request):
         """
-        Save operation_bases and labor_calendar fields to the Company instance.
-        Redirect back to the settings view with a success message.
+        Save operation_bases, labor_calendar, night_start and night_end fields
+        to the Company instance. Redirect back to the settings view with a
+        success message.
         ---
-        Guarda los campos operation_bases y labor_calendar en la instancia Company.
-        Redirige de vuelta a la vista de configuración con mensaje de éxito.
+        Guarda los campos operation_bases, labor_calendar, night_start y night_end
+        en la instancia Company. Redirige de vuelta a la vista de configuración
+        con mensaje de éxito.
         """
+        import datetime as _dt
         company_user = request.user.company_user
         company = company_user.company
         company.operation_bases = request.POST.get("operation_bases", "").strip()
-        company.labor_calendar = request.POST.get("labor_calendar", "").strip()
-        company.save(update_fields=["operation_bases", "labor_calendar"])
+        company.labor_calendar  = request.POST.get("labor_calendar", "").strip()
+
+        # Parse and validate night_start and night_end.
+        # Parsear y validar night_start y night_end.
+        night_start_raw = request.POST.get("night_start", "").strip()
+        night_end_raw   = request.POST.get("night_end",   "").strip()
+        try:
+            company.night_start = (
+                _dt.time.fromisoformat(night_start_raw)
+                if night_start_raw else _dt.time(22, 0)
+            )
+        except ValueError:
+            company.night_start = _dt.time(22, 0)
+        try:
+            company.night_end = (
+                _dt.time.fromisoformat(night_end_raw)
+                if night_end_raw else _dt.time(6, 0)
+            )
+        except ValueError:
+            company.night_end = _dt.time(6, 0)
+
+        company.save(update_fields=[
+            "operation_bases",
+            "labor_calendar",
+            "night_start",
+            "night_end",
+        ])
         django_messages.success(request, "Configuración de empresa guardada correctamente.")
         return redirect("panel:company_settings")

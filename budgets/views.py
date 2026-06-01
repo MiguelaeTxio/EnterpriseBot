@@ -333,8 +333,8 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             service_date = _dt.date.fromisoformat(service_date_str)
             is_overnight = data.get("is_overnight") == "1"
             has_unlock   = data.get("has_unlock") == "1"
-            is_night     = data.get("is_night") == "1"
-            is_loaded    = data.get("is_loaded") == "1"
+            is_night_manual = data.get("is_night") == "1"
+            is_loaded       = data.get("is_loaded") == "1"
             base_id = data.get("base_id") or None
             if base_id:
                 base_id = int(base_id)
@@ -348,7 +348,39 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         # --- Read route fields and resolve km ---
         # --- Leer campos de ruta y resolver km ---
         road_name              = data.get("road_name", "").strip()
+        dest_location          = data.get("dest_location", "").strip()
         pk_km_raw              = data.get("pk_km", "").strip()
+        service_date_raw       = data.get("service_date", "").strip()
+        service_time_raw_nyf   = data.get("service_time", "").strip()
+        # Auto-detect night/holiday. Fallback to manual checkbox if no date/time.
+        # Detección automática nocturno/festivo. Fallback al checkbox si no hay fecha/hora.
+        is_night = is_night_manual
+        if service_date_raw and service_time_raw_nyf:
+            try:
+                import datetime as _dt_nyf
+                _svc_date = _dt_nyf.date.fromisoformat(service_date_raw)
+                _svc_time = _dt_nyf.time.fromisoformat(service_time_raw_nyf)
+                _company  = _get_company_user(request).company
+                _ns       = _company.night_start
+                _ne       = _company.night_end
+                # Night interval may cross midnight (e.g. 22:00-06:00).
+                # El intervalo nocturno puede cruzar la medianoche.
+                if _ns <= _ne:
+                    _is_night_hour = _ns <= _svc_time <= _ne
+                else:
+                    _is_night_hour = _svc_time >= _ns or _svc_time <= _ne
+                _is_holiday_day = _is_holiday(_svc_date, None)
+                try:
+                    _base_obj = Base.objects.get(
+                        pk=int(data.get("base_id", 0)),
+                        company=_company,
+                    )
+                    _is_holiday_day = _is_holiday(_svc_date, _base_obj)
+                except (Base.DoesNotExist, ValueError, TypeError):
+                    pass
+                is_night = _is_night_hour or _is_holiday_day
+            except (ValueError, AttributeError):
+                is_night = is_night_manual
         route_distance_km_raw  = data.get("route_distance_km", "").strip()
         route_toll_cost_raw    = data.get("route_toll_cost", "").strip()
         route_calculation_mode = data.get("route_calculation_mode", "MANUAL").strip()
@@ -428,6 +460,7 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             extra_notes=data.get("extra_notes", "").strip(),
             apply_iva=data.get("apply_iva") == "1",
             road_name=road_name,
+            dest_location=dest_location,
             pk_km=_Dec(pk_km_raw.replace(",", ".")) if pk_km_raw else None,
             route_distance_km=route_distance_km,
             route_toll_cost=route_toll_cost,
@@ -519,6 +552,7 @@ class BudgetRouteCalcView(AssistanceRequiredMixin, View):
 
         base_id          = data.get("base_id", "").strip()
         road_name        = data.get("road_name", "").strip()
+        dest_location    = data.get("dest_location", "").strip()
         pk_km_raw        = data.get("pk_km", "").strip()
         service_date_str = data.get("service_date", "").strip()
         service_time_str = data.get("service_time", "").strip()
@@ -551,7 +585,7 @@ class BudgetRouteCalcView(AssistanceRequiredMixin, View):
 
         from budgets.services import calculate_route, RouteCalculationError
         try:
-            result = calculate_route(base, road_name, pk_km, service_datetime)
+            result = calculate_route(base, road_name, pk_km, service_datetime, dest_location=dest_location)
         except RouteCalculationError as exc:
             return render(request, self.template_name, {
                 "error": str(exc),
@@ -780,12 +814,44 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
             except Base.DoesNotExist:
                 pass
 
+        # Determine whether the operator has provided a service time (step 2b).
+        # Used by the template for step 6 badge and pre-check logic.
+        # Determinar si el operario ha introducido la hora del servicio (paso 2b).
+        # El template lo usa para el badge y el pre-marcado del paso 6.
+        service_time_str  = request.GET.get("service_time", "").strip()
+        service_date_str  = request.GET.get("service_date", "").strip()
+        is_night_auto     = False
+        if service_time_str and service_date_str:
+            try:
+                import datetime as _dt_steps
+                _svc_date  = _dt_steps.date.fromisoformat(service_date_str)
+                _svc_time  = _dt_steps.time.fromisoformat(service_time_str)
+                _company   = company_user.company
+                _ns        = _company.night_start
+                _ne        = _company.night_end
+                if _ns <= _ne:
+                    _is_night_hour = _ns <= _svc_time <= _ne
+                else:
+                    _is_night_hour = _svc_time >= _ns or _svc_time <= _ne
+                _is_hol = _is_holiday(_svc_date, None)
+                if base_id:
+                    try:
+                        _b = Base.objects.get(pk=int(base_id), company=_company)
+                        _is_hol = _is_holiday(_svc_date, _b)
+                    except (Base.DoesNotExist, ValueError, TypeError):
+                        pass
+                is_night_auto = _is_night_hour or _is_hol
+            except (ValueError, AttributeError):
+                pass
+
         return render(request, self.template_name, {
-            "concepts":         concepts,
+            "concepts":          concepts,
             "has_loaded_surcharge": has_loaded,
-            "loaded_percent":   loaded_percent,
-            "always_apply_iva": always_apply_iva,
-            "base_has_coords":  base_has_coords,
+            "loaded_percent":    loaded_percent,
+            "always_apply_iva":  always_apply_iva,
+            "base_has_coords":   base_has_coords,
+            "has_service_time":  bool(service_time_str),
+            "is_night_auto":     is_night_auto,
         })
 
 
@@ -2102,56 +2168,57 @@ class BaseCreateView(AdminRoleRequiredMixin, View):
 class BaseUpdateView(AdminRoleRequiredMixin, View):
     """
     Updates an existing Base record.
-    GET returns the edit form fragment. POST saves and returns the updated row.
+    GET renders a dedicated edit page with Google Maps geolocation.
+    POST saves the form and redirects back to the global base list.
     ---
     Actualiza un registro Base existente.
-    GET devuelve el fragmento de formulario de edicion. POST guarda y devuelve la fila actualizada.
+    GET renderiza una pagina de edicion dedicada con geolocalizacion Google Maps.
+    POST guarda el formulario y redirige al listado global de bases.
     """
+
+    template_name = "budgets/base_edit_page.html"
 
     def get(self, request, pk):
         """
-        Return the edit form fragment for the given base pk.
+        Render the dedicated edit page for the given base pk.
         ---
-        Devuelve el fragmento de formulario de edicion para el pk de base dado.
+        Renderiza la pagina de edicion dedicada para el pk de base dado.
         """
         company_user = _get_company_user(request)
         base = get_object_or_404(Base, pk=pk, company=company_user.company)
         form = BaseForm(instance=base)
-        return render(
-            request,
-            "budgets/partials/base_edit_fragment.html",
-            {
-                "base": base,
-                "base_form": form,
-                "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
-            },
-        )
+        ctx = _build_base_context(request, {
+            "base": base,
+            "base_form": form,
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "active_nav": "budgets_bases",
+        })
+        return render(request, self.template_name, ctx)
 
     def post(self, request, pk):
         """
-        Save the updated base and return the updated row fragment.
+        Save the updated base and redirect to the global base list.
         ---
-        Guarda la base actualizada y devuelve el fragmento de fila actualizado.
+        Guarda la base actualizada y redirige al listado global de bases.
         """
         company_user = _get_company_user(request)
         base = get_object_or_404(Base, pk=pk, company=company_user.company)
         form = BaseForm(request.POST, instance=base)
         if form.is_valid():
             form.save()
-            return render(
+            from django.contrib import messages as _msg
+            _msg.success(
                 request,
-                "budgets/partials/base_row_fragment.html",
-                {"base": base},
+                f"Base '{base.name}' actualizada correctamente."
             )
-        return render(
-            request,
-            "budgets/partials/base_edit_fragment.html",
-            {
-                "base": base,
-                "base_form": form,
-                "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
-            },
-        )
+            return redirect("budgets:base_global")
+        ctx = _build_base_context(request, {
+            "base": base,
+            "base_form": form,
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "active_nav": "budgets_bases",
+        })
+        return render(request, self.template_name, ctx)
 
 
 class BaseToggleView(AdminRoleRequiredMixin, View):
@@ -2712,6 +2779,144 @@ class BudgetExportWordView(AdminRoleRequiredMixin, View):
 # Vista global de bases — listado completo de bases de empresa con filtro por
 # aseguradora. Solo ADMIN.
 # ---------------------------------------------------------------------------
+
+
+class BaseClearCoordsView(AdminRoleRequiredMixin, View):
+    """
+    HTMX POST endpoint. Receives a list of base PKs and sets their
+    latitude and longitude to null. Returns an HTML fragment with
+    the result summary suitable for HTMX swap.
+    ---
+    Endpoint POST HTMX. Recibe una lista de PKs de bases y pone su
+    latitud y longitud a null. Devuelve un fragmento HTML con el
+    resumen del resultado para el swap HTMX.
+    """
+
+    def post(self, request):
+        """
+        Clear coordinates for the given base PKs.
+        ---
+        Limpia las coordenadas de las bases con los PKs indicados.
+        """
+        company_user = _get_company_user(request)
+        company      = company_user.company
+
+        # Parse PKs from POST — sent as repeated 'base_pks' values.
+        # Parsear PKs del POST — enviados como valores repetidos 'base_pks'.
+        raw_pks = request.POST.getlist("base_pks")
+        try:
+            pks = [int(pk) for pk in raw_pks if pk.strip().isdigit()]
+        except (ValueError, AttributeError):
+            pks = []
+
+        if not pks:
+            from django.http import HttpResponse as _HR
+            return _HR(
+                '<div class="alert alert-warning py-2 small mb-2">'
+                '<i class="bi bi-exclamation-triangle me-1"></i>'
+                'No se han seleccionado bases.'
+                '</div>'
+            )
+
+        # Only allow clearing bases that belong to this company.
+        # Solo permitir limpiar bases que pertenecen a esta empresa.
+        updated = Base.objects.filter(
+            pk__in=pks,
+            company=company,
+        ).update(latitude=None, longitude=None)
+
+        from django.http import HttpResponse as _HR
+        return _HR(
+            f'<div class="alert alert-success alert-dismissible fade show py-2 small mb-2" role="alert">'
+            f'<i class="bi bi-check2-circle me-1"></i>'
+            f'<strong>Coordenadas limpiadas en {updated} base(s).</strong> '
+            f'Recarga la página para ver los cambios reflejados en la tabla.'
+            f'<button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>'
+            f'</div>'
+        )
+
+
+class BaseSyncCalendarsView(AdminRoleRequiredMixin, View):
+    """
+    HTMX POST endpoint. Syncs the labour calendars of all active company
+    bases via the calendariosnacionales.com public API. Returns an inline
+    HTML fragment with the sync results (ok count, error details).
+    Reuses _fetch_holidays() and MUNICIPALITY_MAP from the management command.
+    ---
+    Endpoint POST HTMX. Sincroniza los calendarios laborales de todas las
+    bases activas de la empresa via la API publica de calendariosnacionales.com.
+    Devuelve un fragmento HTML inline con los resultados de la sincronizacion.
+    Reutiliza _fetch_holidays() del management command sync_base_calendars.
+    """
+
+    def post(self, request):
+        """
+        Sync labour calendars for all active company bases.
+        Returns an HTML fragment suitable for HTMX swap.
+        ---
+        Sincroniza los calendarios laborales de todas las bases activas.
+        Devuelve un fragmento HTML para el swap HTMX en base_global.
+        """
+        import json as _json
+        import datetime as _dt
+        from django.utils import timezone as _tz
+        from budgets.management.commands.sync_base_calendars import _fetch_holidays
+
+        company_user = _get_company_user(request)
+        company      = company_user.company
+
+        # Target year: next year if Q4, otherwise current year.
+        # Año objetivo: siguiente si Q4, si no el actual.
+        today = _dt.date.today()
+        year  = today.year + 1 if today.month >= 10 else today.year
+
+        bases         = list(Base.objects.filter(company=company, is_active=True))
+        ok_results    = []
+        error_results = []
+
+        for base in bases:
+            try:
+                holidays = _fetch_holidays(base.municipality, year)
+                base.labor_calendar     = _json.dumps(holidays, ensure_ascii=False)
+                base.calendar_synced_at = _tz.now()
+                base.save(update_fields=["labor_calendar", "calendar_synced_at"])
+                ok_results.append({"name": base.name, "count": len(holidays), "year": year})
+            except KeyError as exc:
+                error_results.append({"name": base.name, "error": str(exc)})
+            except Exception as exc:
+                error_results.append({"name": base.name, "error": f"Error inesperado: {exc}"})
+
+        html_parts = []
+        if ok_results:
+            html_parts.append(
+                '<div class="alert alert-success alert-dismissible fade show py-2 small mb-2" role="alert">'
+                f'<i class="bi bi-check2-circle me-1"></i>'
+                f'<strong>{len(ok_results)} base(s) sincronizada(s)</strong> para {year}:'
+                '<ul class="mb-0 mt-1">'
+            )
+            for r in ok_results:
+                html_parts.append(f'<li>{r["name"]} &mdash; {r["count"]} festivos</li>')
+            html_parts.append('</ul><button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button></div>')
+        if error_results:
+            html_parts.append(
+                '<div class="alert alert-warning alert-dismissible fade show py-2 small mb-2" role="alert">'
+                f'<i class="bi bi-exclamation-triangle me-1"></i>'
+                f'<strong>{len(error_results)} base(s) con error:</strong>'
+                '<ul class="mb-0 mt-1">'
+            )
+            for r in error_results:
+                html_parts.append(f'<li>{r["name"]}: {r["error"]}</li>')
+            html_parts.append('</ul><button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button></div>')
+        if not ok_results and not error_results:
+            html_parts.append(
+                '<div class="alert alert-info py-2 small mb-2">'
+                '<i class="bi bi-info-circle me-1"></i>'
+                'No hay bases activas para sincronizar.'
+                '</div>'
+            )
+
+        from django.http import HttpResponse as _HR
+        return _HR("".join(html_parts))
 
 
 class BaseGlobalView(AdminRoleRequiredMixin, View):

@@ -219,7 +219,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Motor de cálculo basado en datos de entrada del operario y facturas de referencia.
 - Generación de documento de presupuesto exportable.
 
-### Hito 17: Albaranes y Órdenes de Trabajo ASISTENCIA (PENDIENTE)
+### Hito 17: Albaranes y Órdenes de Trabajo ASISTENCIA (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`)
 - Generación de órdenes de trabajo desde presupuesto aceptado o entrada directa.
 - Albarán digital prellenado enviado al operario vía notificación WhatsApp.
@@ -228,7 +228,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Modo offline PWA con sincronización automática al recuperar cobertura.
 - Albarán cerrado exportable para revisión y facturación.
 
-### Hito 18: Gestión de Mapas y Geolocalización (EN PROGRESO)
+### Hito 18: Gestión de Mapas y Geolocalización (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V18.md`)
 - Geocodificación de bases desde el panel: Leaflet.js + Nominatim, pin draggable.
 - Coordenadas persistidas en Base.latitude/longitude.

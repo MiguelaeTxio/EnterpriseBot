@@ -1,6 +1,7 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/base_edit_fragment.html #}
 {# HTMX fragment — inline edit form for a base row with Google Maps geolocation.                         #}
 {# Fragmento HTMX — formulario de edicion inline con geolocalizacion Google Maps.                        #}
+{% load l10n %}
 
 <tr id="base-row-{{ base.pk }}">
   <td colspan="6">
@@ -51,7 +52,7 @@
           hx-target="#base-row-{{ base.pk }}"
           hx-swap="outerHTML"
           title="Cancelar"
-          onclick="location.reload();"
+          onclick="if(window.cerrarEditorBase){cerrarEditorBase();}"
         >
           <i class="bi bi-x"></i>
         </button>
@@ -142,8 +143,8 @@
 
       // Initial coordinates — existing base coords or Andalusia centroid.
       // Coordenadas iniciales — coords existentes o centroide de Andalucía.
-      var INIT_LAT  = {{ base.latitude|default:"37.3891" }};
-      var INIT_LNG  = {{ base.longitude|default:"-5.9845" }};
+      var INIT_LAT  = {{ base.latitude|default:"37.3891"|unlocalize }};
+      var INIT_LNG  = {{ base.longitude|default:"-5.9845"|unlocalize }};
       var HAS_COORDS = {{ base.latitude|yesno:"true,false" }};
       var MAPS_API_KEY = "{{ google_maps_api_key }}";
 
@@ -156,51 +157,8 @@
       document.getElementById(MAP_DIV_ID).appendChild(sentinel);
 
       // ----------------------------------------------------------------
-      // Official inline bootstrap loader — makes importLibrary available
-      // immediately without waiting for the full API script to load.
-      // Bootstrap loader oficial inline — hace importLibrary disponible
-      // inmediatamente sin esperar a que cargue el script completo.
-      // ----------------------------------------------------------------
-      (function (g) {
-        var h, a, k,
-            p = "The Google Maps JavaScript API",
-            c = "google",
-            l = "importLibrary",
-            q = "__ib__",
-            m = document,
-            b = window;
-        b = b[c] || (b[c] = {});
-        var d = b.maps || (b.maps = {}),
-            r = new Set(),
-            e = new URLSearchParams(),
-            u = function () {
-              return h || (h = new Promise(function (f, n) {
-                a = m.createElement("script");
-                e.set("libraries", Array.from(r).join(","));
-                for (k in g) {
-                  e.set(
-                    k.replace(/[A-Z]/g, function (t) { return "_" + t[0].toLowerCase(); }),
-                    g[k]
-                  );
-                }
-                e.set("callback", c + ".maps." + q);
-                a.src = "https://maps." + c + "apis.com/maps/api/js?" + e.toString();
-                d[q] = f;
-                a.onerror = function () { h = n(new Error(p + " could not load.")); };
-                a.nonce = (m.querySelector("script[nonce]") || {}).nonce || "";
-                m.head.appendChild(a);
-              }));
-            };
-        d[l]
-          ? console.warn(p + " only loads once. Ignoring:", g)
-          : d[l] = function (f) {
-              r.add(f);
-              return u().then(function () { return d[l](f); });
-            };
-      })({ key: MAPS_API_KEY, v: "weekly" });
-
-      // ----------------------------------------------------------------
-      // initMap — called after bootstrap loader registers importLibrary.
+      // initMap — called after bootstrap loader registers importLibrary
+      // or directly if Google Maps is already loaded in the page.
       // Uses classic google.maps.Marker (no mapId required — always
       // renders the red pin). Map-center pattern for mobile UX:
       // fixed SVG pin at center, user moves map underneath it.
@@ -213,8 +171,9 @@
       // En idle: sincroniza el marker clásico al centro y actualiza inputs y badge.
       // ----------------------------------------------------------------
       async function initMap() {
-        var MapsLib   = await google.maps.importLibrary("maps");
-        var PlacesLib = await google.maps.importLibrary("places");
+        var MapsLib      = await google.maps.importLibrary("maps");
+        var MarkerLib    = await google.maps.importLibrary("marker");
+        var PlacesLib    = await google.maps.importLibrary("places");
 
         var coordsBadge = document.getElementById("coords-badge-" + BASE_PK);
 
@@ -224,6 +183,7 @@
         var map = new MapsLib.Map(document.getElementById(MAP_DIV_ID), {
           center: { lat: INIT_LAT, lng: INIT_LNG },
           zoom: HAS_COORDS ? 15 : 8,
+          mapId: 'DEMO_MAP_ID',
           disableDefaultUI: false,
           zoomControl: true,
           streetViewControl: false,
@@ -236,12 +196,10 @@
         // ── Marker clásico — pin rojo, siempre visible ────────────────
         // Oculto inicialmente si no hay coords; visible en el primer idle
         // tras mover el mapa.
-        var marker = new google.maps.Marker({
-          map: map,
+        var marker = new MarkerLib.AdvancedMarkerElement({
+          map: HAS_COORDS ? map : null,
           position: { lat: INIT_LAT, lng: INIT_LNG },
-          visible: HAS_COORDS,
           title: "Ubicación seleccionada",
-          animation: google.maps.Animation.DROP,
         });
 
         // ── Helper: update inputs and badge ───────────────────────────
@@ -266,8 +224,8 @@
           var center = map.getCenter();
           var lat = center.lat();
           var lng = center.lng();
-          marker.setPosition(center);
-          if (!marker.getVisible()) { marker.setVisible(true); }
+          marker.position = center;
+          if (!marker.map) { marker.map = map; }
           updateInputsAndBadge(lat, lng);
         });
 
@@ -305,9 +263,54 @@
         });
       }
 
-      // Launch.
-      // Lanzar.
-      initMap();
+      // Launch — if Google Maps is already loaded, call initMap directly.
+      // If not, register the bootstrap loader which will trigger initMap.
+      // Lanzar — si Google Maps ya está cargado, llamar initMap directamente.
+      // Si no, registrar el bootstrap loader que disparará initMap.
+      if (window.google && window.google.maps && window.google.maps.importLibrary) {
+        initMap();
+      } else {
+        // Bootstrap loader only runs on first load.
+        // El bootstrap loader solo se ejecuta en la primera carga.
+        (function (g) {
+          var h, a, k,
+              p = "The Google Maps JavaScript API",
+              c = "google",
+              l = "importLibrary",
+              q = "__ib__",
+              m = document,
+              b = window;
+          b = b[c] || (b[c] = {});
+          var d = b.maps || (b.maps = {}),
+              r = new Set(),
+              e = new URLSearchParams(),
+              u = function () {
+                return h || (h = new Promise(function (f, n) {
+                  a = m.createElement("script");
+                  e.set("libraries", Array.from(r).join(","));
+                  for (k in g) {
+                    e.set(
+                      k.replace(/[A-Z]/g, function (t) { return "_" + t[0].toLowerCase(); }),
+                      g[k]
+                    );
+                  }
+                  e.set("callback", c + ".maps." + q);
+                  a.src = "https://maps." + c + "apis.com/maps/api/js?" + e.toString();
+                  d[q] = f;
+                  a.onerror = function () { h = n(new Error(p + " could not load.")); };
+                  a.nonce = (m.querySelector("script[nonce]") || {}).nonce || "";
+                  m.head.appendChild(a);
+                }));
+              };
+          d[l]
+            ? console.warn(p + " only loads once. Ignoring:", g)
+            : d[l] = function (f) {
+                r.add(f);
+                return u().then(function () { return d[l](f); });
+              };
+        })({ key: MAPS_API_KEY, v: "weekly" });
+        initMap();
+      }
 
     })();
     </script>

@@ -150,7 +150,16 @@
           >
         </div>
         <div class="col-12 col-md-6">
-          <label class="form-label small">Punto kilómétrico</label>
+          <label class="form-label small">Municipio / provincia del destino <span class="text-muted">(opcional)</span></label>
+          <input
+            type="text"
+            class="form-control"
+            id="id_dest_location_calc"
+            placeholder="Ej: Lucena, Córdoba"
+          >
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label small">Punto kilométrico</label>
           <input
             type="number"
             class="form-control"
@@ -175,6 +184,7 @@
       <div id="route-result-section" class="mt-2"></div>
       <input type="hidden" name="road_name"              id="id_road_name"              value="">
       <input type="hidden" name="pk_km"                  id="id_pk_km"                  value="">
+      <input type="hidden" name="dest_location"          id="id_dest_location"          value="">
       <input type="hidden" name="route_distance_km"      id="id_route_distance_km"      value="">
       <input type="hidden" name="route_toll_cost"        id="id_route_toll_cost"        value="">
       <input type="hidden" name="route_calculation_mode" id="id_route_calculation_mode" value="MANUAL">
@@ -204,24 +214,40 @@
   </div>
 </div>
 
-{# ── PASO 6: Nocturno ───────────────────────────────────────────────────────── #}
+{# ── PASO 6: Nocturno/Festivo ───────────────────────────────────────────────── #}
+{# El checkbox es siempre visible y editable por el operario.                  #}
+{# Cuando hay fecha+hora en el paso 2b, se pre-marca segun calculo automatico  #}
+{# y se muestra un badge informativo. El operario puede sobreescribirlo.        #}
 <div class="card mb-3" id="step-nyf">
   <div class="card-body">
-    <div class="form-check form-switch">
-      <input
-        class="form-check-input"
-        type="checkbox"
-        name="is_night"
-        id="id_is_night"
-        value="1"
-      >
-      <label class="form-check-label fw-semibold" for="id_is_night">
-        6. ¿Servicio nocturno?
-      </label>
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <div class="form-check form-switch mb-0">
+        <input
+          class="form-check-input"
+          type="checkbox"
+          name="is_night"
+          id="id_is_night"
+          value="1"
+          {% if is_night_auto %}checked{% endif %}
+        >
+        <label class="form-check-label fw-semibold" for="id_is_night">
+          6. ¿Servicio nocturno / festivo?
+        </label>
+      </div>
+      {% if has_service_time %}
+      <span class="badge bg-primary-subtle text-primary border border-primary-subtle small">
+        <i class="bi bi-magic me-1"></i>Auto
+      </span>
+      {% endif %}
     </div>
-    <div class="form-text text-muted mt-1">
-      Los festivos se detectan automaticamente segun la fecha del servicio
-      y el calendario laboral de la base seleccionada.
+    <div class="form-text text-muted">
+      {% if has_service_time %}
+        Pre-marcado automáticamente según la hora y el calendario de la base.
+        Puedes modificarlo si es necesario.
+      {% else %}
+        Introduce la hora en el paso 2b para la detección automática.
+        Los festivos del calendario de la base siempre se aplican automáticamente.
+      {% endif %}
     </div>
   </div>
 </div>

@@ -282,6 +282,26 @@ urlpatterns = [
         name="base_global",
     ),
 
+    # Base sync calendars — HTMX POST, sincroniza calendarios laborales de todas
+    # las bases activas de la empresa via calendariosnacionales.com. Solo ADMIN.
+    # Base sync calendars — HTMX POST, syncs labour calendars for all active
+    # company bases via calendariosnacionales.com. ADMIN only.
+    path(
+        "bases/sync-calendars/",
+        views.BaseSyncCalendarsView.as_view(),
+        name="base_sync_calendars",
+    ),
+
+    # Base clear coords — HTMX POST, limpia coordenadas de las bases seleccionadas.
+    # Recibe lista de PKs via POST. Pone latitude/longitude a null. Solo ADMIN.
+    # Base clear coords — HTMX POST, clears coordinates of selected bases.
+    # Receives list of PKs via POST. Sets latitude/longitude to null. ADMIN only.
+    path(
+        "bases/clear-coords/",
+        views.BaseClearCoordsView.as_view(),
+        name="base_clear_coords",
+    ),
+
     # ---------------------------------------------------------------------------
     # Export routes — Insurer tariff and budget history exports
     # Rutas de exportacion — tarifas de aseguradora e historial de presupuestos

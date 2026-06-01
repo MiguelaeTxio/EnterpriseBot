@@ -580,6 +580,19 @@ class Budget(models.Model):
         verbose_name="Carretera",
         help_text="Nombre de la via donde se encuentra el vehiculo (ej: A-45, N-331).",
     )
+    # Municipality or province of the destination, used to refine geocoding.
+    # Municipio o provincia del destino, usado para refinar la geocodificacion.
+    dest_location = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        verbose_name="Municipio / provincia destino",
+        help_text=(
+            "Municipio o provincia donde se encuentra el vehiculo averiado. "
+            "Opcional. Se usa para refinar la geocodificacion del punto kilometrico "
+            "en la llamada a la Routes API de Google."
+        ),
+    )
     # Kilometre marker on the road where the vehicle is located.
     # Punto kilometrico de la via donde se encuentra el vehiculo.
     pk_km = models.DecimalField(

@@ -187,6 +187,7 @@ def calculate_route(
     road_name: str,
     pk_km: Decimal,
     service_datetime: datetime.datetime,
+    dest_location: str = "",
 ) -> dict:
     """
     Calculate the route from a service base to a kilometre marker on a road
@@ -257,8 +258,15 @@ def calculate_route(
 
     # ── Step 2: geocode the kilometre marker on the road ─────────────────
     # Paso 2: geocodificar el punto kilometrico en la carretera.
+    import re as _re
+    _road = road_name.strip().upper()
+    _road = _re.sub(r'\s+', ' ', _road)
+    _road = _re.sub(r'^([A-Z]+)-?([0-9])', r'\1-\2', _road)
     pk_int = int(pk_km)
-    dest_query_str = f"{_road}, {pk_int}, España"
+    if dest_location:
+        dest_query_str = f"{_road}, PK {pk_int}, {dest_location}, España"
+    else:
+        dest_query_str = f"{_road}, {pk_int}, España"
     geocode_dest_query = urllib.parse.urlencode({
         "address": dest_query_str,
         "key": api_key,
@@ -347,10 +355,6 @@ def calculate_route(
             f"Respuesta completa: {str(routes_data)[:300]}"
         )
     route = routes[0]
-    # DEBUG — log raw route data to SWAP.
-    import json as _json_debug
-    with open('/home/MiguelAeTxio/SWAP/debug_route.json', 'w') as _dbf:
-        _json_debug.dump({'routes_data': routes_data, 'origin': [origin_lat, origin_lng], 'dest': [dest_lat, dest_lng], 'query': dest_query_str}, _dbf, indent=2)
 
     distance_meters = route.get("distanceMeters", 0)
     distance_km = _round2(Decimal(str(distance_meters)) / Decimal("1000"))
@@ -381,7 +385,7 @@ def calculate_route(
         pass
 
     return {
-        "distance_km": distance_km,
+        "distance_km": _round2(distance_km * 2),
         "toll_cost":   _round2(toll_cost),
         "has_tolls":   has_tolls,
         "mode":        "API",
