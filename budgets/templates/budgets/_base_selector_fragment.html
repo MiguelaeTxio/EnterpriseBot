@@ -1,24 +1,44 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_base_selector_fragment.html #}
-{# HTMX fragment — base selector for the budget wizard.                                              #}
-{# Rendered by BudgetBasesView after insurer selection in step 1.                                    #}
-{# If the insurer has 1 active base: hidden input (auto-assigned).                                   #}
-{# If the insurer has >1 active bases: visible dropdown.                                             #}
-{# If the insurer has 0 active bases: empty fragment (no base field rendered).                       #}
-{# Fragmento HTMX — selector de base para el wizard de presupuestos.                                 #}
-{# Renderizado por BudgetBasesView tras la seleccion de aseguradora en el paso 1.                    #}
-{# Si la aseguradora tiene 1 base activa: input oculto (asignacion automatica).                      #}
-{# Si tiene mas de 1: desplegable visible.                                                            #}
-{# Si no tiene ninguna: fragmento vacio (no se renderiza campo base).                                #}
+{#                                                                                                    #}
+{# HTMX fragment — base selector for the budget wizard.                                               #}
+{# Rendered by BudgetBasesView after insurer selection in step 1.                                     #}
+{# Single base: hidden input + immediate auto-trigger to vehicle-type-section.                        #}
+{# Multiple bases: visible dropdown that triggers vehicle-type-section on change.                     #}
+{# No bases: empty fragment.                                                                          #}
+{#                                                                                                    #}
+{# Fragmento HTMX — selector de base para el wizard de presupuestos.                                  #}
+{# Renderizado por BudgetBasesView tras la seleccion de aseguradora en el paso 1.                     #}
+{# Una base: input oculto + disparo automatico inmediato a vehicle-type-section.                      #}
+{# Varias bases: desplegable visible que dispara vehicle-type-section al cambiar.                     #}
+{# Sin bases: fragmento vacio.                                                                        #}
 
 {% if bases|length == 1 %}
-{# Single base — assign automatically, no user interaction needed.                  #}
-{# Una sola base — asignar automaticamente, sin interaccion del usuario necesaria.  #}
-<input type="hidden" name="base_id" value="{{ bases.0.pk }}">
+{# Single base — auto-assign and immediately trigger vehicle type loading.       #}
+{# Una sola base — asignar automaticamente y disparar carga de tipo de vehiculo. #}
+<input
+  type="hidden"
+  name="base_id"
+  id="id_base"
+  value="{{ bases.0.pk }}"
+  hx-get="{% url 'budgets:vehicle_types' %}"
+  hx-target="#vehicle-type-section"
+  hx-trigger="load"
+  hx-include="[name=insurer_id]"
+  hx-vals='{"base_id": "{{ bases.0.pk }}"}'
+>
+<div class="card mb-3">
+  <div class="card-body">
+    <p class="mb-0 small text-muted">
+      <i class="bi bi-geo-alt me-1"></i>
+      <strong>Base asignada:</strong> {{ bases.0.name }}
+    </p>
+  </div>
+</div>
 
 {% elif bases|length > 1 %}
-{# Multiple bases — show dropdown for operator selection.  #}
-{# Multiples bases — mostrar desplegable para seleccion.   #}
-<div class="card mb-3 wizard-step" id="step-base">
+{# Multiple bases — show dropdown, trigger vehicle type loading on change. #}
+{# Varias bases — desplegable visible, carga tipo de vehiculo al cambiar.  #}
+<div class="card mb-3">
   <div class="card-body">
     <label class="form-label fw-semibold" for="id_base">
       1b. Base de servicio
@@ -28,6 +48,10 @@
       name="base_id"
       id="id_base"
       required
+      hx-get="{% url 'budgets:vehicle_types' %}"
+      hx-target="#vehicle-type-section"
+      hx-trigger="change"
+      hx-include="[name=insurer_id]"
     >
       <option value="">— Selecciona una base —</option>
       {% for base in bases %}

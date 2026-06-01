@@ -1,0 +1,107 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_route_calc_fragment.html #}
+{#                                                                                                 #}
+{# HTMX fragment — resultado del calculo de ruta via Routes API.                                  #}
+{# Renderizado por BudgetRouteCalcView y swapeado en #route-result-section del wizard.            #}
+{# En caso de error muestra alerta danger. En caso de exito muestra resumen de ruta               #}
+{# (base origen, destino, distancia, peajes) y pobla los inputs ocultos del formulario.           #}
+{#                                                                                                 #}
+{# HTMX fragment — route calculation result via Routes API.                                       #}
+{# Rendered by BudgetRouteCalcView and swapped into #route-result-section in the wizard.          #}
+{# On error shows a danger alert. On success shows route summary (origin base, destination,       #}
+{# distance, tolls) and populates the hidden inputs of the main form.                             #}
+
+{% if error %}
+<div class="alert alert-danger py-2 small mt-2">
+  <i class="bi bi-exclamation-circle me-1"></i>{{ error }}
+</div>
+{% else %}
+<div class="card border-success mt-2">
+  <div class="card-body py-2 px-3">
+    <div class="d-flex align-items-center mb-2">
+      <i class="bi bi-signpost-2 text-success me-2 fs-5"></i>
+      <span class="fw-semibold text-success">Ruta calculada correctamente</span>
+    </div>
+    <div class="row g-2 small">
+      <div class="col-6">
+        <span class="text-muted">Origen (base):</span><br>
+        <strong>{{ base_name }}</strong>
+      </div>
+      <div class="col-6">
+        <span class="text-muted">Destino:</span><br>
+        <strong>{{ road_name }} — PK {{ pk_km }}</strong>
+      </div>
+      <div class="col-6">
+        <span class="text-muted">Distancia calculada:</span><br>
+        <strong>{{ distance_km }} km</strong>
+        <div class="form-text text-muted">
+          Se usará como km ida y vuelta (4a).
+        </div>
+      </div>
+      <div class="col-6">
+        <span class="text-muted">Peajes:</span><br>
+        {% if toll_cost %}
+        {# Toll cost known — show editable field. #}
+        {# Coste de peaje conocido — mostrar campo editable. #}
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">€</span>
+          <input
+            type="number"
+            class="form-control form-control-sm"
+            id="id_route_toll_cost_display"
+            value="{{ toll_cost }}"
+            step="0.01"
+            onchange="document.getElementById('id_route_toll_cost').value = this.value"
+          >
+        </div>
+        <div class="form-text text-muted small">
+          Editable si el importe real difiere.
+        </div>
+        {% elif has_tolls %}
+        {# Route has tolls but cost unknown for Spain — show editable field at 0. #}
+        {# La ruta tiene peajes pero el coste no esta disponible para Espana.    #}
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">€</span>
+          <input
+            type="number"
+            class="form-control form-control-sm"
+            id="id_route_toll_cost_display"
+            value="0"
+            step="0.01"
+            onchange="document.getElementById('id_route_toll_cost').value = this.value"
+          >
+        </div>
+        <div class="form-text text-warning small">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          Ruta con peajes. Introduce el importe manualmente.
+        </div>
+        {% else %}
+        {# No tolls on this route. #}
+        {# La ruta no tiene peajes. #}
+        <strong class="text-success">Sin peajes</strong>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// Populate hidden form inputs from the route calculation result.
+// Pobla los inputs ocultos del formulario con el resultado del calculo de ruta.
+(function () {
+  var distKm   = "{{ distance_km }}";
+  var tollCost = "{{ toll_cost }}";
+  var roadName = "{{ road_name }}";
+  var pkKm     = "{{ pk_km }}";
+  var fields = {
+    'id_route_distance_km':      distKm,
+    'id_route_toll_cost':        tollCost,
+    'id_route_calculation_mode': 'API',
+    'id_road_name':              roadName,
+    'id_pk_km':                  String(pkKm),
+  };
+  Object.keys(fields).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.value = fields[id];
+  });
+})();
+</script>
+{% endif %}

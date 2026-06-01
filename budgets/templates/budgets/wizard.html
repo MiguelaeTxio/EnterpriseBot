@@ -1,13 +1,20 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/wizard.html #}
-{#                                                                                  #}
-{# Budget wizard — formulario secuencial guiado paso a paso para el operario       #}
-{# ASSISTANCE. Cada paso se activa cuando el anterior esta completo.               #}
-{# HTMX carga dinamicamente los tipos de vehiculo y los conceptos opcionales.      #}
-{#                                                                                  #}
-{# Budget wizard — sequential step-by-step form for the ASSISTANCE operator.       #}
-{# Each step activates when the previous one is complete.                          #}
-{# HTMX dynamically loads vehicle types and optional concepts.                    #}
+{#                                                                                   #}
+{# Budget wizard — formulario secuencial guiado paso a paso para el operario        #}
+{# ASSISTANCE. Cada paso se carga via HTMX encadenado al completar el anterior.     #}
+{# Paso 1 (aseguradora) es estatico. Los pasos siguientes se inyectan via HTMX:     #}
+{#   1b (base) <- BudgetBasesView                                                    #}
+{#   2 (vehiculo) <- BudgetVehicleTypesView                                          #}
+{#   3-9 + submit <- BudgetStepsView                                                 #}
+{#                                                                                   #}
+{# Budget wizard — sequential step-by-step form for the ASSISTANCE operator.        #}
+{# Each step loads via chained HTMX after the previous one is completed.            #}
+{# Step 1 (insurer) is static. Subsequent steps are injected via HTMX:              #}
+{#   1b (base) <- BudgetBasesView                                                    #}
+{#   2 (vehicle) <- BudgetVehicleTypesView                                           #}
+{#   3-9 + submit <- BudgetStepsView                                                 #}
 {% extends "panel/base.html" %}
+{% load static %}
 
 {% block title %}Nuevo presupuesto{% endblock %}
 
@@ -20,14 +27,27 @@
         <i class="bi bi-calculator me-2"></i>Nuevo presupuesto
       </h4>
 
-      <form method="post" action="{% url 'budgets:wizard' %}" id="budget-form">
+      {% if messages %}
+      {% for message in messages %}
+      <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+        <i class="bi bi-exclamation-circle me-2"></i>{{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <form
+        method="post"
+        action="{% url 'budgets:wizard' %}"
+        id="budget-form"
+        data-always-iva-map="{{ always_iva_map|escape }}"
+        data-url-route-calc="{% url 'budgets:route_calc' %}"
+      >
         {% csrf_token %}
 
-        {# ── PASO 1: Aseguradora / Cliente ────────────────────────────────────── #}
-        {# Label dinámico: 'Aseguradora', 'Cliente particular' o               #}
-        {# 'Aseguradora / Cliente' según la mezcla de is_insurance_company.    #}
-        {# Cada <option> muestra el sufijo '(Particular)' cuando el flag       #}
-        {# is_insurance_company es False.                                       #}
+        {# ── PASO 1: Aseguradora / Cliente ───────────────────────────────── #}
+        {# Label dinamico segun mezcla de is_insurance_company en el queryset. #}
+        {# Sufijo '(Particular)' cuando is_insurance_company es False.         #}
         <div class="card mb-3">
           <div class="card-body">
             <label class="form-label fw-semibold">
@@ -38,10 +58,10 @@
               name="insurer_id"
               id="id_insurer"
               required
-              hx-get="{% url 'budgets:vehicle_types' %}"
-              hx-target="#vehicle-type-section"
+              hx-get="{% url 'budgets:bases' %}"
+              hx-target="#base-selector-section"
               hx-trigger="change"
-              hx-include="#id_insurer"
+              hx-include="[name=insurer_id]"
             >
               <option value="">— Selecciona —</option>
               {% for ins in insurers %}
@@ -55,189 +75,14 @@
           </div>
         </div>
 
-        {# ── PASO 1b: Base de servicio (cargado via HTMX) ───────────────── #}
-        {# Si la aseguradora tiene 1 base: input oculto automatico.          #}
-        {# Si tiene mas de 1: desplegable visible.                           #}
-        {# Si no tiene ninguna: fragmento vacio.                             #}
+        {# ── PASO 1b: Base (inyectado via HTMX por BudgetBasesView) ─────── #}
         <div id="base-selector-section"></div>
 
-        {# ── PASO 2: Tipo de vehículo (cargado via HTMX) ────────────────── #}
+        {# ── PASO 2: Tipo de vehiculo (inyectado via HTMX) ───────────────── #}
         <div id="vehicle-type-section"></div>
 
-        {# ── PASO 3: Pernocta ───────────────────────────────────────────── #}
-        <div class="card mb-3 wizard-step d-none" id="step-overnight">
-          <div class="card-body">
-            <label class="form-label fw-semibold">
-              3. ¿Es servicio de pernocta?
-            </label>
-            <div class="d-flex gap-3">
-              <div class="form-check">
-                <input
-                  class="form-check-input"
-                  type="radio"
-                  name="is_overnight"
-                  id="overnight-no"
-                  value="0"
-                  checked
-                  onchange="toggleOvernightFields(false)"
-                >
-                <label class="form-check-label" for="overnight-no">No</label>
-              </div>
-              <div class="form-check">
-                <input
-                  class="form-check-input"
-                  type="radio"
-                  name="is_overnight"
-                  id="overnight-yes"
-                  value="1"
-                  onchange="toggleOvernightFields(true)"
-                >
-                <label class="form-check-label" for="overnight-yes">
-                  Sí (dos fases)
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {# ── PASO 4: Kilómetros ─────────────────────────────────────────── #}
-        <div class="card mb-3 wizard-step d-none" id="step-km">
-          <div class="card-body">
-            <label class="form-label fw-semibold">
-              4. Kilómetros (ida y vuelta)
-            </label>
-            <div class="mb-2">
-              <label class="form-label small text-muted" for="id_km_phase1">
-                Fase 1
-              </label>
-              <input
-                type="number"
-                class="form-control"
-                name="km_phase1"
-                id="id_km_phase1"
-                min="0"
-                step="1"
-                placeholder="Km ida y vuelta fase 1"
-                required
-              >
-            </div>
-            <div id="km-phase2-wrapper" class="d-none">
-              <label class="form-label small text-muted" for="id_km_phase2">
-                Fase 2
-              </label>
-              <input
-                type="number"
-                class="form-control"
-                name="km_phase2"
-                id="id_km_phase2"
-                min="0"
-                step="1"
-                placeholder="Km ida y vuelta fase 2"
-              >
-            </div>
-          </div>
-        </div>
-
-        {# ── PASO 5: Desbloqueo ─────────────────────────────────────────── #}
-        <div class="card mb-3 wizard-step d-none border-warning" id="step-unlock">
-          <div class="card-body">
-            <div class="form-check form-switch">
-              <input
-                class="form-check-input"
-                type="checkbox"
-                name="has_unlock"
-                id="id_has_unlock"
-                value="1"
-              >
-              <label
-                class="form-check-label fw-semibold fs-6"
-                for="id_has_unlock"
-              >
-                5. ¿Incluye desbloqueo / enganche con eslingas?
-              </label>
-            </div>
-            <div class="form-text text-muted mt-1">
-              No marcar para remolques (se enganchan en quinta rueda sin eslingas).
-            </div>
-          </div>
-        </div>
-
-        {# ── PASO 6: Nocturno ─────────────────────────────────────────── #}
-        {# El operario marca si el servicio es nocturno (horario nocturno). #}
-        {# El festivo se detecta automaticamente por el motor segun la      #}
-        {# fecha del servicio y el calendario laboral de la base.           #}
-        <div class="card mb-3 wizard-step d-none" id="step-nyf">
-          <div class="card-body">
-            <div class="form-check form-switch">
-              <input
-                class="form-check-input"
-                type="checkbox"
-                name="is_night"
-                id="id_is_night"
-                value="1"
-              >
-              <label class="form-check-label fw-semibold" for="id_is_night">
-                6. ¿Servicio nocturno?
-              </label>
-            </div>
-            <div class="form-text text-muted mt-1">
-              Los festivos se detectan automaticamente segun la fecha del servicio
-              y el calendario laboral de la base seleccionada.
-            </div>
-          </div>
-        </div>
-
-        {# ── PASO 7: Conceptos opcionales (cargado via HTMX) ───────────── #}
-        <div id="optional-concepts-section"></div>
-
-        {# ── PASO 8: IVA ─────────────────────────────────────────────────── #}
-        <div class="card mb-3 wizard-step d-none" id="step-iva">
-          <div class="card-body">
-            <div class="form-check form-switch">
-              <input
-                class="form-check-input"
-                type="checkbox"
-                name="apply_iva"
-                id="id_apply_iva"
-                value="1"
-              >
-              <label class="form-check-label fw-semibold" for="id_apply_iva">
-                8. ¿Aplicar IVA (21%)?
-              </label>
-            </div>
-            <div class="form-text text-muted mt-1" id="iva-hint">
-              Marcar cuando la aseguradora o cliente requiera factura con IVA incluido.
-            </div>
-            <div class="form-text text-danger mt-1 d-none" id="iva-required-hint">
-              Esta aseguradora requiere IVA obligatoriamente.
-            </div>
-          </div>
-        </div>
-
-        {# ── PASO 9: Fecha del servicio ─────────────────────────────────── #}
-        <div class="card mb-3 wizard-step d-none" id="step-date">
-          <div class="card-body">
-            <label class="form-label fw-semibold" for="id_service_date">
-              Fecha del servicio
-            </label>
-            <input
-              type="date"
-              class="form-control"
-              name="service_date"
-              id="id_service_date"
-              required
-            >
-          </div>
-        </div>
-
-        {# ── BOTÓN CALCULAR ─────────────────────────────────────────────── #}
-        <div class="wizard-step d-none" id="step-submit">
-          <div class="d-grid mt-2">
-            <button type="submit" class="btn btn-primary btn-lg">
-              <i class="bi bi-calculator me-2"></i>Calcular presupuesto
-            </button>
-          </div>
-        </div>
+        {# ── PASOS 3-9 + submit (inyectados via HTMX por BudgetStepsView) ── #}
+        <div id="wizard-steps-section"></div>
 
       </form>
     </div>
@@ -246,109 +91,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
-  // Show steps sequentially as each previous step is completed.
-  // Muestra los pasos secuencialmente a medida que el anterior se completa.
-
-  function showStep(stepId) {
-    const el = document.getElementById(stepId);
-    if (el) el.classList.remove('d-none');
-  }
-
-  function toggleOvernightFields(isOvernight) {
-    const phase2 = document.getElementById('km-phase2-wrapper');
-    const km2Input = document.getElementById('id_km_phase2');
-    if (isOvernight) {
-      phase2.classList.remove('d-none');
-      if (km2Input) km2Input.required = true;
-    } else {
-      phase2.classList.add('d-none');
-      if (km2Input) {
-        km2Input.required = false;
-        km2Input.value = '';
-      }
-    }
-  }
-
-  // Load base selector when insurer changes.
-  // Carga el selector de base cuando cambia la aseguradora.
-  (function () {
-    const insurerSelect = document.getElementById('id_insurer');
-    if (insurerSelect) {
-      insurerSelect.addEventListener('change', function () {
-        const insurerId = this.value;
-        if (!insurerId) {
-          document.getElementById('base-selector-section').innerHTML = '';
-          return;
-        }
-        htmx.ajax('GET', '{% url "budgets:bases" %}', {
-          target: '#base-selector-section',
-          swap: 'innerHTML',
-          values: {insurer_id: insurerId}
-        });
-      });
-    }
-  })();
-
-  // Activate steps 3-8 and submit once vehicle type is selected.
-  // Activa los pasos 3-8 y el boton submit cuando se selecciona tipo de vehiculo.
-  document.addEventListener('htmx:afterSwap', function (evt) {
-    if (evt.detail.target.id === 'vehicle-type-section') {
-      const stepsToShow = [
-        'step-overnight', 'step-km', 'step-unlock',
-        'step-nyf', 'step-iva', 'step-date', 'step-submit'
-      ];
-      stepsToShow.forEach(showStep);
-
-      // Trigger optional concepts load once vehicle type is set.
-      // Dispara la carga de conceptos opcionales al cambiar tipo de vehiculo.
-      const vtSelect = document.getElementById('id_vehicle_type');
-      if (vtSelect) {
-        vtSelect.addEventListener('change', function () {
-          const insurerId = document.getElementById('id_insurer').value;
-          const vtId = this.value;
-          if (!insurerId || !vtId) return;
-          htmx.ajax('GET', '{% url "budgets:optional_concepts" %}', {
-            target: '#optional-concepts-section',
-            values: {insurer_id: insurerId, vehicle_type_id: vtId}
-          });
-        });
-      }
-    }
-  });
-
-  // always_apply_iva logic
-  // When the selected insurer requires IVA always, auto-check and
-  // disable the IVA checkbox so the operator cannot uncheck it.
-  // Logica always_apply_iva
-  // Cuando la aseguradora seleccionada requiere IVA siempre, marcar
-  // y deshabilitar el checkbox de IVA para que el operario no pueda desmarcarlo.
-  (function () {
-    const alwaysIvaMap = {{ always_iva_map|safe }};
-    const insurerSelect = document.getElementById('id_insurer');
-    const ivaCheckbox   = document.getElementById('id_apply_iva');
-    const ivaHint       = document.getElementById('iva-hint');
-    const ivaRequired   = document.getElementById('iva-required-hint');
-
-    function updateIvaState() {
-      const pk = insurerSelect ? insurerSelect.value : '';
-      const required = pk && alwaysIvaMap[pk] === true;
-      if (required) {
-        ivaCheckbox.checked  = true;
-        ivaCheckbox.disabled = true;
-        ivaHint.classList.add('d-none');
-        ivaRequired.classList.remove('d-none');
-      } else {
-        ivaCheckbox.disabled = false;
-        ivaHint.classList.remove('d-none');
-        ivaRequired.classList.add('d-none');
-      }
-    }
-
-    if (insurerSelect) {
-      insurerSelect.addEventListener('change', updateIvaState);
-      updateIvaState();
-    }
-  })();
-</script>
+<script src="{% static 'panel/js/wizard.js' %}"></script>
 {% endblock %}

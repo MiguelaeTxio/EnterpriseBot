@@ -1,0 +1,308 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_wizard_steps_fragment.html #}
+{#                                                                                                   #}
+{# HTMX fragment — wizard steps 2b to 8 + optional concepts + submit button.                        #}
+{# Rendered by BudgetStepsView after vehicle type selection.                                         #}
+{# step-route (4b) is included only when the selected base has coordinates.                          #}
+{# Service date and time are asked in step 2b (before overnight/km) so that                         #}
+{# route calculation (Modo B) can use them to build a valid future departureTime.                    #}
+{#                                                                                                   #}
+{# Fragmento HTMX — pasos 2b a 8 del wizard + conceptos opcionales + boton de envio.                #}
+{# Renderizado por BudgetStepsView tras la seleccion de tipo de vehiculo.                            #}
+{# step-route (4b) se incluye solo cuando la base seleccionada tiene coordenadas.                    #}
+{# Fecha y hora del servicio se piden en el paso 2b (antes de pernocta/km) para que                  #}
+{# el calculo de ruta (Modo B) pueda construir un departureTime valido y futuro.                     #}
+
+{# ── PASO 2b: Fecha y hora del servicio ────────────────────────────────────── #}
+<div class="card mb-3" id="step-date">
+  <div class="card-body">
+    <label class="form-label fw-semibold">
+      2b. Fecha y hora del servicio
+    </label>
+    <div class="row g-2">
+      <div class="col-12 col-md-6">
+        <label class="form-label small text-muted" for="id_service_date">
+          Fecha
+        </label>
+        <input
+          type="date"
+          class="form-control"
+          name="service_date"
+          id="id_service_date"
+          required
+        >
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label small text-muted" for="id_service_time">
+          Hora (para cálculo de ruta y peajes)
+        </label>
+        <input
+          type="time"
+          class="form-control"
+          name="service_time"
+          id="id_service_time"
+        >
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── PASO 3: Pernocta ───────────────────────────────────────────────────────── #}
+<div class="card mb-3" id="step-overnight">
+  <div class="card-body">
+    <label class="form-label fw-semibold">
+      3. ¿Es servicio de pernocta?
+    </label>
+    <div class="d-flex gap-3">
+      <div class="form-check">
+        <input
+          class="form-check-input"
+          type="radio"
+          name="is_overnight"
+          id="overnight-no"
+          value="0"
+          checked
+          onchange="toggleOvernightFields(false)"
+        >
+        <label class="form-check-label" for="overnight-no">No</label>
+      </div>
+      <div class="form-check">
+        <input
+          class="form-check-input"
+          type="radio"
+          name="is_overnight"
+          id="overnight-yes"
+          value="1"
+          onchange="toggleOvernightFields(true)"
+        >
+        <label class="form-check-label" for="overnight-yes">
+          Sí (dos fases)
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── PASO 4a: Kilómetros manuales ───────────────────────────────────────────── #}
+{# Solo obligatorio si el Modo B (calculo de ruta) no esta activo.              #}
+<div class="card mb-3" id="step-km">
+  <div class="card-body">
+    <label class="form-label fw-semibold">
+      4a. Kilómetros (ida y vuelta)
+    </label>
+    <div class="form-text text-muted mb-2">
+      Si calculas la ruta por carretera (4b), este campo es opcional.
+    </div>
+    <div class="mb-2">
+      <label class="form-label small text-muted" for="id_km_phase1">
+        Fase 1
+      </label>
+      <input
+        type="number"
+        class="form-control"
+        name="km_phase1"
+        id="id_km_phase1"
+        min="0"
+        step="1"
+        placeholder="Km ida y vuelta fase 1"
+      >
+    </div>
+    <div id="km-phase2-wrapper" class="d-none">
+      <label class="form-label small text-muted" for="id_km_phase2">
+        Fase 2
+      </label>
+      <input
+        type="number"
+        class="form-control"
+        name="km_phase2"
+        id="id_km_phase2"
+        min="0"
+        step="1"
+        placeholder="Km ida y vuelta fase 2"
+      >
+    </div>
+  </div>
+</div>
+
+{# ── PASO 4b: Ruta por carretera (Modo B) — solo si la base tiene coordenadas ── #}
+{% if base_has_coords %}
+<div class="card mb-3 border-info" id="step-route">
+  <div class="card-body">
+    <div class="form-check form-switch mb-3">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        id="id_use_route_calc"
+        onchange="toggleRouteCalc(this.checked)"
+      >
+      <label class="form-check-label fw-semibold" for="id_use_route_calc">
+        4b. Calcular kilómetros por carretera (opcional)
+      </label>
+    </div>
+    <div id="route-calc-fields" class="d-none">
+      <div class="row g-2 mb-2">
+        <div class="col-12 col-md-6">
+          <label class="form-label small">Carretera</label>
+          <input
+            type="text"
+            class="form-control"
+            id="id_road_name_calc"
+            placeholder="Ej: A-45, N-331"
+          >
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label small">Punto kilómétrico</label>
+          <input
+            type="number"
+            class="form-control"
+            id="id_pk_km_calc"
+            step="0.001"
+            min="0"
+            placeholder="Ej: 127.5"
+          >
+        </div>
+      </div>
+      <div class="form-text text-muted mb-2">
+        <i class="bi bi-info-circle me-1"></i>
+        Se usará la fecha y hora del paso 2b para calcular peajes.
+      </div>
+      <button
+        type="button"
+        class="btn btn-outline-info btn-sm"
+        onclick="calcularRuta()"
+      >
+        <i class="bi bi-signpost-2 me-1"></i>Calcular ruta
+      </button>
+      <div id="route-result-section" class="mt-2"></div>
+      <input type="hidden" name="road_name"              id="id_road_name"              value="">
+      <input type="hidden" name="pk_km"                  id="id_pk_km"                  value="">
+      <input type="hidden" name="route_distance_km"      id="id_route_distance_km"      value="">
+      <input type="hidden" name="route_toll_cost"        id="id_route_toll_cost"        value="">
+      <input type="hidden" name="route_calculation_mode" id="id_route_calculation_mode" value="MANUAL">
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── PASO 5: Desbloqueo ─────────────────────────────────────────────────────── #}
+<div class="card mb-3 border-warning" id="step-unlock">
+  <div class="card-body">
+    <div class="form-check form-switch">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        name="has_unlock"
+        id="id_has_unlock"
+        value="1"
+      >
+      <label class="form-check-label fw-semibold fs-6" for="id_has_unlock">
+        5. ¿Incluye desbloqueo / enganche con eslingas?
+      </label>
+    </div>
+    <div class="form-text text-muted mt-1">
+      No marcar para remolques (se enganchan en quinta rueda sin eslingas).
+    </div>
+  </div>
+</div>
+
+{# ── PASO 6: Nocturno ───────────────────────────────────────────────────────── #}
+<div class="card mb-3" id="step-nyf">
+  <div class="card-body">
+    <div class="form-check form-switch">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        name="is_night"
+        id="id_is_night"
+        value="1"
+      >
+      <label class="form-check-label fw-semibold" for="id_is_night">
+        6. ¿Servicio nocturno?
+      </label>
+    </div>
+    <div class="form-text text-muted mt-1">
+      Los festivos se detectan automaticamente segun la fecha del servicio
+      y el calendario laboral de la base seleccionada.
+    </div>
+  </div>
+</div>
+
+{# ── PASO 7: Conceptos opcionales ───────────────────────────────────────────── #}
+{% if has_loaded_surcharge %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="form-check form-switch">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        name="is_loaded"
+        id="id_is_loaded"
+        value="1"
+      >
+      <label class="form-check-label fw-semibold" for="id_is_loaded">
+        ¿Vehículo cargado? (+{{ loaded_percent }}%)
+      </label>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if concepts %}
+<div class="card mb-3">
+  <div class="card-header fw-semibold small">
+    Conceptos adicionales
+  </div>
+  <div class="card-body">
+    {% for concept in concepts %}
+    <div class="mb-3">
+      <label class="form-label small fw-semibold" for="id_{{ concept.field }}">
+        {{ concept.label }}
+      </label>
+      <input
+        type="{{ concept.input_type }}"
+        class="form-control"
+        name="{{ concept.field }}"
+        id="id_{{ concept.field }}"
+        min="0"
+        step="{{ concept.step }}"
+        placeholder="0"
+      >
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── PASO 8: IVA ─────────────────────────────────────────────────────────────── #}
+<div class="card mb-3" id="step-iva">
+  <div class="card-body">
+    <div class="form-check form-switch">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        name="apply_iva"
+        id="id_apply_iva"
+        value="1"
+        {% if always_apply_iva %}checked disabled{% endif %}
+      >
+      <label class="form-check-label fw-semibold" for="id_apply_iva">
+        8. ¿Aplicar IVA (21%)?
+      </label>
+    </div>
+    {% if always_apply_iva %}
+    <div class="form-text text-danger mt-1">
+      Esta aseguradora requiere IVA obligatoriamente.
+    </div>
+    {% else %}
+    <div class="form-text text-muted mt-1">
+      Marcar cuando la aseguradora o cliente requiera factura con IVA incluido.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── BOTÓN CALCULAR ──────────────────────────────────────────────────────────── #}
+<div class="d-grid mt-2" id="step-submit">
+  <button type="submit" class="btn btn-primary btn-lg">
+    <i class="bi bi-calculator me-2"></i>Calcular presupuesto
+  </button>
+</div>

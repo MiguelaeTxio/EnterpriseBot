@@ -295,28 +295,17 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         # Construye un mapa pk->always_apply_iva para la capa JS.
         # El template lo usa para marcar y bloquear el checkbox de IVA
         # cuando el operario selecciona una aseguradora con always_apply_iva=True.
+        # Build pk->always_apply_iva map for the JS IVA enforcement.
+        # Construye mapa pk->always_apply_iva para el bloqueo de IVA en JS.
         import json
         always_iva_map = json.dumps({
             str(ins.pk): ins.always_apply_iva
-            for ins in insurers
-        })
-        import json as _json
-        bases_map = _json.dumps({
-            str(ins.pk): [
-                {"pk": ib.base.pk, "name": ib.base.name}
-                for ib in InsurerBase.objects.filter(
-                    insurer=ins,
-                    is_active=True,
-                    base__is_active=True,
-                ).select_related("base").order_by("base__name")
-            ]
             for ins in insurers
         })
         ctx = _build_base_context(request, {
             "insurers": insurers,
             "insurer_label": insurer_label,
             "always_iva_map": always_iva_map,
-            "bases_map": bases_map,
             "active_nav": "budgets_wizard",
         })
         return render(request, self.template_name, ctx)
@@ -335,17 +324,17 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
 
         # --- Validate required fields ---
         # --- Validar campos obligatorios ---
+        import datetime as _dt
+        from decimal import Decimal as _Dec
         try:
-            insurer_id = int(data["insurer_id"])
+            insurer_id      = int(data["insurer_id"])
             vehicle_type_id = int(data["vehicle_type_id"])
-            km_phase1 = float(data["km_phase1"])
             service_date_str = data["service_date"]
-            import datetime as _dt
             service_date = _dt.date.fromisoformat(service_date_str)
             is_overnight = data.get("is_overnight") == "1"
-            has_unlock = data.get("has_unlock") == "1"
-            is_night = data.get("is_night") == "1"
-            is_loaded = data.get("is_loaded") == "1"
+            has_unlock   = data.get("has_unlock") == "1"
+            is_night     = data.get("is_night") == "1"
+            is_loaded    = data.get("is_loaded") == "1"
             base_id = data.get("base_id") or None
             if base_id:
                 base_id = int(base_id)
@@ -356,6 +345,32 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             )
             return redirect("budgets:wizard")
 
+        # --- Read route fields and resolve km ---
+        # --- Leer campos de ruta y resolver km ---
+        road_name              = data.get("road_name", "").strip()
+        pk_km_raw              = data.get("pk_km", "").strip()
+        route_distance_km_raw  = data.get("route_distance_km", "").strip()
+        route_toll_cost_raw    = data.get("route_toll_cost", "").strip()
+        route_calculation_mode = data.get("route_calculation_mode", "MANUAL").strip()
+        service_time_raw       = data.get("service_time", "").strip()
+        route_distance_km = _Dec(route_distance_km_raw) if route_distance_km_raw else None
+        route_toll_cost   = _Dec(route_toll_cost_raw)   if route_toll_cost_raw   else None
+        service_time_obj  = _dt.time.fromisoformat(service_time_raw) if service_time_raw else None
+
+        # When Modo B is active, use route_distance_km as km_phase1.
+        # En Modo B activo, usar route_distance_km como km_phase1.
+        if route_calculation_mode == "API" and route_distance_km:
+            km_phase1 = float(route_distance_km)
+        else:
+            try:
+                km_phase1 = float(data["km_phase1"])
+            except (KeyError, ValueError):
+                messages.error(
+                    request,
+                    "Introduce los kilómetros de ida y vuelta (fase 1).",
+                )
+                return redirect("budgets:wizard")
+
         km_phase2 = None
         if is_overnight:
             try:
@@ -363,7 +378,7 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             except (KeyError, ValueError):
                 messages.error(
                     request,
-                    "Introduce los kilometros de la fase 2 para servicios de pernocta.",
+                    "Introduce los kilómetros de la fase 2 para servicios de pernocta.",
                 )
                 return redirect("budgets:wizard")
 
@@ -412,6 +427,12 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             custody_days=_parse_optional(data.get("custody_days")),
             extra_notes=data.get("extra_notes", "").strip(),
             apply_iva=data.get("apply_iva") == "1",
+            road_name=road_name,
+            pk_km=_Dec(pk_km_raw.replace(",", ".")) if pk_km_raw else None,
+            route_distance_km=route_distance_km,
+            route_toll_cost=route_toll_cost,
+            route_calculation_mode=route_calculation_mode,
+            service_time=service_time_obj,
             # Placeholders — set by the engine before save.
             # Valores provisionales — el motor los establece antes de guardar.
             total_amount=0,
@@ -463,6 +484,90 @@ def _parse_optional(raw):
         return value if value > 0 else None
     except ValueError:
         return None
+
+
+# ---------------------------------------------------------------------------
+# HTMX endpoint — route calculation via Routes API
+# Endpoint HTMX — cálculo de ruta via Routes API
+# ---------------------------------------------------------------------------
+
+class BudgetRouteCalcView(AssistanceRequiredMixin, View):
+    """
+    HTMX POST endpoint. Receives base_id, road_name, pk_km, service_date
+    and service_time. Calls calculate_route() and returns the route result
+    fragment. Returns error fragment on RouteCalculationError.
+    ---
+    Endpoint POST HTMX. Recibe base_id, road_name, pk_km, service_date
+    y service_time. Llama a calculate_route() y devuelve el fragmento de
+    resultado de ruta. Devuelve fragmento de error en RouteCalculationError.
+    """
+
+    template_name = "budgets/_route_calc_fragment.html"
+
+    def post(self, request):
+        """
+        Validate inputs, call calculate_route() and return the result fragment.
+        ---
+        Valida los campos, llama a calculate_route() y devuelve el fragmento
+        de resultado.
+        """
+        import datetime as _dt
+        from decimal import Decimal
+
+        company_user = _get_company_user(request)
+        data = request.POST
+
+        base_id          = data.get("base_id", "").strip()
+        road_name        = data.get("road_name", "").strip()
+        pk_km_raw        = data.get("pk_km", "").strip()
+        service_date_str = data.get("service_date", "").strip()
+        service_time_str = data.get("service_time", "").strip()
+
+        if not all([base_id, road_name, pk_km_raw, service_date_str, service_time_str]):
+            return render(request, self.template_name, {
+                "error": "Rellena carretera, punto kilómetrico, fecha y hora del servicio.",
+            })
+
+        try:
+            base             = Base.objects.get(pk=int(base_id), company=company_user.company)
+            pk_km            = Decimal(pk_km_raw.replace(",", "."))
+            service_date     = _dt.date.fromisoformat(service_date_str)
+            service_time_obj = _dt.time.fromisoformat(service_time_str)
+            service_datetime = _dt.datetime.combine(service_date, service_time_obj)
+        except Exception as exc:
+            return render(request, self.template_name, {
+                "error": f"Datos inválidos: {exc}",
+            })
+
+        # Validate that service_datetime is in the future (Routes API requirement).
+        # Validar que service_datetime sea futuro (requisito de Routes API).
+        if service_datetime <= _dt.datetime.utcnow():
+            return render(request, self.template_name, {
+                "error": (
+                    "La fecha y hora del servicio deben ser futuras para calcular "
+                    "la ruta con peajes. Ajusta la fecha u hora en el paso 2b."
+                ),
+            })
+
+        from budgets.services import calculate_route, RouteCalculationError
+        try:
+            result = calculate_route(base, road_name, pk_km, service_datetime)
+        except RouteCalculationError as exc:
+            return render(request, self.template_name, {
+                "error": str(exc),
+            })
+
+        return render(request, self.template_name, {
+            "distance_km":  result["distance_km"],
+            "toll_cost":    result["toll_cost"],
+            "has_tolls":    result["has_tolls"],
+            "road_name":    road_name,
+            "pk_km":        pk_km,
+            "service_time": service_time_str,
+            "base_name":    base.name,
+            "base_lat":     base.latitude,
+            "base_lng":     base.longitude,
+        })
 
 
 # ---------------------------------------------------------------------------
@@ -584,6 +689,103 @@ class BudgetOptionalConceptsView(AssistanceRequiredMixin, View):
         return render(request, self.template_name, {
             "concepts": concepts,
             "has_loaded_surcharge": has_loaded,
+        })
+
+
+# ---------------------------------------------------------------------------
+# HTMX endpoint — wizard steps 3-9 + submit (server-side step resolution)
+# Endpoint HTMX — pasos 3-9 del wizard + submit (resolucion server-side)
+# ---------------------------------------------------------------------------
+
+class BudgetStepsView(AssistanceRequiredMixin, View):
+    """
+    HTMX GET endpoint. Receives insurer_id, base_id and vehicle_type_id.
+    Resolves optional concepts, loaded surcharge, always_apply_iva flag
+    and base coordinates server-side. Returns the full wizard steps
+    fragment (steps 3-9 + submit) via _wizard_steps_fragment.html.
+    ---
+    Endpoint GET HTMX. Recibe insurer_id, base_id y vehicle_type_id.
+    Resuelve conceptos opcionales, recargo cargado, flag always_apply_iva
+    y coordenadas de base en el servidor. Devuelve el fragmento completo
+    de pasos del wizard (pasos 3-9 + submit) via _wizard_steps_fragment.html.
+    """
+
+    template_name = "budgets/_wizard_steps_fragment.html"
+
+    def get(self, request):
+        """
+        Resolve all step context from insurer_id, base_id and vehicle_type_id
+        query params and return the rendered steps fragment.
+        ---
+        Resuelve todo el contexto de pasos desde los parametros insurer_id,
+        base_id y vehicle_type_id y devuelve el fragmento de pasos renderizado.
+        """
+        company_user = _get_company_user(request)
+        insurer_id      = request.GET.get("insurer_id", "").strip()
+        base_id         = request.GET.get("base_id", "").strip()
+        vehicle_type_id = request.GET.get("vehicle_type_id", "").strip()
+
+        if not insurer_id or not vehicle_type_id:
+            return HttpResponseBadRequest("insurer_id y vehicle_type_id requeridos.")
+
+        # Resolve optional concepts and loaded surcharge.
+        # Resolver conceptos opcionales y recargo de cargado.
+        available_codes = _get_optional_concepts(int(insurer_id), int(vehicle_type_id))
+        concepts = [
+            OPTIONAL_CONCEPT_META[code]
+            for code in available_codes
+            if code in OPTIONAL_CONCEPT_META
+        ]
+        has_loaded = _has_loaded_surcharge(int(insurer_id))
+
+        # Resolve always_apply_iva for the selected insurer.
+        # Resolver always_apply_iva para la aseguradora seleccionada.
+        try:
+            insurer = Insurer.objects.get(
+                pk=int(insurer_id),
+                company=company_user.company,
+                is_active=True,
+            )
+            always_apply_iva = insurer.always_apply_iva
+        except Insurer.DoesNotExist:
+            always_apply_iva = False
+
+        # Resolve loaded surcharge percent for display.
+        # Resolver porcentaje de recargo de cargado para mostrar.
+        loaded_percent = ""
+        if has_loaded:
+            try:
+                tariff = InsurerTariff.objects.get(
+                    insurer_id=int(insurer_id),
+                    valid_to__isnull=True,
+                )
+                line = tariff.lines.filter(
+                    concept=TariffLine.CONCEPT_LOADED_PERCENT
+                ).first()
+                if line:
+                    loaded_percent = line.price
+            except InsurerTariff.DoesNotExist:
+                pass
+
+        # Resolve whether the selected base has coordinates.
+        # Resolver si la base seleccionada tiene coordenadas.
+        base_has_coords = False
+        if base_id:
+            try:
+                base = Base.objects.get(
+                    pk=int(base_id),
+                    company=company_user.company,
+                )
+                base_has_coords = bool(base.latitude and base.longitude)
+            except Base.DoesNotExist:
+                pass
+
+        return render(request, self.template_name, {
+            "concepts":         concepts,
+            "has_loaded_surcharge": has_loaded,
+            "loaded_percent":   loaded_percent,
+            "always_apply_iva": always_apply_iva,
+            "base_has_coords":  base_has_coords,
         })
 
 

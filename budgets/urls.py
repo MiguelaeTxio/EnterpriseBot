@@ -24,6 +24,26 @@ urlpatterns = [
         name="wizard",
     ),
 
+    # HTMX endpoint — resuelve pasos 3-9 del wizard server-side y devuelve
+    # el fragmento completo de pasos segun insurer_id, base_id y vehicle_type_id.
+    # HTMX endpoint — resolves wizard steps 3-9 server-side and returns
+    # the full steps fragment based on insurer_id, base_id and vehicle_type_id.
+    path(
+        "steps/",
+        views.BudgetStepsView.as_view(),
+        name="steps",
+    ),
+
+    # HTMX endpoint — calcula la ruta desde la base hasta el punto kilometrico
+    # via Routes API. Devuelve el fragmento de resultado al wizard.
+    # HTMX endpoint — calculates route from base to kilometre point
+    # via Routes API. Returns the result fragment to the wizard.
+    path(
+        "route-calc/",
+        views.BudgetRouteCalcView.as_view(),
+        name="route_calc",
+    ),
+
     # HTMX endpoint — devuelve los tipos de vehiculo para la aseguradora
     # seleccionada en el paso 1. Usado por el formulario secuencial.
     # HTMX endpoint — returns vehicle types for the selected insurer (step 1).

@@ -108,6 +108,7 @@
 ./panel/static/panel/js/admin_history.js
 ./panel/static/panel/js/form_entry_modal.js
 ./panel/static/panel/js/gap_resolution.js
+./panel/static/panel/js/wizard.js
 ./panel/static/panel/js/form_entry_assets.js
 ./panel/static/panel/js/form_entry_tour.js
 ./panel/static/panel/js/chat.js
@@ -164,6 +165,7 @@
 ./static/panel/js/admin_history.js
 ./static/panel/js/form_entry_modal.js
 ./static/panel/js/gap_resolution.js
+./static/panel/js/wizard.js
 ./static/panel/js/form_entry_assets.js
 ./static/panel/js/form_entry_tour.js
 ./static/panel/js/chat.js
@@ -304,6 +306,7 @@
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V03/V03DOC_DYNAMIC_IVR_INJECTION.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V03/V03DOC_TRANSFER_ARCHITECTURE.md
 ./budgets/urls.py
+./budgets/templates/budgets/_route_calc_fragment.html
 ./budgets/templates/budgets/history.html
 ./budgets/templates/budgets/_insurer_table_fragment.html
 ./budgets/templates/budgets/_insurer_badge_fragment.html
@@ -321,6 +324,7 @@
 ./budgets/templates/budgets/partials/insurerbase_toggle_fragment.html
 ./budgets/templates/budgets/bases.html
 ./budgets/templates/budgets/result.html
+./budgets/templates/budgets/_wizard_steps_fragment.html
 ./budgets/templates/budgets/_tariff_line_add_form_fragment.html
 ./budgets/templates/budgets/_base_selector_fragment.html
 ./budgets/templates/budgets/_vehicle_types_fragment.html

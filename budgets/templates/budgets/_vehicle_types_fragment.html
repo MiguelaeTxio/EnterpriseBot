@@ -1,6 +1,13 @@
-{# budgets/_vehicle_types_fragment.html                                        #}
-{# HTMX partial — vehicle type dropdown for the selected insurer.              #}
-{# Parcial HTMX — desplegable de tipo de vehiculo para la aseguradora elegida. #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_vehicle_types_fragment.html #}
+{#                                                                                                    #}
+{# HTMX fragment — vehicle type dropdown for the selected insurer.                                    #}
+{# Rendered by BudgetVehicleTypesView after base selection.                                           #}
+{# On change: triggers loading of wizard steps (3 onwards) into #wizard-steps-section.               #}
+{#                                                                                                    #}
+{# Fragmento HTMX — desplegable de tipo de vehiculo para la aseguradora seleccionada.                 #}
+{# Renderizado por BudgetVehicleTypesView tras la seleccion de base.                                  #}
+{# Al cambiar: dispara la carga de los pasos del wizard (3 en adelante) en #wizard-steps-section.    #}
+
 <div class="card mb-3" id="step-vehicle-type">
   <div class="card-body">
     <label class="form-label fw-semibold" for="id_vehicle_type">
@@ -11,6 +18,10 @@
       name="vehicle_type_id"
       id="id_vehicle_type"
       required
+      hx-get="{% url 'budgets:steps' %}"
+      hx-target="#wizard-steps-section"
+      hx-trigger="change"
+      hx-include="[name=insurer_id],[name=base_id],[name=vehicle_type_id]"
     >
       <option value="">— Selecciona el tipo de vehículo —</option>
       {% for vt in vehicle_types %}
