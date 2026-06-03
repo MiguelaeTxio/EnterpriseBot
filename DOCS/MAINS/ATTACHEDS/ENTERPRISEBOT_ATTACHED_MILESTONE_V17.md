@@ -1,149 +1,154 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md
 
-# Anexo de Hito V17 — Albaranes y Órdenes de Trabajo ASISTENCIA
+# Anexo de Hito V17 -- Albaranes y Ordenes de Trabajo ASISTENCIA
 # Proyecto: EnterpriseBot
-# Fecha de creación: 2026-05-29
+# Fecha de creacion: 2026-05-29
 
 ---
 
-## 1. Visión General del Hito
+## 1. Vision General del Hito
 
-La sección de ASISTENCIA necesita digitalizar el flujo completo de trabajo
+La seccion de ASISTENCIA necesita digitalizar el flujo completo de trabajo
 desde que se acepta un presupuesto (o se genera una orden directa) hasta que
-el operario entrega el servicio al cliente y este firma el albarán. El objetivo
-es eliminar el papel, reducir errores de transcripción y dejar el albarán
-listo para facturación con un solo clic desde el panel de administración.
+el operario entrega el servicio al cliente y este firma el albaran. El objetivo
+es eliminar el papel, reducir errores de transcripcion y dejar el albaran
+listo para facturacion con un solo clic desde el panel de administracion.
 
-El flujo tiene dos vías de entrada y un único flujo de salida:
-
-**Vías de entrada:**
-1. Presupuesto aceptado → se convierte automáticamente en Orden de Trabajo.
-2. Orden de Trabajo nueva directa → sin presupuesto previo.
+**Vias de entrada:**
+1. Presupuesto aceptado -> se convierte automaticamente en Orden de Trabajo.
+2. Orden de Trabajo nueva directa -> sin presupuesto previo.
 
 **Flujo de salida:**
-El albarán digital firmado queda en el sistema listo para revisión ADMIN
-y exportación a facturación.
+El albaran digital firmado queda en el sistema listo para revision ADMIN
+y exportacion a facturacion.
 
 ---
 
-## 2. Arquitectura Técnica
+## 2. Arquitectura Tecnica -- DISENO REVISADO EN S001
 
-### 2.1. Modelos Django nuevos (app `budgets` o nueva app `work_orders`)
+### 2.1. Decisiones de diseno tomadas en S001
 
-- `WorkOrderAssistance`: orden de trabajo de asistencia.
-  - FK nullable a `Budget` (null cuando entrada directa).
-  - FK a `Insurer`, `VehicleType`, `CompanyUser` (operario).
-  - Campos: `service_date`, `status` (PENDING/IN_PROGRESS/COMPLETED/INVOICED),
-    `base_location` (FK a base de operación), `extra_notes`.
-  - Los datos del servicio (km, conceptos) se heredan del Budget si existe,
-    o se introducen manualmente en la orden directa.
+**Arquitectura de N vehiculos por servicio:**
+Un servicio puede requerir multiples vehiculos simultaneos (grua, coche taller,
+plataforma, etc.). Cada vehiculo genera su propio albaran individual. El modelo
+original contemplaba unicamente dos fases/operarios -- redisenado para N unidades.
 
-- `WorkOrderAssistanceLine`: líneas de incidencia adicionales del parte.
-  - FK a `WorkOrderAssistance`.
-  - Campos: `concept` (desplegable: espera adicional, rescate adicional,
-    km adicionales, desbloqueo, custodia, etc.), `units`, `notes`.
+**Estrategia offline:**
+La PWA con Service Worker fue descartada. Solucion adoptada: app Android nativa
+(AlbaranApp) distribuida desde la app web Django, con persistencia offline via
+SharedPreferences y sincronizacion al recuperar cobertura.
 
-- `WorkOrderAssistanceSignature`: firma digital del cliente.
-  - OneToOneField a `WorkOrderAssistance`.
-  - Campo: `signature_data` (TextField, base64 SVG/PNG capturado con
-    signature_pad JS).
-  - Campo: `signed_at` (DateTimeField auto).
-  - Campo: `signer_name` (CharField, opcional — nombre del firmante).
+**Prototipo AlbaranApp:**
+App Android nativa compilada y desplegada. Package: com.miguelaetxio.albaran.
+Distribuida desde /panel/budgets/albaran-demo/. Codigo fuente en GitHub repo AlbaranApp.
 
-### 2.2. Flujo de notificación al operario
+**Campos adicionales identificados desde PDF Allianz Partners (pendiente validacion):**
+- codigo_proveedor, num_poliza, tiempo_llegada, tipo_servicio
+- averia, cod_averia, reparacion_in_situ (bool)
+- nombre_asegurado, segundo_servicio (bool), gestion_propia_grua (bool)
+- accidente (bool), comentarios (cobertura autorizada por la aseguradora)
+- diferido (bool -- pendiente confirmar si es sinonimo de is_overnight)
+- rueda_gemela (bool), num_pasajeros, anchura, cp_recogida
 
-Al crear una WorkOrderAssistance (desde presupuesto aceptado o entrada directa):
-1. El sistema genera la URL directa al albarán digital del operario:
-   `/panel/asistencia/ordenes/<pk>/albaran/`
-2. Se envía un mensaje WhatsApp al operario via canal WhatsApp ya operativo
-   en EnterpriseBot, con el enlace al albarán y los datos básicos del servicio.
+### 2.2. Modelos Django -- Arquitectura definitiva
 
-### 2.3. Interfaz móvil del operario
+WorkOrderAssistance -- Expediente del servicio completo.
+  FK a Budget (nullable), Insurer, CompanyUser (gestor), Base.
+  Campos de servicio: expediente, num_poliza, codigo_proveedor, tiempo_llegada,
+  tipo_servicio, averia, cod_averia, reparacion_in_situ, nombre_asegurado,
+  segundo_servicio, gestion_propia_grua, accidente, comentarios, diferido.
+  Campos de vehiculo: vehicle_plate, vehicle_brand, vehicle_model, vehicle_color,
+  vehicle_height, vehicle_length, vehicle_width, vehicle_pma, rueda_gemela, num_pasajeros.
+  Campos de localizacion: vehicle_locality, vehicle_province, pickup_location, cp_recogida.
+  status: PENDING / IN_PROGRESS / COMPLETED / INVOICED.
+  service_date, created_at, updated_at.
 
-Template `asistencia/albaran_operario.html`:
-- Diseño mobile-first con Bootstrap 5.
-- El albarán llega prellenado: compañía, vehículo, conceptos del presupuesto.
-- Sección de incidencias adicionales: botón "Añadir concepto" desplegable
-  con los conceptos disponibles y campo de unidades.
-- Sección de firma: canvas con `signature_pad` JS (librería sin dependencias
-  de servidor, funciona offline).
-- Botón "Finalizar y firmar" — POST al servidor con firma base64 y líneas
-  adicionales.
+WorkOrderAssistanceUnit -- Un albaran individual por vehiculo que asiste.
+  FK a WorkOrderAssistance.
+  unit_number -- ordinal (1,2,3...). Albaran impreso: work_order_number-unit_number.
+  FK a CompanyUser (operario), machine (matricula), FK nullable a Base.
+  is_overnight (bool).
+  Datos de servicio: km_phase1, km_phase2, horas espera, horas rescate, departure_fee.
+  status: PENDING / IN_PROGRESS / COMPLETED.
+  synced_at (DateTimeField nullable) -- momento de sincronizacion offline.
+  created_at, updated_at.
 
-### 2.4. Modo offline PWA
+WorkOrderAssistanceSignature -- Firma digital del cliente.
+  OneToOneField a WorkOrderAssistanceUnit.
+  signature_data (TextField, base64 PNG, app Android).
+  signed_at (DateTimeField auto).
+  signer_name (CharField, opcional).
+  signed_offline (bool) -- firma capturada sin cobertura.
 
-Service Worker que cachea la página del albarán al abrirla con cobertura.
-Al recuperar cobertura, el SW detecta la conexión y sincroniza el POST
-pendiente automáticamente.
+WorkOrderAssistanceIncidence -- Delta de incidencias por unidad.
+  FK a WorkOrderAssistanceUnit.
+  Todos los campos de servicio de la unidad, todos nullable/blank.
+  Solo se rellena lo que cambio respecto al albaran original.
+  memo (TextField) -- memoriamdum de justificacion obligatorio.
+  recorded_by FK a CompanyUser.
+  recorded_at (DateTimeField auto).
 
-Indicador visual en la interfaz: banner "Sin cobertura — los datos se
-guardarán al recuperar conexión" cuando `navigator.onLine === false`.
+### 2.3. Grafo de modelos
 
-### 2.5. Exportación para facturación
-
-PDF generado con `weasyprint` desde template `asistencia/albaran_pdf.html`.
-Incluye: datos del servicio, conceptos del presupuesto, incidencias
-adicionales, firma del cliente y totales.
-Botón "Exportar PDF" en la vista de detalle ADMIN de la orden de trabajo.
-
-### 2.6. Bases de operación en presupuestos y órdenes
-
-El campo `Company.operation_bases` (TextField, ya migrado) contiene las
-bases de operación. Para el wizard de presupuestos y para las órdenes de
-trabajo, el operario selecciona la base de salida desde un desplegable.
-Las bases se parsean desde `operation_bases` al cargar el wizard.
-No se usa Google Maps API — los km se introducen manualmente o se derivan
-del presupuesto.
+WorkOrderAssistance (expediente)
+    WorkOrderAssistanceUnit x N (un albaran por vehiculo)
+        WorkOrderAssistanceSignature (1:1, firma del conductor)
+        WorkOrderAssistanceIncidence (0:1, delta de incidencias + memo)
 
 ---
 
 ## 3. Hoja de Ruta
 
-### Paso 1 — Modelos y migración
+### Paso 1 -- Modelos y migracion
 - Estado: PENDIENTE
-- Crear `WorkOrderAssistance`, `WorkOrderAssistanceLine`,
-  `WorkOrderAssistanceSignature` en `budgets/models.py` o nueva app.
-- Migración con `makemigrations` + `migrate`.
+- PREREQUISITO: validar con responsables los campos del PDF Allianz antes de makemigrations.
+- Confirmar si diferido es sinonimo de is_overnight o campo independiente.
+- Crear los cuatro modelos en budgets/models.py.
+- Ejecutar makemigrations + migrate.
 
-### Paso 2 — Vistas y URLs
+### Paso 2 -- Vistas y URLs
 - Estado: PENDIENTE
-- `WorkOrderCreateFromBudgetView`: crea WorkOrderAssistance desde Budget aceptado.
-- `WorkOrderCreateDirectView`: crea WorkOrderAssistance directa.
-- `WorkOrderAlbaranView`: interfaz móvil del operario (firma + incidencias).
-- `WorkOrderDetailView`: vista ADMIN de detalle.
-- `WorkOrderPdfView`: exportación PDF.
+- WorkOrderCreateFromBudgetView, WorkOrderCreateDirectView,
+  WorkOrderAlbaranView, WorkOrderDetailView, WorkOrderPdfView.
 
-### Paso 3 — Template móvil operario
+### Paso 3 -- Template movil operario
 - Estado: PENDIENTE
-- `albaran_operario.html`: mobile-first, signature_pad, SW offline.
+- albaran_operario.html: mobile-first, integracion con app Android nativa.
 
-### Paso 4 — Notificación WhatsApp al operario
+### Paso 4 -- Notificacion WhatsApp al operario
 - Estado: PENDIENTE
-- Integrar el envío de WhatsApp al crear la orden de trabajo.
 
-### Paso 5 — Exportación PDF
+### Paso 5 -- Exportacion PDF
 - Estado: PENDIENTE
-- `albaran_pdf.html` + `WorkOrderPdfView`.
+- albaran_pdf.html + WorkOrderPdfView con weasyprint.
 
-### Paso 6 — Botón en BudgetResultView para crear orden de trabajo
+### Paso 6 -- Boton en BudgetResultView
 - Estado: PENDIENTE
-- Añadir botón "Generar orden de trabajo" en `result.html` cuando
-  `budget.status == 'ACCEPTED'`.
+- Boton Generar orden de trabajo en result.html cuando budget.status == ACCEPTED.
 
 ---
 
 ## 4. Registro de Sesiones
 
-| Sesión | Fecha | Pasos trabajados | Resumen |
-|--------|-------|-----------------|---------|
-| — | — | — | Hito creado en S005 (2026-05-29). Pendiente de iniciar. |
+Sesion | Fecha      | Pasos trabajados | Resumen
+S001   | 2026-06-02 | Ninguno (diseno) | Hito iniciado. Rediseno completo arquitectura modelos: N vehiculos por servicio, estrategia offline Android nativa, identificacion campos adicionales PDF Allianz. Incidencias paralelas: fix nocturno/festivo wizard, fix redirect operario, prototipo AlbaranApp Android compilado y desplegado, 6 skills Android creadas, PEE y PICP actualizados.
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesión (S006 — NO EJECUTAR, H16 EN PROGRESO)
+## 5. Hoja de Ruta para la Siguiente Sesion (S002)
 
-Este hito está PENDIENTE. No ejecutar hasta que el MASTER_DOCUMENT lo
-marque EN PROGRESO. La hoja de ruta de S006 pertenece al Hito 16.
+PREREQUISITO OBLIGATORIO antes de arrancar el Paso 1:
+Validar con los responsables los campos del PDF de Allianz identificados en S001,
+especialmente el campo diferido (posible sinonimo de is_overnight). Esta validacion
+debe completarse antes de ejecutar makemigrations para evitar migraciones adicionales.
 
-Cuando este hito pase a EN PROGRESO, arrancar por el Paso 1 (modelos
-y migración) siguiendo el orden definido en la sección 3.
+Una vez validados los campos, arrancar el Paso 1 en este orden estricto:
+
+1. Solicitar el archivo budgets/models.py completo para obtener anclas reales.
+2. Anadir los cuatro modelos nuevos al final del archivo mediante PMA:
+   WorkOrderAssistance, WorkOrderAssistanceUnit,
+   WorkOrderAssistanceSignature, WorkOrderAssistanceIncidence.
+   Seguir exactamente la arquitectura de la seccion 2.2 de este anexo.
+3. Ejecutar makemigrations y migrate. Verificar que no hay errores.
+4. Registrar las migraciones generadas en el PROJECT_DIRECTORY.
+5. Continuar con el Paso 2 -- Vistas y URLs.

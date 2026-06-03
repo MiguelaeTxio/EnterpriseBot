@@ -368,6 +368,16 @@
         </a>
     </li>
     {% endif %}
+
+    {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
+    {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
+    <li class="nav-item">
+        <a class="nav-link {% if active_nav == 'albaran_demo' %}active{% endif %}"
+           href="{% url 'budgets:albaran_demo' %}">
+            <i class="bi bi-file-earmark-text"></i>Albarán (demo)
+        </a>
+    </li>
+
     {% endif %}
 
 </ul>

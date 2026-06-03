@@ -1252,3 +1252,535 @@ class InsurerBase(models.Model):
     def __str__(self):
         status = "activa" if self.is_active else "inactiva"
         return f"{self.insurer.name} — {self.base.name} ({status})"
+
+
+
+# ---------------------------------------------------------------------------
+# 11. WORK ORDER ASSISTANCE — Service work order for the ASISTENCIA section.
+#     Orden de trabajo de asistencia. Entidad central del flujo H17.
+# ---------------------------------------------------------------------------
+
+class WorkOrderAssistance(models.Model):
+    """
+    Central document of the ASISTENCIA workflow. Represents a service work
+    order that either originates from an accepted Budget or is created
+    directly without a prior budget. Captures all data present on the
+    physical albarán: client data, vehicle data, service location, machine
+    assignments, per-phase service data (JSON), internal production report
+    data and billing totals.
+
+    The work_order_number is auto-generated in the format YYYYMMDDNNN,
+    where NNN is a 3-digit daily ordinal per company (001-999), reset
+    each calendar day. A unique constraint at database level guards against
+    duplicates under concurrent writes.
+    ---
+    Documento central del flujo ASISTENCIA. Representa una orden de trabajo
+    que puede originarse desde un Budget aceptado o crearse directamente
+    sin presupuesto previo. Captura todos los datos del albarán físico:
+    datos de cliente, vehículo, localización del servicio, asignación de
+    máquinas, datos de servicio por fase (JSON), parte de producción interno
+    y totales de facturación.
+
+    El work_order_number se auto-genera en formato YYYYMMDDNNN, donde NNN
+    es un ordinal diario de 3 dígitos por empresa (001-999), reiniciado
+    cada día natural. Una restricción unique en BD protege frente a
+    duplicados en escrituras concurrentes.
+    """
+
+    # --- Status choices ---
+    # --- Opciones de estado ---
+    STATUS_PENDING     = "PENDING"
+    STATUS_IN_PROGRESS = "IN_PROGRESS"
+    STATUS_COMPLETED   = "COMPLETED"
+    STATUS_INVOICED    = "INVOICED"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING,     "Pendiente"),
+        (STATUS_IN_PROGRESS, "En curso"),
+        (STATUS_COMPLETED,   "Completada"),
+        (STATUS_INVOICED,    "Facturada"),
+    ]
+
+    # ── Relations ──────────────────────────────────────────────────────────
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="work_orders_assistance",
+        verbose_name="Empresa",
+        help_text="Empresa cliente a la que pertenece esta orden de trabajo.",
+    )
+    budget = models.ForeignKey(
+        "Budget",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="work_orders_assistance",
+        verbose_name="Presupuesto de origen",
+        help_text=(
+            "Presupuesto aceptado del que se origina esta orden de trabajo. "
+            "Null cuando la orden se crea directamente sin presupuesto previo."
+        ),
+    )
+    insurer = models.ForeignKey(
+        "Insurer",
+        on_delete=models.PROTECT,
+        related_name="work_orders_assistance",
+        verbose_name="Aseguradora",
+        help_text=(
+            "Aseguradora o cliente para el que se realiza el servicio. "
+            "Heredado del Budget si existe, o seleccionado manualmente en "
+            "entrada directa."
+        ),
+    )
+    vehicle_type = models.ForeignKey(
+        "VehicleType",
+        on_delete=models.PROTECT,
+        related_name="work_orders_assistance",
+        verbose_name="Tipo de vehículo",
+        help_text=(
+            "Tipo de vehículo asistido según la nomenclatura de la "
+            "aseguradora. Heredado del Budget si existe."
+        ),
+    )
+    operator = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        related_name="work_orders_assistance_primary",
+        verbose_name="Conductor principal",
+        help_text="Conductor principal asignado al servicio (Máquina 1).",
+    )
+    operator_2 = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="work_orders_assistance_secondary",
+        verbose_name="Conductor secundario",
+        help_text=(
+            "Segundo conductor. Solo en servicios que requieren dos "
+            "máquinas simultáneas."
+        ),
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        related_name="work_orders_assistance_created",
+        verbose_name="Creado por",
+        help_text="Usuario del panel que genera la orden de trabajo.",
+    )
+    base = models.ForeignKey(
+        "Base",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_orders_assistance",
+        verbose_name="Base de operación",
+        help_text="Base de salida del servicio de asistencia.",
+    )
+
+    # ── Reference / status ─────────────────────────────────────────────────
+    work_order_number = models.CharField(
+        max_length=11,
+        unique=True,
+        verbose_name="Número de orden",
+        help_text=(
+            "Número de orden auto-generado en formato YYYYMMDDNNN. "
+            "Ejemplo: 20260601001. Ordinal diario de 3 dígitos por empresa, "
+            "reiniciado cada día natural."
+        ),
+    )
+    service_date = models.DateField(
+        verbose_name="Fecha del servicio",
+        help_text="Fecha en la que se realiza el servicio de asistencia.",
+    )
+    expediente = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Expediente",
+        help_text="Número de expediente facilitado por la aseguradora.",
+    )
+    status = models.CharField(
+        max_length=15,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        verbose_name="Estado",
+        help_text=(
+            "PENDING: orden creada, pendiente de enviar al operario. "
+            "IN_PROGRESS: operario en camino o realizando el servicio. "
+            "COMPLETED: servicio realizado y firmado por el cliente. "
+            "INVOICED: albarán procesado y listo para facturación."
+        ),
+    )
+    is_overnight = models.BooleanField(
+        default=False,
+        verbose_name="Pernocta",
+        help_text=(
+            "Activo cuando el servicio se realiza en dos fases en días "
+            "distintos. Cuando es True, phase2_data debe estar informado."
+        ),
+    )
+
+    # ── Machine identifiers ─────────────────────────────────────────────────
+    machine_1 = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Máquina 1",
+        help_text="Identificador o matrícula de la primera máquina de servicio.",
+    )
+    machine_2 = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Máquina 2",
+        help_text=(
+            "Identificador o matrícula de la segunda máquina. "
+            "Vacío en servicios de una sola máquina."
+        ),
+    )
+
+    # ── Client data ─────────────────────────────────────────────────────────
+    client_name = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Cliente",
+        help_text="Nombre completo o razón social del cliente.",
+    )
+    client_nif = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="N.I.F.",
+        help_text="Número de identificación fiscal del cliente.",
+    )
+    client_address = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        verbose_name="Domicilio",
+        help_text="Dirección postal del cliente.",
+    )
+    client_cp = models.CharField(
+        max_length=10,
+        blank=True,
+        default="",
+        verbose_name="C.P.",
+        help_text="Código postal del domicilio del cliente.",
+    )
+    client_email = models.EmailField(
+        blank=True,
+        default="",
+        verbose_name="E-mail",
+        help_text="Correo electrónico del cliente.",
+    )
+    client_phone = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Teléfono",
+        help_text="Teléfono de contacto del cliente.",
+    )
+
+    # ── Vehicle data ────────────────────────────────────────────────────────
+    vehicle_plate = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Matrícula",
+        help_text="Matrícula del vehículo asistido.",
+    )
+    vehicle_brand = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Marca",
+        help_text="Marca del vehículo asistido.",
+    )
+    vehicle_locality = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        verbose_name="Localidad",
+        help_text="Localidad donde se encuentra el vehículo averiado.",
+    )
+    vehicle_province = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Provincia",
+        help_text="Provincia donde se encuentra el vehículo averiado.",
+    )
+    vehicle_pma = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="P.M.A. (kg)",
+        help_text="Peso máximo autorizado del vehículo en kilogramos.",
+    )
+    vehicle_length = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Largo (m)",
+        help_text="Longitud del vehículo en metros.",
+    )
+    vehicle_height = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Alto (m)",
+        help_text="Altura del vehículo en metros.",
+    )
+
+    # ── Service location ────────────────────────────────────────────────────
+    pickup_location = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        verbose_name="Recogida",
+        help_text="Punto de recogida del vehículo averiado.",
+    )
+    base_pickup = models.BooleanField(
+        default=False,
+        verbose_name="Recogida en base",
+        help_text="Activo cuando el vehículo se recoge directamente en la base.",
+    )
+    destination = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        verbose_name="Destino",
+        help_text="Punto de destino del servicio de asistencia.",
+    )
+
+    # ── Service phase data (JSON) ───────────────────────────────────────────
+    # Each phase mirrors one billing column of the physical albarán.
+    # For standard single-phase services, only phase1_data is populated.
+    # For overnight services (is_overnight=True) or simultaneous two-machine
+    # services, phase2_data holds the second column data independently.
+    #
+    # Cada fase corresponde a una columna de facturación del albarán físico.
+    # Para servicios de fase única (caso habitual), solo se informa phase1_data.
+    # Para pernoctas (is_overnight=True) o servicios con dos máquinas simultáneas,
+    # phase2_data recoge de forma independiente la segunda columna.
+    #
+    # JSON schema (both phases share the same structure):
+    # Esquema JSON (ambas fases comparten la misma estructura):
+    # {
+    #   "date": "2026-06-01",           -- Fecha de la fase
+    #   "machine": "GR-1234",           -- Máquina asignada a la fase
+    #   "departure_fee": 45.00,         -- Importe de salida (euros)
+    #   "km_total": 115.0,              -- Kilómetros totales de la fase
+    #   "km_unit_price": 0.85,          -- Precio unitario por kilómetro
+    #   "unlock_hours": 0.0,            -- Horas de desbloqueo / enganche
+    #   "unlock_unit_price": 0.0,       -- Precio por hora de desbloqueo
+    #   "mechanic_hours": 0.0,          -- Horas de mecánico
+    #   "mechanic_unit_price": 0.0,     -- Precio por hora de mecánico
+    #   "assistant_hours": 0.0,         -- Horas de ayudante
+    #   "assistant_unit_price": 0.0,    -- Precio por hora de ayudante
+    #   "rescue_hours": 0.0,            -- Horas de rescate
+    #   "rescue_unit_price": 0.0,       -- Precio por hora de rescate
+    #   "nyf_applied": false,           -- Recargo nocturno/festivo aplicado
+    #   "nyf_percent": 0.0,             -- Porcentaje recargo NYF
+    #   "nyf_amount": 0.0,              -- Importe recargo NYF (euros)
+    #   "loaded_applied": false,        -- Recargo vehículo cargado aplicado
+    #   "loaded_percent": 0.0,          -- Porcentaje recargo vehículo cargado
+    #   "loaded_amount": 0.0,           -- Importe recargo vehículo cargado
+    #   "phase_total": 142.75           -- Total de la fase (euros)
+    # }
+    phase1_data = models.JSONField(
+        default=dict,
+        verbose_name="Datos fase 1",
+        help_text=(
+            "JSON con todos los datos de servicio de la primera fase/máquina. "
+            "Siempre informado. Consultar docstring del modelo para el esquema."
+        ),
+    )
+    phase2_data = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Datos fase 2",
+        help_text=(
+            "JSON con los datos de la segunda fase (pernocta) o segunda "
+            "máquina. Null en servicios de fase única. Mismo esquema que "
+            "phase1_data."
+        ),
+    )
+
+    # ── Billing totals ──────────────────────────────────────────────────────
+    total_importe = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Total importe",
+        help_text="Importe total del servicio antes de aplicar el IVA.",
+    )
+    iva_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="IVA (%)",
+        help_text="Porcentaje de IVA aplicado al importe total.",
+    )
+    total_servicio = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Total servicio",
+        help_text="Importe total del servicio con IVA incluido (TOTAL SERVICIO).",
+    )
+
+    # ── Production report — PARTE DE PRODUCCIÓN ─────────────────────────────
+    # Internal operational data filled by the operator on site.
+    # Not customer-facing — used for internal cost and time control.
+    # Datos internos de operación rellenados por el operario in situ.
+    # No visibles al cliente — usados para control interno de costes y tiempos.
+    parte_operator_number = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Nº operario (parte)",
+        help_text="Número de operario para el parte de producción interno.",
+    )
+    parte_departure_base_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora salida base",
+        help_text="Hora de salida desde la base de operaciones.",
+    )
+    parte_arrival_base_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora llegada base",
+        help_text="Hora de regreso a la base al finalizar el servicio.",
+    )
+    parte_arrival_job_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora llegada trabajo",
+        help_text="Hora de llegada al punto donde se encuentra el vehículo.",
+    )
+    parte_departure_job_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora salida trabajo",
+        help_text="Hora de salida del punto de trabajo.",
+    )
+    parte_km_departure = models.DecimalField(
+        max_digits=8,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km salida",
+        help_text="Lectura del cuentakilómetros al salir de la base.",
+    )
+    parte_km_arrival = models.DecimalField(
+        max_digits=8,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km llegada",
+        help_text="Lectura del cuentakilómetros al regresar a la base.",
+    )
+    parte_motor_a_hours = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Horas motor A",
+        help_text="Horas de funcionamiento del motor A durante el servicio.",
+    )
+    parte_motor_b_hours = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Horas motor B",
+        help_text="Horas de funcionamiento del motor B durante el servicio.",
+    )
+    parte_liters_motor_a = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Litros motor A",
+        help_text="Litros de combustible consumidos por el motor A.",
+    )
+    parte_liters_motor_b = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Litros motor B",
+        help_text="Litros de combustible consumidos por el motor B.",
+    )
+    parte_notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Observaciones (parte)",
+        help_text="Observaciones internas del parte de producción.",
+    )
+
+    # ── Control ─────────────────────────────────────────────────────────────
+    whatsapp_notification_sent = models.BooleanField(
+        default=False,
+        verbose_name="Notificación WhatsApp enviada",
+        help_text=(
+            "Indica si se ha enviado la notificación WhatsApp al operario "
+            "con el enlace al albarán digital."
+        ),
+    )
+    extra_notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Notas adicionales",
+        help_text="Observaciones internas ADMIN. No visibles en el albarán exportado.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificación")
+
+    class Meta:
+        verbose_name = "Orden de trabajo (asistencia)"
+        verbose_name_plural = "Órdenes de trabajo (asistencia)"
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        """
+        Overrides save to auto-generate work_order_number on first persist.
+        Queries existing orders for the same company on today to build the
+        3-digit daily ordinal. The unique constraint on work_order_number
+        catches edge-case duplicates under concurrent writes.
+        ---
+        Sobreescribe save para auto-generar work_order_number en el primer
+        guardado. Consulta las órdenes existentes de la misma empresa en el
+        día de hoy para construir el ordinal diario de 3 dígitos. La
+        restricción unique sobre work_order_number captura duplicados en
+        escrituras concurrentes en casos límite.
+        """
+        if not self.work_order_number:
+            import datetime
+            today = datetime.date.today()
+            date_str = today.strftime("%Y%m%d")
+            # Count today orders for this company to determine next ordinal.
+            # work_order_number starts with the 8-char date string (YYYYMMDD).
+            # Contamos las órdenes del día de esta empresa para el siguiente ordinal.
+            count = WorkOrderAssistance.objects.filter(
+                company=self.company,
+                work_order_number__startswith=date_str,
+            ).count()
+            self.work_order_number = f"{date_str}{count + 1:03d}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return (
+            f"OT {self.work_order_number} — "
+            f"{self.insurer.name} — {self.get_status_display()}"
+        )

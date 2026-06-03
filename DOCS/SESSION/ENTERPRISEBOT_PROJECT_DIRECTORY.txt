@@ -111,7 +111,9 @@
 ./panel/static/panel/js/wizard.js
 ./panel/static/panel/js/form_entry_assets.js
 ./panel/static/panel/js/form_entry_tour.js
+./panel/static/panel/js/sw_albaran.js
 ./panel/static/panel/js/chat.js
+./panel/static/panel/albaran_manifest.json
 ./panel/static/panel/css/panel.css
 ./panel/static/panel/vendor/bootstrap.min.css
 ./panel/static/panel/vendor/bootstrap.bundle.min.js
@@ -168,7 +170,9 @@
 ./static/panel/js/wizard.js
 ./static/panel/js/form_entry_assets.js
 ./static/panel/js/form_entry_tour.js
+./static/panel/js/sw_albaran.js
 ./static/panel/js/chat.js
+./static/panel/albaran_manifest.json
 ./static/panel/css/panel.css
 ./static/panel/vendor/bootstrap.min.css
 ./static/panel/vendor/bootstrap.bundle.min.js
@@ -325,6 +329,7 @@
 ./budgets/templates/budgets/partials/insurerbase_toggle_fragment.html
 ./budgets/templates/budgets/bases.html
 ./budgets/templates/budgets/result.html
+./budgets/templates/budgets/albaran_demo.html
 ./budgets/templates/budgets/_wizard_steps_fragment.html
 ./budgets/templates/budgets/_tariff_line_add_form_fragment.html
 ./budgets/templates/budgets/_base_selector_fragment.html
@@ -335,6 +340,7 @@
 ./budgets/views.py
 ./budgets/apps.py
 ./budgets/models.py
+./budgets/migrations/0013_workorderassistance.py
 ./budgets/migrations/0007_budget_is_night.py
 ./budgets/migrations/0010_base_insurerbase_refactor.py
 ./budgets/migrations/0008_base_model.py

@@ -1,0 +1,284 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/albaran_demo.html #}
+{#                                                                                        #}
+{# Prototype v2 — H17 offline persistence test.                                          #}
+{# Two fields only: name and phone. Service Worker precaches the page.                   #}
+{# localStorage persists field values while offline.                                     #}
+{#                                                                                        #}
+{# Prototipo v2 — prueba de persistencia offline H17.                                    #}
+{# Dos campos: nombre y teléfono. Service Worker precachea la página.                    #}
+{# localStorage persiste los valores de los campos sin cobertura.                        #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}Albarán (demo){% endblock %}
+
+{% block extra_head %}
+<link rel="manifest" href="/albaran-manifest.json">
+<meta name="theme-color" content="#0d6efd">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Albarán">
+<style>
+    .albaran-card { max-width: 480px; margin: 0 auto; }
+    #offline-banner { display: none; }
+    #sync-banner    { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="albaran-card">
+
+        <div class="d-flex align-items-center mb-4 gap-2">
+            <i class="bi bi-file-earmark-text fs-3 text-primary"></i>
+            <div>
+                <h4 class="mb-0">Albarán digital</h4>
+                <small class="text-muted">Prototipo v2 — persistencia offline</small>
+            </div>
+        </div>
+
+        {# Botón de descarga de la app Android #}
+        <div class="alert alert-secondary d-flex align-items-center gap-3 mb-4" role="alert">
+            <i class="bi bi-android2 fs-4 text-success"></i>
+            <div class="flex-grow-1">
+                <div class="fw-semibold">App Android disponible</div>
+                <small class="text-muted">Instala la app nativa para uso offline sin navegador.</small>
+            </div>
+            <a href="/static/panel/apk/AlbaranApp.apk"
+               class="btn btn-success btn-sm"
+               download="AlbaranApp.apk">
+                <i class="bi bi-download me-1"></i>Descargar app
+            </a>
+        </div>
+
+        {# Banner — instalar app #}
+    <div id="install-banner" class="alert alert-primary d-flex align-items-center gap-2 mb-3" role="alert" style="display:none!important;">
+        <i class="bi bi-download fs-5"></i>
+        <span>Instala la app para usarla sin conexión.
+            <button type="button" id="btn-install" class="btn btn-sm btn-light ms-2">
+                Instalar app
+            </button>
+        </span>
+    </div>
+
+    {# Banner — sin cobertura #}
+        <div id="offline-banner" class="alert alert-warning d-flex align-items-center gap-2 mb-3" role="alert">
+            <i class="bi bi-wifi-off fs-5"></i>
+            <span>Sin cobertura — los datos se guardan localmente.</span>
+        </div>
+
+        {# Banner — datos pendientes de sincronizar #}
+        <div id="sync-banner" class="alert alert-info d-flex align-items-center gap-2 mb-3" role="alert">
+            <i class="bi bi-arrow-repeat fs-5"></i>
+            <span>Conexión recuperada — datos pendientes de envío.
+                <button type="button" id="btn-sync" class="btn btn-sm btn-primary ms-2">
+                    Enviar ahora
+                </button>
+            </span>
+        </div>
+
+        {# Mensaje de éxito tras envío #}
+        {% if submitted %}
+        <div class="alert alert-success d-flex align-items-center gap-2 mb-3" role="alert">
+            <i class="bi bi-check-circle-fill fs-5"></i>
+            <span>Albarán enviado correctamente.</span>
+        </div>
+        {% endif %}
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <form id="albaran-form" method="post" action="{% url 'budgets:albaran_demo' %}">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="client-name" class="form-label fw-semibold">
+                            <i class="bi bi-person me-1"></i>Nombre completo
+                        </label>
+                        <input type="text"
+                               id="client-name"
+                               name="client_name"
+                               class="form-control form-control-lg"
+                               placeholder="Nombre y apellidos"
+                               autocomplete="name"
+                               required>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="client-phone" class="form-label fw-semibold">
+                            <i class="bi bi-telephone me-1"></i>Teléfono
+                        </label>
+                        <input type="tel"
+                               id="client-phone"
+                               name="client_phone"
+                               class="form-control form-control-lg"
+                               placeholder="600 000 000"
+                               autocomplete="tel"
+                               required>
+                    </div>
+
+                    {# Estado de guardado local #}
+                    <div id="save-status" class="text-muted small mb-3" style="min-height:1.2em;"></div>
+
+                    <div class="d-grid">
+                        <button type="submit" id="btn-submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-send-check me-2"></i>Enviar al servidor
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    const DRAFT_KEY   = "albaran_demo_v2_draft";
+    const PENDING_KEY = "albaran_demo_v2_pending";
+
+    const form          = document.getElementById("albaran-form");
+    const fieldName     = document.getElementById("client-name");
+    const fieldPhone    = document.getElementById("client-phone");
+    const offlineBanner = document.getElementById("offline-banner");
+    const syncBanner    = document.getElementById("sync-banner");
+    const btnSync       = document.getElementById("btn-sync");
+    const btnSubmit     = document.getElementById("btn-submit");
+    const saveStatus    = document.getElementById("save-status");
+
+    /* ── Install prompt (PWA) ──────────────────────────────────────── */
+    let deferredPrompt = null;
+    const installBanner = document.getElementById("install-banner");
+    const btnInstall    = document.getElementById("btn-install");
+
+    window.addEventListener("beforeinstallprompt", function (e) {
+        e.preventDefault();
+        deferredPrompt = e;
+        installBanner.style.display = "flex";
+    });
+
+    btnInstall.addEventListener("click", function () {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function (choice) {
+            if (choice.outcome === "accepted") {
+                installBanner.style.display = "none";
+            }
+            deferredPrompt = null;
+        });
+    });
+
+    window.addEventListener("appinstalled", function () {
+        installBanner.style.display = "none";
+        deferredPrompt = null;
+    });
+
+    /* ── Service Worker registration ───────────────────────────────── */
+    if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js", { scope: "/" })
+            .then(function (reg) {
+                console.log("[SW] Registrado. Scope:", reg.scope);
+            })
+            .catch(function (err) {
+                console.warn("[SW] Error de registro:", err);
+            });
+    }
+
+    /* ── Draft persistence ─────────────────────────────────────────── */
+    function saveDraft() {
+        try {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify({
+                name:  fieldName.value,
+                phone: fieldPhone.value,
+            }));
+            saveStatus.textContent = "Guardado localmente " + new Date().toLocaleTimeString();
+        } catch (e) { /* ignore */ }
+    }
+
+    function loadDraft() {
+        try {
+            const raw = localStorage.getItem(DRAFT_KEY);
+            if (!raw) return;
+            const d = JSON.parse(raw);
+            if (d.name)  fieldName.value  = d.name;
+            if (d.phone) fieldPhone.value = d.phone;
+            if (d.name || d.phone) {
+                saveStatus.textContent = "Borrador recuperado.";
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    fieldName.addEventListener("input",  saveDraft);
+    fieldPhone.addEventListener("input", saveDraft);
+    loadDraft();
+
+    /* ── Online / offline detection ────────────────────────────────── */
+    /* Banners are hidden by CSS (display:none) at render time.        */
+    /* They are only shown/hidden by the online/offline events below.  */
+    /* Los banners están ocultos por CSS al renderizar.                */
+    /* Solo se muestran/ocultan mediante los eventos online/offline.   */
+
+    function goOffline() {
+        offlineBanner.style.display = "flex";
+        syncBanner.style.display    = "none";
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<i class="bi bi-wifi-off me-2"></i>Sin cobertura';
+        try {
+            localStorage.setItem(PENDING_KEY, localStorage.getItem(DRAFT_KEY) || "{}");
+        } catch (e) { /* ignore */ }
+    }
+
+    function goOnline() {
+        offlineBanner.style.display = "none";
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = '<i class="bi bi-send-check me-2"></i>Enviar al servidor';
+        try {
+            const pending = localStorage.getItem(PENDING_KEY);
+            syncBanner.style.display = pending ? "flex" : "none";
+        } catch (e) { /* ignore */ }
+    }
+
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online",  goOnline);
+
+    /* ── Form submit ───────────────────────────────────────────────── */
+    form.addEventListener("submit", function (e) {
+        if (!navigator.onLine) {
+            e.preventDefault();
+            /* Save as pending — will be sent when back online. */
+            try {
+                localStorage.setItem(PENDING_KEY, localStorage.getItem(DRAFT_KEY) || "{}");
+            } catch (err) { /* ignore */ }
+            saveStatus.textContent = "Guardado sin cobertura. Se enviará al recuperar conexión.";
+            return;
+        }
+        /* Clear draft and pending on successful submit. */
+        try {
+            localStorage.removeItem(DRAFT_KEY);
+            localStorage.removeItem(PENDING_KEY);
+        } catch (err) { /* ignore */ }
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Enviando…';
+    });
+
+    /* ── Manual sync button ────────────────────────────────────────── */
+    btnSync.addEventListener("click", function () {
+        try {
+            const raw = localStorage.getItem(PENDING_KEY);
+            if (!raw) return;
+            const d = JSON.parse(raw);
+            if (d.name)  fieldName.value  = d.name;
+            if (d.phone) fieldPhone.value = d.phone;
+            localStorage.removeItem(PENDING_KEY);
+            syncBanner.style.display = "none";
+            saveStatus.textContent = "Datos recuperados. Pulsa Enviar al servidor.";
+        } catch (e) { /* ignore */ }
+    });
+
+})();
+</script>
+{% endblock %}

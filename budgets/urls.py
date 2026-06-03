@@ -88,6 +88,14 @@ urlpatterns = [
         name="status_update",
     ),
 
+    # Albarán demo — prototipo offline H17. Formulario mobile-first con firma canvas.
+    # Delivery note demo — H17 offline prototype. Mobile-first form with canvas signature.
+    path(
+        "albaran-demo/",
+        views.AlbaranDemoView.as_view(),
+        name="albaran_demo",
+    ),
+
     # Budget history — listado de presupuestos generados.
     # Solo visible para ADMIN. El operario ASSISTANCE no tiene acceso.
     # Budget history — list of generated budgets. ADMIN only.

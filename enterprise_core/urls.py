@@ -11,8 +11,32 @@ Saneado: Eliminadas las rutas de la aplicación legada test_live (Abril 2026).
 
 from django.contrib import admin
 from django.urls import path, include
+from django.http import HttpResponse
+from django.views.decorators.cache import never_cache as _never_cache
 
 urlpatterns = [
+
+    # Web App Manifest — served from root so Chrome can detect the PWA.
+    # Manifiesto de app web — servido desde la raíz para que Chrome detecte la PWA.
+    path(
+        "albaran-manifest.json",
+        _never_cache(lambda request: HttpResponse(
+            open("/home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/albaran_manifest.json").read(),
+            content_type="application/manifest+json; charset=utf-8",
+        )),
+        name="albaran_manifest",
+    ),
+
+    # Service Worker — served from root scope so SW can control all panel routes.
+    # Servido desde la raíz para que el SW controle todas las rutas del panel.
+    path(
+        "sw.js",
+        _never_cache(lambda request: HttpResponse(
+            open("/home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/sw_albaran.js").read(),
+            content_type="application/javascript; charset=utf-8",
+        )),
+        name="sw_js",
+    ),
     path('admin/', admin.site.urls),
     # Voice IVR bridge — puente IVR de voz.
     path('api/vox/', include('vox_bridge.urls')),

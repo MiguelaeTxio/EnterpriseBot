@@ -40,7 +40,7 @@ from budgets.models import (
     TariffLine,
     VehicleType,
 )
-from budgets.services import calculate_budget
+from budgets.services import calculate_budget, _is_holiday
 from ivr_config.models import CompanyUser, PresenceStatus
 from panel.mixins import AdminRoleRequiredMixin, AssistanceRequiredMixin
 
@@ -351,36 +351,16 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         dest_location          = data.get("dest_location", "").strip()
         pk_km_raw              = data.get("pk_km", "").strip()
         service_date_raw       = data.get("service_date", "").strip()
-        service_time_raw_nyf   = data.get("service_time", "").strip()
-        # Auto-detect night/holiday. Fallback to manual checkbox if no date/time.
-        # Detección automática nocturno/festivo. Fallback al checkbox si no hay fecha/hora.
+        # The operator's explicit checkbox choice (is_night_manual) is the
+        # authoritative source of truth. The automatic night/holiday detection
+        # only runs in BudgetStepsView (HTMX GET) to pre-check the checkbox
+        # before the operator sees it. Whatever the operator submits in the
+        # POST is their final decision and must not be overridden here.
+        # La eleccion explicita del operario (is_night_manual) es la fuente
+        # de verdad. La deteccion automatica solo opera en BudgetStepsView
+        # (GET HTMX) para pre-marcar el checkbox. Lo que el operario envia
+        # en el POST es su decision final y no debe sobreescribirse aqui.
         is_night = is_night_manual
-        if service_date_raw and service_time_raw_nyf:
-            try:
-                import datetime as _dt_nyf
-                _svc_date = _dt_nyf.date.fromisoformat(service_date_raw)
-                _svc_time = _dt_nyf.time.fromisoformat(service_time_raw_nyf)
-                _company  = _get_company_user(request).company
-                _ns       = _company.night_start
-                _ne       = _company.night_end
-                # Night interval may cross midnight (e.g. 22:00-06:00).
-                # El intervalo nocturno puede cruzar la medianoche.
-                if _ns <= _ne:
-                    _is_night_hour = _ns <= _svc_time <= _ne
-                else:
-                    _is_night_hour = _svc_time >= _ns or _svc_time <= _ne
-                _is_holiday_day = _is_holiday(_svc_date, None)
-                try:
-                    _base_obj = Base.objects.get(
-                        pk=int(data.get("base_id", 0)),
-                        company=_company,
-                    )
-                    _is_holiday_day = _is_holiday(_svc_date, _base_obj)
-                except (Base.DoesNotExist, ValueError, TypeError):
-                    pass
-                is_night = _is_night_hour or _is_holiday_day
-            except (ValueError, AttributeError):
-                is_night = is_night_manual
         route_distance_km_raw  = data.get("route_distance_km", "").strip()
         route_toll_cost_raw    = data.get("route_toll_cost", "").strip()
         route_calculation_mode = data.get("route_calculation_mode", "MANUAL").strip()
@@ -3041,3 +3021,50 @@ class BaseGlobalView(AdminRoleRequiredMixin, View):
             "active_nav": "budgets_bases",
         })
         return render(request, self.template_name, ctx)
+
+
+# ---------------------------------------------------------------------------
+# ALBARÁN DEMO — H17 offline prototype view.
+# Vista prototipo offline H17 — formulario de albarán con firma canvas.
+# ---------------------------------------------------------------------------
+
+class AlbaranDemoView(AssistanceRequiredMixin, View):
+    """
+    Prototype view for the H17 offline delivery-note flow.
+    Renders a mobile-first form with five fields (name, DNI, phone,
+    vehicle plate, canvas signature) and handles the POST submission,
+    storing the signed data in the session for demo purposes only.
+    ---
+    Vista prototipo para el flujo offline de albarán H17.
+    Renderiza un formulario mobile-first con cinco campos (nombre, DNI,
+    teléfono, matrícula vehículo, firma canvas) y gestiona el POST,
+    almacenando los datos firmados en la sesión solo con fines de demo.
+    """
+
+    template_name = "budgets/albaran_demo.html"
+
+    def get(self, request, *args, **kwargs):
+        """
+        Renders the blank demo delivery-note form.
+        Renderiza el formulario de albarán demo en blanco.
+        """
+        company_user = get_object_or_404(CompanyUser, user=request.user)
+        submitted = request.session.pop("albaran_demo_submitted", False)
+        return render(request, self.template_name, {
+            "active_nav":   "albaran_demo",
+            "company_user": company_user,
+            "submitted":    submitted,
+        })
+
+    def post(self, request, *args, **kwargs):
+        """
+        Handles the signed form submission. Stores a success flag in the
+        session and redirects to GET to avoid double-submit on refresh.
+        ---
+        Gestiona el envío del formulario firmado. Almacena un flag de éxito
+        en la sesión y redirige a GET para evitar doble envío al recargar.
+        """
+        # In the demo, we simply acknowledge receipt. No model persistence yet.
+        # En el demo, solo acusamos recibo. Sin persistencia en modelo aún.
+        request.session["albaran_demo_submitted"] = True
+        return redirect("budgets:albaran_demo")

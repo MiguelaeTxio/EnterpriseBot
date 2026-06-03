@@ -8092,9 +8092,17 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
         django_messages.success(
             request,
             f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
-            f"El informe Excel está disponible en la lista de partes."
+            f"El informe Excel está disponible en tu historial."
         )
-        return redirect("/panel/work-orders/")
+        # Redirect to the role-appropriate history view.
+        # WORKSHOP operators go to their own history; ADMIN/SUPERVISOR go to admin history.
+        # Redirigir a la vista de historial adecuada según el rol.
+        # Los operarios WORKSHOP van a su historial propio; ADMIN/SUPERVISOR al historial admin.
+        from django.urls import reverse as _reverse
+        _cu = request.user.company_user
+        if _cu.role in (CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR):
+            return redirect(_reverse("panel:work_order_admin_history"))
+        return redirect(_reverse("panel:operator_history"))
 
 
 class WorkOrderEntryFormView(WorkshopRequiredMixin, View):

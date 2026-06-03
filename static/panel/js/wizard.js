@@ -45,7 +45,7 @@
       var resultSection = document.getElementById('route-result-section');
       if (resultSection) resultSection.innerHTML = '';
       ['id_route_calculation_mode', 'id_route_distance_km',
-       'id_route_toll_cost', 'id_road_name', 'id_pk_km'
+       'id_route_toll_cost', 'id_road_name', 'id_pk_km', 'id_dest_location'
       ].forEach(function (id) {
         var el = document.getElementById(id);
         if (el) el.value = id === 'id_route_calculation_mode' ? 'MANUAL' : '';
@@ -63,6 +63,7 @@
     var form        = document.getElementById('budget-form');
     var baseIdInput = document.querySelector('[name=base_id]');
     var roadName    = document.getElementById('id_road_name_calc').value.trim();
+    var destLocation = (document.getElementById('id_dest_location_calc') || {value: ''}).value.trim();
     var pkKm        = document.getElementById('id_pk_km_calc').value.trim();
     var serviceDate = (document.getElementById('id_service_date') || {}).value || '';
     var serviceTime = (document.getElementById('id_service_time') || {}).value || '';
@@ -80,6 +81,7 @@
     var postValues = {
       base_id:             baseIdInput ? baseIdInput.value : '',
       road_name:           roadName,
+      dest_location:       destLocation,
       pk_km:               pkKm,
       service_date:        serviceDate,
       service_time:        serviceTime,
