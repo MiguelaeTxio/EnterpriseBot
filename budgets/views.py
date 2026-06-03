@@ -3068,3 +3068,322 @@ class AlbaranDemoView(AssistanceRequiredMixin, View):
         # En el demo, solo acusamos recibo. Sin persistencia en modelo aún.
         request.session["albaran_demo_submitted"] = True
         return redirect("budgets:albaran_demo")
+
+
+# ---------------------------------------------------------------------------
+# H17 — WORK ORDER ASSISTANCE VIEWS
+# Vistas de órdenes de trabajo de asistencia (Hito 17)
+# ---------------------------------------------------------------------------
+
+class WorkOrderCreateFromBudgetView(AssistanceRequiredMixin, View):
+    """
+    Creates a WorkOrderAssistance from an accepted Budget.
+    Accessible via the 'Generar orden de trabajo' button on BudgetResultView
+    when budget.status == ACCEPTED. Inherits insurer, vehicle_type and base
+    from the source Budget. Redirects to WorkOrderDetailView on success.
+    ---
+    Crea una WorkOrderAssistance a partir de un Budget aceptado.
+    Accesible desde el botón 'Generar orden de trabajo' en BudgetResultView
+    cuando budget.status == ACCEPTED. Hereda aseguradora, tipo de vehículo
+    y base del Budget de origen. Redirige a WorkOrderDetailView en éxito.
+    """
+
+    def post(self, request, pk):
+        """
+        POST handler. Resolves the Budget, validates its status is ACCEPTED,
+        creates the WorkOrderAssistance and redirects to its detail view.
+        ---
+        Manejador POST. Resuelve el Budget, valida que su estado sea ACCEPTED,
+        crea la WorkOrderAssistance y redirige a su vista de detalle.
+        """
+        from budgets.models import WorkOrderAssistance
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        budget = get_object_or_404(
+            Budget,
+            pk=pk,
+            company=company_user.company,
+        )
+        if budget.status != Budget.STATUS_ACCEPTED:
+            messages.error(
+                request,
+                "Solo se puede generar una orden de trabajo desde un presupuesto aceptado.",
+            )
+            return redirect("budgets:result", pk=budget.pk)
+        # Guard: avoid creating duplicate work orders for the same budget.
+        # Guardia: evitar crear órdenes duplicadas para el mismo presupuesto.
+        existing = WorkOrderAssistance.objects.filter(budget=budget).first()
+        if existing:
+            messages.warning(
+                request,
+                "Este presupuesto ya tiene una orden de trabajo asociada.",
+            )
+            return redirect("budgets:work_order_detail", pk=existing.pk)
+        with transaction.atomic():
+            work_order = WorkOrderAssistance.objects.create(
+                company=company_user.company,
+                budget=budget,
+                insurer=budget.insurer,
+                vehicle_type=budget.vehicle_type,
+                base=budget.base,
+                operator=company_user,
+                created_by=company_user,
+                service_date=budget.service_date,
+            )
+        messages.success(
+            request,
+            f"Orden de trabajo {work_order.work_order_number} creada correctamente.",
+        )
+        return redirect("budgets:work_order_detail", pk=work_order.pk)
+
+
+class WorkOrderCreateDirectView(AssistanceRequiredMixin, View):
+    """
+    Creates a WorkOrderAssistance directly, without a prior Budget.
+    Renders a form pre-populated with the company's active insurers.
+    On valid POST, creates the order and redirects to WorkOrderDetailView.
+    ---
+    Crea una WorkOrderAssistance directamente, sin presupuesto previo.
+    Renderiza un formulario pre-poblado con las aseguradoras activas de
+    la empresa. En POST válido, crea la orden y redirige a WorkOrderDetailView.
+    """
+
+    template_name = "budgets/work_order_create_direct.html"
+
+    def get(self, request):
+        """
+        Renders the direct work order creation form.
+        ---
+        Renderiza el formulario de creación directa de orden de trabajo.
+        """
+        from budgets.models import WorkOrderAssistance
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        insurers = Insurer.objects.filter(
+            company=company_user.company,
+            is_active=True,
+        ).order_by("name")
+        ctx = _build_base_context(request, {
+            "insurers": insurers,
+            "active_nav": "work_orders",
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request):
+        """
+        Handles the direct work order creation form submission.
+        Validates required fields, creates the WorkOrderAssistance and
+        redirects to its detail view.
+        ---
+        Gestiona el envío del formulario de creación directa.
+        Valida los campos obligatorios, crea la WorkOrderAssistance y
+        redirige a su vista de detalle.
+        """
+        from budgets.models import WorkOrderAssistance
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        insurer_id  = request.POST.get("insurer_id", "").strip()
+        service_date = request.POST.get("service_date", "").strip()
+        if not insurer_id or not service_date:
+            messages.error(request, "La aseguradora y la fecha del servicio son obligatorias.")
+            return redirect("budgets:work_order_create_direct")
+        insurer = get_object_or_404(
+            Insurer,
+            pk=int(insurer_id),
+            company=company_user.company,
+            is_active=True,
+        )
+        with transaction.atomic():
+            work_order = WorkOrderAssistance.objects.create(
+                company=company_user.company,
+                budget=None,
+                insurer=insurer,
+                vehicle_type=insurer.vehicle_types.first(),
+                base=None,
+                operator=company_user,
+                created_by=company_user,
+                service_date=service_date,
+            )
+        messages.success(
+            request,
+            f"Orden de trabajo {work_order.work_order_number} creada correctamente.",
+        )
+        return redirect("budgets:work_order_detail", pk=work_order.pk)
+
+
+class WorkOrderDetailView(AssistanceRequiredMixin, View):
+    """
+    Displays the full detail of a WorkOrderAssistance record.
+    Shows all TIREA fields, linked units and their status.
+    Accessible to ASSISTANCE and ADMIN roles scoped to the company.
+    ---
+    Muestra el detalle completo de un registro WorkOrderAssistance.
+    Muestra todos los campos TIREA, unidades vinculadas y su estado.
+    Accesible para los roles ASSISTANCE y ADMIN con ámbito de empresa.
+    """
+
+    template_name = "budgets/work_order_detail.html"
+
+    def get(self, request, pk):
+        """
+        Renders the work order detail page.
+        ---
+        Renderiza la página de detalle de la orden de trabajo.
+        """
+        from budgets.models import WorkOrderAssistance
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        work_order = get_object_or_404(
+            WorkOrderAssistance,
+            pk=pk,
+            company=company_user.company,
+        )
+        units = work_order.units.select_related(
+            "operator", "operator_2"
+        ).prefetch_related(
+            "signature", "incidence"
+        ).order_by("unit_number")
+        ctx = _build_base_context(request, {
+            "work_order": work_order,
+            "units": units,
+            "active_nav": "work_orders",
+        })
+        return render(request, self.template_name, ctx)
+
+
+class WorkOrderAlbaranView(AssistanceRequiredMixin, View):
+    """
+    Renders the mobile-first albarán form for a WorkOrderAssistanceUnit.
+    Used by the operator on the Android app or mobile browser to fill in
+    service data and capture the client signature. Handles GET (render)
+    and POST (save data + signature).
+    ---
+    Renderiza el formulario de albarán mobile-first para una
+    WorkOrderAssistanceUnit. Usado por el operario en la app Android o
+    navegador móvil para rellenar datos del servicio y capturar la firma
+    del cliente. Gestiona GET (renderizar) y POST (guardar datos + firma).
+    """
+
+    template_name = "budgets/albaran_operario.html"
+
+    def get(self, request, pk):
+        """
+        Renders the albarán form for the given unit.
+        ---
+        Renderiza el formulario de albarán para la unidad indicada.
+        """
+        from budgets.models import WorkOrderAssistanceUnit
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        unit = get_object_or_404(
+            WorkOrderAssistanceUnit,
+            pk=pk,
+            work_order__company=company_user.company,
+        )
+        ctx = _build_base_context(request, {
+            "unit": unit,
+            "work_order": unit.work_order,
+            "active_nav": "work_orders",
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request, pk):
+        """
+        Saves the albarán data and client signature for the given unit.
+        Marks the unit as COMPLETED and creates the signature record.
+        Redirects to WorkOrderDetailView on success.
+        ---
+        Guarda los datos del albarán y la firma del cliente para la unidad.
+        Marca la unidad como COMPLETED y crea el registro de firma.
+        Redirige a WorkOrderDetailView en éxito.
+        """
+        from budgets.models import WorkOrderAssistanceUnit, WorkOrderAssistanceSignature
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        unit = get_object_or_404(
+            WorkOrderAssistanceUnit,
+            pk=pk,
+            work_order__company=company_user.company,
+        )
+        phase1_km     = request.POST.get("phase1_km", "").strip() or None
+        phase2_km     = request.POST.get("phase2_km", "").strip() or None
+        departure_fee = request.POST.get("departure_fee", "").strip() or None
+        rescue_hours  = request.POST.get("rescue_hours", "").strip() or None
+        wait_hours    = request.POST.get("wait_hours", "").strip() or None
+        signature_data = request.POST.get("signature_data", "").strip()
+        signer_name    = request.POST.get("signer_name", "").strip()
+        signed_offline = request.POST.get("signed_offline", "false") == "true"
+        with transaction.atomic():
+            unit.phase1_km     = phase1_km
+            unit.phase2_km     = phase2_km
+            unit.departure_fee = departure_fee
+            unit.rescue_hours  = rescue_hours
+            unit.wait_hours    = wait_hours
+            unit.status        = WorkOrderAssistanceUnit.STATUS_COMPLETED
+            unit.save()
+            if signature_data:
+                WorkOrderAssistanceSignature.objects.update_or_create(
+                    unit=unit,
+                    defaults={
+                        "signature_data": signature_data,
+                        "signer_name":    signer_name,
+                        "signed_offline": signed_offline,
+                    },
+                )
+        messages.success(request, "Albarán guardado y firmado correctamente.")
+        return redirect("budgets:work_order_detail", pk=unit.work_order.pk)
+
+
+class WorkOrderPdfView(AssistanceRequiredMixin, View):
+    """
+    Generates and streams a PDF export of a WorkOrderAssistanceUnit albarán.
+    Uses weasyprint to render albaran_pdf.html as a PDF response.
+    Accessible to ASSISTANCE and ADMIN roles scoped to the company.
+    ---
+    Genera y envía como respuesta un PDF del albarán de una
+    WorkOrderAssistanceUnit. Usa weasyprint para renderizar albaran_pdf.html
+    como respuesta PDF. Accesible para ASSISTANCE y ADMIN con ámbito empresa.
+    """
+
+    template_name = "budgets/albaran_pdf.html"
+
+    def get(self, request, pk):
+        """
+        Renders the unit albarán as a downloadable PDF.
+        ---
+        Renderiza el albarán de la unidad como PDF descargable.
+        """
+        from budgets.models import WorkOrderAssistanceUnit
+        from django.http import HttpResponse
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        unit = get_object_or_404(
+            WorkOrderAssistanceUnit,
+            pk=pk,
+            work_order__company=company_user.company,
+        )
+        html_string = render(
+            request,
+            self.template_name,
+            {
+                "unit":        unit,
+                "work_order":  unit.work_order,
+                "company":     company_user.company,
+            },
+        ).content.decode("utf-8")
+        pdf_file = weasyprint.HTML(string=html_string).write_pdf()
+        filename = (
+            f"albaran_"
+            f"{unit.work_order.work_order_number}-"
+            f"{unit.unit_number:02d}.pdf"
+        )
+        response = HttpResponse(pdf_file, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

@@ -186,6 +186,31 @@ class WhatsAppSession(models.Model):
             ),
         ]
 
+    # ------------------------------------------------------------------
+    # PENDING ALBARAN UNITS — H17 operator notification queue.
+    # List of WorkOrderAssistanceUnit PKs pending delivery to this operator.
+    # Populated by send_operator_albaran_notification() when the session
+    # renewal template is sent. Consumed and cleared by the opt_in branch
+    # of the IncomingWhatsAppView webhook (step 4b-bis) once the operator
+    # opens the 24-hour window and receives the albarán link.
+    # ------------------------------------------------------------------
+    # UNIDADES DE ALBARÁN PENDIENTES — cola de notificación al operario H17.
+    # Lista de PKs de WorkOrderAssistanceUnit pendientes de entrega a este
+    # operario. Poblada por send_operator_albaran_notification() cuando se
+    # envía el template de renovación de sesión. Consumida y vaciada por la
+    # rama opt_in del webhook IncomingWhatsAppView (paso 4b-bis) cuando el
+    # operario abre la ventana de 24 horas y recibe el enlace al albarán.
+    pending_albaran_units = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Unidades de albarán pendientes",
+        help_text=(
+            "Lista de PKs de WorkOrderAssistanceUnit pendientes de notificar "
+            "a este operario. Formato: [1, 2, 3]. Se vacía tras la entrega "
+            "del enlace al albarán en el webhook opt_in."
+        ),
+    )
+
     def __str__(self):
         return (
             f"{self.company.name} — {self.phone_number} "

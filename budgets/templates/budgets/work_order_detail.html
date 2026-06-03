@@ -1,0 +1,386 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/work_order_detail.html -->
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}OT {{ work_order.work_order_number }}{% endblock %}
+{% block page_title %}Orden de trabajo {{ work_order.work_order_number }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+
+    {# ------------------------------------------------------------------ #}
+    {# Cabecera — estado y acciones globales                               #}
+    {# ------------------------------------------------------------------ #}
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div>
+            <span class="badge
+                {% if work_order.status == 'PENDING' %}bg-secondary
+                {% elif work_order.status == 'IN_PROGRESS' %}bg-primary
+                {% elif work_order.status == 'COMPLETED' %}bg-success
+                {% elif work_order.status == 'INVOICED' %}bg-dark
+                {% endif %} fs-6">
+                {{ work_order.get_status_display }}
+            </span>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'budgets:wizard' %}"
+               class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>Volver
+            </a>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Datos del expediente TIREA                                          #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card mb-3 shadow-sm">
+        <div class="card-header py-2 fw-semibold small">
+            <i class="bi bi-file-earmark-text me-1"></i>Expediente
+        </div>
+        <div class="card-body">
+            <div class="row g-2 small">
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Nº orden</span>
+                    <strong>{{ work_order.work_order_number }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Fecha servicio</span>
+                    <strong>{{ work_order.service_date|date:"d/m/Y" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Aseguradora</span>
+                    <strong>{{ work_order.insurer.name }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Expediente</span>
+                    <strong>{{ work_order.expediente|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Cód. proveedor</span>
+                    <strong>{{ work_order.provider_code|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Nº póliza</span>
+                    <strong>{{ work_order.policy_number|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Asegurado</span>
+                    <strong>{{ work_order.insured_name|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Motivo RIS</span>
+                    <strong>{{ work_order.ris_motive|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">F. solicitud</span>
+                    <strong>{{ work_order.request_time|date:"d/m/Y H:i"|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">F. inicio</span>
+                    <strong>{{ work_order.service_start_time|date:"d/m/Y H:i"|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">F. localizado</span>
+                    <strong>{{ work_order.arrival_time|date:"d/m/Y H:i"|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">F. cargado</span>
+                    <strong>{{ work_order.load_time|date:"d/m/Y H:i"|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">F. finalizado</span>
+                    <strong>{{ work_order.completion_time|date:"d/m/Y H:i"|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Tiempo localizado</span>
+                    <strong>{{ work_order.location_elapsed|default:"—" }}</strong>
+                </div>
+                <div class="col-12">
+                    <div class="d-flex flex-wrap gap-2 mt-1">
+                        {% if work_order.is_overnight %}
+                        <span class="badge bg-warning text-dark">
+                            <i class="bi bi-moon-fill me-1"></i>Pernocta
+                        </span>
+                        {% endif %}
+                        {% if work_order.is_accident %}
+                        <span class="badge bg-danger">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i>Accidente
+                        </span>
+                        {% endif %}
+                        {% if work_order.repair_on_site %}
+                        <span class="badge bg-info text-dark">
+                            <i class="bi bi-tools me-1"></i>Reparación in situ
+                        </span>
+                        {% endif %}
+                        {% if work_order.second_service %}
+                        <span class="badge bg-secondary">
+                            <i class="bi bi-arrow-repeat me-1"></i>2º servicio
+                        </span>
+                        {% endif %}
+                        {% if work_order.is_failed %}
+                        <span class="badge bg-dark">
+                            <i class="bi bi-x-circle-fill me-1"></i>Fallido
+                        </span>
+                        {% endif %}
+                        {% if not work_order.is_billable %}
+                        <span class="badge bg-secondary">
+                            <i class="bi bi-dash-circle me-1"></i>No facturable
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Vehículo asistido                                                   #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card mb-3 shadow-sm">
+        <div class="card-header py-2 fw-semibold small">
+            <i class="bi bi-truck me-1"></i>Vehículo asistido
+        </div>
+        <div class="card-body">
+            <div class="row g-2 small">
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Matrícula</span>
+                    <strong>{{ work_order.vehicle_plate|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Marca</span>
+                    <strong>{{ work_order.vehicle_brand|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Modelo</span>
+                    <strong>{{ work_order.vehicle_model|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Color</span>
+                    <strong>{{ work_order.vehicle_color|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Tipo</span>
+                    <strong>{{ work_order.vehicle_type_label|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Subtipo</span>
+                    <strong>{{ work_order.vehicle_subtype_label|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">P.M.A. (kg)</span>
+                    <strong>{{ work_order.vehicle_pma|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Peso (kg)</span>
+                    <strong>{{ work_order.vehicle_weight|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Largo (m)</span>
+                    <strong>{{ work_order.vehicle_length|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Alto (m)</span>
+                    <strong>{{ work_order.vehicle_height|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Ejes</span>
+                    <strong>{{ work_order.vehicle_axes|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Tara (kg)</span>
+                    <strong>{{ work_order.vehicle_tare|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="text-muted d-block">Ocupantes</span>
+                    <strong>{{ work_order.num_passengers|default:"—" }}</strong>
+                </div>
+                <div class="col-12">
+                    <span class="text-muted d-block">Avería</span>
+                    <strong>{{ work_order.breakdown_description|default:"—" }}</strong>
+                    {% if work_order.breakdown_code %}
+                    <span class="text-muted ms-1">({{ work_order.breakdown_code }})</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Recogida y entrega                                                  #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card mb-3 shadow-sm">
+        <div class="card-header py-2 fw-semibold small">
+            <i class="bi bi-geo-alt me-1"></i>Recogida y entrega
+        </div>
+        <div class="card-body">
+            <div class="row g-2 small">
+                <div class="col-12 col-md-6">
+                    <p class="fw-semibold mb-1 text-muted" style="font-size:.75rem;text-transform:uppercase;">Recogida</p>
+                    <div class="row g-1">
+                        <div class="col-6">
+                            <span class="text-muted d-block">Tipo</span>
+                            <strong>{{ work_order.pickup_type|default:"—" }}</strong>
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted d-block">Provincia</span>
+                            <strong>{{ work_order.pickup_province|default:work_order.vehicle_province|default:"—" }}</strong>
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted d-block">Localidad</span>
+                            <strong>{{ work_order.vehicle_locality|default:"—" }}</strong>
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted d-block">C.P.</span>
+                            <strong>{{ work_order.pickup_cp|default:"—" }}</strong>
+                        </div>
+                        <div class="col-12">
+                            <span class="text-muted d-block">Dirección</span>
+                            <strong>{{ work_order.pickup_location|default:"—" }}</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <p class="fw-semibold mb-1 text-muted" style="font-size:.75rem;text-transform:uppercase;">Entrega</p>
+                    <div class="row g-1">
+                        <div class="col-6">
+                            <span class="text-muted d-block">Tipo</span>
+                            <strong>{{ work_order.delivery_type|default:"—" }}</strong>
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted d-block">Provincia</span>
+                            <strong>{{ work_order.delivery_province|default:"—" }}</strong>
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted d-block">Localidad</span>
+                            <strong>{{ work_order.delivery_locality|default:"—" }}</strong>
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted d-block">País</span>
+                            <strong>{{ work_order.delivery_country|default:"—" }}</strong>
+                        </div>
+                        <div class="col-12">
+                            <span class="text-muted d-block">Dirección</span>
+                            <strong>{{ work_order.delivery_address|default:work_order.destination|default:"—" }}</strong>
+                        </div>
+                    </div>
+                </div>
+                {% if work_order.driver_km or work_order.total_km_tirea %}
+                <div class="col-6 col-md-3 mt-2">
+                    <span class="text-muted d-block">Km chófer</span>
+                    <strong>{{ work_order.driver_km|default:"—" }}</strong>
+                </div>
+                <div class="col-6 col-md-3 mt-2">
+                    <span class="text-muted d-block">Km totales TIREA</span>
+                    <strong>{{ work_order.total_km_tirea|default:"—" }}</strong>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Comentarios                                                         #}
+    {# ------------------------------------------------------------------ #}
+    {% if work_order.insurer_comments or work_order.company_observations %}
+    <div class="card mb-3 shadow-sm">
+        <div class="card-header py-2 fw-semibold small">
+            <i class="bi bi-chat-left-text me-1"></i>Comentarios
+        </div>
+        <div class="card-body small">
+            {% if work_order.insurer_comments %}
+            <p class="text-muted mb-1" style="font-size:.75rem;text-transform:uppercase;font-weight:700;">Aseguradora</p>
+            <p class="mb-3">{{ work_order.insurer_comments }}</p>
+            {% endif %}
+            {% if work_order.company_observations %}
+            <p class="text-muted mb-1" style="font-size:.75rem;text-transform:uppercase;font-weight:700;">Compañía</p>
+            <p class="mb-0">{{ work_order.company_observations }}</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Unidades — albaranes individuales                                   #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card mb-3 shadow-sm">
+        <div class="card-header py-2 d-flex align-items-center justify-content-between">
+            <span class="fw-semibold small">
+                <i class="bi bi-truck-flatbed me-1"></i>Unidades
+            </span>
+        </div>
+        <div class="card-body p-0">
+            {% if units %}
+            <div class="list-group list-group-flush">
+                {% for unit in units %}
+                <div class="list-group-item px-3 py-3">
+                    <div class="d-flex align-items-start justify-content-between gap-2 flex-wrap">
+                        <div>
+                            <span class="fw-semibold">
+                                {{ work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }}
+                            </span>
+                            <span class="badge ms-1
+                                {% if unit.status == 'PENDING' %}bg-secondary
+                                {% elif unit.status == 'IN_PROGRESS' %}bg-primary
+                                {% elif unit.status == 'COMPLETED' %}bg-success
+                                {% endif %}">
+                                {{ unit.get_status_display }}
+                            </span>
+                            {% if unit.is_overnight %}
+                            <span class="badge bg-warning text-dark ms-1">
+                                <i class="bi bi-moon-fill"></i> Pernocta
+                            </span>
+                            {% endif %}
+                            {% if unit.signature %}
+                            <span class="badge bg-success ms-1">
+                                <i class="bi bi-pen-fill"></i> Firmado
+                            </span>
+                            {% endif %}
+                            <div class="small text-muted mt-1">
+                                <i class="bi bi-person me-1"></i>{{ unit.operator }}
+                                {% if unit.machine %}
+                                — <i class="bi bi-truck ms-1 me-1"></i>{{ unit.machine }}
+                                {% endif %}
+                            </div>
+                            {% if unit.is_overnight and unit.operator_2 %}
+                            <div class="small text-muted">
+                                <i class="bi bi-person me-1"></i>Fase 2: {{ unit.operator_2 }}
+                                {% if unit.machine_2 %}
+                                — <i class="bi bi-truck ms-1 me-1"></i>{{ unit.machine_2 }}
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if unit.phase1_km %}
+                            <div class="small text-muted">
+                                <i class="bi bi-signpost me-1"></i>{{ unit.phase1_km }} km
+                                {% if unit.phase2_km %}+ {{ unit.phase2_km }} km (fase 2){% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex gap-2 flex-shrink-0">
+                            <a href="{% url 'budgets:work_order_albaran' pk=unit.pk %}"
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-pencil-square me-1"></i>Albarán
+                            </a>
+                            {% if unit.status == 'COMPLETED' %}
+                            <a href="{% url 'budgets:work_order_pdf' pk=unit.pk %}"
+                               class="btn btn-sm btn-outline-success"
+                               target="_blank">
+                                <i class="bi bi-filetype-pdf me-1"></i>PDF
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="p-3 text-muted small">
+                <i class="bi bi-info-circle me-1"></i>
+                No hay unidades asignadas a esta orden de trabajo.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}

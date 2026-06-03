@@ -1744,6 +1744,355 @@ class WorkOrderAssistance(models.Model):
         verbose_name="Notas adicionales",
         help_text="Observaciones internas ADMIN. No visibles en el albarán exportado.",
     )
+    # ── TIREA service data — Datos del expediente TIREA ────────────────────
+    # Provider code assigned by the insurer to Grúas Álvarez.
+    # Código de proveedor asignado por la aseguradora a Grúas Álvarez.
+    provider_code = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Cód. proveedor",
+        help_text="Código de proveedor asignado por la aseguradora (ej: GP700101).",
+    )
+    # Insurance policy number linked to the service request.
+    # Número de póliza del asegurado vinculado a la solicitud de servicio.
+    policy_number = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Nº póliza",
+        help_text="Número de póliza del asegurado facilitado por la aseguradora.",
+    )
+    # Full name of the insured person (driver or policy holder).
+    # Nombre completo del asegurado (conductor o titular de la póliza).
+    insured_name = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Nombre asegurado",
+        help_text="Nombre completo del asegurado o conductor del vehículo.",
+    )
+    # Datetime when the operator located the vehicle on site.
+    # Momento en que el operario localizó el vehículo en el lugar del servicio.
+    arrival_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="F. localizado",
+        help_text="Fecha y hora en que el operario localizó el vehículo.",
+    )
+    # Datetime when the vehicle was loaded onto the crane.
+    # Momento en que el vehículo fue cargado sobre la grúa.
+    load_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="F. cargado",
+        help_text="Fecha y hora en que el vehículo fue cargado.",
+    )
+    # Datetime when the service request was received from the insurer.
+    # Momento en que la aseguradora cursó la solicitud de servicio.
+    request_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="F. solicitud",
+        help_text="Fecha y hora de recepción de la solicitud de la aseguradora.",
+    )
+    # Datetime when the operator started travelling to the breakdown site.
+    # Momento en que el operario inició el desplazamiento al punto de avería.
+    service_start_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="F. inicio",
+        help_text="Fecha y hora de inicio del desplazamiento del operario.",
+    )
+    # Datetime when the service was fully completed.
+    # Momento en que el servicio quedó completamente finalizado.
+    completion_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="F. finalizado",
+        help_text="Fecha y hora de finalización completa del servicio.",
+    )
+    # Elapsed time between request and vehicle location, as a formatted string.
+    # Tiempo transcurrido entre solicitud y localización del vehículo (cadena formateada).
+    location_elapsed = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Tiempo localizado",
+        help_text="Tiempo transcurrido hasta localizar el vehículo (ej: 01h53m).",
+    )
+    # True when this is a follow-up second service for the same incident.
+    # True cuando este es un segundo servicio de seguimiento del mismo siniestro.
+    second_service = models.BooleanField(
+        default=False,
+        verbose_name="Segundo servicio",
+        help_text="Indica si este servicio es un segundo servicio del mismo siniestro.",
+    )
+    # True when Grúas Álvarez manages the crane dispatch directly (no intermediary).
+    # True cuando Grúas Álvarez gestiona el envío de la grúa directamente.
+    own_crane_management = models.BooleanField(
+        default=False,
+        verbose_name="Gestión propia grúa",
+        help_text="Indica si la gestión de la grúa es propia, sin intermediario.",
+    )
+    # True when the service is related to a traffic accident.
+    # True cuando el servicio está relacionado con un accidente de tráfico.
+    is_accident = models.BooleanField(
+        default=False,
+        verbose_name="Accidente",
+        help_text="Indica si el servicio está relacionado con un accidente de tráfico.",
+    )
+    # True when the service attempt failed (vehicle not found, no access, etc.).
+    # True cuando el intento de servicio resultó fallido.
+    is_failed = models.BooleanField(
+        default=False,
+        verbose_name="Fallido",
+        help_text="Indica si el servicio resultó fallido (vehículo no localizado, sin acceso, etc.).",
+    )
+    # True when the service is billable to the insurer.
+    # True cuando el servicio es facturable a la aseguradora.
+    is_billable = models.BooleanField(
+        default=True,
+        verbose_name="Facturable",
+        help_text="Indica si el servicio es facturable. Por defecto True.",
+    )
+    # Free-text comments from the insurer about coverage, authorisations, etc.
+    # Comentarios de texto libre de la aseguradora sobre cobertura, autorizaciones, etc.
+    insurer_comments = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Comentarios aseguradora",
+        help_text="Comentarios de la aseguradora sobre cobertura, destino, autopista, etc.",
+    )
+    # Free-text observations from the company operating the service.
+    # Observaciones de texto libre de la empresa que presta el servicio.
+    company_observations = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Observaciones compañía",
+        help_text="Observaciones internas de la empresa prestadora del servicio.",
+    )
+
+    # ── TIREA vehicle data — Datos adicionales del vehículo ─────────────────
+    # Vehicle model name (e.g. ACTROS, Sprinter).
+    # Nombre del modelo del vehículo (ej: ACTROS, Sprinter).
+    vehicle_model = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Modelo",
+        help_text="Modelo del vehículo asistido (ej: ACTROS, Sprinter).",
+    )
+    # Vehicle colour as reported in TIREA.
+    # Color del vehículo tal como aparece en TIREA.
+    vehicle_color = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Color",
+        help_text="Color del vehículo asistido.",
+    )
+    # Free-text vehicle type label from TIREA (e.g. Cabeza Tractora).
+    # Etiqueta de tipo de vehículo en texto libre procedente de TIREA.
+    vehicle_type_label = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Tipo vehículo",
+        help_text="Tipo de vehículo según TIREA (ej: Cabeza Tractora, Turismo).",
+    )
+    # Free-text vehicle subtype label from TIREA.
+    # Etiqueta de subtipo de vehículo en texto libre procedente de TIREA.
+    vehicle_subtype_label = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Subtipo vehículo",
+        help_text="Subtipo de vehículo según TIREA.",
+    )
+    # Gross vehicle weight in kg as reported in TIREA.
+    # Masa total del vehículo en kg tal como aparece en TIREA.
+    vehicle_weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Peso (kg)",
+        help_text="Peso del vehículo en kilogramos.",
+    )
+    # Number of axles of the assisted vehicle.
+    # Número de ejes del vehículo asistido.
+    vehicle_axes = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Ejes",
+        help_text="Número de ejes del vehículo asistido.",
+    )
+    # Tare weight of the vehicle in kg.
+    # Tara del vehículo en kg.
+    vehicle_tare = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Tara (kg)",
+        help_text="Tara del vehículo en kilogramos.",
+    )
+    # Number of passengers in the vehicle at the time of the incident.
+    # Número de ocupantes en el vehículo en el momento del siniestro.
+    num_passengers = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Ocupantes",
+        help_text="Número de ocupantes del vehículo en el momento del siniestro.",
+    )
+    # Free-text description of the breakdown as reported by the insured.
+    # Descripción en texto libre de la avería según el asegurado.
+    breakdown_description = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        verbose_name="Avería",
+        help_text="Descripción de la avería facilitada por el asegurado.",
+    )
+    # Breakdown code assigned by the insurer.
+    # Código de avería asignado por la aseguradora.
+    breakdown_code = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Cód. avería",
+        help_text="Código de avería asignado por la aseguradora.",
+    )
+    # True when the vehicle was repaired on site without towing.
+    # True cuando el vehículo fue reparado in situ sin necesidad de remolque.
+    repair_on_site = models.BooleanField(
+        default=False,
+        verbose_name="Reparación in situ",
+        help_text="Indica si el vehículo fue reparado in situ sin remolque.",
+    )
+
+    # ── TIREA pickup data — Datos de recogida ───────────────────────────────
+    # Type of pickup location: Población, Carretera, etc.
+    # Tipo de punto de recogida: Población, Carretera, etc.
+    pickup_type = models.CharField(
+        max_length=30,
+        blank=True,
+        default="",
+        verbose_name="Tipo recogida",
+        help_text="Tipo de punto de recogida (ej: Población, Carretera).",
+    )
+    # Province of the pickup location.
+    # Provincia del punto de recogida.
+    pickup_province = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Provincia recogida",
+        help_text="Provincia del punto de recogida del vehículo.",
+    )
+    # Country of the pickup location.
+    # País del punto de recogida.
+    pickup_country = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="País recogida",
+        help_text="País del punto de recogida del vehículo.",
+    )
+    # Postal code of the pickup location.
+    # Código postal del punto de recogida.
+    pickup_cp = models.CharField(
+        max_length=10,
+        blank=True,
+        default="",
+        verbose_name="C.P. recogida",
+        help_text="Código postal del punto de recogida del vehículo.",
+    )
+
+    # ── TIREA delivery data — Datos de entrega ──────────────────────────────
+    # Type of delivery: In situ, Taller, Depósito, etc.
+    # Tipo de entrega: In situ, Taller, Depósito, etc.
+    delivery_type = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Tipo entrega",
+        help_text="Tipo de punto de entrega (ej: In situ, Taller, Depósito).",
+    )
+    # Province of the delivery location.
+    # Provincia del punto de entrega.
+    delivery_province = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Provincia entrega",
+        help_text="Provincia del punto de entrega del vehículo.",
+    )
+    # Locality of the delivery location.
+    # Localidad del punto de entrega.
+    delivery_locality = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        verbose_name="Localidad entrega",
+        help_text="Localidad del punto de entrega del vehículo.",
+    )
+    # Country of the delivery location.
+    # País del punto de entrega.
+    delivery_country = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="País entrega",
+        help_text="País del punto de entrega del vehículo.",
+    )
+    # Full street address of the delivery location.
+    # Dirección completa del punto de entrega.
+    delivery_address = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        verbose_name="Dirección entrega",
+        help_text="Dirección completa del punto de entrega del vehículo.",
+    )
+    # RIS motive — reason for roadside intervention service.
+    # Pending completion with the actual dropdown values from TIREA.
+    # Motivo RIS — razón de la intervención en carretera.
+    # Pendiente de completar con los valores reales del desplegable TIREA.
+    RIS_MOTIVE_CHOICES = [
+        # Pendiente de completar con los valores reales del desplegable TIREA.
+    ]
+    ris_motive = models.CharField(
+        max_length=50,
+        choices=RIS_MOTIVE_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name="Motivo RIS",
+        help_text="Motivo de la intervención RIS según el desplegable de TIREA.",
+    )
+    # Kilometres driven by the operator (chófer) as recorded in TIREA.
+    # Kilómetros recorridos por el chófer según TIREA.
+    driver_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Km chófer",
+        help_text="Kilómetros recorridos por el chófer según TIREA.",
+    )
+    # Total kilometres of the service as recorded in TIREA.
+    # Kilómetros totales del servicio según TIREA.
+    total_km_tirea = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Km totales TIREA",
+        help_text="Kilómetros totales del servicio registrados en TIREA.",
+    )
+
+    # ── Control ─────────────────────────────────────────────────────────────
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificación")
 
@@ -1784,3 +2133,528 @@ class WorkOrderAssistance(models.Model):
             f"OT {self.work_order_number} — "
             f"{self.insurer.name} — {self.get_status_display()}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 12. WORK ORDER ASSISTANCE UNIT — Individual albarán per vehicle unit.
+#     Albarán individual por cada vehículo de Grúas Álvarez en el servicio.
+# ---------------------------------------------------------------------------
+
+class WorkOrderAssistanceUnit(models.Model):
+    """
+    Represents one individual albarán within a WorkOrderAssistance service
+    order. Each vehicle dispatched by Grúas Álvarez (crane, workshop car,
+    platform, etc.) generates its own independent unit. The printed albarán
+    number is composed as: work_order_number-unit_number.
+
+    A unit can itself be a deferred service (is_overnight=True), in which
+    case operator_2 and machine_2 represent the second leg (base to
+    destination), with its own independent km data in phase2_km.
+    ---
+    Representa un albarán individual dentro de una orden de servicio
+    WorkOrderAssistance. Cada vehículo enviado por Grúas Álvarez (grúa,
+    coche de taller, plataforma, etc.) genera su propia unidad independiente.
+    El número de albarán impreso se compone como: work_order_number-unit_number.
+
+    Una unidad puede ser a su vez un servicio diferido (is_overnight=True),
+    en cuyo caso operator_2 y machine_2 representan el segundo tramo (base
+    a destino), con sus propios km independientes en phase2_km.
+    """
+
+    # --- Status choices ---
+    # --- Opciones de estado ---
+    STATUS_PENDING            = "PENDING"
+    STATUS_NOTIFIED           = "NOTIFIED"
+    STATUS_DOWNLOADED         = "DOWNLOADED"
+    STATUS_IN_PROGRESS        = "IN_PROGRESS"
+    STATUS_COMPLETED          = "COMPLETED"
+    STATUS_CLOSED_UNSIGNED    = "CLOSED_UNSIGNED"
+    STATUS_SIGNED_RECEIVED    = "SIGNED_RECEIVED"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING,         "Pendiente"),
+        (STATUS_NOTIFIED,        "Notificado"),
+        (STATUS_DOWNLOADED,      "Descargado"),
+        (STATUS_IN_PROGRESS,     "En curso"),
+        (STATUS_COMPLETED,       "Completado"),
+        (STATUS_CLOSED_UNSIGNED, "Cerrado sin firma"),
+        (STATUS_SIGNED_RECEIVED, "Firma recibida"),
+    ]
+
+    # ── Relations ───────────────────────────────────────────────────────────
+    work_order = models.ForeignKey(
+        WorkOrderAssistance,
+        on_delete=models.CASCADE,
+        related_name="units",
+        verbose_name="Orden de trabajo",
+        help_text="Orden de trabajo (expediente) a la que pertenece esta unidad.",
+    )
+    # Operator assigned to phase 1 (pickup leg).
+    # Operario asignado a la fase 1 (tramo de recogida).
+    operator = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        related_name="assistance_units_primary",
+        verbose_name="Chófer",
+        help_text="Chófer asignado al primer tramo del servicio.",
+    )
+    # Operator assigned to phase 2 (delivery leg). Only for deferred services.
+    # Operario asignado a la fase 2 (tramo de entrega). Solo en servicios diferidos.
+    operator_2 = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="assistance_units_secondary",
+        verbose_name="Chófer (fase 2)",
+        help_text=(
+            "Chófer del segundo tramo (base a destino). "
+            "Solo en servicios diferidos (is_overnight=True). "
+            "Puede coincidir con el chófer del primer tramo."
+        ),
+    )
+
+    # ── Unit identifier ─────────────────────────────────────────────────────
+    # Ordinal position of this unit within the work order (1, 2, 3...).
+    # The printed albarán number is: work_order_number-unit_number.
+    # Posición ordinal de esta unidad dentro de la orden (1, 2, 3...).
+    # El número de albarán impreso es: work_order_number-unit_number.
+    unit_number = models.PositiveSmallIntegerField(
+        verbose_name="Nº unidad",
+        help_text=(
+            "Ordinal de esta unidad dentro de la orden de trabajo (1, 2, 3...). "
+            "El albarán impreso se identifica como work_order_number-unit_number."
+        ),
+    )
+
+    # ── Machine identifiers ─────────────────────────────────────────────────
+    # Machine or plate assigned to phase 1.
+    # Máquina o matrícula asignada a la fase 1.
+    machine = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Máquina",
+        help_text="Matrícula o identificador de la máquina asignada al primer tramo.",
+    )
+    # Machine or plate assigned to phase 2. Only for deferred services.
+    # Máquina o matrícula asignada a la fase 2. Solo en servicios diferidos.
+    machine_2 = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Máquina (fase 2)",
+        help_text=(
+            "Matrícula o identificador de la máquina del segundo tramo. "
+            "Solo en servicios diferidos. Puede coincidir con la máquina del primer tramo."
+        ),
+    )
+
+    # ── Service flags ───────────────────────────────────────────────────────
+    # True when this unit performs a deferred service (two legs on different days).
+    # True cuando esta unidad realiza un servicio diferido (dos tramos en días distintos).
+    is_overnight = models.BooleanField(
+        default=False,
+        verbose_name="Pernocta",
+        help_text=(
+            "Indica si esta unidad realiza un servicio diferido: recoge el vehículo "
+            "un día y lo traslada a destino en otro momento. "
+            "Cuando es True, operator_2, machine_2 y phase2_km deben estar informados."
+        ),
+    )
+
+    # ── Kilometre data ──────────────────────────────────────────────────────
+    # Kilometres for phase 1 (base to pickup and back, or base to destination).
+    # Kilómetros de la fase 1 (base a recogida y vuelta, o base a destino).
+    phase1_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Km fase 1",
+        help_text="Kilómetros del primer tramo del servicio.",
+    )
+    # Kilometres for phase 2. Only populated when is_overnight is True.
+    # Kilómetros de la fase 2. Solo informado cuando is_overnight es True.
+    phase2_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Km fase 2",
+        help_text=(
+            "Kilómetros del segundo tramo del servicio. "
+            "Solo en servicios diferidos (is_overnight=True)."
+        ),
+    )
+
+    # ── Billable service concepts ────────────────────────────────────────────
+    # Departure fee — fixed charge per dispatch.
+    # Importe de salida — cargo fijo por desplazamiento.
+    departure_fee = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Salida",
+        help_text="Importe fijo de salida/enganche del servicio.",
+    )
+    # Rescue hours billed for this unit.
+    # Horas de rescate facturadas para esta unidad.
+    rescue_hours = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Horas rescate",
+        help_text="Horas de rescate/extracción facturables para esta unidad.",
+    )
+    # Wait hours billed for this unit.
+    # Horas de espera facturadas para esta unidad.
+    wait_hours = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Horas espera",
+        help_text="Horas de espera facturables para esta unidad.",
+    )
+
+    # ── Synchronisation ─────────────────────────────────────────────────────
+    # Timestamp of last successful sync from the Android app (null = not synced yet).
+    # Momento de la última sincronización exitosa desde la app Android (null = sin sync).
+    synced_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Sincronizado",
+        help_text=(
+            "Fecha y hora de la última sincronización exitosa desde la app Android. "
+            "Null indica que la unidad aún no ha sido sincronizada."
+        ),
+    )
+
+    # ── Status / control ────────────────────────────────────────────────────
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        verbose_name="Estado",
+        help_text=(
+            "PENDING: unidad creada, pendiente de notificar al operario. "
+            "NOTIFIED: template WhatsApp enviado al operario. "
+            "DOWNLOADED: operario ha abierto el albarán en la app. "
+            "IN_PROGRESS: operario en servicio activo. "
+            "COMPLETED: albarán recibido en plataforma con firma. "
+            "CLOSED_UNSIGNED: albarán recibido sin firma — pendiente de gestión. "
+            "SIGNED_RECEIVED: supervisor confirma firma recibida del cliente."
+        ),
+    )
+
+    # ── Traceability timestamps — Marcas de tiempo de trazabilidad ───────────
+    # Datetime when the WhatsApp session renewal template was sent to the operator.
+    # Momento en que se envió el template de renovación de sesión WhatsApp al operario.
+    notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Notificado en",
+        help_text=(
+            "Fecha y hora en que se envió el template WhatsApp al operario. "
+            "Null hasta que se ejecuta send_operator_albaran_notification()."
+        ),
+    )
+    # Datetime when the operator opened the albarán in the Android app or panel.
+    # Momento en que el operario abrió el albarán en la app Android o el panel.
+    downloaded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Descargado en",
+        help_text=(
+            "Fecha y hora en que el operario descargó o abrió el albarán. "
+            "Registrado por la app Android al cargar el albarán por primera vez."
+        ),
+    )
+    # Datetime when the operator started the active service leg.
+    # Momento en que el operario inició el tramo de servicio activo.
+    started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Iniciado en",
+        help_text=(
+            "Fecha y hora en que el operario marcó inicio del servicio en la app Android."
+        ),
+    )
+    # Datetime when the signed albarán was received by the platform.
+    # Momento en que el albarán firmado fue recibido por la plataforma.
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Completado en",
+        help_text=(
+            "Fecha y hora en que la plataforma recibió el albarán firmado desde la app Android."
+        ),
+    )
+    # Datetime when the unsigned albarán was closed by the operator.
+    # Momento en que el operario cerró el albarán sin firma.
+    closed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Cerrado en",
+        help_text=(
+            "Fecha y hora en que el operario cerró el albarán sin firma del cliente."
+        ),
+    )
+    # Mandatory justification when closing without signature.
+    # Justificación obligatoria al cerrar sin firma.
+    unsigned_reason = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Motivo cierre sin firma",
+        help_text=(
+            "Justificación obligatoria cuando el albarán se cierra sin firma del cliente. "
+            "Vacío en albaranes cerrados con firma."
+        ),
+    )
+    # Datetime when the supervisor confirmed the signed copy was received from the client.
+    # Momento en que el supervisor confirmó la recepción de la copia firmada del cliente.
+    signed_received_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Firma recibida en",
+        help_text=(
+            "Fecha y hora en que el supervisor confirmó la recepción de la firma del cliente. "
+            "Solo aplica a albaranes cerrados sin firma (CLOSED_UNSIGNED → SIGNED_RECEIVED)."
+        ),
+    )
+    # Supervisor who confirmed the signed copy reception.
+    # Supervisor que confirmó la recepción de la copia firmada.
+    signed_received_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="assistance_units_signed_received",
+        verbose_name="Firma confirmada por",
+        help_text=(
+            "Supervisor que marcó la recepción de la firma del cliente. "
+            "Null en todos los estados salvo SIGNED_RECEIVED."
+        ),
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificación")
+
+    class Meta:
+        verbose_name = "Unidad de orden de trabajo (asistencia)"
+        verbose_name_plural = "Unidades de orden de trabajo (asistencia)"
+        ordering = ["work_order", "unit_number"]
+        unique_together = [("work_order", "unit_number")]
+
+    def __str__(self):
+        return (
+            f"{self.work_order.work_order_number}-{self.unit_number:02d} — "
+            f"{self.operator} — {self.get_status_display()}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 13. WORK ORDER ASSISTANCE SIGNATURE — Digital client signature per unit.
+#     Firma digital del cliente por unidad de albarán.
+# ---------------------------------------------------------------------------
+
+class WorkOrderAssistanceSignature(models.Model):
+    """
+    Stores the digital signature captured from the client on the operator's
+    Android device at the moment of service delivery. One signature per unit.
+    The signature_data field stores the raw base64-encoded PNG produced by
+    the AlbaranApp canvas. The signed_offline flag indicates the signature
+    was captured without network coverage and synced later.
+    ---
+    Almacena la firma digital capturada del cliente en el dispositivo Android
+    del operario en el momento de la entrega del servicio. Una firma por unidad.
+    El campo signature_data almacena el PNG en base64 producido por el canvas
+    de AlbaranApp. El flag signed_offline indica que la firma fue capturada
+    sin cobertura y sincronizada posteriormente.
+    """
+
+    # One-to-one relation: each unit has at most one client signature.
+    # Relación uno a uno: cada unidad tiene como máximo una firma del cliente.
+    unit = models.OneToOneField(
+        WorkOrderAssistanceUnit,
+        on_delete=models.CASCADE,
+        related_name="signature",
+        verbose_name="Unidad",
+        help_text="Unidad de albarán a la que pertenece esta firma.",
+    )
+    # Base64-encoded PNG of the client signature captured on the Android canvas.
+    # PNG en base64 de la firma del cliente capturada en el canvas Android.
+    signature_data = models.TextField(
+        verbose_name="Firma (base64)",
+        help_text="Imagen PNG de la firma del cliente codificada en base64.",
+    )
+    # Optional name of the person who signed.
+    # Nombre opcional de la persona que firma.
+    signer_name = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Firmante",
+        help_text="Nombre de la persona que firma el albarán (opcional).",
+    )
+    # True when the signature was captured offline and synced later.
+    # True cuando la firma fue capturada sin cobertura y sincronizada después.
+    signed_offline = models.BooleanField(
+        default=False,
+        verbose_name="Firmado offline",
+        help_text=(
+            "Indica si la firma fue capturada sin cobertura de red "
+            "y sincronizada posteriormente al recuperar conexión."
+        ),
+    )
+    # Auto-set timestamp of when the signature record was created.
+    # Timestamp automático del momento en que se creó el registro de firma.
+    signed_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de firma",
+        help_text="Fecha y hora en que se registró la firma en el sistema.",
+    )
+
+    class Meta:
+        verbose_name = "Firma digital (asistencia)"
+        verbose_name_plural = "Firmas digitales (asistencia)"
+
+    def __str__(self):
+        signer = self.signer_name or "Sin nombre"
+        return f"Firma — {self.unit} — {signer}"
+
+
+# ---------------------------------------------------------------------------
+# 14. WORK ORDER ASSISTANCE INCIDENCE — Delta of changes per unit.
+#     Delta de incidencias por unidad de albarán.
+# ---------------------------------------------------------------------------
+
+class WorkOrderAssistanceIncidence(models.Model):
+    """
+    Records post-completion changes to a WorkOrderAssistanceUnit. Only the
+    fields that changed are populated — all service fields are nullable so
+    that a null value means "no change for this field". A mandatory memo
+    field requires the operator to justify every incidence. Each unit can
+    have at most one incidence record.
+    ---
+    Registra cambios post-cierre sobre una WorkOrderAssistanceUnit. Solo se
+    rellenan los campos que cambiaron — todos los campos de servicio son
+    nullable para que un valor nulo signifique "sin cambio en este campo".
+    Un campo memo obligatorio exige al operario justificar cada incidencia.
+    Cada unidad puede tener como máximo un registro de incidencia.
+    """
+
+    # One-to-one relation: each unit has at most one incidence record.
+    # Relación uno a uno: cada unidad tiene como máximo un registro de incidencia.
+    unit = models.OneToOneField(
+        WorkOrderAssistanceUnit,
+        on_delete=models.CASCADE,
+        related_name="incidence",
+        verbose_name="Unidad",
+        help_text="Unidad de albarán a la que pertenece esta incidencia.",
+    )
+    recorded_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        related_name="assistance_incidences",
+        verbose_name="Registrado por",
+        help_text="Usuario que registró la incidencia.",
+    )
+    # Mandatory justification memo for the incidence.
+    # Memorándum de justificación obligatorio para la incidencia.
+    memo = models.TextField(
+        verbose_name="Memorándum",
+        help_text=(
+            "Justificación obligatoria de la incidencia. "
+            "Debe describir el motivo del cambio respecto al albarán original."
+        ),
+    )
+    # Delta fields — all nullable. Null means no change for that field.
+    # Campos delta — todos nullable. Null significa sin cambio en ese campo.
+    operator = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="assistance_incidences_operator",
+        verbose_name="Chófer",
+        help_text="Chófer modificado. Null si no cambia.",
+    )
+    operator_2 = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="assistance_incidences_operator_2",
+        verbose_name="Chófer (fase 2)",
+        help_text="Chófer de fase 2 modificado. Null si no cambia.",
+    )
+    machine = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Máquina",
+        help_text="Máquina modificada. Null si no cambia.",
+    )
+    machine_2 = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Máquina (fase 2)",
+        help_text="Máquina de fase 2 modificada. Null si no cambia.",
+    )
+    phase1_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Km fase 1",
+        help_text="Kilómetros fase 1 modificados. Null si no cambian.",
+    )
+    phase2_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Km fase 2",
+        help_text="Kilómetros fase 2 modificados. Null si no cambian.",
+    )
+    departure_fee = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Salida",
+        help_text="Importe de salida modificado. Null si no cambia.",
+    )
+    rescue_hours = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Horas rescate",
+        help_text="Horas de rescate modificadas. Null si no cambian.",
+    )
+    wait_hours = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Horas espera",
+        help_text="Horas de espera modificadas. Null si no cambian.",
+    )
+    recorded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de registro",
+        help_text="Fecha y hora en que se registró la incidencia.",
+    )
+
+    class Meta:
+        verbose_name = "Incidencia de unidad (asistencia)"
+        verbose_name_plural = "Incidencias de unidad (asistencia)"
+
+    def __str__(self):
+        return f"Incidencia — {self.unit} — {self.recorded_by}"

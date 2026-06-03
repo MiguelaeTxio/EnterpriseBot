@@ -132,6 +132,7 @@
 ./whatsapp/views.py
 ./whatsapp/apps.py
 ./whatsapp/models.py
+./whatsapp/migrations/0003_whatsappsession_pending_albaran_units.py
 ./whatsapp/migrations/__init__.py
 ./whatsapp/migrations/0002_whatsappsession_location_target_section_whatsappmessage_type_coords.py
 ./whatsapp/migrations/0001_initial.py
@@ -315,6 +316,7 @@
 ./budgets/templates/budgets/_insurer_table_fragment.html
 ./budgets/templates/budgets/_insurer_badge_fragment.html
 ./budgets/templates/budgets/wizard.html
+./budgets/templates/budgets/albaran_operario.html
 ./budgets/templates/budgets/base_global.html
 ./budgets/templates/budgets/base_edit_page.html
 ./budgets/templates/budgets/detail.html
@@ -327,8 +329,10 @@
 ./budgets/templates/budgets/partials/base_row_fragment.html
 ./budgets/templates/budgets/partials/base_edit_fragment.html
 ./budgets/templates/budgets/partials/insurerbase_toggle_fragment.html
+./budgets/templates/budgets/albaran_pdf.html
 ./budgets/templates/budgets/bases.html
 ./budgets/templates/budgets/result.html
+./budgets/templates/budgets/work_order_detail.html
 ./budgets/templates/budgets/albaran_demo.html
 ./budgets/templates/budgets/_wizard_steps_fragment.html
 ./budgets/templates/budgets/_tariff_line_add_form_fragment.html
@@ -340,6 +344,7 @@
 ./budgets/views.py
 ./budgets/apps.py
 ./budgets/models.py
+./budgets/migrations/0014_workorderassistance_arrival_time_and_more.py
 ./budgets/migrations/0013_workorderassistance.py
 ./budgets/migrations/0007_budget_is_night.py
 ./budgets/migrations/0010_base_insurerbase_refactor.py
@@ -351,6 +356,7 @@
 ./budgets/migrations/0003_insurer_is_insurance_company.py
 ./budgets/migrations/0004_insurer_company_and_service_name.py
 ./budgets/migrations/0002_budget_apply_iva.py
+./budgets/migrations/0015_workorderassistanceunit_closed_at_and_more.py
 ./budgets/migrations/0001_initial.py
 ./budgets/migrations/0006_insurer_iva_special_rate_tariff.py
 ./budgets/migrations/0011_budget_route_fields.py

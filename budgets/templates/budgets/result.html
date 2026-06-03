@@ -70,6 +70,20 @@
         <i class="bi bi-x-circle me-2"></i>Presupuesto rechazado
         {% endif %}
       </div>
+
+      {# Botón generar orden de trabajo — solo cuando el presupuesto está aceptado #}
+      {# Generate work order button — only when budget is ACCEPTED                 #}
+      {% if budget.status == 'ACCEPTED' %}
+      <div class="text-center mt-3">
+        <form method="post"
+              action="{% url 'budgets:work_order_create_from_budget' budget.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-primary btn-lg px-4">
+            <i class="bi bi-clipboard2-check me-2"></i>Generar orden de trabajo
+          </button>
+        </form>
+      </div>
+      {% endif %}
       {% endif %}
 
       <div class="text-center mt-4">

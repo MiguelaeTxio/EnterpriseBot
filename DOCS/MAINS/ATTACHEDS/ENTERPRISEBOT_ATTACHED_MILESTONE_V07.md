@@ -129,9 +129,71 @@ si la HC supera la comida).
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión (S041)
+## Incidencias Incorporadas en S041 (esta sesión)
+
+### I4 — Configuración de empresa: campos obsoletos
+**Descripción:** La vista `/panel/company/settings/` muestra dos campos
+('Bases de operación' y 'Calendario laboral') que ya no son relevantes
+dado que las bases y sus calendarios laborales están completamente
+gestionados desde la BD (modelo Base + sync_base_calendars). Estos
+campos de texto libre confunden al usuario y deben eliminarse o
+adaptarse a la nueva arquitectura.
+**Pendiente diagnóstico y fix en S042.**
+
+### I5 — Exportación Excel del historial de partes con plantillas configurables
+**Descripción:** La exportación Excel actual del historial de partes
+(`/panel/work-orders/history/`) necesita:
+- Elección de columnas a exportar por parte del usuario.
+- Formato por hojas (una hoja por operario, una hoja total, etc.).
+- Grabado y recuperación de plantillas de formato por usuario.
+**Pendiente diseño y implementación en S042.**
+
+### I6 — Disparador de ausencias en el formulario de partes de taller
+**Descripción:** Al introducir un parte de taller y seleccionar
+una ausencia como tipo de entrada, deben aparecer las categorías
+de ausencia disponibles (modelo AbsenceCategory) para que el operario
+elija el motivo correcto. Actualmente el formulario no ofrece este
+selector.
+**Pendiente implementación en S042.**
+
+---
+
+## Hoja de Ruta para la Siguiente Sesión (S042)
 
 ### Prioridad 0 — Fix CSS colores de campos (I1)
+Ver sección 'Incidencias Pendientes al Cierre de S040' — descripción completa
+y método obligatorio detallados arriba.
+Ejecutar en este orden exacto: panel.css → form_entry.html → form_entry_assets.js.
+Recolectar estáticos y recargar servidor al finalizar los tres archivos.
+
+### Prioridad 1 — Diagnóstico y fix pausa de comida en modo retomar (I2)
+Ver sección 'Incidencias Pendientes al Cierre de S040'.
+
+### Prioridad 2 — HC/HF por defecto en bloques nuevos (I3)
+Ver sección 'Incidencias Pendientes al Cierre de S040'.
+
+### Prioridad 3 — Fix Configuración de empresa: eliminar campos obsoletos (I4)
+Solicitar `panel/views.py` (sección CompanySettingsView o equivalente) y
+el template `panel/templates/panel/company/settings.html`.
+Eliminar o deshabilitar los campos 'Bases de operación' y 'Calendario laboral'
+del formulario de configuración de empresa. Verificar que el modelo Company
+no persiste esos campos o que quedan sin uso.
+
+### Prioridad 4 — Disparador de ausencias en formulario de partes (I6)
+Solicitar `panel/templates/panel/operator/form_entry.html` y
+`panel/static/panel/js/form_entry_assets.js`.
+Cuando el operario selecciona 'Ausencia' como tipo de entrada, mostrar
+un desplegable con las AbsenceCategory activas de la empresa.
+El campo absence_category ya existe en WorkOrderEntry — conectar con el selector.
+
+### Prioridad 5 — Exportación Excel con plantillas configurables (I5)
+Diseño previo obligatorio antes de implementar:
+- Definir el modelo de plantilla (campos seleccionables, formato de hojas).
+- Decidir persistencia: modelo Django vs JSONField en CompanyUser.
+- Implementar selector de columnas en la vista de historial.
+- Implementar generación Excel con openpyxl respetando la plantilla elegida.
+- Implementar guardado y recuperación de plantillas por usuario.
+
 Ver sección "Incidencias Pendientes" — descripción completa y método obligatorio detallados arriba.
 Ejecutar en este orden exacto: panel.css → form_entry.html → form_entry_assets.js.
 Recolectar estáticos y recargar servidor al finalizar los tres archivos.

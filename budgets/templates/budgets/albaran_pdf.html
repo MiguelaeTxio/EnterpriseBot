@@ -1,0 +1,379 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/albaran_pdf.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Albarán {{ work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }}</title>
+    <style>
+        /*
+         * Print stylesheet for the ASISTENCIA delivery note PDF.
+         * Rendered by weasyprint — no external CSS dependencies.
+         * ---
+         * Hoja de estilos de impresión para el albarán PDF de ASISTENCIA.
+         * Renderizado por weasyprint — sin dependencias CSS externas.
+         */
+        @page {
+            size: A4 portrait;
+            margin: 15mm 12mm 15mm 12mm;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 9pt;
+            color: #212529;
+            line-height: 1.4;
+        }
+        /* ── Header ── */
+        .pdf-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #212529;
+            padding-bottom: 6pt;
+            margin-bottom: 8pt;
+        }
+        .pdf-header .company-name {
+            font-size: 14pt;
+            font-weight: 700;
+        }
+        .pdf-header .doc-title {
+            font-size: 12pt;
+            font-weight: 700;
+            text-align: right;
+        }
+        .pdf-header .doc-subtitle {
+            font-size: 8pt;
+            color: #6c757d;
+            text-align: right;
+        }
+        /* ── Section titles ── */
+        .section-title {
+            font-size: 7pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: #495057;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 2pt;
+            margin-bottom: 5pt;
+            margin-top: 8pt;
+        }
+        /* ── Field grid ── */
+        .field-grid {
+            display: grid;
+            gap: 4pt 8pt;
+        }
+        .field-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+        .field-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .field-grid.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+        .field-block .label {
+            font-size: 7pt;
+            color: #6c757d;
+            display: block;
+        }
+        .field-block .value {
+            font-size: 9pt;
+            font-weight: 600;
+        }
+        .field-block.full { grid-column: 1 / -1; }
+        /* ── Badges ── */
+        .badge-row {
+            margin-top: 4pt;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4pt;
+        }
+        .badge {
+            display: inline-block;
+            font-size: 7pt;
+            font-weight: 700;
+            padding: 1pt 5pt;
+            border-radius: 3pt;
+            border: 1px solid #212529;
+        }
+        .badge-warning { border-color: #ffc107; background: #fff3cd; color: #856404; }
+        .badge-danger  { border-color: #dc3545; background: #f8d7da; color: #842029; }
+        .badge-info    { border-color: #0dcaf0; background: #cff4fc; color: #055160; }
+        /* ── Divider ── */
+        hr.pdf-divider {
+            border: none;
+            border-top: 1px solid #dee2e6;
+            margin: 6pt 0;
+        }
+        /* ── Signature ── */
+        .signature-block {
+            margin-top: 12pt;
+            border: 1px solid #dee2e6;
+            border-radius: 4pt;
+            padding: 6pt;
+            min-height: 80pt;
+        }
+        .signature-block img {
+            max-width: 100%;
+            max-height: 70pt;
+            display: block;
+        }
+        .signature-block .sig-label {
+            font-size: 7pt;
+            color: #6c757d;
+            margin-bottom: 4pt;
+        }
+        .signature-block .sig-name {
+            font-size: 8pt;
+            font-weight: 700;
+            margin-top: 4pt;
+            border-top: 1px solid #dee2e6;
+            padding-top: 3pt;
+        }
+        /* ── Footer ── */
+        .pdf-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            font-size: 7pt;
+            color: #6c757d;
+            text-align: center;
+            border-top: 1px solid #dee2e6;
+            padding-top: 3pt;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Footer fijo en todas las páginas -->
+    <!-- Fixed footer on all pages -->
+    <div class="pdf-footer">
+        Albarán {{ work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }} —
+        {{ work_order.service_date|date:"d/m/Y" }} —
+        {{ company.name }}
+    </div>
+
+    <!-- ================================================================
+         CABECERA DEL DOCUMENTO
+         DOCUMENT HEADER
+         ================================================================ -->
+    <div class="pdf-header">
+        <div>
+            <div class="company-name">{{ company.name }}</div>
+        </div>
+        <div>
+            <div class="doc-title">
+                ALBARÁN DE ASISTENCIA
+            </div>
+            <div class="doc-subtitle">
+                Nº {{ work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }}
+                — {{ work_order.service_date|date:"d/m/Y" }}
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         EXPEDIENTE
+         ================================================================ -->
+    <div class="section-title">Expediente</div>
+    <div class="field-grid cols-4">
+        <div class="field-block">
+            <span class="label">Nº orden</span>
+            <span class="value">{{ work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Aseguradora</span>
+            <span class="value">{{ work_order.insurer.name }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Expediente</span>
+            <span class="value">{{ work_order.expediente|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Nº póliza</span>
+            <span class="value">{{ work_order.policy_number|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Cód. proveedor</span>
+            <span class="value">{{ work_order.provider_code|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Asegurado</span>
+            <span class="value">{{ work_order.insured_name|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Motivo RIS</span>
+            <span class="value">{{ work_order.ris_motive|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Fecha servicio</span>
+            <span class="value">{{ work_order.service_date|date:"d/m/Y" }}</span>
+        </div>
+    </div>
+    {% if work_order.is_overnight or work_order.is_accident or work_order.repair_on_site or work_order.second_service %}
+    <div class="badge-row">
+        {% if work_order.is_overnight %}<span class="badge badge-warning">Pernocta</span>{% endif %}
+        {% if work_order.is_accident %}<span class="badge badge-danger">Accidente</span>{% endif %}
+        {% if work_order.repair_on_site %}<span class="badge badge-info">Reparación in situ</span>{% endif %}
+        {% if work_order.second_service %}<span class="badge">2º servicio</span>{% endif %}
+    </div>
+    {% endif %}
+
+    <!-- ================================================================
+         VEHÍCULO ASISTIDO
+         ================================================================ -->
+    <div class="section-title">Vehículo asistido</div>
+    <div class="field-grid cols-4">
+        <div class="field-block">
+            <span class="label">Matrícula</span>
+            <span class="value">{{ work_order.vehicle_plate|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Marca</span>
+            <span class="value">{{ work_order.vehicle_brand|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Modelo</span>
+            <span class="value">{{ work_order.vehicle_model|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Color</span>
+            <span class="value">{{ work_order.vehicle_color|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Tipo</span>
+            <span class="value">{{ work_order.vehicle_type_label|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">P.M.A. (kg)</span>
+            <span class="value">{{ work_order.vehicle_pma|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Peso (kg)</span>
+            <span class="value">{{ work_order.vehicle_weight|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Ejes</span>
+            <span class="value">{{ work_order.vehicle_axes|default:"—" }}</span>
+        </div>
+        <div class="field-block full">
+            <span class="label">Avería</span>
+            <span class="value">{{ work_order.breakdown_description|default:"—" }}{% if work_order.breakdown_code %} ({{ work_order.breakdown_code }}){% endif %}</span>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         RECOGIDA Y ENTREGA
+         ================================================================ -->
+    <div class="section-title">Recogida y entrega</div>
+    <div class="field-grid cols-2">
+        <div>
+            <div class="field-grid cols-2">
+                <div class="field-block">
+                    <span class="label">Tipo recogida</span>
+                    <span class="value">{{ work_order.pickup_type|default:"—" }}</span>
+                </div>
+                <div class="field-block">
+                    <span class="label">Provincia</span>
+                    <span class="value">{{ work_order.pickup_province|default:work_order.vehicle_province|default:"—" }}</span>
+                </div>
+                <div class="field-block full">
+                    <span class="label">Dirección recogida</span>
+                    <span class="value">{{ work_order.pickup_location|default:"—" }}</span>
+                </div>
+            </div>
+        </div>
+        <div>
+            <div class="field-grid cols-2">
+                <div class="field-block">
+                    <span class="label">Tipo entrega</span>
+                    <span class="value">{{ work_order.delivery_type|default:"—" }}</span>
+                </div>
+                <div class="field-block">
+                    <span class="label">Provincia</span>
+                    <span class="value">{{ work_order.delivery_province|default:"—" }}</span>
+                </div>
+                <div class="field-block full">
+                    <span class="label">Dirección entrega</span>
+                    <span class="value">{{ work_order.delivery_address|default:work_order.destination|default:"—" }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         DATOS DE LA UNIDAD
+         ================================================================ -->
+    <div class="section-title">Datos del servicio — Unidad {{ unit.unit_number }}</div>
+    <div class="field-grid cols-4">
+        <div class="field-block">
+            <span class="label">Chófer</span>
+            <span class="value">{{ unit.operator }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Máquina</span>
+            <span class="value">{{ unit.machine|default:"—" }}</span>
+        </div>
+        {% if unit.is_overnight %}
+        <div class="field-block">
+            <span class="label">Chófer fase 2</span>
+            <span class="value">{{ unit.operator_2|default:"—" }}</span>
+        </div>
+        <div class="field-block">
+            <span class="label">Máquina fase 2</span>
+            <span class="value">{{ unit.machine_2|default:"—" }}</span>
+        </div>
+        {% endif %}
+        <div class="field-block">
+            <span class="label">Km fase 1</span>
+            <span class="value">{{ unit.phase1_km|default:"—" }}</span>
+        </div>
+        {% if unit.is_overnight %}
+        <div class="field-block">
+            <span class="label">Km fase 2</span>
+            <span class="value">{{ unit.phase2_km|default:"—" }}</span>
+        </div>
+        {% endif %}
+        {% if unit.departure_fee %}
+        <div class="field-block">
+            <span class="label">Salida (€)</span>
+            <span class="value">{{ unit.departure_fee }}</span>
+        </div>
+        {% endif %}
+        {% if unit.rescue_hours %}
+        <div class="field-block">
+            <span class="label">Horas rescate</span>
+            <span class="value">{{ unit.rescue_hours }}</span>
+        </div>
+        {% endif %}
+        {% if unit.wait_hours %}
+        <div class="field-block">
+            <span class="label">Horas espera</span>
+            <span class="value">{{ unit.wait_hours }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ================================================================
+         FIRMA DEL CLIENTE
+         ================================================================ -->
+    <div class="section-title">Firma del cliente</div>
+    <div class="signature-block">
+        {% if unit.signature and unit.signature.signature_data %}
+        <div class="sig-label">Firma capturada el {{ unit.signature.signed_at|date:"d/m/Y H:i" }}</div>
+        <img src="{{ unit.signature.signature_data }}" alt="Firma del cliente">
+        {% if unit.signature.signer_name %}
+        <div class="sig-name">{{ unit.signature.signer_name }}</div>
+        {% endif %}
+        {% else %}
+        <div class="sig-label">Sin firma registrada</div>
+        {% endif %}
+    </div>
+
+    {% if work_order.insurer_comments %}
+    <div class="section-title">Comentarios aseguradora</div>
+    <p style="font-size:8pt;">{{ work_order.insurer_comments }}</p>
+    {% endif %}
+
+</body>
+</html>

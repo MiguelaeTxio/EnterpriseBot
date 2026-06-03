@@ -359,4 +359,49 @@ urlpatterns = [
         views.BudgetExportWordView.as_view(),
         name="budget_export_word",
     ),
+
+    # ---------------------------------------------------------------------------
+    # H17 — Work order assistance routes
+    # Rutas de órdenes de trabajo de asistencia (Hito 17)
+    # ---------------------------------------------------------------------------
+
+    # Work order create from budget — POST, crea orden desde presupuesto aceptado.
+    # Work order create from budget — POST, creates order from accepted budget.
+    path(
+        "budgets/<int:pk>/work-order/create/",
+        views.WorkOrderCreateFromBudgetView.as_view(),
+        name="work_order_create_from_budget",
+    ),
+
+    # Work order create direct — GET form + POST, crea orden sin presupuesto.
+    # Work order create direct — GET form + POST, creates order without budget.
+    path(
+        "work-orders/new/",
+        views.WorkOrderCreateDirectView.as_view(),
+        name="work_order_create_direct",
+    ),
+
+    # Work order detail — vista de detalle completa de la orden. ASSISTANCE + ADMIN.
+    # Work order detail — full detail view of the work order. ASSISTANCE + ADMIN.
+    path(
+        "work-orders/<int:pk>/",
+        views.WorkOrderDetailView.as_view(),
+        name="work_order_detail",
+    ),
+
+    # Work order albarán — formulario mobile-first por unidad. ASSISTANCE + ADMIN.
+    # Work order albarán — mobile-first form per unit. ASSISTANCE + ADMIN.
+    path(
+        "work-orders/units/<int:pk>/albaran/",
+        views.WorkOrderAlbaranView.as_view(),
+        name="work_order_albaran",
+    ),
+
+    # Work order PDF — exportación PDF del albarán de una unidad. ASSISTANCE + ADMIN.
+    # Work order PDF — PDF export of a unit albarán. ASSISTANCE + ADMIN.
+    path(
+        "work-orders/units/<int:pk>/pdf/",
+        views.WorkOrderPdfView.as_view(),
+        name="work_order_pdf",
+    ),
 ]

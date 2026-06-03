@@ -1,0 +1,381 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/albaran_operario.html -->
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}Albarán {{ unit.work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }}{% endblock %}
+{% block page_title %}Albarán {{ unit.work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    /*
+     * Mobile-first overrides for the albarán operator form.
+     * Ajustes mobile-first para el formulario de albarán del operario.
+     */
+    .albaran-card {
+        max-width: 480px;
+        margin: 0 auto;
+    }
+    .albaran-section-title {
+        font-size: .8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #6c757d;
+        margin-bottom: .5rem;
+        padding-bottom: .25rem;
+        border-bottom: 1px solid #dee2e6;
+    }
+    #signature-canvas {
+        border: 2px dashed #ced4da;
+        border-radius: .375rem;
+        touch-action: none;
+        cursor: crosshair;
+        background: #fff;
+        width: 100%;
+        height: 160px;
+    }
+    #signature-canvas.signed {
+        border-color: #198754;
+        border-style: solid;
+    }
+    .btn-clear-sig {
+        font-size: .75rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+<div class="albaran-card">
+
+    {# ------------------------------------------------------------------ #}
+    {# Cabecera del expediente                                              #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card mb-3 shadow-sm">
+        <div class="card-body pb-2">
+            <p class="albaran-section-title mb-2">Expediente</p>
+            <div class="row g-2 small">
+                <div class="col-6">
+                    <span class="text-muted">Nº orden</span><br>
+                    <strong>{{ unit.work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }}</strong>
+                </div>
+                <div class="col-6">
+                    <span class="text-muted">Aseguradora</span><br>
+                    <strong>{{ unit.work_order.insurer.name }}</strong>
+                </div>
+                <div class="col-6">
+                    <span class="text-muted">Fecha servicio</span><br>
+                    <strong>{{ unit.work_order.service_date|date:"d/m/Y" }}</strong>
+                </div>
+                <div class="col-6">
+                    <span class="text-muted">Expediente</span><br>
+                    <strong>{{ unit.work_order.expediente|default:"—" }}</strong>
+                </div>
+                {% if unit.work_order.insured_name %}
+                <div class="col-12">
+                    <span class="text-muted">Asegurado</span><br>
+                    <strong>{{ unit.work_order.insured_name }}</strong>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Vehículo asistido                                                   #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card mb-3 shadow-sm">
+        <div class="card-body pb-2">
+            <p class="albaran-section-title mb-2">Vehículo asistido</p>
+            <div class="row g-2 small">
+                <div class="col-6">
+                    <span class="text-muted">Matrícula</span><br>
+                    <strong>{{ unit.work_order.vehicle_plate|default:"—" }}</strong>
+                </div>
+                <div class="col-6">
+                    <span class="text-muted">Marca / Modelo</span><br>
+                    <strong>{{ unit.work_order.vehicle_brand|default:"—" }} {{ unit.work_order.vehicle_model|default:"" }}</strong>
+                </div>
+                <div class="col-12">
+                    <span class="text-muted">Avería</span><br>
+                    <strong>{{ unit.work_order.breakdown_description|default:"—" }}</strong>
+                </div>
+                <div class="col-12">
+                    <span class="text-muted">Recogida</span><br>
+                    <strong>{{ unit.work_order.pickup_location|default:"—" }}</strong>
+                </div>
+                <div class="col-12">
+                    <span class="text-muted">Destino</span><br>
+                    <strong>{{ unit.work_order.destination|default:"—" }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Formulario de datos del servicio                                    #}
+    {# ------------------------------------------------------------------ #}
+    <form method="post" id="albaran-form" action="{% url 'budgets:work_order_albaran' pk=unit.pk %}">
+        {% csrf_token %}
+
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body">
+                <p class="albaran-section-title mb-3">Datos del servicio</p>
+
+                {# Chófer y máquina — solo lectura, informativo #}
+                <div class="row g-2 mb-3 small">
+                    <div class="col-6">
+                        <span class="text-muted">Chófer</span><br>
+                        <strong>{{ unit.operator }}</strong>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted">Máquina</span><br>
+                        <strong>{{ unit.machine|default:"—" }}</strong>
+                    </div>
+                    {% if unit.is_overnight %}
+                    <div class="col-6">
+                        <span class="text-muted">Chófer fase 2</span><br>
+                        <strong>{{ unit.operator_2|default:"—" }}</strong>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted">Máquina fase 2</span><br>
+                        <strong>{{ unit.machine_2|default:"—" }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {# Kilómetros fase 1 #}
+                <div class="mb-3">
+                    <label for="id_phase1_km" class="form-label fw-semibold small">
+                        Km fase 1
+                        {% if unit.is_overnight %}<span class="text-muted fw-normal">(recogida a base)</span>{% endif %}
+                    </label>
+                    <input type="number"
+                           step="0.01"
+                           min="0"
+                           id="id_phase1_km"
+                           name="phase1_km"
+                           class="form-control"
+                           value="{{ unit.phase1_km|default:'' }}"
+                           placeholder="0.00">
+                </div>
+
+                {# Kilómetros fase 2 — solo si es pernocta #}
+                {% if unit.is_overnight %}
+                <div class="mb-3">
+                    <label for="id_phase2_km" class="form-label fw-semibold small">
+                        Km fase 2 <span class="text-muted fw-normal">(base a destino)</span>
+                    </label>
+                    <input type="number"
+                           step="0.01"
+                           min="0"
+                           id="id_phase2_km"
+                           name="phase2_km"
+                           class="form-control"
+                           value="{{ unit.phase2_km|default:'' }}"
+                           placeholder="0.00">
+                </div>
+                {% endif %}
+
+                {# Salida #}
+                <div class="mb-3">
+                    <label for="id_departure_fee" class="form-label fw-semibold small">Salida (€)</label>
+                    <input type="number"
+                           step="0.01"
+                           min="0"
+                           id="id_departure_fee"
+                           name="departure_fee"
+                           class="form-control"
+                           value="{{ unit.departure_fee|default:'' }}"
+                           placeholder="0.00">
+                </div>
+
+                {# Horas de rescate #}
+                <div class="mb-3">
+                    <label for="id_rescue_hours" class="form-label fw-semibold small">Horas de rescate</label>
+                    <input type="number"
+                           step="0.25"
+                           min="0"
+                           id="id_rescue_hours"
+                           name="rescue_hours"
+                           class="form-control"
+                           value="{{ unit.rescue_hours|default:'' }}"
+                           placeholder="0.00">
+                </div>
+
+                {# Horas de espera #}
+                <div class="mb-3">
+                    <label for="id_wait_hours" class="form-label fw-semibold small">Horas de espera</label>
+                    <input type="number"
+                           step="0.25"
+                           min="0"
+                           id="id_wait_hours"
+                           name="wait_hours"
+                           class="form-control"
+                           value="{{ unit.wait_hours|default:'' }}"
+                           placeholder="0.00">
+                </div>
+            </div>
+        </div>
+
+        {# ------------------------------------------------------------------ #}
+        {# Firma del cliente                                                   #}
+        {# ------------------------------------------------------------------ #}
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body">
+                <p class="albaran-section-title mb-3">Firma del cliente</p>
+
+                <div class="mb-3">
+                    <label for="id_signer_name" class="form-label fw-semibold small">
+                        Nombre del firmante <span class="text-muted fw-normal">(opcional)</span>
+                    </label>
+                    <input type="text"
+                           id="id_signer_name"
+                           name="signer_name"
+                           class="form-control"
+                           value="{{ unit.signature.signer_name|default:'' }}"
+                           placeholder="Nombre completo">
+                </div>
+
+                <label class="form-label fw-semibold small d-block mb-1">Firma</label>
+                <canvas id="signature-canvas"
+                        aria-label="Área de firma del cliente"
+                        role="img"></canvas>
+                <input type="hidden" id="id_signature_data" name="signature_data" value="">
+                <input type="hidden" id="id_signed_offline" name="signed_offline" value="false">
+
+                <div class="d-flex justify-content-end mt-2">
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm btn-clear-sig"
+                            id="btn-clear-signature">
+                        <i class="bi bi-eraser me-1"></i>Borrar firma
+                    </button>
+                </div>
+
+                {% if unit.signature %}
+                <div class="alert alert-success py-2 small mt-2 mb-0">
+                    <i class="bi bi-check2-circle me-1"></i>
+                    Albarán ya firmado —
+                    {% if unit.signature.signer_name %}{{ unit.signature.signer_name }} — {% endif %}
+                    {{ unit.signature.signed_at|date:"d/m/Y H:i" }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {# ------------------------------------------------------------------ #}
+        {# Botones de acción                                                   #}
+        {# ------------------------------------------------------------------ #}
+        <div class="d-grid gap-2 mb-4">
+            <button type="submit" class="btn btn-success btn-lg" id="btn-submit-albaran">
+                <i class="bi bi-check2-circle me-2"></i>Guardar y firmar albarán
+            </button>
+            <a href="{% url 'budgets:work_order_detail' pk=unit.work_order.pk %}"
+               class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>Volver al expediente
+            </a>
+        </div>
+
+    </form>
+
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+/*
+ * Signature canvas controller for the albaran operator form.
+ * Handles touch and mouse drawing, clear button and form submission.
+ * ---
+ * Controlador del canvas de firma para el formulario de albarán del operario.
+ * Gestiona trazado táctil y con ratón, botón de borrado y envío del formulario.
+ */
+(function () {
+    "use strict";
+
+    var canvas   = document.getElementById("signature-canvas");
+    var ctx      = canvas.getContext("2d");
+    var drawing  = false;
+    var hasSig   = false;
+
+    /* Scale canvas to its CSS display size for crisp rendering on HiDPI. */
+    /* Escala el canvas a su tamaño CSS para renderizado nítido en HiDPI. */
+    function resizeCanvas() {
+        var rect = canvas.getBoundingClientRect();
+        canvas.width  = rect.width  * window.devicePixelRatio;
+        canvas.height = rect.height * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        ctx.strokeStyle = "#212529";
+        ctx.lineWidth   = 2;
+        ctx.lineCap     = "round";
+        ctx.lineJoin    = "round";
+    }
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+
+    function getPos(e) {
+        var rect = canvas.getBoundingClientRect();
+        var src  = e.touches ? e.touches[0] : e;
+        return {
+            x: src.clientX - rect.left,
+            y: src.clientY - rect.top,
+        };
+    }
+
+    function startDraw(e) {
+        e.preventDefault();
+        drawing = true;
+        var pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+    }
+
+    function draw(e) {
+        if (!drawing) { return; }
+        e.preventDefault();
+        var pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        hasSig = true;
+        canvas.classList.add("signed");
+    }
+
+    function endDraw(e) {
+        e.preventDefault();
+        drawing = false;
+    }
+
+    canvas.addEventListener("mousedown",  startDraw);
+    canvas.addEventListener("mousemove",  draw);
+    canvas.addEventListener("mouseup",    endDraw);
+    canvas.addEventListener("mouseleave", endDraw);
+    canvas.addEventListener("touchstart", startDraw, { passive: false });
+    canvas.addEventListener("touchmove",  draw,      { passive: false });
+    canvas.addEventListener("touchend",   endDraw,   { passive: false });
+
+    /* Clear button — Botón de borrado */
+    document.getElementById("btn-clear-signature").addEventListener("click", function () {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.classList.remove("signed");
+        document.getElementById("id_signature_data").value = "";
+        hasSig = false;
+    });
+
+    /* Detect offline status for the signed_offline flag. */
+    /* Detecta estado offline para el flag signed_offline. */
+    document.getElementById("id_signed_offline").value = navigator.onLine ? "false" : "true";
+    window.addEventListener("online",  function () { document.getElementById("id_signed_offline").value = "false"; });
+    window.addEventListener("offline", function () { document.getElementById("id_signed_offline").value = "true";  });
+
+    /* On submit: serialize canvas to base64 PNG before sending. */
+    /* Al enviar: serializa el canvas a PNG base64 antes de enviar. */
+    document.getElementById("albaran-form").addEventListener("submit", function (e) {
+        if (hasSig) {
+            document.getElementById("id_signature_data").value = canvas.toDataURL("image/png");
+        }
+    });
+
+}());
+</script>
+{% endblock %}

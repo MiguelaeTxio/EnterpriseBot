@@ -15325,7 +15325,7 @@ class BotManagementView(CompanyUserRequiredMixin, View):
                 Contact.objects
                 .filter(
                     company=company,
-                    section_contacts__section=section,
+                    section_assignments__section=section,
                 )
                 .exclude(alias_onboarding_step=Contact.ALIAS_STEP_NONE)
                 .exclude(
@@ -15473,8 +15473,8 @@ class BotManagementView(CompanyUserRequiredMixin, View):
 
             if section_id:
                 contacts_qs = contacts_qs.filter(
-                    section_contacts__section_id=section_id,
-                    section_contacts__section__company=company,
+                    section_assignments__section_id=section_id,
+                    section_assignments__section__company=company,
                 )
 
             sent_count = 0

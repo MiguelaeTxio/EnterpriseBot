@@ -114,7 +114,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -219,7 +219,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Motor de cálculo basado en datos de entrada del operario y facturas de referencia.
 - Generación de documento de presupuesto exportable.
 
-### Hito 17: Albaranes y Órdenes de Trabajo ASISTENCIA (EN PROGRESO)
+### Hito 17: Albaranes y Órdenes de Trabajo ASISTENCIA (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`)
 - Generación de órdenes de trabajo desde presupuesto aceptado o entrada directa.
 - Albarán digital prellenado enviado al operario vía notificación WhatsApp.

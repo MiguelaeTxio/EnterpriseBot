@@ -260,21 +260,107 @@ class IncomingWhatsAppView(View):
         _button_payload = request.POST.get("ButtonPayload", "").strip()
         if _button_payload in ("opt_in", "opt_out"):
             if _button_payload == "opt_in":
+                # Reactivate the WhatsApp session window for this operator.
+                # Reactivar la ventana de sesión WhatsApp para este operario.
                 WhatsAppSession.objects.filter(
                     company=company,
                     phone_number=from_number,
                 ).update(is_active=True, last_message_at=now())
-                try:
-                    WhatsAppChatService.send_reply(
-                        from_number=to_number,
-                        to_number=from_number,
-                        reply_text="Perfecto, te mantendremos informado/a.",
-                    )
-                except Exception as _exc:
-                    logger.error(
-                        "# [WHATSAPP] Error enviando confirmación opt_in a %s: %s",
-                        from_number, _exc,
-                    )
+
+                # Deliver pending albarán links if any are queued for this operator.
+                # Entregar los enlaces de albarán pendientes si hay alguno en cola.
+                _active_session = WhatsAppSession.objects.filter(
+                    company=company,
+                    phone_number=from_number,
+                    is_active=True,
+                ).order_by("-session_start").first()
+
+                _pending_units = (
+                    _active_session.pending_albaran_units
+                    if _active_session
+                    else []
+                ) or []
+
+                if _pending_units:
+                    from budgets.models import WorkOrderAssistanceUnit as _WAU
+                    from django.urls import reverse as _reverse
+
+                    # Build and send one message per pending unit.
+                    # Construir y enviar un mensaje por cada unidad pendiente.
+                    _delivered_pks = []
+                    for _unit_pk in _pending_units:
+                        try:
+                            _unit = _WAU.objects.select_related(
+                                "work_order__insurer",
+                            ).get(pk=_unit_pk)
+                            _albaran_url = (
+                                f"{os.environ.get('PLATFORM_BASE_URL', '').rstrip('/')}"
+                                f"/panel/budgets/work-orders/units/{_unit.pk}/albaran/"
+                            )
+                            _msg = (
+                                "\U0001f4cb Albar\u00e1n asignado:\n"
+                                f"Orden: {_unit.work_order.work_order_number}"
+                                f"-{_unit.unit_number:02d}\n"
+                                f"Aseguradora: {_unit.work_order.insurer.name}\n"
+                                f"Accede aqu\u00ed: {_albaran_url}"
+                            )
+                            WhatsAppChatService.send_reply(
+                                from_number=to_number,
+                                to_number=from_number,
+                                reply_text=_msg,
+                            )
+                            # Mark unit as DOWNLOADED when operator receives the link.
+                            # Marcar la unidad como DOWNLOADED cuando el operario recibe el enlace.
+                            _unit.status        = _WAU.STATUS_DOWNLOADED
+                            _unit.downloaded_at = now()
+                            _unit.save(update_fields=["status", "downloaded_at"])
+                            _delivered_pks.append(_unit_pk)
+                            logger.info(
+                                "# [ALBARAN NOTIFY] Enlace albarán pk=%s entregado a %s.",
+                                _unit_pk,
+                                from_number,
+                            )
+                        except _WAU.DoesNotExist:
+                            logger.warning(
+                                "# [ALBARAN NOTIFY] Unidad pk=%s no encontrada — "
+                                "ignorada en entrega opt_in.",
+                                _unit_pk,
+                            )
+                        except Exception as _exc:
+                            logger.error(
+                                "# [ALBARAN NOTIFY] Error entregando albarán pk=%s "
+                                "a %s: %s",
+                                _unit_pk,
+                                from_number,
+                                _exc,
+                            )
+
+                    # Clear delivered units from the queue.
+                    # Vaciar las unidades entregadas de la cola.
+                    if _active_session and _delivered_pks:
+                        remaining = [
+                            pk for pk in _pending_units
+                            if pk not in _delivered_pks
+                        ]
+                        _active_session.pending_albaran_units = remaining
+                        _active_session.save(
+                            update_fields=["pending_albaran_units"]
+                        )
+                else:
+                    # No pending albarán units — send generic confirmation.
+                    # Sin unidades pendientes — enviar confirmación genérica.
+                    try:
+                        WhatsAppChatService.send_reply(
+                            from_number=to_number,
+                            to_number=from_number,
+                            reply_text="Perfecto, te mantendremos informado/a.",
+                        )
+                    except Exception as _exc:
+                        logger.error(
+                            "# [WHATSAPP] Error enviando confirmación opt_in a %s: %s",
+                            from_number, _exc,
+                        )
+
                 logger.info(
                     "# [WHATSAPP] opt_in procesado para %s — sesión reactivada.",
                     from_number,
