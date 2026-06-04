@@ -19,12 +19,303 @@
 
 {% block extra_scripts %}
 <script src="{% static 'panel/js/admin_history.js' %}"></script>
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Exportar por plantilla                                      #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalExportTemplate" tabindex="-1"
+     aria-labelledby="modalExportTemplateLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalExportTemplateLabel">
+                    <i class="bi bi-file-earmark-excel me-2 text-success"></i>Exportar partes digitales
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+
+                {# Selector de plantilla #}
+                <div class="mb-3">
+                    <label class="form-label text-sm fw-semibold">Plantilla de exportación</label>
+                    <div class="d-flex gap-2 align-items-center">
+                        <select id="sel-export-template" class="form-select form-select-sm">
+                            <option value="">Cargando plantillas…</option>
+                        </select>
+                        <a href="{% url 'panel:export_template_list' %}"
+                           class="btn btn-outline-secondary btn-sm px-2 text-nowrap"
+                           title="Gestionar plantillas" target="_blank">
+                            <i class="bi bi-gear"></i>
+                        </a>
+                    </div>
+                </div>
+
+                {# Resumen de la plantilla seleccionada #}
+                <div id="export-template-summary" class="mb-3 p-3 bg-light rounded border text-sm d-none">
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <span class="text-muted">Formato:</span>
+                            <strong id="tpl-sheet-format"></strong>
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted">Operarios:</span>
+                            <strong id="tpl-operator-scope"></strong>
+                        </div>
+                        <div class="col-12">
+                            <span class="text-muted">Columnas:</span>
+                            <span id="tpl-columns"></span>
+                        </div>
+                    </div>
+                </div>
+
+                {# Selector de operarios (solo visible cuando operator_scope == 'selection') #}
+                <div id="export-operator-selector" class="mb-3 d-none">
+                    <label class="form-label text-sm fw-semibold">Selecciona operarios a incluir</label>
+                    <div id="export-operator-checkboxes" class="d-flex flex-wrap gap-2">
+                        {% for op in operators %}
+                        <div class="form-check">
+                            <input class="form-check-input export-op-check" type="checkbox"
+                                   value="{{ op.pk }}" id="exp-op-{{ op.pk }}" checked>
+                            <label class="form-check-label text-sm" for="exp-op-{{ op.pk }}">
+                                {{ op.user.get_full_name|default:op.user.username }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div id="export-template-error" class="alert alert-danger text-sm py-2 d-none"></div>
+
+            </div>
+            <div class="modal-footer border-top py-3 d-flex justify-content-between align-items-center">
+                <small class="text-muted" id="export-parts-count"></small>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                            data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" id="btn-confirm-export-template"
+                            class="btn btn-success btn-sm px-4">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Exportar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Formulario oculto para el POST de exportación por plantilla #}
+<form method="post" id="form-export-by-template"
+      action="{% url 'panel:work_order_export_by_template' %}">
+    {% csrf_token %}
+    <input type="hidden" id="hidden-template-pk" name="template_pk" value="">
+</form>
+
+<script>
+/*
+ * Modal de exportación por plantilla — admin_history.html
+ * Carga plantillas via AJAX, muestra resumen, gestiona selector de operarios
+ * y envía el POST de exportación con los PKs seleccionados en la tabla.
+ *
+ * Export-by-template modal — admin_history.html
+ * Loads templates via AJAX, shows summary, manages operator selector
+ * and submits the export POST with the PKs selected in the table.
+ */
+(function () {
+    "use strict";
+
+    var TEMPLATE_LIST_URL = "{% url 'panel:export_template_list' %}?format=json";
+    var templates         = [];
+
+    var SHEET_FORMAT_LABELS = {
+        "single_sheet": "Una sola hoja",
+        "multi_sheet":  "Una hoja por operario"
+    };
+    var OPERATOR_SCOPE_LABELS = {
+        "all":       "Todos los operarios",
+        "selection": "Selección manual"
+    };
+    var COLUMN_LABELS = {
+        "fecha":       "Fecha",
+        "operario":    "Operario",
+        "maquina":     "Máquina",
+        "descripcion": "Descripción",
+        "notas":       "Notas",
+        "hc":          "H. inicio",
+        "hf":          "H. fin",
+        "delta_horas": "Δ Horas",
+        "estado":      "Estado",
+        "familia":     "Familia",
+        "origen":      "Origen"
+    };
+
+    /* Load templates from API when modal opens.
+       Cargar plantillas desde la API cuando se abre el modal. */
+    var modalEl = document.getElementById("modalExportTemplate");
+    if (modalEl) {
+        modalEl.addEventListener("show.bs.modal", function () {
+            fetch(TEMPLATE_LIST_URL)
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    templates = data.templates || [];
+                    var sel = document.getElementById("sel-export-template");
+                    sel.innerHTML = "";
+                    templates.forEach(function (t) {
+                        var opt       = document.createElement("option");
+                        opt.value     = t.id;
+                        opt.textContent = t.name + (t.is_default ? " ★" : "");
+                        sel.appendChild(opt);
+                    });
+                    _updateSummary();
+                    _updatePartsCount();
+                })
+                .catch(function () {
+                    var sel = document.getElementById("sel-export-template");
+                    sel.innerHTML = "<option value=''>Error al cargar plantillas</option>";
+                });
+        });
+    }
+
+    /* Update summary panel when selection changes.
+       Actualizar panel de resumen cuando cambia la selección. */
+    var selEl = document.getElementById("sel-export-template");
+    if (selEl) {
+        selEl.addEventListener("change", _updateSummary);
+    }
+
+    function _getSelectedTemplate() {
+        var sel = document.getElementById("sel-export-template");
+        if (!sel || !sel.value) { return null; }
+        var id = parseInt(sel.value, 10);
+        return templates.find(function (t) { return t.id === id; }) || null;
+    }
+
+    function _updateSummary() {
+        var tpl     = _getSelectedTemplate();
+        var summary = document.getElementById("export-template-summary");
+        var opSel   = document.getElementById("export-operator-selector");
+        if (!tpl || !summary) { return; }
+        summary.classList.remove("d-none");
+        document.getElementById("tpl-sheet-format").textContent =
+            SHEET_FORMAT_LABELS[tpl.sheet_format] || tpl.sheet_format;
+        document.getElementById("tpl-operator-scope").textContent =
+            OPERATOR_SCOPE_LABELS[tpl.operator_scope] || tpl.operator_scope;
+        document.getElementById("tpl-columns").textContent =
+            (tpl.columns || []).map(function (k) {
+                return COLUMN_LABELS[k] || k;
+            }).join(", ");
+        if (opSel) {
+            if (tpl.operator_scope === "selection") {
+                opSel.classList.remove("d-none");
+            } else {
+                opSel.classList.add("d-none");
+            }
+        }
+    }
+
+    function _updatePartsCount() {
+        /* Count checked PKs in the reviewed table.
+           Contar PKs marcados en la tabla de revisados. */
+        var checked = document.querySelectorAll(
+            "#form-bulk-reviewed .bulk-check-item:checked"
+        );
+        var countEl = document.getElementById("export-parts-count");
+        if (countEl) {
+            countEl.textContent = checked.length > 0
+                ? checked.length + " parte(s) seleccionado(s)"
+                : "Se exportarán todos los partes del filtro activo";
+        }
+    }
+
+    /* Confirm export button: build form and submit.
+       Botón confirmar exportación: construir formulario y enviar. */
+    var btnConfirm = document.getElementById("btn-confirm-export-template");
+    if (btnConfirm) {
+        btnConfirm.addEventListener("click", function () {
+            var tpl = _getSelectedTemplate();
+            if (!tpl) {
+                var errEl = document.getElementById("export-template-error");
+                if (errEl) {
+                    errEl.textContent = "Selecciona una plantilla antes de exportar.";
+                    errEl.classList.remove("d-none");
+                }
+                return;
+            }
+
+            var form = document.getElementById("form-export-by-template");
+            if (!form) { return; }
+
+            /* Set template pk.
+               Establecer pk de plantilla. */
+            document.getElementById("hidden-template-pk").value = tpl.id;
+
+            /* Remove any previously injected pk inputs.
+               Eliminar inputs pk inyectados previamente. */
+            form.querySelectorAll("input[name='pks']").forEach(function (el) {
+                el.remove();
+            });
+            form.querySelectorAll("input[name='operator_pks']").forEach(function (el) {
+                el.remove();
+            });
+
+            /* Collect checked PKs from reviewed table (or all if none checked).
+               Recopilar PKs marcados de la tabla revisados (o todos si ninguno). */
+            var checkedItems = document.querySelectorAll(
+                "#form-bulk-reviewed .bulk-check-item:checked"
+            );
+            var pkSource = checkedItems.length > 0
+                ? Array.from(checkedItems).map(function (el) { return el.value; })
+                : Array.from(document.querySelectorAll(
+                    "#form-bulk-reviewed .bulk-check-item"
+                  )).map(function (el) { return el.value; });
+
+            pkSource.forEach(function (pk) {
+                var inp   = document.createElement("input");
+                inp.type  = "hidden";
+                inp.name  = "pks";
+                inp.value = pk;
+                form.appendChild(inp);
+            });
+
+            /* Inject operator_pks if scope == 'selection'.
+               Inyectar operator_pks si scope == 'selection'. */
+            if (tpl.operator_scope === "selection") {
+                document.querySelectorAll(".export-op-check:checked").forEach(function (chk) {
+                    var inp   = document.createElement("input");
+                    inp.type  = "hidden";
+                    inp.name  = "operator_pks";
+                    inp.value = chk.value;
+                    form.appendChild(inp);
+                });
+            }
+
+            /* Close modal and submit.
+               Cerrar modal y enviar. */
+            var bsModal = bootstrap.Modal.getInstance(
+                document.getElementById("modalExportTemplate")
+            );
+            if (bsModal) { bsModal.hide(); }
+            form.submit();
+        });
+    }
+
+}());
+</script>
 {% endblock %}
 
 {% block page_title %}Historial de partes{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-0">
+
+    {# ------------------------------------------------------------------ #}
+    {# Sort URL helper — generador de URL de ordenación                    #}
+    {# Uso: {% url 'panel:work_order_admin_history' %}?tab={{ active_tab   #}
+    {#      }}&sort=COLUMNA&dir=DIR&operator_pk=...&date_from=...         #}
+    {# Macro inline via with tag para construir la query base preservando  #}
+    {# todos los filtros activos en cada enlace de cabecera de columna.    #}
+    {# ------------------------------------------------------------------ #}
+    {% with _fp="operator_pk="|add:operator_pk|add:"&date_from="|add:date_from|add:"&date_to="|add:date_to|add:"&machine="|add:machine|add:"&fault_category="|add:fault_category|default:''|add:"&q="|add:q|default:'' %}
+    {# _fp = filter params string — cadena de parámetros de filtro activos #}
+    {% endwith %}
 
     {# ------------------------------------------------------------------ #}
     {# Global filter bar — Barra de filtros global                         #}
@@ -34,8 +325,12 @@
             <form method="get" class="row g-2 align-items-end">
                 {# Preserve active tab on filter submit #}
                 <input type="hidden" name="tab" value="{{ active_tab }}">
+                {# Preserve sort state on filter submit — preservar ordenación al filtrar #}
+                <input type="hidden" name="sort" value="{{ sort_col }}">
+                <input type="hidden" name="dir" value="{{ sort_dir }}">
+                {# fault_category y q son enviados por los inputs visibles del formulario — no se duplican aquí #}
 
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-2">
                     <label class="form-label text-sm fw-semibold mb-1">Operario</label>
                     <select name="operator_pk" class="form-select form-select-sm">
                         <option value="">Todos los operarios</option>
@@ -62,7 +357,7 @@
                            value="{{ date_to }}">
                 </div>
 
-                <div class="col-12 col-md-3 filter-machine-wrapper">
+                <div class="col-12 col-md-2 filter-machine-wrapper">
                     <label class="form-label text-sm fw-semibold mb-1">Máquina / CdG</label>
                     <input type="text" name="machine" id="filter-machine-input"
                            class="form-control form-control-sm"
@@ -73,7 +368,29 @@
                     </ul>
                 </div>
 
-                <div class="col-12 col-md-2 d-flex gap-2">
+                {# Familia de avería — fault_category filter dropdown #}
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">Familia de avería</label>
+                    <select name="fault_category" class="form-select form-select-sm">
+                        <option value="">Todas las familias</option>
+                        {% for fc_value, fc_label in fault_category_choices %}
+                        <option value="{{ fc_value }}"
+                            {% if fault_category == fc_value %}selected{% endif %}>
+                            {{ fc_label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                {# Búsqueda libre — free-text search over fault_description + repair_notes #}
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">Búsqueda</label>
+                    <input type="text" name="q" class="form-control form-control-sm"
+                           placeholder="Avería o reparación…" value="{{ q|default:'' }}"
+                           autocomplete="off">
+                </div>
+
+                <div class="col-12 col-md-1 d-flex gap-2">
                     <button type="submit" class="btn btn-primary btn-sm px-3 flex-grow-1">
                         <i class="bi bi-funnel me-1"></i>Filtrar
                     </button>
@@ -158,6 +475,12 @@
                             onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
                         <i class="bi bi-trash me-1"></i>Eliminar
                     </button>
+                    <button type="button" id="btn-export-template"
+                            class="btn btn-success btn-sm py-0 px-3 ms-auto"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalExportTemplate">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Exportar
+                    </button>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0">
@@ -167,10 +490,29 @@
                                     <input type="checkbox" class="form-check-input bulk-check-all"
                                            data-target="pending" title="Seleccionar todos">
                                 </th>
-                                <th class="text-sm fw-semibold">Operario</th>
-                                <th class="text-sm fw-semibold">Fecha</th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="?tab=pending&sort=operator_name&dir={% if sort_col == 'operator_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                        Operario
+                                        {% if sort_col == 'operator_name' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="?tab=pending&sort=fecha&dir={% if sort_col == 'fecha' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                        Fecha
+                                        {% if sort_col == 'fecha' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
                                 <th class="text-sm fw-semibold">Bloques</th>
-                                <th class="text-sm fw-semibold">Horas</th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="?tab=pending&sort=horas_totales&dir={% if sort_col == 'horas_totales' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                        Horas
+                                        {% if sort_col == 'horas_totales' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
+                                <th class="text-sm fw-semibold">Familia</th>
                                 <th class="text-sm fw-semibold">Acciones</th>
                             </tr>
                         </thead>
@@ -187,6 +529,13 @@
                                 </td>
                                 <td class="text-sm">{{ wo.num_bloques }}</td>
                                 <td class="text-sm">{{ wo.horas_totales }}</td>
+                                <td class="text-sm">
+                                    {% if wo.fault_category %}
+                                    <span class="badge bg-light text-dark border badge-sm">{{ wo.fault_category }}</span>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
                                 <td class="text-sm">
                                     <div class="d-flex gap-2">
                                         <a href="{% url 'panel:work_order_edit' wo.pk %}?from=taller"
@@ -229,40 +578,60 @@
         {% elif active_tab == 'reviewed' %}
         <div class="p-0">
 
-            {# Export action bar — Barra de acciones de exportación #}
-            {# Bug A fix: method POST → work_order_admin_export with explicit pks list. #}
-            {# Corrección Bug A: method POST → work_order_admin_export con lista de pks. #}
+            {# Bulk action bar — Barra de acciones en bloque (Revisados) #}
             {% if reviewed_list %}
-            <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center gap-3 flex-wrap">
-                <span class="text-sm fw-semibold text-muted">
-                    <i class="bi bi-download me-1"></i>Exportar Excel:
-                </span>
-                <form method="post"
-                      action="{% url 'panel:work_order_admin_export' %}"
-                      class="d-flex gap-2 align-items-center flex-wrap">
-                    {% csrf_token %}
-                    <input type="hidden" name="export_mode" value="multi_sheet">
-                    {% if operator_pk %}<input type="hidden" name="operator_pk" value="{{ operator_pk }}">{% endif %}
-                    {% for wo in reviewed_list %}
-                    <input type="hidden" name="pks" value="{{ wo.pk }}">
-                    {% endfor %}
-                    <button type="submit" class="btn btn-success btn-sm px-3">
-                        <i class="bi bi-file-earmark-excel me-1"></i>Exportar selección ({{ reviewed_list|length }} partes)
+            <form method="post" id="form-bulk-reviewed">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk_action">
+                <input type="hidden" name="active_tab" value="reviewed">
+                <div class="px-4 py-2 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
+                     id="bulk-bar-reviewed">
+                    <span class="text-sm text-muted" id="bulk-count-reviewed">0 seleccionados</span>
+                    <button type="submit" name="bulk_op" value="unmark_reviewed"
+                            class="btn btn-warning btn-sm py-0 px-3">
+                        <i class="bi bi-x-circle me-1"></i>Desmarcar revisados
                     </button>
-                </form>
-                <span class="text-muted text-sm">— o descarga individual desde la tabla.</span>
-            </div>
-            {% endif %}
-
-            {% if reviewed_list %}
-            <div class="table-responsive">
-                <table class="table table-sm table-hover align-middle mb-0">
+                    <button type="submit" name="bulk_op" value="mark_reviewed"
+                            class="btn btn-success btn-sm py-0 px-3">
+                        <i class="bi bi-check2-all me-1"></i>Marcar revisados
+                    </button>
+                    <button type="submit" name="bulk_op" value="delete"
+                            class="btn btn-danger btn-sm py-0 px-3"
+                            onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
+                        <i class="bi bi-trash me-1"></i>Eliminar
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th class="px-4 text-sm fw-semibold">Operario</th>
-                            <th class="text-sm fw-semibold">Fecha</th>
+                            <th class="px-3 bulk-check-col">
+                                <input type="checkbox" class="form-check-input bulk-check-all"
+                                       data-target="reviewed" title="Seleccionar todos">
+                            </th>
+                            <th class="text-sm fw-semibold">
+                                <a href="?tab=reviewed&sort=operator_name&dir={% if sort_col == 'operator_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                   class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    Operario
+                                    {% if sort_col == 'operator_name' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                </a>
+                            </th>
+                            <th class="text-sm fw-semibold">
+                                <a href="?tab=reviewed&sort=fecha&dir={% if sort_col == 'fecha' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                   class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    Fecha
+                                    {% if sort_col == 'fecha' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                </a>
+                            </th>
                             <th class="text-sm fw-semibold">Bloques</th>
-                            <th class="text-sm fw-semibold">Horas</th>
+                            <th class="text-sm fw-semibold">
+                                <a href="?tab=reviewed&sort=horas_totales&dir={% if sort_col == 'horas_totales' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                   class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    Horas
+                                    {% if sort_col == 'horas_totales' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                </a>
+                            </th>
+                            <th class="text-sm fw-semibold">Familia</th>
                             <th class="text-sm fw-semibold">Revisado por</th>
                             <th class="text-sm fw-semibold">Excel</th>
                             <th class="text-sm fw-semibold">Acciones</th>
@@ -271,12 +640,23 @@
                     <tbody>
                         {% for wo in reviewed_list %}
                         <tr>
-                            <td class="px-4 text-sm fw-semibold">{{ wo.operator_name }}</td>
+                            <td class="px-3">
+                                <input type="checkbox" name="selected_pks" value="{{ wo.pk }}"
+                                       class="form-check-input bulk-check-item" data-group="reviewed">
+                            </td>
+                            <td class="text-sm fw-semibold">{{ wo.operator_name }}</td>
                             <td class="text-sm">
                                 {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
                             </td>
                             <td class="text-sm">{{ wo.num_bloques }}</td>
                             <td class="text-sm">{{ wo.horas_totales }}</td>
+                            <td class="text-sm">
+                                {% if wo.fault_category %}
+                                <span class="badge bg-light text-dark border badge-sm">{{ wo.fault_category }}</span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
                             <td class="text-sm text-muted">
                                 {% if wo.reviewed_by %}
                                     {{ wo.reviewed_by }}
@@ -296,17 +676,27 @@
                                 <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
-                            {# Desmarcar revisión — toggle reviewed via HTMX, target review-badge fragment #}
-                            <td id="review-badge-{{ wo.pk }}" class="text-sm">
-                                <button
-                                    hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
-                                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                                    hx-target="#review-badge-{{ wo.pk }}"
-                                    hx-swap="outerHTML"
-                                    class="btn btn-sm btn-outline-warning"
-                                    title="Desmarcar revisión">
-                                    <i class="bi bi-x-circle"></i> Desmarcar
-                                </button>
+                            <td class="text-sm">
+                                <div class="d-flex gap-1 flex-wrap">
+                                    {# Desmarcar individualmente via HTMX #}
+                                    <button
+                                        hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
+                                        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                                        hx-target="closest tr"
+                                        hx-swap="outerHTML"
+                                        class="btn btn-sm btn-outline-warning py-0 px-2"
+                                        title="Desmarcar revisión">
+                                        <i class="bi bi-x-circle"></i>
+                                    </button>
+                                    {# Eliminar individual #}
+                                    <button type="button"
+                                            class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-single"
+                                            data-pk="{{ wo.pk }}"
+                                            data-form="form-bulk-reviewed"
+                                            data-tab="reviewed">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -352,11 +742,36 @@
                                     <input type="checkbox" class="form-check-input bulk-check-all"
                                            data-target="history" title="Seleccionar todos">
                                 </th>
-                                <th class="text-sm fw-semibold">Operario</th>
-                                <th class="text-sm fw-semibold">Fecha</th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="?tab=history&sort=operator_name&dir={% if sort_col == 'operator_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                        Operario
+                                        {% if sort_col == 'operator_name' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="?tab=history&sort=fecha&dir={% if sort_col == 'fecha' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                        Fecha
+                                        {% if sort_col == 'fecha' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
                                 <th class="text-sm fw-semibold">Bloques</th>
-                                <th class="text-sm fw-semibold">Horas</th>
-                                <th class="text-sm fw-semibold">Estado</th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="?tab=history&sort=horas_totales&dir={% if sort_col == 'horas_totales' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                        Horas
+                                        {% if sort_col == 'horas_totales' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
+                                <th class="text-sm fw-semibold">Familia</th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="?tab=history&sort=reviewed&dir={% if sort_col == 'reviewed' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
+                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                        Estado
+                                        {% if sort_col == 'reviewed' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
                                 <th class="text-sm fw-semibold">Origen</th>
                                 <th class="text-sm fw-semibold">Acciones</th>
                             </tr>
@@ -374,6 +789,13 @@
                                 </td>
                                 <td class="text-sm">{{ wo.num_bloques }}</td>
                                 <td class="text-sm">{{ wo.horas_totales }}</td>
+                                <td class="text-sm">
+                                    {% if wo.fault_category %}
+                                    <span class="badge bg-light text-dark border badge-sm">{{ wo.fault_category }}</span>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
                                 <td class="text-sm">
                                     {% if wo.reviewed %}
                                     <span class="badge bg-success">Revisado</span>

@@ -1,0 +1,442 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/export_templates/list.html #}
+{#                                                                                              #}
+{# Standalone CRUD page for ExportTemplate management.                                         #}
+{# Accessible from the export modal gear button. SUPERVISOR and ADMIN only.                   #}
+{#                                                                                              #}
+{# Página CRUD autónoma para gestión de plantillas de exportación.                              #}
+{# Accesible desde el botón de engranaje del modal de exportación.                           #}
+{# Solo SUPERVISOR y ADMIN.                                                                    #}
+{% extends "panel/base.html" %}
+
+{% block title %}Plantillas de exportación{% endblock %}
+
+{% block page_title %}Plantillas de exportación Excel{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Column pill list — lista de columnas en formato pill */
+    .col-pill {
+        font-size: 0.72rem;
+        padding: 0.2em 0.55em;
+    }
+    /* Template card default badge — badge de plantilla por defecto */
+    .badge-default-tpl {
+        font-size: 0.72rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+
+    {# ------------------------------------------------------------------ #}
+    {# Page header — Cabecera de página                                   #}
+    {# ------------------------------------------------------------------ #}
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h5 class="mb-0 fw-bold">
+                <i class="bi bi-file-earmark-excel me-2 text-success"></i>Plantillas de exportación
+            </h5>
+            <small class="text-muted">
+                Define y gestiona tus formatos de exportación Excel personalizados.
+            </small>
+        </div>
+        <button type="button" class="btn btn-success btn-sm px-3"
+                data-bs-toggle="modal" data-bs-target="#modalCreateTemplate">
+            <i class="bi bi-plus-lg me-1"></i>Nueva plantilla
+        </button>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Template list — Listado de plantillas                               #}
+    {# ------------------------------------------------------------------ #}
+    {% if templates %}
+    <div class="row g-3">
+        {% for tpl in templates %}
+        <div class="col-12 col-md-6 col-xl-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-start justify-content-between mb-2">
+                        <h6 class="fw-bold mb-0">
+                            {{ tpl.name }}
+                        </h6>
+                        {% if tpl.is_default %}
+                        <span class="badge bg-success rounded-pill badge-default-tpl ms-2 text-nowrap">
+                            <i class="bi bi-star-fill me-1"></i>Por defecto
+                        </span>
+                        {% endif %}
+                    </div>
+                    <div class="mb-2 text-sm text-muted">
+                        <i class="bi bi-layout-split me-1"></i>
+                        {% if tpl.sheet_format == "single_sheet" %}Una sola hoja{% else %}Una hoja por operario{% endif %}
+                         · 
+                        <i class="bi bi-people me-1"></i>
+                        {% if tpl.operator_scope == "all" %}Todos los operarios{% else %}Selección manual{% endif %}
+                    </div>
+                    <div class="d-flex flex-wrap gap-1 mb-3">
+                        {% for col in tpl.columns %}
+                        <span class="badge bg-light text-dark border col-pill">{{ col }}</span>
+                        {% endfor %}
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        {% if not tpl.is_default %}
+                        <form method="post"
+                              action="{% url 'panel:export_template_update' tpl.pk %}"
+                              class="d-inline" id="form-set-default-{{ tpl.pk }}">
+                            {% csrf_token %}
+                            <input type="hidden" name="name" value="{{ tpl.name }}">
+                            <input type="hidden" name="columns" value="{{ tpl.columns|join:',' }}">
+                            <input type="hidden" name="sheet_format" value="{{ tpl.sheet_format }}">
+                            <input type="hidden" name="operator_scope" value="{{ tpl.operator_scope }}">
+                            <input type="hidden" name="is_default" value="true">
+                        </form>
+                        <button type="button"
+                                class="btn btn-outline-success btn-sm py-0 px-2"
+                                onclick="document.getElementById('form-set-default-{{ tpl.pk }}').submit()"
+                                title="Establecer como plantilla por defecto">
+                            <i class="bi bi-star me-1"></i>Establecer por defecto
+                        </button>
+                        {% endif %}
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm py-0 px-2 btn-edit-tpl"
+                                data-pk="{{ tpl.pk }}"
+                                data-name="{{ tpl.name|escapejs }}"
+                                data-columns="{{ tpl.columns|join:',' }}"
+                                data-sheet-format="{{ tpl.sheet_format }}"
+                                data-operator-scope="{{ tpl.operator_scope }}"
+                                data-is-default="{{ tpl.is_default|yesno:'true,false' }}"
+                                data-bs-toggle="modal"
+                                data-bs-target="#modalEditTemplate"
+                                title="Editar plantilla">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        {% if templates|length > 1 %}
+                        <form method="post"
+                              action="{% url 'panel:export_template_delete' tpl.pk %}"
+                              class="d-inline"
+                              onsubmit="return confirm('¿Eliminar la plantilla \'{{ tpl.name|escapejs }}\'? Esta acción no se puede deshacer.')">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    class="btn btn-outline-danger btn-sm py-0 px-2"
+                                    title="Eliminar plantilla">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent border-top py-2 px-4">
+                    <small class="text-muted">
+                        Actualizada {{ tpl.updated_at|date:"d/m/Y H:i" }}
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="py-5 text-center text-muted">
+        <i class="bi bi-file-earmark-excel fs-3 d-block mb-2"></i>
+        <span class="text-sm">No tienes plantillas de exportación todavía.</span>
+        <br>
+        <small>Crea tu primera plantilla con el botón «Nueva plantilla».</small>
+    </div>
+    {% endif %}
+
+</div>{# /.container-fluid #}
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Crear nueva plantilla                                        #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalCreateTemplate" tabindex="-1"
+     aria-labelledby="modalCreateTemplateLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalCreateTemplateLabel">
+                    <i class="bi bi-plus-circle me-2 text-success"></i>Nueva plantilla de exportación
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div id="create-error" class="alert alert-danger text-sm py-2 d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label text-sm fw-semibold">Nombre <span class="text-danger">*</span></label>
+                    <input type="text" id="create-name" class="form-control form-control-sm"
+                           placeholder="Ej. Exportación mensual completa" maxlength="100">
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-sm fw-semibold">Formato de hoja</label>
+                        <select id="create-sheet-format" class="form-select form-select-sm">
+                            <option value="single_sheet">Una sola hoja</option>
+                            <option value="multi_sheet">Una hoja por operario</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-sm fw-semibold">Alcance de operarios</label>
+                        <select id="create-operator-scope" class="form-select form-select-sm">
+                            <option value="all">Todos los operarios</option>
+                            <option value="selection">Selección manual</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-sm fw-semibold">Columnas a incluir <span class="text-danger">*</span></label>
+                    <div class="d-flex flex-wrap gap-2" id="create-columns-checks">
+                        {% for col_key, col_label in column_choices %}
+                        <div class="form-check">
+                            <input class="form-check-input create-col-check" type="checkbox"
+                                   value="{{ col_key }}" id="create-col-{{ col_key }}" checked>
+                            <label class="form-check-label text-sm" for="create-col-{{ col_key }}">
+                                {{ col_label }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="create-is-default">
+                    <label class="form-check-label text-sm" for="create-is-default">
+                        Establecer como plantilla por defecto
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" id="btn-create-template"
+                        class="btn btn-success btn-sm px-4">
+                    <i class="bi bi-check2 me-1"></i>Crear plantilla
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# Modal — Editar plantilla                                             #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalEditTemplate" tabindex="-1"
+     aria-labelledby="modalEditTemplateLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalEditTemplateLabel">
+                    <i class="bi bi-pencil me-2 text-secondary"></i>Editar plantilla
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div id="edit-error" class="alert alert-danger text-sm py-2 d-none"></div>
+                <input type="hidden" id="edit-pk" value="">
+                <div class="mb-3">
+                    <label class="form-label text-sm fw-semibold">Nombre <span class="text-danger">*</span></label>
+                    <input type="text" id="edit-name" class="form-control form-control-sm" maxlength="100">
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-sm fw-semibold">Formato de hoja</label>
+                        <select id="edit-sheet-format" class="form-select form-select-sm">
+                            <option value="single_sheet">Una sola hoja</option>
+                            <option value="multi_sheet">Una hoja por operario</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-sm fw-semibold">Alcance de operarios</label>
+                        <select id="edit-operator-scope" class="form-select form-select-sm">
+                            <option value="all">Todos los operarios</option>
+                            <option value="selection">Selección manual</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-sm fw-semibold">Columnas a incluir <span class="text-danger">*</span></label>
+                    <div class="d-flex flex-wrap gap-2" id="edit-columns-checks">
+                        {% for col_key, col_label in column_choices %}
+                        <div class="form-check">
+                            <input class="form-check-input edit-col-check" type="checkbox"
+                                   value="{{ col_key }}" id="edit-col-{{ col_key }}">
+                            <label class="form-check-label text-sm" for="edit-col-{{ col_key }}">
+                                {{ col_label }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="edit-is-default">
+                    <label class="form-check-label text-sm" for="edit-is-default">
+                        Establecer como plantilla por defecto
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" id="btn-save-edit-template"
+                        class="btn btn-primary btn-sm px-4">
+                    <i class="bi bi-check2 me-1"></i>Guardar cambios
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+/*
+ * Export template CRUD — list.html
+ * Gestiona creación y edición de plantillas via fetch (JSON API).
+ * Manages template creation and editing via fetch (JSON API).
+ */
+(function () {
+    "use strict";
+
+    var CREATE_URL = "{% url 'panel:export_template_create' %}";
+    var CSRF       = "{{ csrf_token }}";
+
+    /* ---- Create template ---- */
+    var btnCreate = document.getElementById("btn-create-template");
+    if (btnCreate) {
+        btnCreate.addEventListener("click", function () {
+            var name     = (document.getElementById("create-name").value || "").trim();
+            var columns  = Array.from(
+                document.querySelectorAll(".create-col-check:checked")
+            ).map(function (el) { return el.value; });
+            var sheetFmt = document.getElementById("create-sheet-format").value;
+            var opScope  = document.getElementById("create-operator-scope").value;
+            var isDef    = document.getElementById("create-is-default").checked;
+            var errEl    = document.getElementById("create-error");
+
+            errEl.classList.add("d-none");
+
+            if (!name) {
+                errEl.textContent = "El nombre es obligatorio.";
+                errEl.classList.remove("d-none");
+                return;
+            }
+            if (columns.length === 0) {
+                errEl.textContent = "Selecciona al menos una columna.";
+                errEl.classList.remove("d-none");
+                return;
+            }
+
+            fetch(CREATE_URL, {
+                method:  "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken":  CSRF,
+                },
+                body: JSON.stringify({
+                    name:           name,
+                    columns:        columns,
+                    sheet_format:   sheetFmt,
+                    operator_scope: opScope,
+                    is_default:     isDef,
+                }),
+            })
+            .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, data: d}; }); })
+            .then(function (res) {
+                if (!res.ok) {
+                    errEl.textContent = res.data.error || "Error al crear la plantilla.";
+                    errEl.classList.remove("d-none");
+                    return;
+                }
+                window.location.reload();
+            })
+            .catch(function () {
+                errEl.textContent = "Error de red. Inténtalo de nuevo.";
+                errEl.classList.remove("d-none");
+            });
+        });
+    }
+
+    /* ---- Pre-fill edit modal ---- */
+    document.querySelectorAll(".btn-edit-tpl").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            var pk         = btn.getAttribute("data-pk");
+            var name       = btn.getAttribute("data-name");
+            var columns    = (btn.getAttribute("data-columns") || "").split(",").filter(Boolean);
+            var sheetFmt   = btn.getAttribute("data-sheet-format");
+            var opScope    = btn.getAttribute("data-operator-scope");
+            var isDef      = btn.getAttribute("data-is-default") === "true";
+
+            document.getElementById("edit-pk").value   = pk;
+            document.getElementById("edit-name").value = name;
+            document.getElementById("edit-sheet-format").value   = sheetFmt;
+            document.getElementById("edit-operator-scope").value = opScope;
+            document.getElementById("edit-is-default").checked   = isDef;
+
+            document.querySelectorAll(".edit-col-check").forEach(function (chk) {
+                chk.checked = columns.indexOf(chk.value) !== -1;
+            });
+
+            document.getElementById("edit-error").classList.add("d-none");
+        });
+    });
+
+    /* ---- Save edit ---- */
+    var btnSaveEdit = document.getElementById("btn-save-edit-template");
+    if (btnSaveEdit) {
+        btnSaveEdit.addEventListener("click", function () {
+            var pk      = document.getElementById("edit-pk").value;
+            var name    = (document.getElementById("edit-name").value || "").trim();
+            var columns = Array.from(
+                document.querySelectorAll(".edit-col-check:checked")
+            ).map(function (el) { return el.value; });
+            var sheetFmt = document.getElementById("edit-sheet-format").value;
+            var opScope  = document.getElementById("edit-operator-scope").value;
+            var isDef    = document.getElementById("edit-is-default").checked;
+            var errEl    = document.getElementById("edit-error");
+
+            errEl.classList.add("d-none");
+
+            if (!name) {
+                errEl.textContent = "El nombre es obligatorio.";
+                errEl.classList.remove("d-none");
+                return;
+            }
+            if (columns.length === 0) {
+                errEl.textContent = "Selecciona al menos una columna.";
+                errEl.classList.remove("d-none");
+                return;
+            }
+
+            var updateUrl = "/panel/export-templates/" + pk + "/update/";
+
+            fetch(updateUrl, {
+                method:  "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken":  CSRF,
+                },
+                body: JSON.stringify({
+                    name:           name,
+                    columns:        columns,
+                    sheet_format:   sheetFmt,
+                    operator_scope: opScope,
+                    is_default:     isDef,
+                }),
+            })
+            .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, data: d}; }); })
+            .then(function (res) {
+                if (!res.ok) {
+                    errEl.textContent = res.data.error || "Error al guardar la plantilla.";
+                    errEl.classList.remove("d-none");
+                    return;
+                }
+                window.location.reload();
+            })
+            .catch(function () {
+                errEl.textContent = "Error de red. Inténtalo de nuevo.";
+                errEl.classList.remove("d-none");
+            });
+        });
+    }
+
+}());
+</script>
+{% endblock %}

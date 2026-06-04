@@ -1368,3 +1368,178 @@ class WorkdayGap(models.Model):
             f"({'resuelto' if self.resolved else 'pendiente'})"
         )
 
+
+# ---------------------------------------------------------------------------
+# ExportTemplate — user-defined Excel export templates
+# ExportTemplate — plantillas de exportación Excel definidas por usuario
+# ---------------------------------------------------------------------------
+
+class ExportTemplate(models.Model):
+    """
+    Stores a named Excel export configuration for a CompanyUser.
+    Each template defines which columns to include, the sheet layout
+    (single sheet vs one sheet per operator) and the operator scope
+    (all operators vs a specific selection).
+
+    A default template is created automatically the first time a user
+    accesses the export modal if they have no templates yet.
+
+    ---
+
+    Almacena una configuración de exportación Excel con nombre para un
+    CompanyUser. Cada plantilla define qué columnas incluir, el diseño
+    de hojas (una hoja vs una por operario) y el alcance de operarios
+    (todos vs una selección específica).
+
+    Se crea una plantilla por defecto automáticamente la primera vez que
+    el usuario accede al modal de exportación si no tiene ninguna todavía.
+    """
+
+    # ------------------------------------------------------------------
+    # Sheet format choices / Opciones de formato de hoja
+    # ------------------------------------------------------------------
+    class SheetFormat(models.TextChoices):
+        SINGLE_SHEET = "single_sheet", _("Una sola hoja")
+        MULTI_SHEET  = "multi_sheet",  _("Una hoja por operario")
+
+    # ------------------------------------------------------------------
+    # Operator scope choices / Opciones de alcance de operarios
+    # ------------------------------------------------------------------
+    class OperatorScope(models.TextChoices):
+        ALL       = "all",       _("Todos los operarios")
+        SELECTION = "selection", _("Selección manual")
+
+    # ------------------------------------------------------------------
+    # Relation / Relación
+    # ------------------------------------------------------------------
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="export_templates",
+        verbose_name=_("Usuario"),
+        help_text=_(
+            "Usuario propietario de esta plantilla. "
+            "Cada usuario gestiona sus propias plantillas de forma independiente."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Identity / Identidad
+    # ------------------------------------------------------------------
+    name = models.CharField(
+        _("Nombre"),
+        max_length=100,
+        help_text=_("Nombre descriptivo de la plantilla. Visible en el modal de exportación."),
+    )
+    is_default = models.BooleanField(
+        _("Plantilla por defecto"),
+        default=False,
+        help_text=_(
+            "Si True, esta plantilla se preselecciona automáticamente en el modal "
+            "de exportación. Solo puede haber una plantilla por defecto por usuario."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Export configuration / Configuración de exportación
+    # ------------------------------------------------------------------
+    columns = models.JSONField(
+        _("Columnas"),
+        default=list,
+        help_text=_(
+            "Lista ordenada de claves de columna a incluir en el Excel. "
+            "Valores válidos: fecha, operario, maquina, descripcion, notas, "
+            "hc, hf, delta_horas, estado, familia, origen."
+        ),
+    )
+    sheet_format = models.CharField(
+        _("Formato de hoja"),
+        max_length=20,
+        choices=SheetFormat.choices,
+        default=SheetFormat.SINGLE_SHEET,
+        help_text=_(
+            "single_sheet: todas las filas en una sola hoja agrupadas por operario. "
+            "multi_sheet: una hoja por operario distinto."
+        ),
+    )
+    operator_scope = models.CharField(
+        _("Alcance de operarios"),
+        max_length=20,
+        choices=OperatorScope.choices,
+        default=OperatorScope.ALL,
+        help_text=_(
+            "all: exportar todos los operarios del listado filtrado. "
+            "selection: el usuario selecciona manualmente los operarios a incluir."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Timestamps / Marcas de tiempo
+    # ------------------------------------------------------------------
+    created_at = models.DateTimeField(
+        _("Creada el"),
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        _("Actualizada el"),
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name        = _("Plantilla de exportación")
+        verbose_name_plural = _("Plantillas de exportación")
+        ordering            = ["company_user", "-is_default", "name"]
+        constraints         = [
+            models.UniqueConstraint(
+                fields=["company_user", "name"],
+                name="unique_export_template_name_per_user",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        default_marker = " ★" if self.is_default else ""
+        return f"{self.name}{default_marker} ({self.company_user.user.username})"
+
+    def save(self, *args, **kwargs):
+        """
+        Ensures only one template per user is marked as default.
+        When is_default=True is set on this instance, all other templates
+        of the same user are automatically set to is_default=False.
+        ---
+        Garantiza que solo una plantilla por usuario esté marcada como
+        por defecto. Cuando is_default=True se establece en esta instancia,
+        todas las demás plantillas del mismo usuario se ponen a False.
+        """
+        if self.is_default:
+            ExportTemplate.objects.filter(
+                company_user=self.company_user,
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_or_create_default(cls, company_user):
+        """
+        Returns the default ExportTemplate for the given company_user.
+        If no templates exist for the user, creates and returns a sensible
+        default with all standard columns selected.
+        ---
+        Devuelve la ExportTemplate por defecto del company_user indicado.
+        Si el usuario no tiene ninguna plantilla, crea y devuelve una con
+        todas las columnas estándar seleccionadas.
+        """
+        existing = cls.objects.filter(company_user=company_user).order_by("-is_default").first()
+        if existing:
+            return existing
+        return cls.objects.create(
+            company_user   = company_user,
+            name           = "Exportación estándar",
+            is_default     = True,
+            columns        = [
+                "fecha", "operario", "maquina", "descripcion",
+                "notas", "hc", "hf", "delta_horas", "estado", "familia",
+            ],
+            sheet_format   = cls.SheetFormat.SINGLE_SHEET,
+            operator_scope = cls.OperatorScope.ALL,
+        )
+

@@ -2491,3 +2491,220 @@ def find_cached_classification(
         # On any DB error, fall through to Celery classification.
         # Ante cualquier error de BD, dejar pasar al encolado Celery.
         return None
+
+
+# ---------------------------------------------------------------------------
+# build_export_from_template — Excel generation from ExportTemplate
+# build_export_from_template — generación de Excel desde ExportTemplate
+# ---------------------------------------------------------------------------
+
+def build_export_from_template(template, work_orders_qs):
+    """
+    Builds an openpyxl Workbook from a WorkOrder queryset according to the
+    configuration stored in the given ExportTemplate instance.
+
+    Supported template.sheet_format values:
+      single_sheet — all rows on one sheet, grouped by operator then date.
+                     A dark-blue separator row marks each new operator block.
+      multi_sheet  — one sheet per distinct operator.
+
+    The columns rendered in each row are controlled by template.columns,
+    an ordered list of column keys. Valid keys and their sources:
+      fecha       — WorkOrderEntry.work_date
+      operario    — WorkOrder.uploaded_by (full name or username)
+      maquina     — WorkOrderEntryLine.machine_asset.code or machine_raw
+      descripcion — WorkOrderEntryLine.fault_description
+      notas       — WorkOrderEntryLine.repair_notes
+      hc          — WorkOrderEntryLine.hc
+      hf          — WorkOrderEntryLine.hf
+      delta_horas — WorkOrderEntryLine.delta_hours
+      estado      — WorkOrder.reviewed (Revisado / Pendiente)
+      familia     — WorkOrderEntryLine.fault_category
+      origen      — WorkOrder.source
+
+    Returns an openpyxl.Workbook instance ready for streaming.
+    ---
+
+    Construye un Workbook openpyxl desde un queryset de WorkOrder según
+    la configuración almacenada en la instancia ExportTemplate dada.
+
+    Valores de template.sheet_format soportados:
+      single_sheet — todas las filas en una hoja, agrupadas por operario y fecha.
+                     Una fila separadora azul oscuro marca cada nuevo operario.
+      multi_sheet  — una hoja por operario distinto.
+
+    Las columnas renderizadas se controlan por template.columns, una lista
+    ordenada de claves. Claves válidas y sus orígenes: ver docstring en.
+
+    Devuelve una instancia openpyxl.Workbook lista para streaming.
+    """
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from decimal import Decimal
+    from .models import WorkOrderEntry, WorkOrderEntryLine
+
+    # ------------------------------------------------------------------
+    # Column metadata: label and value extractor per key.
+    # Metadatos de columna: etiqueta y extractor de valor por clave.
+    # ------------------------------------------------------------------
+    COLUMN_DEFS = {
+        "fecha":       ("Fecha",            lambda wo, entry, line: entry.work_date),
+        "operario":    ("Operario",         lambda wo, entry, line: (
+                                                wo.uploaded_by.user.get_full_name()
+                                                or wo.uploaded_by.user.username
+                                            ) if wo.uploaded_by else ""),
+        "maquina":     ("Máquina / CdG",    lambda wo, entry, line: (
+                                                line.machine_asset.code
+                                                if line.machine_asset
+                                                else line.machine_raw or ""
+                                            )),
+        "descripcion": ("Descripción avería", lambda wo, entry, line: line.fault_description or ""),
+        "notas":       ("Notas reparación", lambda wo, entry, line: line.repair_notes or ""),
+        "hc":          ("H. inicio",        lambda wo, entry, line: (
+                                                line.hc.strftime("%H:%M") if line.hc else ""
+                                            )),
+        "hf":          ("H. fin",           lambda wo, entry, line: (
+                                                line.hf.strftime("%H:%M") if line.hf else ""
+                                            )),
+        "delta_horas": ("Δ Horas",          lambda wo, entry, line: (
+                                                float(line.delta_hours)
+                                                if line.delta_hours is not None else ""
+                                            )),
+        "estado":      ("Estado",           lambda wo, entry, line: (
+                                                "Revisado" if wo.reviewed else "Pendiente"
+                                            )),
+        "familia":     ("Familia avería",   lambda wo, entry, line: line.fault_category or ""),
+        "origen":      ("Origen",           lambda wo, entry, line: wo.source or ""),
+    }
+
+    # Resolve active column definitions in template order.
+    # Resolver definiciones de columna activas en el orden de la plantilla.
+    active_cols = [
+        (key, COLUMN_DEFS[key])
+        for key in template.columns
+        if key in COLUMN_DEFS
+    ]
+
+    # ------------------------------------------------------------------
+    # Styles / Estilos
+    # ------------------------------------------------------------------
+    header_fill = PatternFill("solid", fgColor="1F3864")
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    sep_fill    = PatternFill("solid", fgColor="2F5496")
+    sep_font    = Font(bold=True, color="FFFFFF", size=10)
+    center_align = Alignment(horizontal="center", vertical="center")
+
+    # ------------------------------------------------------------------
+    # Build flat line list enriched with wo and entry references.
+    # Construir lista plana de líneas enriquecidas con referencias wo y entry.
+    # ------------------------------------------------------------------
+    rows = (
+        WorkOrderEntryLine.objects
+        .filter(entry__work_order__in=work_orders_qs)
+        .select_related(
+            "entry__work_order__uploaded_by__user",
+            "entry",
+            "machine_asset",
+        )
+        .order_by(
+            "entry__work_order__uploaded_by__user__last_name",
+            "entry__work_order__uploaded_by__user__first_name",
+            "entry__work_date",
+            "entry__work_order__pk",
+            "line_number",
+        )
+    )
+
+    # ------------------------------------------------------------------
+    # Helper: write a header row on a given worksheet.
+    # Auxiliar: escribir la fila de cabecera en una hoja dada.
+    # ------------------------------------------------------------------
+    def _write_header(ws, col_defs):
+        """
+        Writes the header row with the active column labels.
+        ---
+        Escribe la fila de cabecera con las etiquetas de columna activas.
+        """
+        for col_idx, (key, (label, _extractor)) in enumerate(col_defs, start=1):
+            cell           = ws.cell(row=1, column=col_idx, value=label)
+            cell.fill      = header_fill
+            cell.font      = header_font
+            cell.alignment = center_align
+
+    # ------------------------------------------------------------------
+    # SHEET FORMAT: single_sheet
+    # FORMATO DE HOJA: single_sheet
+    # ------------------------------------------------------------------
+    if template.sheet_format == "single_sheet":
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Partes digitales"
+        _write_header(ws, active_cols)
+
+        current_row      = 2
+        current_operator = None
+
+        for line in rows:
+            wo    = line.entry.work_order
+            entry = line.entry
+            op_name = (
+                wo.uploaded_by.user.get_full_name() or wo.uploaded_by.user.username
+                if wo.uploaded_by else ""
+            )
+
+            # Insert separator row when operator changes.
+            # Insertar fila separadora cuando cambia el operario.
+            if op_name != current_operator:
+                current_operator = op_name
+                sep_cell       = ws.cell(row=current_row, column=1, value=op_name)
+                sep_cell.fill  = sep_fill
+                sep_cell.font  = sep_font
+                # Merge separator across all active columns.
+                # Fusionar separador a lo largo de todas las columnas activas.
+                if len(active_cols) > 1:
+                    ws.merge_cells(
+                        start_row=current_row, start_column=1,
+                        end_row=current_row,   end_column=len(active_cols),
+                    )
+                current_row += 1
+
+            for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
+                ws.cell(row=current_row, column=col_idx, value=extractor(wo, entry, line))
+            current_row += 1
+
+        return wb
+
+    # ------------------------------------------------------------------
+    # SHEET FORMAT: multi_sheet (one sheet per operator)
+    # FORMATO DE HOJA: multi_sheet (una hoja por operario)
+    # ------------------------------------------------------------------
+    wb = openpyxl.Workbook()
+    # Remove default empty sheet.
+    # Eliminar la hoja vacía por defecto.
+    wb.remove(wb.active)
+
+    current_operator = None
+    ws               = None
+    current_row      = 2
+
+    for line in rows:
+        wo    = line.entry.work_order
+        entry = line.entry
+        op_name = (
+            wo.uploaded_by.user.get_full_name() or wo.uploaded_by.user.username
+            if wo.uploaded_by else "Sin operario"
+        )
+
+        # Create a new sheet when operator changes.
+        # Crear una nueva hoja cuando cambia el operario.
+        if op_name != current_operator:
+            current_operator = op_name
+            ws          = wb.create_sheet(title=op_name[:31])
+            current_row = 2
+            _write_header(ws, active_cols)
+
+        for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
+            ws.cell(row=current_row, column=col_idx, value=extractor(wo, entry, line))
+        current_row += 1
+
+    return wb

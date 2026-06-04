@@ -1,170 +1,92 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md
+# ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md
 
-# Hito 19 — Mejoras WorkOrderAdminHistoryView: Filtros, Búsqueda, Ordenación y Exportación por Plantillas
+## Hito 19 — Filtros, búsqueda, ordenación y exportación por plantillas en WorkOrderAdminHistoryView
 
-## Estado General
-EN PROGRESO. Pivotaje desde Hito 7 en S044 (2026-06-04).
-
----
-
-## Alcance y Arquitectura
-
-### Vista objetivo
-`WorkOrderAdminHistoryView` + `panel/templates/panel/work_orders/admin_history.html`.
-Roles con acceso: SUPERVISOR y ADMIN exclusivamente. WORKSHOP sin acceso a ninguna
-funcionalidad de este hito.
-
-### 1. Ordenación por columna (ya implementado en S044)
-Parámetros GET `sort` y `dir` operativos en `WorkOrderAdminHistoryView`.
-Columnas ordenables: fecha, operator_name, horas_totales, reviewed.
-sort_col y sort_dir disponibles en el contexto del template para las cabeceras.
-**Estado:** COMPLETADO (S044). Pendiente: actualizar cabeceras del template con indicadores
-visuales (▲/▼) y enlaces que alternen `dir=asc`/`dir=desc` preservando filtros activos.
-
-### 2. Filtro por familia de avería
-Añadir un desplegable `fault_category` a la barra de filtros existente.
-Valores: los distintos `fault_category` presentes en `WorkOrderEntryLine` de la empresa.
-Filtra los WorkOrders cuyas líneas tengan la categoría seleccionada.
-La columna `fault_category` se añade al listado en las tres pestañas (Pendientes, Revisados, Histórico).
-
-**Archivos a modificar:**
-- `panel/views.py` — `WorkOrderAdminHistoryView.get()`: leer `fault_category` del GET,
-  aplicar filtro al queryset, pasar lista de categorías disponibles al contexto.
-- `_apply_filters()`: añadir rama fault_category.
-- `_enrich_work_orders()`: añadir campo `fault_category` al dict enriquecido.
-- `panel/templates/panel/work_orders/admin_history.html`: desplegable en barra de filtros
-  y columna familia de avería en las tres tablas.
-
-### 3. Campo de búsqueda libre
-Input de texto que busca simultáneamente en `fault_description` e `repair_notes`
-de las líneas del parte (AND lógico con los demás filtros activos).
-Parámetro GET: `q`.
-
-**Archivos a modificar:**
-- `panel/views.py` — `WorkOrderAdminHistoryView.get()`: leer `q`, aplicar filtro
-  `entries__lines__fault_description__icontains` OR `entries__lines__repair_notes__icontains`.
-- `_apply_filters()`: añadir rama `q`.
-- `admin_history.html`: input de búsqueda en barra de filtros.
-
-### 4. Acción desmarcar revisado
-En la pestaña Revisados, añadir acción individual para revertir `reviewed=True` a `reviewed=False`.
-El parte pasa a aparecer en la pestaña Pendientes.
-
-**Archivos a modificar:**
-- `panel/views.py` — `WorkOrderAdminHistoryView.post()`: nueva acción `unmark_reviewed`.
-- `admin_history.html`: botón desmarcar en columna Acciones de la pestaña Revisados.
-
-### 5. Motor de exportación por plantillas
-Sustituye completamente a `WorkOrderAdminExportView` y su modal actual.
-Toda exportación pasa obligatoriamente por el modal de selección de plantilla.
-
-#### 5.1 Modelo ExportTemplate
-Nueva app: `work_order_processor`. Migración nueva.
-
-Campos:
-- `company_user` FK → CompanyUser (on_delete=CASCADE)
-- `name` CharField(max_length=100) — nombre de la plantilla
-- `is_default` BooleanField(default=False) — plantilla por defecto del usuario
-- `columns` JSONField — lista de claves de columna a incluir en el Excel
-- `sheet_format` CharField choices: `single_sheet` | `multi_sheet`
-- `operator_scope` CharField choices: `all` | `selection` — alcance de operarios
-- `created_at` DateTimeField(auto_now_add=True)
-- `updated_at` DateTimeField(auto_now=True)
-
-Plantilla por defecto: creada automáticamente si el usuario no tiene ninguna,
-con columnas estándar (fecha, operario, máquina, descripción, horas, estado, familia).
-
-#### 5.2 Vistas CRUD de plantillas
-- `ExportTemplateListView` — lista las plantillas del usuario autenticado.
-- `ExportTemplateCreateView` — formulario de creación.
-- `ExportTemplateUpdateView` — formulario de edición.
-- `ExportTemplateDeleteView` — confirmación de eliminación.
-Accesibles desde el modal de exportación y desde una sección de gestión en el panel.
-
-#### 5.3 Motor de generación Excel
-Función `build_export_from_template(template, work_orders_qs)` en
-`work_order_processor/services.py`. Genera el Excel según la configuración
-de la plantilla: columnas seleccionadas, formato de hoja, agrupación por operario.
-
-#### 5.4 Flujo de exportación
-1. Usuario pulsa "Exportar" en `admin_history.html`.
-2. Modal muestra las plantillas del usuario con opción de selección y acceso a gestión.
-3. Usuario selecciona plantilla y confirma.
-4. POST a nueva vista `WorkOrderAdminExportByTemplateView` con pks + template_pk.
-5. Vista genera el Excel y devuelve HttpResponse attachment.
+### Objetivo
+Implementar en `WorkOrderAdminHistoryView` un sistema completo de filtrado por familia de avería, búsqueda libre, ordenación por columnas y exportación Excel configurable mediante plantillas de usuario.
 
 ---
 
-## Columnas disponibles para plantillas
+### Trabajo Realizado en S045
 
-| Clave | Descripción |
-|---|---|
-| `fecha` | Fecha del parte (work_date) |
-| `operario` | Nombre del operario (uploaded_by) |
-| `maquina` | Código de máquina / Centro de gasto |
-| `descripcion` | Descripción de avería (fault_description) |
-| `notas` | Notas de reparación (repair_notes) |
-| `hc` | Hora de inicio |
-| `hf` | Hora de fin |
-| `delta_horas` | Horas trabajadas (delta_hours) |
-| `estado` | Estado del parte (reviewed) |
-| `familia` | Familia de avería (fault_category) |
-| `origen` | Origen del parte (source) |
+#### P1 — Cabeceras de ordenación en `admin_history.html` ✓
+Cabeceras de columna (Operario, Fecha, Horas, Estado) convertidas en enlaces con indicadores ▲/▼ en las tres pestañas (Pendientes, Revisados, Histórico). Hidden inputs `sort` y `dir` preservan la ordenación al filtrar.
 
----
+#### P2 — Filtro familia de avería + columna Familia + búsqueda libre ✓
+- `WorkOrderAdminHistoryView._apply_filters()` extendida con parámetros `fault_category` (exact, con `.distinct()`) y `q` (OR icontains sobre `fault_description` + `repair_notes`).
+- Helper `_dominant_fault_category()` añadido — devuelve el label en castellano de la familia dominante de las líneas del parte (usando `FaultCategory.choices`).
+- Campo `fault_category` añadido al dict de `_enrich_work_orders()`.
+- Barra de filtros actualizada: desplegable familia, input búsqueda, columnas Bootstrap ajustadas a `col-md-2`.
+- Columna "Familia" añadida en las tres pestañas con badge `.badge-sm`.
+- Clase `.badge-sm` añadida a `panel.css`.
+- Bug corregido: `fault_category_choices` usaba `fc.value` → corregido a `fc[0]`.
+- Bug corregido: hidden inputs `fault_category` y `q` duplicaban el valor GET → eliminados.
+- Bug corregido: `.distinct()` añadido al filtro ORM para evitar duplicados por JOIN.
 
-## Directrices Técnicas Vinculantes
+#### P4 — Desmarcar revisado individual + bulk ✓
+- Rama `unmark_reviewed` añadida al `bulk_action` de `WorkOrderAdminHistoryView.post()`.
+- Pestaña Revisados refactorizada: export bar antiguo eliminado, bulk bar con Desmarcar revisados / Marcar revisados / Eliminar, checkboxes por fila y global, botón HTMX individual de desmarcar, botón eliminar individual.
+- `.djlintrc` creado con `per-file-ignores` H025 para `admin_history.html`.
 
-- **SDK IA:** `google-genai 2.7.0` — Modelo: `gemini-live-2.5-flash-native-audio` — Vertex AI
-- **Framework:** Django `5.2.12` — Servidor async: `aiohttp 3.13.5` — Puerto `8081`
-- **Twilio SDK:** `twilio 9.10.4` — Auth via API Key
-- **Entorno:** PythonAnywhere — Python `3.10.5` — `EnterpriseBot_venv`
-- **BD:** MySQL `MiguelAeTxio$enterprisebot`
-- Directriz 4.4 activa: actualización online obligatoria antes de implementar
-  código con APIs externas.
+#### P5 — Modelo ExportTemplate + migración 0022 ✓
+Modelo `ExportTemplate` añadido a `work_order_processor/models.py` con `SheetFormat`, `OperatorScope`, `columns` JSONField, `UniqueConstraint` por usuario+nombre, `save()` override para unicidad de `is_default`, y `get_or_create_default()` classmethod. Migración `0022_exporttemplate` generada y aplicada.
 
----
+#### P6 — Motor de exportación por plantillas ✓
+- `build_export_from_template(template, work_orders_qs)` añadida a `work_order_processor/services.py`. Soporta `single_sheet` (con filas separadoras de operario) y `multi_sheet` (una hoja por operario). 11 columnas configurables.
+- Vistas CRUD: `ExportTemplateListView`, `ExportTemplateCreateView`, `ExportTemplateUpdateView`, `ExportTemplateDeleteView` añadidas a `panel/views.py`.
+- Vista `WorkOrderAdminExportByTemplateView` añadida — resuelve plantilla y partes, llama a `build_export_from_template`, devuelve xlsx attachment.
+- 5 URLs nuevas añadidas a `panel/urls.py`.
+- Modal `modalExportTemplate` añadido a `admin_history.html` — carga plantillas via AJAX, muestra resumen, gestiona selector de operarios, envía POST con PKs seleccionados.
+- Formulario oculto `form-export-by-template` añadido al template.
+- Template `panel/export_templates/list.html` creado — página CRUD standalone con cards por plantilla, modales crear/editar, fetch JSON API, botón establecer por defecto, delete con confirmación.
+- `column_choices` añadido al contexto de `ExportTemplateListView`.
 
-## Hoja de Ruta para S045
-
-### Prioridad 1 — Cabeceras de ordenación en admin_history.html
-Actualizar el template `admin_history.html` con cabeceras de columna enlazadas
-que alternen `dir=asc`/`dir=desc` preservando todos los filtros activos,
-con indicador visual (▲/▼) en la columna activa.
-
-### Prioridad 2 — Filtro familia de avería + columna
-Añadir desplegable `fault_category` en barra de filtros y columna familia
-en las tres pestañas del listado. Requiere modificar `_apply_filters()`,
-`_enrich_work_orders()` y el template.
-
-### Prioridad 3 — Campo de búsqueda libre
-Input `q` en barra de filtros. Busca en `fault_description` + `repair_notes`.
-
-### Prioridad 4 — Acción desmarcar revisado
-Botón en pestaña Revisados. Acción `unmark_reviewed` en el POST de la vista.
-
-### Prioridad 5 — Modelo ExportTemplate + migración
-Crear modelo en `work_order_processor/models.py`, generar y aplicar migración.
-
-### Prioridad 6 — Motor de exportación por plantillas
-Función `build_export_from_template` en services.py, vistas CRUD, modal de
-selección en admin_history.html, sustitución de WorkOrderAdminExportView.
-
-**Orden de ejecución en S045:**
-1. Solicitar `admin_history.html` actualizado y `work_order_processor/models.py`.
-2. PMA cabeceras de ordenación en admin_history.html (P1).
-3. PMA filtro familia + columna en views.py (P2).
-4. PMA filtro familia + columna en admin_history.html (P2).
-5. PMA búsqueda libre en views.py + admin_history.html (P3).
-6. PMA acción desmarcar revisado (P4).
-7. PMA modelo ExportTemplate en models.py + migración (P5).
-8. PEA función build_export_from_template + vistas CRUD + modal (P6).
-9. Verificar E2E en producción.
+#### Skills actualizadas ✓
+- `ped-format`: bloque INTEGRIDAD reemplazado por script Python inline — `git diff` eliminado completamente. Regla anti-fallo-silencioso `[ -z "$outN" ]`.
+- `ped-pma`: scripts en SWAP, comprobaciones de variables vacías, sin `git diff`.
 
 ---
 
-## Registro de Sesiones
+### Bugs Pendientes de Auditoría
 
-### S044 — 2026-06-04
-**Título:** Apertura del Hito 19 y definición de arquitectura completa
-**Descripción:** Sesión inaugural del Hito 19. Durante la sesión S044 (originalmente del Hito 7) se debatió el alcance de las mejoras de WorkOrderAdminHistoryView y se concluyó que el volumen justificaba un hito propio. Se definió la arquitectura completa: ordenación ya implementada en views.py (sort/dir), filtro por familia de avería con columna visible, campo de búsqueda libre acotado a fault_description y repair_notes, acción desmarcar revisado en pestaña Revisados, y motor de exportación por plantillas con modelo ExportTemplate en work_order_processor (columnas configurables, formato de hoja, alcance de operarios, plantilla por defecto automática, CRUD por usuario). El MASTER_DOCUMENT fue actualizado (H7 → PAUSADO, H19 → EN PROGRESO) y el anexo V07 registró el pivotaje. La sesión cierra con este anexo como única hoja de ruta activa.
+#### BUG ACTIVO — Filtro familia de avería no filtra correctamente
+**Síntoma:** Al seleccionar una familia en el desplegable, la tabla sigue mostrando partes de otras familias.
+**Estado:** Se aplicó `.distinct()` al filtro ORM en S045. Pendiente verificación en producción y auditoría completa del flujo GET → `_apply_filters` → queryset → `_enrich_work_orders` → template.
+**Acción requerida S046:** Auditar el flujo completo. Verificar que el valor GET del desplegable coincide exactamente con los valores almacenados en BD. Comprobar si el problema persiste tras el `.distinct()`.
+
+---
+
+### Archivos Modificados en S045
+
+- `panel/views.py` — `_apply_filters`, `_dominant_fault_category`, `_enrich_work_orders`, `bulk_action`, 5 vistas CRUD ExportTemplate, `WorkOrderAdminExportByTemplateView`, `ExportTemplateListView` contexto `column_choices`
+- `panel/urls.py` — 5 URLs nuevas ExportTemplate + export-by-template
+- `panel/templates/panel/work_orders/admin_history.html` — barra filtros, columna Familia, bulk bar Revisados, modal exportación por plantilla
+- `panel/templates/panel/export_templates/list.html` — neonato puro
+- `panel/static/panel/css/panel.css` — clase `.badge-sm`
+- `work_order_processor/models.py` — modelo `ExportTemplate`
+- `work_order_processor/services.py` — función `build_export_from_template`
+- `work_order_processor/migrations/0022_exporttemplate.py` — migración aplicada
+- `.djlintrc` — neonato puro, `per-file-ignores` H025
+
+---
+
+### Hoja de Ruta para la Siguiente Sesión (S046)
+
+#### Paso 1 — Auditoría del filtro de familia de avería
+Verificar en producción si el filtro funciona tras el `.distinct()` aplicado en S045.
+Si no funciona, auditar el flujo completo:
+1. Confirmar que el desplegable envía el valor interno correcto (ej. `ENGINE_TRANSMISSION`) y no el label.
+2. Confirmar que `_apply_filters` recibe el valor GET correctamente.
+3. Confirmar que el filtro ORM `entries__lines__fault_category=fault_category` produce el queryset esperado ejecutando la query en la shell de Django.
+4. Si el problema persiste, considerar filtrar via subquery con `WorkOrder.pk__in` en lugar de JOIN directo.
+
+#### Paso 2 — Verificación E2E completa de la pestaña Revisados
+- Verificar bulk bar: Desmarcar revisados, Marcar revisados, Eliminar.
+- Verificar botón HTMX individual de desmarcar.
+- Verificar botón Exportar y modal de plantillas.
+
+#### Paso 3 — Fix botón Exportar cortado en bulk bar
+El botón verde "Exportar" se desborda por la derecha en la bulk bar de Revisados. Ajustar el layout Bootstrap para que quede contenido.
+
+#### Paso 4 — Verificación E2E motor de exportación
+Probar exportación completa: seleccionar partes revisados → abrir modal → seleccionar plantilla → exportar → verificar xlsx descargado.

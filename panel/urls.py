@@ -101,6 +101,11 @@ from panel.views import (
     TrustDeviceToggleView,
     TrustDeviceQuickLoginView,
     CompanySettingsView,
+    ExportTemplateListView,
+    ExportTemplateCreateView,
+    ExportTemplateUpdateView,
+    ExportTemplateDeleteView,
+    WorkOrderAdminExportByTemplateView,
 )
 
 from chat.views import (
@@ -367,4 +372,13 @@ urlpatterns = [
     # Company settings — Configuración de empresa (bases operación, calendario laboral).
     # Hito 16 Paso 8 (2026-05-28)
     path("company/settings/", CompanySettingsView.as_view(), name="company_settings"),
+
+    # Export templates CRUD — Plantillas de exportación Excel (Hito 19 / P6).
+    path("export-templates/", ExportTemplateListView.as_view(), name="export_template_list"),
+    path("export-templates/create/", ExportTemplateCreateView.as_view(), name="export_template_create"),
+    path("export-templates/<int:pk>/update/", ExportTemplateUpdateView.as_view(), name="export_template_update"),
+    path("export-templates/<int:pk>/delete/", ExportTemplateDeleteView.as_view(), name="export_template_delete"),
+
+    # Export by template — Generación de Excel desde plantilla (Hito 19 / P6).
+    path("work-orders/export-by-template/", WorkOrderAdminExportByTemplateView.as_view(), name="work_order_export_by_template"),
 ]

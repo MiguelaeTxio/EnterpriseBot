@@ -1,0 +1,5 @@
+{
+    "per-file-ignores": {
+        "panel/templates/panel/work_orders/admin_history.html": "H025"
+    }
+}

@@ -13184,15 +13184,20 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             .order_by("-id")
         )
 
-    def _apply_filters(self, qs, operator_pk, date_from, date_to, machine, company):
+    def _apply_filters(self, qs, operator_pk, date_from, date_to, machine, company,
+                        fault_category="", q=""):
         """
         Applies the optional GET filters to a WorkOrder queryset.
         operator_pk filters by uploaded_by; date_from/date_to filter by the
         first entry's work_date; machine filters by machine_asset__code.
+        fault_category filters by WorkOrderEntryLine.fault_category (exact).
+        q performs a free-text OR search over fault_description and repair_notes.
         ---
         Aplica los filtros GET opcionales a un queryset de WorkOrder.
         operator_pk filtra por uploaded_by; date_from/date_to filtran por
         work_date del primer entry; machine filtra por machine_asset__code.
+        fault_category filtra por WorkOrderEntryLine.fault_category (exacto).
+        q realiza una búsqueda libre OR sobre fault_description y repair_notes.
         """
         if operator_pk:
             try:
@@ -13207,6 +13212,20 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         if machine:
             qs = qs.filter(
                 entries__lines__machine_asset__code__icontains=machine
+            )
+        if fault_category:
+            # Filter to work orders whose lines carry the selected fault category.
+            # Filtrar a partes cuyas líneas tienen la categoría de avería seleccionada.
+            qs = qs.filter(
+                entries__lines__fault_category=fault_category
+            ).distinct()
+        if q:
+            # Free-text search over fault_description and repair_notes (OR, AND with other filters).
+            # Búsqueda libre sobre fault_description y repair_notes (OR, AND lógico con otros filtros).
+            from django.db.models import Q as _Q
+            qs = qs.filter(
+                _Q(entries__lines__fault_description__icontains=q)
+                | _Q(entries__lines__repair_notes__icontains=q)
             )
         return qs.distinct()
 
@@ -13256,8 +13275,33 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
                     if wo.generated_by else None
                 ),
                 "excel_url": wo.excel_file.url if wo.excel_file else None,
+                "fault_category": self._dominant_fault_category(wo),
             })
         return result
+
+    def _dominant_fault_category(self, wo):
+        """
+        Returns the most frequent fault_category among all WorkOrderEntryLine
+        records of this WorkOrder. Returns an empty string when no lines exist
+        or all lines have an empty category.
+        ---
+        Devuelve la fault_category más frecuente entre todas las
+        WorkOrderEntryLine del WorkOrder. Devuelve cadena vacía cuando no hay
+        líneas o todas tienen la categoría vacía.
+        """
+        from collections import Counter
+        from work_order_processor.models import FaultCategory
+        label_map = {fc[0]: str(fc[1]) for fc in FaultCategory.choices}
+        categories = [
+            line.fault_category
+            for entry in wo.entries.all()
+            for line in entry.lines.all()
+            if line.fault_category
+        ]
+        if not categories:
+            return ""
+        dominant = Counter(categories).most_common(1)[0][0]
+        return label_map.get(dominant, dominant)
 
     def get(self, request, *args, **kwargs):
         """
@@ -13279,7 +13323,9 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         operator_pk  = request.GET.get("operator_pk", "").strip()
         date_from    = self._parse_date(request.GET.get("date_from", ""))
         date_to      = self._parse_date(request.GET.get("date_to", ""))
-        machine      = request.GET.get("machine", "").strip()
+        machine        = request.GET.get("machine", "").strip()
+        fault_category = request.GET.get("fault_category", "").strip()
+        q              = request.GET.get("q", "").strip()
 
         # ------------------------------------------------------------------
         # Sort parameters — parámetros de ordenación.
@@ -13314,7 +13360,8 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         # ------------------------------------------------------------------
         qs_pending = self._build_base_queryset(company).filter(reviewed=False)
         qs_pending = self._apply_filters(
-            qs_pending, operator_pk, date_from, date_to, machine, company
+            qs_pending, operator_pk, date_from, date_to, machine, company,
+            fault_category=fault_category, q=q,
         )
         pending_list = self._enrich_work_orders(qs_pending)
 
@@ -13324,7 +13371,8 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         # ------------------------------------------------------------------
         qs_reviewed = self._build_base_queryset(company).filter(reviewed=True)
         qs_reviewed = self._apply_filters(
-            qs_reviewed, operator_pk, date_from, date_to, machine, company
+            qs_reviewed, operator_pk, date_from, date_to, machine, company,
+            fault_category=fault_category, q=q,
         )
         reviewed_list = self._enrich_work_orders(qs_reviewed)
 
@@ -13334,7 +13382,8 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         # ------------------------------------------------------------------
         qs_history = self._build_base_queryset(company).filter(reviewed=True)
         qs_history = self._apply_filters(
-            qs_history, operator_pk, date_from, date_to, machine, company
+            qs_history, operator_pk, date_from, date_to, machine, company,
+            fault_category=fault_category, q=q,
         )
         history_list = self._enrich_work_orders(qs_history)
 
@@ -13420,6 +13469,15 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             "date_from":              request.GET.get("date_from", ""),
             "date_to":                request.GET.get("date_to", ""),
             "machine":                machine,
+            "fault_category":         fault_category,
+            "q":                      q,
+            # Fault category choices for the filter dropdown.
+            # Opciones de familia de avería para el desplegable de filtro.
+            "fault_category_choices": [
+                (fc[0], fc[1])
+                for fc in WorkOrderEntryLine.fault_category.field.choices
+                if fc[0]
+            ],
             # Sort state — estado de ordenación.
             "sort_col":               sort_col,
             "sort_dir":               sort_dir,
@@ -13439,7 +13497,8 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         Supported actions:
           generate_absence_parts — creates synthetic WorkOrders from a WorkerAbsence.
           delete_work_order      — deletes a single WorkOrder by pk.
-          bulk_action            — applies mark_reviewed or delete to a set of PKs.
+          bulk_action            — applies mark_reviewed, unmark_reviewed or delete
+                                   to a set of PKs.
 
         ---
 
@@ -13448,7 +13507,8 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         Acciones soportadas:
           generate_absence_parts — crea WorkOrders sinteticos desde un WorkerAbsence.
           delete_work_order      — elimina un WorkOrder individual por pk.
-          bulk_action            — aplica mark_reviewed o delete a un conjunto de PKs.
+          bulk_action            — aplica mark_reviewed, unmark_reviewed o delete
+                                   a un conjunto de PKs.
         """
         from datetime import timedelta, date as dt_date
         from django.db import transaction
@@ -13522,6 +13582,18 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
                 django_messages.success(
                     request,
                     f"{updated} parte(s) marcado(s) como revisado(s).",
+                )
+            elif bulk_op == "unmark_reviewed":
+                # Revert reviewed=True → False for the selected parts.
+                # Revertir reviewed=True → False para los partes seleccionados.
+                updated = qs.filter(reviewed=True).update(
+                    reviewed    = False,
+                    reviewed_by = None,
+                    reviewed_at = None,
+                )
+                django_messages.success(
+                    request,
+                    f"{updated} parte(s) desmarcado(s) como revisado(s).",
                 )
             elif bulk_op == "delete":
                 count  = qs.count()
@@ -16598,3 +16670,394 @@ class CompanySettingsView(AdminRoleRequiredMixin, View):
         ])
         django_messages.success(request, "Configuración de empresa guardada correctamente.")
         return redirect("panel:company_settings")
+
+
+# ===========================================================================
+# ExportTemplate CRUD — Hito 19 / P6
+# Gestión de plantillas de exportación Excel por usuario.
+# ===========================================================================
+
+class ExportTemplateListView(SupervisorAccessMixin, View):
+    """
+    Lists all ExportTemplate records belonging to the authenticated user.
+    Returns a JSON response suitable for AJAX calls from the export modal,
+    or renders a full HTML page for standalone template management.
+    GET ?format=json — returns [{id, name, is_default, columns, sheet_format,
+                                   operator_scope}] for the modal.
+    GET             — renders panel/export_templates/list.html.
+    ---
+    Lista todos los registros ExportTemplate del usuario autenticado.
+    Devuelve JSON para llamadas AJAX desde el modal de exportación,
+    o renderiza una página HTML para la gestión autónoma de plantillas.
+    GET ?format=json — lista [{id, name, is_default, ...}] para el modal.
+    GET             — renderiza panel/export_templates/list.html.
+    """
+
+    template_name = "panel/export_templates/list.html"
+
+    def get(self, request, *args, **kwargs):
+        """
+        Returns the user's export templates as JSON or HTML.
+        Auto-creates the default template if the user has none.
+        ---
+        Devuelve las plantillas del usuario como JSON o HTML.
+        Crea la plantilla por defecto si el usuario no tiene ninguna.
+        """
+        from django.http import JsonResponse
+        from work_order_processor.models import ExportTemplate
+
+        cu = request.user.company_user
+        # Ensure at least the default template exists.
+        # Garantizar que al menos existe la plantilla por defecto.
+        ExportTemplate.get_or_create_default(cu)
+        templates = ExportTemplate.objects.filter(company_user=cu).order_by("-is_default", "name")
+
+        if request.GET.get("format") == "json":
+            data = [
+                {
+                    "id":             t.pk,
+                    "name":           t.name,
+                    "is_default":     t.is_default,
+                    "columns":        t.columns,
+                    "sheet_format":   t.sheet_format,
+                    "operator_scope": t.operator_scope,
+                }
+                for t in templates
+            ]
+            return JsonResponse({"templates": data})
+
+        cu_obj = request.user.company_user
+        context = {
+            "company":      cu_obj.company,
+            "company_user": cu_obj,
+            "own_presence": PresenceStatus.objects.filter(
+                company_user=cu_obj,
+                starts_at__lte=now(),
+            ).filter(
+                Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+            ).order_by("-starts_at").first(),
+            "active_nav":   "work_order_admin_history",
+            "templates":    templates,
+            # Column choices for the template editor checkboxes.
+            # Opciones de columna para los checkboxes del editor de plantillas.
+            "column_choices": [
+                ("fecha",       "Fecha"),
+                ("operario",    "Operario"),
+                ("maquina",     "Máquina / CdG"),
+                ("descripcion", "Descripción avería"),
+                ("notas",       "Notas reparación"),
+                ("hc",          "H. inicio"),
+                ("hf",          "H. fin"),
+                ("delta_horas", "Δ Horas"),
+                ("estado",      "Estado"),
+                ("familia",     "Familia avería"),
+                ("origen",      "Origen"),
+            ],
+        }
+        return render(request, self.template_name, context)
+
+
+class ExportTemplateCreateView(SupervisorAccessMixin, View):
+    """
+    Creates a new ExportTemplate for the authenticated user.
+    Accepts POST with JSON body or form data.
+    Returns JSON {id, name} on success or {error} on failure.
+    ---
+    Crea una nueva ExportTemplate para el usuario autenticado.
+    Acepta POST con cuerpo JSON o datos de formulario.
+    Devuelve JSON {id, name} en éxito o {error} en fallo.
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Validates and creates the ExportTemplate.
+        ---
+        Valida y crea la ExportTemplate.
+        """
+        import json as _json
+        from django.http import JsonResponse
+        from work_order_processor.models import ExportTemplate
+
+        cu = request.user.company_user
+
+        try:
+            body = _json.loads(request.body)
+        except (ValueError, TypeError):
+            body = request.POST
+
+        name           = str(body.get("name", "")).strip()
+        columns        = body.get("columns", [])
+        sheet_format   = str(body.get("sheet_format", ExportTemplate.SheetFormat.SINGLE_SHEET)).strip()
+        operator_scope = str(body.get("operator_scope", ExportTemplate.OperatorScope.ALL)).strip()
+        is_default     = bool(body.get("is_default", False))
+
+        if not name:
+            return JsonResponse({"error": "El nombre es obligatorio."}, status=400)
+        if not columns:
+            return JsonResponse({"error": "Selecciona al menos una columna."}, status=400)
+        if sheet_format not in ExportTemplate.SheetFormat.values:
+            return JsonResponse({"error": "Formato de hoja no válido."}, status=400)
+        if operator_scope not in ExportTemplate.OperatorScope.values:
+            return JsonResponse({"error": "Alcance de operarios no válido."}, status=400)
+        if ExportTemplate.objects.filter(company_user=cu, name=name).exists():
+            return JsonResponse(
+                {"error": f"Ya existe una plantilla con el nombre '{name}'."}, status=400
+            )
+
+        template = ExportTemplate.objects.create(
+            company_user   = cu,
+            name           = name,
+            columns        = list(columns),
+            sheet_format   = sheet_format,
+            operator_scope = operator_scope,
+            is_default     = is_default,
+        )
+        logger.info(
+            "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' creada por %s.",
+            template.pk, template.name, cu.user.username,
+        )
+        return JsonResponse({"id": template.pk, "name": template.name}, status=201)
+
+
+class ExportTemplateUpdateView(SupervisorAccessMixin, View):
+    """
+    Updates an existing ExportTemplate belonging to the authenticated user.
+    Returns JSON {ok: true} on success or {error} on failure.
+    ---
+    Actualiza una ExportTemplate existente del usuario autenticado.
+    Devuelve JSON {ok: true} en éxito o {error} en fallo.
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Validates and applies the update.
+        ---
+        Valida y aplica la actualización.
+        """
+        import json as _json
+        from django.http import JsonResponse
+        from work_order_processor.models import ExportTemplate
+
+        cu = request.user.company_user
+
+        try:
+            template = ExportTemplate.objects.get(pk=pk, company_user=cu)
+        except ExportTemplate.DoesNotExist:
+            return JsonResponse({"error": "Plantilla no encontrada."}, status=404)
+
+        try:
+            body = _json.loads(request.body)
+        except (ValueError, TypeError):
+            body = request.POST
+
+        name           = str(body.get("name", template.name)).strip()
+        columns        = body.get("columns", template.columns)
+        sheet_format   = str(body.get("sheet_format", template.sheet_format)).strip()
+        operator_scope = str(body.get("operator_scope", template.operator_scope)).strip()
+        is_default     = bool(body.get("is_default", template.is_default))
+
+        if not name:
+            return JsonResponse({"error": "El nombre es obligatorio."}, status=400)
+        if not columns:
+            return JsonResponse({"error": "Selecciona al menos una columna."}, status=400)
+        if sheet_format not in ExportTemplate.SheetFormat.values:
+            return JsonResponse({"error": "Formato de hoja no válido."}, status=400)
+        if operator_scope not in ExportTemplate.OperatorScope.values:
+            return JsonResponse({"error": "Alcance de operarios no válido."}, status=400)
+        if (
+            name != template.name
+            and ExportTemplate.objects.filter(company_user=cu, name=name).exists()
+        ):
+            return JsonResponse(
+                {"error": f"Ya existe una plantilla con el nombre '{name}'."}, status=400
+            )
+
+        template.name           = name
+        template.columns        = list(columns)
+        template.sheet_format   = sheet_format
+        template.operator_scope = operator_scope
+        template.is_default     = is_default
+        template.save()
+        logger.info(
+            "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' actualizada por %s.",
+            template.pk, template.name, cu.user.username,
+        )
+        return JsonResponse({"ok": True})
+
+
+class ExportTemplateDeleteView(SupervisorAccessMixin, View):
+    """
+    Deletes an ExportTemplate belonging to the authenticated user.
+    Returns JSON {ok: true} on success or {error} on failure.
+    Cannot delete the last remaining template of a user.
+    ---
+    Elimina una ExportTemplate del usuario autenticado.
+    Devuelve JSON {ok: true} en éxito o {error} en fallo.
+    No permite eliminar la última plantilla del usuario.
+    """
+
+    def post(self, request, pk, *args, **kwargs):
+        """
+        Deletes the template and redirects to the list.
+        ---
+        Elimina la plantilla y redirige a la lista.
+        """
+        from django.http import JsonResponse
+        from work_order_processor.models import ExportTemplate
+
+        cu = request.user.company_user
+
+        try:
+            template = ExportTemplate.objects.get(pk=pk, company_user=cu)
+        except ExportTemplate.DoesNotExist:
+            return JsonResponse({"error": "Plantilla no encontrada."}, status=404)
+
+        if ExportTemplate.objects.filter(company_user=cu).count() <= 1:
+            return JsonResponse(
+                {"error": "No puedes eliminar tu única plantilla de exportación."},
+                status=400,
+            )
+
+        name = template.name
+        template.delete()
+        logger.info(
+            "# [EXPORT TEMPLATE] Plantilla '%s' eliminada por %s.",
+            name, cu.user.username,
+        )
+        return JsonResponse({"ok": True})
+
+
+class WorkOrderAdminExportByTemplateView(SupervisorAccessMixin, View):
+    """
+    Generates and streams an Excel file from selected WorkOrder PKs
+    using the configuration of the chosen ExportTemplate.
+
+    POST /panel/work-orders/export-by-template/
+         Body params:
+           template_pk  (int)       — ExportTemplate pk (must belong to user).
+           pks          (list[int]) — WorkOrder primary keys to export.
+           operator_pks (list[int]) — optional operator filter when
+                                       template.operator_scope == 'selection'.
+
+    Returns HttpResponse with Content-Disposition attachment (xlsx).
+    Returns HTTP 400 on invalid input or HTTP 404 on unknown template.
+    ---
+    Genera y devuelve en streaming un Excel desde los PKs de WorkOrder
+    seleccionados usando la configuración de la ExportTemplate elegida.
+
+    POST /panel/work-orders/export-by-template/
+         Parámetros del cuerpo:
+           template_pk  (int)       — pk de ExportTemplate (debe pertenecer al usuario).
+           pks          (list[int]) — claves primarias de WorkOrder a exportar.
+           operator_pks (list[int]) — filtro de operario opcional cuando
+                                       template.operator_scope == 'selection'.
+
+    Devuelve HttpResponse con Content-Disposition attachment (xlsx).
+    Devuelve HTTP 400 en entrada inválida o HTTP 404 en plantilla desconocida.
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Resolves the template and work orders, calls build_export_from_template
+        and streams the resulting workbook as an xlsx attachment.
+        ---
+        Resuelve la plantilla y los partes, llama a build_export_from_template
+        y devuelve el libro resultante como adjunto xlsx.
+        """
+        import io
+        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.models import ExportTemplate
+        from work_order_processor.services import build_export_from_template
+
+        cu      = request.user.company_user
+        company = cu.company
+
+        # ------------------------------------------------------------------
+        # Resolve ExportTemplate — must belong to the authenticated user.
+        # Resolver ExportTemplate — debe pertenecer al usuario autenticado.
+        # ------------------------------------------------------------------
+        try:
+            template_pk = int(request.POST.get("template_pk", ""))
+            template    = ExportTemplate.objects.get(pk=template_pk, company_user=cu)
+        except (ValueError, TypeError, ExportTemplate.DoesNotExist):
+            return HttpResponseBadRequest(
+                "# [EXPORT BY TEMPLATE] Plantilla no encontrada o no pertenece al usuario."
+            )
+
+        # ------------------------------------------------------------------
+        # Resolve WorkOrder PKs.
+        # Resolver PKs de WorkOrder.
+        # ------------------------------------------------------------------
+        raw_pks = request.POST.getlist("pks")
+        try:
+            pk_list = [int(p) for p in raw_pks if str(p).strip().isdigit()]
+        except (ValueError, TypeError):
+            pk_list = []
+
+        if not pk_list:
+            return HttpResponseBadRequest(
+                "# [EXPORT BY TEMPLATE] No se han seleccionado partes para exportar."
+            )
+
+        # ------------------------------------------------------------------
+        # Build base queryset scoped to company + digital/generated sources.
+        # Construir queryset base acotado a empresa + orígenes digital/generado.
+        # ------------------------------------------------------------------
+        qs = WorkOrder.objects.filter(
+            pk__in=pk_list,
+            company=company,
+            source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+        ).select_related(
+            "uploaded_by__user",
+        ).prefetch_related(
+            Prefetch(
+                "entries",
+                queryset=WorkOrderEntry.objects.prefetch_related("lines"),
+            )
+        ).order_by(
+            "uploaded_by__user__last_name",
+            "uploaded_by__user__first_name",
+            "pk",
+        )
+
+        # ------------------------------------------------------------------
+        # Optional operator filter when scope == 'selection'.
+        # Filtro de operario opcional cuando scope == 'selection'.
+        # ------------------------------------------------------------------
+        if template.operator_scope == "selection":
+            raw_op_pks = request.POST.getlist("operator_pks")
+            try:
+                op_pk_list = [int(p) for p in raw_op_pks if str(p).strip().isdigit()]
+            except (ValueError, TypeError):
+                op_pk_list = []
+            if op_pk_list:
+                qs = qs.filter(uploaded_by__pk__in=op_pk_list)
+
+        if not qs.exists():
+            return HttpResponseBadRequest(
+                "# [EXPORT BY TEMPLATE] Ninguno de los partes seleccionados es válido para exportar."
+            )
+
+        # ------------------------------------------------------------------
+        # Build workbook and stream as attachment.
+        # Construir el libro y devolver como adjunto.
+        # ------------------------------------------------------------------
+        wb       = build_export_from_template(template, qs)
+        buf      = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        filename = (
+            f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
+        response = HttpResponse(
+            buf.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        logger.info(
+            "# [EXPORT BY TEMPLATE] Exportación '%s' (%d partes) por %s.",
+            template.name, qs.count(), cu.user.username,
+        )
+        return response

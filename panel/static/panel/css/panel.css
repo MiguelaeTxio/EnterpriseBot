@@ -641,3 +641,9 @@ input[type="time"].eb-field.field-flagged:valid {
     background-color: #e9ecef;
     color: #343a40;
 }
+
+/* Fault-category badge — tamaño reducido para celdas de tabla.
+   Fault-category badge — reduced size for table cells. */
+.badge-sm {
+    font-size: 0.75rem;
+}
