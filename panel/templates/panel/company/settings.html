@@ -26,46 +26,132 @@
         {% endfor %}
       {% endif %}
 
+      {# ── Bases ──────────────────────────────────────────────────────────── #}
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">
+            <i class="bi bi-geo-alt me-1"></i>Bases
+          </span>
+          <a href="{% url 'budgets:base_global' %}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-pencil-square me-1"></i>Gestionar bases
+          </a>
+        </div>
+        <div class="card-body p-0">
+          {% if bases_data %}
+            <div class="table-responsive">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Municipio</th>
+                    <th class="text-center">Activa</th>
+                    <th class="text-center">Festivos</th>
+                    <th>Último sync</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in bases_data %}
+                    <tr>
+                      <td>{{ item.base.name }}</td>
+                      <td>{{ item.base.municipality }}</td>
+                      <td class="text-center">
+                        {% if item.base.is_active %}
+                          <span class="badge bg-success">Sí</span>
+                        {% else %}
+                          <span class="badge bg-secondary">No</span>
+                        {% endif %}
+                      </td>
+                      <td class="text-center">
+                        {% if item.holiday_count %}
+                          <span class="badge bg-info text-dark">{{ item.holiday_count }}</span>
+                        {% else %}
+                          <span class="text-muted small">—</span>
+                        {% endif %}
+                      </td>
+                      <td class="small text-muted">
+                        {% if item.base.calendar_synced_at %}
+                          {{ item.base.calendar_synced_at|date:'d/m/Y H:i' }}
+                        {% else %}
+                          Sin sincronizar
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-muted p-3 mb-0">No hay bases configuradas para esta empresa.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── Horarios ────────────────────────────────────────────────────────── #}
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">
+            <i class="bi bi-clock me-1"></i>Horarios de jornada
+          </span>
+          <a href="{% url 'panel:workday_schedule' %}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-pencil-square me-1"></i>Gestionar horarios
+          </a>
+        </div>
+        <div class="card-body p-0">
+          {% if schedules %}
+            <div class="table-responsive">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Temporada</th>
+                    <th>Entrada mañana</th>
+                    <th>Salida mañana</th>
+                    <th>Entrada tarde</th>
+                    <th>Salida tarde</th>
+                    <th class="text-center">Por defecto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for sched in schedules %}
+                    <tr>
+                      <td>{{ sched.label }}</td>
+                      <td>{{ sched.get_season_display }}</td>
+                      <td>{{ sched.start_time_morning|time:'H:i' }}</td>
+                      <td>{{ sched.end_time_morning|time:'H:i' }}</td>
+                      <td>
+                        {% if sched.is_intensive %}
+                          <span class="text-muted small">Intensiva</span>
+                        {% else %}
+                          {{ sched.start_time_afternoon|time:'H:i'|default:'—' }}
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if sched.is_intensive %}
+                          <span class="text-muted small">—</span>
+                        {% else %}
+                          {{ sched.end_time_afternoon|time:'H:i'|default:'—' }}
+                        {% endif %}
+                      </td>
+                      <td class="text-center">
+                        {% if sched.is_default %}
+                          <span class="badge bg-primary">Sí</span>
+                        {% else %}
+                          <span class="text-muted small">—</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-muted p-3 mb-0">No hay horarios configurados para esta empresa.</p>
+          {% endif %}
+        </div>
+      </div>
+
       <form method="post" action="{% url 'panel:company_settings' %}">
         {% csrf_token %}
-
-        {# ── Bases de operación ──────────────────────────────────────────── #}
-        <div class="card mb-3">
-          <div class="card-body">
-            <label class="form-label fw-semibold" for="id_operation_bases">
-              Bases de operación
-            </label>
-            <textarea
-              class="form-control"
-              name="operation_bases"
-              id="id_operation_bases"
-              rows="4"
-              placeholder="Localidades o zonas de cobertura (ej: Valladolid, Arroyo de la Encomienda, Simancas...)"
-            >{{ company.operation_bases }}</textarea>
-            <div class="form-text text-muted mt-1">
-              Localidades, zonas o bases desde las que opera la empresa de asistencia.
-            </div>
-          </div>
-        </div>
-
-        {# ── Calendario laboral ──────────────────────────────────────────── #}
-        <div class="card mb-3">
-          <div class="card-body">
-            <label class="form-label fw-semibold" for="id_labor_calendar">
-              Calendario laboral
-            </label>
-            <textarea
-              class="form-control"
-              name="labor_calendar"
-              id="id_labor_calendar"
-              rows="5"
-              placeholder="Festivos locales, nacionales y horario nocturno de referencia (ej: 1 ene, 6 ene... nocturno: 22:00–06:00)"
-            >{{ company.labor_calendar }}</textarea>
-            <div class="form-text text-muted mt-1">
-              Festivos locales y nacionales, y franja horaria nocturna de referencia para el cálculo de recargos.
-            </div>
-          </div>
-        </div>
 
         {# ── Franja horaria nocturna (Asistencia) ───────────────────────── #}
         <div class="card mb-3">

@@ -136,18 +136,20 @@
                             _selecting  = false;
                             _hideDropdown();
                             input.focus();
-                            // Reveal/hide meter fields for this block after asset selection.
-                            // Revelar/ocultar campos de contadores del bloque tras seleccionar activo.
                             var blockDiv = input.closest('[id^="block-"]');
                             if (blockDiv) {
                                 var bIdx = (blockDiv.id || "").replace("block-", "");
                                 if (bIdx) {
-                                    fetch(ASSET_DETAIL_URL + "?code=" + encodeURIComponent(asset.code))
-                                        .then(function (r) { return r.json(); })
-                                        .then(function (d) { _applyMeterFields(bIdx, d); })
-                                        .catch(function () {
-                                            _applyMeterFields(bIdx, {has_odometer: false, has_engine_hours: false, has_crane_hours: false});
-                                        });
+                                    var isPersonal = asset.code === EB_CONFIG.personalAssetCode;
+                                    _toggleAbsenceMode(bIdx, isPersonal);
+                                    if (!isPersonal) {
+                                        fetch(ASSET_DETAIL_URL + "?code=" + encodeURIComponent(asset.code))
+                                            .then(function (r) { return r.json(); })
+                                            .then(function (d) { _applyMeterFields(bIdx, d); })
+                                            .catch(function () {
+                                                _applyMeterFields(bIdx, {has_odometer: false, has_engine_hours: false, has_crane_hours: false});
+                                            });
+                                    }
                                 }
                             }
                         });
@@ -175,6 +177,96 @@
         input.addEventListener("focus", function () {
             if (input.value.trim().length > 0) { fetchAndRender(input.value.trim()); }
         });
+    }
+
+    // ==================================================================
+    // _toggleAbsenceMode
+    // Switches a work block between repair mode and absence mode.
+    // When isPersonal=true: hides fault_description, shows absence
+    // category selector. Adjusts repair_notes based on requires_note.
+    //
+    // Alterna un bloque entre modo reparación y modo ausencia.
+    // Con isPersonal=true: oculta fault_description, muestra selector
+    // de categoría. Ajusta repair_notes según requires_note.
+    // ==================================================================
+    function _toggleAbsenceMode(idx, isPersonal) {
+        var absWrap    = document.getElementById('absence-selector-wrap-' + idx);
+        var faultWrap  = document.getElementById('fault-description-wrap-' + idx);
+        var repairWrap = document.getElementById('repair-notes-wrap-' + idx);
+        var repairLbl  = document.getElementById('repair-notes-label-' + idx);
+        if (isPersonal && !absWrap) {
+            var blockDiv = document.getElementById('block-' + idx);
+            if (blockDiv && EB_CONFIG.absenceCategories) {
+                var faultDiv = document.getElementById('fault-description-wrap-' + idx);
+                if (!faultDiv) {
+                    var fdr = blockDiv.querySelector('[name="entrada_' + idx + '_fault_description"]');
+                    if (fdr && fdr.parentElement) {
+                        fdr.parentElement.id = 'fault-description-wrap-' + idx;
+                        faultDiv = fdr.parentElement;
+                    }
+                }
+                if (faultDiv) {
+                    var opts = '<option value="">— Selecciona una categoría —</option>';
+                    EB_CONFIG.absenceCategories.forEach(function (cat) {
+                        opts += '<option value="' + cat.id + '" data-requires-note="' +
+                            (cat.requires_note ? '1' : '0') + '">' + cat.label + '</option>';
+                    });
+                    var nad = document.createElement('div');
+                    nad.className = 'col-12 col-md-6 absence-selector-wrap d-none';
+                    nad.id = 'absence-selector-wrap-' + idx;
+                    nad.innerHTML =
+                        '<label class="form-label fw-medium">' +
+                        'Categoría de ausencia <span class="text-danger">*</span></label>' +
+                        '<select name="entrada_' + idx + '_absence_category" ' +
+                        'id="entrada_' + idx + '_absence_category" ' +
+                        'class="form-select eb-field">' + opts + '</select>';
+                    faultDiv.parentElement.insertBefore(nad, faultDiv);
+                    absWrap = nad;
+                    var rdr = blockDiv.querySelector('[name="entrada_' + idx + '_repair_notes"]');
+                    if (rdr && rdr.parentElement) {
+                        rdr.parentElement.id = 'repair-notes-wrap-' + idx;
+                        var lbl = rdr.parentElement.querySelector('label');
+                        if (lbl) { lbl.id = 'repair-notes-label-' + idx; }
+                        repairWrap = rdr.parentElement;
+                        repairLbl  = lbl;
+                    }
+                }
+            }
+        }
+        if (!absWrap || !faultWrap) { return; }
+        if (isPersonal) {
+            absWrap.classList.remove('d-none');
+            faultWrap.classList.add('d-none');
+            var catSel = document.getElementById('entrada_' + idx + '_absence_category');
+            if (catSel) {
+                catSel.addEventListener('change', function () { _adjustRepairNotes(idx, catSel); });
+                _adjustRepairNotes(idx, catSel);
+            }
+        } else {
+            absWrap.classList.add('d-none');
+            faultWrap.classList.remove('d-none');
+            if (repairLbl) { repairLbl.innerHTML = 'Reparación realizada <span class=\"text-danger\">*</span>'; }
+            if (repairWrap) { repairWrap.classList.remove('d-none'); }
+        }
+    }
+
+    // ==================================================================
+    // _adjustRepairNotes
+    // Adjusts repair_notes visibility and label based on requires_note.
+    // Ajusta repair_notes según el flag requires_note de la categoría.
+    // ==================================================================
+    function _adjustRepairNotes(idx, catSel) {
+        var repairWrap = document.getElementById('repair-notes-wrap-' + idx);
+        var repairLbl  = document.getElementById('repair-notes-label-' + idx);
+        if (!repairWrap) { return; }
+        var selOpt = catSel.options[catSel.selectedIndex];
+        var requiresNote = selOpt && selOpt.dataset.requiresNote === '1';
+        if (requiresNote) {
+            repairWrap.classList.remove('d-none');
+            if (repairLbl) { repairLbl.innerHTML = 'Observaciones <span class=\"text-danger\">*</span>'; }
+        } else {
+            repairWrap.classList.add('d-none');
+        }
     }
 
     // ==================================================================
@@ -355,15 +447,30 @@
                     '<label class="form-label fw-medium">Horómetro grúa (h) <span class=\"text-danger meter-required\">*</span></label>' +
                     '<input type="number" step="0.1" min="0" name="entrada_' + idx + '_crane_hours_reading" class="form-control horometro-input" placeholder="Horas grúa">' +
                 '</div>' +
-                '<div class="col-12 col-md-6">' +
+                '<div class="col-12 col-md-6 absence-selector-wrap d-none" id="absence-selector-wrap-' + idx + '">' +
+                    '<label class="form-label fw-medium">Categoría de ausencia <span class="text-danger">*</span></label>' +
+                    (function () {
+                        var opts = '<option value="">— Selecciona una categoría —</option>';
+                        if (EB_CONFIG.absenceCategories) {
+                            EB_CONFIG.absenceCategories.forEach(function (cat) {
+                                opts += '<option value="' + cat.id + '" data-requires-note="' +
+                                    (cat.requires_note ? '1' : '0') + '">' + cat.label + '</option>';
+                            });
+                        }
+                        return '<select name="entrada_' + idx + '_absence_category" ' +
+                               'id="entrada_' + idx + '_absence_category" ' +
+                               'class="form-select eb-field">' + opts + '</select>';
+                    }()) +
+                '</div>' +
+                '<div class="col-12 col-md-6" id="fault-description-wrap-' + idx + '">' +
                     '<label class="form-label fw-medium">Descripción avería <span class="text-danger">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_fault_description" ' +
                               'class="form-control desc-search eb-field" rows="3" ' +
                               'data-desc-field="fault_description" ' +
                               'placeholder="Descripción de la avería o tarea"></textarea>' +
                 '</div>' +
-                '<div class="col-12 col-md-6">' +
-                    '<label class="form-label fw-medium">Reparación realizada <span class=\"text-danger\">*</span></label>' +
+                '<div class="col-12 col-md-6" id="repair-notes-wrap-' + idx + '">' +
+                    '<label class="form-label fw-medium" id="repair-notes-label-' + idx + '">Reparación realizada <span class=\"text-danger\">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_repair_notes" ' +
                               'class="form-control desc-search eb-field" rows="3" ' +
                               'data-desc-field="repair_notes" ' +
@@ -594,44 +701,6 @@
 
             // Gate 2 — Work blocks / Bloques de trabajo.
             var numEntradas = parseInt(_val("num_entradas"), 10) || 1;
-            /*
-             * _lunchOverlapMinutes — computes the overlap in minutes between
-             * a work block [hc, hf] and the lunch break [lunchStart, lunchEnd].
-             * All params are "HH:MM" strings. Returns 0 if any param is empty
-             * or there is no overlap.
-             *
-             * _lunchOverlapMinutes — calcula el solapamiento en minutos entre
-             * un bloque de trabajo [hc, hf] y la pausa de comida [lunchStart, lunchEnd].
-             * Todos los parametros son cadenas "HH:MM". Devuelve 0 si algun parametro
-             * esta vacio o no hay solapamiento.
-             */
-            function _lunchOverlapMinutes(hc, hf, lunchStart, lunchEnd) {
-                if (!hc || !hf || !lunchStart || !lunchEnd) { return 0; }
-                function _toMin(t) {
-                    var parts = t.split(":");
-                    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-                }
-                var blockStart  = _toMin(hc);
-                var blockEnd    = _toMin(hf);
-                var lunchS      = _toMin(lunchStart);
-                var lunchE      = _toMin(lunchEnd);
-                var overlapStart = Math.max(blockStart, lunchS);
-                var overlapEnd   = Math.min(blockEnd,   lunchE);
-                return Math.max(0, overlapEnd - overlapStart);
-            }
-
-            /* Read lunch break from form fields (operator may have modified them). */
-            /* Leer pausa de comida desde los campos del formulario (el operario pudo modificarlos). */
-            /*
-             * no_lunch_break: when checked, lunch overlap is forced to 0
-             * and the backend skips Gate 4 LUNCH_BREAK detection.
-             * no_lunch_break: cuando marcado, el solapamiento de comida es 0
-             * y el backend omite la deteccion de LUNCH_BREAK en Gate 4.
-             */
-            var noLunchEl  = document.getElementById("id_no_lunch_break_value");
-            var noLunch    = noLunchEl && noLunchEl.value === "1";
-            var lunchStart = noLunch ? "" : (_val("lunch_break_start") || LUNCH_BREAK_START);
-            var lunchEnd   = noLunch ? "" : (_val("lunch_break_end")   || LUNCH_BREAK_END);
 
             for (var i = 1; i <= numEntradas; i++) {
                 var blk  = "Bloque " + i;
@@ -656,26 +725,10 @@
                     _markField("entrada_" + i + "_hf", true);
                     errors.push(blk + ": H.F. debe ser posterior a H.C.");
                 }
-
-                /*
-                 * Compute lunch overlap for this block and store in a hidden input
-                 * so the backend can apply the exact deduction per line.
-                 *
-                 * Calcular el solapamiento de comida para este bloque y almacenarlo
-                 * en un input oculto para que el backend aplique el descuento exacto.
-                 */
-                var overlapMin = _lunchOverlapMinutes(hc, hf, lunchStart, lunchEnd);
-                var overlapId  = "lunch_overlap_" + i;
-                var overlapEl  = document.getElementById(overlapId);
-                if (!overlapEl) {
-                    overlapEl      = document.createElement("input");
-                    overlapEl.type = "hidden";
-                    overlapEl.id   = overlapId;
-                    overlapEl.name = "lunch_overlap_" + i;
-                    document.getElementById("form-entry").appendChild(overlapEl);
-                }
-                overlapEl.value = overlapMin;
             }
+            // Inject lunch overlap hidden inputs before close_order submit.
+            // Inyectar inputs de solapamiento antes del submit close_order.
+            _computeAndInjectLunchOverlaps(numEntradas);
 
             // Gate 3 — Spare parts / Repuestos.
             var numRepuestos = parseInt(_val("num_repuestos"), 10) || 0;
@@ -732,6 +785,54 @@
         });
     }
 
+    // ==================================================================
+    // _computeAndInjectLunchOverlaps
+    // Computes the overlap in minutes between each work block [hc, hf]
+    // and the lunch break window, injects the result into a hidden input
+    // (lunch_overlap_N) for backend deduction. Called from both the
+    // close_order submit handler and the save_blocks click handler.
+    //
+    // Calcula el solapamiento en minutos entre cada bloque [hc, hf] y la
+    // ventana de pausa de comida, e inyecta el resultado en un input oculto
+    // (lunch_overlap_N) para el descuento en backend. Se llama desde
+    // close_order y save_blocks para garantizar descuento coherente.
+    // ==================================================================
+    function _computeAndInjectLunchOverlaps(numBlocks) {
+        function _lunchOverlapMinutes(hc, hf, lunchStart, lunchEnd) {
+            if (!hc || !hf || !lunchStart || !lunchEnd) { return 0; }
+            function _toMin(t) {
+                var parts = t.split(":");
+                return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+            }
+            var blockStart   = _toMin(hc);
+            var blockEnd     = _toMin(hf);
+            var lunchS       = _toMin(lunchStart);
+            var lunchE       = _toMin(lunchEnd);
+            var overlapStart = Math.max(blockStart, lunchS);
+            var overlapEnd   = Math.min(blockEnd,   lunchE);
+            return Math.max(0, overlapEnd - overlapStart);
+        }
+        var noLunchEl  = document.getElementById("id_no_lunch_break_value");
+        var noLunch    = noLunchEl && noLunchEl.value === "1";
+        var lunchStart = noLunch ? "" : (_val("lunch_break_start") || LUNCH_BREAK_START);
+        var lunchEnd   = noLunch ? "" : (_val("lunch_break_end")   || LUNCH_BREAK_END);
+        for (var i = 1; i <= numBlocks; i++) {
+            var hc         = _val("entrada_" + i + "_hc");
+            var hf         = _val("entrada_" + i + "_hf");
+            var overlapMin = _lunchOverlapMinutes(hc, hf, lunchStart, lunchEnd);
+            var overlapId  = "lunch_overlap_" + i;
+            var overlapEl  = document.getElementById(overlapId);
+            if (!overlapEl) {
+                overlapEl      = document.createElement("input");
+                overlapEl.type = "hidden";
+                overlapEl.id   = overlapId;
+                overlapEl.name = "lunch_overlap_" + i;
+                document.getElementById("form-entry").appendChild(overlapEl);
+            }
+            overlapEl.value = overlapMin;
+        }
+    }
+
     // Progressive save: "Guardar bloques" button.
     // Guardado progresivo: boton Guardar bloques.
     var btnSaveBlocks   = document.getElementById("btn-save-blocks");
@@ -773,6 +874,9 @@
                 _showAlert(sbErrors.join(" | "));
                 return;
             }
+            // Inject lunch overlap inputs before save_blocks submit.
+            // Inyectar inputs de solapamiento antes del submit save_blocks.
+            _computeAndInjectLunchOverlaps(sbNum);
             formActionInput.value = "save_blocks";
             form.submit();
         });

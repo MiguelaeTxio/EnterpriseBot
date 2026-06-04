@@ -392,7 +392,23 @@
                                        class="form-control horometro-input"
                                        placeholder="Horas grúa">
                             </div>
-                            <div class="col-12 col-md-6">
+                            <div class="col-12 col-md-6 absence-selector-wrap d-none" id="absence-selector-wrap-1">
+                                <label class="form-label fw-medium">
+                                    Categoría de ausencia <span class="text-danger">*</span>
+                                </label>
+                                <select name="entrada_1_absence_category"
+                                        id="entrada_1_absence_category"
+                                        class="form-select eb-field">
+                                    <option value="">-- Selecciona una categoría --</option>
+                                    {% for cat in absence_categories %}
+                                        <option value="{{ cat.id }}"
+                                                data-requires-note="{% if cat.requires_note %}1{% else %}0{% endif %}">
+                                            {{ cat.label }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6" id="fault-description-wrap-1">
                                 <label class="form-label fw-medium">
                                     Descripción avería <span class="text-danger">*</span>
                                 </label>
@@ -402,8 +418,8 @@
                                           placeholder="Descripción de la avería o tarea"
                                           data-desc-field="fault_description"></textarea>
                             </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-medium">Reparación realizada <span class="text-danger">*</span></label>
+                            <div class="col-12 col-md-6" id="repair-notes-wrap-1">
+                                <label class="form-label fw-medium" id="repair-notes-label-1">Reparación realizada <span class="text-danger">*</span></label>
                                 <textarea name="entrada_1_repair_notes"
                                           class="form-control desc-search eb-field"
                                           rows="3"
@@ -588,7 +604,9 @@ window.EB_CONFIG = {
     lunchBreakEnd:      "{{ lunch_break_end }}",
     noLunchBreak:       false,
     endTimeMorning:     "{{ end_time_morning }}",
-    endTimeAfternoon:   "{{ end_time_afternoon }}"
+    endTimeAfternoon:   "{{ end_time_afternoon }}",
+    personalAssetCode:  "{{ personal_asset_code }}",
+    absenceCategories:  {{ absence_categories|default:'[]'|safe }}
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>

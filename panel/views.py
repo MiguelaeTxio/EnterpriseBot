@@ -8422,6 +8422,14 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 _ip_lunch_start, _ip_lunch_end,
             )
             context = self._get_context_base(request)
+            from ivr_config.models import AbsenceCategory as _AbsCat
+            from fleet.models import MachineAsset as _MA
+            from work_order_processor.management.commands.seed_personal_asset import PERSONAL_ASSET_CODE
+            _absence_cats = list(
+                _AbsCat.objects.filter(company=company, is_active=True)
+                .order_by("order", "label")
+                .values("id", "label", "requires_note")
+            )
             context.update({
                 "in_progress_mode": True,
                 "in_progress_wo_pk": _in_progress_wo.pk,
@@ -8431,14 +8439,16 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "entradas_enriched": _ip_entradas,
                 "repuestos_enriched": _ip_repuestos,
                 "min_date":          min_date.isoformat() if min_date else "",
-                "lunch_break_start": "XX:XX",
-                "lunch_break_end":   "XX:XX",
+                "lunch_break_start": _ip_first_entry.lunch_break_start.strftime("%H:%M") if _ip_first_entry and _ip_first_entry.lunch_break_start else "",
+                "lunch_break_end":   _ip_first_entry.lunch_break_end.strftime("%H:%M")   if _ip_first_entry and _ip_first_entry.lunch_break_end   else "",
                 "first_block_hc":    _ip_first_hc,
                 "first_block_hf":    _ip_first_hf,
                 "no_lunch_break":    _ip_no_lunch,
                 "show_lunch_break":  _ip_show_lunch,
                 "end_time_morning":  _ip_end_time_morning,
                 "end_time_afternoon": _ip_end_time_afternoon,
+                "absence_categories": _absence_cats,
+                "personal_asset_code": PERSONAL_ASSET_CODE,
             })
             return render(request, self.template_name, context)
 
@@ -8474,6 +8484,13 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             elif _schedule_create.is_intensive and _schedule_create.end_time_morning:
                 _end_time_afternoon_create = _schedule_create.end_time_morning.strftime("%H:%M")
 
+        from ivr_config.models import AbsenceCategory as _AbsCat
+        from work_order_processor.management.commands.seed_personal_asset import PERSONAL_ASSET_CODE
+        _absence_cats = list(
+            _AbsCat.objects.filter(company=company, is_active=True)
+            .order_by("order", "label")
+            .values("id", "label", "requires_note")
+        )
         context = self._get_context_base(request)
         context.update({
             "num_entradas":    1,
@@ -8488,6 +8505,8 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             "show_lunch_break":  bool(_lunch_start),
             "end_time_morning":  _end_time_morning_create,
             "end_time_afternoon": _end_time_afternoon_create,
+            "absence_categories": _absence_cats,
+            "personal_asset_code": PERSONAL_ASSET_CODE,
         })
         return render(request, self.template_name, context)
 
@@ -15778,13 +15797,37 @@ class CompanySettingsView(AdminRoleRequiredMixin, View):
 
     def get(self, request):
         """
-        Render the company settings form with current field values.
+        Render the company settings page with bases, schedules and night
+        shift fields. The obsolete operation_bases and labor_calendar text
+        fields have been replaced by live querysets from the database.
         ---
-        Renderiza el formulario de configuración con los valores actuales.
+        Renderiza la página de configuración de empresa con bases, horarios
+        y franja nocturna. Los campos de texto obsoletos operation_bases y
+        labor_calendar han sido sustituidos por querysets en vivo desde BD.
         """
-        from ivr_config.models import Company
+        import json as _json
+        from ivr_config.models import Company, WorkdaySchedule
+        from budgets.models import Base
         company_user = request.user.company_user
         company = company_user.company
+        bases = Base.objects.filter(company=company).order_by("name")
+        # Annotate each base with the count of loaded public holidays.
+        # Anotar cada base con el conteo de festivos cargados en su calendario.
+        bases_data = []
+        for base in bases:
+            holiday_count = 0
+            if base.labor_calendar:
+                try:
+                    holiday_count = len(_json.loads(base.labor_calendar))
+                except (ValueError, TypeError):
+                    holiday_count = 0
+            bases_data.append({
+                "base": base,
+                "holiday_count": holiday_count,
+            })
+        schedules = WorkdaySchedule.objects.filter(
+            company=company
+        ).order_by("label")
         ctx = {
             "company": company,
             "company_user": company_user,
@@ -15795,24 +15838,26 @@ class CompanySettingsView(AdminRoleRequiredMixin, View):
                 Q(ends_at__isnull=True) | Q(ends_at__gt=now())
             ).order_by("-starts_at").first(),
             "active_nav": "company_settings",
+            "bases_data": bases_data,
+            "schedules": schedules,
         }
         return render(request, self.template_name, ctx)
 
     def post(self, request):
         """
-        Save operation_bases, labor_calendar, night_start and night_end fields
-        to the Company instance. Redirect back to the settings view with a
-        success message.
+        Save night_start and night_end fields to the Company instance.
+        The obsolete operation_bases and labor_calendar fields are no longer
+        persisted from this form — they are managed via Base model and the
+        sync_base_calendars command.
         ---
-        Guarda los campos operation_bases, labor_calendar, night_start y night_end
-        en la instancia Company. Redirige de vuelta a la vista de configuración
-        con mensaje de éxito.
+        Guarda los campos night_start y night_end en la instancia Company.
+        Los campos obsoletos operation_bases y labor_calendar ya no se
+        persisten desde este formulario — se gestionan via modelo Base y
+        el comando sync_base_calendars.
         """
         import datetime as _dt
         company_user = request.user.company_user
         company = company_user.company
-        company.operation_bases = request.POST.get("operation_bases", "").strip()
-        company.labor_calendar  = request.POST.get("labor_calendar", "").strip()
 
         # Parse and validate night_start and night_end.
         # Parsear y validar night_start y night_end.
@@ -15834,8 +15879,6 @@ class CompanySettingsView(AdminRoleRequiredMixin, View):
             company.night_end = _dt.time(6, 0)
 
         company.save(update_fields=[
-            "operation_bases",
-            "labor_calendar",
             "night_start",
             "night_end",
         ])
