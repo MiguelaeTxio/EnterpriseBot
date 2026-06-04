@@ -114,7 +114,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Listado de PDFs mejorado: nombre legible, desplegable de acciones, modal de incidencias.
 - Refactor CSS: panel.css extraido del bloque inline de base.html. COMPLETADO 2026-04-27.
 
-### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (EN PROGRESO)
+### Hito 7: Partes Diarios de Reparación — Entrada Digital desde el Panel (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`)
 - Nuevos roles `WORKSHOP` (operario de taller) y `DRIVER` (reservado) en CompanyUser.
 - WorkshopRequiredMixin creado. OperatorDashboardView con selector de tres vías implementada.
@@ -235,5 +235,19 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Cálculo de ruta en wizard: carretera + PK → Google Routes API → km real + peajes.
 - Campos de ruta en Budget: road_name, pk_km, route_distance_km, route_toll_cost.
 - Peajes como concepto adicional en calculate_budget().
+
+### Hito 19: Mejoras WorkOrderAdminHistoryView — Filtros, Búsqueda, Ordenación y Exportación por Plantillas (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md`)
+- Filtro adicional por familia de avería (`fault_category`) en barra de filtros de `WorkOrderAdminHistoryView`.
+- Columna familia de avería visible en pestañas Pendientes, Revisados e Histórico.
+- Campo de búsqueda libre acotado a `fault_description` + `repair_notes` (AND lógico con filtros activos).
+- Ordenación ascendente/descendente por columna en las tres pestañas (ya implementado en S044).
+- Acción desmarcar revisado disponible en pestaña Revisados.
+- Motor de exportación por plantillas: sustituye completamente a `WorkOrderAdminExportView`.
+  Toda exportación pasa por modal de selección de plantilla. Plantillas por usuario (`CompanyUser`).
+  Plantilla por defecto creada automáticamente. CRUD completo de plantillas.
+  Configuración: columnas a incluir, formato de hoja (una hoja / por operario), alcance de operarios.
+- Nuevo modelo `ExportTemplate` en app `work_order_processor` con migración.
+- Exclusivo para roles SUPERVISOR y ADMIN. WORKSHOP sin acceso a exportación.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

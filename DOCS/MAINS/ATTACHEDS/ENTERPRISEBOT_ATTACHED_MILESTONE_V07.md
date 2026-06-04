@@ -3,7 +3,7 @@
 # Hito 7 — Partes Diarios de Reparación — Entrada Digital desde el Panel
 
 ## Estado General
-Implementación avanzada. Múltiples vías de entrada operativas. En curso.
+Implementación avanzada. Múltiples vías de entrada operativas. **PAUSADO** — pivotaje a Hito 19 en S044 (2026-06-04). Las mejoras de la vista de administración (filtros, búsqueda, ordenación, exportación por plantillas) se desarrollan en el anexo V19.
 
 ---
 
@@ -61,6 +61,8 @@ Upload de PDF escaneado procesado por Gemini Vision. Flujo de merge con Vía A.
 | Fix I6 — backend selector ausencias: _parse_entry_lines_from_post + WorkdayGap sintético | S043 | COMPLETADO |
 | Fix I6 — WorkdayGapResolutionView crea WorkOrderEntryLine PERSONAL al resolver gap | S043 | COMPLETADO |
 | Fix serialización JSON de absence_categories en contexto GET (regresión autocomplete) | S043 | COMPLETADO |
+| Ordenación por columna (sort/dir) en WorkOrderEntryHistoryView (Tab 1) | S044 | COMPLETADO |
+| Ordenación por columna (sort/dir) en WorkOrderAdminHistoryView (3 pestañas) | S044 | COMPLETADO |
 
 ---
 
@@ -140,61 +142,16 @@ el formulario de edición de sección.
 
 ---
 
-## Hoja de Ruta para S044
+## Hoja de Ruta — CERRADA en S044
 
-### Prioridad 1 — Mejoras UX historial de partes digitales (P4)
+La hoja de ruta original de S044 quedó parcialmente ejecutada.
+La ordenación (P1.1 y P1.2) se implementó correctamente en views.py.
+Las mejoras restantes (exportación, filtros, búsqueda) evolucionaron
+en alcance durante la sesión y se promovieron al Hito 19, donde se
+implementarán con la arquitectura correcta (motor de plantillas,
+modelo ExportTemplate, filtro familia de avería, búsqueda libre).
 
-#### 1.1 Ordenación por columnas — vista WORKSHOP (`WorkOrderEntryHistoryView`)
-La vista `WorkOrderEntryHistoryView` renderiza el historial personal del
-operario en 4 pestañas. La pestaña principal (periodo actual) y las demás
-deben permitir ordenar por las columnas visibles.
-
-**Implementación:**
-- Leer parámetro GET `sort` (nombre de columna) y `dir` (asc/desc).
-- Aplicar `order_by` al queryset según el par `sort`/`dir`.
-- En el template, cada cabecera de columna es un enlace que alterna
-  `dir=asc` / `dir=desc` e incluye un indicador visual (▲/▼).
-- Preservar los filtros activos (pestaña, fecha) en los enlaces de ordenación.
-
-**Columnas ordenables:** fecha del parte, máquina, horas totales, estado.
-
-**Archivos a modificar:**
-- `panel/views.py` — `WorkOrderEntryHistoryView.get()`: añadir lógica
-  de ordenación al queryset de cada pestaña.
-- `panel/templates/panel/operator/history.html`: cabeceras con enlaces
-  de ordenación y clase CSS activa en la columna activa.
-
-#### 1.2 Ordenación por columnas — vista SUPERVISOR/ADMIN (`WorkOrderAdminHistoryView`)
-Misma lógica que 1.1 aplicada a `WorkOrderAdminHistoryView`.
-
-**Archivos a modificar:**
-- `panel/views.py` — `WorkOrderAdminHistoryView.get()`.
-- `panel/templates/panel/work_orders/digital_list.html` (o el template
-  correspondiente): cabeceras con enlaces de ordenación.
-
-#### 1.3 Exportación Excel historial de partes digitales
-El SUPERVISOR/ADMIN y el WORKSHOP deben poder exportar a Excel el listado
-de partes digitales filtrado por el periodo/criterio activo en ese momento.
-
-**Implementación:**
-- Añadir parámetro GET `export=excel` a ambas vistas.
-- Reutilizar `generate_work_order_excel` o crear una función específica
-  que genere un Excel con las columnas del listado (fecha, operario,
-  máquina, horas, estado).
-- El botón de exportación se añade en el template junto a los filtros,
-  preservando los parámetros de filtrado activos en la URL.
-
-**Archivos a modificar:**
-- `panel/views.py` — `WorkOrderEntryHistoryView.get()` y
-  `WorkOrderAdminHistoryView.get()`: rama `export=excel`.
-- Templates correspondientes: botón de exportación.
-
-**Orden de ejecución en S044:**
-1. Solicitar `panel/views.py` actualizado y los dos templates de historial.
-2. Implementar ordenación (1.1 y 1.2) en una sola caja PMA sobre views.py.
-3. Implementar exportación Excel (1.3) en caja PMA separada.
-4. Actualizar templates con cabeceras y botón de exportación.
-5. Verificar en producción con operario y supervisor.
+**Hito 7 queda PAUSADO.** Continuar en `ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md`.
 
 ---
 
@@ -257,3 +214,16 @@ eliminando workshop_family y creando infraestructura de circulares por sección 
 is_broadcast_enabled (migración ivr_config 0032), modal de selección, lógica de ventana
 24h con pending_broadcast_messages (migración whatsapp 0004) y entrega en opt_in con
 registro en sala de chat; fix de activación de usuarios WORKSHOP inactivos desde panel.
+
+### S044 — 2026-06-04
+**Título:** Ordenación por columnas en historial de partes digitales y pivotaje a Hito 19
+**Descripción:** Sesión S044 del Hito 7. Se implementó la ordenación por columna
+(parámetros GET sort/dir) en WorkOrderEntryHistoryView (Tab 1 — periodo actual,
+columnas fecha/num_bloques/horas_totales/reviewed) y en WorkOrderAdminHistoryView
+(pestañas Pendientes, Revisados e Histórico, columnas fecha/operator_name/horas_totales/reviewed).
+Ambas vistas pasan sort_col y sort_dir al contexto del template. Durante la sesión
+se debatió la exportación Excel y se concluyó que el alcance correcto es un motor
+de exportación por plantillas con modelo ExportTemplate en work_order_processor,
+filtro por familia de avería, campo de búsqueda libre (fault_description + repair_notes),
+acción desmarcar revisado y sustitución completa del sistema de exportación existente.
+Todo ello se promovió al Hito 19. El Hito 7 queda PAUSADO en este punto.

@@ -10338,6 +10338,18 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
         active_tab = request.GET.get("tab", "current_period")
 
         # ------------------------------------------------------------------
+        # Sort parameters — parámetros de ordenación.
+        # sort: column key (fecha | num_bloques | horas_totales | reviewed)
+        # dir:  asc | desc
+        # ------------------------------------------------------------------
+        sort_col = request.GET.get("sort", "fecha")
+        sort_dir = request.GET.get("dir", "asc")
+        if sort_col not in ("fecha", "num_bloques", "horas_totales", "reviewed"):
+            sort_col = "fecha"
+        if sort_dir not in ("asc", "desc"):
+            sort_dir = "asc"
+
+        # ------------------------------------------------------------------
         # Base queryset helper — helper de queryset base.
         # Scoped to DIGITAL and GENERATED sources only — PDF_UPLOAD parts
         # belong exclusively to the SUPERVISOR/ADMIN WorkOrderListView.
@@ -10402,6 +10414,29 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
 
         current_period_list, current_period_hours = (
             self._enrich_work_orders_for_period(period_qs)
+        )
+
+        # Apply column sort to current_period_list.
+        # Aplicar ordenación de columna a current_period_list.
+        def _sort_key_history(item):
+            """
+            Returns the sort key for a current_period_list dict entry.
+            None values sort last in both directions.
+            ---
+            Devuelve la clave de ordenación para un dict de current_period_list.
+            Los valores None se ordenan al final en ambas direcciones.
+            """
+            val = item.get(sort_col)
+            if val is None:
+                # Place None last regardless of direction.
+                # Colocar None al final independientemente de la dirección.
+                return (1, None)
+            return (0, val)
+
+        current_period_list = sorted(
+            current_period_list,
+            key=_sort_key_history,
+            reverse=(sort_dir == "desc"),
         )
 
         # ------------------------------------------------------------------
@@ -10476,6 +10511,9 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
                     "own_presence":          self._get_own_presence(cu),
                     "active_nav":            "operator_history",
                     "active_tab":            active_tab,
+                    # Sort state — estado de ordenación.
+                    "sort_col":              sort_col,
+                    "sort_dir":              sort_dir,
                     "active_period":         active_period,
                     "current_period_list":   current_period_list,
                     "current_period_hours":  current_period_hours,
@@ -10510,6 +10548,9 @@ class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
             "own_presence":          self._get_own_presence(cu),
             "active_nav":            "operator_history",
             "active_tab":            active_tab,
+            # Sort state — estado de ordenación.
+            "sort_col":              sort_col,
+            "sort_dir":              sort_dir,
             # Tab 1
             "active_period":         active_period,
             "current_period_list":   current_period_list,
@@ -13241,6 +13282,18 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         machine      = request.GET.get("machine", "").strip()
 
         # ------------------------------------------------------------------
+        # Sort parameters — parámetros de ordenación.
+        # sort: column key (fecha | operator_name | horas_totales | reviewed)
+        # dir:  asc | desc
+        # ------------------------------------------------------------------
+        sort_col = request.GET.get("sort", "fecha")
+        sort_dir = request.GET.get("dir", "asc")
+        if sort_col not in ("fecha", "operator_name", "horas_totales", "reviewed"):
+            sort_col = "fecha"
+        if sort_dir not in ("asc", "desc"):
+            sort_dir = "asc"
+
+        # ------------------------------------------------------------------
         # Operator selector list (all active company users).
         # Lista de selector de operarios (todos los usuarios activos de la empresa).
         # ------------------------------------------------------------------
@@ -13284,6 +13337,28 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             qs_history, operator_pk, date_from, date_to, machine, company
         )
         history_list = self._enrich_work_orders(qs_history)
+
+        # ------------------------------------------------------------------
+        # Apply column sort to all three enriched lists.
+        # Aplicar ordenación de columna a las tres listas enriquecidas.
+        # ------------------------------------------------------------------
+        def _sort_key_admin(item):
+            """
+            Returns the sort key for an admin enriched work-order dict.
+            None values and empty strings sort last in both directions.
+            ---
+            Devuelve la clave de ordenación para un dict enriquecido de
+            historial de administrador. None y cadena vacía se ordenan al final.
+            """
+            val = item.get(sort_col)
+            if val is None or val == "":
+                return (1, None)
+            return (0, val)
+
+        reverse_sort = (sort_dir == "desc")
+        pending_list  = sorted(pending_list,  key=_sort_key_admin, reverse=reverse_sort)
+        reviewed_list = sorted(reviewed_list, key=_sort_key_admin, reverse=reverse_sort)
+        history_list  = sorted(history_list,  key=_sort_key_admin, reverse=reverse_sort)
 
         # ------------------------------------------------------------------
         # Tab 4 — Absences (WorkerAbsence records for the company).
@@ -13345,6 +13420,9 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             "date_from":              request.GET.get("date_from", ""),
             "date_to":                request.GET.get("date_to", ""),
             "machine":                machine,
+            # Sort state — estado de ordenación.
+            "sort_col":               sort_col,
+            "sort_dir":               sort_dir,
             "pending_list":           pending_list,
             "reviewed_list":          reviewed_list,
             "history_list":           history_list,
