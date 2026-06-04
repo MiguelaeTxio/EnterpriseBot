@@ -50,41 +50,117 @@
   </div>
 
   {# ------------------------------------------------------------------ #}
-  {# BLOQUE 2 — Circular a salas de taller via Twilio (solo ADMIN)       #}
-  {# BLOCK 2 — Workshop section broadcast via Twilio (ADMIN only)         #}
+  {# BLOQUE 2 — Circular a secciones habilitadas via Twilio (solo ADMIN)  #}
+  {# BLOCK 2 — Broadcast to broadcast-enabled sections (ADMIN only)       #}
   {# ------------------------------------------------------------------ #}
   <div class="card mb-4">
     <div class="card-header fw-semibold">
-      <i class="bi bi-broadcast me-2"></i>Circular a salas de taller
+      <i class="bi bi-broadcast me-2"></i>Circular a secciones
     </div>
     <div class="card-body">
       <p class="text-muted small mb-3">
-        Envía un mensaje 1:1 a todos los miembros de uno o ambos talleres
-        vía Twilio WhatsApp. El mensaje se registra en el historial de cada sala.
+        Envía un mensaje 1:1 a todos los miembros de las secciones seleccionadas
+        vía Twilio WhatsApp. Solo aparecen las secciones habilitadas para circulares.
+        El mensaje se registra en el historial de cada sala.
       </p>
-      <form method="post" action="{% url 'panel:bot_management' %}">
+      {% if broadcast_sections %}
+      {# Formulario oculto — se envía desde el modal de confirmación #}
+      {# Hidden form — submitted from the confirmation modal #}
+      <form method="post" action="{% url 'panel:bot_management' %}" id="form-group-broadcast">
         {% csrf_token %}
         <input type="hidden" name="action" value="group_broadcast">
-        <div class="mb-3">
-          <label class="form-label">Talleres destinatarios</label>
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" name="groups" value="MECHANICAL" id="grp_mechanical">
-            <label class="form-check-label" for="grp_mechanical">Taller Mecánico</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" name="groups" value="ELEVATION" id="grp_elevation">
-            <label class="form-check-label" for="grp_elevation">Taller Elevación</label>
-          </div>
-        </div>
-        <div class="mb-3">
-          <label for="group_message" class="form-label">Mensaje</label>
-          <textarea name="message" id="group_message" class="form-control" rows="3"
-                    placeholder="Escribe el mensaje para el taller..." required></textarea>
-        </div>
-        <button type="submit" class="btn btn-primary">
-          <i class="bi bi-send me-1"></i>Enviar al taller
-        </button>
+        {# section_pks se inyectan dinámicamente por el JS del modal #}
+        {# section_pks are injected dynamically by the modal JS #}
+        <div id="section-pks-container"></div>
+        <input type="hidden" name="message" id="group-broadcast-message-hidden">
       </form>
+      <div class="mb-3">
+        <label for="group_message_input" class="form-label">Mensaje</label>
+        <textarea id="group_message_input" class="form-control" rows="3"
+                  placeholder="Escribe el mensaje para las secciones..."></textarea>
+      </div>
+      <button type="button" class="btn btn-primary" id="btn-open-broadcast-modal"
+              data-bs-toggle="modal" data-bs-target="#broadcastSectionsModal">
+        <i class="bi bi-send me-1"></i>Enviar circular
+      </button>
+
+      {# Modal de selección de secciones #}
+      {# Section selection modal #}
+      <div class="modal fade" id="broadcastSectionsModal" tabindex="-1"
+           aria-labelledby="broadcastSectionsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title fw-semibold" id="broadcastSectionsModalLabel">
+                <i class="bi bi-broadcast me-2 text-primary"></i>Selecciona las secciones destinatarias
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+              <p class="text-muted small mb-3">Marca las secciones a las que quieres enviar la circular:</p>
+              {% for section in broadcast_sections %}
+              <div class="form-check mb-2">
+                <input class="form-check-input broadcast-section-check" type="checkbox"
+                       value="{{ section.pk }}" id="bc_section_{{ section.pk }}" checked>
+                <label class="form-check-label" for="bc_section_{{ section.pk }}">
+                  {{ section.name }}
+                </label>
+              </div>
+              {% endfor %}
+              <div id="broadcast-modal-error" class="text-danger small mt-2 d-none">
+                Debes seleccionar al menos una sección.
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="button" class="btn btn-primary" id="btn-confirm-broadcast">
+                <i class="bi bi-send me-1"></i>Confirmar y enviar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+      (function () {
+        "use strict";
+        document.getElementById("btn-confirm-broadcast").addEventListener("click", function () {
+          var checks = document.querySelectorAll(".broadcast-section-check:checked");
+          var errorEl = document.getElementById("broadcast-modal-error");
+          if (checks.length === 0) {
+            errorEl.classList.remove("d-none");
+            return;
+          }
+          errorEl.classList.add("d-none");
+          var messageVal = document.getElementById("group_message_input").value.trim();
+          if (!messageVal) {
+            var modal = bootstrap.Modal.getInstance(document.getElementById("broadcastSectionsModal"));
+            if (modal) { modal.hide(); }
+            document.getElementById("group_message_input").focus();
+            return;
+          }
+          document.getElementById("group-broadcast-message-hidden").value = messageVal;
+          var container = document.getElementById("section-pks-container");
+          container.innerHTML = "";
+          checks.forEach(function (chk) {
+            var inp = document.createElement("input");
+            inp.type  = "hidden";
+            inp.name  = "section_pks";
+            inp.value = chk.value;
+            container.appendChild(inp);
+          });
+          document.getElementById("form-group-broadcast").submit();
+        });
+      }());
+      </script>
+      {% else %}
+      <div class="alert alert-warning mb-0">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        No hay secciones habilitadas para circulares WhatsApp.
+        Activa la opción <strong>Habilitada para circulares WhatsApp</strong>
+        en la configuración de cada sección que quieras incluir.
+      </div>
+      {% endif %}
     </div>
   </div>
 

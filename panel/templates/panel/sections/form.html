@@ -650,6 +650,26 @@
                         </div>
                     </div>
 
+                    <!-- is_broadcast_enabled field — Habilitada para circulares WhatsApp -->
+                    <div class="mb-4">
+                        <div class="form-check">
+                            {{ form.is_broadcast_enabled }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.is_broadcast_enabled.id_for_label }}">
+                                Habilitada para circulares WhatsApp
+                            </label>
+                        </div>
+                        {% if form.is_broadcast_enabled.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.is_broadcast_enabled.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Las secciones habilitadas aparecerán en el selector de circulares
+                            masivas del bot de WhatsApp.
+                        </div>
+                    </div>
+
                     <!-- workday_schedule field — Horario de trabajo por defecto de la sección -->
                     <hr class="my-4">
                     <h6 class="fw-semibold mb-1">

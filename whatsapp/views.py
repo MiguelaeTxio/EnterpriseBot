@@ -361,6 +361,93 @@ class IncomingWhatsAppView(View):
                             from_number, _exc,
                         )
 
+                # Deliver pending broadcast messages queued while outside 24h window.
+                # Messages older than 48h are discarded — considered expired.
+                # ---
+                # Entregar mensajes de circular pendientes encolados fuera de la ventana.
+                # Los mensajes con más de 48h se descartan — se consideran expirados.
+                if _active_session:
+                    import json as _json_bc_opt
+                    from datetime import timedelta as _td_bc_opt, datetime as _dt_bc_opt
+                    _pending_bc = list(
+                        _active_session.pending_broadcast_messages or []
+                    )
+                    if _pending_bc:
+                        _expiry_threshold = now() - _td_bc_opt(hours=48)
+                        _bc_remaining = []
+                        for _bc_msg in _pending_bc:
+                            _bc_body       = _bc_msg.get("body", "")
+                            _bc_created_raw = _bc_msg.get("created_at", "")
+                            # Parse created_at and check expiry.
+                            # Parsear created_at y comprobar expiración.
+                            try:
+                                _bc_created = _dt_bc_opt.fromisoformat(_bc_created_raw)
+                                # Make offset-naive for comparison if needed.
+                                if _bc_created.tzinfo is None:
+                                    from django.utils.timezone import make_aware as _make_aware
+                                    _bc_created = _make_aware(_bc_created)
+                            except (ValueError, TypeError):
+                                _bc_created = now()  # Unknown age — treat as fresh.
+                            if _bc_created < _expiry_threshold:
+                                logger.info(
+                                    "# [WHATSAPP] Mensaje de circular expirado (>48h) "
+                                    "para %s — descartado.",
+                                    from_number,
+                                )
+                                continue  # Discard expired message.
+                            if not _bc_body:
+                                continue
+                            # Deliver the broadcast message and persist
+                            # it as OUTBOUND in the section's ChatRoom.
+                            # Entregar el mensaje de circular y persistirlo
+                            # como OUTBOUND en la ChatRoom de la sección.
+                            try:
+                                WhatsAppChatService.send_reply(
+                                    from_number=to_number,
+                                    to_number=from_number,
+                                    reply_text=_bc_body,
+                                )
+                                # Persist in the section ChatRoom for panel history.
+                                # Persistir en la ChatRoom de la sección para historial.
+                                _bc_section = _active_session.target_section
+                                if _bc_section is not None:
+                                    from chat.models import ChatRoom as _CR_BC
+                                    from chat.models import ChatMessage as _CM_BC
+                                    _bc_room = _CR_BC.objects.filter(
+                                        company=company,
+                                        room_type=_CR_BC.ROOM_TYPE_SECTION,
+                                        section=_bc_section,
+                                        is_active=True,
+                                    ).first()
+                                    if _bc_room is not None:
+                                        _CM_BC.objects.create(
+                                            room=_bc_room,
+                                            direction=_CM_BC.DIRECTION_OUTBOUND,
+                                            body=_bc_body,
+                                            whatsapp_sid="",
+                                        )
+                                        logger.info(
+                                            "# [WHATSAPP] Circular registrada en sala '%s'.",
+                                            _bc_room.name,
+                                        )
+                                logger.info(
+                                    "# [WHATSAPP] Mensaje de circular entregado a %s "
+                                    "tras opt_in.",
+                                    from_number,
+                                )
+                            except Exception as _bc_exc:
+                                logger.error(
+                                    "# [WHATSAPP] Error entregando circular a %s: %s",
+                                    from_number, _bc_exc,
+                                )
+                                _bc_remaining.append(_bc_msg)  # Keep for retry.
+                        # Clear delivered messages; keep only failed ones.
+                        # Vaciar mensajes entregados; conservar solo los fallidos.
+                        _active_session.pending_broadcast_messages = _bc_remaining
+                        _active_session.save(
+                            update_fields=["pending_broadcast_messages"]
+                        )
+
                 logger.info(
                     "# [WHATSAPP] opt_in procesado para %s — sesión reactivada.",
                     from_number,

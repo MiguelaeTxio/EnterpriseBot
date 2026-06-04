@@ -4494,7 +4494,7 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
         return redirect("panel:work_order_list")
 
 
-class WorkOrderEditView(SupervisorAccessMixin, View):
+class WorkOrderEditView(WorkshopRequiredMixin, View):
     """
     Displays and processes inline edits for all WorkOrderEntryLine records
     belonging to a given WorkOrder. Lines are grouped by their parent
@@ -4506,10 +4506,16 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
                          Recomputes delta_hours from hc/hf and re-resolves
                          machine_asset from the updated machine_norm.
       "regenerate"     : Re-enqueues the Excel generation task for this WorkOrder
-                         (status reset to PENDING) and redirects to the list view.
+                         (status reset to PENDING) and redirects to the appropriate list.
 
+    Access rules:
+      WORKSHOP  — can only access their own DIGITAL/GENERATED parts. Access to
+                   PDF parts or parts belonging to other operators is denied.
+                   After save/regenerate, redirects to panel:operator_history.
+      SUPERVISOR/ADMIN — full access to all parts of the company.
+                   After save/regenerate, redirects to panel:digital_work_order_list
+                   for DIGITAL/GENERATED parts or panel:work_order_list for PDF parts.
     Access is restricted to the authenticated company (multicompany guard).
-    Restricted to ADMIN role.
 
     ---
 
@@ -4523,10 +4529,16 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
                          Recalcula delta_hours desde hc/hf y re-resuelve machine_asset
                          desde el machine_norm actualizado.
       "regenerate"     : Re-encola la tarea de generación de Excel para este WorkOrder
-                         (estado reseteado a PENDING) y redirige a la vista de lista.
+                         (estado reseteado a PENDING) y redirige a la lista apropiada.
 
+    Reglas de acceso:
+      WORKSHOP  — solo puede acceder a sus propios partes DIGITAL/GENERATED. El acceso
+                   a partes PDF o de otros operarios queda denegado.
+                   Tras guardar/regenerar redirige a panel:operator_history.
+      SUPERVISOR/ADMIN — acceso completo a todos los partes de la empresa.
+                   Tras guardar/regenerar redirige a panel:digital_work_order_list
+                   para partes DIGITAL/GENERATED o a panel:work_order_list para PDF.
     El acceso está restringido a la empresa autenticada (guardia multiempresa).
-    Restringido al rol ADMIN.
     """
 
     template_name = "panel/work_orders/edit.html"
@@ -4630,40 +4642,68 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
     def get(self, request, pk):
         """
         Renders the inline edit table for the given WorkOrder.
+        WORKSHOP role: access restricted to own DIGITAL/GENERATED parts only.
+        SUPERVISOR/ADMIN: full access to all parts of the company.
+        Passes is_digital to the template for conditional title rendering.
         ---
         Renderiza la tabla de edición inline para el WorkOrder dado.
+        Rol WORKSHOP: acceso restringido a sus propios partes DIGITAL/GENERATED.
+        SUPERVISOR/ADMIN: acceso completo a todos los partes de la empresa.
+        Pasa is_digital al template para renderizado condicional del título.
         """
         from work_order_processor.models import WorkOrderEntry
+        from django.urls import reverse as _reverse_get
         company_user = request.user.company_user
         company      = company_user.company
+        _is_workshop = company_user.role == "WORKSHOP"
 
         try:
             work_order = self._get_work_order(pk, company)
         except WorkOrder.DoesNotExist:
             django_messages.error(request, "Parte de trabajo no encontrado.")
-            return redirect("panel:work_order_list")
+            if _is_workshop:
+                return redirect(_reverse_get("panel:operator_history"))
+            return redirect(_reverse_get("panel:work_order_list"))
+
+        # --- WORKSHOP access guard. ---
+        # WORKSHOP can only edit their own DIGITAL/GENERATED parts.
+        # PDF parts or parts belonging to other operators are denied.
+        # --- Guardia de acceso WORKSHOP. ---
+        # WORKSHOP solo puede editar sus propios partes DIGITAL/GENERATED.
+        # Los partes PDF o de otros operarios quedan denegados.
+        _is_digital = work_order.source in (
+            WorkOrder.Source.DIGITAL,
+            WorkOrder.Source.GENERATED,
+        )
+        if _is_workshop:
+            if not _is_digital or work_order.uploaded_by != company_user:
+                django_messages.error(
+                    request,
+                    "No tienes permiso para editar este parte."
+                )
+                return redirect(_reverse_get("panel:operator_history"))
 
         groups = self._build_groups(work_order)
 
-        # Resolve back URL from optional ?from GET parameter.
-        # "digital" — comes from DigitalWorkOrderListView (digital parts).
-        # "taller"  — comes from WorkOrderAdminHistoryView (operator parts).
-        # Default   — returns to the PDF pipeline list (WorkOrderListView).
+        # Resolve back URL.
+        # WORKSHOP always returns to their own history.
+        # SUPERVISOR/ADMIN: ?from parameter or defaults by source.
         #
-        # Resolver URL de retorno desde el parametro GET opcional ?from.
-        # "digital" — proviene de DigitalWorkOrderListView (partes digitales).
-        # "taller"  — proviene de WorkOrderAdminHistoryView (partes de operarios).
-        # Por defecto — vuelve a la lista del pipeline PDF (WorkOrderListView).
-        from_param = request.GET.get("from", "")
-        if from_param == "digital":
-            from django.urls import reverse
-            back_url = reverse("panel:digital_work_order_list")
-        elif from_param == "taller":
-            from django.urls import reverse
-            back_url = reverse("panel:work_order_admin_history") + "?tab=pending"
+        # Resolver URL de retorno.
+        # WORKSHOP siempre vuelve a su historial propio.
+        # SUPERVISOR/ADMIN: parámetro ?from o por defecto según source.
+        if _is_workshop:
+            back_url = _reverse_get("panel:operator_history")
         else:
-            from django.urls import reverse
-            back_url = reverse("panel:work_order_list")
+            from_param = request.GET.get("from", "")
+            if from_param == "digital":
+                back_url = _reverse_get("panel:digital_work_order_list")
+            elif from_param == "taller":
+                back_url = _reverse_get("panel:work_order_admin_history") + "?tab=pending"
+            elif _is_digital:
+                back_url = _reverse_get("panel:digital_work_order_list")
+            else:
+                back_url = _reverse_get("panel:work_order_list")
 
         # Retrieve WorkdayGap records for DIGITAL/GENERATED parts only.
         # They are ordered by gap_start so the supervisor sees the timeline
@@ -4673,10 +4713,7 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
         # Se ordenan por gap_start para que el supervisor vea la línea de tiempo
         # en orden cronológico. Lista vacía para partes PDF_UPLOAD.
         from work_order_processor.models import WorkdayGap
-        if work_order.source in (
-            WorkOrder.Source.DIGITAL,
-            WorkOrder.Source.GENERATED,
-        ):
+        if _is_digital:
             workday_gaps = list(
                 WorkdayGap.objects
                 .filter(work_order=work_order)
@@ -4695,13 +4732,24 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
             "groups":       groups,
             "back_url":     back_url,
             "workday_gaps": workday_gaps,
+            "is_digital":   _is_digital,
         })
 
     def post(self, request, pk):
         """
         Dispatches POST actions: save_line or regenerate.
+        WORKSHOP role: access restricted to own DIGITAL/GENERATED parts.
+        Redirects after action respect the role:
+          WORKSHOP         — panel:operator_history.
+          SUPERVISOR/ADMIN — panel:digital_work_order_list (DIGITAL/GENERATED)
+                              or panel:work_order_list (PDF).
         ---
         Despacha las acciones POST: save_line o regenerate.
+        Rol WORKSHOP: acceso restringido a sus propios partes DIGITAL/GENERATED.
+        Las redirecciones tras la acción respetan el rol:
+          WORKSHOP         — panel:operator_history.
+          SUPERVISOR/ADMIN — panel:digital_work_order_list (DIGITAL/GENERATED)
+                              o panel:work_order_list (PDF).
         """
         from work_order_processor.models import WorkOrderEntry, WorkOrderEntryLine
         from work_order_processor.services import (
@@ -4710,16 +4758,45 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
             _resolve_machine_asset,
         )
         from datetime import time as dt_time
+        from django.urls import reverse as _reverse_post
         import json
 
         company_user = request.user.company_user
         company      = company_user.company
+        _is_workshop_post = company_user.role == "WORKSHOP"
 
         try:
             work_order = self._get_work_order(pk, company)
         except WorkOrder.DoesNotExist:
             django_messages.error(request, "Parte de trabajo no encontrado.")
-            return redirect("panel:work_order_list")
+            if _is_workshop_post:
+                return redirect(_reverse_post("panel:operator_history"))
+            return redirect(_reverse_post("panel:work_order_list"))
+
+        # --- WORKSHOP access guard (mirrors get()). ---
+        # WORKSHOP can only edit their own DIGITAL/GENERATED parts.
+        # --- Guardia de acceso WORKSHOP (espeja get()). ---
+        # WORKSHOP solo puede editar sus propios partes DIGITAL/GENERATED.
+        _is_digital_post = work_order.source in (
+            WorkOrder.Source.DIGITAL,
+            WorkOrder.Source.GENERATED,
+        )
+        if _is_workshop_post:
+            if not _is_digital_post or work_order.uploaded_by != company_user:
+                django_messages.error(
+                    request,
+                    "No tienes permiso para editar este parte."
+                )
+                return redirect(_reverse_post("panel:operator_history"))
+
+        # Resolve list URL after action — respects role and source.
+        # Resolver URL de lista post-acción — respeta rol y source.
+        if _is_workshop_post:
+            _list_url = _reverse_post("panel:operator_history")
+        elif _is_digital_post:
+            _list_url = _reverse_post("panel:digital_work_order_list")
+        else:
+            _list_url = _reverse_post("panel:work_order_list")
 
         action = request.POST.get("action", "")
 
@@ -4739,7 +4816,7 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
                 request,
                 f"Excel regenerado correctamente para el Parte #{work_order.pk}."
             )
-            return redirect("panel:work_order_list")
+            return redirect(_list_url)
 
         # ------------------------------------------------------------------
         # Action: save_line — save a single WorkOrderEntryLine
@@ -6737,6 +6814,15 @@ def _parse_entry_lines_from_post(POST, company):
       Pass 2 — iexact on _normalise_machine_code(machine_raw): covers OCR
                and handwritten input where normalisation is required.
 
+    Absence (PERSONAL asset) handling:
+      When the selected machine_asset matches the PERSONAL asset code,
+      the backend reads entrada_{i}_absence_category from POST, resolves
+      the AbsenceCategory, and overrides fault_description with its label.
+      If requires_note=True the operator must supply repair_notes (validated
+      in Gate 1). The resolved AbsenceCategory instance is stored in the
+      'absence_category' key of the dict so that save_blocks and close_order
+      can create the synthetic WorkdayGap record.
+
     Returns a list of dicts ready to feed the integrity gate and the
     atomic persistence block.
     ---
@@ -6749,6 +6835,15 @@ def _parse_entry_lines_from_post(POST, company):
       Pasada 2 — iexact sobre _normalise_machine_code(machine_raw): cubre
                  entrada OCR y manuscrita donde se requiere normalización.
 
+    Gestión de ausencias (activo PERSONAL):
+      Cuando el machine_asset seleccionado coincide con el código PERSONAL,
+      el backend lee entrada_{i}_absence_category del POST, resuelve la
+      AbsenceCategory y sobreescribe fault_description con su label.
+      Si requires_note=True el operario debe proporcionar repair_notes
+      (validado en Gate 1). La instancia AbsenceCategory resuelta se
+      almacena en la clave 'absence_category' del dict para que save_blocks
+      y close_order puedan crear el registro WorkdayGap sintético.
+
     Devuelve una lista de dicts lista para la barrera de integridad y el
     bloque de persistencia atómica.
     """
@@ -6758,6 +6853,9 @@ def _parse_entry_lines_from_post(POST, company):
     from work_order_processor.services import (
         _normalise_machine_code,
         _compute_delta_hours,
+    )
+    from work_order_processor.management.commands.seed_personal_asset import (
+        PERSONAL_ASSET_CODE as _PERSONAL_CODE,
     )
 
     num_entradas     = int(POST.get("num_entradas", "1") or "1")
@@ -6848,6 +6946,63 @@ def _parse_entry_lines_from_post(POST, company):
         engine_hours_reading = _parse_decimal(POST.get(f"entrada_{i}_engine_hours_reading", ""))
         crane_hours_reading  = _parse_decimal(POST.get(f"entrada_{i}_crane_hours_reading", ""))
 
+        # ------------------------------------------------------------------
+        # Absence (PERSONAL asset) resolution — I6.
+        # When the resolved machine_asset matches PERSONAL_ASSET_CODE, read
+        # the absence_category pk from POST, resolve the AbsenceCategory and
+        # override fault_description with its label so both entry paths
+        # (voluntary PERSONAL block and auto-detected GAP) produce an
+        # identical WorkOrderEntryLine in the database.
+        # The resolved AbsenceCategory is stored for WorkdayGap creation
+        # by save_blocks and close_order.
+        # repair_notes carries the optional operator note (required when
+        # AbsenceCategory.requires_note=True).
+        # ------------------------------------------------------------------
+        # Resolución de ausencia (activo PERSONAL) — I6.
+        # Cuando el machine_asset resuelto coincide con PERSONAL_ASSET_CODE,
+        # se lee el pk de absence_category del POST, se resuelve la
+        # AbsenceCategory y se sobreescribe fault_description con su label
+        # para que ambos caminos de entrada (bloque PERSONAL voluntario y
+        # GAP detectado automáticamente) produzcan un WorkOrderEntryLine
+        # idéntico en base de datos.
+        # La AbsenceCategory resuelta se almacena para la creación del
+        # WorkdayGap sintético por save_blocks y close_order.
+        # repair_notes lleva la nota opcional del operario (obligatoria
+        # cuando AbsenceCategory.requires_note=True).
+        absence_category_obj = None
+        _is_personal_block   = (
+            machine_asset is not None
+            and machine_asset.code.upper() == _PERSONAL_CODE.upper()
+        )
+        if _is_personal_block:
+            _abs_cat_pk_raw = POST.get(f"{pfx}absence_category", "").strip()
+            if _abs_cat_pk_raw:
+                try:
+                    from ivr_config.models import AbsenceCategory as _AbsCatParse
+                    absence_category_obj = _AbsCatParse.objects.get(
+                        pk=int(_abs_cat_pk_raw),
+                        company=company,
+                        is_active=True,
+                    )
+                    # Override fault_description with the category label so the
+                    # WorkOrderEntryLine is identical regardless of entry path.
+                    # Sobreescribir fault_description con el label de la categoría
+                    # para que el WorkOrderEntryLine sea idéntico sin importar
+                    # el camino de entrada.
+                    desc_averia = absence_category_obj.label
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "# [_parse_entry_lines] absence_category pk=%r inválido "
+                        "para entrada_%d — se omite.",
+                        _abs_cat_pk_raw, i,
+                    )
+                except Exception as _abs_exc:
+                    logger.warning(
+                        "# [_parse_entry_lines] Error resolviendo AbsenceCategory "
+                        "pk=%r para entrada_%d: %s",
+                        _abs_cat_pk_raw, i, _abs_exc,
+                    )
+
         entry_lines_data.append({
             "line_number":           i,
             "machine_raw":           machine_raw,
@@ -6863,6 +7018,8 @@ def _parse_entry_lines_from_post(POST, company):
             "odometer_reading":      odometer_reading,
             "engine_hours_reading":  engine_hours_reading,
             "crane_hours_reading":   crane_hours_reading,
+            "absence_category":      absence_category_obj,
+            "is_personal":           _is_personal_block,
         })
 
     return entry_lines_data
@@ -7812,6 +7969,46 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
             )
             return render(request, self.template_name, context)
 
+        # Create synthetic WorkdayGap records for PERSONAL blocks (post-atomic).
+        # close_order always creates a fresh DONE WorkOrder, so there are no
+        # pre-existing synthetic gaps to delete. Each PERSONAL line gets exactly
+        # one WorkdayGap with gap_start=hc, gap_end=hf, resolved=True.
+        # ---
+        # Crear registros WorkdayGap sintéticos para bloques PERSONAL (post-atomic).
+        # close_order siempre crea un WorkOrder DONE nuevo, por lo que no hay
+        # gaps sintéticos previos que eliminar. Cada línea PERSONAL obtiene
+        # exactamente un WorkdayGap con gap_start=hc, gap_end=hf, resolved=True.
+        from work_order_processor.models import WorkdayGap as _WDG_CO
+        for _co_ld in entry_lines_data:
+            if not _co_ld.get("is_personal"):
+                continue
+            _co_abs_cat = _co_ld.get("absence_category")
+            _co_hc      = _co_ld.get("hc")
+            _co_hf      = _co_ld.get("hf")
+            if _co_hc is None or _co_hf is None:
+                continue
+            _co_dur_min = max(
+                0,
+                (_co_hf.hour * 60 + _co_hf.minute)
+                - (_co_hc.hour * 60 + _co_hc.minute),
+            )
+            _WDG_CO.objects.create(
+                work_order       = work_order,
+                gap_type         = _WDG_CO.GapType.GAP,
+                gap_start        = _co_hc,
+                gap_end          = _co_hf,
+                duration_minutes = _co_dur_min,
+                absence_category = _co_abs_cat,
+                note             = _co_ld.get("repair_notes", ""),
+                resolved         = True,
+            )
+            logger.info(
+                "# [FormView/close_order] WorkdayGap sintético creado. "
+                "work_order_pk=%r gap_start=%r gap_end=%r absence_cat=%r",
+                work_order.pk, _co_hc, _co_hf,
+                _co_abs_cat.label if _co_abs_cat else None,
+            )
+
         # Classify fault for each persisted line (post-atomic — records are
         # guaranteed committed). Pre-lookup within the same company: if an
         # identical (fault_description, repair_notes) pair is already classified,
@@ -8447,7 +8644,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 "show_lunch_break":  _ip_show_lunch,
                 "end_time_morning":  _ip_end_time_morning,
                 "end_time_afternoon": _ip_end_time_afternoon,
-                "absence_categories": _absence_cats,
+                "absence_categories": _json_fix.dumps(_absence_cats),
                 "personal_asset_code": PERSONAL_ASSET_CODE,
             })
             return render(request, self.template_name, context)
@@ -8484,6 +8681,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             elif _schedule_create.is_intensive and _schedule_create.end_time_morning:
                 _end_time_afternoon_create = _schedule_create.end_time_morning.strftime("%H:%M")
 
+        import json as _json_fix
         from ivr_config.models import AbsenceCategory as _AbsCat
         from work_order_processor.management.commands.seed_personal_asset import PERSONAL_ASSET_CODE
         _absence_cats = list(
@@ -8505,7 +8703,7 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             "show_lunch_break":  bool(_lunch_start),
             "end_time_morning":  _end_time_morning_create,
             "end_time_afternoon": _end_time_afternoon_create,
-            "absence_categories": _absence_cats,
+            "absence_categories": _json_fix.dumps(_absence_cats),
             "personal_asset_code": PERSONAL_ASSET_CODE,
         })
         return render(request, self.template_name, context)
@@ -9314,17 +9512,153 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                         # Eliminar lineas existentes — estrategia de sustitución completa.
                         _ip_entry.lines.all().delete()
 
-                    # Persist the submitted lines.
-                    # Persistir las lineas enviadas.
+                    # Persist the submitted lines — server-side lunch deduction (I-BUG-A fix).
+                    #
+                    # The JS lunch_overlap_N value is NOT trusted: if the operator saves
+                    # blocks before filling the lunch fields, JS sends 0 even when a valid
+                    # pause exists. The backend resolves the effective lunch window from:
+                    #   1. _lb_start/_lb_end (operator-modified values from POST), or
+                    #   2. _post_schedule default when the operator did not touch the fields.
+                    # If no_lunch_break is True, overlap is always 0.
+                    #
+                    # Additionally: if the operator modifies the lunch pause AFTER having
+                    # already saved blocks, the lines already persisted in DB must be
+                    # recalculated with the new effective pause before the new lines are
+                    # persisted. This covers the gap where save_blocks is called again
+                    # (or close_order is called directly) after a pause change.
+                    #
+                    # Persistir las líneas enviadas — descuento server-side (fix I-BUG-A).
+                    #
+                    # El valor JS lunch_overlap_N NO se usa: si el operario guarda bloques
+                    # antes de rellenar los campos de comida, el JS envía 0 aunque exista
+                    # una pausa válida. El backend resuelve la ventana efectiva desde:
+                    #   1. _lb_start/_lb_end (valores modificados por el operario en POST), o
+                    #   2. el horario por defecto de _post_schedule si no los tocó.
+                    # Si no_lunch_break es True, el overlap es siempre 0.
+                    #
+                    # Además: si el operario modifica la pausa DESPUÉS de haber guardado
+                    # bloques, las líneas ya persistidas en BD se recalculan con la nueva
+                    # pausa efectiva antes de persistir las líneas nuevas. Esto cubre la
+                    # laguna en la que save_blocks se vuelve a llamar (o se llama directamente
+                    # a close_order) tras un cambio de pausa.
                     from decimal import Decimal as _Dec_ip
+                    from work_order_processor.services import _compute_delta_hours as _cdh_ip
+                    # --- Resolve effective lunch window for this save_blocks call. ---
+                    # --- Resolver ventana de comida efectiva para este save_blocks. ---
+                    _ip_eff_lb_start = _lb_start
+                    _ip_eff_lb_end   = _lb_end
+                    if not _no_lunch_break and (
+                        _ip_eff_lb_start is None or _ip_eff_lb_end is None
+                    ):
+                        # Fallback to schedule default when operator did not fill the fields.
+                        # Fallback al horario por defecto si el operario no rellenó los campos.
+                        if _post_schedule and not _post_schedule.is_intensive:
+                            if _ip_eff_lb_start is None:
+                                _ip_eff_lb_start = _post_schedule.end_time_morning
+                            if _ip_eff_lb_end is None:
+                                _ip_eff_lb_end = _post_schedule.start_time_afternoon
+                    def _ip_to_min(t):
+                        """
+                        Converts a time object to total minutes from midnight.
+                        Returns 0 when t is None.
+                        ---
+                        Convierte un objeto time a minutos totales desde medianoche.
+                        Devuelve 0 cuando t es None.
+                        """
+                        return t.hour * 60 + t.minute if t is not None else 0
+                    def _ip_calc_overlap(hc_t, hf_t, lb_s, lb_e, no_lb):
+                        """
+                        Computes the lunch overlap in minutes between a work block
+                        [hc_t, hf_t] and the lunch window [lb_s, lb_e].
+                        Returns 0 if no_lb is True or any value is None.
+                        ---
+                        Calcula el solapamiento de la pausa de comida en minutos entre
+                        un bloque de trabajo [hc_t, hf_t] y la ventana [lb_s, lb_e].
+                        Devuelve 0 si no_lb es True o algún valor es None.
+                        """
+                        if no_lb or hc_t is None or hf_t is None or lb_s is None or lb_e is None:
+                            return 0
+                        return max(
+                            0,
+                            min(_ip_to_min(hf_t), _ip_to_min(lb_e))
+                            - max(_ip_to_min(hc_t), _ip_to_min(lb_s)),
+                        )
+                    # --- Recalculate already-persisted lines if the lunch pause changed. ---
+                    # Compare the effective pause from POST against what is stored in
+                    # _ip_entry. If they differ (operator changed the pause or toggled
+                    # no_lunch_break), recompute delta_hours for every existing line
+                    # from its stored hc/hf using the new effective pause.
+                    # ---
+                    # --- Recalcular líneas ya persistidas si la pausa de comida cambió. ---
+                    # Compara la pausa efectiva del POST con la guardada en _ip_entry.
+                    # Si difieren (el operario cambió la pausa o marcó no_lunch_break),
+                    # recalcula delta_hours de cada línea existente desde su hc/hf
+                    # guardado usando la nueva pausa efectiva.
+                    _ip_pause_changed = (
+                        _ip_entry.no_lunch_break != _no_lunch_break
+                        or _ip_entry.lunch_break_start != (
+                            None if _no_lunch_break else _ip_eff_lb_start
+                        )
+                        or _ip_entry.lunch_break_end != (
+                            None if _no_lunch_break else _ip_eff_lb_end
+                        )
+                    )
+                    if _ip_pause_changed:
+                        logger.info(
+                            "# [FormView/save_blocks] Pausa de comida modificada. "
+                            "Recalculando líneas existentes. "
+                            "entry_pk=%r old_lb_start=%r old_lb_end=%r old_no_lb=%r "
+                            "new_lb_start=%r new_lb_end=%r new_no_lb=%r",
+                            _ip_entry.pk,
+                            _ip_entry.lunch_break_start, _ip_entry.lunch_break_end,
+                            _ip_entry.no_lunch_break,
+                            _ip_eff_lb_start, _ip_eff_lb_end, _no_lunch_break,
+                        )
+                        for _ip_existing_line in _ip_entry.lines.all():
+                            _ip_ex_hc = _ip_existing_line.hc
+                            _ip_ex_hf = _ip_existing_line.hf
+                            if _ip_ex_hc is None or _ip_ex_hf is None:
+                                # Cannot recalculate without time bounds — skip.
+                                # No se puede recalcular sin límites de tiempo — omitir.
+                                continue
+                            # Recompute gross delta from hc/hf (no lunch deduction).
+                            # Recalcular delta bruto desde hc/hf (sin descuento de comida).
+                            _ip_gross = _cdh_ip(_ip_ex_hc, _ip_ex_hf, deduct_lunch=False)
+                            if _ip_gross is None:
+                                continue
+                            # Apply new lunch deduction.
+                            # Aplicar nuevo descuento de comida.
+                            _ip_ex_overlap = _ip_calc_overlap(
+                                _ip_ex_hc, _ip_ex_hf,
+                                _ip_eff_lb_start, _ip_eff_lb_end,
+                                _no_lunch_break,
+                            )
+                            if _ip_ex_overlap > 0:
+                                _ip_new_delta = _Dec_ip(str(_ip_gross)) - _Dec_ip(_ip_ex_overlap) / _Dec_ip("60")
+                                _ip_new_delta = max(_Dec_ip("0"), _ip_new_delta)
+                            else:
+                                _ip_new_delta = _Dec_ip(str(_ip_gross))
+                            _ip_existing_line.delta_hours = _ip_new_delta
+                            _ip_existing_line.save(update_fields=["delta_hours"])
+                            logger.info(
+                                "# [FormView/save_blocks] Línea pk=%r recalculada. "
+                                "hc=%r hf=%r gross=%r overlap_min=%r new_delta=%r",
+                                _ip_existing_line.pk,
+                                _ip_ex_hc, _ip_ex_hf, _ip_gross,
+                                _ip_ex_overlap, _ip_new_delta,
+                            )
+                    # --- Persist the new lines submitted in this POST. ---
+                    # --- Persistir las nuevas líneas enviadas en este POST. ---
                     _ip_created_lines = {}
                     for _ip_ld in entry_lines_data:
                         _ip_line_num    = _ip_ld["line_number"]
-                        _ip_overlap_raw = POST.get(f"lunch_overlap_{_ip_line_num}", "0").strip()
-                        try:
-                            _ip_overlap_min = int(_ip_overlap_raw)
-                        except (ValueError, TypeError):
-                            _ip_overlap_min = 0
+                        _ip_hc          = _ip_ld.get("hc")
+                        _ip_hf          = _ip_ld.get("hf")
+                        _ip_overlap_min = _ip_calc_overlap(
+                            _ip_hc, _ip_hf,
+                            _ip_eff_lb_start, _ip_eff_lb_end,
+                            _no_lunch_break,
+                        )
                         _ip_delta_raw = _ip_ld["delta_hours"]
                         if _ip_delta_raw is not None and _ip_overlap_min > 0:
                             _ip_delta_net = _Dec_ip(str(_ip_delta_raw)) - _Dec_ip(_ip_overlap_min) / _Dec_ip("60")
@@ -9366,6 +9700,57 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                             source      = _ip_spd["source"],
                             supplier    = _ip_spd["supplier"],
                             flags       = _ip_spd["flags"],
+                        )
+
+                    # Create synthetic WorkdayGap for each PERSONAL block.
+                    # A PERSONAL block represents a voluntary absence declared
+                    # directly by the operator. The WorkdayGap mirrors what Gate 4
+                    # auto-detection would produce so both paths are identical in DB.
+                    # Existing synthetic gaps for this entry are deleted first to
+                    # avoid duplicates on repeated save_blocks calls.
+                    # ---
+                    # Crear WorkdayGap sintético para cada bloque PERSONAL.
+                    # Un bloque PERSONAL representa una ausencia voluntaria declarada
+                    # directamente por el operario. El WorkdayGap refleja lo que la
+                    # detección automática de Gate 4 produciría, de modo que ambos
+                    # caminos son idénticos en BD.
+                    # Los gaps sintéticos existentes para este entry se eliminan
+                    # primero para evitar duplicados en llamadas repetidas a save_blocks.
+                    from work_order_processor.models import WorkdayGap as _WDG_IP
+                    _WDG_IP.objects.filter(
+                        work_order = _ip_wo,
+                        resolved   = True,
+                    ).filter(
+                        gap_type = _WDG_IP.GapType.GAP,
+                    ).delete()
+                    for _ip_ld_p in entry_lines_data:
+                        if not _ip_ld_p.get("is_personal"):
+                            continue
+                        _ip_abs_cat = _ip_ld_p.get("absence_category")
+                        _ip_p_hc    = _ip_ld_p.get("hc")
+                        _ip_p_hf    = _ip_ld_p.get("hf")
+                        if _ip_p_hc is None or _ip_p_hf is None:
+                            continue
+                        _ip_dur_min = max(
+                            0,
+                            (_ip_p_hf.hour * 60 + _ip_p_hf.minute)
+                            - (_ip_p_hc.hour * 60 + _ip_p_hc.minute),
+                        )
+                        _WDG_IP.objects.create(
+                            work_order       = _ip_wo,
+                            gap_type         = _WDG_IP.GapType.GAP,
+                            gap_start        = _ip_p_hc,
+                            gap_end          = _ip_p_hf,
+                            duration_minutes = _ip_dur_min,
+                            absence_category = _ip_abs_cat,
+                            note             = _ip_ld_p.get("repair_notes", ""),
+                            resolved         = True,
+                        )
+                        logger.info(
+                            "# [FormView/save_blocks] WorkdayGap sintético creado. "
+                            "entry_pk=%r gap_start=%r gap_end=%r absence_cat=%r",
+                            _ip_entry.pk, _ip_p_hc, _ip_p_hf,
+                            _ip_abs_cat.label if _ip_abs_cat else None,
                         )
 
                 logger.info(
@@ -9487,20 +9872,71 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
                 created_lines    = {}
                 created_line_pks = []  # Collected for classify_fault_line enqueue (post-atomic).
                                        # Recogidos para el encolado de classify_fault_line (post-atomic).
+                # Lunch break deduction — server-side calculation (I-BUG-A fix).
+                #
+                # close_order always creates a fresh DONE WorkOrder from scratch
+                # (the IN_PROGRESS record is deleted beforehand). There are no
+                # previously-persisted lines to recalculate here — all lines come
+                # from the POST and are computed with the current effective pause.
+                # JS lunch_overlap_N is ignored entirely.
+                #
+                # Descuento de pausa de comida — cálculo server-side (fix I-BUG-A).
+                #
+                # close_order siempre crea un WorkOrder DONE nuevo desde cero
+                # (el registro IN_PROGRESS se elimina previamente). No hay líneas
+                # previas que recalcular aquí — todas las líneas vienen del POST
+                # y se calculan con la pausa efectiva actual.
+                # lunch_overlap_N del JS se ignora por completo.
+                from decimal import Decimal as _Dec_lb
+                # Resolve effective lunch window for this close_order call.
+                # Resolver ventana de comida efectiva para este close_order.
+                _co_eff_lb_start = _lb_start
+                _co_eff_lb_end   = _lb_end
+                if not _no_lunch_break and (
+                    _co_eff_lb_start is None or _co_eff_lb_end is None
+                ):
+                    # Fallback to schedule default when operator did not fill the fields.
+                    # Fallback al horario por defecto si el operario no rellenó los campos.
+                    if _post_schedule and not _post_schedule.is_intensive:
+                        if _co_eff_lb_start is None:
+                            _co_eff_lb_start = _post_schedule.end_time_morning
+                        if _co_eff_lb_end is None:
+                            _co_eff_lb_end = _post_schedule.start_time_afternoon
+                def _co_to_min(t):
+                    """
+                    Converts a time object to total minutes from midnight.
+                    Returns 0 when t is None.
+                    ---
+                    Convierte un objeto time a minutos totales desde medianoche.
+                    Devuelve 0 cuando t es None.
+                    """
+                    return t.hour * 60 + t.minute if t is not None else 0
+                def _co_calc_overlap(hc_t, hf_t, lb_s, lb_e, no_lb):
+                    """
+                    Computes the lunch overlap in minutes between a work block
+                    [hc_t, hf_t] and the lunch window [lb_s, lb_e].
+                    Returns 0 if no_lb is True or any value is None.
+                    ---
+                    Calcula el solapamiento de la pausa de comida en minutos entre
+                    un bloque de trabajo [hc_t, hf_t] y la ventana [lb_s, lb_e].
+                    Devuelve 0 si no_lb es True o algún valor es None.
+                    """
+                    if no_lb or hc_t is None or hf_t is None or lb_s is None or lb_e is None:
+                        return 0
+                    return max(
+                        0,
+                        min(_co_to_min(hf_t), _co_to_min(lb_e))
+                        - max(_co_to_min(hc_t), _co_to_min(lb_s)),
+                    )
                 for ld in entry_lines_data:
-                    # Apply lunch break deduction to this line's delta_hours.
-                    # The JS pre-computed the overlap in minutes (lunch_overlap_N);
-                    # the backend applies the exact deduction to preserve per-line accuracy.
-                    # Aplicar el descuento de pausa de comida al delta_hours de esta linea.
-                    # El JS precalculo el solapamiento en minutos (lunch_overlap_N);
-                    # el backend aplica el descuento exacto para preservar la precision por linea.
-                    from decimal import Decimal as _Dec_lb
-                    _line_num      = ld["line_number"]
-                    _overlap_raw   = POST.get(f"lunch_overlap_{_line_num}", "0").strip()
-                    try:
-                        _overlap_min = int(_overlap_raw)
-                    except (ValueError, TypeError):
-                        _overlap_min = 0
+                    _line_num    = ld["line_number"]
+                    _co_hc       = ld.get("hc")
+                    _co_hf       = ld.get("hf")
+                    _overlap_min = _co_calc_overlap(
+                        _co_hc, _co_hf,
+                        _co_eff_lb_start, _co_eff_lb_end,
+                        _no_lunch_break,
+                    )
                     _delta_raw = ld["delta_hours"]
                     if _delta_raw is not None and _overlap_min > 0:
                         _delta_net = _Dec_lb(str(_delta_raw)) - _Dec_lb(_overlap_min) / _Dec_lb("60")
@@ -9751,7 +10187,16 @@ class WorkOrderEntryFormView(WorkshopRequiredMixin, View):
             f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
             f"El informe Excel está disponible en la lista de partes."
         )
-        return redirect("/panel/work-orders/")
+        # Redirect to the appropriate list based on role.
+        # WORKSHOP operators go to their own history.
+        # SUPERVISOR/ADMIN go to the digital parts list.
+        # Redirigir a la lista apropiada según el rol.
+        # Los operarios WORKSHOP van a su historial propio.
+        # SUPERVISOR/ADMIN van a la lista de partes digitales.
+        from django.urls import reverse as _reverse_co
+        if cu.role == "WORKSHOP":
+            return redirect(_reverse_co("panel:operator_history"))
+        return redirect(_reverse_co("panel:digital_work_order_list"))
 
 
 class WorkOrderEntryHistoryView(WorkshopRequiredMixin, View):
@@ -11905,10 +12350,52 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
 
         # ------------------------------------------------------------------
         # Persist resolutions and promote WorkOrder to DONE atomically.
+        # For standard gaps (GAP / LATE_START / EARLY_END), in addition to
+        # updating the WorkdayGap, a WorkOrderEntryLine is created with
+        # machine_asset=PERSONAL, fault_description=absence_cat.label,
+        # hc=gap_start, hf=gap_end, delta_hours computed from those times.
+        # This makes the auto-detection path (Gate 4 → resolution) produce
+        # an identical result in DB to the voluntary PERSONAL entry path.
+        # ---
         # Persistir resoluciones y promover WorkOrder a DONE de forma atómica.
+        # Para gaps estándar (GAP / LATE_START / EARLY_END), además de
+        # actualizar el WorkdayGap, se crea un WorkOrderEntryLine con
+        # machine_asset=PERSONAL, fault_description=absence_cat.label,
+        # hc=gap_start, hf=gap_end, delta_hours calculado desde esas horas.
+        # Esto hace que el camino de detección automática (Gate 4 → resolución)
+        # produzca un resultado idéntico en BD al camino de entrada PERSONAL
+        # voluntario.
         # ------------------------------------------------------------------
+        from work_order_processor.management.commands.seed_personal_asset import (
+            PERSONAL_ASSET_CODE as _PERSONAL_CODE_GR,
+        )
+        from fleet.models import MachineAsset as _MA_GR
+        from work_order_processor.services import _compute_delta_hours as _cdh_gr
+        try:
+            _personal_asset_gr = _MA_GR.objects.get(
+                code__iexact=_PERSONAL_CODE_GR, company=company
+            )
+        except _MA_GR.DoesNotExist:
+            _personal_asset_gr = None
+            logger.warning(
+                "# [GapResolutionView] Activo PERSONAL no encontrado para empresa pk=%r. "
+                "Las líneas PERSONAL no se crearán.",
+                company.pk,
+            )
         try:
             with transaction.atomic():
+                first_entry_gr = draft.entries.first()
+                # Determine the next available line_number for PERSONAL lines.
+                # Determinar el siguiente line_number disponible para líneas PERSONAL.
+                _next_line_num = 1
+                if first_entry_gr:
+                    existing_max = (
+                        first_entry_gr.lines
+                        .order_by("-line_number")
+                        .values_list("line_number", flat=True)
+                        .first()
+                    )
+                    _next_line_num = (existing_max or 0) + 1
                 for gap, res in resolutions:
                     if res["type"] == "lunch":
                         gap.lunch_had  = res["lunch_had"]
@@ -11921,6 +12408,41 @@ class WorkdayGapResolutionView(WorkshopRequiredMixin, View):
                         gap.note             = res["note"]
                         gap.resolved         = True
                         gap.save(update_fields=["absence_category", "note", "resolved"])
+                        # Create the PERSONAL WorkOrderEntryLine for this gap.
+                        # hc/hf = gap_start/gap_end; delta_hours computed gross
+                        # (no lunch deduction — absence blocks are not subject to
+                        # lunch overlap logic).
+                        # ---
+                        # Crear el WorkOrderEntryLine PERSONAL para este gap.
+                        # hc/hf = gap_start/gap_end; delta_hours calculado bruto
+                        # (sin descuento de comida — los bloques de ausencia no están
+                        # sujetos a la lógica de solapamiento de comida).
+                        if first_entry_gr is not None and _personal_asset_gr is not None:
+                            _gr_delta = _cdh_gr(
+                                gap.gap_start, gap.gap_end, deduct_lunch=False
+                            )
+                            WorkOrderEntryLine.objects.create(
+                                entry             = first_entry_gr,
+                                line_number       = _next_line_num,
+                                machine_asset     = _personal_asset_gr,
+                                machine_raw       = _personal_asset_gr.code,
+                                machine_norm      = _personal_asset_gr.code,
+                                fault_description = res["absence_cat"].label,
+                                repair_notes      = res["note"],
+                                hc                = gap.gap_start,
+                                hf                = gap.gap_end,
+                                or_val            = "",
+                                delta_hours       = _gr_delta,
+                                flags             = [],
+                            )
+                            logger.info(
+                                "# [GapResolutionView] WorkOrderEntryLine PERSONAL creado. "
+                                "entry_pk=%r line_number=%r hc=%r hf=%r absence_cat=%r",
+                                first_entry_gr.pk, _next_line_num,
+                                gap.gap_start, gap.gap_end,
+                                res["absence_cat"].label,
+                            )
+                            _next_line_num += 1
 
                 draft.status = WorkOrder.Status.DONE
                 draft.save(update_fields=["status"])
@@ -15222,6 +15744,14 @@ class BotManagementView(CompanyUserRequiredMixin, View):
             .order_by("name")
             if can_manage else []
         )
+        # -- Sections enabled for WhatsApp broadcast (ADMIN only) --
+        # -- Secciones habilitadas para circular WhatsApp (solo ADMIN) --
+        broadcast_sections = (
+            Section.objects
+            .filter(company=company_user.company, is_broadcast_enabled=True)
+            .order_by("name")
+            if can_manage else []
+        )
 
         # -- Workshop family choices for family selector (ADMIN/SUPERVISOR) --
         # -- Opciones de familia para el selector (ADMIN/SUPERVISOR) --
@@ -15231,15 +15761,16 @@ class BotManagementView(CompanyUserRequiredMixin, View):
         )
 
         return render(request, self.template_name, {
-            "active_nav":        "bot_management",
-            "can_manage":        can_manage,
-            "is_admin":          is_admin,
-            "is_supervisor":     is_supervisor,
-            "sections":          sections,
-            "breakdown_tickets": breakdown_tickets,
-            "family_choices":    family_choices,
-            "family_filter":     family_filter,
-            "company_user":      company_user,
+            "active_nav":           "bot_management",
+            "can_manage":           can_manage,
+            "is_admin":             is_admin,
+            "is_supervisor":        is_supervisor,
+            "sections":             sections,
+            "broadcast_sections":   broadcast_sections,
+            "breakdown_tickets":    breakdown_tickets,
+            "family_choices":       family_choices,
+            "family_filter":        family_filter,
+            "company_user":         company_user,
         })
 
     def post(self, request, *args, **kwargs):
@@ -15384,90 +15915,195 @@ class BotManagementView(CompanyUserRequiredMixin, View):
 
         # --------------------------------------------------------------
         # ACTION: group_broadcast
-        # Sends a free-form message 1:1 to all active CompanyUser members
-        # of the ChatRoom SECTION rooms matching the selected workshop
-        # families, resolved via WorkshopFamilyMapping.
-        # Envía un mensaje libre 1:1 a todos los CompanyUser activos de
-        # las salas ChatRoom SECTION que corresponden a las familias de
-        # taller seleccionadas, resueltas via WorkshopFamilyMapping.
+        # Sends a free-form message 1:1 to all active Contacts that are
+        # members of the selected Section ChatRooms. Sections are selected
+        # by the ADMIN from the modal (POST field 'section_pks[]').
+        # Only sections with is_broadcast_enabled=True are valid targets.
+        # The old workshop_family / WorkshopFamilyMapping mechanism has
+        # been removed — sections are now selected directly.
+        # ---
+        # Envía un mensaje libre 1:1 a todos los Contacts activos que son
+        # miembros de las ChatRoom de las secciones seleccionadas. Las
+        # secciones se seleccionan en el modal (campo POST 'section_pks[]').
+        # Solo las secciones con is_broadcast_enabled=True son destinos válidos.
+        # El mecanismo antiguo de workshop_family / WorkshopFamilyMapping
+        # ha sido eliminado — las secciones se seleccionan directamente.
         # --------------------------------------------------------------
         if action == "group_broadcast":
-            selected_families = request.POST.getlist("groups")
+            selected_section_pks = request.POST.getlist("section_pks")
             message_body = request.POST.get("message", "").strip()
-            if not selected_families or not message_body:
+            if not selected_section_pks or not message_body:
                 django_messages.error(
                     request,
-                    "Debes seleccionar al menos un taller y escribir un mensaje.",
+                    "Debes seleccionar al menos una sección y escribir un mensaje.",
                 )
                 return redirect("panel:bot_management")
 
-            valid_families = {CompanyUser.WORKSHOP_FAMILY_MECHANICAL, CompanyUser.WORKSHOP_FAMILY_ELEVATION}
-            selected_families = [f for f in selected_families if f in valid_families]
-            if not selected_families:
-                django_messages.error(request, "Familia de taller no válida.")
+            # Validate: only sections with is_broadcast_enabled=True are accepted.
+            # Validar: solo se aceptan secciones con is_broadcast_enabled=True.
+            from ivr_config.models import Section as _Section_BC
+            valid_sections = _Section_BC.objects.filter(
+                pk__in=selected_section_pks,
+                company=company,
+                is_broadcast_enabled=True,
+            )
+            if not valid_sections.exists():
+                django_messages.error(request, "Ninguna sección seleccionada es válida para circulares.")
                 return redirect("panel:bot_management")
 
-            total_sent = 0
-            for workshop_family in selected_families:
-                # Resolve ChatRoom SECTION for this workshop family.
-                # Resolver ChatRoom SECTION para esta familia de taller.
-                target_rooms = ChatRoom.objects.filter(
+            from django.utils.timezone import now as _now_bc
+            from datetime import timedelta as _td_bc
+            import json as _json_bc
+            from whatsapp.models import WhatsAppSession as _WAS_BC
+            from whatsapp.models import WhatsAppTemplate as _WAT_BC
+
+            # Resolve chat_session_renewal template for out-of-window contacts.
+            # Resolver el template chat_session_renewal para contactos fuera de ventana.
+            try:
+                _renewal_template = _WAT_BC.objects.get(
+                    name="chat_session_renewal", company=company
+                )
+            except _WAT_BC.DoesNotExist:
+                _renewal_template = None
+                logger.warning(
+                    "# [BOT MGMT] Template chat_session_renewal no encontrado "
+                    "para empresa pk=%r. Contactos fuera de ventana no recibirán renewal.",
+                    company.pk,
+                )
+
+            _window_threshold = _now_bc() - _td_bc(hours=24)
+            _created_at_iso   = _now_bc().isoformat()
+            total_sent    = 0
+            total_pending = 0
+            for section in valid_sections:
+                # Resolve the ChatRoom of type SECTION for this section.
+                # Resolver la ChatRoom de tipo SECTION para esta sección.
+                room = ChatRoom.objects.filter(
                     company=company,
                     room_type=ChatRoom.ROOM_TYPE_SECTION,
-                    section__companyuser__workshop_family=workshop_family,
+                    section=section,
                     is_active=True,
-                ).distinct()
-
-                for room in target_rooms:
-                    # Resolve active CompanyUser members with a linked Contact.
-                    # Resolver CompanyUser activos con Contact vinculado.
-                    members = (
-                        CompanyUser.objects
-                        .filter(
-                            company=company,
-                            sections__chat_rooms=room,
-                            is_active=True,
-                        )
-                        .select_related("contact")
-                        .distinct()
+                ).first()
+                if room is None:
+                    logger.warning(
+                        "# [BOT MGMT] No hay ChatRoom SECTION activa para sección pk=%r (%s).",
+                        section.pk, section.name,
                     )
+                    continue
 
-                    room_sent = 0
-                    for cu in members:
-                        member_contact = (
-                            Contact.objects
-                            .filter(company=company, company_user=cu)
-                            .first()
-                        )
-                        if not member_contact or not member_contact.phone_number:
-                            continue
+                # Resolve all active Contacts linked to CompanyUsers of this section.
+                # Resolver todos los Contacts activos vinculados a CompanyUser de esta sección.
+                room_contacts = (
+                    Contact.objects
+                    .filter(
+                        company=company,
+                        sections=section,
+                        company_user__isnull=False,
+                        company_user__is_active=True,
+                    )
+                    .exclude(phone_number="")
+                    .distinct()
+                )
+
+                room_sent = 0
+                for contact in room_contacts:
+                    # Check 24-hour session window via WhatsAppSession.last_message_at.
+                    # Comprobar la ventana de sesión de 24h via WhatsAppSession.last_message_at.
+                    _session = _WAS_BC.objects.filter(
+                        company=company,
+                        phone_number=contact.phone_number,
+                        is_active=True,
+                        last_message_at__gte=_window_threshold,
+                    ).order_by("-last_message_at").first()
+
+                    if _session is not None:
+                        # Within 24h window — send direct reply.
+                        # Dentro de la ventana de 24h — enviar respuesta directa.
                         try:
                             WhatsAppChatService.send_reply(
                                 from_number=bot_number,
-                                to_number=member_contact.phone_number,
+                                to_number=contact.phone_number,
                                 reply_text=message_body,
                             )
                             room_sent += 1
                             total_sent += 1
+                            logger.info(
+                                "# [BOT MGMT] group_broadcast directo a %s (ventana activa).",
+                                contact.phone_number,
+                            )
                         except Exception as exc:
                             logger.error(
-                                "# [BOT MGMT] Error en group_broadcast a %s: %s",
-                                member_contact.phone_number, exc,
+                                "# [BOT MGMT] Error en group_broadcast directo a %s: %s",
+                                contact.phone_number, exc,
                             )
+                    else:
+                        # Outside 24h window — send chat_session_renewal and
+                        # queue the broadcast message in pending_broadcast_messages.
+                        # Fuera de la ventana de 24h — enviar chat_session_renewal
+                        # y encolar el mensaje en pending_broadcast_messages.
+                        _out_session = _WAS_BC.objects.filter(
+                            company=company,
+                            phone_number=contact.phone_number,
+                        ).order_by("-session_start").first()
+                        if _out_session is None:
+                            logger.warning(
+                                "# [BOT MGMT] No hay sesión WhatsApp para %s — omitido.",
+                                contact.phone_number,
+                            )
+                            continue
+                        # Queue the broadcast message for delivery after opt_in.
+                        # Encolar el mensaje para entrega tras opt_in.
+                        _pending = list(_out_session.pending_broadcast_messages or [])
+                        _pending.append({
+                            "body":       message_body,
+                            "created_at": _created_at_iso,
+                        })
+                        _out_session.pending_broadcast_messages = _pending
+                        _out_session.save(update_fields=["pending_broadcast_messages"])
+                        # Send chat_session_renewal to open the window.
+                        # Enviar chat_session_renewal para abrir la ventana.
+                        if _renewal_template:
+                            try:
+                                WhatsAppChatService.send_quick_reply(
+                                    from_number=bot_number,
+                                    to_number=contact.phone_number,
+                                    content_sid=_renewal_template.content_sid,
+                                    content_variables={
+                                        "1": contact.name or contact.phone_number,
+                                        "2": company.name,
+                                        "3": "/panel/",
+                                    },
+                                )
+                                total_pending += 1
+                                logger.info(
+                                    "# [BOT MGMT] chat_session_renewal enviado a %s —"
+                                    " circular encolada en pending_broadcast_messages.",
+                                    contact.phone_number,
+                                )
+                            except Exception as exc:
+                                logger.error(
+                                    "# [BOT MGMT] Error enviando renewal a %s: %s",
+                                    contact.phone_number, exc,
+                                )
 
-                    # Persist broadcast as OUTBOUND in the room for panel history.
-                    # Persistir el broadcast como OUTBOUND en la sala para historial del panel.
-                    if room_sent > 0:
-                        ChatMessage.objects.create(
-                            room=room,
-                            direction=ChatMessage.DIRECTION_OUTBOUND,
-                            body=message_body,
-                            whatsapp_sid="",
-                        )
+                # Persist broadcast as OUTBOUND in the room for panel history.
+                # Persistir el broadcast como OUTBOUND en la sala para historial del panel.
+                if room_sent > 0:
+                    ChatMessage.objects.create(
+                        room=room,
+                        direction=ChatMessage.DIRECTION_OUTBOUND,
+                        body=message_body,
+                        whatsapp_sid="",
+                    )
+                    logger.info(
+                        "# [BOT MGMT] group_broadcast: %d directo(s) a sección '%s'.",
+                        room_sent, section.name,
+                    )
 
             django_messages.success(
                 request,
-                f"Circular enviada a {total_sent} miembro(s) de los talleres seleccionados.",
+                f"Circular enviada: {total_sent} entregado(s) directamente, "
+                f"{total_pending} renewal(s) enviado(s) con mensaje en cola.",
             )
             return redirect("panel:bot_management")
 

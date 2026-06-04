@@ -32,7 +32,7 @@
 {# ==================================================================================== #}
 {% extends "panel/base.html" %}
 
-{% block page_title %}Editar PDF #{{ work_order.pk }}{% endblock %}
+{% block page_title %}{% if is_digital %}Editar parte #{{ work_order.pk }}{% else %}Editar PDF #{{ work_order.pk }}{% endif %}{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -333,8 +333,16 @@
             <i class="bi bi-arrow-left"></i>
         </a>
         <div>
-            <h5 class="mb-0 fw-semibold">Editar PDF #{{ work_order.pk }}</h5>
-            <small class="text-muted">{{ work_order.source_pdf.name|truncatechars:60 }}</small>
+            <h5 class="mb-0 fw-semibold">
+                {% if is_digital %}Editar parte{% else %}Editar PDF{% endif %} #{{ work_order.pk }}
+            </h5>
+            <small class="text-muted">
+                {% if is_digital %}
+                    {{ work_order.worker_name|default:work_order.source_pdf.name|truncatechars:60 }}
+                {% else %}
+                    {{ work_order.source_pdf.name|truncatechars:60 }}
+                {% endif %}
+            </small>
         </div>
     </div>
 

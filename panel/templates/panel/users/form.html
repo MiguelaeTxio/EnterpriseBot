@@ -88,9 +88,8 @@
                         </div>
                     </div>
 
-                    <!-- is_active field — hidden for WORKSHOP/DRIVER (always active) -->
-                    <!-- Campo is_active — oculto para WORKSHOP/DRIVER (siempre activos) -->
-                    {% if object.role not in "WORKSHOP,DRIVER" %}
+                    <!-- is_active field — visible for all roles -->
+                    <!-- Campo is_active — visible para todos los roles -->
                     <div class="mb-4">
                         <div class="form-check">
                             {{ form.is_active }}
@@ -108,7 +107,6 @@
                             Los usuarios inactivos no pueden acceder al panel.
                         </div>
                     </div>
-                    {% endif %}
 
                     <!-- Submit buttons — Botones de envío -->
 

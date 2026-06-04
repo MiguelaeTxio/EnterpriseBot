@@ -133,6 +133,7 @@
 ./whatsapp/apps.py
 ./whatsapp/models.py
 ./whatsapp/migrations/0003_whatsappsession_pending_albaran_units.py
+./whatsapp/migrations/0004_add_pending_broadcast_messages.py
 ./whatsapp/migrations/__init__.py
 ./whatsapp/migrations/0002_whatsappsession_location_target_section_whatsappmessage_type_coords.py
 ./whatsapp/migrations/0001_initial.py
@@ -397,6 +398,7 @@
 ./ivr_config/migrations/0030_company_labor_calendar_company_operation_bases.py
 ./ivr_config/migrations/0015_workerabsence_workperiod.py
 ./ivr_config/migrations/0006_callflow_voiceprofile_add_backup_fields.py
+./ivr_config/migrations/0032_add_section_is_broadcast_enabled.py
 ./ivr_config/migrations/0005_corporatevoiceprofile_add_voice_name.py
 ./ivr_config/migrations/0012_callflow_backup_name.py
 ./ivr_config/migrations/0016_workdayschedule_absencecategory.py

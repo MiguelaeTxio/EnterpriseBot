@@ -210,6 +210,18 @@ class WhatsAppSession(models.Model):
             "del enlace al albarán en el webhook opt_in."
         ),
     )
+    pending_broadcast_messages = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Mensajes de circular pendientes",
+        help_text=(
+            "Lista de mensajes de circular masiva pendientes de entregar "
+            "a este operario. Formato: [{\"body\": \"...\", \"created_at\": \"ISO\"}]. "
+            "Se popula cuando el operario está fuera de la ventana de 24h y se "
+            "envía un chat_session_renewal. Se vacía tras la entrega en opt_in. "
+            "Los mensajes con más de 48h se descartan automáticamente en la entrega."
+        ),
+    )
 
     def __str__(self):
         return (

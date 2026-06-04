@@ -652,6 +652,14 @@ class Section(models.Model):
         verbose_name="Activa",
         help_text="Indica si esta sección está operativa para el enrutamiento IVR.",
     )
+    is_broadcast_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Habilitada para circulares WhatsApp",
+        help_text=(
+            "Indica si esta sección puede recibir circulares masivas de WhatsApp. "
+            "Solo las secciones habilitadas aparecen en el selector del bot."
+        ),
+    )
     workday_schedule = models.ForeignKey(
         "WorkdaySchedule",
         null=True,
