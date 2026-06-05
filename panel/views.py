@@ -3812,16 +3812,93 @@ class WorkOrderListView(SupervisorAccessMixin, View):
         Renders the tabbed work order list with four filtered querysets.
         The active tab defaults to "Pendiente revisión" when there are pending
         work orders; otherwise defaults to "En cola".
+        Supports multi-level column sort via the sort_stack GET parameter
+        (same mechanism as WorkOrderAdminHistoryView). Columns sortable from
+        the PDF list: upload_date, pdf_display_name, uploaded_by_name.
         ---
         Renderiza la lista de partes con pestañas y cuatro querysets filtrados.
         La pestaña activa por defecto es "Pendiente revisión" si hay partes
         pendientes; en caso contrario, "En cola".
+        Soporta ordenación multi-nivel via el parámetro GET sort_stack
+        (mismo mecanismo que WorkOrderAdminHistoryView). Columnas ordenables
+        desde la lista PDF: upload_date, pdf_display_name, uploaded_by_name.
         """
         company_user = request.user.company_user
         company      = company_user.company
 
+        # ------------------------------------------------------------------
+        # Sort stack — pila de criterios de ordenación acumulativa.
+        # Columnas válidas y su campo ORM correspondiente:
+        #   upload_date      → upload_date        (DateTimeField directo)
+        #   pdf_display_name → source_pdf__name   (ordenación por nombre de PDF)
+        #   uploaded_by_name → uploaded_by__user__last_name, __first_name
+        # La pila se serializa como "col:dir,col:dir,..." en la URL.
+        # ------------------------------------------------------------------
+        _VALID_SORT_COLS = frozenset(
+            ("upload_date", "pdf_display_name", "uploaded_by_name")
+        )
+        _VALID_SORT_DIRS = frozenset(("asc", "desc"))
+
+        # Map logical column name → ORM order_by field(s).
+        # Mapa nombre lógico de columna → campo(s) ORM para order_by.
+        _ORM_FIELD_MAP = {
+            "upload_date":      [("upload_date",)],
+            "pdf_display_name": [("source_pdf__name",)],
+            "uploaded_by_name": [
+                ("uploaded_by__user__last_name",),
+                ("uploaded_by__user__first_name",),
+            ],
+        }
+
+        raw_stack = request.GET.get("sort_stack", "").strip()
+
+        sort_stack = []
+        if raw_stack:
+            for token in raw_stack.split(","):
+                token = token.strip()
+                if ":" not in token:
+                    continue
+                col, _, direction = token.partition(":")
+                col       = col.strip()
+                direction = direction.strip()
+                if col in _VALID_SORT_COLS and direction in _VALID_SORT_DIRS:
+                    if not any(s[0] == col for s in sort_stack):
+                        sort_stack.append((col, direction))
+                        if len(sort_stack) >= 3:
+                            break
+
+        if not sort_stack:
+            sort_stack = [("upload_date", "desc")]
+
+        sort_primary_col = sort_stack[0][0]
+        sort_primary_dir = sort_stack[0][1]
+        sort_stack_str   = ",".join(f"{col}:{direction}" for col, direction in sort_stack)
+
+        def _build_order_by(stack):
+            """
+            Builds an order_by tuple from the sort stack, applying the
+            correct direction prefix ("-") for each column and its ORM fields.
+            Secondary and tertiary columns act as tiebreakers in order.
+            ---
+            Construye una tupla order_by desde la pila de ordenación, aplicando
+            el prefijo de dirección ("-") correcto a cada columna y sus campos ORM.
+            Las columnas secundaria y terciaria actúan como desempate en orden.
+            """
+            order_fields = []
+            for col, direction in stack:
+                prefix = "-" if direction == "desc" else ""
+                for field_tuple in _ORM_FIELD_MAP.get(col, [(col,)]):
+                    for field in field_tuple:
+                        order_fields.append(f"{prefix}{field}")
+            return order_fields
+
+        orm_order = _build_order_by(sort_stack)
+
+        # ------------------------------------------------------------------
         # Four querysets for the tabbed UI — Hito 8 / Bloque H.
-        # Cuatro querysets para la UI de pestañas — Hito 8 / Bloque H.
+        # Ordenación dinámica via sort_stack aplicada a Pendiente y Revisados.
+        # En cola y Error mantienen -upload_date (sin contenido ordenable útil).
+        # ------------------------------------------------------------------
         wo_queue = (
             WorkOrder.objects
             .filter(
@@ -3851,7 +3928,8 @@ class WorkOrderListView(SupervisorAccessMixin, View):
                 status=WorkOrder.Status.DONE,
                 reviewed=False,
             )
-            .order_by("-upload_date")
+            .select_related("uploaded_by__user")
+            .order_by(*orm_order)
         )
         wo_reviewed = (
             WorkOrder.objects
@@ -3861,8 +3939,8 @@ class WorkOrderListView(SupervisorAccessMixin, View):
                 status=WorkOrder.Status.DONE,
                 reviewed=True,
             )
-            .select_related("reviewed_by__user")
-            .order_by("-upload_date")
+            .select_related("reviewed_by__user", "uploaded_by__user")
+            .order_by(*orm_order)
         )
 
         # Default active tab: "pending" if there are unreviewed DONE orders,
@@ -3872,15 +3950,18 @@ class WorkOrderListView(SupervisorAccessMixin, View):
         default_tab = "pending" if wo_pending.exists() else "queue"
 
         return render(request, self.template_name, {
-            "company":      company,
-            "company_user": company_user,
-            "own_presence": self._get_own_presence(company_user),
-            "active_nav":   "work_orders",
-            "wo_queue":     wo_queue,
-            "wo_error":     wo_error,
-            "wo_pending":   wo_pending,
-            "wo_reviewed":  wo_reviewed,
-            "default_tab":  default_tab,
+            "company":           company,
+            "company_user":      company_user,
+            "own_presence":      self._get_own_presence(company_user),
+            "active_nav":        "work_orders",
+            "wo_queue":          wo_queue,
+            "wo_error":          wo_error,
+            "wo_pending":        wo_pending,
+            "wo_reviewed":       wo_reviewed,
+            "default_tab":       default_tab,
+            "sort_stack_str":    sort_stack_str,
+            "sort_primary_col":  sort_primary_col,
+            "sort_primary_dir":  sort_primary_dir,
         })
 
     def post(self, request):
@@ -5088,6 +5169,192 @@ class WorkOrderLineSaveView(SupervisorAccessMixin, View):
                 "entry":      line.entry,
             },
         )
+
+
+
+
+class WorkOrderEntrySaveDateView(SupervisorAccessMixin, View):
+    """
+    HTMX endpoint that saves the work_date of a WorkOrderEntry and returns
+    the updated group header fragment so the inline editor reflects the change
+    without a full-page reload.
+
+    POST /panel/work-orders/<wo_pk>/entries/<entry_pk>/save-date/
+         Expected POST fields:
+           work_date : str — date in YYYY-MM-DD format. Empty string clears
+                             the date and keeps uncertain_date unchanged.
+         On a valid non-empty date, uncertain_date is automatically set to
+         False — the supervisor's explicit correction removes the uncertainty.
+         Returns the rendered _entry_group_fragment.html partial with HTTP 200.
+         Returns HTTP 400 on an invalid date format.
+         Returns HTTP 404 if the WorkOrder or entry do not exist or belong to
+         another company.
+
+    ---
+
+    Endpoint HTMX que guarda el work_date de un WorkOrderEntry y devuelve
+    el fragmento de cabecera del grupo actualizado para que el editor inline
+    refleje el cambio sin recarga completa de página.
+
+    POST /panel/work-orders/<wo_pk>/entries/<entry_pk>/save-date/
+         Campos POST esperados:
+           work_date : str — fecha en formato YYYY-MM-DD. Cadena vacía limpia
+                             la fecha y deja uncertain_date sin cambios.
+         Con una fecha válida no vacía, uncertain_date se pone automáticamente
+         a False — la corrección explícita del supervisor elimina la incertidumbre.
+         Devuelve el parcial _entry_group_fragment.html renderizado con HTTP 200.
+         Devuelve HTTP 400 ante un formato de fecha inválido.
+         Devuelve HTTP 404 si el WorkOrder o entry no existen o son de otra empresa.
+    """
+
+    def post(self, request, wo_pk, entry_pk):
+        """
+        Persists the corrected work_date on the WorkOrderEntry and returns
+        the group header fragment as an HTMX response.
+        ---
+        Persiste el work_date corregido en el WorkOrderEntry y devuelve el
+        fragmento de cabecera del grupo como respuesta HTMX.
+        """
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponse
+        from work_order_processor.models import WorkOrderEntry
+        from datetime import date as dt_date
+
+        company = request.user.company_user.company
+        wo      = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        entry   = get_object_or_404(WorkOrderEntry, pk=entry_pk, work_order=wo)
+
+        raw_date = request.POST.get("work_date", "").strip()
+
+        if raw_date:
+            # Parse and validate the date string.
+            # Parsear y validar la cadena de fecha.
+            try:
+                parsed = dt_date.fromisoformat(raw_date)
+            except ValueError:
+                return HttpResponse(
+                    "Formato de fecha inválido. Use YYYY-MM-DD.",
+                    status=400,
+                )
+            entry.work_date     = parsed
+            # Explicit supervisor correction removes uncertainty.
+            # La corrección explícita del supervisor elimina la incertidumbre.
+            entry.uncertain_date = False
+        else:
+            entry.work_date = None
+            # Do not touch uncertain_date when clearing the date.
+            # No tocar uncertain_date al limpiar la fecha.
+
+        entry.save(update_fields=["work_date", "uncertain_date"])
+
+        # ------------------------------------------------------------------
+        # Rebuild the group dict expected by _entry_group_fragment.html.
+        # Reconstruir el dict de grupo esperado por _entry_group_fragment.html.
+        # ------------------------------------------------------------------
+        from decimal import Decimal
+        lines = list(
+            entry.lines.select_related("machine_asset").order_by("line_number")
+        )
+        delta_sum = sum(
+            (ln.delta_hours for ln in lines if ln.delta_hours is not None),
+            Decimal("0"),
+        )
+        if delta_sum > 0:
+            total_hours = float(delta_sum)
+            if total_hours < 8:
+                day_css = "day-total-short"
+            elif total_hours <= 12:
+                day_css = "day-total-normal"
+            elif total_hours <= 16:
+                day_css = "day-total-warning"
+            else:
+                day_css = "day-total-danger"
+            day_total = round(total_hours, 2)
+        else:
+            day_total = None
+            day_css   = ""
+
+        group = {
+            "entry":     entry,
+            "lines":     lines,
+            "day_total": day_total,
+            "day_css":   day_css,
+        }
+
+        return render(
+            request,
+            "panel/work_orders/_entry_group_fragment.html",
+            {
+                "group":  group,
+                "wo_pk":  wo.pk,
+            },
+        )
+
+
+class MachineAssetAutocompleteView(SupervisorAccessMixin, View):
+    """
+    Lightweight JSON autocomplete endpoint for MachineAsset records.
+    Returns up to 10 active assets matching the query string against
+    code, brand_model and plate fields (case-insensitive icontains),
+    scoped to the authenticated user's company.
+
+    GET /panel/fleet/autocomplete/?q=<query>
+        Returns:
+          {"results": [{"code": "...", "label": "..."}, ...]}
+        where label is "code — brand_model" or just "code" when brand_model
+        is empty. Results are ordered by code ascending.
+
+    Used by the machine_norm field autocomplete in _line_row.html.
+
+    ---
+
+    Endpoint JSON ligero de autocompletado para registros MachineAsset.
+    Devuelve hasta 10 activos activos que coincidan con la cadena de consulta
+    sobre los campos code, brand_model y plate (icontains sin distinción de
+    mayúsculas), acotado a la empresa del usuario autenticado.
+
+    GET /panel/fleet/autocomplete/?q=<query>
+        Devuelve:
+          {"results": [{"code": "...", "label": "..."}, ...]}
+        donde label es "code — brand_model" o solo "code" cuando brand_model
+        está vacío. Resultados ordenados por code ascendente.
+
+    Usado por el autocompletado del campo machine_norm en _line_row.html.
+    """
+
+    def get(self, request, *args, **kwargs):
+        """
+        Returns a JSON list of matching MachineAsset records for the given query.
+        ---
+        Devuelve un JSON con los MachineAsset coincidentes para la consulta dada.
+        """
+        from django.http import JsonResponse
+        from fleet.models import MachineAsset
+
+        company = request.user.company_user.company
+        q       = request.GET.get("q", "").strip()
+
+        qs = MachineAsset.objects.filter(
+            company=company,
+            is_active=True,
+        ).order_by("code")
+
+        if q:
+            qs = qs.filter(
+                Q(code__icontains=q)
+                | Q(brand_model__icontains=q)
+                | Q(plate__icontains=q)
+            )
+
+        results = []
+        for asset in qs[:10]:
+            label = asset.code
+            if asset.brand_model:
+                label = f"{asset.code} — {asset.brand_model}"
+            results.append({"code": asset.code, "label": label})
+
+        return JsonResponse({"results": results})
+
 
 
 class WorkOrderLineInsertView(SupervisorAccessMixin, View):
@@ -13229,15 +13496,27 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             )
         return qs.distinct()
 
-    def _enrich_work_orders(self, qs):
+    def _enrich_work_orders(self, qs, active_fault_category=""):
         """
         Converts a WorkOrder queryset into a list of enriched dicts suitable
         for template rendering. Each dict includes pk, fecha, operator name,
         num_bloques, horas_totales and reviewed flag.
+        When active_fault_category is provided (a FaultCategory internal value),
+        the fault_category badge of every enriched dict is forced to the label
+        of that category rather than being calculated from the dominant category
+        across all lines. This ensures the badge is always coherent with the
+        active filter — a work order returned by the filter is guaranteed to have
+        at least one line matching the category, so forcing the label is correct.
         ---
         Convierte un queryset de WorkOrder en una lista de dicts enriquecidos
         adecuados para renderizado en template. Cada dict incluye pk, fecha,
         nombre del operario, num_bloques, horas_totales y flag reviewed.
+        Cuando active_fault_category contiene un valor interno de FaultCategory,
+        el badge fault_category de cada dict se fuerza al label de esa categoría
+        en lugar de calcularse como la dominante sobre todas las líneas. Esto
+        garantiza coherencia visual entre el filtro activo y el badge mostrado —
+        un parte devuelto por el filtro tiene garantizada al menos una línea con
+        esa categoría, por lo que forzar el label es semánticamente correcto.
         """
         from decimal import Decimal
         result = []
@@ -13275,23 +13554,57 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
                     if wo.generated_by else None
                 ),
                 "excel_url": wo.excel_file.url if wo.excel_file else None,
-                "fault_category": self._dominant_fault_category(wo),
+                "fault_category": self._dominant_fault_category(
+                    wo, active_fault_category=active_fault_category
+                ),
             })
         return result
 
-    def _dominant_fault_category(self, wo):
+    def _dominant_fault_category(self, wo, active_fault_category=""):
         """
-        Returns the most frequent fault_category among all WorkOrderEntryLine
-        records of this WorkOrder. Returns an empty string when no lines exist
-        or all lines have an empty category.
+        Returns the display label of the most frequent fault_category among all
+        WorkOrderEntryLine records of this WorkOrder. Returns an empty string
+        when no lines exist or all lines have an empty category.
+
+        When active_fault_category is supplied (a FaultCategory internal value
+        such as "ENGINE_TRANSMISSION"), the method short-circuits: it resolves
+        the label for that value from FaultCategory.choices and returns it
+        immediately, bypassing the frequency calculation. This is correct because
+        any WorkOrder present in a fault_category-filtered queryset is guaranteed
+        to contain at least one line with that exact category value — there is no
+        semantic loss in forcing the label. The short-circuit also avoids
+        redundant iteration over prefetched lines on every row render.
         ---
-        Devuelve la fault_category más frecuente entre todas las
+        Devuelve el label del fault_category más frecuente entre todas las
         WorkOrderEntryLine del WorkOrder. Devuelve cadena vacía cuando no hay
         líneas o todas tienen la categoría vacía.
+
+        Cuando active_fault_category contiene un valor interno de FaultCategory
+        (ej. "ENGINE_TRANSMISSION"), el método hace cortocircuito: resuelve el
+        label de ese valor desde FaultCategory.choices y lo devuelve directamente,
+        sin ejecutar el cálculo de frecuencia. Esto es semánticamente correcto
+        porque cualquier WorkOrder presente en un queryset filtrado por
+        fault_category tiene garantizada al menos una línea con ese valor exacto.
+        El cortocircuito también evita iteración redundante sobre las líneas
+        prefetcheadas en cada fila del render.
         """
         from collections import Counter
         from work_order_processor.models import FaultCategory
         label_map = {fc[0]: str(fc[1]) for fc in FaultCategory.choices}
+
+        # Short-circuit: when a fault_category filter is active, every work order
+        # in the queryset is guaranteed to have at least one line with that category.
+        # Return the label directly without iterating over all prefetched lines.
+        # Cortocircuito: cuando hay un filtro activo de fault_category, todos los
+        # partes del queryset tienen garantizada al menos una línea con esa categoría.
+        # Devolver el label directamente sin iterar sobre todas las líneas prefetcheadas.
+        if active_fault_category:
+            label = label_map.get(active_fault_category)
+            if label:
+                return label
+
+        # No active filter — compute the dominant category across all lines.
+        # Sin filtro activo — calcular la categoría dominante sobre todas las líneas.
         categories = [
             line.fault_category
             for entry in wo.entries.all()
@@ -13328,16 +13641,52 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
         q              = request.GET.get("q", "").strip()
 
         # ------------------------------------------------------------------
-        # Sort parameters — parámetros de ordenación.
-        # sort: column key (fecha | operator_name | horas_totales | reviewed)
-        # dir:  asc | desc
+        # Sort stack — pila de criterios de ordenación acumulativa.
+        # sort_stack: cadena serializada "col:dir,col:dir,..." con hasta 3 niveles.
+        # Columnas válidas: fecha, operator_name, horas_totales, reviewed,
+        #                   fault_category.
+        # El primer elemento es el criterio primario (badge ▲/▼ en cabecera).
+        # Los siguientes actúan como desempate en orden de pila.
         # ------------------------------------------------------------------
-        sort_col = request.GET.get("sort", "fecha")
-        sort_dir = request.GET.get("dir", "asc")
-        if sort_col not in ("fecha", "operator_name", "horas_totales", "reviewed"):
-            sort_col = "fecha"
-        if sort_dir not in ("asc", "desc"):
-            sort_dir = "asc"
+        _VALID_SORT_COLS = frozenset(
+            ("fecha", "operator_name", "horas_totales", "reviewed", "fault_category")
+        )
+        _VALID_SORT_DIRS = frozenset(("asc", "desc"))
+
+        raw_stack = request.GET.get("sort_stack", "").strip()
+
+        # Parse and validate the sort stack.
+        # Parsear y validar la pila de ordenación.
+        sort_stack = []
+        if raw_stack:
+            for token in raw_stack.split(","):
+                token = token.strip()
+                if ":" not in token:
+                    continue
+                col, _, direction = token.partition(":")
+                col       = col.strip()
+                direction = direction.strip()
+                if col in _VALID_SORT_COLS and direction in _VALID_SORT_DIRS:
+                    # Deduplicate: skip if column already in stack.
+                    # Deduplicar: omitir si la columna ya está en la pila.
+                    if not any(s[0] == col for s in sort_stack):
+                        sort_stack.append((col, direction))
+                        if len(sort_stack) >= 3:
+                            break
+
+        # Default: primary sort by fecha ascending.
+        # Por defecto: ordenación primaria por fecha ascendente.
+        if not sort_stack:
+            sort_stack = [("fecha", "asc")]
+
+        # Primary sort column and direction — used for header indicators.
+        # Columna y dirección primarias — usadas para los indicadores de cabecera.
+        sort_primary_col = sort_stack[0][0]
+        sort_primary_dir = sort_stack[0][1]
+
+        # Serialize the stack back to string for URL propagation.
+        # Serializar la pila de vuelta a cadena para propagación en URLs.
+        sort_stack_str = ",".join(f"{col}:{direction}" for col, direction in sort_stack)
 
         # ------------------------------------------------------------------
         # Operator selector list (all active company users).
@@ -13363,7 +13712,7 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             qs_pending, operator_pk, date_from, date_to, machine, company,
             fault_category=fault_category, q=q,
         )
-        pending_list = self._enrich_work_orders(qs_pending)
+        pending_list = self._enrich_work_orders(qs_pending, active_fault_category=fault_category)
 
         # ------------------------------------------------------------------
         # Tab 2 — Reviewed (reviewed work orders — Excel export available).
@@ -13374,7 +13723,7 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             qs_reviewed, operator_pk, date_from, date_to, machine, company,
             fault_category=fault_category, q=q,
         )
-        reviewed_list = self._enrich_work_orders(qs_reviewed)
+        reviewed_list = self._enrich_work_orders(qs_reviewed, active_fault_category=fault_category)
 
         # ------------------------------------------------------------------
         # Tab 3 — Full history (all work orders, cross-filters).
@@ -13385,29 +13734,67 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
             qs_history, operator_pk, date_from, date_to, machine, company,
             fault_category=fault_category, q=q,
         )
-        history_list = self._enrich_work_orders(qs_history)
+        history_list = self._enrich_work_orders(qs_history, active_fault_category=fault_category)
 
         # ------------------------------------------------------------------
-        # Apply column sort to all three enriched lists.
-        # Aplicar ordenación de columna a las tres listas enriquecidas.
+        # Apply multi-level column sort to all three enriched lists.
+        # Aplicar ordenación multi-nivel a las tres listas enriquecidas.
+        #
+        # sort_stack contains up to 3 (col, dir) pairs. The list is sorted
+        # by the last criterion first and the first criterion last, so that
+        # the primary criterion ends up as the dominant sort (stable sort
+        # guarantees the relative order of equal primary-key rows is
+        # determined by prior passes — i.e. the secondary and tertiary keys).
+        #
+        # sort_stack contiene hasta 3 pares (col, dir). La lista se ordena
+        # por el criterio menos prioritario primero y el más prioritario al
+        # final, de modo que el criterio primario resulta dominante (la
+        # estabilidad del sort garantiza que el orden relativo de filas con
+        # clave primaria igual queda determinado por los pases previos —
+        # es decir, las claves secundaria y terciaria).
         # ------------------------------------------------------------------
-        def _sort_key_admin(item):
+        def _sort_key_for_col(item, col):
             """
-            Returns the sort key for an admin enriched work-order dict.
-            None values and empty strings sort last in both directions.
+            Returns a comparable sort key for a single column in an enriched
+            work-order dict. None values and empty strings always sort last,
+            regardless of the sort direction applied by the caller.
             ---
-            Devuelve la clave de ordenación para un dict enriquecido de
-            historial de administrador. None y cadena vacía se ordenan al final.
+            Devuelve una clave de ordenación comparable para una sola columna
+            en un dict enriquecido de parte. None y cadena vacía se ordenan
+            siempre al final, independientemente de la dirección aplicada.
             """
-            val = item.get(sort_col)
+            val = item.get(col)
             if val is None or val == "":
-                return (1, None)
+                # Sentinel tuple that sorts after (0, anything).
+                # Tupla centinela que ordena después de (0, cualquier cosa).
+                return (1, "")
             return (0, val)
 
-        reverse_sort = (sort_dir == "desc")
-        pending_list  = sorted(pending_list,  key=_sort_key_admin, reverse=reverse_sort)
-        reviewed_list = sorted(reviewed_list, key=_sort_key_admin, reverse=reverse_sort)
-        history_list  = sorted(history_list,  key=_sort_key_admin, reverse=reverse_sort)
+        def _apply_sort_stack(lst, stack):
+            """
+            Applies a multi-level stable sort to lst according to stack.
+            stack is a list of (col, dir) pairs ordered from most to least
+            significant. Sorting is applied from least significant to most
+            significant to leverage Python's stable sort.
+            ---
+            Aplica una ordenación estable multi-nivel a lst según stack.
+            stack es una lista de pares (col, dir) de más a menos significativo.
+            La ordenación se aplica de menos significativo a más significativo
+            para aprovechar la estabilidad del sort de Python.
+            """
+            result = list(lst)
+            for col, direction in reversed(stack):
+                reverse_flag = (direction == "desc")
+                result = sorted(
+                    result,
+                    key=lambda item, _col=col: _sort_key_for_col(item, _col),
+                    reverse=reverse_flag,
+                )
+            return result
+
+        pending_list  = _apply_sort_stack(pending_list,  sort_stack)
+        reviewed_list = _apply_sort_stack(reviewed_list, sort_stack)
+        history_list  = _apply_sort_stack(history_list,  sort_stack)
 
         # ------------------------------------------------------------------
         # Tab 4 — Absences (WorkerAbsence records for the company).
@@ -13478,9 +13865,12 @@ class WorkOrderAdminHistoryView(SupervisorAccessMixin, View):
                 for fc in WorkOrderEntryLine.fault_category.field.choices
                 if fc[0]
             ],
-            # Sort state — estado de ordenación.
-            "sort_col":               sort_col,
-            "sort_dir":               sort_dir,
+            # Sort stack state — estado de la pila de ordenación.
+            # sort_stack_str: cadena serializada para propagación en URLs de cabecera.
+            # sort_primary_col/dir: columna y dirección primarias para indicadores ▲/▼.
+            "sort_stack_str":         sort_stack_str,
+            "sort_primary_col":       sort_primary_col,
+            "sort_primary_dir":       sort_primary_dir,
             "pending_list":           pending_list,
             "reviewed_list":          reviewed_list,
             "history_list":           history_list,

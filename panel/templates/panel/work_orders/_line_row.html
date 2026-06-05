@@ -46,18 +46,35 @@
 
     {# ------------------------------------------------------------------ #}
     {# machine_norm — normalised machine code / código de máquina norm.    #}
+    {# Autocomplete AJAX: on input, fetches /panel/fleet/autocomplete/?q=  #}
+    {# and shows a dropdown of matching MachineAsset codes. On selection,  #}
+    {# the code is injected into the input and HTMX save is triggered.     #}
+    {#                                                                      #}
+    {# Autocompletado AJAX: al escribir, consulta fleet/autocomplete/?q=   #}
+    {# y muestra un desplegable con los códigos de MachineAsset coincid.   #}
+    {# Al seleccionar, inyecta el código en el input y dispara el guardado.#}
     {# ------------------------------------------------------------------ #}
-    <td>
+    <td style="position:relative; overflow:visible;">
         <input type="text"
                name="machine_norm"
+               id="machine-norm-{{ line.pk }}"
                value="{{ line.machine_norm }}"
-               class="form-control form-control-sm {{ row_class }}{% if 'machine_norm' in line.flags or 'MAQUINA' in line.flags %} field-flagged{% endif %}"
+               class="form-control form-control-sm {{ row_class }}{% if 'machine_norm' in line.flags or 'MAQUINA' in line.flags %} field-flagged{% endif %} machine-norm-input"
                placeholder="Ej. A-54"
+               autocomplete="off"
+               data-line-pk="{{ line.pk }}"
                hx-post="{{ save_url }}"
                hx-trigger="change"
                hx-target="#line-row-{{ line.pk }}"
                hx-swap="outerHTML"
                hx-include=".{{ row_class }}">
+        {# Autocomplete dropdown container — Contenedor del desplegable de autocompletado #}
+        <ul id="machine-ac-{{ line.pk }}"
+            class="list-unstyled bg-white border rounded shadow-sm mb-0 machine-ac-dropdown"
+            style="position:fixed; z-index:2000; width:220px;
+                   max-height:180px; overflow-y:auto; display:none;
+                   font-size:0.8rem;">
+        </ul>
         {% if line.machine_raw %}
         <div class="text-muted text-raw">
             raw: {{ line.machine_raw }}

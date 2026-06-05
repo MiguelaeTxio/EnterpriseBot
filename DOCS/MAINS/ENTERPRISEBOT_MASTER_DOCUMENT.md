@@ -236,7 +236,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Campos de ruta en Budget: road_name, pk_km, route_distance_km, route_toll_cost.
 - Peajes como concepto adicional en calculate_budget().
 
-### Hito 19: Mejoras WorkOrderAdminHistoryView — Filtros, Búsqueda, Ordenación y Exportación por Plantillas (EN PROGRESO)
+### Hito 19: Mejoras WorkOrderAdminHistoryView — Filtros, Búsqueda, Ordenación y Exportación por Plantillas (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md`)
 - Filtro adicional por familia de avería (`fault_category`) en barra de filtros de `WorkOrderAdminHistoryView`.
 - Columna familia de avería visible en pestañas Pendientes, Revisados e Histórico.
@@ -249,5 +249,15 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
   Configuración: columnas a incluir, formato de hoja (una hoja / por operario), alcance de operarios.
 - Nuevo modelo `ExportTemplate` en app `work_order_processor` con migración.
 - Exclusivo para roles SUPERVISOR y ADMIN. WORKSHOP sin acceso a exportación.
+
+### Hito 20: Laboratorio de Análisis Unificado (EN PROGRESO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md`)
+- Unificación y sustitución de las vistas Gráficas, Analítica CdG e Informes.
+- Centro de análisis configurable: Operario, Máquina/CdG, Familia de Avería,
+  Periodo Temporal y Presupuesto/Asistencia.
+- Gráficas interactivas via Apache ECharts 5 (CDN). Sin dependencias nuevas en venv.
+- Informe tabular con exportación Excel via openpyxl.
+- Vista de tres paneles: laboratorio superior + informe + gráficas, con divisor
+  arrastrable y pantalla completa independiente por panel.
 
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)

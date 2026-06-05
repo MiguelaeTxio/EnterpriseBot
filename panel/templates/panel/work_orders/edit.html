@@ -170,6 +170,140 @@
     "use strict";
 
     // ------------------------------------------------------------------
+    // AC — Machine norm autocomplete handler.
+    // AC — Manejador del autocompletado de código de máquina.
+    //
+    // Listens for input events on .machine-norm-input fields. Debounces
+    // at 220 ms, fetches /panel/fleet/autocomplete/?q=<value>, renders
+    // a dropdown beneath the input and injects the selected code into the
+    // field before dispatching a "change" event so HTMX auto-saves.
+    //
+    // Escucha eventos input sobre los campos .machine-norm-input. Debounce
+    // de 220 ms, consulta /panel/fleet/autocomplete/?q=<value>, renderiza
+    // un desplegable bajo el input e inyecta el código seleccionado en el
+    // campo antes de despachar un evento "change" para que HTMX auto-guarde.
+    // ------------------------------------------------------------------
+    var _acTimer = null;
+    var AUTOCOMPLETE_URL = "/panel/fleet/autocomplete/";
+    var DEBOUNCE_MS      = 220;
+
+    function _closeAllDropdowns(exceptLinePk) {
+        /* Close every open autocomplete dropdown except the one for exceptLinePk.
+           Cerrar todos los desplegables de autocompletado excepto el de exceptLinePk. */
+        document.querySelectorAll(".machine-ac-dropdown").forEach(function (ul) {
+            if (exceptLinePk && ul.id === "machine-ac-" + exceptLinePk) { return; }
+            ul.style.display = "none";
+            ul.innerHTML     = "";
+        });
+    }
+
+    document.addEventListener("input", function (evt) {
+        var inp = evt.target;
+
+        var linePk  = inp.dataset.linePk;
+        var dropdown = document.getElementById("machine-ac-" + linePk);
+
+        var q = inp.value.trim();
+
+        clearTimeout(_acTimer);
+
+        if (!q) {
+            dropdown.style.display = "none";
+            dropdown.innerHTML     = "";
+            return;
+        }
+
+        _acTimer = setTimeout(function () {
+            fetch(AUTOCOMPLETE_URL + "?q=" + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var results = data.results || [];
+                    dropdown.innerHTML = "";
+
+                    if (results.length === 0) {
+                        dropdown.style.display = "none";
+                        return;
+                    }
+
+                    results.forEach(function (item) {
+                        var li       = document.createElement("li");
+                        li.textContent = item.label;
+                        li.style.cssText = "padding:0.3rem 0.65rem; cursor:pointer;";
+                        li.dataset.code  = item.code;
+
+                        li.addEventListener("mousedown", function (e) {
+                            /* mousedown fires before blur — prevent blur closing dropdown. */
+                            e.preventDefault();
+                        });
+                        li.addEventListener("click", function () {
+                            /* Inject the exact code into the input and trigger HTMX save.
+                               Inyectar el código exacto en el input y disparar guardado HTMX. */
+                            inp.value            = item.code;
+                            dropdown.style.display = "none";
+                            dropdown.innerHTML     = "";
+                            /* Dispatch change to trigg
+er hx-trigger="change".
+                               Despachar change para activar hx-trigger="change". */
+                            inp.dispatchEvent(new Event("change", { bubbles: true }));
+                        });
+
+                        li.addEventListener("mouseover", function () {
+                            li.style.backgroundColor = "#f0f4ff";
+                        });
+                        li.addEventListener("mouseout", function () {
+                            li.style.backgroundColor = "";
+                        });
+
+                        dropdown.appendChild(li);
+                    });
+
+                    _closeAllDropdowns(linePk);
+
+                    /* Position the fixed dropdown below the input using
+                       getBoundingClientRect — escapes table stacking context.
+                       Posicionar el desplegable fixed bajo el input usando
+                       getBoundingClientRect — escapa el contexto de apilado
+                       de la tabla. */
+                    var rect = inp.getBoundingClientRect();
+                    dropdown.style.top   = (rect.bottom + window.scrollY) + "px";
+                    dropdown.style.left  = (rect.left  + window.scrollX) + "px";
+                    dropdown.style.width = rect.width + "px";
+                    dropdown.style.display = "block";
+                })
+                .catch(function (err) {
+                    console.error("# [AC] Error en autocompletado de máquina:", err);
+                });
+        }, DEBOUNCE_MS);
+    });
+
+    /* Close dropdown on blur of any machine-norm-input.
+       Cerrar desplegable al perder el foco en cualquier machine-norm-input. */
+    document.addEventListener("blur", function (evt) {
+        var inp = evt.target;
+        var linePk   = inp.dataset.linePk;
+        var dropdown = document.getElementById("machine-ac-" + linePk);
+        /* Small delay to allow click on a dropdown item to fire first.
+           Pequeño retardo para que el click en un item del desplegable se dispare primero. */
+        setTimeout(function () {
+            if (dropdown) {
+                dropdown.style.display = "none";
+                dropdown.innerHTML     = "";
+            }
+        }, 150);
+    }, true);
+
+    /* Close all dropdowns when clicking outside any machine-norm-input or dropdown.
+       Cerrar todos los desplegables al hacer click fuera de cualquier input o desplegable. */
+    document.addEventListener("click", function (evt) {
+        if (
+            !evt.target.classList.contains("machine-norm-input") &&
+            !evt.target.closest(".machine-ac-dropdown")
+        ) {
+            _closeAllDropdowns(null);
+        }
+    });
+
+    // ------------------------------------------------------------------
     // C1 — Insert line button handler.
     // C1 — Manejador del botón de inserción de línea.
     // ------------------------------------------------------------------

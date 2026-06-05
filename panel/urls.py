@@ -106,6 +106,8 @@ from panel.views import (
     ExportTemplateUpdateView,
     ExportTemplateDeleteView,
     WorkOrderAdminExportByTemplateView,
+    WorkOrderEntrySaveDateView,
+    MachineAssetAutocompleteView,
 )
 
 from chat.views import (
@@ -268,6 +270,14 @@ urlpatterns = [
     # WorkOrder HTMX line delete — Eliminación de línea individual (rol ADMIN).
     # Bugfix E2E — Hito 8 (2026-04-28)
     path("work-orders/<int:wo_pk>/lines/<int:line_pk>/delete/", WorkOrderLineDeleteView.as_view(), name="work_order_line_delete"),
+
+    # WorkOrderEntry save date — Guardado de fecha de grupo via HTMX (incidencia S046).
+    path("work-orders/<int:wo_pk>/entries/<int:entry_pk>/save-date/",
+         WorkOrderEntrySaveDateView.as_view(),
+         name="work_order_entry_save_date"),
+
+    # MachineAsset autocomplete JSON — Autocompletado de activo en editor inline (incidencia S046).
+    path("fleet/autocomplete/", MachineAssetAutocompleteView.as_view(), name="fleet_autocomplete"),
 
     # WorkOrder review toggle — Marcar/desmarcar revisión HTMX (rol SUPERVISOR y ADMIN).
     # Paso 7 — Hito 8 (2026-04-28)

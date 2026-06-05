@@ -368,9 +368,27 @@
                                                class="form-check-input"
                                                title="Seleccionar todos">
                                     </th>
-                                    <th>Parte / Operario</th>
-                                    <th>Subido por</th>
-                                    <th>Fecha de carga</th>
+                                    <th>
+                                        <a href="#" class="text-white text-decoration-none d-inline-flex align-items-center gap-1
+                                           list-sort-link" data-col="pdf_display_name">
+                                            Parte / Operario
+                                            {% if sort_primary_col == 'pdf_display_name' %}<span class="text-warning">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="opacity-50">▲</span>{% endif %}
+                                        </a>
+                                    </th>
+                                    <th>
+                                        <a href="#" class="text-white text-decoration-none d-inline-flex align-items-center gap-1
+                                           list-sort-link" data-col="uploaded_by_name">
+                                            Subido por
+                                            {% if sort_primary_col == 'uploaded_by_name' %}<span class="text-warning">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="opacity-50">▲</span>{% endif %}
+                                        </a>
+                                    </th>
+                                    <th>
+                                        <a href="#" class="text-white text-decoration-none d-inline-flex align-items-center gap-1
+                                           list-sort-link" data-col="upload_date">
+                                            Fecha de carga
+                                            {% if sort_primary_col == 'upload_date' %}<span class="text-warning">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="opacity-50">▲</span>{% endif %}
+                                        </a>
+                                    </th>
                                     <th class="text-center">Revisión</th>
                                     <th class="text-center pe-3">Acciones</th>
                                 </tr>
@@ -493,9 +511,27 @@
                                                class="form-check-input"
                                                title="Seleccionar todos">
                                     </th>
-                                    <th>Parte / Operario</th>
-                                    <th>Subido por</th>
-                                    <th>Fecha de carga</th>
+                                    <th>
+                                        <a href="#" class="text-white text-decoration-none d-inline-flex align-items-center gap-1
+                                           list-sort-link" data-col="pdf_display_name">
+                                            Parte / Operario
+                                            {% if sort_primary_col == 'pdf_display_name' %}<span class="text-warning">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="opacity-50">▲</span>{% endif %}
+                                        </a>
+                                    </th>
+                                    <th>
+                                        <a href="#" class="text-white text-decoration-none d-inline-flex align-items-center gap-1
+                                           list-sort-link" data-col="uploaded_by_name">
+                                            Subido por
+                                            {% if sort_primary_col == 'uploaded_by_name' %}<span class="text-warning">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="opacity-50">▲</span>{% endif %}
+                                        </a>
+                                    </th>
+                                    <th>
+                                        <a href="#" class="text-white text-decoration-none d-inline-flex align-items-center gap-1
+                                           list-sort-link" data-col="upload_date">
+                                            Fecha de carga
+                                            {% if sort_primary_col == 'upload_date' %}<span class="text-warning">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="opacity-50">▲</span>{% endif %}
+                                        </a>
+                                    </th>
                                     <th class="text-center">Revisión</th>
                                     <th class="text-center pe-3">Acciones</th>
                                 </tr>
@@ -905,6 +941,79 @@
             if (exportForm) { exportForm.submit(); }
         });
     }
+
+    // ------------------------------------------------------------------
+    // Sort stack manager — list.html (PDF pipeline list)
+    // Gestor de pila de ordenación — list.html (lista de PDFs)
+    //
+    // Same logic as admin_history.html sort-stack manager.
+    // Intercepts clicks on .list-sort-link, computes the new sort_stack
+    // and reloads the page preserving the active Bootstrap tab via the
+    // URL hash (Bootstrap reads the hash on load if a tab matches).
+    // ---
+    // Misma lógica que el gestor de pila de admin_history.html.
+    // Intercepta clicks en .list-sort-link, calcula el nuevo sort_stack
+    // y recarga la página preservando la pestaña Bootstrap activa via
+    // el hash de la URL (Bootstrap lo lee al cargar si hay coincidencia).
+    // ------------------------------------------------------------------
+    var MAX_STACK  = 3;
+    var VALID_COLS = ["upload_date", "pdf_display_name", "uploaded_by_name"];
+
+    function _parseStack(str) {
+        var result = [];
+        str.split(",").forEach(function (token) {
+            var parts = token.trim().split(":");
+            if (parts.length !== 2) { return; }
+            var col = parts[0].trim(), dir = parts[1].trim();
+            if (VALID_COLS.indexOf(col) === -1) { return; }
+            if (dir !== "asc" && dir !== "desc") { return; }
+            if (result.some(function (s) { return s.col === col; })) { return; }
+            result.push({ col: col, dir: dir });
+        });
+        return result;
+    }
+
+    function _serializeStack(stack) {
+        return stack.map(function (s) { return s.col + ":" + s.dir; }).join(",");
+    }
+
+    function _computeStack(current, clickedCol) {
+        var stack = current.slice();
+        var idx   = -1;
+        for (var i = 0; i < stack.length; i++) {
+            if (stack[i].col === clickedCol) { idx = i; break; }
+        }
+        if (idx === 0) {
+            stack[0] = { col: clickedCol, dir: stack[0].dir === "asc" ? "desc" : "asc" };
+        } else {
+            if (idx > 0) { stack.splice(idx, 1); }
+            stack.unshift({ col: clickedCol, dir: "asc" });
+            if (stack.length > MAX_STACK) { stack = stack.slice(0, MAX_STACK); }
+        }
+        return stack;
+    }
+
+    // Current sort_stack from server-rendered context.
+    // sort_stack actual desde el contexto renderizado por el servidor.
+    var _currentStackStr = "{{ sort_stack_str|escapejs }}";
+
+    document.querySelectorAll(".list-sort-link").forEach(function (link) {
+        link.addEventListener("click", function (evt) {
+            evt.preventDefault();
+            var col      = link.getAttribute("data-col");
+            var current  = _parseStack(_currentStackStr);
+            var newStack = _computeStack(current, col);
+            var newStr   = _serializeStack(newStack);
+
+            /* Determine which tab is currently active to preserve it after reload.
+               Determinar qué pestaña está activa para preservarla tras la recarga. */
+            var activeBtn = document.querySelector("#woTabs button.active");
+            var tabHash   = activeBtn ? "#" + activeBtn.getAttribute("data-bs-target").replace("#", "") : "";
+
+            var url = window.location.pathname + "?sort_stack=" + encodeURIComponent(newStr) + tabHash;
+            window.location.href = url;
+        });
+    });
 
     // ------------------------------------------------------------------
     // Incidence modal / Modal de incidencias

@@ -33,6 +33,7 @@
 ./chat/services.py
 ./panel/urls.py
 ./panel/templates/panel/base.html
+./panel/templates/panel/export_templates/list.html
 ./panel/templates/panel/workday/schedule_form.html
 ./panel/templates/panel/workday/absence_category_list.html
 ./panel/templates/panel/chat/breakdown_room_manage.html
@@ -297,6 +298,7 @@
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V04/V04DOC_WHATSAPP_NUMBER_REGISTRATION.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V06.md
+./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V03.md
@@ -305,6 +307,7 @@
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V16.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V02.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V05.md
+./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md
 ./DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V01.md
 ./DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V03/V03DOC_DATA_MODEL.md
@@ -439,6 +442,7 @@
 ./work_order_processor/migrations/__init__.py
 ./work_order_processor/migrations/0003_workorder_reviewed_workorder_reviewed_at_and_more.py
 ./work_order_processor/migrations/0015_workorderentryline_fault_fields_default.py
+./work_order_processor/migrations/0022_exporttemplate.py
 ./work_order_processor/migrations/0009_workorder_has_cg_incident.py
 ./work_order_processor/migrations/0016_workorder_source_pdf_name.py
 ./work_order_processor/migrations/0001_initial.py

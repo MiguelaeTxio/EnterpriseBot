@@ -299,6 +299,161 @@
 
 }());
 </script>
+
+<script>
+/*
+ * Sort-stack manager — admin_history.html
+ *
+ * Intercepts clicks on .sort-header-link anchors and computes the new
+ * sort_stack value before navigating. The stack is maintained as a
+ * comma-separated string "col:dir,col:dir,..." with up to 3 levels.
+ *
+ * Click behaviour on a column header:
+ *   - If the column is NOT the primary sort → insert at front as :asc,
+ *     push others down (deduplicating and capping at 3 levels).
+ *   - If the column IS already the primary sort → toggle its direction
+ *     (asc ↔ desc), keeping secondary/tertiary unchanged.
+ *
+ * After computing the new stack, the page is reloaded preserving all
+ * active filters (tab, operator_pk, date_from, date_to, machine,
+ * fault_category, q) from the current URL query string.
+ *
+ * Gestor de pila de ordenación — admin_history.html
+ *
+ * Intercepta clicks en los enlaces .sort-header-link y calcula el nuevo
+ * valor de sort_stack antes de navegar. La pila se mantiene como cadena
+ * "col:dir,col:dir,..." con hasta 3 niveles.
+ *
+ * Comportamiento al hacer click en una cabecera de columna:
+ *   - Si la columna NO es la ordenación primaria → insertar al frente
+ *     como :asc, desplazando las demás (deduplicando y limitando a 3).
+ *   - Si la columna YA es la ordenación primaria → alternar su dirección
+ *     (asc ↔ desc), manteniendo inalterados el segundo y tercer criterio.
+ *
+ * Tras calcular la nueva pila, se recarga la página preservando todos
+ * los filtros activos (tab, operator_pk, date_from, date_to, machine,
+ * fault_category, q) de la cadena de consulta actual.
+ */
+(function () {
+    "use strict";
+
+    var MAX_STACK_LEVELS = 3;
+
+    /**
+     * Parse a sort_stack string into an array of {col, dir} objects.
+     * Returns [] for an empty or invalid string.
+     * ---
+     * Parsear una cadena sort_stack en un array de objetos {col, dir}.
+     * Devuelve [] para cadena vacía o inválida.
+     */
+    function parseStack(stackStr) {
+        var valid = ["fecha", "operator_name", "horas_totales", "reviewed", "fault_category"];
+        var result = [];
+        stackStr.split(",").forEach(function (token) {
+            var parts = token.trim().split(":");
+            if (parts.length !== 2) { return; }
+            var col = parts[0].trim();
+            var dir = parts[1].trim();
+            if (valid.indexOf(col) === -1) { return; }
+            if (dir !== "asc" && dir !== "desc") { return; }
+            /* Deduplicate — skip if already in result.
+               Deduplicar — omitir si ya está en result. */
+            if (result.some(function (s) { return s.col === col; })) { return; }
+            result.push({ col: col, dir: dir });
+        });
+        return result;
+    }
+
+    /**
+     * Serialize an array of {col, dir} objects into a sort_stack string.
+     * ---
+     * Serializar un array de objetos {col, dir} en una cadena sort_stack.
+     */
+    function serializeStack(stack) {
+        return stack.map(function (s) { return s.col + ":" + s.dir; }).join(",");
+    }
+
+    /**
+     * Compute the new stack when the user clicks on a column header.
+     * ---
+     * Calcular la nueva pila cuando el usuario hace click en una cabecera.
+     */
+    function computeNewStack(currentStack, clickedCol) {
+        var newStack = currentStack.slice(); /* shallow copy */
+
+        var primaryIdx = newStack.findIndex
+            ? newStack.findIndex(function (s) { return s.col === clickedCol; })
+            : (function () {
+                for (var i = 0; i < newStack.length; i++) {
+                    if (newStack[i].col === clickedCol) { return i; }
+                }
+                return -1;
+              }());
+
+        if (primaryIdx === 0) {
+            /* Column is already primary — toggle direction.
+               La columna ya es primaria — alternar dirección. */
+            newStack[0] = {
+                col: clickedCol,
+                dir: newStack[0].dir === "asc" ? "desc" : "asc"
+            };
+        } else {
+            /* Column is not primary — remove it from wherever it is
+               (if present) and insert at front as :asc.
+               La columna no es primaria — eliminarla de donde esté
+               (si existe) e insertarla al frente como :asc. */
+            if (primaryIdx > 0) {
+                newStack.splice(primaryIdx, 1);
+            }
+            newStack.unshift({ col: clickedCol, dir: "asc" });
+            /* Cap at MAX_STACK_LEVELS.
+               Limitar a MAX_STACK_LEVELS. */
+            if (newStack.length > MAX_STACK_LEVELS) {
+                newStack = newStack.slice(0, MAX_STACK_LEVELS);
+            }
+        }
+
+        return newStack;
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        var links = document.querySelectorAll(".sort-header-link");
+
+        links.forEach(function (link) {
+            link.addEventListener("click", function (evt) {
+                evt.preventDefault();
+
+                var clickedCol = link.getAttribute("data-col");
+                var tab        = link.getAttribute("data-tab");
+
+                /* Read current sort_stack from the hidden input.
+                   Leer el sort_stack actual del input oculto. */
+                var hiddenInput = document.getElementById("hidden-sort-stack");
+                var currentStackStr = hiddenInput ? hiddenInput.value : "";
+                var currentStack    = parseStack(currentStackStr);
+
+                var newStack    = computeNewStack(currentStack, clickedCol);
+                var newStackStr = serializeStack(newStack);
+
+                /* Build the new URL preserving all active filters.
+                   Construir la nueva URL preservando todos los filtros activos. */
+                var params = new URLSearchParams(window.location.search);
+                params.set("tab",        tab);
+                params.set("sort_stack", newStackStr);
+                /* Ensure filter params are present (may be absent on first load).
+                   Asegurar que los parámetros de filtro estén presentes. */
+                ["operator_pk", "date_from", "date_to", "machine",
+                 "fault_category", "q"].forEach(function (key) {
+                    /* Keep existing value; don't overwrite if already set. */
+                });
+
+                window.location.href = window.location.pathname + "?" + params.toString();
+            });
+        });
+    });
+
+}());
+</script>
 {% endblock %}
 
 {% block page_title %}Historial de partes{% endblock %}
@@ -325,9 +480,8 @@
             <form method="get" class="row g-2 align-items-end">
                 {# Preserve active tab on filter submit #}
                 <input type="hidden" name="tab" value="{{ active_tab }}">
-                {# Preserve sort state on filter submit — preservar ordenación al filtrar #}
-                <input type="hidden" name="sort" value="{{ sort_col }}">
-                <input type="hidden" name="dir" value="{{ sort_dir }}">
+                {# Preserve sort stack on filter submit — preservar pila de ordenación al filtrar #}
+                <input type="hidden" name="sort_stack" id="hidden-sort-stack" value="{{ sort_stack_str }}">
                 {# fault_category y q son enviados por los inputs visibles del formulario — no se duplican aquí #}
 
                 <div class="col-12 col-md-2">
@@ -475,12 +629,6 @@
                             onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
                         <i class="bi bi-trash me-1"></i>Eliminar
                     </button>
-                    <button type="button" id="btn-export-template"
-                            class="btn btn-success btn-sm py-0 px-3 ms-auto"
-                            data-bs-toggle="modal"
-                            data-bs-target="#modalExportTemplate">
-                        <i class="bi bi-file-earmark-excel me-1"></i>Exportar
-                    </button>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0">
@@ -491,28 +639,34 @@
                                            data-target="pending" title="Seleccionar todos">
                                 </th>
                                 <th class="text-sm fw-semibold">
-                                    <a href="?tab=pending&sort=operator_name&dir={% if sort_col == 'operator_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="operator_name" data-tab="pending">
                                         Operario
-                                        {% if sort_col == 'operator_name' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                        {% if sort_primary_col == 'operator_name' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
                                 <th class="text-sm fw-semibold">
-                                    <a href="?tab=pending&sort=fecha&dir={% if sort_col == 'fecha' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="fecha" data-tab="pending">
                                         Fecha
-                                        {% if sort_col == 'fecha' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                        {% if sort_primary_col == 'fecha' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
                                 <th class="text-sm fw-semibold">Bloques</th>
                                 <th class="text-sm fw-semibold">
-                                    <a href="?tab=pending&sort=horas_totales&dir={% if sort_col == 'horas_totales' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="horas_totales" data-tab="pending">
                                         Horas
-                                        {% if sort_col == 'horas_totales' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                        {% if sort_primary_col == 'horas_totales' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
-                                <th class="text-sm fw-semibold">Familia</th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="fault_category" data-tab="pending">
+                                        Familia
+                                        {% if sort_primary_col == 'fault_category' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
                                 <th class="text-sm fw-semibold">Acciones</th>
                             </tr>
                         </thead>
@@ -600,6 +754,12 @@
                             onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
                         <i class="bi bi-trash me-1"></i>Eliminar
                     </button>
+                    <button type="button" id="btn-export-template"
+                            class="btn btn-success btn-sm py-0 px-3 ms-auto"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalExportTemplate">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Exportar
+                    </button>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0">
@@ -610,28 +770,34 @@
                                        data-target="reviewed" title="Seleccionar todos">
                             </th>
                             <th class="text-sm fw-semibold">
-                                <a href="?tab=reviewed&sort=operator_name&dir={% if sort_col == 'operator_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                   class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                   sort-header-link" data-col="operator_name" data-tab="reviewed">
                                     Operario
-                                    {% if sort_col == 'operator_name' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    {% if sort_primary_col == 'operator_name' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                 </a>
                             </th>
                             <th class="text-sm fw-semibold">
-                                <a href="?tab=reviewed&sort=fecha&dir={% if sort_col == 'fecha' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                   class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                   sort-header-link" data-col="fecha" data-tab="reviewed">
                                     Fecha
-                                    {% if sort_col == 'fecha' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    {% if sort_primary_col == 'fecha' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                 </a>
                             </th>
                             <th class="text-sm fw-semibold">Bloques</th>
                             <th class="text-sm fw-semibold">
-                                <a href="?tab=reviewed&sort=horas_totales&dir={% if sort_col == 'horas_totales' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                   class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                   sort-header-link" data-col="horas_totales" data-tab="reviewed">
                                     Horas
-                                    {% if sort_col == 'horas_totales' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    {% if sort_primary_col == 'horas_totales' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                 </a>
                             </th>
-                            <th class="text-sm fw-semibold">Familia</th>
+                            <th class="text-sm fw-semibold">
+                                <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                   sort-header-link" data-col="fault_category" data-tab="reviewed">
+                                    Familia
+                                    {% if sort_primary_col == 'fault_category' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                </a>
+                            </th>
                             <th class="text-sm fw-semibold">Revisado por</th>
                             <th class="text-sm fw-semibold">Excel</th>
                             <th class="text-sm fw-semibold">Acciones</th>
@@ -743,33 +909,39 @@
                                            data-target="history" title="Seleccionar todos">
                                 </th>
                                 <th class="text-sm fw-semibold">
-                                    <a href="?tab=history&sort=operator_name&dir={% if sort_col == 'operator_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="operator_name" data-tab="history">
                                         Operario
-                                        {% if sort_col == 'operator_name' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                        {% if sort_primary_col == 'operator_name' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
                                 <th class="text-sm fw-semibold">
-                                    <a href="?tab=history&sort=fecha&dir={% if sort_col == 'fecha' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="fecha" data-tab="history">
                                         Fecha
-                                        {% if sort_col == 'fecha' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                        {% if sort_primary_col == 'fecha' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
                                 <th class="text-sm fw-semibold">Bloques</th>
                                 <th class="text-sm fw-semibold">
-                                    <a href="?tab=history&sort=horas_totales&dir={% if sort_col == 'horas_totales' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="horas_totales" data-tab="history">
                                         Horas
-                                        {% if sort_col == 'horas_totales' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                        {% if sort_primary_col == 'horas_totales' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
-                                <th class="text-sm fw-semibold">Familia</th>
                                 <th class="text-sm fw-semibold">
-                                    <a href="?tab=history&sort=reviewed&dir={% if sort_col == 'reviewed' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&fault_category={{ fault_category|default:'' }}&q={{ q|default:'' }}"
-                                       class="text-dark text-decoration-none d-inline-flex align-items-center gap-1">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="fault_category" data-tab="history">
+                                        Familia
+                                        {% if sort_primary_col == 'fault_category' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                    </a>
+                                </th>
+                                <th class="text-sm fw-semibold">
+                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                                       sort-header-link" data-col="reviewed" data-tab="history">
                                         Estado
-                                        {% if sort_col == 'reviewed' %}<span class="text-primary">{% if sort_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                                        {% if sort_primary_col == 'reviewed' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
                                 <th class="text-sm fw-semibold">Origen</th>
