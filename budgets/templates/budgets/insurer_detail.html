@@ -15,6 +15,17 @@
   <div class="row justify-content-center">
     <div class="col-12 col-lg-10">
 
+      {# ── Guía del pastor — insurer_detail ──────────────────────────────── #}
+              </div>
+        <button type="button"
+                class="btn-close btn-sm"
+                aria-label="Cerrar guía"
+                onclick="cerrarGuiaInsurerDetail()"></button>
+      </div>
+              </div>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert" aria-label="Cerrar guía"></button>
+      </div>
+
       {# ── Cabecera ─────────────────────────────────────────────────── #}
       <div class="d-flex align-items-center justify-content-between mb-4">
         <div class="d-flex align-items-center gap-3">
@@ -380,4 +391,51 @@
     </div>
   </div>
 </div>
+
+
+{% block extra_scripts %}
+<script>
+
+document.addEventListener("DOMContentLoaded", function () {
+    window.EbTour.register("insurer_detail", [
+        {
+            popover: {
+                title:       "Detalle de aseguradora",
+                description: "Esta pantalla es de solo lectura. Muestra toda la configuraci\u00f3n de la aseguradora: datos generales, tarifa vigente y bases de servicio. Para modificar algo, usa el bot\u00f3n Editar.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: ".btn-outline-primary",
+            popover: {
+                title:       "Bot\u00f3n Editar",
+                description: "Abre el formulario de edici\u00f3n para modificar datos generales, tarifa y l\u00edneas de precios.",
+                side:        "bottom",
+                align:       "end",
+            },
+        },
+        {
+            element: ".btn-outline-secondary",
+            popover: {
+                title:       "Bot\u00f3n Exportar tarifa",
+                description: "Genera un documento con la tarifa completa en el formato que elijas. \u00datil para archivarla o enviarla a la aseguradora.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".card.border-0.shadow-sm",
+            popover: {
+                title:       "Tarifa activa y l\u00edneas",
+                description: "Muestra todas las l\u00edneas de tarifa agrupadas por tipo de veh\u00edculo. El grupo Conceptos generales incluye las l\u00edneas sin tipo de veh\u00edculo: desbloqueo, hora de espera, mano de obra...",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("insurer_detail");
+});
+</script>
+{% endblock extra_scripts %}
 {% endblock %}

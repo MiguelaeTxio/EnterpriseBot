@@ -211,6 +211,68 @@
 
 </div>
 
+{% block extra_scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    window.EbTour.register("budget_history", [
+        {
+            popover: {
+                title:       "Historial de presupuestos",
+                description: "Lista todos los presupuestos generados. Puedes filtrarlos por compañía, estado y rango de fechas, exportarlos a varios formatos, y acceder al desglose detallado de cada uno.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: "[name='insurer']",
+            popover: {
+                title:       "Filtro por compañía",
+                description: "Filtra los presupuestos de una aseguradora concreta.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "[name='status']",
+            popover: {
+                title:       "Filtro por estado",
+                description: "Borrador: pendiente de confirmar. Aceptado: confirmado por la aseguradora. Rechazado: no aprobado.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "[name='date_from']",
+            popover: {
+                title:       "Rango de fechas",
+                description: "Filtra por fecha de servicio. Rellena Desde y Hasta para acotar el período.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".dropdown",
+            popover: {
+                title:       "Exportar",
+                description: "Descarga el listado filtrado en CSV, Excel, PDF o Word. El export respeta los filtros activos.",
+                side:        "bottom",
+                align:       "end",
+            },
+        },
+        {
+            element: "#btn-bulk-delete",
+            popover: {
+                title:       "Eliminar seleccionados",
+                description: "Marca varios presupuestos con la casilla de la izquierda y pulsa este botón para eliminarlos. Los presupuestos Aceptados no se pueden eliminar.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("budget_history");
+});
+</script>
+{% endblock extra_scripts %}
 {% block extra_js %}
 <script>
   (function () {

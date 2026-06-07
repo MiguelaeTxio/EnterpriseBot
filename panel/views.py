@@ -432,7 +432,7 @@ class CompanyUserCreateView(SupervisorAccessMixin, View):
 
 
 
-class CompanyUserListView(AdminRoleRequiredMixin, ListView):
+class CompanyUserListView(SupervisorAccessMixin, ListView):
     """
     Lists all CompanyUser accounts belonging to the authenticated user's company.
     Accessible only to users with the ADMIN role.
@@ -513,7 +513,7 @@ class CompanyUserListView(AdminRoleRequiredMixin, ListView):
         ).order_by("-starts_at").first()
 
 
-class CompanyUserUpdateView(AdminRoleRequiredMixin, UpdateView):
+class CompanyUserUpdateView(SupervisorAccessMixin, UpdateView):
     """
     Allows an ADMIN to update the role, active status and workday schedule
     of a CompanyUser belonging to the same company.
@@ -1219,7 +1219,7 @@ class SectionListView(AdminRoleRequiredMixin, ListView):
         ).order_by("-starts_at").first()
 
 
-class SectionCreateView(SupervisorAccessMixin, CreateView):
+class SectionCreateView(AdminRoleRequiredMixin, CreateView):
     """
     Allows an ADMIN to create a new Section for their company.
     Automatically assigns the company from the authenticated user's CompanyUser.
@@ -1420,7 +1420,7 @@ class SectionCreateView(SupervisorAccessMixin, CreateView):
         ).order_by("-starts_at").first()
 
 
-class SectionUpdateView(SupervisorAccessMixin, UpdateView):
+class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
     """
     Allows an ADMIN to update an existing Section belonging to their company.
     Prevents editing sections from other companies.
@@ -4575,7 +4575,7 @@ class WorkOrderUploadView(SupervisorAccessMixin, View):
         return redirect("panel:work_order_list")
 
 
-class WorkOrderEditView(WorkshopRequiredMixin, View):
+class WorkOrderEditView(SupervisorAccessMixin, View):
     """
     Displays and processes inline edits for all WorkOrderEntryLine records
     belonging to a given WorkOrder. Lines are grouped by their parent
@@ -6495,7 +6495,7 @@ class WorkOrderDuplicateDeleteView(SupervisorAccessMixin, View):
         return HttpResponse("")
 
 
-class AnalyticsView(AdminRoleRequiredMixin, View):
+class AnalyticsView(SupervisorAccessMixin, View):
     """
     Renders the analytics dashboard for the authenticated user's company.
     Serves the template shell only — all data is fetched client-side via
@@ -6543,7 +6543,7 @@ class AnalyticsView(AdminRoleRequiredMixin, View):
         })
 
 
-class AnalyticsDataView(AdminRoleRequiredMixin, View):
+class AnalyticsDataView(SupervisorAccessMixin, View):
     """
     JSON endpoint that returns all WorkOrderEntryLine records for the
     authenticated user's company, enriched with machine asset metadata,
@@ -6710,7 +6710,7 @@ class AnalyticsDataView(AdminRoleRequiredMixin, View):
         })
 
 
-class AnalyticsProfileListCreateView(AdminRoleRequiredMixin, View):
+class AnalyticsProfileListCreateView(SupervisorAccessMixin, View):
     """
     JSON endpoint for listing and creating/updating AnalyticsProfile records
     belonging to the authenticated CompanyUser.
@@ -15247,7 +15247,7 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
         return response
 
 
-class AnalyticsProfileDeleteView(AdminRoleRequiredMixin, View):
+class AnalyticsProfileDeleteView(SupervisorAccessMixin, View):
     """
     JSON endpoint for deleting a single AnalyticsProfile by primary key.
 
@@ -16023,7 +16023,7 @@ class WorkOrderDescriptionAutocompleteView(WorkshopRequiredMixin, View):
 
 
 
-class SectionDefaultRoleView(SupervisorAccessMixin, View):
+class SectionDefaultRoleView(AdminRoleRequiredMixin, View):
     """
     AJAX endpoint that returns the default_role of a Section as JSON.
     Used by the user creation form to pre-fill the role selector when
@@ -16699,7 +16699,7 @@ class BotManagementView(CompanyUserRequiredMixin, View):
         return redirect("panel:bot_management")
 
 
-class MachineAssetAnalyticsView(AdminRoleRequiredMixin, View):
+class MachineAssetAnalyticsView(SupervisorAccessMixin, View):
     """
     Displays an activity report grouped by cost centre (MachineAsset).
     Aggregates total hours worked and total associated work-order entry lines

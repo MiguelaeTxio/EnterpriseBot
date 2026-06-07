@@ -127,43 +127,80 @@ apuntando a analytics_lab.
 
 ### Trabajo Realizado
 
-Ninguno aun. Hito nuevo.
+Ninguno sobre el Hito 20. La sesion S047 se dedico integramente a la
+resolucion de incidencias urgentes de produccion y a la implementacion
+de tours Driver.js en las vistas de asistencia y gestion. Trabajo de
+soporte atendido fuera del hito:
+
+- Restauracion de acceso de operarios de taller: migracion de 10 vistas
+  de SupervisorAccessMixin a WorkshopRequiredMixin, reactivacion del
+  CompanyUser miguel-loja (is_active=True).
+- Correccion de NameError en InsurerDetailView.get: variable bases no
+  definida antes de ser referenciada en el contexto.
+- Siembra de 14 lineas UNLOCK faltantes en BD mediante comando de gestion
+  seed_unlock_lines. Dos tarifas (RACE pk=86, Petit Forestier pk=101)
+  pendientes de configuracion manual desde el panel.
+- Implementacion de tours Driver.js para ADMIN/SUPERVISOR en 9 vistas
+  del modulo budgets: insurer_list, insurer_detail, insurer_form (modos
+  create y edit con apertura programatica de acordeones), bases,
+  base_global, base_edit_page, history, detail y work_order_detail.
+- Correccion de visibilidad del boton de ayuda en movil (d-none eliminado).
+- Correccion del progressText de Driver.js mediante {% verbatim %} en
+  _tour_workshop.html para evitar interpolacion Django.
+- Exportacion de las 21 skills de usuario a skills_miguelaetxio.zip
+  para sincronizacion con cuenta secundaria.
 
 ---
 
-### Hoja de Ruta para la Siguiente Sesion (S047)
+### Hoja de Ruta para la Siguiente Sesion (S048)
 
 #### Paso 0 - Auditoria de modelos (OBLIGATORIO PRIMERO)
 
-Antes de escribir ningun codigo, leer integra y completamente los models.py de:
-  work_order_processor/models.py
-  fleet/models.py
-  ivr_config/models.py
-  budgets/models.py
-  panel/models.py
+Los modelos ya fueron auditados en S047 y estan en memoria del anexo.
+No es necesario releerlos salvo que hayan cambiado. Verificar unicamente
+que no hay migraciones nuevas pendientes antes de implementar:
 
-Con los modelos en memoria, validar que las dimensiones D1-D5 son correctas
-y que los campos referenciados en las metricas existen. Ajustar el diseno
-si procede antes de implementar.
+  python -m dotenv run python manage.py showmigrations | grep "\[ \]"
 
 #### Paso 1 - Backend: tres vistas
 
 Implementar AnalyticsLabView, AnalyticsLabDataView y AnalyticsLabExportView
 en panel/views.py segun la arquitectura tecnica definida en este anexo.
-Actualizarse online sobre la API de ECharts 5 antes de implementar el
-endpoint de datos (Directriz 4.4).
+
+Antes de implementar AnalyticsLabDataView, actualizarse online sobre la
+API de ECharts 5 (Directriz 4.4 — actualizacion online obligatoria antes
+de implementar el endpoint de datos).
+
+Recordatorio del mapeo de campos validado en S047:
+- D1 (Operario): fuente de nombres en WorkOrderEntry.worker_name (CharField,
+  no FK). Selector construido con .values_list('worker_name', flat=True)
+  .distinct(). Horas en WorkOrderEntryLine.delta_hours.
+- D2 (Maquina): WorkOrderEntryLine.machine_asset FK a MachineAsset.
+- D3 (Familia): WorkOrderEntryLine.fault_category (TextChoices, blank=True).
+  Filtrar fault_category__gt="" en todas las consultas.
+- D4 (Periodo): sin entity_pk. Filtros sobre WorkOrderEntry.work_date.
+- D5 (Presupuesto): Budget.insurer (FK), Budget.service_date, Budget.total_amount.
+  Disponibilidad: Budget.objects.filter(company=...).count() > 0.
+- Toda consulta filtrada por company del usuario autenticado via
+  request.company_user.company.
 
 #### Paso 2 - URLs
 
-Anadir las tres URLs nuevas a panel/urls.py e importar las tres vistas.
+Anadir las tres URLs a panel/urls.py e importar las tres vistas:
+  path('analytics/lab/', AnalyticsLabView.as_view(), name='analytics_lab')
+  path('analytics/lab/data/', AnalyticsLabDataView.as_view(), name='analytics_lab_data')
+  path('analytics/lab/export/', AnalyticsLabExportView.as_view(), name='analytics_lab_export')
 
 #### Paso 3 - Template analytics_lab.html (neonato puro)
 
-Estructura HTML con tres paneles. ECharts desde CDN. Fetch al endpoint
-de datos al pulsar Analizar. Renderizado del grafico y la tabla con JS.
-Boton de exportacion. Botones de pantalla completa. Divisor arrastrable.
-El selector de dimension debe mostrar solo dimensiones con datos disponibles
-(verificar count mayor que 0 antes de listar en el contexto).
+Estructura HTML con tres paneles. ECharts desde CDN:
+  https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js
+
+Fetch al endpoint de datos al pulsar Analizar. Renderizado del grafico
+y la tabla con JS. Boton de exportacion via POST. Botones de pantalla
+completa via Element.requestFullscreen(). Divisor arrastrable entre
+paneles inferiores. El selector de dimension debe mostrar solo dimensiones
+con datos disponibles (verificar count > 0 antes de listar en el contexto).
 
 #### Paso 4 - Navegacion sidebar
 

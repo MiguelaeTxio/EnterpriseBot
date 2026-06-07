@@ -25,6 +25,7 @@
     </ol>
   </nav>
 
+
   {# ── Cabecera ─────────────────────────────────────────────────────── #}
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h4 class="mb-0">
@@ -249,4 +250,42 @@
   </div>
 
 </div>
+
+
+{% block extra_scripts %}
+<script>
+
+document.addEventListener("DOMContentLoaded", function () {
+    window.EbTour.register("insurer_bases", [
+        {
+            popover: {
+                title:       "Bases de servicio",
+                description: "Aqu\u00ed gestionas qu\u00e9 bases de servicio est\u00e1n asignadas a esta aseguradora. Solo las bases activas aqu\u00ed aparecer\u00e1n disponibles al crear un presupuesto.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: ".card.border-0.shadow-sm.mb-3",
+            popover: {
+                title:       "Bases activas para esta aseguradora",
+                description: "Lista las bases que tienen el toggle activado para esta aseguradora espec\u00edficamente.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".card.border-0.shadow-sm.mb-4",
+            popover: {
+                title:       "Todas las bases de la empresa",
+                description: "El toggle de cada fila activa o desactiva la base \u00fanicamente para esta aseguradora, sin afectar al resto. Si faltan coordenadas, edita la base y localiza el punto en el mapa.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("insurer_bases");
+});
+</script>
+{% endblock extra_scripts %}
 {% endblock %}

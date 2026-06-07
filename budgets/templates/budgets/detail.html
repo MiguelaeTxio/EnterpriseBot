@@ -154,4 +154,40 @@
     </div>
   </div>
 </div>
+
+{% block extra_scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    window.EbTour.register("budget_detail", [
+        {
+            popover: {
+                title:       "Desglose del presupuesto",
+                description: "Vista de solo lectura con el cálculo completo del presupuesto. Muestra todos los conceptos facturados, recargos aplicados y el total con o sin IVA.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: ".card.mb-4",
+            popover: {
+                title:       "Resumen del servicio",
+                description: "Datos generales: compañía, tipo de vehículo, tarifa aplicada, fecha, operario, kilómetros y opciones activas (pernocta, desbloqueo, nocturno/festivo, vehículo cargado).",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".card.mb-4:nth-child(2)",
+            popover: {
+                title:       "Desglose del cálculo",
+                description: "Tabla con cada concepto facturado: unidades, precio unitario y subtotal. Las filas en amarillo son recargos (nocturno/festivo, vehículo cargado). El total aparece al pie con o sin IVA según la configuración de la aseguradora.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("budget_detail");
+});
+</script>
+{% endblock extra_scripts %}
 {% endblock %}

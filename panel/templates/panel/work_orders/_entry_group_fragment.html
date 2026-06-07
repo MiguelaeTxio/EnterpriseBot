@@ -47,85 +47,76 @@
             {# ---------------------------------------------------------- #}
             {% url 'panel:work_order_entry_save_date' wo_pk=wo_pk entry_pk=group.entry.pk as save_date_url %}
 
+            {# ---------------------------------------------------------- #}
+            {# Date display + inline HTMX editor — always available.       #}
+            {# uncertain_date controls the warning badge only, not the     #}
+            {# editor visibility. The editor is always accessible via the  #}
+            {# pencil toggle so supervisors can correct any date at any    #}
+            {# time regardless of extraction confidence.                   #}
+            {#                                                              #}
+            {# Display de fecha + editor HTMX inline — siempre disponible. #}
+            {# uncertain_date controla solo el badge de aviso, no la       #}
+            {# visibilidad del editor. El editor es siempre accesible via  #}
+            {# el toggle de lápiz para que los supervisores puedan         #}
+            {# corregir cualquier fecha en cualquier momento.              #}
+            {# ---------------------------------------------------------- #}
+
+            {# Warning badge — only when date is absent or uncertain.      #}
+            {# Badge de aviso — solo cuando la fecha está ausente o incierta. #}
             {% if group.entry.uncertain_date or not group.entry.work_date %}
-                {# Date is absent or uncertain — show editable input + warning. #}
-                {# Fecha ausente o incierta — mostrar input editable + aviso.  #}
                 <span class="date-uncertain">
                     <i class="bi bi-exclamation-triangle-fill"></i>
                     {% if group.entry.work_date %}Fecha incierta{% else %}Sin fecha{% endif %}
                 </span>
-                <form class="d-inline-flex align-items-center gap-1 ms-1"
-                      id="form-date-{{ group.entry.pk }}"
-                      hx-post="{{ save_date_url }}"
-                      hx-target="#entry-group-{{ group.entry.pk }}"
-                      hx-swap="outerHTML">
-                    {% csrf_token %}
-                    <input type="date"
-                           name="work_date"
-                           value="{{ group.entry.work_date|date:'Y-m-d'|default:'' }}"
-                           class="form-control form-control-sm date-edit-input"
-                           style="max-width:140px; font-size:0.78rem; padding:0.1rem 0.3rem;"
-                           title="Corregir fecha de este grupo">
-                    <button type="submit"
-                            class="btn btn-sm btn-outline-light py-0 px-2"
-                            style="font-size:0.78rem;"
-                            title="Guardar fecha corregida">
-                        <i class="bi bi-check2"></i>
-                    </button>
-                </form>
-            {% else %}
-                {# Date is confirmed — show as text with an edit toggle button. #}
-                {# Fecha confirmada — mostrar como texto con botón de edición.  #}
-                — {{ group.entry.work_date|date:"d/m/Y" }}
-                <button type="button"
-                        class="btn btn-sm btn-outline-light py-0 px-1 ms-1"
-                        style="font-size:0.72rem; opacity:0.6;"
-                        title="Editar fecha"
-                        onclick="(function(btn){
-                            var grp = btn.closest('.page-group-header');
-                            var span = grp.querySelector('.date-confirmed-span');
-                            var form = grp.querySelector('.date-edit-form');
-                            if(span){ span.style.display='none'; }
-                            if(form){ form.style.display='inline-flex'; form.querySelector('input').focus(); }
-                            btn.style.display='none';
-                        })(this)">
-                    <i class="bi bi-pencil"></i>
-                </button>
-                <span class="date-confirmed-span" style="display:none">
-                </span>
-                <form class="date-edit-form d-none align-items-center gap-1 ms-1"
-                      id="form-date-{{ group.entry.pk }}"
-                      hx-post="{{ save_date_url }}"
-                      hx-target="#entry-group-{{ group.entry.pk }}"
-                      hx-swap="outerHTML"
-                    {% csrf_token %}
-                    <input type="date"
-                           name="work_date"
-                           value="{{ group.entry.work_date|date:'Y-m-d'|default:'' }}"
-                           class="form-control form-control-sm date-edit-input"
-                           style="max-width:140px; font-size:0.78rem; padding:0.1rem 0.3rem;"
-                           title="Corregir fecha de este grupo">
-                    <button type="submit"
-                            class="btn btn-sm btn-outline-light py-0 px-2"
-                            style="font-size:0.78rem;"
-                            title="Guardar fecha corregida">
-                        <i class="bi bi-check2"></i>
-                    </button>
-                    <button type="button"
-                            class="btn btn-sm btn-outline-light py-0 px-1"
-                            style="font-size:0.72rem;"
-                            title="Cancelar edición de fecha"
-                            onclick="(function(btn){
-                                var form = btn.closest('form');
-                                var grp  = btn.closest('.page-group-header');
-                                var editBtn = grp.querySelector('.btn[title='Editar fecha']');
-                                form.style.display='none';
-                                if(editBtn){ editBtn.style.display=''; }
-                            })(this)">
-                        <i class="bi bi-x"></i>
-                    </button>
-                </form>
             {% endif %}
+
+            {# Date text display — shown when date is present.             #}
+            {# Texto de fecha — visible cuando hay fecha.                  #}
+            {% if group.entry.work_date %}
+                <span class="date-display-text" id="date-text-{{ group.entry.pk }}">
+                    — {{ group.entry.work_date|date:"d/m/Y" }}
+                </span>
+            {% endif %}
+
+            {# Pencil toggle button — always shown to open the date editor. #}
+            {# Botón lápiz — siempre visible para abrir el editor de fecha. #}
+            <button type="button"
+                    class="btn btn-sm btn-outline-light py-0 px-1 ms-1 btn-date-edit-toggle"
+                    id="btn-date-toggle-{{ group.entry.pk }}"
+                    style="font-size:0.72rem; opacity:0.6;"
+                    title="Editar fecha">
+                <i class="bi bi-pencil"></i>
+            </button>
+
+            {# Inline date editor form — hidden by default, toggled by the pencil button. #}
+            {# Formulario editor de fecha inline — oculto por defecto, activado por el lápiz. #}
+            <form class="date-edit-form align-items-center gap-1 ms-1"
+                  id="form-date-{{ group.entry.pk }}"
+                  style="display:none;"
+                  hx-post="{{ save_date_url }}"
+                  hx-target="#entry-group-{{ group.entry.pk }}"
+                  hx-swap="outerHTML">
+                {% csrf_token %}
+                <input type="date"
+                       name="work_date"
+                       value="{{ group.entry.work_date|date:'Y-m-d'|default:'' }}"
+                       class="form-control form-control-sm date-edit-input"
+                       style="max-width:140px; font-size:0.78rem; padding:0.1rem 0.3rem;"
+                       title="Corregir fecha de este grupo">
+                <button type="submit"
+                        class="btn btn-sm btn-outline-light py-0 px-2"
+                        style="font-size:0.78rem;"
+                        title="Guardar fecha corregida">
+                    <i class="bi bi-check2"></i>
+                </button>
+                <button type="button"
+                        class="btn btn-sm btn-outline-light py-0 px-1 btn-date-cancel"
+                        data-entry-pk="{{ group.entry.pk }}"
+                        style="font-size:0.72rem;"
+                        title="Cancelar edición de fecha">
+                    <i class="bi bi-x"></i>
+                </button>
+            </form>
         </span>
         <div class="d-flex align-items-center gap-2">
             {% if group.day_total is not None %}

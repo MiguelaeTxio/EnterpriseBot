@@ -1910,6 +1910,9 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
         insurer_bases = InsurerBase.objects.filter(
             insurer=insurer,
         ).select_related("base").order_by("base__name")
+        bases = Base.objects.filter(
+            company=company_user.company, is_active=True
+        ).order_by("name")
         base_form = BaseForm()
         ctx = _build_base_context(request, {
             "insurer": insurer,

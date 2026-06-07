@@ -148,7 +148,7 @@
                 <!-- Boton de ayuda del tour — visible solo para roles WORKSHOP y ADMIN -->
                 <button type="button"
                         id="btn-tour-help"
-                        class="btn btn-outline-primary btn-sm d-none d-sm-inline-flex align-items-center gap-1"
+                        class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"
                         title="Visita guiada de esta pantalla">
                     <i class="bi bi-question-circle"></i>
                     <span class="d-none d-md-inline">Ayuda</span>
@@ -211,9 +211,9 @@
     {% if active_nav == 'chat' %}
     <script src="{% static 'panel/js/chat.js' %}" defer></script>
     {% endif %}
-    {% block extra_scripts %}{% endblock %}
     {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
     {% include "panel/_tour_workshop.html" %}
     {% endif %}
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

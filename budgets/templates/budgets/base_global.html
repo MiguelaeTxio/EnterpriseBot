@@ -25,6 +25,7 @@
     </ol>
   </nav>
 
+
   {# ── Cabecera ────────────────────────────────────────────────────── #}
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h4 class="mb-0">
@@ -393,4 +394,51 @@
 })();
 </script>
 
+
+
+{% block extra_scripts %}
+<script>
+
+document.addEventListener("DOMContentLoaded", function () {
+    window.EbTour.register("base_global", [
+        {
+            popover: {
+                title:       "Gesti\u00f3n global de bases",
+                description: "Cat\u00e1logo completo de todas las bases de la empresa, independientemente de la aseguradora.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: ".form-select",
+            popover: {
+                title:       "Filtro por aseguradora",
+                description: "Filtra la tabla para ver solo las bases vinculadas a una aseguradora concreta. No modifica datos, solo la vista.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "[title='Sincronizar calendarios laborales de todas las bases activas']",
+            popover: {
+                title:       "Sincronizar calendarios",
+                description: "Actualiza el calendario de festivos locales de todas las bases activas. H\u00e1zlo al inicio de cada a\u00f1o o al incorporar una base nueva, para que los recargos de nocturno y festivo se apliquen correctamente.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".table",
+            popover: {
+                title:       "Tabla global de bases",
+                description: "El toggle Activa globalmente habilita o deshabilita la base para toda la empresa. Los badges de aseguradoras muestran en cu\u00e1les est\u00e1 activa. Si faltan coordenadas, edita la base y arrastra el marcador en el mapa.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("base_global");
+});
+</script>
+{% endblock extra_scripts %}
 {% endblock %}

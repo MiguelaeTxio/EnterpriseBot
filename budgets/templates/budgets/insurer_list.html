@@ -15,6 +15,7 @@
 {% block content %}
 <div class="container-fluid py-3">
 
+
   {# ------------------------------------------------------------------ #}
   {# Header row: title + new insurer button                              #}
   {# Fila de cabecera: titulo + boton nueva aseguradora                 #}
@@ -97,4 +98,51 @@
   </div>
 
 </div>
+
+
+{% block extra_scripts %}
+<script>
+
+document.addEventListener("DOMContentLoaded", function () {
+    window.EbTour.register("insurer_list", [
+        {
+            popover: {
+                title:       "Listado de aseguradoras",
+                description: "Aqu\u00ed aparecen todas las aseguradoras y clientes configurados para tu empresa. Solo las activas estar\u00e1n disponibles al crear un presupuesto.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: "#insurer-search",
+            popover: {
+                title:       "Buscador",
+                description: "Escribe el nombre o c\u00f3digo de la aseguradora para filtrar la tabla en tiempo real.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#filter-status",
+            popover: {
+                title:       "Filtro de estado",
+                description: "Filtra entre aseguradoras activas e inactivas.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#insurer-table-wrapper",
+            popover: {
+                title:       "Tabla de aseguradoras",
+                description: "Cada fila es una aseguradora. Los botones de la derecha permiten ver el detalle completo de la tarifa, editar sus datos y gestionar las bases de servicio desde las que se atiende a esa aseguradora.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("insurer_list");
+});
+</script>
+{% endblock extra_scripts %}
 {% endblock %}

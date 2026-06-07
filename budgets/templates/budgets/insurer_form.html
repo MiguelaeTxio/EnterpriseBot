@@ -102,6 +102,8 @@
 
   {# Accordion — NO data-bs-parent so panels are independent #}
   {# Acordeon sin data-bs-parent — los paneles son independientes #}
+
+
   <div class="accordion" id="insurerAccordion">
 
     {# ------------------------------------------------------------------ #}
@@ -484,4 +486,274 @@
   {% endif %}{# /mode edit #}
 
 </div>
+
+
+{% block extra_scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    /* ------------------------------------------------------------------ */
+    /* Helper: open a Bootstrap accordion panel by its collapse ID         */
+    /* Ayuda: abrir un panel del acordeon de Bootstrap por su ID collapse  */
+    /* ------------------------------------------------------------------ */
+    function openPanel(collapseId, callback) {
+        var el = document.getElementById(collapseId);
+        if (!el) { if (callback) callback(); return; }
+        if (el.classList.contains("show")) {
+            if (callback) callback();
+            return;
+        }
+        el.addEventListener("shown.bs.collapse", function handler() {
+            el.removeEventListener("shown.bs.collapse", handler);
+            if (callback) callback();
+        });
+        var bsCollapse = bootstrap.Collapse.getOrCreateInstance(el);
+        bsCollapse.show();
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* MODE: CREATE                                                         */
+    /* ------------------------------------------------------------------ */
+    {% if mode == 'create' %}
+    window.EbTour.register("insurer_create", [
+        {
+            popover: {
+                title:       "Nueva aseguradora",
+                description: "Este formulario crea una nueva aseguradora o cliente particular. Una vez creada, acceder\u00e1s al modo de edici\u00f3n donde podr\u00e1s configurar su tarifa y bases de servicio.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: "#id_name",
+            popover: {
+                title:       "Nombre combinado",
+                description: "Nombre que ver\u00e1 el operario al crear un presupuesto. Debe incluir la aseguradora y la empresa prestadora separadas por barra: \u00abEurop Assistance / Transgrual\u00bb.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_insurer_company_name",
+            popover: {
+                title:       "Aseguradora",
+                description: "Nombre puro de la compa\u00f1\u00eda aseguradora: \u00abEurop Assistance\u00bb, \u00abARAG\u00bb, \u00abMapfre\u00bb. Permite agrupar y filtrar tarifas por aseguradora.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_service_company_name",
+            popover: {
+                title:       "Empresa prestadora",
+                description: "Empresa que presta el servicio en campo: \u00abTransgrual\u00bb, \u00abGr\u00faas Alvarez\u00bb, \u00abAsistencia y Gr\u00faas Granada\u00bb.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_code",
+            popover: {
+                title:       "C\u00f3digo interno",
+                description: "Identificador \u00fanico sin espacios. Ejemplos: AXA, RACE, MAPFRE. Se usa internamente para identificar la aseguradora.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_management_fee_percent",
+            popover: {
+                title:       "Gastos de gesti\u00f3n (%)",
+                description: "Porcentaje que se descuenta del total del presupuesto. Pon 0 si no aplica. COVEI por ejemplo usa un 5%.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_surcharges_are_cumulative",
+            popover: {
+                title:       "Recargos acumulables",
+                description: "Si est\u00e1 activado, el recargo nocturno/festivo y el recargo por veh\u00edculo cargado se suman entre s\u00ed. Si est\u00e1 desactivado (lo habitual), solo se aplica el mayor de los dos.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_is_active",
+            popover: {
+                title:       "Activa",
+                description: "Una aseguradora inactiva no aparece en el asistente de presupuestos. D\u00e9jala activa salvo que quieras ocultarla temporalmente.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_is_insurance_company",
+            popover: {
+                title:       "Compa\u00f1\u00eda aseguradora",
+                description: "Activado: es una aseguradora. Desactivado: es un cliente particular con tarifa propia. El asistente de presupuestos mostrar\u00e1 \u00abParticular\u00bb junto al nombre cuando est\u00e9 desactivado.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_always_apply_iva",
+            popover: {
+                title:       "Aplicar IVA siempre",
+                description: "Si est\u00e1 activo, el IVA se aplica obligatoriamente en todos los presupuestos de esta aseguradora y el operario no puede desmarcarlo.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_special_night_holiday_tariff",
+            popover: {
+                title:       "Tarifa especial nocturno/festivo",
+                description: "Si est\u00e1 activo, el motor usar\u00e1 la tabla de precios especiales nocturnos/festivos en lugar del recargo porcentual est\u00e1ndar. Requiere configurar la tabla especial vinculada a la tarifa activa.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#id_notes",
+            popover: {
+                title:       "Notas internas",
+                description: "Campo libre de anotaciones. No visible para el operario. Los datos de tarifa (precios, recargos) se configuran en el Panel 3 una vez creada la aseguradora.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("insurer_create");
+    {% endif %}
+
+    /* ------------------------------------------------------------------ */
+    /* MODE: EDIT                                                           */
+    /* ------------------------------------------------------------------ */
+    {% if mode == 'edit' %}
+    window.EbTour.register("insurer_edit", [
+        {
+            popover: {
+                title:       "Editar aseguradora",
+                description: "Este formulario tiene cuatro paneles independientes. Puedes abrirlos y cerrarlos por separado. Los cambios de cada panel se guardan de forma aut\u00f3noma.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: "#headingGeneral",
+            popover: {
+                title:       "Panel 1 \u2014 Datos generales",
+                description: "Abierto por defecto. Contiene todos los campos de configuraci\u00f3n de la aseguradora: nombre, c\u00f3digo, empresa prestadora, gastos de gesti\u00f3n y switches de comportamiento (IVA, recargos, tarifa especial). Guarda con el bot\u00f3n Guardar cambios de este panel.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#headingTariff",
+            popover: {
+                title:       "Panel 2 \u2014 Tarifa activa",
+                description: "Pulsa el encabezado para desplegarlo. Muestra el a\u00f1o y fechas de vigencia de la tarifa en curso (solo lectura) y un campo de notas editable. Desde aqu\u00ed tambi\u00e9n puedes crear una nueva versi\u00f3n de tarifa cuando llegue el cambio de a\u00f1o, y consultar el historial de versiones anteriores.",
+                side:        "bottom",
+                align:       "start",
+                onNextClick: function () {
+                    openPanel("collapseTariff", function () {
+                        window.EbTour.start("insurer_edit");
+                    });
+                },
+            },
+        },
+        {
+            element: "#headingLines",
+            popover: {
+                title:       "Panel 3 \u2014 L\u00edneas de tarifa",
+                description: "Contiene toda la tabla de precios agrupada por tipo de veh\u00edculo. Cada fila es una l\u00ednea de tarifa con los siguientes campos:",
+                side:        "bottom",
+                align:       "start",
+                onNextClick: function () {
+                    openPanel("collapseLines", function () {
+                        window.EbTour.start("insurer_edit");
+                    });
+                },
+            },
+        },
+        {
+            element: ".btn-outline-success",
+            popover: {
+                title:       "A\u00f1adir l\u00ednea",
+                description: "Crea una nueva l\u00ednea de tarifa. Al pulsar aparece un formulario inline para seleccionar el concepto y el tipo de veh\u00edculo al que aplica.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "th.ps-3",
+            popover: {
+                title:       "Columna Concepto",
+                description: "Tipo de servicio: Enganche/Salida, Kil\u00f3metro, Hora de rescate, Desbloqueo, Hora de espera, Mano de obra, etc. Se selecciona de una lista desplegable.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "th:nth-child(2)",
+            popover: {
+                title:       "Columna Unidad",
+                description: "C\u00f3mo se factura el concepto: Fijo (importe \u00fanico), Por kil\u00f3metro, Por hora, o Por porcentaje. Determina c\u00f3mo el motor de c\u00e1lculo aplica el precio.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "th.text-end:nth-child(3)",
+            popover: {
+                title:       "Columna Precio",
+                description: "Importe en euros de la l\u00ednea. Se guarda autom\u00e1ticamente al salir del campo (sin bot\u00f3n de guardar). Usa punto o coma como separador decimal.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "th.text-end:nth-child(4)",
+            popover: {
+                title:       "Columna Umbral km",
+                description: "Kil\u00f3metro a partir del cual se aplica esta l\u00ednea. \u00datil cuando la tarifa tiene dos tramos: un precio hasta X km y otro distinto a partir de X km. Dejar vac\u00edo si no aplica tramo.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "th.text-end:nth-child(5)",
+            popover: {
+                title:       "Columna M\u00edn. facturable",
+                description: "Cantidad m\u00ednima que se factura aunque el servicio sea menor. Por ejemplo: si el m\u00ednimo es 2 horas de rescate, aunque solo se trabajen 45 minutos se cobrar\u00e1n 2 horas.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "th.text-center",
+            popover: {
+                title:       "Columna Req. autorizaci\u00f3n",
+                description: "Si est\u00e1 marcado, este concepto requiere autorizaci\u00f3n previa de la aseguradora antes de aplicarse en el presupuesto. El sistema lo indicar\u00e1 al operario.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "#headingBases",
+            popover: {
+                title:       "Panel 4 \u2014 Bases de servicio",
+                description: "Muestra las bases desde las que se presta servicio a esta aseguradora. Pulsa Gestionar bases para activar o desactivar bases, editar coordenadas y sincronizar calendarios de festivos.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("insurer_edit");
+    {% endif %}
+
+});
+</script>
+{% endblock extra_scripts %}
 {% endblock %}

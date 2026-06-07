@@ -383,4 +383,58 @@
     </div>
 
 </div>
+
+{% block extra_scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    window.EbTour.register("work_order_detail", [
+        {
+            popover: {
+                title:       "Detalle de la orden de trabajo",
+                description: "Vista de solo lectura con toda la información de la orden de trabajo TIREA: expediente, vehículo, recogida, entrega y unidades asignadas.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: ".card.mb-3.shadow-sm",
+            popover: {
+                title:       "Expediente TIREA",
+                description: "Número de expediente, compañía aseguradora, servicio contratado y estado actual de la orden.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".card.mb-3.shadow-sm:nth-child(2)",
+            popover: {
+                title:       "Datos del vehículo",
+                description: "Matrícula, marca, modelo, tipo y datos del asegurado.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".card.mb-3.shadow-sm:nth-child(3)",
+            popover: {
+                title:       "Recogida y entrega",
+                description: "Dirección de recogida del vehículo y punto de destino de entrega con kilómetros.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".card.mb-3.shadow-sm:last-child",
+            popover: {
+                title:       "Unidades",
+                description: "Cada unidad es un vehículo de asistencia asignado a esta orden. Desde aquí puedes acceder al albarán para registrar los datos del servicio y generar el PDF cuando esté completado.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("work_order_detail");
+});
+</script>
+{% endblock extra_scripts %}
 {% endblock %}

@@ -256,4 +256,67 @@
 })();
 </script>
 
+
+{% block extra_scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    window.EbTour.register("base_edit", [
+        {
+            popover: {
+                title:       "Editar base de servicio",
+                description: "Aquí puedes modificar los datos de la base y su ubicación geográfica en el mapa.",
+                side:        "over",
+                align:       "center",
+            },
+        },
+        {
+            element: "[name='name']",
+            popover: {
+                title:       "Nombre de la base",
+                description: "Nombre identificativo de la base. Aparece en los listados y en el asistente de presupuesto.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "[name='municipality']",
+            popover: {
+                title:       "Municipio",
+                description: "Municipio donde está ubicada la base. Se usa para asignar el calendario de festivos locales.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: "[name='is_active']",
+            popover: {
+                title:       "Base activa globalmente",
+                description: "Si está marcada, la base está operativa para toda la empresa. Si se desactiva, deja de estar disponible en todos los presupuestos independientemente de las aseguradoras.",
+                side:        "bottom",
+                align:       "start",
+            },
+        },
+        {
+            element: ".card.border-secondary",
+            popover: {
+                title:       "Geolocalización",
+                description: "Usa el buscador para encontrar la dirección o mueve el mapa hasta que el pin rojo quede sobre la ubicación exacta de la base. Las coordenadas se actualizan automáticamente y se guardan al enviar el formulario. Son imprescindibles para el cálculo de kilómetros en los presupuestos.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+        {
+            element: "button[type='submit']",
+            popover: {
+                title:       "Guardar cambios",
+                description: "Guarda el nombre, municipio, coordenadas y estado de la base.",
+                side:        "top",
+                align:       "start",
+            },
+        },
+    ]);
+    window.EbTour.startIfNew("base_edit");
+});
+</script>
+{% endblock extra_scripts %}
 {% endblock %}
