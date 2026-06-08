@@ -43,6 +43,7 @@
 ./panel/templates/panel/chat/room_list.html
 ./panel/templates/panel/chat/_messages_fragment.html
 ./panel/templates/panel/chat/breakdown_ticket_detail.html
+./panel/templates/panel/_tour_assistance.html
 ./panel/templates/panel/whatsapp/active_session_list.html
 ./panel/templates/panel/whatsapp/template_list.html
 ./panel/templates/panel/voiceprofile/detail.html
@@ -62,6 +63,7 @@
 ./panel/templates/panel/_overlap_incident_modal.html
 ./panel/templates/panel/_tour_workshop.html
 ./panel/templates/panel/dashboard.html
+./panel/templates/panel/analytics_lab.html
 ./panel/templates/panel/presence/status.html
 ./panel/templates/panel/profile/own_profile.html
 ./panel/templates/panel/company/settings.html
@@ -72,6 +74,7 @@
 ./panel/templates/panel/users/create.html
 ./panel/templates/panel/users/form.html
 ./panel/templates/panel/users/bulk_delete_confirm.html
+./panel/templates/panel/_tour_assistance_cdn.html
 ./panel/templates/panel/contacts/list.html
 ./panel/templates/panel/contacts/form.html
 ./panel/templates/panel/contacts/confirm_delete.html
@@ -370,6 +373,7 @@
 ./budgets/management/commands/seed_bases.py
 ./budgets/management/commands/seed_insurer_tariffs.py
 ./budgets/management/commands/sync_base_calendars.py
+./budgets/management/commands/seed_unlock_lines.py
 ./budgets/management/__init__.py
 ./budgets/services.py
 ./ivr_config/signals.py

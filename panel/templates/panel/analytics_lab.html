@@ -1,0 +1,1055 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/analytics_lab.html #}
+{#                                                                                      #}
+{# Unified Analytics Laboratory — Hito 20.                                            #}
+{# Three-panel layout: Lab (selectors) + Report (table) + Charts (ECharts 5).        #}
+{# Draggable divider between report and chart panels.                                 #}
+{# Independent fullscreen per panel via Element.requestFullscreen().                  #}
+{# Data fetched client-side from /panel/analytics/lab/data/.                         #}
+{# Excel export via POST to /panel/analytics/lab/export/.                             #}
+{#                                                                                      #}
+{# Laboratorio de Análisis Unificado — Hito 20.                                       #}
+{# Diseño de tres paneles: Laboratorio (selectores) + Informe (tabla) + Gráficas.    #}
+{# Divisor arrastrable entre paneles de informe y gráficas.                           #}
+{# Pantalla completa independiente por panel via Element.requestFullscreen().         #}
+{# Datos obtenidos en el cliente desde /panel/analytics/lab/data/.                   #}
+{# Exportación Excel via POST a /panel/analytics/lab/export/.                        #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}Laboratorio de Análisis{% endblock %}
+{% block page_title %}Laboratorio de Análisis{% endblock %}
+
+{% block content %}
+{# ECharts 5 from CDN — no venv installation required.                                #}
+{# ECharts 5 desde CDN — no requiere instalación en el venv.                         #}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+<style>
+/* ============================================================
+   Lab layout — Diseño del laboratorio
+   ============================================================ */
+#lab-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 0.75rem 0.75rem;
+    height: calc(100vh - 120px);
+    min-height: 600px;
+    box-sizing: border-box;
+}
+
+/* Top panel: laboratory selectors — Panel superior: selectores */
+#lab-top {
+    flex: 0 0 auto;
+    background: var(--bs-body-bg, #fff);
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.25s ease;
+    overflow: hidden;
+}
+#lab-top.collapsed {
+    max-height: 2.6rem !important;
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+}
+#lab-top.collapsed #lab-form-body {
+    display: none;
+}
+
+/* Bottom row: report + divider + chart — Fila inferior: informe + divisor + gráfica */
+#lab-bottom {
+    display: flex;
+    flex: 1 1 0;
+    gap: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+/* Report panel — Panel de informe */
+#lab-report {
+    flex: 0 0 48%;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    overflow: hidden;
+    border-right: 1px solid var(--bs-border-color, #dee2e6);
+}
+#lab-report-header {
+    flex: 0 0 auto;
+    padding: 0.4rem 0.75rem;
+    background: var(--bs-light, #f8f9fa);
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+#lab-report-body {
+    flex: 1 1 0;
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+/* Draggable divider — Divisor arrastrable */
+#lab-divider {
+    flex: 0 0 6px;
+    cursor: col-resize;
+    background: var(--bs-border-color, #dee2e6);
+    transition: background 0.15s;
+    position: relative;
+    z-index: 10;
+}
+#lab-divider:hover,
+#lab-divider.dragging {
+    background: var(--bs-primary, #0d6efd);
+}
+#lab-divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 32px;
+    border-left: 2px dotted rgba(0,0,0,0.25);
+    border-right: 2px dotted rgba(0,0,0,0.25);
+}
+
+/* Chart panel — Panel de gráficas */
+#lab-chart {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    overflow: hidden;
+}
+#lab-chart-header {
+    flex: 0 0 auto;
+    padding: 0.4rem 0.75rem;
+    background: var(--bs-light, #f8f9fa);
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+#lab-chart-body {
+    flex: 1 1 0;
+    overflow: hidden;
+    position: relative;
+}
+#lab-echarts {
+    width: 100%;
+    height: 100%;
+}
+
+/* Summary bar — Barra de resumen */
+#lab-summary {
+    display: none;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    padding: 0.4rem 0 0.1rem;
+}
+#lab-summary .badge {
+    font-size: 0.78rem;
+}
+
+/* Empty state — Estado vacío */
+#lab-empty-report,
+#lab-empty-chart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--bs-secondary, #6c757d);
+    opacity: 0.5;
+    pointer-events: none;
+    user-select: none;
+}
+#lab-empty-report i,
+#lab-empty-chart i {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Fullscreen overrides — Ajustes para pantalla completa */
+#lab-report:fullscreen,
+#lab-chart:fullscreen,
+#lab-top:fullscreen {
+    background: var(--bs-body-bg, #fff);
+    padding: 1rem;
+    overflow: auto;
+}
+#lab-chart:fullscreen #lab-chart-body,
+#lab-chart:fullscreen #lab-echarts {
+    height: calc(100vh - 3rem);
+}
+
+/* Spinner — Indicador de carga */
+#lab-spinner {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+}
+
+/* Table in report panel — Tabla en panel de informe */
+#lab-table {
+    font-size: 0.8rem;
+}
+#lab-table th {
+    position: sticky;
+    top: 0;
+    background: var(--bs-light, #f8f9fa);
+    z-index: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+#lab-table th:hover {
+    background: var(--bs-primary-subtle, #cfe2ff);
+}
+#lab-table th .sort-icon {
+    font-size: 0.65rem;
+    opacity: 0.5;
+    margin-left: 0.2rem;
+}
+#lab-table th.sorted-asc .sort-icon::before  { content: '▲'; opacity: 1; }
+#lab-table th.sorted-desc .sort-icon::before { content: '▼'; opacity: 1; }
+</style>
+
+<div id="lab-wrapper">
+
+    {# ================================================================== #}
+    {# TOP PANEL — Laboratory selectors / Selectores del laboratorio       #}
+    {# ================================================================== #}
+    <div id="lab-top">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <span class="fw-semibold text-primary">
+                <i class="bi bi-flask me-1"></i>Laboratorio de Análisis
+            </span>
+            <div class="d-flex align-items-center gap-2">
+                <button id="btn-analyze"
+                        class="btn btn-sm btn-primary"
+                        onclick="labAnalyze()">
+                    <i class="bi bi-play-fill me-1"></i>Analizar
+                </button>
+                <button class="btn btn-sm btn-outline-secondary"
+                        onclick="labToggleTop()"
+                        title="Colapsar / expandir panel">
+                    <i id="btn-collapse-icon" class="bi bi-chevron-up"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary"
+                        onclick="labFullscreen('lab-top')"
+                        title="Pantalla completa">
+                    <i class="bi bi-fullscreen"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="lab-form-body">
+
+            {# ---------------------------------------------------------- #}
+            {# FIELD BUILDER — Constructor de campos de análisis           #}
+            {# El usuario añade campos uno a uno. El backend cruza todos.  #}
+            {# ---------------------------------------------------------- #}
+            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                <span class="text-muted small fw-semibold">Campos de análisis:</span>
+                <div id="lab-fields-container" class="d-flex flex-wrap gap-2 align-items-center">
+                    {# Campo 1 por defecto — Field 1 default #}
+                    <div class="lab-field-row d-flex align-items-center gap-1"
+                         data-field-idx="0">
+                        <select class="form-select form-select-sm lab-field-type"
+                                style="width:140px;"
+                                onchange="labFieldTypeChanged(this)">
+                            <option value="">-- campo --</option>
+                            {% if has_d1 %}<option value="worker">Operario</option>{% endif %}
+                            {% if has_d2 %}<option value="machine">Máquina / CdG</option>{% endif %}
+                            {% if has_d3 %}<option value="fault_category">Familia avería</option>{% endif %}
+                            <option value="spare_part">Repuesto</option>
+                            <option value="period">Periodo temporal</option>
+                        </select>
+                        <select class="form-select form-select-sm lab-field-value"
+                                style="width:160px; display:none;">
+                            <option value="*">Todos</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline-danger lab-field-remove"
+                                style="display:none; padding:0.15rem 0.4rem; font-size:0.72rem;"
+                                onclick="labRemoveField(this)"
+                                title="Eliminar campo">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-outline-primary"
+                        style="padding:0.2rem 0.55rem; font-size:0.78rem;"
+                        onclick="labAddField()"
+                        title="Añadir campo de análisis">
+                    <i class="bi bi-plus-lg"></i> Añadir campo
+                </button>
+                <span id="lab-field-warning"
+                      class="text-warning small"
+                      style="display:none;">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Selecciona al menos 2 campos para analizar.
+                </span>
+            </div>
+
+            {# ---------------------------------------------------------- #}
+            {# DATE RANGE + GRANULARITY + CHART TYPE                      #}
+            {# ---------------------------------------------------------- #}
+            <div class="row g-2 align-items-end mt-1">
+                <div class="col-6 col-sm-4 col-md-2">
+                    <label class="form-label form-label-sm mb-1 fw-semibold">Desde</label>
+                    <input type="date" id="lab-date-from" class="form-control form-control-sm"
+                           value="{{ date_from_default }}">
+                </div>
+                <div class="col-6 col-sm-4 col-md-2">
+                    <label class="form-label form-label-sm mb-1 fw-semibold">Hasta</label>
+                    <input type="date" id="lab-date-to" class="form-control form-control-sm"
+                           value="{{ date_to_default }}">
+                </div>
+                <div class="col-12 col-sm-4 col-md-2">
+                    <label class="form-label form-label-sm mb-1 fw-semibold">Agrupación</label>
+                    <select id="lab-granularity" class="form-select form-select-sm">
+                        <option value="month" selected>Mensual</option>
+                        <option value="week">Semanal</option>
+                        <option value="day">Diaria</option>
+                    </select>
+                </div>
+                <div class="col-12 col-sm-6 col-md-2">
+                    <label class="form-label form-label-sm mb-1 fw-semibold">Gráfico</label>
+                    <select id="lab-chart-type" class="form-select form-select-sm">
+                        <option value="bar">Barras</option>
+                        <option value="line">Línea</option>
+                        <option value="pie">Tarta</option>
+                        <option value="scatter">Dispersión</option>
+                        <option value="heatmap">Heatmap</option>
+                    </select>
+                </div>
+            </div>
+
+            {# Summary badges — Insignias de resumen #}
+            <div id="lab-summary" class="mt-2">
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">
+                    <i class="bi bi-clock me-1"></i>
+                    <span id="summary-hours">—</span> h
+                </span>
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                    <i class="bi bi-tools me-1"></i>
+                    <span id="summary-parts">—</span> intervenciones
+                </span>
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                    <i class="bi bi-calculator me-1"></i>
+                    Media: <span id="summary-avg">—</span> h/intervención
+                </span>
+            </div>
+        </div>
+    </div>
+
+    {# ================================================================== #}
+    {# BOTTOM ROW — Report + Divider + Chart                               #}
+    {# ================================================================== #}
+    <div id="lab-bottom">
+
+        {# ---------------------------------------------------------- #}
+        {# REPORT PANEL — Panel de informe tabular                     #}
+        {# ---------------------------------------------------------- #}
+        <div id="lab-report">
+            <div id="lab-report-header">
+                <span class="fw-semibold small text-muted">
+                    <i class="bi bi-table me-1"></i>Informe
+                </span>
+                <div class="d-flex align-items-center gap-1">
+                    <button class="btn btn-xs btn-outline-success"
+                            style="font-size:0.72rem;padding:0.15rem 0.45rem;"
+                            onclick="labExport()"
+                            title="Exportar a Excel">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                    </button>
+                    <button class="btn btn-xs btn-outline-secondary"
+                            style="font-size:0.72rem;padding:0.15rem 0.45rem;"
+                            onclick="labFullscreen('lab-report')"
+                            title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="lab-report-body">
+                <div id="lab-empty-report">
+                    <i class="bi bi-table"></i>
+                    <span class="small">Selecciona una dimensión y pulsa Analizar</span>
+                </div>
+                <div id="lab-table-wrap" style="display:none;">
+                    <table class="table table-sm table-hover align-middle mb-0" id="lab-table">
+                        <thead id="lab-thead"></thead>
+                        <tbody id="lab-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {# ---------------------------------------------------------- #}
+        {# DRAGGABLE DIVIDER — Divisor arrastrable                     #}
+        {# ---------------------------------------------------------- #}
+        <div id="lab-divider"></div>
+
+        {# ---------------------------------------------------------- #}
+        {# CHART PANEL — Panel de gráficas ECharts                    #}
+        {# ---------------------------------------------------------- #}
+        <div id="lab-chart">
+            <div id="lab-chart-header">
+                <span class="fw-semibold small text-muted">
+                    <i class="bi bi-bar-chart-line me-1"></i>Gráfica
+                </span>
+                <button class="btn btn-xs btn-outline-secondary"
+                        style="font-size:0.72rem;padding:0.15rem 0.45rem;"
+                        onclick="labFullscreen('lab-chart')"
+                        title="Pantalla completa">
+                    <i class="bi bi-fullscreen"></i>
+                </button>
+            </div>
+            <div id="lab-chart-body">
+                <div id="lab-spinner">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                </div>
+                <div id="lab-empty-chart">
+                    <i class="bi bi-bar-chart-line"></i>
+                    <span class="small">Los gráficos aparecerán aquí</span>
+                </div>
+                <div id="lab-echarts"></div>
+            </div>
+        </div>
+
+    </div>{# /lab-bottom #}
+</div>{# /lab-wrapper #}
+
+{# Hidden CSRF token for POST requests — Token CSRF oculto para peticiones POST #}
+{% verbatim %}{% endverbatim %}
+<input type="hidden" id="lab-csrf" value="{{ csrf_token }}">
+
+<script>
+/* ================================================================
+   EnterpriseBot — Laboratorio de Análisis Unificado (Hito 20)
+   ECharts 5 + JS puro. Sin dependencias adicionales.
+   ================================================================ */
+
+// ----------------------------------------------------------------
+// Selector data from Django context — Datos de selectores desde Django
+// ----------------------------------------------------------------
+const LAB_OPERATORS  = {{ operators|safe }};
+const LAB_MACHINES   = {{ machines|safe }};
+const LAB_FAULT_CATS = {{ fault_categories|safe }};  // [{key, label}, ...]
+
+const LAB_CSRF = document.getElementById('lab-csrf').value;
+
+// ----------------------------------------------------------------
+// ECharts instance — Instancia ECharts
+// ----------------------------------------------------------------
+let labChart = null;
+
+// ----------------------------------------------------------------
+// Current table data for export — Datos de tabla actuales para exportar
+// ----------------------------------------------------------------
+let labCurrentColumns = [];
+let labCurrentRows    = [];
+let labCurrentDim     = 'cross';
+let labCurrentFrom    = '';
+let labCurrentTo      = '';
+
+// ----------------------------------------------------------------
+// Sort state — Estado de ordenación
+// ----------------------------------------------------------------
+let labSortCol = -1;
+let labSortAsc = true;
+
+// ----------------------------------------------------------------
+// Field counter — Contador de campos
+// ----------------------------------------------------------------
+let labFieldIdx = 1;
+
+// ----------------------------------------------------------------
+// Init on DOM ready — Inicialización al cargar el DOM
+// ----------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', function () {
+    labInitChart();
+    labInitDivider();
+});
+
+// ----------------------------------------------------------------
+// ECharts init — Inicialización de ECharts
+// ----------------------------------------------------------------
+function labInitChart() {
+    const el = document.getElementById('lab-echarts');
+    labChart  = echarts.init(el, null, { renderer: 'canvas' });
+    window.addEventListener('resize', function () {
+        if (labChart) labChart.resize();
+    });
+}
+
+// ----------------------------------------------------------------
+// Add field row — Añadir fila de campo
+// Clones the field row template and appends it to the container.
+// Clona la plantilla de fila de campo y la añade al contenedor.
+// ----------------------------------------------------------------
+function labAddField() {
+    const container = document.getElementById('lab-fields-container');
+    const idx       = labFieldIdx++;
+
+    const row = document.createElement('div');
+    row.className        = 'lab-field-row d-flex align-items-center gap-1';
+    row.dataset.fieldIdx = idx;
+
+    // Type selector — Selector de tipo
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'form-select form-select-sm lab-field-type';
+    typeSelect.style.width = '140px';
+    typeSelect.innerHTML = [
+        '<option value="">-- campo --</option>',
+        LAB_OPERATORS.length  ? '<option value="worker">Operario</option>'          : '',
+        LAB_MACHINES.length   ? '<option value="machine">M\u00e1quina / CdG</option>'   : '',
+        LAB_FAULT_CATS.length ? '<option value="fault_category">Familia aver\u00eda</option>' : '',
+        '<option value="spare_part">Repuesto</option>',
+        '<option value="period">Periodo temporal</option>',
+    ].join('');
+    typeSelect.addEventListener('change', function () { labFieldTypeChanged(typeSelect); });
+
+    // Value selector — Selector de valor
+    const valSelect = document.createElement('select');
+    valSelect.className = 'form-select form-select-sm lab-field-value';
+    valSelect.style.cssText = 'width:160px; display:none;';
+    valSelect.innerHTML = '<option value="*">Todos</option>';
+
+    // Remove button — Botón de eliminar
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn btn-sm btn-outline-danger lab-field-remove';
+    removeBtn.style.cssText = 'padding:0.15rem 0.4rem; font-size:0.72rem;';
+    removeBtn.title = 'Eliminar campo';
+    removeBtn.innerHTML = '<i class="bi bi-x"></i>';
+    removeBtn.addEventListener('click', function () { labRemoveField(removeBtn); });
+
+    row.appendChild(typeSelect);
+    row.appendChild(valSelect);
+    row.appendChild(removeBtn);
+    container.appendChild(row);
+}
+
+// ----------------------------------------------------------------
+// Remove field row — Eliminar fila de campo
+// ----------------------------------------------------------------
+function labRemoveField(btn) {
+    const row = btn.closest('.lab-field-row');
+    if (row) row.remove();
+}
+
+// ----------------------------------------------------------------
+// Field type changed — Cambio de tipo de campo
+// Populates the value selector according to the selected field type.
+// Rellena el selector de valor según el tipo de campo seleccionado.
+// ----------------------------------------------------------------
+function labFieldTypeChanged(typeSelect) {
+    const row       = typeSelect.closest('.lab-field-row');
+    const valSelect = row.querySelector('.lab-field-value');
+    const removeBtn = row.querySelector('.lab-field-remove');
+    const fieldType = typeSelect.value;
+
+    // Reset value selector — Resetear selector de valor
+    valSelect.innerHTML = '<option value="*">Todos</option>';
+
+    if (!fieldType) {
+        valSelect.style.display = 'none';
+        if (removeBtn) removeBtn.style.display = 'none';
+        return;
+    }
+
+    // Show remove button for all non-empty types
+    // Mostrar botón eliminar para todos los tipos no vacíos
+    if (removeBtn) removeBtn.style.display = '';
+
+    if (fieldType === 'worker') {
+        LAB_OPERATORS.forEach(function (op) {
+            const opt       = document.createElement('option');
+            opt.value       = op;
+            opt.textContent = op;
+            valSelect.appendChild(opt);
+        });
+        valSelect.style.display = '';
+    } else if (fieldType === 'machine') {
+        LAB_MACHINES.forEach(function (m) {
+            const opt       = document.createElement('option');
+            opt.value       = m.pk;
+            opt.textContent = m.code + ' \u2014 ' + m.brand_model;
+            valSelect.appendChild(opt);
+        });
+        valSelect.style.display = '';
+    } else if (fieldType === 'fault_category') {
+        LAB_FAULT_CATS.forEach(function (fc) {
+            const opt       = document.createElement('option');
+            opt.value       = fc.key;
+            opt.textContent = fc.label;
+            valSelect.appendChild(opt);
+        });
+        valSelect.style.display = '';
+    } else if (fieldType === 'spare_part') {
+        // Free text input for spare part material search
+        // Campo de texto libre para búsqueda de repuesto por material
+        valSelect.innerHTML = '<option value="*">Con cualquier repuesto</option>';
+        valSelect.style.display = '';
+    } else if (fieldType === 'period') {
+        // Period has no entity selector — date range is enough
+        // Periodo no tiene selector de entidad — el rango de fechas es suficiente
+        valSelect.style.display = 'none';
+    }
+}
+
+// ----------------------------------------------------------------
+// Build fields parameter — Construir parámetro fields
+// Collects all active field rows and builds the 'fields' query param.
+// Recoge todas las filas de campo activas y construye el parámetro 'fields'.
+// ----------------------------------------------------------------
+function labBuildFieldsParam() {
+    const rows   = document.querySelectorAll('#lab-fields-container .lab-field-row');
+    const tokens = [];
+    rows.forEach(function (row) {
+        const typeSelect = row.querySelector('.lab-field-type');
+        const valSelect  = row.querySelector('.lab-field-value');
+        const fieldType  = typeSelect ? typeSelect.value : '';
+        if (!fieldType) return;
+        const fieldValue = (valSelect && valSelect.style.display !== 'none')
+            ? (valSelect.value || '*')
+            : '*';
+        // Encode spaces as + for URL compatibility
+        // Codificar espacios como + para compatibilidad con URL
+        tokens.push(fieldType + ':' + fieldValue.replace(/ /g, '+'));
+    });
+    return tokens.join(',');
+}
+
+// ----------------------------------------------------------------
+// Count active fields — Contar campos activos
+// Returns the number of field rows with a non-empty type selected.
+// Devuelve el número de filas de campo con tipo no vacío seleccionado.
+// ----------------------------------------------------------------
+function labCountActiveFields() {
+    let count = 0;
+    document.querySelectorAll('#lab-fields-container .lab-field-type').forEach(function (sel) {
+        if (sel.value) count++;
+    });
+    return count;
+}
+
+// ----------------------------------------------------------------
+// Analyze — Analizar
+// Collects active fields, validates minimum count, builds params
+// and fetches data from the cross-analysis endpoint.
+// Recoge campos activos, valida el mínimo, construye parámetros
+// y obtiene datos del endpoint de análisis cruzado.
+// ----------------------------------------------------------------
+function labAnalyze() {
+    const warning   = document.getElementById('lab-field-warning');
+    const activeCount = labCountActiveFields();
+
+    if (activeCount < 2) {
+        warning.style.display = '';
+        return;
+    }
+    warning.style.display = 'none';
+
+    const fields_param = labBuildFieldsParam();
+    const date_from    = document.getElementById('lab-date-from').value;
+    const date_to      = document.getElementById('lab-date-to').value;
+    const granul       = document.getElementById('lab-granularity').value;
+    const chart_type   = document.getElementById('lab-chart-type').value;
+
+    // Store current params for export — Guardar parámetros para exportar
+    labCurrentDim  = 'cross';
+    labCurrentFrom = date_from;
+    labCurrentTo   = date_to;
+
+    // Show spinner, hide empty states — Mostrar spinner, ocultar estados vacíos
+    document.getElementById('lab-spinner').style.display = 'block';
+    document.getElementById('lab-empty-chart').style.display = 'none';
+    document.getElementById('lab-empty-report').style.display = 'none';
+    document.getElementById('lab-table-wrap').style.display = 'none';
+
+    const params = new URLSearchParams({
+        fields:      fields_param,
+        date_from:   date_from,
+        date_to:     date_to,
+        granularity: granul,
+        chart_type:  chart_type,
+    });
+
+    fetch('/panel/analytics/lab/data/?' + params.toString(), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function (resp) { return resp.json(); })
+    .then(function (data) {
+        document.getElementById('lab-spinner').style.display = 'none';
+        if (!data.ok) {
+            labShowChartError(data.error || 'Error desconocido.');
+            return;
+        }
+        labRenderChart(data.chart);
+        labRenderTable(data.table);
+        labRenderSummary(data.summary);
+    })
+    .catch(function (err) {
+        document.getElementById('lab-spinner').style.display = 'none';
+        labShowChartError('Error de red: ' + err.message);
+    });
+}
+
+// ----------------------------------------------------------------
+// Render ECharts chart — Renderizar gráfico ECharts
+// ----------------------------------------------------------------
+function labRenderChart(chart) {
+    if (!labChart) labInitChart();
+
+    const type   = chart.type;
+    const title  = chart.title  || '';
+    const xAxis  = chart.xAxis  || [];
+    const series = chart.series || [];
+
+    let option = {};
+
+    if (type === 'pie') {
+        // Pie chart — Gráfico de tarta
+        const pieSeries = series[0] || {};
+        option = {
+            title:   { text: title, left: 'center', top: 8, textStyle: { fontSize: 13 } },
+            tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+            legend:  { orient: 'vertical', left: 'left', top: 'middle', type: 'scroll' },
+            series:  [{
+                type:      'pie',
+                radius:    ['35%', '65%'],
+                center:    ['60%', '55%'],
+                data:      pieSeries.data || [],
+                emphasis:  { itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.4)' } },
+                label:     { show: true, formatter: '{b}: {d}%' },
+            }],
+        };
+
+    } else if (type === 'scatter') {
+        // Scatter chart — Gráfico de dispersión
+        const scatterSeries = series[0] || {};
+        const scatterData   = (scatterSeries.data || []).map(function (p) {
+            return { value: [p[0], p[1]], name: p[2] || '' };
+        });
+        option = {
+            title:   { text: title, left: 'center', top: 8, textStyle: { fontSize: 13 } },
+            tooltip: {
+                trigger: 'item',
+                formatter: function (params) {
+                    return params.name + '<br/>Horas: ' + params.value[0] + '<br/>Intervenciones: ' + params.value[1];
+                }
+            },
+            xAxis:   { name: 'Horas acumuladas', type: 'value', nameLocation: 'end' },
+            yAxis:   { name: 'Intervenciones',   type: 'value', nameLocation: 'end' },
+            series:  [{
+                type:        'scatter',
+                data:        scatterData,
+                symbolSize:  12,
+                emphasis:    { focus: 'self' },
+                label:       { show: true, formatter: '{@name}', position: 'top', fontSize: 10 },
+            }],
+        };
+
+    } else if (type === 'heatmap') {
+        // Heatmap — Mapa de calor
+        const heatSeries = series[0] || {};
+        const vm         = chart.visualMap || { min: 0, max: 10 };
+        option = {
+            title:     { text: title, left: 'center', top: 8, textStyle: { fontSize: 13 } },
+            tooltip:   { position: 'top', formatter: function (p) { return p.name + ': ' + p.value[2]; } },
+            grid:      { top: '15%', left: '15%', right: '10%', bottom: '15%' },
+            xAxis:     { type: 'category', data: xAxis, axisLabel: { rotate: 30, fontSize: 10 } },
+            yAxis:     { type: 'category', data: chart.yAxis || [], axisLabel: { fontSize: 10 } },
+            visualMap: {
+                min:        vm.min,
+                max:        vm.max,
+                calculable: true,
+                orient:     'horizontal',
+                left:       'center',
+                bottom:     '2%',
+                inRange:    { color: ['#e0f3f8', '#74add1', '#313695'] },
+            },
+            series:    [{
+                type:        'heatmap',
+                data:        heatSeries.data || [],
+                label:       { show: true, fontSize: 10 },
+                emphasis:    { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } },
+            }],
+        };
+
+    } else if (type === 'treemap') {
+        // Treemap
+        const tmSeries = series[0] || {};
+        option = {
+            title:   { text: title, left: 'center', top: 8, textStyle: { fontSize: 13 } },
+            tooltip: { formatter: '{b}: {c}' },
+            series:  [{
+                type:             'treemap',
+                data:             tmSeries.data || [],
+                visibleMin:       1,
+                label:            { show: true, formatter: '{b}\n{c}' },
+                upperLabel:       { show: true, height: 20, color: '#fff', fontWeight: 'bold' },
+                itemStyle:        { borderColor: '#fff', borderWidth: 1, gapWidth: 1 },
+                roam:             false,
+                breadcrumb:       { show: true, bottom: 4 },
+                emphasis:         { label: { show: true } },
+            }],
+        };
+
+    } else {
+        // Bar / Line — Barras / Línea (default)
+        const isStacked = series.length > 1 && series[0].stack;
+        const echartseries = series.map(function (s) {
+            const obj = {
+                name:      s.name,
+                type:      type === 'line' ? 'line' : 'bar',
+                data:      s.data,
+                smooth:    type === 'line',
+                emphasis:  { focus: 'series' },
+                label:     { show: false },
+            };
+            if (s.stack) obj.stack = s.stack;
+            if (type === 'line') {
+                obj.areaStyle = { opacity: 0.08 };
+            }
+            return obj;
+        });
+        option = {
+            title:     { text: title, left: 'center', top: 8, textStyle: { fontSize: 13 } },
+            tooltip:   { trigger: 'axis', axisPointer: { type: type === 'line' ? 'line' : 'shadow' } },
+            legend:    { top: 30, type: 'scroll' },
+            grid:      { top: 70, left: '3%', right: '3%', bottom: '12%', containLabel: true },
+            xAxis:     { type: 'category', data: xAxis, axisLabel: { rotate: 30, fontSize: 10, interval: 0 } },
+            yAxis:     { type: 'value', axisLabel: { fontSize: 10 } },
+            dataZoom:  [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 4 }],
+            series:    echartseries,
+        };
+    }
+
+    labChart.setOption(option, true);
+    // Force resize after render to fill the container correctly.
+    // Forzar resize tras renderizar para ocupar el contenedor correctamente.
+    setTimeout(function () { if (labChart) labChart.resize(); }, 60);
+}
+
+// ----------------------------------------------------------------
+// Render table — Renderizar tabla de informe
+// ----------------------------------------------------------------
+function labRenderTable(table) {
+    labCurrentColumns = table.columns || [];
+    labCurrentRows    = (table.rows   || []).slice();
+    labSortCol        = -1;
+    labSortAsc        = true;
+    labDrawTable();
+}
+
+function labDrawTable() {
+    const thead = document.getElementById('lab-thead');
+    const tbody = document.getElementById('lab-tbody');
+
+    // Header row — Fila de cabecera
+    thead.innerHTML = '';
+    const tr = document.createElement('tr');
+    labCurrentColumns.forEach(function (col, idx) {
+        const th              = document.createElement('th');
+        th.innerHTML          = col + ' <span class="sort-icon"></span>';
+        th.dataset.idx        = idx;
+        if (idx === labSortCol) {
+            th.classList.add(labSortAsc ? 'sorted-asc' : 'sorted-desc');
+        }
+        th.addEventListener('click', function () {
+            if (labSortCol === idx) {
+                labSortAsc = !labSortAsc;
+            } else {
+                labSortCol = idx;
+                labSortAsc = true;
+            }
+            labDrawTable();
+        });
+        tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+
+    // Sort rows — Ordenar filas
+    const sorted = labCurrentRows.slice().sort(function (a, b) {
+        if (labSortCol < 0) return 0;
+        const va = a[labSortCol];
+        const vb = b[labSortCol];
+        if (typeof va === 'number' && typeof vb === 'number') {
+            return labSortAsc ? va - vb : vb - va;
+        }
+        const sa = String(va || '');
+        const sb = String(vb || '');
+        return labSortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+    });
+
+    // Body rows — Filas del cuerpo
+    tbody.innerHTML = '';
+    sorted.forEach(function (row) {
+        const tr = document.createElement('tr');
+        row.forEach(function (cell, ci) {
+            const td         = document.createElement('td');
+            const isNum      = typeof cell === 'number';
+            td.textContent   = cell !== null && cell !== undefined ? cell : '—';
+            td.className     = isNum ? 'text-end' : '';
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+
+    document.getElementById('lab-table-wrap').style.display  = '';
+    document.getElementById('lab-empty-report').style.display = 'none';
+}
+
+// ----------------------------------------------------------------
+// Render summary badges — Renderizar insignias de resumen
+// ----------------------------------------------------------------
+function labRenderSummary(summary) {
+    const s = summary || {};
+    document.getElementById('summary-hours').textContent = s.total_hours     != null ? s.total_hours     : '—';
+    document.getElementById('summary-parts').textContent = s.total_parts     != null ? s.total_parts     : '—';
+    document.getElementById('summary-avg').textContent   = s.avg_hours_per_part != null ? s.avg_hours_per_part : '—';
+    document.getElementById('lab-summary').style.display = 'flex';
+}
+
+// ----------------------------------------------------------------
+// Show chart error — Mostrar error en gráfico
+// ----------------------------------------------------------------
+function labShowChartError(msg) {
+    if (labChart) {
+        labChart.setOption({
+            title: {
+                text:      '⚠ ' + msg,
+                left:      'center',
+                top:       'middle',
+                textStyle: { color: '#dc3545', fontSize: 13 }
+            }
+        }, true);
+    }
+}
+
+// ----------------------------------------------------------------
+// Export to Excel — Exportar a Excel
+// ----------------------------------------------------------------
+function labExport() {
+    if (!labCurrentColumns.length) return;
+
+    const form     = document.createElement('form');
+    form.method    = 'POST';
+    form.action    = '/panel/analytics/lab/export/';
+    form.style.display = 'none';
+
+    function addField(name, value) {
+        const inp   = document.createElement('input');
+        inp.type    = 'hidden';
+        inp.name    = name;
+        inp.value   = value;
+        form.appendChild(inp);
+    }
+
+    addField('csrfmiddlewaretoken', LAB_CSRF);
+    addField('dimension',  labCurrentDim);
+    addField('date_from',  labCurrentFrom);
+    addField('date_to',    labCurrentTo);
+    addField('columns',    JSON.stringify(labCurrentColumns));
+    addField('rows',       JSON.stringify(labCurrentRows));
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+}
+
+// ----------------------------------------------------------------
+// Toggle top panel — Colapsar / expandir panel superior
+// ----------------------------------------------------------------
+function labToggleTop() {
+    const top  = document.getElementById('lab-top');
+    const icon = document.getElementById('btn-collapse-icon');
+    top.classList.toggle('collapsed');
+    if (top.classList.contains('collapsed')) {
+        icon.className = 'bi bi-chevron-down';
+    } else {
+        icon.className = 'bi bi-chevron-up';
+    }
+    setTimeout(function () { if (labChart) labChart.resize(); }, 260);
+}
+
+// ----------------------------------------------------------------
+// Fullscreen — Pantalla completa por panel
+// ----------------------------------------------------------------
+function labFullscreen(panelId) {
+    const el = document.getElementById(panelId);
+    if (!el) return;
+    if (!document.fullscreenElement) {
+        el.requestFullscreen().then(function () {
+            if (panelId === 'lab-chart') {
+                setTimeout(function () { if (labChart) labChart.resize(); }, 120);
+            }
+        }).catch(function (err) {
+            console.warn('Fullscreen no disponible:', err);
+        });
+    } else {
+        document.exitFullscreen();
+    }
+}
+
+document.addEventListener('fullscreenchange', function () {
+    setTimeout(function () { if (labChart) labChart.resize(); }, 120);
+});
+
+// ----------------------------------------------------------------
+// Draggable divider — Divisor arrastrable
+// ----------------------------------------------------------------
+function labInitDivider() {
+    const divider = document.getElementById('lab-divider');
+    const report  = document.getElementById('lab-report');
+    const bottom  = document.getElementById('lab-bottom');
+    let   dragging = false;
+    let   startX   = 0;
+    let   startW   = 0;
+
+    divider.addEventListener('mousedown', function (e) {
+        dragging            = true;
+        startX              = e.clientX;
+        startW              = report.getBoundingClientRect().width;
+        divider.classList.add('dragging');
+        document.body.style.cursor    = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function (e) {
+        if (!dragging) return;
+        const dx       = e.clientX - startX;
+        const totalW   = bottom.getBoundingClientRect().width;
+        const newW     = Math.max(180, Math.min(startW + dx, totalW - 200));
+        report.style.flex = '0 0 ' + newW + 'px';
+        if (labChart) labChart.resize();
+    });
+
+    document.addEventListener('mouseup', function () {
+        if (!dragging) return;
+        dragging                       = false;
+        divider.classList.remove('dragging');
+        document.body.style.cursor    = '';
+        document.body.style.userSelect = '';
+        if (labChart) labChart.resize();
+    });
+}
+</script>
+
+{% endblock %}

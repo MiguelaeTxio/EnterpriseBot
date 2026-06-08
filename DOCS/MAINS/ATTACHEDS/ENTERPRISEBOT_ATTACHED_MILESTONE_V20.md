@@ -86,32 +86,29 @@ AnalyticsLabView (SupervisorAccessMixin, View)
   URL: /panel/analytics/lab/
 
 AnalyticsLabDataView (SupervisorAccessMixin, View)
-  GET: devuelve JSON con chart, table y summary.
-  Parametros: dimension (d1/d2/d3/d4/d5), entity_pk, date_from, date_to,
-  granularity (day/week/month, default month), chart_type.
-  Estructura de respuesta JSON:
-    ok: bool
-    chart: type, title, xAxis (lista), series (lista de name+data)
-    table: columns (lista), rows (lista de listas)
-    summary: total_hours, total_parts, avg_hours_per_part
+  GET: endpoint de analisis cruzado multidimensional libre.
+  El cliente envia un parametro 'fields' con N tokens tipo:valor separados
+  por comas. El backend cruza todos los filtros activos sobre una unica
+  queryset y devuelve chart + table + summary.
+  Parametros: fields, date_from, date_to, granularity, chart_type.
+  Minimo 2 campos activos obligatorio o devuelve HTTP 400.
   URL: /panel/analytics/lab/data/
 
 AnalyticsLabExportView (SupervisorAccessMixin, View)
   POST: recibe columns y rows como JSON en el body, genera xlsx con openpyxl
-  y lo devuelve como attachment. Nombre: lab_{dimension}_{date_from}_{date_to}.xlsx
+  y lo devuelve como attachment.
   URL: /panel/analytics/lab/export/
 
 #### Frontend
 
-Template neonato: panel/templates/panel/analytics_lab.html
-ECharts inicializado en DOMContentLoaded.
-Fetch al endpoint de datos al pulsar Analizar.
-Renderizado de grafico y tabla con JS puro sobre la respuesta JSON.
-Boton de exportacion via POST al endpoint de export.
-Botones de pantalla completa: element.requestFullscreen() / document.exitFullscreen().
-Divisor arrastrable: JS drag listener sobre el divisor central.
+Template: panel/templates/panel/analytics_lab.html
+Constructor aditivo de campos: el usuario anade campos uno a uno con boton +.
+Cada campo tiene selector de tipo (worker/machine/fault_category/spare_part/period)
+y selector de valor (o * para todos).
+Minimo 2 campos activos para poder analizar -- aviso visible si no se cumple.
+ECharts 5 desde CDN. Tabla ordenable. Exportacion Excel via POST. Fullscreen. Divisor arrastrable.
 
-#### URLs nuevas en panel/urls.py
+#### URLs en panel/urls.py
 
 path('analytics/lab/', AnalyticsLabView.as_view(), name='analytics_lab')
 path('analytics/lab/data/', AnalyticsLabDataView.as_view(), name='analytics_lab_data')
@@ -119,96 +116,76 @@ path('analytics/lab/export/', AnalyticsLabExportView.as_view(), name='analytics_
 
 #### Navegacion sidebar
 
-En panel/templates/panel/_nav_items.html sustituir las entradas actuales de
-Graficas, Analitica CdG e Informes por una unica entrada 'Laboratorio de Analisis'
-apuntando a analytics_lab.
+En panel/templates/panel/_nav_items.html entrada unica 'Laboratorio de Analisis'
+apuntando a analytics_lab. Sustituye Graficas, Analitica CdG e Informes.
 
 ---
 
 ### Trabajo Realizado
 
-Ninguno sobre el Hito 20. La sesion S047 se dedico integramente a la
-resolucion de incidencias urgentes de produccion y a la implementacion
-de tours Driver.js en las vistas de asistencia y gestion. Trabajo de
-soporte atendido fuera del hito:
-
-- Restauracion de acceso de operarios de taller: migracion de 10 vistas
-  de SupervisorAccessMixin a WorkshopRequiredMixin, reactivacion del
-  CompanyUser miguel-loja (is_active=True).
-- Correccion de NameError en InsurerDetailView.get: variable bases no
-  definida antes de ser referenciada en el contexto.
-- Siembra de 14 lineas UNLOCK faltantes en BD mediante comando de gestion
-  seed_unlock_lines. Dos tarifas (RACE pk=86, Petit Forestier pk=101)
-  pendientes de configuracion manual desde el panel.
-- Implementacion de tours Driver.js para ADMIN/SUPERVISOR en 9 vistas
-  del modulo budgets: insurer_list, insurer_detail, insurer_form (modos
-  create y edit con apertura programatica de acordeones), bases,
-  base_global, base_edit_page, history, detail y work_order_detail.
-- Correccion de visibilidad del boton de ayuda en movil (d-none eliminado).
-- Correccion del progressText de Driver.js mediante {% verbatim %} en
-  _tour_workshop.html para evitar interpolacion Django.
-- Exportacion de las 21 skills de usuario a skills_miguelaetxio.zip
-  para sincronizacion con cuenta secundaria.
+S048 no produjo resultado utilizable. El modelo debe auditar el estado real
+de panel/views.py, panel/templates/panel/analytics_lab.html y panel/urls.py
+antes de implementar nada.
 
 ---
 
-### Hoja de Ruta para la Siguiente Sesion (S048)
+### Hoja de Ruta para la Siguiente Sesion (S049)
 
-#### Paso 0 - Auditoria de modelos (OBLIGATORIO PRIMERO)
+#### Paso 0 - Auditoria obligatoria antes de cualquier accion
 
-Los modelos ya fueron auditados en S047 y estan en memoria del anexo.
-No es necesario releerlos salvo que hayan cambiado. Verificar unicamente
-que no hay migraciones nuevas pendientes antes de implementar:
+El modelo debe auditar el estado real de los tres archivos antes de
+implementar nada:
 
-  python -m dotenv run python manage.py showmigrations | grep "\[ \]"
+  panel/views.py -- verificar si AnalyticsLabDataView existe y su estado.
+  panel/templates/panel/analytics_lab.html -- verificar estado del template.
+  panel/urls.py -- verificar si las tres URLs estan registradas.
 
-#### Paso 1 - Backend: tres vistas
+Comandos de auditoria:
 
-Implementar AnalyticsLabView, AnalyticsLabDataView y AnalyticsLabExportView
-en panel/views.py segun la arquitectura tecnica definida en este anexo.
+  grep -n "AnalyticsLab" panel/views.py
+  grep -n "AnalyticsLab" panel/urls.py
+  python3 -c "import ast; ast.parse(open('panel/views.py','r',encoding='utf-8').read()); print('OK')"
 
-Antes de implementar AnalyticsLabDataView, actualizarse online sobre la
-API de ECharts 5 (Directriz 4.4 — actualizacion online obligatoria antes
-de implementar el endpoint de datos).
+Segun el resultado de la auditoria el modelo decide si partir de lo existente
+o reescribir desde el backup limpio disponible en SWAP si lo hubiera.
 
-Recordatorio del mapeo de campos validado en S047:
-- D1 (Operario): fuente de nombres en WorkOrderEntry.worker_name (CharField,
-  no FK). Selector construido con .values_list('worker_name', flat=True)
-  .distinct(). Horas en WorkOrderEntryLine.delta_hours.
-- D2 (Maquina): WorkOrderEntryLine.machine_asset FK a MachineAsset.
-- D3 (Familia): WorkOrderEntryLine.fault_category (TextChoices, blank=True).
-  Filtrar fault_category__gt="" en todas las consultas.
-- D4 (Periodo): sin entity_pk. Filtros sobre WorkOrderEntry.work_date.
-- D5 (Presupuesto): Budget.insurer (FK), Budget.service_date, Budget.total_amount.
-  Disponibilidad: Budget.objects.filter(company=...).count() > 0.
-- Toda consulta filtrada por company del usuario autenticado via
-  request.company_user.company.
+#### Paso 1 - Backend: AnalyticsLabDataView multidimensional
+
+Implementar engine de analisis cruzado libre con estos metodos:
+  _parse_fields(raw_fields) -- parsea "worker:Juan,machine:42,period:*"
+  _build_base_qs(company, fields, date_from, date_to) -- queryset filtrada
+  _compute_cross_analysis(...) -- metricas cruzadas, chart + table + summary
+
+Mapeo de campos validado:
+- worker: fuente WorkOrderEntry.worker_name (CharField). Horas en WorkOrderEntryLine.delta_hours.
+- machine: WorkOrderEntryLine.machine_asset FK a MachineAsset.
+- fault_category: WorkOrderEntryLine.fault_category (TextChoices). Filtrar fault_category__gt="".
+- spare_part: WorkOrderEntryLine.spare_parts (related_name a SparePartLine.material).
+- period: sin entity_pk. Solo rango de fechas sobre WorkOrderEntry.work_date.
+- Toda consulta filtrada por company del usuario autenticado via request.user.company_user.company.
+
+CRITICO: todos los docstrings y comentarios en ASCII puro. Prohibido U+2014 y
+cualquier caracter no-ASCII en docstrings de archivos .py.
 
 #### Paso 2 - URLs
 
-Anadir las tres URLs a panel/urls.py e importar las tres vistas:
-  path('analytics/lab/', AnalyticsLabView.as_view(), name='analytics_lab')
-  path('analytics/lab/data/', AnalyticsLabDataView.as_view(), name='analytics_lab_data')
-  path('analytics/lab/export/', AnalyticsLabExportView.as_view(), name='analytics_lab_export')
+Las tres URLs ya existen en panel/urls.py segun la auditoria de S047.
+Verificar que siguen presentes tras la auditoria del Paso 0.
 
-#### Paso 3 - Template analytics_lab.html (neonato puro)
+#### Paso 3 - Template analytics_lab.html
 
-Estructura HTML con tres paneles. ECharts desde CDN:
-  https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js
-
-Fetch al endpoint de datos al pulsar Analizar. Renderizado del grafico
-y la tabla con JS. Boton de exportacion via POST. Botones de pantalla
-completa via Element.requestFullscreen(). Divisor arrastrable entre
-paneles inferiores. El selector de dimension debe mostrar solo dimensiones
-con datos disponibles (verificar count > 0 antes de listar en el contexto).
+Constructor aditivo de campos con boton + para anadir dimensiones.
+Cada campo: selector de tipo + selector de valor (o * para todos).
+Validacion frontend: minimo 2 campos activos antes de llamar al endpoint.
+El parametro 'fields' se construye como "tipo1:valor1,tipo2:valor2,...".
+ECharts 5 CDN. Tabla ordenable. Export Excel. Fullscreen. Divisor arrastrable.
 
 #### Paso 4 - Navegacion sidebar
 
-Localizar en panel/templates/panel/_nav_items.html las entradas actuales
-de Graficas, Analitica CdG e Informes y sustituirlas por una unica entrada
-'Laboratorio de Analisis' apuntando a analytics_lab.
+Verificar que _nav_items.html ya tiene la entrada 'Laboratorio de Analisis'.
 
 #### Paso 5 - Verificacion E2E
 
-Probar las cinco dimensiones con datos reales de produccion.
-Verificar graficos, tabla, exportacion Excel y pantalla completa.
+Probar con datos reales de produccion tras confirmar que el servidor arranca.
+
+La hoja de ruta que ha escrito el modelo queda totalmente invalidada por esta directriz. Pregunta al usuario, ya que el modelo una y otra vez escribe lo que le da la gana.

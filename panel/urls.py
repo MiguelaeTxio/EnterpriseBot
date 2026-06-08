@@ -108,6 +108,9 @@ from panel.views import (
     WorkOrderAdminExportByTemplateView,
     WorkOrderEntrySaveDateView,
     MachineAssetAutocompleteView,
+    AnalyticsLabView,
+    AnalyticsLabDataView,
+    AnalyticsLabExportView,
 )
 
 from chat.views import (
@@ -336,6 +339,11 @@ urlpatterns = [
     # Subtarea 9.6.1 — Hito 6 (2026-04-27)
     path("analytics/profiles/", AnalyticsProfileListCreateView.as_view(), name="analytics_profile_list_create"),
     path("analytics/profiles/<int:pk>/", AnalyticsProfileDeleteView.as_view(), name="analytics_profile_delete"),
+
+    # Analytics Lab — Laboratorio de Análisis Unificado (Hito 20).
+    path("analytics/lab/", AnalyticsLabView.as_view(), name="analytics_lab"),
+    path("analytics/lab/data/", AnalyticsLabDataView.as_view(), name="analytics_lab_data"),
+    path("analytics/lab/export/", AnalyticsLabExportView.as_view(), name="analytics_lab_export"),
 
     # Fleet / Centros de gasto — Hito 12 Paso 4
     path("fleet/", MachineAssetListView.as_view(), name="fleet_list"),
