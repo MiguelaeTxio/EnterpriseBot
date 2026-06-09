@@ -251,6 +251,18 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Exclusivo para roles SUPERVISOR y ADMIN. WORKSHOP sin acceso a exportación.
 
 ### Hito 20: Laboratorio de Análisis Unificado (EN PROGRESO)
+
+### Hito 21: Refactorización Arquitectónica — Split de panel/views.py (PAUSADO)
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md`)
+- Desmantelamiento del fichero monolítico panel/views.py (16.482 líneas tras S049).
+- Fase B: extraer vistas de operario (~4.900 líneas) a panel/views_operator.py.
+- Fase C: extraer vistas de supervisor/partes (~3.500 líneas) a panel/views_workorders.py.
+- Fase D: extraer vistas de flota (~820 líneas) a panel/views_fleet.py.
+- Fase E: extraer vistas IVR config (~1.500 líneas) a panel/views_ivr.py.
+- Fase F: extraer vistas auth+WhatsApp (~740 líneas) a panel/views_auth.py.
+- Objetivo final: panel/views.py < 200 líneas (solo imports y re-exports).
+- En sesiones posteriores, elevar cada bloque a app Django independiente
+  siguiendo el patrón establecido con la app analytics en S049.
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md`)
 - Unificación y sustitución de las vistas Gráficas, Analítica CdG e Informes.
 - Centro de análisis configurable: Operario, Máquina/CdG, Familia de Avería,

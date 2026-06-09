@@ -33,7 +33,7 @@ Apache ECharts 5 cargado desde CDN:
 https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js
 
 Sin instalacion en el venv. Tooltips ricos, animaciones fluidas, zoom, pan,
-descarga de imagen. La vista actual analytics.html (Plotly.js) queda sustituida.
+descarga de imagen.
 
 ---
 
@@ -76,116 +76,186 @@ D5 - Presupuesto: barras (importe/aseguradora), linea temporal.
 
 ### Arquitectura Tecnica
 
-#### Backend
+#### App Django: analytics (segregada en S049)
 
-Vistas en panel/views.py:
+En S049 se segrego el laboratorio de panel a su propia app Django independiente.
+Esta decision es arquitectonicamente correcta y marca el patron para todos los
+hitos futuros: todo dominio funcional nuevo va en app propia.
 
-AnalyticsLabView (SupervisorAccessMixin, View)
-  GET: renderiza analytics_lab.html con operadores, maquinas, fault_categories,
-  date_from_default (primer dia del mes actual) y date_to_default (hoy).
-  URL: /panel/analytics/lab/
+Estructura de la app analytics:
+  analytics/__init__.py
+  analytics/apps.py        -- AnalyticsConfig
+  analytics/urls.py        -- 8 rutas bajo /panel/analytics/
+  analytics/views.py       -- 8 vistas (ver detalle abajo)
 
-AnalyticsLabDataView (SupervisorAccessMixin, View)
-  GET: endpoint de analisis cruzado multidimensional libre.
-  El cliente envia un parametro 'fields' con N tokens tipo:valor separados
-  por comas. El backend cruza todos los filtros activos sobre una unica
-  queryset y devuelve chart + table + summary.
-  Parametros: fields, date_from, date_to, granularity, chart_type.
-  Minimo 2 campos activos obligatorio o devuelve HTTP 400.
-  URL: /panel/analytics/lab/data/
+#### Backend: analytics/views.py
 
-AnalyticsLabExportView (SupervisorAccessMixin, View)
-  POST: recibe columns y rows como JSON en el body, genera xlsx con openpyxl
-  y lo devuelve como attachment.
-  URL: /panel/analytics/lab/export/
+Vistas implementadas:
+  AnalyticsView             -- shell dashboard Plotly (legado, mantener)
+  AnalyticsDataView         -- endpoint JSON para Plotly (legado, mantener)
+  AnalyticsLabView          -- shell del laboratorio ECharts
+  AnalyticsLabDataView      -- endpoint JSON multidimensional (D1-D5)
+  AnalyticsLabExportView    -- exportacion Excel via openpyxl
+  AnalyticsProfileListCreateView -- CRUD perfiles guardados (GET/POST)
+  AnalyticsProfileDeleteView     -- DELETE perfil por pk
+  BotManagementView         -- panel gestion bot WhatsApp (movida aqui desde panel)
 
-#### Frontend
+Parametros de AnalyticsLabDataView.get():
+  dimension   (str) -- d1 | d2 | d3 | d4 | d5
+  entity_pk   (str) -- pk de operario/maquina/familia; omitir para d4/d5
+  date_from   (str) -- YYYY-MM-DD
+  date_to     (str) -- YYYY-MM-DD
+  granularity (str) -- day | week | month  (por defecto: month)
+  chart_type  (str) -- bar | line | scatter | pie | heatmap | treemap
 
-Template: panel/templates/panel/analytics_lab.html
+Validacion defensiva en get(): si dimension no esta en (d1..d5) devuelve
+HTTP 400 con mensaje "Dimension no valida: ''. Valores permitidos: d1, d2, d3, d4, d5."
+
+#### URLs en analytics/urls.py
+
+  path("", AnalyticsView, name="analytics")
+  path("data/", AnalyticsDataView, name="analytics_data")
+  path("profiles/", AnalyticsProfileListCreateView, name="analytics_profile_list_create")
+  path("profiles/<int:pk>/", AnalyticsProfileDeleteView, name="analytics_profile_delete")
+  path("lab/", AnalyticsLabView, name="analytics_lab")
+  path("lab/data/", AnalyticsLabDataView, name="analytics_lab_data")
+  path("lab/export/", AnalyticsLabExportView, name="analytics_lab_export")
+  path("bot/", BotManagementView, name="bot_management")
+
+Incluida en enterprise_core/urls.py:
+  path('panel/analytics/', include('analytics.urls', namespace='analytics'))
+
+#### Templates afectados en S049
+
+  panel/templates/panel/_nav_items.html
+    -- panel:analytics_lab   -> analytics:analytics_lab
+    -- panel:bot_management  -> analytics:bot_management
+  panel/templates/panel/analytics.html
+    -- panel:analytics_data                -> analytics:analytics_data
+    -- panel:analytics_profile_list_create -> analytics:analytics_profile_list_create
+    -- panel:analytics_profile_delete      -> analytics:analytics_profile_delete
+  panel/templates/panel/bot/dashboard.html
+    -- panel:bot_management (x3)           -> analytics:bot_management
+
+#### Frontend: panel/templates/panel/analytics_lab.html
+
 Constructor aditivo de campos: el usuario anade campos uno a uno con boton +.
 Cada campo tiene selector de tipo (worker/machine/fault_category/spare_part/period)
 y selector de valor (o * para todos).
 Minimo 2 campos activos para poder analizar -- aviso visible si no se cumple.
 ECharts 5 desde CDN. Tabla ordenable. Exportacion Excel via POST. Fullscreen. Divisor arrastrable.
 
-#### URLs en panel/urls.py
-
-path('analytics/lab/', AnalyticsLabView.as_view(), name='analytics_lab')
-path('analytics/lab/data/', AnalyticsLabDataView.as_view(), name='analytics_lab_data')
-path('analytics/lab/export/', AnalyticsLabExportView.as_view(), name='analytics_lab_export')
-
-#### Navegacion sidebar
-
-En panel/templates/panel/_nav_items.html entrada unica 'Laboratorio de Analisis'
-apuntando a analytics_lab. Sustituye Graficas, Analitica CdG e Informes.
-
 ---
 
 ### Trabajo Realizado
 
-S048 no produjo resultado utilizable. El modelo debe auditar el estado real
-de panel/views.py, panel/templates/panel/analytics_lab.html y panel/urls.py
-antes de implementar nada.
+S048: no produjo resultado utilizable.
+
+S049 (2026-06-09):
+  1. Diagnostico arquitectonico: panel/views.py tenia 18.765 lineas y 102 clases.
+     Decision tomada: segregar el laboratorio a app Django independiente 'analytics'.
+     Directriz arquitectonica vinculante registrada: todo dominio funcional nuevo
+     va en app propia, sin excepciones.
+  2. Creacion de la app analytics con apps.py, urls.py y views.py.
+  3. Extraccion de las 8 clases analytics de panel/views.py a analytics/views.py.
+     panel/views.py reducido de 18.765 a 16.482 lineas (-2.283 lineas).
+  4. Registro de 'analytics' en INSTALLED_APPS (enterprise_core/settings.py).
+  5. Inclusion de analytics.urls en enterprise_core/urls.py bajo /panel/analytics/.
+  6. Eliminacion de las 8 rutas analytics de panel/urls.py.
+  7. Correccion de todas las referencias panel:analytics* y panel:bot_management
+     en los templates afectados (7 referencias en 3 archivos).
+  8. Validacion django.setup() + django check --deploy: 0 errores, solo warnings
+     de seguridad preexistentes.
+  9. Recarga del servidor: status OK. Panel operativo sin errores de navegacion.
+  10. Actualizacion de SYSTEM_PROMPTS_NEW.md a V.2.1: eliminadas las directrices
+      de detenerse para preguntar como entregar el codigo.
+  11. Bug identificado pendiente de resolver: el boton Analizar no envia el
+      parametro 'dimension' correctamente al endpoint -- el backend lo recibe
+      vacio y devuelve HTTP 400. La causa es un problema en el template
+      analytics_lab.html (construccion del parametro dimension en el JS).
 
 ---
 
-### Hoja de Ruta para la Siguiente Sesion (S049)
+### Hoja de Ruta para la Siguiente Sesion (S050)
 
-#### Paso 0 - Auditoria obligatoria antes de cualquier accion
+#### Contexto obligatorio previo
 
-El modelo debe auditar el estado real de los tres archivos antes de
-implementar nada:
-
-  panel/views.py -- verificar si AnalyticsLabDataView existe y su estado.
-  panel/templates/panel/analytics_lab.html -- verificar estado del template.
-  panel/urls.py -- verificar si las tres URLs estan registradas.
+Antes de implementar nada, el modelo debe auditar el estado real de:
+  analytics/views.py        -- verificar que las 8 vistas estan correctas
+  panel/templates/panel/analytics_lab.html -- estado real del template
 
 Comandos de auditoria:
+  grep -n "dimension\|entity_pk\|Analizar\|fetch\|GET" panel/templates/panel/analytics_lab.html | head -60
 
-  grep -n "AnalyticsLab" panel/views.py
-  grep -n "AnalyticsLab" panel/urls.py
-  python3 -c "import ast; ast.parse(open('panel/views.py','r',encoding='utf-8').read()); print('OK')"
+#### Paso 1 - Correccion del bug de dimension vacia
 
-Segun el resultado de la auditoria el modelo decide si partir de lo existente
-o reescribir desde el backup limpio disponible en SWAP si lo hubiera.
+El boton Analizar no envia el parametro 'dimension' al endpoint
+analytics:analytics_lab_data. El backend recibe dimension='' y devuelve
+HTTP 400 "Dimension no valida: ''".
 
-#### Paso 1 - Backend: AnalyticsLabDataView multidimensional
+La causa esta en analytics_lab.html: el JS que construye la URL de la
+peticion al endpoint no esta incluyendo el parametro 'dimension' correctamente.
 
-Implementar engine de analisis cruzado libre con estos metodos:
-  _parse_fields(raw_fields) -- parsea "worker:Juan,machine:42,period:*"
-  _build_base_qs(company, fields, date_from, date_to) -- queryset filtrada
-  _compute_cross_analysis(...) -- metricas cruzadas, chart + table + summary
+El template envia los campos como "tipo1:valor1,tipo2:valor2,..." via el
+parametro 'fields' segun la arquitectura del anexo original, pero
+AnalyticsLabDataView.get() espera el parametro 'dimension' (d1..d5), no 'fields'.
 
-Mapeo de campos validado:
-- worker: fuente WorkOrderEntry.worker_name (CharField). Horas en WorkOrderEntryLine.delta_hours.
-- machine: WorkOrderEntryLine.machine_asset FK a MachineAsset.
-- fault_category: WorkOrderEntryLine.fault_category (TextChoices). Filtrar fault_category__gt="".
-- spare_part: WorkOrderEntryLine.spare_parts (related_name a SparePartLine.material).
-- period: sin entity_pk. Solo rango de fechas sobre WorkOrderEntry.work_date.
-- Toda consulta filtrada por company del usuario autenticado via request.user.company_user.company.
+DECISION ARQUITECTONICA CRITICA: hay dos opciones.
 
-CRITICO: todos los docstrings y comentarios en ASCII puro. Prohibido U+2014 y
-cualquier caracter no-ASCII en docstrings de archivos .py.
+OPCION A (recomendada): adaptar el template para que envie 'dimension' y
+'entity_pk' en lugar de 'fields', alineandose con la implementacion real
+del backend. El frontend construye dimension=d1 cuando el primer campo es
+de tipo worker, dimension=d2 para machine, etc.
 
-#### Paso 2 - URLs
+Mapeo tipo_campo -> dimension:
+  worker        -> d1, entity_pk = nombre del operario (worker_name)
+  machine       -> d2, entity_pk = pk del MachineAsset
+  fault_category-> d3, entity_pk = clave de la familia (ej. HYDRAULIC)
+  period        -> d4, entity_pk = null
+  budget        -> d5, entity_pk = null
 
-Las tres URLs ya existen en panel/urls.py segun la auditoria de S047.
-Verificar que siguen presentes tras la auditoria del Paso 0.
+OPCION B: reimplementar el backend para aceptar 'fields' en lugar de
+'dimension'+'entity_pk'. Mayor impacto, no recomendada.
 
-#### Paso 3 - Template analytics_lab.html
+El modelo debe presentar el analisis al usuario y ejecutar la OPCION A
+salvo instruccion expresa en contrario.
 
-Constructor aditivo de campos con boton + para anadir dimensiones.
-Cada campo: selector de tipo + selector de valor (o * para todos).
-Validacion frontend: minimo 2 campos activos antes de llamar al endpoint.
-El parametro 'fields' se construye como "tipo1:valor1,tipo2:valor2,...".
-ECharts 5 CDN. Tabla ordenable. Export Excel. Fullscreen. Divisor arrastrable.
+#### Paso 2 - Sistema de plantillas de analisis por usuario
 
-#### Paso 4 - Navegacion sidebar
+Modelo: AnalyticsProfile (ya existe en panel/models.py).
+Campos existentes: company_user (FK), nombre (str), config (JSONField).
+El campo config almacena la configuracion completa del laboratorio:
+{
+  "dimension": "d1",
+  "entity_pk": "PABLO CAÑAMERO",
+  "date_from": "2026-06-01",
+  "date_to": "2026-06-09",
+  "granularity": "month",
+  "chart_type": "bar",
+  "fields_raw": "worker:PABLO CAÑAMERO,machine:*"
+}
 
-Verificar que _nav_items.html ya tiene la entrada 'Laboratorio de Analisis'.
+Endpoints ya implementados en analytics/views.py:
+  AnalyticsProfileListCreateView -- GET lista perfiles, POST crea/actualiza
+  AnalyticsProfileDeleteView     -- DELETE elimina por pk
 
-#### Paso 5 - Verificacion E2E
+Lo que falta: la integracion en el template analytics_lab.html.
+  - Boton "Guardar plantilla" que abre un input de nombre y hace POST a
+    analytics:analytics_profile_list_create con el config actual.
+  - Selector de plantillas guardadas que al seleccionar rellena todos los
+    campos del laboratorio con los valores del config.
+  - Boton de borrado por plantilla que llama a analytics:analytics_profile_delete.
+  - Las plantillas se cargan al abrir el laboratorio via GET al endpoint
+    analytics:analytics_profile_list_create.
+  - Toda la logica de plantillas es client-side (JS) salvo las llamadas
+    a los endpoints de persistencia.
 
-Probar con datos reales de produccion tras confirmar que el servidor arranca.
+#### Paso 3 - Verificacion E2E
 
-La hoja de ruta que ha escrito el modelo queda totalmente invalidada por esta directriz. Pregunta al usuario, ya que el modelo una y otra vez escribe lo que le da la gana.
+Probar con datos reales de produccion:
+  - Seleccionar D1 (Operario) con un operario concreto, rango de fechas
+    con datos, granularidad mensual, tipo barras. Verificar que el grafico
+    ECharts se renderiza y la tabla de informe se puebla correctamente.
+  - Probar exportacion Excel.
+  - Guardar una plantilla, recargar la pagina, cargar la plantilla y
+    verificar que los campos se rellenan correctamente.

@@ -140,7 +140,7 @@
 
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'bot_management' %}active{% endif %}"
-           href="{% url 'panel:bot_management' %}">
+           href="{% url 'analytics:bot_management' %}">
             <i class="bi bi-robot"></i>Gestión del bot
         </a>
     </li>
@@ -232,7 +232,7 @@
     {# Laboratorio de Análisis — solo ADMIN / Analytics Lab — ADMIN only #}
     <li class="nav-item">
         <a class="nav-link {% if active_nav == 'analytics_lab' %}active{% endif %}"
-           href="{% url 'panel:analytics_lab' %}">
+           href="{% url 'analytics:analytics_lab' %}">
             <i class="bi bi-flask"></i>Laboratorio de Análisis
         </a>
     </li>

@@ -75,6 +75,8 @@ INSTALLED_APPS = [
     'chat',
     # ASISTENCIA budget engine — motor de presupuestos ASISTENCIA.
     'budgets',
+    # Unified Analytics Laboratory — Laboratorio de Análisis Unificado.
+    'analytics',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.

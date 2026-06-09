@@ -48,4 +48,9 @@ urlpatterns = [
     path('panel/budgets/', include('budgets.urls', namespace='budgets')),
     # IRC-style section chat rooms — salas de chat IRC por sección (Hito 13).
     path('panel/chat/', include('chat.urls', namespace='chat')),
+    # Unified Analytics Laboratory — Laboratorio de Análisis Unificado (Hito 20).
+    path(
+        'panel/analytics/',
+        include('analytics.urls', namespace='analytics'),
+    ),
 ]

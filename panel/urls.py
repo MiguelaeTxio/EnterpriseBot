@@ -56,11 +56,6 @@ from panel.views import (
     WorkOrderMarkReviewedView,
     WorkOrderDuplicateSearchView,
     WorkOrderDuplicateDeleteView,
-    AnalyticsView,
-    AnalyticsDataView,
-    BotManagementView,
-    AnalyticsProfileListCreateView,
-    AnalyticsProfileDeleteView,
     OperatorDashboardView,
     WorkshopAssetAutocompleteView,
     WorkshopAssetDetailView,
@@ -108,9 +103,6 @@ from panel.views import (
     WorkOrderAdminExportByTemplateView,
     WorkOrderEntrySaveDateView,
     MachineAssetAutocompleteView,
-    AnalyticsLabView,
-    AnalyticsLabDataView,
-    AnalyticsLabExportView,
 )
 
 from chat.views import (
@@ -327,23 +319,12 @@ urlpatterns = [
     path("absence-categories/<int:pk>/update/", AbsenceCategoryUpdateView.as_view(), name="absence_category_update"),
     path("absence-categories/<int:pk>/toggle/", AbsenceCategoryToggleView.as_view(), name="absence_category_toggle"),
 
-    # Analytics — Panel de analítica con gráficos Plotly (rol ADMIN).
     # Subtarea 9.6 — Hito 6 (2026-04-27)
-    path("analytics/", AnalyticsView.as_view(), name="analytics"),
 
-    # Analytics data endpoint — JSON payload para el constructor de gráficos client-side.
     # Subtarea 9.6 — Hito 6 (2026-04-27)
-    path("analytics/data/", AnalyticsDataView.as_view(), name="analytics_data"),
 
-    # Analytics profiles — Gestión de perfiles de gráfico guardados (rol ADMIN).
     # Subtarea 9.6.1 — Hito 6 (2026-04-27)
-    path("analytics/profiles/", AnalyticsProfileListCreateView.as_view(), name="analytics_profile_list_create"),
-    path("analytics/profiles/<int:pk>/", AnalyticsProfileDeleteView.as_view(), name="analytics_profile_delete"),
 
-    # Analytics Lab — Laboratorio de Análisis Unificado (Hito 20).
-    path("analytics/lab/", AnalyticsLabView.as_view(), name="analytics_lab"),
-    path("analytics/lab/data/", AnalyticsLabDataView.as_view(), name="analytics_lab_data"),
-    path("analytics/lab/export/", AnalyticsLabExportView.as_view(), name="analytics_lab_export"),
 
     # Fleet / Centros de gasto — Hito 12 Paso 4
     path("fleet/", MachineAssetListView.as_view(), name="fleet_list"),
@@ -385,7 +366,6 @@ urlpatterns = [
     path("trust-device/quick-login/", TrustDeviceQuickLoginView.as_view(), name="trust_device_quick_login"),
 
     # Bot management — Panel de gestión del bot WhatsApp (Hito 13 Paso 17+).
-    path("bot/", BotManagementView.as_view(), name="bot_management"),
 
     # Company settings — Configuración de empresa (bases operación, calendario laboral).
     # Hito 16 Paso 8 (2026-05-28)

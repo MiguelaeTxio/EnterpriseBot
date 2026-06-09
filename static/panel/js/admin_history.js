@@ -188,6 +188,51 @@
         });
     }
 
+    // ------------------------------------------------------------------
+    // Date editor toggle — Apertura y cierre del editor inline de fecha.
+    // Uses event delegation so it works after HTMX outerHTML swaps.
+    // Usa delegación de eventos para funcionar tras swaps HTMX outerHTML.
+    //
+    // btn-date-edit-toggle: opens the form and hides the date text + pencil.
+    // btn-date-cancel:      closes the form and restores the date text + pencil.
+    // ------------------------------------------------------------------
+    document.addEventListener("click", function (e) {
+
+        // --- Open: pencil toggle button ---
+        // --- Apertura: botón lápiz toggle ---
+        var toggleBtn = e.target.closest(".btn-date-edit-toggle");
+        if (toggleBtn) {
+            var grp      = toggleBtn.closest(".page-group-header");
+            var entryPk  = toggleBtn.id.replace("btn-date-toggle-", "");
+            var form     = grp.querySelector("#form-date-" + entryPk);
+            var dateText = grp.querySelector("#date-text-" + entryPk);
+            if (dateText)  { dateText.style.display  = "none"; }
+            toggleBtn.style.display = "none";
+            if (form) {
+                form.style.display = "inline-flex";
+                var inp = form.querySelector("input[name=work_date]");
+                if (inp) { inp.focus(); }
+            }
+            return;
+        }
+
+        // --- Cancel: close the editor and restore text + pencil ---
+        // --- Cancelar: cerrar el editor y restaurar texto + lápiz ---
+        var cancelBtn = e.target.closest(".btn-date-cancel");
+        if (cancelBtn) {
+            var entryPk  = cancelBtn.dataset.entryPk;
+            var grp      = cancelBtn.closest(".page-group-header");
+            var form     = grp.querySelector("#form-date-" + entryPk);
+            var dateText = grp.querySelector("#date-text-" + entryPk);
+            var toggleBtn = grp.querySelector("#btn-date-toggle-" + entryPk);
+            if (form)      { form.style.display      = "none"; }
+            if (dateText)  { dateText.style.display  = ""; }
+            if (toggleBtn) { toggleBtn.style.display = ""; }
+            return;
+        }
+
+    });
+
     document.addEventListener("DOMContentLoaded", function () {
         initBulkGroup("pending");
         initBulkGroup("history");

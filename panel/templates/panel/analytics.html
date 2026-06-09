@@ -237,7 +237,7 @@
     // ------------------------------------------------------------------
     // Constants / Constantes
     // ------------------------------------------------------------------
-    const DATA_URL   = "{% url 'panel:analytics_data' %}";
+    const DATA_URL   = "{% url 'analytics:analytics_data' %}";
     const WEEKDAYS   = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
     const FONT_FAMILY = "system-ui, -apple-system, sans-serif";
 
@@ -666,7 +666,7 @@
          * Obtiene todos los perfiles guardados del usuario actual desde el
          * servidor y reconstruye las opciones del selector de perfiles.
          */
-        fetch("{% url 'panel:analytics_profile_list_create' %}", {
+        fetch("{% url 'analytics:analytics_profile_list_create' %}", {
             headers: { "X-Requested-With": "XMLHttpRequest" },
         })
         .then(function (r) { return r.json(); })
@@ -787,7 +787,7 @@
             work_orders: workOrders,
         };
 
-        fetch("{% url 'panel:analytics_profile_list_create' %}", {
+        fetch("{% url 'analytics:analytics_profile_list_create' %}", {
             method:  "POST",
             headers: {
                 "Content-Type":     "application/json",
@@ -835,7 +835,7 @@
         if (!pk) return;
         if (!confirm("¿Eliminar el perfil «" + nombre + "»? Esta acción no se puede deshacer.")) return;
 
-        const url = "{% url 'panel:analytics_profile_delete' pk=0 %}".replace("/0/", "/" + pk + "/");
+        const url = "{% url 'analytics:analytics_profile_delete' pk=0 %}".replace("/0/", "/" + pk + "/");
 
         fetch(url, {
             method:  "DELETE",

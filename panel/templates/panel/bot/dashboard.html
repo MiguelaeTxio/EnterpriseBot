@@ -26,7 +26,7 @@
         Lanza el flujo de onboarding para todos los contactos de una sección
         que aún no lo hayan completado.
       </p>
-      <form method="post" action="{% url 'panel:bot_management' %}">
+      <form method="post" action="{% url 'analytics:bot_management' %}">
         {% csrf_token %}
         <input type="hidden" name="action" value="onboarding">
         <div class="row g-2 align-items-end">
@@ -66,7 +66,7 @@
       {% if broadcast_sections %}
       {# Formulario oculto — se envía desde el modal de confirmación #}
       {# Hidden form — submitted from the confirmation modal #}
-      <form method="post" action="{% url 'panel:bot_management' %}" id="form-group-broadcast">
+      <form method="post" action="{% url 'analytics:bot_management' %}" id="form-group-broadcast">
         {% csrf_token %}
         <input type="hidden" name="action" value="group_broadcast">
         {# section_pks se inyectan dinámicamente por el JS del modal #}
@@ -177,7 +177,7 @@
         Envía un mensaje individual a uno o varios contactos vía Twilio WhatsApp.
         Filtra por sección o envía a todos los contactos activos de la empresa.
       </p>
-      <form method="post" action="{% url 'panel:bot_management' %}">
+      <form method="post" action="{% url 'analytics:bot_management' %}">
         {% csrf_token %}
         <input type="hidden" name="action" value="direct_broadcast">
         <div class="mb-3">
