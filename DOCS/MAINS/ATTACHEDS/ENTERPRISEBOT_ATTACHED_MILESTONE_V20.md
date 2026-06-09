@@ -62,6 +62,20 @@ intervenidas, comparativa entre periodos.
 Metricas: presupuestos por aseguradora, importes medios, distribucion de
 servicios, evolucion temporal. Solo disponible si existen registros en budgets.
 
+#### D6 - Coste de Mano de Obra (OperatorMonthlyCost) -- PENDIENTE DE IMPLEMENTAR
+Metricas: coste total por maquina en un periodo, coste por familia de averia,
+coste por operario, reparto proporcional del coste mensual del operario segun
+horas trabajadas en cada maquina.
+
+Formula de reparto:
+  coste_operario_en_maquina =
+    (horas_operario_en_maquina / horas_totales_operario_en_mes)
+    x coste_total_operario_en_mes
+
+Fuente de datos: modelo OperatorMonthlyCost (work_order_processor).
+Entrada: manual desde el panel o importacion de Excel mensual con
+matching difuso de nombres por contexto de empresa.
+
 ---
 
 ### Tipos de Grafico por Dimension
@@ -71,6 +85,7 @@ D2 - Maquina: barras (intervenciones), scatter (horas vs frecuencia), pie famili
 D3 - Familia: barras apiladas, linea temporal, treemap por maquina.
 D4 - Periodo: barras agrupadas, linea multi-serie.
 D5 - Presupuesto: barras (importe/aseguradora), linea temporal.
+D6 - Coste: barras (coste/maquina), linea temporal, pie (distribucion por maquina).
 
 ---
 
@@ -85,31 +100,37 @@ hitos futuros: todo dominio funcional nuevo va en app propia.
 Estructura de la app analytics:
   analytics/__init__.py
   analytics/apps.py        -- AnalyticsConfig
-  analytics/urls.py        -- 8 rutas bajo /panel/analytics/
-  analytics/views.py       -- 8 vistas (ver detalle abajo)
+  analytics/urls.py        -- 9 rutas bajo /panel/analytics/
+  analytics/views.py       -- 8 vistas implementadas + vistas D6 pendientes
 
 #### Backend: analytics/views.py
 
 Vistas implementadas:
-  AnalyticsView             -- shell dashboard Plotly (legado, mantener)
-  AnalyticsDataView         -- endpoint JSON para Plotly (legado, mantener)
-  AnalyticsLabView          -- shell del laboratorio ECharts
-  AnalyticsLabDataView      -- endpoint JSON multidimensional (D1-D5)
-  AnalyticsLabExportView    -- exportacion Excel via openpyxl
-  AnalyticsProfileListCreateView -- CRUD perfiles guardados (GET/POST)
+  AnalyticsView                  -- shell dashboard Plotly (legado, mantener)
+  AnalyticsDataView              -- endpoint JSON para Plotly (legado, mantener)
+  AnalyticsLabView               -- shell del laboratorio ECharts
+  AnalyticsLabDataView           -- endpoint JSON multidimensional (D1-D5)
+  AnalyticsLabExportView         -- exportacion Excel via openpyxl
+  AnalyticsProfileListCreateView -- CRUD perfiles guardados (GET/POST JSON)
   AnalyticsProfileDeleteView     -- DELETE perfil por pk
-  BotManagementView         -- panel gestion bot WhatsApp (movida aqui desde panel)
+  BotManagementView              -- panel gestion bot WhatsApp
 
 Parametros de AnalyticsLabDataView.get():
-  dimension   (str) -- d1 | d2 | d3 | d4 | d5
-  entity_pk   (str) -- pk de operario/maquina/familia; omitir para d4/d5
-  date_from   (str) -- YYYY-MM-DD
-  date_to     (str) -- YYYY-MM-DD
-  granularity (str) -- day | week | month  (por defecto: month)
-  chart_type  (str) -- bar | line | scatter | pie | heatmap | treemap
+  fields      (JSON array) -- lista de campos activos con type y value
+  date_from   (str)        -- YYYY-MM-DD
+  date_to     (str)        -- YYYY-MM-DD
+  granularity (str)        -- day | week | month (por defecto: month)
+  chart_type  (str)        -- bar | line | scatter | pie | heatmap | treemap
 
-Validacion defensiva en get(): si dimension no esta en (d1..d5) devuelve
-HTTP 400 con mensaje "Dimension no valida: ''. Valores permitidos: d1, d2, d3, d4, d5."
+#### Modelo OperatorMonthlyCost (work_order_processor/models.py)
+
+Creado en S051. Migracion 0023_operator_monthly_cost aplicada.
+Campos: company (FK), worker_name (CharField 200), year, month
+(PositiveSmallIntegerField), monthly_cost (DecimalField 10,2),
+created_at, updated_at.
+Unicidad: (company, worker_name, year, month).
+Proposito: almacenar el coste laboral mensual bruto por operario para
+que el laboratorio pueda calcular el reparto por maquina.
 
 #### URLs en analytics/urls.py
 
@@ -125,25 +146,13 @@ HTTP 400 con mensaje "Dimension no valida: ''. Valores permitidos: d1, d2, d3, d
 Incluida en enterprise_core/urls.py:
   path('panel/analytics/', include('analytics.urls', namespace='analytics'))
 
-#### Templates afectados en S049
-
-  panel/templates/panel/_nav_items.html
-    -- panel:analytics_lab   -> analytics:analytics_lab
-    -- panel:bot_management  -> analytics:bot_management
-  panel/templates/panel/analytics.html
-    -- panel:analytics_data                -> analytics:analytics_data
-    -- panel:analytics_profile_list_create -> analytics:analytics_profile_list_create
-    -- panel:analytics_profile_delete      -> analytics:analytics_profile_delete
-  panel/templates/panel/bot/dashboard.html
-    -- panel:bot_management (x3)           -> analytics:bot_management
-
 #### Frontend: panel/templates/panel/analytics_lab.html
 
-Constructor aditivo de campos: el usuario anade campos uno a uno con boton +.
-Cada campo tiene selector de tipo (worker/machine/fault_category/spare_part/period)
-y selector de valor (o * para todos).
-Minimo 2 campos activos para poder analizar -- aviso visible si no se cumple.
-ECharts 5 desde CDN. Tabla ordenable. Exportacion Excel via POST. Fullscreen. Divisor arrastrable.
+Constructor aditivo de campos con limite de 5. POST de plantillas en JSON.
+Modal de gestion de plantillas (labOpenManageModal / labDeleteProfileByPk).
+ECharts 5 desde CDN. Tabla ordenable. Exportacion Excel via POST.
+Fullscreen por panel. Divisor arrastrable. Unicode eliminado de comentarios
+JS/CSS -- solo se conserva en contenido visible de usuario y simbolos CSS.
 
 ---
 
@@ -169,110 +178,83 @@ S049 (2026-06-09):
   9. Recarga del servidor: status OK. Panel operativo sin errores de navegacion.
   10. Actualizacion de SYSTEM_PROMPTS_NEW.md a V.2.1: eliminadas las directrices
       de detenerse para preguntar como entregar el codigo.
-  11. Bug identificado pendiente de resolver: el boton Analizar no envia el
-      parametro 'dimension' correctamente al endpoint -- el backend lo recibe
-      vacio y devuelve HTTP 400. La causa es un problema en el template
-      analytics_lab.html (construccion del parametro dimension en el JS).
 
 S050 (2026-06-09):
-  1. Actualizacion del PISA: PASO 0 ampliado de 3 a 9 lecturas obligatorias.
-     Grupo B (PED completo): ped-router, ped-format, ped-pma, ped-pea, ped-pmp,
-     ped-doc. Grupo C: pythonanywhere-reload. Skill empaquetada como pisa.skill.
+  1. Actualizacion del PISA: PASO 0 ampliado de 4 lecturas obligatorias.
+     Skills obligatorias: session-standards, ped (conjunto), pah,
+     pythonanywhere-reload. Skill empaquetada como pisa.skill.
   2. Correccion bug dimension vacia: nueva funcion labCollectFields() sustituye
      a labDeriveDimension(). El frontend serializa todos los campos activos como
      JSON array y los envia como parametro 'fields' al backend.
   3. Eliminacion de los 9 inline styles del template analytics_lab.html y de
      los inline styles JS en labAddField() y labFieldTypeChanged(). Clases CSS
-     nuevas anadidas a panel.css: lab-field-type-select, lab-field-value-select,
-     lab-field-remove-btn, lab-add-field-btn, lab-field-warning, lab-btn-xs,
-     lab-table-wrap-hidden, lab-profile-select, lab-btn-delete-profile,
-     lab-field-limit. djlint: 0 errores en estado final.
+     nuevas anadidas a panel.css.
   4. Arquitectura multidimensional: nuevo dispatcher _dispatch() y handler
      _handle_cross() en AnalyticsLabDataView. Soporta hasta 5 campos activos
-     con cruce por worker, machine, fault_category, period. Compatibilidad
-     legacy con parametro 'dimension' conservada. Limite 5 campos en frontend.
-  5. Correccion _handle_d1 heatmap: filtro worker_name aplicado correctamente
-     cuando entity_pk presente (hm_entry_filter / hm_line_filter).
-  6. Desglose por entidad en _handle_d1 y _handle_d2 cuando entity_pk=None:
-     una serie por operario / una serie por maquina respectivamente.
-  7. Sistema de plantillas de analisis: labLoadProfiles(), labSaveProfile(),
-     labDeleteProfile(), labLoadProfile(), labCreateDefaultProfile()
-     implementadas en analytics_lab.html. Selector de plantillas, boton
-     guardar y boton eliminar anadidos a la cabecera del laboratorio.
-     Plantilla por defecto creada automaticamente en primer acceso.
-  8. Pendiente al cierre de S050: sustituir style.display por classList en
-     las referencias JS a btn-delete-profile y lab-field-limit. Verificar
-     que AnalyticsProfileListCreateView devuelve clave 'profiles' en GET.
-     Verificacion E2E completa del flujo multidimensional y plantillas.
+     con cruce por worker, machine, fault_category, period.
+  5. Correcciones _handle_d1 heatmap y desglose por entidad en D1/D2.
+  6. Sistema de plantillas de analisis implementado en analytics_lab.html.
+
+S051 (2026-06-09):
+  1. Correccion de tres referencias residuales style.display -> classList
+     en analytics_lab.html (labLoadProfile, labDeleteProfile, labAddField).
+     djlint 0 errores. Integridad 9/9 OK.
+  2. Limpieza de Unicode en comentarios de desarrollador (JS, CSS, Django
+     template comments). 123 caracteres Unicode auditados: eliminados de
+     comentarios, conservados en contenido visible de usuario y simbolos
+     CSS sort arrows (U+25B2 / U+25BC). Norma establecida: ASCII puro en
+     contexto de desarrollador.
+  3. Purgado de 2 registros legacy de AnalyticsProfile de la BD.
+  4. Correccion POST de plantillas: urlencoded -> JSON en labCreateDefaultProfile()
+     y labSaveProfile(). Alineacion con el endpoint que esperaba JSON.
+  5. Modal de gestion de plantillas: boton lista en cabecera, labOpenManageModal(),
+     labDeleteProfileByPk() con eliminacion individual desde el modal.
+  6. Correccion tabla informe vacia: lab-table-wrap usaba style.display=''
+     para mostrarse pero la ocultacion usaba classList -- inconsistencia que
+     dejaba la tabla siempre oculta. Corregido con classList.remove().
+  7. Creacion del modelo OperatorMonthlyCost en work_order_processor/models.py.
+     Migracion 0023_operator_monthly_cost generada y aplicada correctamente.
+     Tabla work_order_processor_operatormonthlycost operativa en BD.
 
 ---
 
-### Hoja de Ruta para la Siguiente Sesion (S051)
+### Hoja de Ruta para la Siguiente Sesion
 
-#### Contexto obligatorio previo
+NOTA: La siguiente sesion es H21 (split de panel/views.py). El H20 retoma
+tras completar el split. Ver anexo ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md.
 
-Auditar el estado real de los dos archivos modificados en S050 antes de
-implementar nada:
+Pendiente en H20 al retomar:
+  A) Vistas de gestion de OperatorMonthlyCost:
+     - OperatorMonthlyCostListView   GET  /panel/analytics/costs/
+     - OperatorMonthlyCostCreateView POST /panel/analytics/costs/create/
+     - OperatorMonthlyCostDeleteView DELETE /panel/analytics/costs/<pk>/
+     - OperatorMonthlyCostImportView POST /panel/analytics/costs/import/
+       Logica de importacion Excel: columnas MECANICO, FECHA (serial Excel
+       o YYYY-MM-DD), COSTE. Matching difuso de nombres via difflib.get_close_matches()
+       contra worker_names unicos del mes en WorkOrderEntry para la empresa.
+       Si ambiguedad (score < 0.8 o multiples candidatos): presentar al usuario
+       para confirmacion antes de persistir. Formato serial Excel: dias desde
+       1900-01-01 (ajuste leap year bug: restar 2 si valor > 60).
+     Todas las vistas van en analytics/views.py. Rutas en analytics/urls.py
+     bajo costs/. Mixin: SupervisorAccessMixin.
 
-  analytics/views.py
-  panel/templates/panel/analytics_lab.html
+  B) Template de gestion de costes:
+     panel/templates/panel/analytics_costs.html
+     - Tabla de registros existentes (operario, mes/anyo, coste).
+     - Formulario de entrada manual (select operario del mes, anyo, mes, coste).
+     - Formulario de importacion Excel con preview de matching antes de confirmar.
+     - Acceso desde sidebar bajo seccion Analisis.
 
-#### Paso 1 - Correccion JS style.display -> classList
-
-En analytics_lab.html existen dos referencias residuales a style.display
-que deben sustituirse por classList para ser coherentes con el resto del
-codigo y evitar conflictos con las clases CSS definidas en panel.css:
-
-  Referencia 1 (linea aprox. 562 en S050):
-    const delBtn = document.getElementById('btn-delete-profile');
-    ...
-    if (delBtn) delBtn.style.display = 'none';  -- en labLoadProfile()
-    if (delBtn) delBtn.style.display = '';       -- en labLoadProfile()
-
-  Sustituir por:
-    if (delBtn) delBtn.classList.add('lab-btn-delete-profile');
-    if (delBtn) delBtn.classList.remove('lab-btn-delete-profile');
-
-  Referencia 2 (linea aprox. 682 en S050):
-    const limitWarn = document.getElementById('lab-field-limit');
-    if (limitWarn) limitWarn.style.display = '';   -- en labAddField()
-    if (limitWarn) limitWarn.style.display = 'none'; -- en labAddField()
-
-  Sustituir por:
-    if (limitWarn) limitWarn.classList.remove('lab-field-limit');
-    if (limitWarn) limitWarn.classList.add('lab-field-limit');
-
-  Referencia 3 (linea aprox. 654 en S050):
-    document.getElementById('btn-delete-profile').style.display = 'none';
-    -- en labDeleteProfile()
-
-  Sustituir por:
-    document.getElementById('btn-delete-profile').classList.add(
-        'lab-btn-delete-profile'
-    );
-
-  Tras cada sustitucion ejecutar djlint --lint y verificar 0 errores.
-
-#### Paso 2 - Verificar endpoint AnalyticsProfileListCreateView
-
-Auditar analytics/views.py: confirmar que AnalyticsProfileListCreateView.get()
-devuelve un JSON con la clave 'profiles' como lista de objetos con campos
-pk, nombre y config. Si la estructura es diferente, adaptar el JS o el
-endpoint segun corresponda.
-
-Comando de auditoria:
-  grep -n "class AnalyticsProfileListCreateView\|def get\|def post\|profiles\|JsonResponse" \
-      analytics/views.py | head -40
-
-#### Paso 3 - Verificacion E2E
-
-Con el servidor recargado tras los pasos anteriores:
-  - Seleccionar 2 campos (Operario + Maquina), rango con datos, barras.
-    Verificar que el grafico ECharts muestra una serie por maquina para
-    el operario seleccionado.
-  - Seleccionar 3 campos (Operario + Maquina + Familia). Verificar tabla
-    cruzada correcta.
-  - Guardar una plantilla, recargar la pagina, cargar la plantilla y
-    verificar que todos los campos se restauran correctamente.
-  - Probar exportacion Excel con cruce multidimensional.
-  - Verificar plantilla por defecto creada automaticamente en primer acceso.
+  C) Dimension D6 en el laboratorio:
+     - Nueva opcion 'cost' en el selector de tipo de campo de analytics_lab.html.
+     - Handler _handle_cost() en AnalyticsLabDataView:
+       * Cruzar WorkOrderEntryLine.delta_hours con OperatorMonthlyCost por
+         (worker_name, year, month, company).
+       * Si no hay registro de coste para un operario/mes: excluir o marcar
+         como sin datos (configurable, por defecto excluir).
+       * Calcular coste_en_maquina = (horas_en_maquina / horas_totales_mes)
+         x monthly_cost para cada combinacion (operario, maquina, mes).
+       * Devolver series y tabla con columnas:
+         Operario, Maquina/CdG, Periodo, Horas, Coste (EUR).
+     - Actualizar col_labels en _handle_cross() para incluir coste cuando
+       el campo 'cost' este activo.

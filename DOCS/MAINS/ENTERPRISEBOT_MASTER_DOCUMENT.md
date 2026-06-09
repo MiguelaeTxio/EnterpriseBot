@@ -250,9 +250,9 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Nuevo modelo `ExportTemplate` en app `work_order_processor` con migración.
 - Exclusivo para roles SUPERVISOR y ADMIN. WORKSHOP sin acceso a exportación.
 
-### Hito 20: Laboratorio de Análisis Unificado (EN PROGRESO)
+### Hito 20: Laboratorio de Análisis Unificado (PAUSADO)
 
-### Hito 21: Refactorización Arquitectónica — Split de panel/views.py (PAUSADO)
+### Hito 21: Refactorización Arquitectónica — Split de panel/views.py (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md`)
 - Desmantelamiento del fichero monolítico panel/views.py (16.482 líneas tras S049).
 - Fase B: extraer vistas de operario (~4.900 líneas) a panel/views_operator.py.

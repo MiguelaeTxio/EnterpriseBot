@@ -1543,3 +1543,88 @@ class ExportTemplate(models.Model):
             operator_scope = cls.OperatorScope.ALL,
         )
 
+
+# ---------------------------------------------------------------------------
+# OperatorMonthlyCost
+# ---------------------------------------------------------------------------
+
+class OperatorMonthlyCost(models.Model):
+    """
+    Stores the total monthly labour cost for a single operator within a
+    company. Used by the Analytics Laboratory to distribute operator cost
+    across machines proportionally to hours worked.
+
+    The cost figure represents the full employer cost for the month:
+    gross salary + social security + any other employer-side charges.
+
+    Uniqueness is enforced at (company, worker_name, year, month) so that
+    only one cost record exists per operator per calendar month.
+    ---
+    Almacena el coste laboral mensual total de un operario en una empresa.
+    Usado por el Laboratorio de Analisis para repartir el coste del operario
+    entre maquinas proporcionalmente a las horas trabajadas.
+
+    El importe representa el coste total para el empresario en el mes:
+    salario bruto + seguridad social + cualquier otro cargo del empleador.
+
+    La unicidad se aplica a (company, worker_name, year, month) para que
+    solo exista un registro de coste por operario por mes.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name='operator_monthly_costs',
+        verbose_name='empresa',
+    )
+
+    # Matches WorkOrderEntry.worker_name -- same raw string used in parts.
+    # Coincide con WorkOrderEntry.worker_name -- misma cadena usada en partes.
+    worker_name = models.CharField(
+        max_length=200,
+        verbose_name='nombre del operario',
+    )
+
+    year = models.PositiveSmallIntegerField(
+        verbose_name='año',
+    )
+
+    month = models.PositiveSmallIntegerField(
+        verbose_name='mes',
+    )
+
+    # Full employer monthly cost in EUR / Coste mensual total del empresario en EUR.
+    monthly_cost = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='coste mensual (EUR)',
+    )
+
+    # Audit timestamps / Marcas de tiempo de auditoria.
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='creado en',
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='actualizado en',
+    )
+
+    class Meta:
+        unique_together = [('company', 'worker_name', 'year', 'month')]
+        ordering = ['-year', '-month', 'worker_name']
+        verbose_name = 'Coste mensual de operario'
+        verbose_name_plural = 'Costes mensuales de operarios'
+
+    def __str__(self):
+        """
+        Returns a human-readable representation of the cost record.
+        ---
+        Devuelve una representacion legible del registro de coste.
+        """
+        return (
+            f'{self.worker_name} '
+            f'({self.year}-{self.month:02d}): '
+            f'{self.monthly_cost} EUR'
+        )
+

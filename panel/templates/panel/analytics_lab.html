@@ -1,18 +1,18 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/analytics_lab.html #}
 {#                                                                                      #}
-{# Unified Analytics Laboratory — Hito 20.                                            #}
+{# Unified Analytics Laboratory - Hito 20.                                            #}
 {# Three-panel layout: Lab (selectors) + Report (table) + Charts (ECharts 5).        #}
 {# Draggable divider between report and chart panels.                                 #}
 {# Independent fullscreen per panel via Element.requestFullscreen().                  #}
 {# Data fetched client-side from /panel/analytics/lab/data/.                         #}
 {# Excel export via POST to /panel/analytics/lab/export/.                             #}
 {#                                                                                      #}
-{# Laboratorio de Análisis Unificado — Hito 20.                                       #}
-{# Diseño de tres paneles: Laboratorio (selectores) + Informe (tabla) + Gráficas.    #}
-{# Divisor arrastrable entre paneles de informe y gráficas.                           #}
+{# Laboratorio de Analisis Unificado - Hito 20.                                       #}
+{# Diseno de tres paneles: Laboratorio (selectores) + Informe (tabla) + Graficas.    #}
+{# Divisor arrastrable entre paneles de informe y graficas.                           #}
 {# Pantalla completa independiente por panel via Element.requestFullscreen().         #}
 {# Datos obtenidos en el cliente desde /panel/analytics/lab/data/.                   #}
-{# Exportación Excel via POST a /panel/analytics/lab/export/.                        #}
+{# Exportacion Excel via POST a /panel/analytics/lab/export/.                        #}
 {% extends "panel/base.html" %}
 {% load static %}
 
@@ -20,8 +20,8 @@
 {% block page_title %}Laboratorio de Análisis{% endblock %}
 
 {% block content %}
-{# ECharts 5 from CDN — no venv installation required.                                #}
-{# ECharts 5 desde CDN — no requiere instalación en el venv.                         #}
+{# ECharts 5 from CDN - no venv installation required.                                #}
+{# ECharts 5 desde CDN - no requiere instalacion en el venv.                         #}
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 
 <style>
@@ -38,7 +38,7 @@
     box-sizing: border-box;
 }
 
-/* Top panel: laboratory selectors — Panel superior: selectores */
+/* Top panel: laboratory selectors - Panel superior: selectores */
 #lab-top {
     flex: 0 0 auto;
     background: var(--bs-body-bg, #fff);
@@ -58,7 +58,7 @@
     display: none;
 }
 
-/* Bottom row: report + divider + chart — Fila inferior: informe + divisor + gráfica */
+/* Bottom row: report + divider + chart - Fila inferior: informe + divisor + grafica */
 #lab-bottom {
     display: flex;
     flex: 1 1 0;
@@ -69,7 +69,7 @@
     border: 1px solid var(--bs-border-color, #dee2e6);
 }
 
-/* Report panel — Panel de informe */
+/* Report panel - Panel de informe */
 #lab-report {
     flex: 0 0 48%;
     display: flex;
@@ -94,7 +94,7 @@
     padding: 0.5rem;
 }
 
-/* Draggable divider — Divisor arrastrable */
+/* Draggable divider - Divisor arrastrable */
 #lab-divider {
     flex: 0 0 6px;
     cursor: col-resize;
@@ -119,7 +119,7 @@
     border-right: 2px dotted rgba(0,0,0,0.25);
 }
 
-/* Chart panel — Panel de gráficas */
+/* Chart panel - Panel de graficas */
 #lab-chart {
     flex: 1 1 0;
     display: flex;
@@ -147,7 +147,7 @@
     height: 100%;
 }
 
-/* Summary bar — Barra de resumen */
+/* Summary bar - Barra de resumen */
 #lab-summary {
     display: none;
     gap: 0.5rem;
@@ -158,7 +158,7 @@
     font-size: 0.78rem;
 }
 
-/* Empty state — Estado vacío */
+/* Empty state - Estado vacio */
 #lab-empty-report,
 #lab-empty-chart {
     display: flex;
@@ -177,7 +177,7 @@
     margin-bottom: 0.5rem;
 }
 
-/* Fullscreen overrides — Ajustes para pantalla completa */
+/* Fullscreen overrides - Ajustes para pantalla completa */
 #lab-report:fullscreen,
 #lab-chart:fullscreen,
 #lab-top:fullscreen {
@@ -190,7 +190,7 @@
     height: calc(100vh - 3rem);
 }
 
-/* Spinner — Indicador de carga */
+/* Spinner - Indicador de carga */
 #lab-spinner {
     display: none;
     position: absolute;
@@ -200,7 +200,7 @@
     z-index: 20;
 }
 
-/* Table in report panel — Tabla en panel de informe */
+/* Table in report panel - Tabla en panel de informe */
 #lab-table {
     font-size: 0.8rem;
 }
@@ -228,7 +228,7 @@
 <div id="lab-wrapper">
 
     {# ================================================================== #}
-    {# TOP PANEL — Laboratory selectors / Selectores del laboratorio       #}
+    {# TOP PANEL - Laboratory selectors / Selectores del laboratorio       #}
     {# ================================================================== #}
     <div id="lab-top">
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -260,7 +260,44 @@
                             title="Eliminar plantilla seleccionada">
                         <i class="bi bi-trash"></i>
                     </button>
+                    <button class="btn btn-sm btn-outline-secondary"
+                            onclick="labOpenManageModal()"
+                            title="Gestionar plantillas">
+                        <i class="bi bi-list-ul"></i>
+                    </button>
                 </div>
+
+{# ---- Modal: gestionar plantillas ---- #}
+<div id="lab-manage-modal"
+     class="modal fade" tabindex="-1"
+     aria-labelledby="lab-manage-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="lab-manage-modal-label">
+                    <i class="bi bi-list-ul me-2"></i>Gestionar plantillas
+                </h5>
+                <button type="button" class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <ul id="lab-manage-list"
+                    class="list-group list-group-flush">
+                </ul>
+                <p id="lab-manage-empty"
+                   class="text-muted small mt-2 d-none">
+                    No hay plantillas guardadas.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-sm btn-secondary"
+                        data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
                 <button class="btn btn-sm btn-outline-secondary"
                         onclick="labToggleTop()"
                         title="Colapsar / expandir panel">
@@ -277,13 +314,13 @@
         <div id="lab-form-body">
 
             {# ---------------------------------------------------------- #}
-            {# FIELD BUILDER — Constructor de campos de análisis           #}
-            {# El usuario añade campos uno a uno. El backend cruza todos.  #}
+            {# FIELD BUILDER - Constructor de campos de analisis           #}
+            {# El usuario anade campos uno a uno. El backend cruza todos.  #}
             {# ---------------------------------------------------------- #}
             <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
                 <span class="text-muted small fw-semibold">Campos de análisis:</span>
                 <div id="lab-fields-container" class="d-flex flex-wrap gap-2 align-items-center">
-                    {# Campo 1 por defecto — Field 1 default #}
+                    {# Campo 1 por defecto - Field 1 default #}
                     <div class="lab-field-row d-flex align-items-center gap-1"
                          data-field-idx="0">
                         <select class="form-select form-select-sm lab-field-type lab-field-type-select"
@@ -356,7 +393,7 @@
                 </div>
             </div>
 
-            {# Summary badges — Insignias de resumen #}
+            {# Summary badges - Insignias de resumen #}
             <div id="lab-summary" class="mt-2">
                 <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">
                     <i class="bi bi-clock me-1"></i>
@@ -375,12 +412,12 @@
     </div>
 
     {# ================================================================== #}
-    {# BOTTOM ROW — Report + Divider + Chart                               #}
+    {# BOTTOM ROW - Report + Divider + Chart                               #}
     {# ================================================================== #}
     <div id="lab-bottom">
 
         {# ---------------------------------------------------------- #}
-        {# REPORT PANEL — Panel de informe tabular                     #}
+        {# REPORT PANEL - Panel de informe tabular                     #}
         {# ---------------------------------------------------------- #}
         <div id="lab-report">
             <div id="lab-report-header">
@@ -415,12 +452,12 @@
         </div>
 
         {# ---------------------------------------------------------- #}
-        {# DRAGGABLE DIVIDER — Divisor arrastrable                     #}
+        {# DRAGGABLE DIVIDER - Divisor arrastrable                     #}
         {# ---------------------------------------------------------- #}
         <div id="lab-divider"></div>
 
         {# ---------------------------------------------------------- #}
-        {# CHART PANEL — Panel de gráficas ECharts                    #}
+        {# CHART PANEL - Panel de graficas ECharts                    #}
         {# ---------------------------------------------------------- #}
         <div id="lab-chart">
             <div id="lab-chart-header">
@@ -450,7 +487,7 @@
     </div>{# /lab-bottom #}
 </div>{# /lab-wrapper #}
 
-{# Hidden CSRF token for POST requests — Token CSRF oculto para peticiones POST #}
+{# Hidden CSRF token for POST requests - Token CSRF oculto para peticiones POST #}
 {% verbatim %}{% endverbatim %}
 <input type="hidden" id="lab-csrf" value="{{ csrf_token }}">
 
@@ -461,7 +498,7 @@
    ================================================================ */
 
 // ----------------------------------------------------------------
-// Selector data from Django context — Datos de selectores desde Django
+// Selector data from Django context - Datos de selectores desde Django
 // ----------------------------------------------------------------
 const LAB_OPERATORS  = {{ operators|safe }};
 const LAB_MACHINES   = {{ machines|safe }};
@@ -470,12 +507,12 @@ const LAB_FAULT_CATS = {{ fault_categories|safe }};  // [{key, label}, ...]
 const LAB_CSRF = document.getElementById('lab-csrf').value;
 
 // ----------------------------------------------------------------
-// ECharts instance — Instancia ECharts
+// ECharts instance - Instancia ECharts
 // ----------------------------------------------------------------
 let labChart = null;
 
 // ----------------------------------------------------------------
-// Current table data for export — Datos de tabla actuales para exportar
+// Current table data for export - Datos de tabla actuales para exportar
 // ----------------------------------------------------------------
 let labCurrentColumns = [];
 let labCurrentRows    = [];
@@ -484,18 +521,18 @@ let labCurrentFrom    = '';
 let labCurrentTo      = '';
 
 // ----------------------------------------------------------------
-// Sort state — Estado de ordenación
+// Sort state - Estado de ordenacion
 // ----------------------------------------------------------------
 let labSortCol = -1;
 let labSortAsc = true;
 
 // ----------------------------------------------------------------
-// Field counter — Contador de campos
+// Field counter - Contador de campos
 // ----------------------------------------------------------------
 let labFieldIdx = 1;
 
 // ----------------------------------------------------------------
-// Init on DOM ready — Inicialización al cargar el DOM
+// Init on DOM ready - Inicializacion al cargar el DOM
 // ----------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', function () {
     labInitChart();
@@ -538,18 +575,17 @@ function labLoadProfiles() {
 // Crea una plantilla por defecto para usuarios nuevos.
 function labCreateDefaultProfile() {
     const config = labGetCurrentConfig();
-    const body   = new URLSearchParams({
-        csrfmiddlewaretoken: LAB_CSRF,
-        nombre:              'Default',
-        config:              JSON.stringify(config),
-    });
     fetch('/panel/analytics/profiles/', {
         method:  'POST',
         headers: {
             'X-Requested-With': 'XMLHttpRequest',
-            'Content-Type':     'application/x-www-form-urlencoded',
+            'Content-Type':     'application/json',
+            'X-CSRFToken':      LAB_CSRF,
         },
-        body: body.toString(),
+        body: JSON.stringify({
+            nombre: 'Default',
+            config: config,
+        }),
     })
     .then(function () { labLoadProfiles(); })
     .catch(function () { /* silently ignore */ });
@@ -561,10 +597,10 @@ function labLoadProfile(pk) {
     const sel = document.getElementById('lab-profile-select');
     const delBtn = document.getElementById('btn-delete-profile');
     if (!pk) {
-        if (delBtn) delBtn.style.display = 'none';
+        if (delBtn) delBtn.classList.add('lab-btn-delete-profile');
         return;
     }
-    if (delBtn) delBtn.style.display = '';
+    if (delBtn) delBtn.classList.remove('lab-btn-delete-profile');
     const opt = sel.querySelector('option[value="' + pk + '"]');
     if (!opt || !opt.dataset.config) return;
     let config;
@@ -603,6 +639,76 @@ function labLoadProfile(pk) {
     }
 }
 
+// Open profile management modal.
+// Abre el modal de gestion de plantillas.
+function labOpenManageModal() {
+    const list  = document.getElementById('lab-manage-list');
+    const empty = document.getElementById('lab-manage-empty');
+    const sel   = document.getElementById('lab-profile-select');
+    list.innerHTML = '';
+    const opts  = Array.from(sel.options).filter(
+        function (o) { return o.value !== ''; }
+    );
+    if (!opts.length) {
+        empty.classList.remove('d-none');
+    } else {
+        empty.classList.add('d-none');
+        opts.forEach(function (opt) {
+            const li  = document.createElement('li');
+            li.className = (
+                'list-group-item d-flex'
+                + ' justify-content-between align-items-center'
+            );
+            const span = document.createElement('span');
+            span.textContent = opt.text;
+            const btn  = document.createElement('button');
+            btn.className   = 'btn btn-sm btn-outline-danger';
+            btn.innerHTML   = '<i class="bi bi-trash"></i>';
+            btn.title       = 'Eliminar plantilla';
+            btn.onclick     = function () {
+                labDeleteProfileByPk(
+                    opt.value, opt.text, li
+                );
+            };
+            li.appendChild(span);
+            li.appendChild(btn);
+            list.appendChild(li);
+        });
+    }
+    const modal = new bootstrap.Modal(
+        document.getElementById('lab-manage-modal')
+    );
+    modal.show();
+}
+
+// Delete a profile by pk from within the manage modal.
+// Elimina una plantilla por pk desde el modal de gestion.
+function labDeleteProfileByPk(pk, label, liElement) {
+    if (!window.confirm(
+        'Eliminar la plantilla "' + label + '"?'
+    )) return;
+    fetch('/panel/analytics/profiles/' + pk + '/', {
+        method:  'DELETE',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken':      LAB_CSRF,
+        },
+    })
+    .then(function (r) { return r.json(); })
+    .then(function () {
+        liElement.remove();
+        const list  = document.getElementById('lab-manage-list');
+        const empty = document.getElementById('lab-manage-empty');
+        if (!list.children.length) {
+            empty.classList.remove('d-none');
+        }
+        labLoadProfiles();
+    })
+    .catch(function () {
+        alert('Error al eliminar la plantilla.');
+    });
+}
+
 // Save current lab config as a named profile.
 // Guarda la config actual del laboratorio como plantilla con nombre.
 function labSaveProfile() {
@@ -611,18 +717,17 @@ function labSaveProfile() {
     );
     if (!nombre || !nombre.trim()) return;
     const config = labGetCurrentConfig();
-    const body   = new URLSearchParams({
-        csrfmiddlewaretoken: LAB_CSRF,
-        nombre:              nombre.trim(),
-        config:              JSON.stringify(config),
-    });
     fetch('/panel/analytics/profiles/', {
         method:  'POST',
         headers: {
             'X-Requested-With': 'XMLHttpRequest',
-            'Content-Type':     'application/x-www-form-urlencoded',
+            'Content-Type':     'application/json',
+            'X-CSRFToken':      LAB_CSRF,
         },
-        body: body.toString(),
+        body: JSON.stringify({
+            nombre: nombre.trim(),
+            config: config,
+        }),
     })
     .then(function (r) { return r.json(); })
     .then(function () { labLoadProfiles(); })
@@ -651,7 +756,7 @@ function labDeleteProfile() {
     })
     .then(function () {
         sel.value = '';
-        document.getElementById('btn-delete-profile').style.display = 'none';
+        document.getElementById('btn-delete-profile').classList.add('lab-btn-delete-profile');
         labLoadProfiles();
     })
     .catch(function () {
@@ -660,7 +765,7 @@ function labDeleteProfile() {
 }
 
 // ----------------------------------------------------------------
-// ECharts init — Inicialización de ECharts
+// ECharts init - Inicializacion de ECharts
 // ----------------------------------------------------------------
 function labInitChart() {
     const el = document.getElementById('lab-echarts');
@@ -671,9 +776,9 @@ function labInitChart() {
 }
 
 // ----------------------------------------------------------------
-// Add field row — Añadir fila de campo
+// Add field row - Anadir fila de campo
 // Clones the field row template and appends it to the container.
-// Clona la plantilla de fila de campo y la añade al contenedor.
+// Clona la plantilla de fila de campo y la anade al contenedor.
 // ----------------------------------------------------------------
 function labAddField() {
     const container = document.getElementById('lab-fields-container');
@@ -681,17 +786,17 @@ function labAddField() {
     const currentCount = container.querySelectorAll('.lab-field-row').length;
     const limitWarn    = document.getElementById('lab-field-limit');
     if (currentCount >= 5) {
-        if (limitWarn) limitWarn.style.display = '';
+        if (limitWarn) limitWarn.classList.remove('lab-field-limit');
         return;
     }
-    if (limitWarn) limitWarn.style.display = 'none';
+    if (limitWarn) limitWarn.classList.add('lab-field-limit');
     const idx = labFieldIdx++;
 
     const row = document.createElement('div');
     row.className        = 'lab-field-row d-flex align-items-center gap-1';
     row.dataset.fieldIdx = idx;
 
-    // Type selector — Selector de tipo
+    // Type selector - Selector de tipo
     const typeSelect = document.createElement('select');
     typeSelect.className = 'form-select form-select-sm lab-field-type lab-field-type-select';
     typeSelect.innerHTML = [
@@ -704,12 +809,12 @@ function labAddField() {
     ].join('');
     typeSelect.addEventListener('change', function () { labFieldTypeChanged(typeSelect); });
 
-    // Value selector — Selector de valor
+    // Value selector - Selector de valor
     const valSelect = document.createElement('select');
     valSelect.className = 'form-select form-select-sm lab-field-value lab-field-value-select';
     valSelect.innerHTML = '<option value="*">Todos</option>';
 
-    // Remove button — Botón de eliminar
+    // Remove button - Boton de eliminar
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn btn-sm btn-outline-danger lab-field-remove lab-field-remove-btn';
     removeBtn.title = 'Eliminar campo';
@@ -723,7 +828,7 @@ function labAddField() {
 }
 
 // ----------------------------------------------------------------
-// Remove field row — Eliminar fila de campo
+// Remove field row - Eliminar fila de campo
 // ----------------------------------------------------------------
 function labRemoveField(btn) {
     const row = btn.closest('.lab-field-row');
@@ -731,9 +836,9 @@ function labRemoveField(btn) {
 }
 
 // ----------------------------------------------------------------
-// Field type changed — Cambio de tipo de campo
+// Field type changed - Cambio de tipo de campo
 // Populates the value selector according to the selected field type.
-// Rellena el selector de valor según el tipo de campo seleccionado.
+// Rellena el selector de valor segun el tipo de campo seleccionado.
 // ----------------------------------------------------------------
 function labFieldTypeChanged(typeSelect) {
     const row       = typeSelect.closest('.lab-field-row');
@@ -741,7 +846,7 @@ function labFieldTypeChanged(typeSelect) {
     const removeBtn = row.querySelector('.lab-field-remove');
     const fieldType = typeSelect.value;
 
-    // Reset value selector — Resetear selector de valor
+    // Reset value selector - Resetear selector de valor
     valSelect.innerHTML = '<option value="*">Todos</option>';
 
     if (!fieldType) {
@@ -751,7 +856,7 @@ function labFieldTypeChanged(typeSelect) {
     }
 
     // Show remove button for all non-empty types
-    // Mostrar botón eliminar para todos los tipos no vacíos
+    // Mostrar boton eliminar para todos los tipos no vacios
     if (removeBtn) removeBtn.classList.remove('lab-field-remove-btn');
 
     if (fieldType === 'worker') {
@@ -780,20 +885,20 @@ function labFieldTypeChanged(typeSelect) {
         valSelect.classList.remove('lab-field-value-select');
     } else if (fieldType === 'spare_part') {
         // Free text input for spare part material search
-        // Campo de texto libre para búsqueda de repuesto por material
+        // Campo de texto libre para busqueda de repuesto por material
         valSelect.innerHTML = '<option value="*">Con cualquier repuesto</option>';
         valSelect.classList.remove('lab-field-value-select');
     } else if (fieldType === 'period') {
-        // Period has no entity selector — date range is enough
-        // Periodo no tiene selector de entidad — el rango de fechas es suficiente
+        // Period has no entity selector - date range is enough
+        // Periodo no tiene selector de entidad - el rango de fechas es suficiente
         valSelect.classList.add('lab-field-value-select');
     }
 }
 
 // ----------------------------------------------------------------
-// Build fields parameter — Construir parámetro fields
+// Build fields parameter - Construir parametro fields
 // Collects all active field rows and builds the 'fields' query param.
-// Recoge todas las filas de campo activas y construye el parámetro 'fields'.
+// Recoge todas las filas de campo activas y construye el parametro 'fields'.
 // ----------------------------------------------------------------
 function labBuildFieldsParam() {
     const rows   = document.querySelectorAll('#lab-fields-container .lab-field-row');
@@ -814,9 +919,9 @@ function labBuildFieldsParam() {
 }
 
 // ----------------------------------------------------------------
-// Count active fields — Contar campos activos
+// Count active fields - Contar campos activos
 // Returns the number of field rows with a non-empty type selected.
-// Devuelve el número de filas de campo con tipo no vacío seleccionado.
+// Devuelve el numero de filas de campo con tipo no vacio seleccionado.
 // ----------------------------------------------------------------
 function labCountActiveFields() {
     let count = 0;
@@ -931,7 +1036,7 @@ function labAnalyze() {
 }
 
 // ----------------------------------------------------------------
-// Render ECharts chart — Renderizar gráfico ECharts
+// Render ECharts chart - Renderizar grafico ECharts
 // ----------------------------------------------------------------
 function labRenderChart(chart) {
     if (!labChart) labInitChart();
@@ -944,7 +1049,7 @@ function labRenderChart(chart) {
     let option = {};
 
     if (type === 'pie') {
-        // Pie chart — Gráfico de tarta
+        // Pie chart - Grafico de tarta
         const pieSeries = series[0] || {};
         option = {
             title:   { text: title, left: 'center', top: 8, textStyle: { fontSize: 13 } },
@@ -961,7 +1066,7 @@ function labRenderChart(chart) {
         };
 
     } else if (type === 'scatter') {
-        // Scatter chart — Gráfico de dispersión
+        // Scatter chart - Grafico de dispersion
         const scatterSeries = series[0] || {};
         const scatterData   = (scatterSeries.data || []).map(function (p) {
             return { value: [p[0], p[1]], name: p[2] || '' };
@@ -986,7 +1091,7 @@ function labRenderChart(chart) {
         };
 
     } else if (type === 'heatmap') {
-        // Heatmap — Mapa de calor
+        // Heatmap - Mapa de calor
         const heatSeries = series[0] || {};
         const vm         = chart.visualMap || { min: 0, max: 10 };
         option = {
@@ -1032,7 +1137,7 @@ function labRenderChart(chart) {
         };
 
     } else {
-        // Bar / Line — Barras / Línea (default)
+        // Bar / Line - Barras / Linea (default)
         const isStacked = series.length > 1 && series[0].stack;
         const echartseries = series.map(function (s) {
             const obj = {
@@ -1068,7 +1173,7 @@ function labRenderChart(chart) {
 }
 
 // ----------------------------------------------------------------
-// Render table — Renderizar tabla de informe
+// Render table - Renderizar tabla de informe
 // ----------------------------------------------------------------
 function labRenderTable(table) {
     labCurrentColumns = table.columns || [];
@@ -1082,7 +1187,7 @@ function labDrawTable() {
     const thead = document.getElementById('lab-thead');
     const tbody = document.getElementById('lab-tbody');
 
-    // Header row — Fila de cabecera
+    // Header row - Fila de cabecera
     thead.innerHTML = '';
     const tr = document.createElement('tr');
     labCurrentColumns.forEach(function (col, idx) {
@@ -1105,7 +1210,7 @@ function labDrawTable() {
     });
     thead.appendChild(tr);
 
-    // Sort rows — Ordenar filas
+    // Sort rows - Ordenar filas
     const sorted = labCurrentRows.slice().sort(function (a, b) {
         if (labSortCol < 0) return 0;
         const va = a[labSortCol];
@@ -1118,7 +1223,7 @@ function labDrawTable() {
         return labSortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
     });
 
-    // Body rows — Filas del cuerpo
+    // Body rows - Filas del cuerpo
     tbody.innerHTML = '';
     sorted.forEach(function (row) {
         const tr = document.createElement('tr');
@@ -1132,12 +1237,12 @@ function labDrawTable() {
         tbody.appendChild(tr);
     });
 
-    document.getElementById('lab-table-wrap').style.display  = '';
+    document.getElementById('lab-table-wrap').classList.remove('lab-table-wrap-hidden');
     document.getElementById('lab-empty-report').style.display = 'none';
 }
 
 // ----------------------------------------------------------------
-// Render summary badges — Renderizar insignias de resumen
+// Render summary badges - Renderizar insignias de resumen
 // ----------------------------------------------------------------
 function labRenderSummary(summary) {
     const s = summary || {};
@@ -1148,7 +1253,7 @@ function labRenderSummary(summary) {
 }
 
 // ----------------------------------------------------------------
-// Show chart error — Mostrar error en gráfico
+// Show chart error - Mostrar error en grafico
 // ----------------------------------------------------------------
 function labShowChartError(msg) {
     if (labChart) {
@@ -1164,7 +1269,7 @@ function labShowChartError(msg) {
 }
 
 // ----------------------------------------------------------------
-// Export to Excel — Exportar a Excel
+// Export to Excel - Exportar a Excel
 // ----------------------------------------------------------------
 function labExport() {
     if (!labCurrentColumns.length) return;
@@ -1195,7 +1300,7 @@ function labExport() {
 }
 
 // ----------------------------------------------------------------
-// Toggle top panel — Colapsar / expandir panel superior
+// Toggle top panel - Colapsar / expandir panel superior
 // ----------------------------------------------------------------
 function labToggleTop() {
     const top  = document.getElementById('lab-top');
@@ -1210,7 +1315,7 @@ function labToggleTop() {
 }
 
 // ----------------------------------------------------------------
-// Fullscreen — Pantalla completa por panel
+// Fullscreen - Pantalla completa por panel
 // ----------------------------------------------------------------
 function labFullscreen(panelId) {
     const el = document.getElementById(panelId);
@@ -1233,7 +1338,7 @@ document.addEventListener('fullscreenchange', function () {
 });
 
 // ----------------------------------------------------------------
-// Draggable divider — Divisor arrastrable
+// Draggable divider - Divisor arrastrable
 // ----------------------------------------------------------------
 function labInitDivider() {
     const divider = document.getElementById('lab-divider');
