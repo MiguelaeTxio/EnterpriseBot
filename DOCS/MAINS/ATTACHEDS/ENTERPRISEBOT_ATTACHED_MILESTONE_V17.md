@@ -159,20 +159,13 @@ WorkOrderAssistance (expediente)
 
 Sesion | Fecha      | Pasos trabajados | Resumen
 S001   | 2026-06-02 | Ninguno (diseno) | Hito iniciado. Rediseno completo arquitectura modelos: N vehiculos por servicio, estrategia offline Android nativa, identificacion campos adicionales PDF Allianz. Incidencias paralelas: fix nocturno/festivo wizard, fix redirect operario, prototipo AlbaranApp Android compilado y desplegado, 6 skills Android creadas, PEE y PICP actualizados.
+S002   | 2026-06-09 | Incidencias previas (0.1 y parcial) | Sidebar acordeon Bootstrap Collapse con 9 secciones, persistencia sessionStorage y chevron animado. Fusion IVR+WhatsApp en seccion Telefonia. Iconos homogeneizados: bi-buildings-fill en cabecera sidebar y login, bi-truck-flatbed en acordeon Asistencia, bi-bar-chart en acordeon Analitica, bi-building reservado para Aseguradoras. Bloque 0.2 (autocompletado matricula) pendiente para S003.
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S002)
+## 5. Hoja de Ruta para la Siguiente Sesion (S003)
 
-### BLOQUE 0 -- Incidencias previas (ejecutar primero)
-
-**0.1 -- Sidebar acordeon (Paso 7)**
-1. Solicitar _nav_items.html completo para obtener anclas reales.
-2. Identificar secciones actuales del sidebar y estructura HTML.
-3. Envolver cada seccion en Bootstrap Collapse (ya disponible en el proyecto).
-4. Anadir cabecera colapsable por seccion con flecha giratoria.
-5. Persistencia del estado en sessionStorage via JS minimo.
-6. Verificar en produccion que todas las rutas siguen funcionando.
+### BLOQUE 0 -- Incidencias previas (completar primero)
 
 **0.2 -- Autocompletado matricula en partes digitales**
 1. Solicitar panel/static/panel/js/form_entry_assets.js para auditar
