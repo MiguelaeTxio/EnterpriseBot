@@ -647,3 +647,68 @@ input[type="time"].eb-field.field-flagged:valid {
 .badge-sm {
     font-size: 0.75rem;
 }
+
+/* Analytics Lab — field selectors width.
+   Analytics Lab — ancho de selectores de campo. */
+.lab-field-type-select {
+    width: 140px;
+}
+
+/* Analytics Lab — field value selector width + hidden by default.
+   Analytics Lab — ancho del selector de valor + oculto por defecto. */
+.lab-field-value-select {
+    width: 160px;
+    display: none;
+}
+
+/* Analytics Lab — remove field button, hidden by default.
+   Analytics Lab — botón eliminar campo, oculto por defecto. */
+.lab-field-remove-btn {
+    display: none;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.72rem;
+}
+
+/* Analytics Lab — add field button.
+   Analytics Lab — botón añadir campo. */
+.lab-add-field-btn {
+    padding: 0.2rem 0.55rem;
+    font-size: 0.78rem;
+}
+
+/* Analytics Lab — field warning label, hidden by default.
+   Analytics Lab — aviso de campo, oculto por defecto. */
+.lab-field-warning {
+    display: none;
+}
+
+/* Analytics Lab — xs action buttons (export, fullscreen).
+   Analytics Lab — botones de acción xs (exportar, pantalla completa). */
+.lab-btn-xs {
+    font-size: 0.72rem;
+    padding: 0.15rem 0.45rem;
+}
+
+/* Analytics Lab — table wrapper, hidden until data arrives.
+   Analytics Lab — contenedor de tabla, oculto hasta recibir datos. */
+.lab-table-wrap-hidden {
+    display: none;
+}
+
+/* Analytics Lab — profile selector width.
+   Analytics Lab — ancho del selector de plantillas. */
+.lab-profile-select {
+    width: 160px;
+}
+
+/* Analytics Lab — delete profile button, hidden by default.
+   Analytics Lab — botón eliminar plantilla, oculto por defecto. */
+.lab-btn-delete-profile {
+    display: none;
+}
+
+/* Analytics Lab — field limit warning, hidden by default.
+   Analytics Lab — aviso de límite de campos, oculto por defecto. */
+.lab-field-limit {
+    display: none;
+}

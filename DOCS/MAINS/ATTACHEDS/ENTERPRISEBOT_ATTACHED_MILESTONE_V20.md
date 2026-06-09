@@ -174,88 +174,105 @@ S049 (2026-06-09):
       vacio y devuelve HTTP 400. La causa es un problema en el template
       analytics_lab.html (construccion del parametro dimension en el JS).
 
+S050 (2026-06-09):
+  1. Actualizacion del PISA: PASO 0 ampliado de 3 a 9 lecturas obligatorias.
+     Grupo B (PED completo): ped-router, ped-format, ped-pma, ped-pea, ped-pmp,
+     ped-doc. Grupo C: pythonanywhere-reload. Skill empaquetada como pisa.skill.
+  2. Correccion bug dimension vacia: nueva funcion labCollectFields() sustituye
+     a labDeriveDimension(). El frontend serializa todos los campos activos como
+     JSON array y los envia como parametro 'fields' al backend.
+  3. Eliminacion de los 9 inline styles del template analytics_lab.html y de
+     los inline styles JS en labAddField() y labFieldTypeChanged(). Clases CSS
+     nuevas anadidas a panel.css: lab-field-type-select, lab-field-value-select,
+     lab-field-remove-btn, lab-add-field-btn, lab-field-warning, lab-btn-xs,
+     lab-table-wrap-hidden, lab-profile-select, lab-btn-delete-profile,
+     lab-field-limit. djlint: 0 errores en estado final.
+  4. Arquitectura multidimensional: nuevo dispatcher _dispatch() y handler
+     _handle_cross() en AnalyticsLabDataView. Soporta hasta 5 campos activos
+     con cruce por worker, machine, fault_category, period. Compatibilidad
+     legacy con parametro 'dimension' conservada. Limite 5 campos en frontend.
+  5. Correccion _handle_d1 heatmap: filtro worker_name aplicado correctamente
+     cuando entity_pk presente (hm_entry_filter / hm_line_filter).
+  6. Desglose por entidad en _handle_d1 y _handle_d2 cuando entity_pk=None:
+     una serie por operario / una serie por maquina respectivamente.
+  7. Sistema de plantillas de analisis: labLoadProfiles(), labSaveProfile(),
+     labDeleteProfile(), labLoadProfile(), labCreateDefaultProfile()
+     implementadas en analytics_lab.html. Selector de plantillas, boton
+     guardar y boton eliminar anadidos a la cabecera del laboratorio.
+     Plantilla por defecto creada automaticamente en primer acceso.
+  8. Pendiente al cierre de S050: sustituir style.display por classList en
+     las referencias JS a btn-delete-profile y lab-field-limit. Verificar
+     que AnalyticsProfileListCreateView devuelve clave 'profiles' en GET.
+     Verificacion E2E completa del flujo multidimensional y plantillas.
+
 ---
 
-### Hoja de Ruta para la Siguiente Sesion (S050)
+### Hoja de Ruta para la Siguiente Sesion (S051)
 
 #### Contexto obligatorio previo
 
-Antes de implementar nada, el modelo debe auditar el estado real de:
-  analytics/views.py        -- verificar que las 8 vistas estan correctas
-  panel/templates/panel/analytics_lab.html -- estado real del template
+Auditar el estado real de los dos archivos modificados en S050 antes de
+implementar nada:
 
-Comandos de auditoria:
-  grep -n "dimension\|entity_pk\|Analizar\|fetch\|GET" panel/templates/panel/analytics_lab.html | head -60
+  analytics/views.py
+  panel/templates/panel/analytics_lab.html
 
-#### Paso 1 - Correccion del bug de dimension vacia
+#### Paso 1 - Correccion JS style.display -> classList
 
-El boton Analizar no envia el parametro 'dimension' al endpoint
-analytics:analytics_lab_data. El backend recibe dimension='' y devuelve
-HTTP 400 "Dimension no valida: ''".
+En analytics_lab.html existen dos referencias residuales a style.display
+que deben sustituirse por classList para ser coherentes con el resto del
+codigo y evitar conflictos con las clases CSS definidas en panel.css:
 
-La causa esta en analytics_lab.html: el JS que construye la URL de la
-peticion al endpoint no esta incluyendo el parametro 'dimension' correctamente.
+  Referencia 1 (linea aprox. 562 en S050):
+    const delBtn = document.getElementById('btn-delete-profile');
+    ...
+    if (delBtn) delBtn.style.display = 'none';  -- en labLoadProfile()
+    if (delBtn) delBtn.style.display = '';       -- en labLoadProfile()
 
-El template envia los campos como "tipo1:valor1,tipo2:valor2,..." via el
-parametro 'fields' segun la arquitectura del anexo original, pero
-AnalyticsLabDataView.get() espera el parametro 'dimension' (d1..d5), no 'fields'.
+  Sustituir por:
+    if (delBtn) delBtn.classList.add('lab-btn-delete-profile');
+    if (delBtn) delBtn.classList.remove('lab-btn-delete-profile');
 
-DECISION ARQUITECTONICA CRITICA: hay dos opciones.
+  Referencia 2 (linea aprox. 682 en S050):
+    const limitWarn = document.getElementById('lab-field-limit');
+    if (limitWarn) limitWarn.style.display = '';   -- en labAddField()
+    if (limitWarn) limitWarn.style.display = 'none'; -- en labAddField()
 
-OPCION A (recomendada): adaptar el template para que envie 'dimension' y
-'entity_pk' en lugar de 'fields', alineandose con la implementacion real
-del backend. El frontend construye dimension=d1 cuando el primer campo es
-de tipo worker, dimension=d2 para machine, etc.
+  Sustituir por:
+    if (limitWarn) limitWarn.classList.remove('lab-field-limit');
+    if (limitWarn) limitWarn.classList.add('lab-field-limit');
 
-Mapeo tipo_campo -> dimension:
-  worker        -> d1, entity_pk = nombre del operario (worker_name)
-  machine       -> d2, entity_pk = pk del MachineAsset
-  fault_category-> d3, entity_pk = clave de la familia (ej. HYDRAULIC)
-  period        -> d4, entity_pk = null
-  budget        -> d5, entity_pk = null
+  Referencia 3 (linea aprox. 654 en S050):
+    document.getElementById('btn-delete-profile').style.display = 'none';
+    -- en labDeleteProfile()
 
-OPCION B: reimplementar el backend para aceptar 'fields' en lugar de
-'dimension'+'entity_pk'. Mayor impacto, no recomendada.
+  Sustituir por:
+    document.getElementById('btn-delete-profile').classList.add(
+        'lab-btn-delete-profile'
+    );
 
-El modelo debe presentar el analisis al usuario y ejecutar la OPCION A
-salvo instruccion expresa en contrario.
+  Tras cada sustitucion ejecutar djlint --lint y verificar 0 errores.
 
-#### Paso 2 - Sistema de plantillas de analisis por usuario
+#### Paso 2 - Verificar endpoint AnalyticsProfileListCreateView
 
-Modelo: AnalyticsProfile (ya existe en panel/models.py).
-Campos existentes: company_user (FK), nombre (str), config (JSONField).
-El campo config almacena la configuracion completa del laboratorio:
-{
-  "dimension": "d1",
-  "entity_pk": "PABLO CAÑAMERO",
-  "date_from": "2026-06-01",
-  "date_to": "2026-06-09",
-  "granularity": "month",
-  "chart_type": "bar",
-  "fields_raw": "worker:PABLO CAÑAMERO,machine:*"
-}
+Auditar analytics/views.py: confirmar que AnalyticsProfileListCreateView.get()
+devuelve un JSON con la clave 'profiles' como lista de objetos con campos
+pk, nombre y config. Si la estructura es diferente, adaptar el JS o el
+endpoint segun corresponda.
 
-Endpoints ya implementados en analytics/views.py:
-  AnalyticsProfileListCreateView -- GET lista perfiles, POST crea/actualiza
-  AnalyticsProfileDeleteView     -- DELETE elimina por pk
-
-Lo que falta: la integracion en el template analytics_lab.html.
-  - Boton "Guardar plantilla" que abre un input de nombre y hace POST a
-    analytics:analytics_profile_list_create con el config actual.
-  - Selector de plantillas guardadas que al seleccionar rellena todos los
-    campos del laboratorio con los valores del config.
-  - Boton de borrado por plantilla que llama a analytics:analytics_profile_delete.
-  - Las plantillas se cargan al abrir el laboratorio via GET al endpoint
-    analytics:analytics_profile_list_create.
-  - Toda la logica de plantillas es client-side (JS) salvo las llamadas
-    a los endpoints de persistencia.
+Comando de auditoria:
+  grep -n "class AnalyticsProfileListCreateView\|def get\|def post\|profiles\|JsonResponse" \
+      analytics/views.py | head -40
 
 #### Paso 3 - Verificacion E2E
 
-Probar con datos reales de produccion:
-  - Seleccionar D1 (Operario) con un operario concreto, rango de fechas
-    con datos, granularidad mensual, tipo barras. Verificar que el grafico
-    ECharts se renderiza y la tabla de informe se puebla correctamente.
-  - Probar exportacion Excel.
+Con el servidor recargado tras los pasos anteriores:
+  - Seleccionar 2 campos (Operario + Maquina), rango con datos, barras.
+    Verificar que el grafico ECharts muestra una serie por maquina para
+    el operario seleccionado.
+  - Seleccionar 3 campos (Operario + Maquina + Familia). Verificar tabla
+    cruzada correcta.
   - Guardar una plantilla, recargar la pagina, cargar la plantilla y
-    verificar que los campos se rellenan correctamente.
+    verificar que todos los campos se restauran correctamente.
+  - Probar exportacion Excel con cruce multidimensional.
+  - Verificar plantilla por defecto creada automaticamente en primer acceso.

@@ -504,14 +504,24 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
         ]
 
         if chart_type == "heatmap":
+            hm_entry_filter = {
+                "work_order__company": company,
+                "work_date__gte": date_from,
+                "work_date__lte": date_to,
+                "worker_name__gt": "",
+            }
+            hm_line_filter = {
+                "entry__work_order__company": company,
+                "entry__work_date__gte": date_from,
+                "entry__work_date__lte": date_to,
+                "fault_category__gt": "",
+            }
+            if worker_name:
+                hm_entry_filter["worker_name"] = worker_name
+                hm_line_filter["entry__worker_name"] = worker_name
             operators_in_range = list(
                 WorkOrderEntry.objects
-                .filter(
-                    work_order__company=company,
-                    work_date__gte=date_from,
-                    work_date__lte=date_to,
-                    worker_name__gt="",
-                )
+                .filter(**hm_entry_filter)
                 .values_list("worker_name", flat=True)
                 .distinct()
                 .order_by("worker_name")
@@ -520,12 +530,7 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
                 self._translate_fault_cat(k)
                 for k in sorted(
                     WorkOrderEntryLine.objects
-                    .filter(
-                        entry__work_order__company=company,
-                        entry__work_date__gte=date_from,
-                        entry__work_date__lte=date_to,
-                        fault_category__gt="",
-                    )
+                    .filter(**hm_line_filter)
                     .values_list("fault_category", flat=True)
                     .distinct()
                 )
@@ -533,12 +538,7 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
             heat_data = defaultdict(int)
             for line in (
                 WorkOrderEntryLine.objects
-                .filter(
-                    entry__work_order__company=company,
-                    entry__work_date__gte=date_from,
-                    entry__work_date__lte=date_to,
-                    fault_category__gt="",
-                )
+                .filter(**hm_line_filter)
                 .select_related("entry")
             ):
                 op = line.entry.worker_name
@@ -611,11 +611,63 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
         )
         total_hours = sum(hours_series)
         total_parts = sum(parts_series)
-        table_rows = [
-            [b, round(bucket_hours.get(b, 0.0), 2),
-             bucket_parts.get(b, 0)]
-            for b in all_buckets
-        ]
+        # When a specific operator is selected, show aggregated
+        # series. When "all" is selected, break down by operator.
+        # Con operario especifico: serie agregada. Con "Todos":
+        # desglosar por operario.
+        if worker_name:
+            chart_series = [
+                {
+                    "name": "Horas trabajadas",
+                    "data": hours_series,
+                },
+                {"name": "N entradas", "data": parts_series},
+            ]
+            table_cols = [
+                "Periodo", "Horas trabajadas", "N entradas",
+            ]
+            table_rows = [
+                [b, round(bucket_hours.get(b, 0.0), 2),
+                 bucket_parts.get(b, 0)]
+                for b in all_buckets
+            ]
+        else:
+            # Breakdown by operator -- Desglose por operario
+            all_operators = sorted(
+                WorkOrderEntry.objects
+                .filter(
+                    work_order__company=company,
+                    work_date__gte=date_from,
+                    work_date__lte=date_to,
+                    worker_name__gt="",
+                )
+                .values_list("worker_name", flat=True)
+                .distinct()
+            )
+            op_bucket_hours = defaultdict(lambda: defaultdict(float))
+            for line in lines_qs.select_related("entry"):
+                op = line.entry.worker_name
+                b = self._bucket(line.entry.work_date, granularity)
+                op_bucket_hours[op][b] += float(
+                    line.delta_hours or 0
+                )
+            chart_series = [
+                {
+                    "name": op,
+                    "data": [
+                        round(op_bucket_hours[op].get(b, 0.0), 2)
+                        for b in all_buckets
+                    ],
+                }
+                for op in all_operators
+            ]
+            table_cols = ["Operario", "Periodo", "Horas trabajadas"]
+            table_rows = [
+                [op, b, round(op_bucket_hours[op].get(b, 0.0), 2)]
+                for op in all_operators
+                for b in all_buckets
+                if op_bucket_hours[op].get(b, 0.0) > 0
+            ]
         return {
             "ok": True,
             "chart": {
@@ -626,18 +678,10 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
                 ),
                 "title": title,
                 "xAxis": all_buckets,
-                "series": [
-                    {
-                        "name": "Horas trabajadas",
-                        "data": hours_series,
-                    },
-                    {"name": "N entradas", "data": parts_series},
-                ],
+                "series": chart_series,
             },
             "table": {
-                "columns": [
-                    "Periodo", "Horas trabajadas", "N entradas",
-                ],
+                "columns": table_cols,
                 "rows": table_rows,
             },
             "summary": {
@@ -818,6 +862,80 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
         )
         total_hours = sum(hours_series)
         total_parts = sum(count_series)
+        # When a specific machine is selected, show aggregated
+        # series. When "all" is selected, break down by machine.
+        # Con maquina especifica: serie agregada. Con "Todas":
+        # desglosar por maquina.
+        if machine:
+            chart_series = [
+                {
+                    "name": "Horas de mano de obra",
+                    "data": hours_series,
+                },
+                {"name": "Intervenciones", "data": count_series},
+            ]
+            table_cols = [
+                "Periodo", "Horas de mano de obra",
+                "Intervenciones",
+            ]
+            table_rows_d2 = [
+                [b, round(bucket_hours.get(b, 0.0), 2),
+                 bucket_counts.get(b, 0)]
+                for b in all_buckets
+            ]
+        else:
+            # Breakdown by machine -- Desglose por maquina
+            all_machines = list(
+                MachineAsset.objects
+                .filter(
+                    company=company,
+                    workorderentryline__entry__work_date__gte=(
+                        date_from
+                    ),
+                    workorderentryline__entry__work_date__lte=(
+                        date_to
+                    ),
+                )
+                .distinct()
+                .order_by("code")
+            )
+            m_bucket_hours = defaultdict(
+                lambda: defaultdict(float)
+            )
+            for line in lines_qs.select_related(
+                "entry", "machine_asset"
+            ):
+                m_pk = line.machine_asset.pk
+                b = self._bucket(
+                    line.entry.work_date, granularity
+                )
+                m_bucket_hours[m_pk][b] += float(
+                    line.delta_hours or 0
+                )
+            chart_series = [
+                {
+                    "name": m.code,
+                    "data": [
+                        round(
+                            m_bucket_hours[m.pk].get(b, 0.0), 2
+                        )
+                        for b in all_buckets
+                    ],
+                }
+                for m in all_machines
+            ]
+            table_cols = [
+                "Maquina", "Periodo", "Horas de mano de obra",
+            ]
+            table_rows_d2 = [
+                [
+                    m.code, b,
+                    round(m_bucket_hours[m.pk].get(b, 0.0), 2),
+                ]
+                for m in all_machines
+                for b in all_buckets
+                if m_bucket_hours[m.pk].get(b, 0.0) > 0
+            ]
         return {
             "ok": True,
             "chart": {
@@ -1305,17 +1423,35 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
             },
         }
 
+    # ----------------------------------------------------------
+    # Field type -> legacy dimension code mapping
+    # Mapeo tipo de campo -> codigo de dimension legacy
+    # ----------------------------------------------------------
+    _FIELD_TYPE_TO_DIM = {
+        "worker":         "d1",
+        "machine":        "d2",
+        "fault_category": "d3",
+        "period":         "d4",
+        "budget":         "d5",
+    }
+
     def get(self, request):
         """
         Validates required parameters, dispatches to the appropriate
-        dimension handler and returns the structured JSON payload.
-        Returns HTTP 400 on missing/invalid dimension.
+        handler and returns the structured JSON payload.
+        Accepts either:
+          - legacy: dimension=d1..d5 + entity_pk
+          - multidimensional: fields=JSON array of {type, value}
+            up to 5 active fields.
+        Returns HTTP 400 on invalid input.
         Returns HTTP 403 on missing CompanyUser profile.
         Returns HTTP 500 on unhandled handler exception.
         ---
-        Valida los parametros requeridos, despacha al manejador de
-        dimension correspondiente y devuelve el payload JSON estructurado.
-        HTTP 400 ante dimension ausente o invalida.
+        Valida parametros, despacha al handler adecuado y devuelve
+        el payload JSON estructurado.
+        Acepta modo legacy (dimension + entity_pk) o multidimensional
+        (fields = array JSON de {type, value}, max 5 campos activos).
+        HTTP 400 ante entrada invalida.
         HTTP 403 ante perfil CompanyUser ausente.
         HTTP 500 ante excepcion no manejada en el handler.
         """
@@ -1323,90 +1459,379 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
             company = request.user.company_user.company
         except AttributeError:
             return JsonResponse(
-                {
-                    "ok": False,
-                    "error": "Sin perfil de empresa asociado.",
-                },
+                {"ok": False, "error": "Sin perfil de empresa asociado."},
                 status=403,
             )
 
-        dimension = (
-            request.GET.get("dimension", "").strip().lower()
-        )
-        entity_pk = (
-            request.GET.get("entity_pk", "").strip() or None
-        )
         granularity = (
             request.GET.get("granularity", "month").strip().lower()
         )
+        if granularity not in ("day", "week", "month"):
+            granularity = "month"
+
         chart_type = (
             request.GET.get("chart_type", "").strip().lower()
         )
 
-        if dimension not in ("d1", "d2", "d3", "d4", "d5"):
+        today = localdate()
+        fallback_from = today.replace(day=1)
+        fallback_to = today
+        date_from = self._parse_date(
+            request.GET.get("date_from", "").strip(), fallback_from,
+        )
+        date_to = self._parse_date(
+            request.GET.get("date_to", "").strip(), fallback_to,
+        )
+        if date_from > date_to:
+            date_from, date_to = date_to, date_from
+
+        # -------------------------------------------------------
+        # Parse active fields -- Parsear campos activos
+        # -------------------------------------------------------
+        fields_raw = request.GET.get("fields", "").strip()
+        legacy_dim = request.GET.get("dimension", "").strip().lower()
+
+        if fields_raw:
+            # Multidimensional mode -- Modo multidimensional
+            try:
+                fields = _json.loads(fields_raw)
+                if not isinstance(fields, list):
+                    raise ValueError("fields must be a list")
+            except (ValueError, _json.JSONDecodeError) as exc:
+                return JsonResponse(
+                    {"ok": False, "error": f"fields JSON invalido: {exc}"},
+                    status=400,
+                )
+            # Filter out empty types -- Filtrar tipos vacios
+            fields = [
+                f for f in fields
+                if isinstance(f, dict) and f.get("type")
+            ]
+            if not fields:
+                return JsonResponse(
+                    {"ok": False, "error": "Sin campos activos."},
+                    status=400,
+                )
+            if len(fields) > 5:
+                fields = fields[:5]
+        elif legacy_dim:
+            # Legacy mode -- Modo legacy
+            if legacy_dim not in ("d1", "d2", "d3", "d4", "d5"):
+                return JsonResponse(
+                    {
+                        "ok": False,
+                        "error": (
+                            f"Dimension no valida: '{legacy_dim}'. "
+                            "Valores permitidos: d1, d2, d3, d4, d5."
+                        ),
+                    },
+                    status=400,
+                )
+            dim_to_type = {v: k for k, v in self._FIELD_TYPE_TO_DIM.items()}
+            entity_pk = (
+                request.GET.get("entity_pk", "").strip() or None
+            )
+            fields = [{
+                "type": dim_to_type.get(legacy_dim, "period"),
+                "value": entity_pk or "*",
+            }]
+        else:
             return JsonResponse(
                 {
                     "ok": False,
-                    "error": (
-                        f"Dimension no valida: '{dimension}'. "
-                        "Valores permitidos: d1, d2, d3, d4, d5."
-                    ),
+                    "error": "Parametro fields o dimension requerido.",
                 },
                 status=400,
             )
 
-        if granularity not in ("day", "week", "month"):
-            granularity = "month"
-
         if not chart_type:
-            chart_type = self._DEFAULT_CHART.get(dimension, "bar")
+            # Derive default chart type from first field type
+            # Derivar tipo de grafico por defecto del primer campo
+            first_dim = self._FIELD_TYPE_TO_DIM.get(
+                fields[0]["type"], "d4"
+            )
+            chart_type = self._DEFAULT_CHART.get(first_dim, "bar")
 
-        today = localdate()
-        fallback_from = today.replace(day=1)
-        fallback_to = today
-
-        date_from = self._parse_date(
-            request.GET.get("date_from", "").strip(),
-            fallback_from,
-        )
-        date_to = self._parse_date(
-            request.GET.get("date_to", "").strip(),
-            fallback_to,
-        )
-
-        if date_from > date_to:
-            date_from, date_to = date_to, date_from
-
-        handlers = {
-            "d1": self._handle_d1,
-            "d2": self._handle_d2,
-            "d3": self._handle_d3,
-            "d4": self._handle_d4,
-            "d5": self._handle_d5,
-        }
         try:
-            result = handlers[dimension](
-                company, entity_pk, date_from, date_to,
+            result = self._dispatch(
+                company, fields, date_from, date_to,
                 granularity, chart_type,
             )
         except Exception as exc:
             logger.exception(
-                "# [ANALYTICS LAB DATA] Error dimension=%s "
-                "entity_pk=%s: %s",
-                dimension, entity_pk, exc,
+                "# [ANALYTICS LAB DATA] Error fields=%s: %s",
+                fields_raw or legacy_dim, exc,
             )
             return JsonResponse(
                 {
                     "ok": False,
-                    "error": (
-                        "Error interno al procesar la dimension "
-                        f"{dimension}."
-                    ),
+                    "error": "Error interno al procesar la solicitud.",
                 },
                 status=500,
             )
 
         return JsonResponse(result)
+
+    def _dispatch(
+        self, company, fields, date_from, date_to,
+        granularity, chart_type,
+    ):
+        """
+        Routes to the appropriate handler based on the active field
+        type combination. Single-field requests use the legacy handlers
+        (d1..d5). Multi-field requests use _handle_cross.
+        ---
+        Enruta al handler adecuado segun la combinacion de tipos de
+        campo activos. Solicitudes de un campo usan los handlers legacy
+        (d1..d5). Solicitudes multiples usan _handle_cross.
+        """
+        types = [f["type"] for f in fields]
+        type_set = frozenset(types)
+
+        if len(fields) == 1:
+            # Single field -- Campo unico: usar handlers legacy
+            dim = self._FIELD_TYPE_TO_DIM.get(types[0], "d4")
+            entity_pk = fields[0].get("value") or None
+            if entity_pk == "*":
+                entity_pk = None
+            legacy_handlers = {
+                "d1": self._handle_d1,
+                "d2": self._handle_d2,
+                "d3": self._handle_d3,
+                "d4": self._handle_d4,
+                "d5": self._handle_d5,
+            }
+            return legacy_handlers[dim](
+                company, entity_pk, date_from, date_to,
+                granularity, chart_type,
+            )
+
+        # Multi-field -- Multiples campos: handler de cruce
+        return self._handle_cross(
+            company, fields, type_set, date_from, date_to,
+            granularity, chart_type,
+        )
+
+    def _handle_cross(
+        self, company, fields, type_set, date_from, date_to,
+        granularity, chart_type,
+    ):
+        """
+        Cross-dimensional handler. Builds a single queryset joining
+        WorkOrderEntryLine + WorkOrderEntry + MachineAsset filtered by
+        all active field values, then aggregates according to the active
+        dimension combination.
+        Supported combinations (any order, up to 5 fields):
+          worker, machine, fault_category, period, spare_part.
+        Output: one series per group-by key, table with all dimensions.
+        ---
+        Handler multidimensional. Construye un queryset unico uniendo
+        WorkOrderEntryLine + WorkOrderEntry + MachineAsset filtrado por
+        todos los valores de campos activos, luego agrega segun la
+        combinacion de dimensiones activas.
+        Combinaciones soportadas (cualquier orden, hasta 5 campos):
+          worker, machine, fault_category, period, spare_part.
+        Salida: una serie por clave de agrupacion, tabla con todas las
+        dimensiones.
+        """
+        from collections import defaultdict
+
+        # Build base filter -- Construir filtro base
+        qs_filter = {
+            "entry__work_order__company": company,
+            "entry__work_date__gte": date_from,
+            "entry__work_date__lte": date_to,
+            "entry__work_date__isnull": False,
+            "delta_hours__isnull": False,
+        }
+
+        # Apply per-field value filters -- Aplicar filtros de valor
+        for field in fields:
+            ftype = field.get("type")
+            fval = field.get("value") or "*"
+            if fval == "*":
+                continue
+            if ftype == "worker":
+                qs_filter["entry__worker_name"] = fval
+            elif ftype == "machine":
+                try:
+                    qs_filter["machine_asset__pk"] = int(fval)
+                except (ValueError, TypeError):
+                    qs_filter["machine_asset__code__iexact"] = fval
+            elif ftype == "fault_category":
+                qs_filter["fault_category__iexact"] = fval
+
+        # Determine group-by dimensions -- Determinar dimensiones de agrupacion
+        # Priority: worker > machine > fault_category > period
+        # Prioridad: worker > machine > fault_category > period
+        group_by_worker = "worker" in type_set
+        group_by_machine = "machine" in type_set
+        group_by_fault = "fault_category" in type_set
+        group_by_period = "period" in type_set
+
+        lines_qs = (
+            WorkOrderEntryLine.objects
+            .filter(**qs_filter)
+            .select_related("entry", "machine_asset")
+        )
+
+        # Aggregate -- Agregar
+        # key: tuple of active dimension values
+        # clave: tupla de valores de dimensiones activas
+        agg = defaultdict(lambda: {"hours": 0.0, "count": 0})
+
+        for line in lines_qs:
+            key_parts = []
+            if group_by_worker:
+                key_parts.append(
+                    line.entry.worker_name or "Desconocido"
+                )
+            if group_by_machine:
+                key_parts.append(
+                    line.machine_asset.code
+                    if line.machine_asset else "Sin maquina"
+                )
+            if group_by_fault:
+                key_parts.append(
+                    self._translate_fault_cat(
+                        line.fault_category
+                    ) if line.fault_category else "Sin familia"
+                )
+            if group_by_period:
+                key_parts.append(
+                    self._bucket(line.entry.work_date, granularity)
+                )
+            key = tuple(key_parts) if key_parts else ("Total",)
+            agg[key]["hours"] += float(line.delta_hours or 0)
+            agg[key]["count"] += 1
+
+        # Build column headers -- Construir cabeceras de columna
+        col_labels = []
+        if group_by_worker:
+            col_labels.append("Operario")
+        if group_by_machine:
+            col_labels.append("Maquina / CdG")
+        if group_by_fault:
+            col_labels.append("Familia averia")
+        if group_by_period:
+            col_labels.append("Periodo")
+        col_labels += ["Horas trabajadas", "Intervenciones"]
+
+        # Sort keys -- Ordenar claves
+        sorted_keys = sorted(agg.keys())
+
+        # Build table rows -- Construir filas de tabla
+        table_rows = [
+            list(key) + [
+                round(agg[key]["hours"], 2),
+                agg[key]["count"],
+            ]
+            for key in sorted_keys
+        ]
+
+        total_hours = sum(v["hours"] for v in agg.values())
+        total_parts = sum(v["count"] for v in agg.values())
+
+        # Build chart series -- Construir series de grafico
+        # Group by first dimension key, x-axis = second dimension
+        # or bucket if period is active.
+        # Agrupar por primera clave de dimension, eje X = segunda
+        # dimension o bucket si periodo esta activo.
+        if group_by_period:
+            # X-axis: time buckets -- Eje X: periodos temporales
+            x_axis = sorted(
+                set(
+                    key[-1] for key in sorted_keys
+                    if key
+                )
+            )
+            # One series per non-period combination
+            # Una serie por combinacion no-periodo
+            series_keys = sorted(
+                set(
+                    key[:-1] for key in sorted_keys
+                )
+            )
+            chart_series = [
+                {
+                    "name": " / ".join(str(s) for s in sk) or "Total",
+                    "data": [
+                        round(
+                            agg.get(sk + (b,), {}).get("hours", 0.0),
+                            2,
+                        )
+                        for b in x_axis
+                    ],
+                }
+                for sk in series_keys
+            ]
+        else:
+            # X-axis: all group keys as labels
+            # Eje X: todas las claves de grupo como etiquetas
+            x_axis = [
+                " / ".join(str(k) for k in key)
+                for key in sorted_keys
+            ]
+            chart_series = [
+                {
+                    "name": "Horas trabajadas",
+                    "data": [
+                        round(agg[key]["hours"], 2)
+                        for key in sorted_keys
+                    ],
+                },
+                {
+                    "name": "Intervenciones",
+                    "data": [
+                        agg[key]["count"]
+                        for key in sorted_keys
+                    ],
+                },
+            ]
+
+        # Build cross title -- Construir titulo de cruce
+        dim_names = []
+        if group_by_worker:
+            dim_names.append("Operario")
+        if group_by_machine:
+            dim_names.append("Maquina")
+        if group_by_fault:
+            dim_names.append("Familia")
+        if group_by_period:
+            dim_names.append("Periodo")
+        title = (
+            " x ".join(dim_names)
+            + f" ({date_from} / {date_to})"
+        )
+
+        return {
+            "ok": True,
+            "chart": {
+                "type": (
+                    chart_type
+                    if chart_type in (
+                        "bar", "line", "scatter",
+                        "heatmap", "treemap",
+                    )
+                    else "bar"
+                ),
+                "title": title,
+                "xAxis": x_axis,
+                "series": chart_series,
+            },
+            "table": {
+                "columns": col_labels,
+                "rows": table_rows,
+            },
+            "summary": {
+                "total_hours": round(total_hours, 2),
+                "total_parts": total_parts,
+                "avg_hours_per_part": (
+                    round(total_hours / total_parts, 2)
+                    if total_parts else 0.0
+                ),
+            },
+        }
 
 
 # ---------------------------------------------------------------------------
