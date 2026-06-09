@@ -126,6 +126,33 @@ WorkOrderAssistance (expediente)
 - Estado: PENDIENTE
 - Boton Generar orden de trabajo en result.html cuando budget.status == ACCEPTED.
 
+### Paso 7 -- Sidebar acordeon (incidencia transversal)
+- Estado: PENDIENTE
+- Refactorizar panel/templates/panel/_nav_items.html para convertir la barra
+  lateral en un acordeon colapsable por secciones usando Bootstrap Collapse.
+- Cada seccion del sidebar se representa como un bloque colapsable independiente.
+- Solo una seccion expandida a la vez (comportamiento acordeon).
+- Persistencia del estado via sessionStorage.
+
+### Paso 8 -- Nuevo campo servicios locales (< 20 km)
+- Estado: PENDIENTE
+- Anadir campo local_service (BooleanField, default=False) en
+  WorkOrderAssistanceUnit para identificar servicios de corta distancia.
+- Confirmar con responsables si es booleano simple o umbral numerico.
+
+### Paso 9 -- Gestion de horarios nocturnos
+- Estado: PENDIENTE
+- Modelo NightSchedule con nombre, hora_inicio, hora_fin y grupo
+  (choices: INSURER / INDIVIDUAL).
+- CRUD completo desde el panel.
+- Vinculado al calculo de tarifas nocturnas en WorkOrderAssistanceUnit.
+
+### Paso 10 -- Clonado de aseguradora con nombre nuevo
+- Estado: PENDIENTE
+- Boton Clonar en listado/detalle de Insurer (app budgets).
+- El clon copia todos los campos de tarifa; el usuario introduce nombre nuevo.
+- InsurerCloneView en budgets/views.py.
+
 ---
 
 ## 4. Registro de Sesiones
@@ -137,18 +164,36 @@ S001   | 2026-06-02 | Ninguno (diseno) | Hito iniciado. Rediseno completo arquit
 
 ## 5. Hoja de Ruta para la Siguiente Sesion (S002)
 
-PREREQUISITO OBLIGATORIO antes de arrancar el Paso 1:
-Validar con los responsables los campos del PDF de Allianz identificados en S001,
-especialmente el campo diferido (posible sinonimo de is_overnight). Esta validacion
-debe completarse antes de ejecutar makemigrations para evitar migraciones adicionales.
+### BLOQUE 0 -- Incidencias previas (ejecutar primero)
 
-Una vez validados los campos, arrancar el Paso 1 en este orden estricto:
+**0.1 -- Sidebar acordeon (Paso 7)**
+1. Solicitar _nav_items.html completo para obtener anclas reales.
+2. Identificar secciones actuales del sidebar y estructura HTML.
+3. Envolver cada seccion en Bootstrap Collapse (ya disponible en el proyecto).
+4. Anadir cabecera colapsable por seccion con flecha giratoria.
+5. Persistencia del estado en sessionStorage via JS minimo.
+6. Verificar en produccion que todas las rutas siguen funcionando.
 
-1. Solicitar el archivo budgets/models.py completo para obtener anclas reales.
-2. Anadir los cuatro modelos nuevos al final del archivo mediante PMA:
+**0.2 -- Autocompletado matricula en partes digitales**
+1. Solicitar panel/static/panel/js/form_entry_assets.js para auditar
+   el handler del autocompletado de maquina (WorkshopAssetAutocompleteView).
+2. Identificar si el problema es en el evento de disparo, threshold de
+   caracteres minimos, o en la respuesta del endpoint JSON.
+3. Aplicar fix con PMA sobre el archivo JS afectado.
+4. Verificar en produccion con una matricula real.
+
+### BLOQUE 1 -- Modelos y migracion (Paso 1)
+
+Confirmar con responsables si el campo de servicios locales es BooleanField
+simple (local_service) o umbral numerico configurable por empresa, antes de
+ejecutar makemigrations.
+
+1. Solicitar budgets/models.py completo para obtener anclas reales.
+2. Anadir los cuatro modelos nuevos al final mediante PMA:
    WorkOrderAssistance, WorkOrderAssistanceUnit,
    WorkOrderAssistanceSignature, WorkOrderAssistanceIncidence.
-   Seguir exactamente la arquitectura de la seccion 2.2 de este anexo.
-3. Ejecutar makemigrations y migrate. Verificar que no hay errores.
-4. Registrar las migraciones generadas en el PROJECT_DIRECTORY.
-5. Continuar con el Paso 2 -- Vistas y URLs.
+   Arquitectura exacta en seccion 2.2 de este anexo.
+3. Incorporar campo local_service en WorkOrderAssistanceUnit.
+4. Ejecutar makemigrations y migrate. Verificar sin errores.
+5. Registrar migraciones en PROJECT_DIRECTORY.
+6. Continuar con Paso 2 -- Vistas y URLs.

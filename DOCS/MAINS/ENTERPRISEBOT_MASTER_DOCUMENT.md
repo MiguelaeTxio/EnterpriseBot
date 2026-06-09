@@ -219,7 +219,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Motor de cálculo basado en datos de entrada del operario y facturas de referencia.
 - Generación de documento de presupuesto exportable.
 
-### Hito 17: Albaranes y Órdenes de Trabajo ASISTENCIA (PAUSADO)
+### Hito 17: Albaranes y Órdenes de Trabajo ASISTENCIA (EN PROGRESO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`)
 - Generación de órdenes de trabajo desde presupuesto aceptado o entrada directa.
 - Albarán digital prellenado enviado al operario vía notificación WhatsApp.
@@ -252,7 +252,7 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 
 ### Hito 20: Laboratorio de Análisis Unificado (PAUSADO)
 
-### Hito 21: Refactorización Arquitectónica — Split de panel/views.py (EN PROGRESO)
+### Hito 21: Refactorización Arquitectónica — Split de panel/views.py (PAUSADO)
 (Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md`)
 - Desmantelamiento del fichero monolítico panel/views.py (16.482 líneas tras S049).
 - Fase B: extraer vistas de operario (~4.900 líneas) a panel/views_operator.py.

@@ -109,6 +109,7 @@
 ./panel/templates/panel/operator/confirm_entry.html
 ./panel/templates/panel/operator/dashboard.html
 ./panel/templates/panel/operator/upload_entry.html
+./panel/views_operator.py
 ./panel/static/panel/js/admin_history.js
 ./panel/static/panel/js/form_entry_modal.js
 ./panel/static/panel/js/gap_resolution.js
@@ -124,6 +125,7 @@
 ./panel/__init__.py
 ./panel/views.py
 ./panel/middleware.py
+./panel/views_workorders.py
 ./panel/apps.py
 ./panel/forms.py
 ./panel/models.py
