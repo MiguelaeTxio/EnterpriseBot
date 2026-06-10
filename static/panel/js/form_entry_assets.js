@@ -350,6 +350,37 @@
     // Asociar autocompletado a todos los inputs pre-renderizados.
     document.querySelectorAll(".asset-search").forEach(attachAutocomplete);
 
+    // Re-attach autocomplete after HTMX outerHTML swaps (e.g. intensive-shift
+    // toggle replaces #schedule-dependent-fields, destroying the first block
+    // input and inserting a new one without data-tp-init or the autocomplete
+    // event listeners). MutationObserver deferred via setTimeout so the full
+    // subtree is in the DOM before querySelectorAll runs.
+    // Re-adjuntar autocompletado tras swaps HTMX outerHTML (el toggle de jornada
+    // intensiva reemplaza #schedule-dependent-fields destruyendo el input del
+    // primer bloque e insertando uno nuevo sin listeners de autocompletado).
+    // MutationObserver diferido via setTimeout para que el subarbol completo
+    // este en el DOM antes de que corra querySelectorAll.
+    var _autocompleteObserver = new MutationObserver(function (mutations) {
+        var needsAttach = false;
+        mutations.forEach(function (m) {
+            if (m.addedNodes.length) { needsAttach = true; }
+        });
+        if (needsAttach) {
+            setTimeout(function () {
+                document.querySelectorAll(".asset-search").forEach(function (inp) {
+                    // attachAutocomplete is idempotent via the dropdown guard:
+                    // if dropdown is absent or already has listeners, it returns.
+                    // attachAutocomplete es idempotente via la guarda del dropdown.
+                    attachAutocomplete(inp);
+                });
+            }, 0);
+        }
+    });
+    _autocompleteObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
     // On page load, reveal meter fields for any block that already has a
     // machine_raw value (server re-render after validation error).
     // Al cargar la página, revelar campos de contador para cualquier bloque
@@ -782,31 +813,53 @@
     // Only present in split-shift mode (when #lunch-break-times exists).
     // Solo en jornada partida (cuando existe #lunch-break-times).
     // ==================================================================
-    var noLunchToggle  = document.getElementById("id_no_lunch_toggle");
-    var noLunchHidden  = document.getElementById("id_no_lunch_break_value");
-    var lunchTimesDiv  = document.getElementById("lunch-break-times");
-    var lbStartInput   = document.getElementById("id_lunch_break_start");
-    var lbEndInput     = document.getElementById("id_lunch_break_end");
+    // ==================================================================
+    // No-lunch-break toggle — delegated to document so it survives HTMX
+    // outerHTML swaps that replace #schedule-dependent-fields in-place.
+    // References captured at module load time become stale (zombie nodes)
+    // after HTMX replaces the DOM subtree. Event delegation on document
+    // always targets the live node, regardless of how many swaps occurred.
+    //
+    // Toggle sin pausa de comida — delegado al document para que sobreviva
+    // los swaps HTMX outerHTML que reemplazan #schedule-dependent-fields.
+    // Las referencias capturadas al cargar el módulo quedan obsoletas (nodos
+    // zombie) tras el swap HTMX. La delegación sobre document siempre
+    // apunta al nodo vivo, independientemente del número de swaps ocurridos.
+    // ==================================================================
+    document.addEventListener("change", function (evt) {
+        if (!evt.target || evt.target.id !== "id_no_lunch_toggle") { return; }
 
-    if (noLunchToggle && noLunchHidden && lunchTimesDiv) {
-        noLunchToggle.addEventListener("change", function () {
-            if (noLunchToggle.checked) {
-                lunchTimesDiv.classList.add("d-none");
-                noLunchHidden.value = "1";
-                if (lbStartInput) { lbStartInput.value = ""; }
-                if (lbEndInput)   { lbEndInput.value   = ""; }
-            } else {
-                lunchTimesDiv.classList.remove("d-none");
-                noLunchHidden.value = "0";
-                if (lbStartInput && window.EB_CONFIG && window.EB_CONFIG.lunchBreakStart) {
-                    lbStartInput.value = window.EB_CONFIG.lunchBreakStart;
-                }
-                if (lbEndInput && window.EB_CONFIG && window.EB_CONFIG.lunchBreakEnd) {
-                    lbEndInput.value = window.EB_CONFIG.lunchBreakEnd;
-                }
+        // Re-query live DOM on every change event — nodes may have been
+        // replaced by a prior HTMX swap.
+        // Re-consultar el DOM vivo en cada evento change — los nodos pueden
+        // haber sido reemplazados por un swap HTMX anterior.
+        var noLunchHidden = document.getElementById("id_no_lunch_break_value");
+        var lunchTimesDiv = document.getElementById("lunch-break-times");
+        var lbStartInput  = document.getElementById("id_lunch_break_start");
+        var lbEndInput    = document.getElementById("id_lunch_break_end");
+
+        if (!noLunchHidden || !lunchTimesDiv) { return; }
+
+        if (evt.target.checked) {
+            // Operator skipped lunch: hide time fields, clear values, flag 1.
+            // El operario no ha parado: ocultar campos, vaciar valores, flag 1.
+            lunchTimesDiv.classList.add("d-none");
+            noLunchHidden.value = "1";
+            if (lbStartInput) { lbStartInput.value = ""; }
+            if (lbEndInput)   { lbEndInput.value   = ""; }
+        } else {
+            // Operator had lunch: show time fields, restore schedule values.
+            // El operario ha parado: mostrar campos, restaurar valores de horario.
+            lunchTimesDiv.classList.remove("d-none");
+            noLunchHidden.value = "0";
+            if (lbStartInput && window.EB_CONFIG && window.EB_CONFIG.lunchBreakStart) {
+                lbStartInput.value = window.EB_CONFIG.lunchBreakStart;
             }
-        });
-    }
+            if (lbEndInput && window.EB_CONFIG && window.EB_CONFIG.lunchBreakEnd) {
+                lbEndInput.value = window.EB_CONFIG.lunchBreakEnd;
+            }
+        }
+    });
 
     // ==================================================================
     // _computeAndInjectLunchOverlaps

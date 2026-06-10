@@ -1,8 +1,10 @@
 {# _schedule_fields_fragment.html #}
 {# HTMX partial — rendered by WorkshopIntensiveToggleView after persisting  #}
-{# is_intensive_override. Replaces #schedule-dependent-fields in-place.     #}
+{# is_intensive_override. Replaces #schedule-dependent-fields in-place via  #}
+{# outerHTML swap — this wrapper div IS the target element.                 #}
 {# Partial HTMX — renderizado por WorkshopIntensiveToggleView tras persistir #}
-{# is_intensive_override. Sustituye #schedule-dependent-fields en su lugar. #}
+{# is_intensive_override. Sustituye #schedule-dependent-fields via          #}
+{# outerHTML swap — este wrapper div ES el elemento objetivo.               #}
 <div id="schedule-dependent-fields">
 
     {# ================================================================ #}
@@ -54,7 +56,7 @@
                     <input type="time" step="1800"
                            id="id_lunch_break_start"
                            name="lunch_break_start"
-                           class="form-control eb-field"
+                           class="form-control eb-field d-none"
                            value="{{ lunch_break_start }}">
                 </div>
                 <div class="col-6 col-md-2">
@@ -62,7 +64,7 @@
                     <input type="time" step="1800"
                            id="id_lunch_break_end"
                            name="lunch_break_end"
-                           class="form-control eb-field"
+                           class="form-control eb-field d-none"
                            value="{{ lunch_break_end }}">
                 </div>
             </div>

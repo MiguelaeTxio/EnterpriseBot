@@ -671,6 +671,14 @@
         /* ------------------------------------------------------------------
            Assemble and inject into DOM / Ensamblar e inyectar en el DOM.
         ------------------------------------------------------------------ */
+        /* Remove any stale tp-wrapper left by a previous HTMX swap that
+           destroyed the DOM subtree without running widget teardown.
+           Eliminar cualquier tp-wrapper obsoleto dejado por un swap HTMX
+           anterior que destruyo el subarbol DOM sin ejecutar el teardown. */
+        var prevSibling = input.previousElementSibling;
+        if (prevSibling && prevSibling.classList.contains("tp-wrapper")) {
+            prevSibling.remove();
+        }
         input.parentNode.insertBefore(wrapper, input);
         wrapper.appendChild(display);
         wrapper.appendChild(dropdown);
@@ -691,6 +699,14 @@
     function initAll() {
         var inputs = document.querySelectorAll('input[type="time"]:not([' + ATTR_INIT + '])');
         Array.prototype.forEach.call(inputs, function (inp) {
+            /* Skip inputs whose parent is already a tp-wrapper — guards
+               against double-wrapping when initAll() fires on a subtree
+               re-inserted by HTMX after an outerHTML swap.
+               Omitir inputs cuyo padre ya es un tp-wrapper — guarda contra
+               doble envoltorio cuando initAll() se dispara sobre un subarbol
+               reinsertado por HTMX tras un swap outerHTML. */
+            if (inp.parentNode && inp.parentNode.classList &&
+                    inp.parentNode.classList.contains('tp-wrapper')) { return; }
             init(inp);
         });
     }
@@ -706,7 +722,17 @@
         mutations.forEach(function (m) {
             if (m.addedNodes.length) { needsInit = true; }
         });
-        if (needsInit) { initAll(); }
+        /* Defer initAll() so the DOM is fully settled after HTMX
+           outerHTML swaps before the widget processes new inputs.
+           Without the timeout, input.style.display='none' may execute
+           before the browser has painted the new subtree, leaving the
+           native input visible below the custom display button.
+           Diferir initAll() para que el DOM este estabilizado tras los
+           swaps HTMX outerHTML antes de que el widget procese los nuevos
+           inputs. Sin el timeout, input.style.display='none' puede
+           ejecutarse antes de que el navegador haya pintado el nuevo
+           subarbol, dejando el input nativo visible bajo el boton custom. */
+        if (needsInit) { setTimeout(initAll, 0); }
     });
 
     domObserver.observe(document.body, { childList: true, subtree: true });

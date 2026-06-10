@@ -170,12 +170,34 @@ class WorkshopAssetAutocompleteView (WorkshopRequiredMixin ,View ):
         qs =MachineAsset .objects .filter (company =company ,is_active =True )
 
         if q :
-
-
-            qs =qs .filter (
-            django_models .Q (code__icontains =q )|
-            django_models .Q (brand_model__icontains =q )|
-            django_models .Q (plate__icontains =q )
+            # Build a compound OR filter so the operator can search by
+            # asset code, brand/model or plate. A fourth branch extracts
+            # only the digit characters from the query and searches them
+            # as a substring inside the plate field — this allows finding
+            # "AB1234C" by typing "1234", regardless of the letter layout
+            # of the plate format (LNNNNLL, NNNNLLL, LLLNNNN, etc.).
+            #
+            # Construye un filtro OR compuesto para que el operario pueda
+            # buscar por código, marca/modelo o matrícula. Una cuarta rama
+            # extrae únicamente los dígitos del query y los busca como
+            # subcadena dentro del campo plate — permite encontrar "AB1234C"
+            # escribiendo "1234", independientemente del formato de la
+            # matrícula (LNNNNLL, NNNNLLL, LLLNNNN, etc.).
+            _q_digits = "".join(ch for ch in q if ch.isdigit())
+            _plate_filter = django_models.Q(plate__icontains=q)
+            if _q_digits and _q_digits != q:
+                # Query contains a mix of letters and digits, or is digits
+                # only: add digit-only substring match as an extra OR branch.
+                # El query contiene letras y dígitos, o solo dígitos: añadir
+                # búsqueda por subcadena de dígitos como rama OR adicional.
+                _plate_filter = (
+                    django_models.Q(plate__icontains=q)
+                    | django_models.Q(plate__icontains=_q_digits)
+                )
+            qs = qs.filter(
+                django_models.Q(code__icontains=q)
+                | django_models.Q(brand_model__icontains=q)
+                | _plate_filter
             )
 
         assets =list (
@@ -6167,11 +6189,14 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
         )
 
         _first_hc = first_hc
-        _first_hf = (
-            end_time_afternoon
-            if end_time_afternoon
-            else end_time_morning
-        )
+        if activate :
+            # Intensive shift: HF is end_time_morning (morning block ends at noon).
+            # Jornada intensiva: HF es end_time_morning (el bloque termina al mediodia).
+            _first_hf = end_time_morning if end_time_morning else end_time_afternoon
+        else :
+            # Split shift: HF is end_time_morning (end of morning block).
+            # Jornada partida: HF es end_time_morning (fin del tramo de manana).
+            _first_hf = end_time_morning
 
         _ctx = {
             'is_intensive_override': activate ,

@@ -163,88 +163,28 @@ S002   | 2026-06-09 | Incidencias previas (0.1 y parcial) | Sidebar acordeon Boo
 S003   | 2026-06-10 | Incidencias previas (0.2 completado) + incidencia is_intensive_override | Fix autocompletado matricula: threshold 2 caracteres, reset lastQuery, busqueda por plate en WorkshopAssetAutocompleteView, matricula visible en dropdown. Fix NameError PresenceStatus en views_workorders.py. Nuevo campo is_intensive_override en CompanyUser (migracion 0033). WorkshopIntensiveToggleView: endpoint POST que persiste el flag y devuelve campos de horario actualizados. Checkbox jornada intensiva en form_entry.html con handler JS que recarga EB_CONFIG y actualiza DOM sin recarga de pagina. Correccion is_default WINTER/SUMMER en BD. PENDIENTE S004: corregir schedule para operarios con workday_schedule_id=2 asignado individualmente que ignoran el override.
 S004   | 2026-06-10 | Incidencias (Bloque 0 + HTMX toggle parcial) | Fix Gate 1 _resolve_operator_schedule: condicional is_intensive_override vs schedule intensivo individual (cu=14, cu=12). Implementacion HTMX toggle jornada intensiva: partial _schedule_fields_fragment.html, WorkshopIntensiveToggleView convierte de JSON a render HTML, form_entry.html usa hx-post/hx-target. Fix form_entry_assets.js: prereelleno HC/HF bloques adicionales corregido (EB_CONFIG en tiempo de click, logica tarde/manana). Actualizacion ped-format.skill. Toggle HTMX reporta error en produccion -- diagnostico pendiente S005.
 S005   | 2026-06-10 | Incidencias (Bloque 0 parcial) | Diagnostico error toggle HTMX jornada intensiva: causa raiz identificada como conflicto entre JS nativo fetch+json y respuesta HTML de WorkshopIntensiveToggleView. Eliminado bloque <script> nativo del toggle en form_entry.html (115 lineas). Anadido hx-on::after-request al checkbox para feedback visual via HTMX puro. PMA aplicado y validado con djlint + integridad OK. Pendientes S006: Issue A (campos pausa duplicados al volver de intensiva a partida) e Issue B (HF Tarea 1 muestra end_time_afternoon en lugar de end_time_morning al desmarcar intensiva).
+S006   | 2026-06-10 | Incidencias previas (B0 duplicidad pausa + autocomplete matricula) | Fix duplicidad visual inputs pausa comida: causa raiz doble div#schedule-dependent-fields en _schedule_fields_fragment.html introducida por modelo anterior. Eliminado div duplicado via PMA. Fix widget TimePicker: MutationObserver deferia con setTimeout(0) para estabilizar DOM tras swap HTMX; guarda tp-wrapper en initAll() para evitar doble envoltorio; inputs de pausa marcados d-none en HTML para ocultar nativo sin depender de JS. Fix autocompletado matricula: WorkshopAssetAutocompleteView ampliado con rama _q_digits para buscar subcadena numerica en plate (encuentra AB1234C escribiendo 1234). Fix re-adjuncion autocomplete tras swap HTMX: MutationObserver en form_entry_assets.js re-adjunta attachAutocomplete a inputs .asset-search nuevos insertados por HTMX.
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S006)
+## 5. Hoja de Ruta para la Siguiente Sesion (S007)
 
-### BLOQUE 0 -- Issue A: campos de pausa duplicados al volver de intensiva a partida
+### BLOQUE 0 -- Confirmar campo local_service con responsables
 
-**Contexto exacto del problema:**
-Al marcar jornada intensiva y luego desmarcarla, el HTMX swap de
-`#schedule-dependent-fields` reemplaza el div correctamente, pero los
-campos de inicio/fin pausa aparecen duplicados en pantalla (imagen S005).
-Causa probable: existe un segundo bloque de campos de pausa fuera del partial
-en `form_entry.html`, o el swap inserta el partial nuevo sin eliminar
-correctamente el contenido previo del div objetivo.
+Antes de ejecutar makemigrations, confirmar con los responsables si el
+campo de servicios locales (distancia < 20 km) es:
+- BooleanField simple (local_service) en WorkOrderAssistanceUnit, o
+- Umbral numerico configurable por empresa.
 
-**Pasos:**
-1. Auditar `form_entry.html` completo buscando cualquier elemento con
-   `id="id_lunch_break_start"`, `id="id_lunch_break_end"` o
-   `id="lunch-break-times"` fuera del `{% include ... _schedule_fields_fragment %}`.
-2. Si existe un segundo bloque: eliminarlo mediante PMA.
-3. Verificar que `hx-swap="outerHTML"` en el checkbox apunta a
-   `hx-target="#schedule-dependent-fields"` y que ese id existe
-   exactamente una vez en el DOM inicial.
-4. Reload y confirmar que al ciclar intensiva -> partida no hay duplicados.
-
-### BLOQUE 1 -- Issue B: HF Tarea 1 muestra end_time_afternoon al desmarcar intensiva
-
-**Contexto exacto del problema:**
-Al desmarcar jornada intensiva (volver a jornada partida), el campo H.F.
-del Tarea 1 se rellena con `end_time_afternoon` (17:30) en lugar de
-`end_time_morning` (13:30). Lo correcto es `end_time_morning` porque el
-primer bloque del operario termina al final de la manana.
-
-**Causa raiz exacta:**
-En `WorkshopIntensiveToggleView.post()` (views_operator.py, linea ~6170):
-```python
-_first_hf = (
-    end_time_afternoon
-    if end_time_afternoon
-    else end_time_morning
-)
-```
-Esta logica devuelve siempre `end_time_afternoon` cuando existe,
-independientemente de si la jornada es intensiva o partida.
-Para jornada partida, `_first_hf` debe ser `end_time_morning`.
-
-**Fix exacto en `WorkshopIntensiveToggleView.post()`:**
-Sustituir el bloque de calculo de `_first_hf` por:
-```python
-if activate:
-    # Jornada intensiva: usar end_time_morning como HF
-    # Intensive shift: use end_time_morning as HF
-    _first_hf = end_time_morning if end_time_morning else end_time_afternoon
-else:
-    # Jornada partida: HF es end_time_morning (fin de manana)
-    # Split shift: HF is end_time_morning (end of morning block)
-    _first_hf = end_time_morning
-```
-Ancla OLD exacta en views_operator.py (verificar linea antes de patchear):
-```
-        _first_hf = (
-            end_time_afternoon
-            if end_time_afternoon
-            else end_time_morning
-        )
-```
-PMA sobre `views_operator.py`. Barrera de fuego: `py_compile`.
-
-### BLOQUE 2 -- Modelos y migracion (Paso 1)
-
-Solo iniciar tras confirmar BLOQUE 0 y BLOQUE 1 resueltos.
-
-Confirmar con responsables si el campo de servicios locales es BooleanField
-simple (local_service) o umbral numerico configurable por empresa,
-antes de ejecutar makemigrations.
+### BLOQUE 1 -- Modelos y migracion (Paso 1 del Hito)
 
 1. Solicitar budgets/models.py completo para obtener anclas reales.
 2. Anadir los cuatro modelos nuevos al final mediante PMA:
    WorkOrderAssistance, WorkOrderAssistanceUnit,
    WorkOrderAssistanceSignature, WorkOrderAssistanceIncidence.
    Arquitectura exacta en seccion 2.2 de este anexo.
-3. Incorporar campo local_service en WorkOrderAssistanceUnit.
+3. Incorporar campo local_service en WorkOrderAssistanceUnit
+   segun confirmacion del BLOQUE 0.
 4. Ejecutar makemigrations y migrate. Verificar sin errores.
 5. Registrar migraciones en PROJECT_DIRECTORY.
 6. Continuar con Paso 2 -- Vistas y URLs.
