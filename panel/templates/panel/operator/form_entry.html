@@ -166,7 +166,19 @@
                                hx-vals='js:{"value": event.target.checked ? "1" : "0"}'
                                hx-target="#schedule-dependent-fields"
                                hx-swap="outerHTML"
-                               hx-indicator="#intensive-shift-feedback">
+                               hx-indicator="#intensive-shift-feedback"
+                               hx-on::after-request="
+                                   var ok = event.detail.successful;
+                                   var fb = document.getElementById('intensive-shift-feedback');
+                                   if (fb) {
+                                       fb.textContent = ok
+                                           ? (this.checked ? 'Jornada intensiva activada.' : 'Jornada partida activada.')
+                                           : 'Error al guardar el tipo de jornada. Recarga la página.';
+                                       fb.className = 'mt-2 small ' + (ok ? 'text-success' : 'text-danger');
+                                       fb.classList.remove('d-none');
+                                       setTimeout(function(){ fb.classList.add('d-none'); }, 3000);
+                                   }
+                               ">
                         <label class="form-check-label fw-medium"
                                for="id_intensive_shift_toggle">
                             Jornada intensiva (verano)
@@ -182,121 +194,10 @@
                     <div id="intensive-shift-feedback" class="mt-2 small d-none"></div>
                 </div>
             </div>
-            <script>
-            (function () {
-                "use strict";
-                var toggle   = document.getElementById("id_intensive_shift_toggle");
-                var feedback = document.getElementById("intensive-shift-feedback");
-                if (!toggle) { return; }
-
-                function _showFeedback(msg, isError) {
-                    if (!feedback) { return; }
-                    feedback.textContent = msg;
-                    feedback.className = "mt-2 small " + (isError ? "text-danger" : "text-success");
-                    feedback.classList.remove("d-none");
-                    setTimeout(function () { feedback.classList.add("d-none"); }, 3000);
-                }
-
-                function _reloadEbConfig(data) {
-                    /* Reload EB_CONFIG schedule fields without page refresh and
-                       update DOM inputs accordingly.
-                       Recarga los campos de horario de EB_CONFIG sin recargar la pagina
-                       y actualiza los inputs del DOM en consecuencia. */
-                    if (!window.EB_CONFIG) { return; }
-                    window.EB_CONFIG.isIntensiveOverride  = data.is_intensive;
-                    window.EB_CONFIG.lunchBreakStart      = data.lunch_break_start;
-                    window.EB_CONFIG.lunchBreakEnd        = data.lunch_break_end;
-                    window.EB_CONFIG.endTimeMorning       = data.end_time_morning;
-                    window.EB_CONFIG.endTimeAfternoon     = data.end_time_afternoon;
-
-                    /* Update lunch break DOM inputs.
-                       Actualizar los inputs de pausa de comida en el DOM. */
-                    var lbStart     = document.getElementById("id_lunch_break_start");
-                    var lbEnd       = document.getElementById("id_lunch_break_end");
-                    var lbTimes     = document.getElementById("lunch-break-times");
-                    var noLunchChk  = document.getElementById("id_no_lunch_toggle");
-                    var noLunchHid  = document.getElementById("id_no_lunch_break_value");
-                    var noLunchWrap = document.getElementById("no-lunch-check-wrapper");
-
-                    if (data.is_intensive) {
-                        /* Intensive shift: clear lunch fields, hide no-lunch checkbox,
-                           leave times visible but empty so operator can fill manually.
-                           Jornada intensiva: vaciar campos de pausa, ocultar checkbox
-                           sin-pausa, dejar los campos visibles para relleno manual. */
-                        if (lbStart)    { lbStart.value = ""; }
-                        if (lbEnd)      { lbEnd.value   = ""; }
-                        if (noLunchChk) { noLunchChk.checked = false; }
-                        if (noLunchHid) { noLunchHid.value   = "0"; }
-                        if (noLunchWrap){ noLunchWrap.classList.add("d-none"); }
-                        if (lbTimes)    { lbTimes.classList.remove("d-none"); }
-                    } else {
-                        /* Split shift: pre-fill lunch fields from schedule,
-                           restore no-lunch checkbox.
-                           Jornada partida: prerrellenar pausa desde horario,
-                           restaurar checkbox sin-pausa. */
-                        if (lbStart)    { lbStart.value = data.lunch_break_start || ""; }
-                        if (lbEnd)      { lbEnd.value   = data.lunch_break_end   || ""; }
-                        if (noLunchWrap){ noLunchWrap.classList.remove("d-none"); }
-                        if (lbTimes)    { lbTimes.classList.remove("d-none"); }
-                    }
-
-                    /* Update first block HC/HF inputs from resolved schedule.
-                       Actualizar los inputs HC/HF del primer bloque desde el
-                       horario resuelto. */
-                    var firstHc = document.querySelector(
-                        "[name=entrada_1_hc]"
-                    );
-                    var firstHf = document.querySelector(
-                        "[name=entrada_1_hf]"
-                    );
-                    if (firstHc) {
-                        firstHc.value = data.first_hc || "";
-                    }
-                    if (firstHf) {
-                        /* In intensive shift end_time_afternoon holds
-                           end_time_morning (set by the view). In split
-                           shift it holds end_time_afternoon of the schedule.
-                           En jornada intensiva end_time_afternoon contiene
-                           end_time_morning (asignado por la vista). En jornada
-                           partida contiene end_time_afternoon del horario. */
-                        firstHf.value = data.end_time_afternoon || "";
-                    }
-                }
-
-                toggle.addEventListener("change", function () {
-                    var value = toggle.checked ? "1" : "0";
-                    var url   = (window.EB_CONFIG && window.EB_CONFIG.intensiveToggleUrl) || "";
-                    if (!url) { return; }
-
-                    /* Build form-encoded body with CSRF token.
-                       Construir cuerpo form-encoded con token CSRF. */
-                    var csrfToken = (function () {
-                        var el = document.querySelector("[name=csrfmiddlewaretoken]");
-                        return el ? el.value : "";
-                    }());
-
-                    fetch(url, {
-                        method:  "POST",
-                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                        body:    "value=" + value + "&csrfmiddlewaretoken=" + encodeURIComponent(csrfToken)
-                    })
-                    .then(function (r) { return r.json(); })
-                    .then(function (data) {
-                        _reloadEbConfig(data);
-                        _showFeedback(
-                            data.is_intensive
-                                ? "Jornada intensiva activada. Horario actualizado."
-                                : "Jornada partida activada. Horario actualizado.",
-                            false
-                        );
-                    })
-                    .catch(function () {
-                        _showFeedback("Error al guardar el tipo de jornada. Recarga la página.", true);
-                        toggle.checked = !toggle.checked;
-                    });
-                });
-            }());
-            </script>
+{# JS nativo del toggle eliminado en S005: HTMX gestiona el swap completo. #}
+{# El hx-on::after-request del checkbox maneja el feedback visual.         #}
+{# Native toggle JS removed in S005: HTMX handles the full swap.           #}
+{# The hx-on::after-request on the checkbox handles visual feedback.       #}
 
             {# ================================================================ #}
             {# SCHEDULE-DEPENDENT FIELDS — HTMX swap target                   #}
