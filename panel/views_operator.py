@@ -174,12 +174,13 @@ class WorkshopAssetAutocompleteView (WorkshopRequiredMixin ,View ):
 
             qs =qs .filter (
             django_models .Q (code__icontains =q )|
-            django_models .Q (brand_model__icontains =q )
+            django_models .Q (brand_model__icontains =q )|
+            django_models .Q (plate__icontains =q )
             )
 
         assets =list (
         qs .order_by ("code")
-        .values ("code","brand_model")[:20 ]
+        .values ("code","brand_model","plate")[:20 ]
         )
         return JsonResponse ({"assets":assets })
 
@@ -344,6 +345,9 @@ def _resolve_operator_schedule (cu ,company ):
     """
     Resolves the effective WorkdaySchedule for a CompanyUser following
     the Gate 4 priority chain:
+      0. If cu.is_intensive_override=True, returns the company's intensive
+         WorkdaySchedule (is_intensive=True) when one exists. Falls through
+         to the normal chain if no intensive schedule is configured.
       1. CompanyUser.workday_schedule (individual assignment).
       2. First active Section of the operator's Contact that has a
          workday_schedule assigned.
@@ -353,6 +357,9 @@ def _resolve_operator_schedule (cu ,company ):
     ---
     Resuelve el WorkdaySchedule efectivo para un CompanyUser siguiendo
     la cadena de prioridad de Gate 4:
+      0. Si cu.is_intensive_override=True, devuelve el WorkdaySchedule
+         intensivo de la empresa (is_intensive=True) si existe. Si no
+         existe horario intensivo configurado, continua con la cadena normal.
       1. CompanyUser.workday_schedule (asignacion individual).
       2. Primera Section activa del Contact del operario que tenga
          workday_schedule asignado.
@@ -362,6 +369,14 @@ def _resolve_operator_schedule (cu ,company ):
     """
     from ivr_config .models import WorkdaySchedule as _WDS_R 
     from ivr_config .models import Contact as _Contact_R 
+
+    if getattr (cu ,"is_intensive_override",False ):
+        _intensive =_WDS_R .objects .filter (
+            company =company ,
+            is_intensive =True ,
+        ).first ()
+        if _intensive is not None :
+            return _intensive 
 
     if cu .workday_schedule_id :
         return cu .workday_schedule 
@@ -2288,6 +2303,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         "end_time_afternoon":_end_time_afternoon_create ,
         "absence_categories":_json_fix .dumps (_absence_cats ),
         "personal_asset_code":PERSONAL_ASSET_CODE ,
+        "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
         })
         return render (request ,self .template_name ,context )
 
@@ -6006,4 +6022,114 @@ class WorkOrderDescriptionAutocompleteView (WorkshopRequiredMixin ,View ):
         )
 
         return JsonResponse ({"results":list (qs )})
+
+
+class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
+    """
+    JSON endpoint that toggles or explicitly sets the is_intensive_override
+    flag on the authenticated CompanyUser. Called from the operator work-order
+    entry form when the operator activates or deactivates the intensive-shift
+    checkbox. Returns the updated schedule data so the frontend can reload
+    EB_CONFIG without a full page refresh.
+
+    POST /panel/operator/intensive-toggle/
+        Body (form-encoded or JSON): value=1|0
+          1 — activate intensive shift.
+          0 — deactivate intensive shift.
+        Returns JSON:
+          {
+            "is_intensive": bool,
+            "lunch_break_start": "HH:MM" | "",
+            "lunch_break_end":   "HH:MM" | "",
+            "end_time_morning":  "HH:MM" | "",
+            "end_time_afternoon":"HH:MM" | "",
+            "first_hc":          "HH:MM" | ""
+          }
+    ---
+    Endpoint JSON que activa o desactiva el flag is_intensive_override del
+    CompanyUser autenticado. Llamado desde el formulario de parte del operario
+    cuando activa o desactiva el checkbox de jornada intensiva. Devuelve los
+    datos del horario actualizado para que el frontend recargue EB_CONFIG sin
+    recargar la pagina completa.
+
+    POST /panel/operator/intensive-toggle/
+        Cuerpo (form-encoded o JSON): value=1|0
+          1 — activar jornada intensiva.
+          0 — desactivar jornada intensiva.
+        Devuelve JSON con los campos de horario actualizados.
+    """
+
+    def post (self ,request ,*args ,**kwargs ):
+        """
+        Persists the intensive-shift override and returns updated schedule
+        fields as JSON for immediate EB_CONFIG reload on the client.
+        ---
+        Persiste el override de jornada intensiva y devuelve los campos de
+        horario actualizados como JSON para recargar EB_CONFIG en el cliente.
+        """
+        import json as _json
+        from django .http import JsonResponse 
+
+        try :
+            cu =request .user .company_user 
+            company =cu .company 
+        except AttributeError :
+            return JsonResponse ({"error":"Sin perfil de empresa."},status =403 )
+
+        # -- Parse value from JSON body or form-encoded body. --
+        # -- Parsear value desde cuerpo JSON o form-encoded. --
+        raw_value =None 
+        if request .content_type and "application/json" in request .content_type :
+            try :
+                payload =_json .loads (request .body )
+                raw_value =payload .get ("value")
+            except (ValueError ,KeyError ):
+                pass 
+        if raw_value is None :
+            raw_value =request .POST .get ("value","0")
+
+        activate =str (raw_value ).strip ()in ("1","true","True")
+
+        # -- Persist the flag. --
+        # -- Persistir el flag. --
+        cu .is_intensive_override =activate 
+        cu .save (update_fields =["is_intensive_override"])
+
+        # -- Resolve updated schedule and build response payload. --
+        # -- Resolver horario actualizado y construir payload de respuesta. --
+        schedule =_resolve_operator_schedule (cu ,company )
+
+        def _fmt (t ):
+            """
+            Formats a time field as HH:MM string, or returns empty string.
+            ---
+            Formatea un campo de hora como cadena HH:MM, o devuelve cadena vacia.
+            """
+            return t .strftime ("%H:%M") if t else ""
+
+        lunch_break_start =""
+        lunch_break_end =""
+        end_time_morning =""
+        end_time_afternoon =""
+        first_hc =""
+
+        if schedule is not None :
+            first_hc =_fmt (schedule .start_time_morning )
+            if not schedule .is_intensive :
+                lunch_break_start =_fmt (schedule .end_time_morning )
+                lunch_break_end =_fmt (schedule .start_time_afternoon )
+                end_time_morning =_fmt (schedule .end_time_morning )
+            if schedule .end_time_afternoon :
+                end_time_afternoon =_fmt (schedule .end_time_afternoon )
+            elif schedule .is_intensive and schedule .end_time_morning :
+                end_time_afternoon =_fmt (schedule .end_time_morning )
+
+        return JsonResponse ({
+            "is_intensive":activate ,
+            "lunch_break_start":lunch_break_start ,
+            "lunch_break_end":lunch_break_end ,
+            "end_time_morning":end_time_morning ,
+            "end_time_afternoon":end_time_afternoon ,
+            "first_hc":first_hc ,
+        })
 

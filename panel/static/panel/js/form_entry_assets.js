@@ -104,6 +104,7 @@
         }
 
         function fetchAndRender(q) {
+            if (q !== input.value.trim()) { lastQuery = ""; }
             if (q === lastQuery) { return; }
             lastQuery = q;
             fetch(ASSETS_URL + "?q=" + encodeURIComponent(q))
@@ -118,7 +119,8 @@
                         var btn = document.createElement("button");
                         btn.type      = "button";
                         btn.className = "list-group-item list-group-item-action text-sm py-1 px-2";
-                        btn.textContent = asset.code + " — " + asset.brand_model;
+                        var plate = asset.plate ? " (" + asset.plate + ")" : "";
+                        btn.textContent = asset.code + " — " + asset.brand_model + plate;
 
                         /* pointerdown fires before blur on all platforms including
                            Android Chrome — set guard so blur does not close dropdown
@@ -162,7 +164,7 @@
 
         var debouncedFetch = debounce(function () {
             var q = input.value.trim();
-            if (q.length === 0) { dropdown.classList.add("d-none"); return; }
+            if (q.length < 2) { dropdown.classList.add("d-none"); return; }
             fetchAndRender(q);
         }, 250);
 

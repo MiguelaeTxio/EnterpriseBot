@@ -144,6 +144,132 @@
             </div>
 
             {# ================================================================ #}
+            {# SECTION 1b-bis — Intensive shift toggle / Jornada intensiva     #}
+            {# Persists via WorkshopIntensiveToggleView. Reloads EB_CONFIG      #}
+            {# without full page refresh. Admin can also toggle from user panel.#}
+            {# ================================================================ #}
+            <div class="card border-0 shadow-sm mb-4" id="intensive-shift-card">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h6 class="mb-0 fw-semibold">
+                        <i class="bi bi-sun me-2 text-warning"></i>
+                        Tipo de jornada
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox"
+                               id="id_intensive_shift_toggle"
+                               {% if is_intensive_override %}checked{% endif %}>
+                        <label class="form-check-label fw-medium"
+                               for="id_intensive_shift_toggle">
+                            Jornada intensiva (verano)
+                        </label>
+                    </div>
+                    <div class="form-text text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Los turnos se alternan entre jornada intensiva
+                        (mañana) y jornada partida (mañana y tarde). Marca o desmarca
+                        según el horario que te corresponda. El cambio se guarda
+                        automáticamente y se mantiene hasta que lo modifiques.
+                    </div>
+                    <div id="intensive-shift-feedback" class="mt-2 small d-none"></div>
+                </div>
+            </div>
+            <script>
+            (function () {
+                "use strict";
+                var toggle   = document.getElementById("id_intensive_shift_toggle");
+                var feedback = document.getElementById("intensive-shift-feedback");
+                if (!toggle) { return; }
+
+                function _showFeedback(msg, isError) {
+                    if (!feedback) { return; }
+                    feedback.textContent = msg;
+                    feedback.className = "mt-2 small " + (isError ? "text-danger" : "text-success");
+                    feedback.classList.remove("d-none");
+                    setTimeout(function () { feedback.classList.add("d-none"); }, 3000);
+                }
+
+                function _reloadEbConfig(data) {
+                    /* Reload EB_CONFIG schedule fields without page refresh and
+                       update DOM inputs accordingly.
+                       Recarga los campos de horario de EB_CONFIG sin recargar la pagina
+                       y actualiza los inputs del DOM en consecuencia. */
+                    if (!window.EB_CONFIG) { return; }
+                    window.EB_CONFIG.isIntensiveOverride  = data.is_intensive;
+                    window.EB_CONFIG.lunchBreakStart      = data.lunch_break_start;
+                    window.EB_CONFIG.lunchBreakEnd        = data.lunch_break_end;
+                    window.EB_CONFIG.endTimeMorning       = data.end_time_morning;
+                    window.EB_CONFIG.endTimeAfternoon     = data.end_time_afternoon;
+
+                    /* Update lunch break DOM inputs.
+                       Actualizar los inputs de pausa de comida en el DOM. */
+                    var lbStart     = document.getElementById("id_lunch_break_start");
+                    var lbEnd       = document.getElementById("id_lunch_break_end");
+                    var lbTimes     = document.getElementById("lunch-break-times");
+                    var noLunchChk  = document.getElementById("id_no_lunch_toggle");
+                    var noLunchHid  = document.getElementById("id_no_lunch_break_value");
+                    var noLunchWrap = document.getElementById("no-lunch-check-wrapper");
+
+                    if (data.is_intensive) {
+                        /* Intensive shift: clear lunch fields, hide no-lunch checkbox,
+                           leave times visible but empty so operator can fill manually.
+                           Jornada intensiva: vaciar campos de pausa, ocultar checkbox
+                           sin-pausa, dejar los campos visibles para relleno manual. */
+                        if (lbStart)    { lbStart.value = ""; }
+                        if (lbEnd)      { lbEnd.value   = ""; }
+                        if (noLunchChk) { noLunchChk.checked = false; }
+                        if (noLunchHid) { noLunchHid.value   = "0"; }
+                        if (noLunchWrap){ noLunchWrap.classList.add("d-none"); }
+                        if (lbTimes)    { lbTimes.classList.remove("d-none"); }
+                    } else {
+                        /* Split shift: pre-fill lunch fields from schedule,
+                           restore no-lunch checkbox.
+                           Jornada partida: prerrellenar pausa desde horario,
+                           restaurar checkbox sin-pausa. */
+                        if (lbStart)    { lbStart.value = data.lunch_break_start || ""; }
+                        if (lbEnd)      { lbEnd.value   = data.lunch_break_end   || ""; }
+                        if (noLunchWrap){ noLunchWrap.classList.remove("d-none"); }
+                        if (lbTimes)    { lbTimes.classList.remove("d-none"); }
+                    }
+                }
+
+                toggle.addEventListener("change", function () {
+                    var value = toggle.checked ? "1" : "0";
+                    var url   = (window.EB_CONFIG && window.EB_CONFIG.intensiveToggleUrl) || "";
+                    if (!url) { return; }
+
+                    /* Build form-encoded body with CSRF token.
+                       Construir cuerpo form-encoded con token CSRF. */
+                    var csrfToken = (function () {
+                        var el = document.querySelector("[name=csrfmiddlewaretoken]");
+                        return el ? el.value : "";
+                    }());
+
+                    fetch(url, {
+                        method:  "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body:    "value=" + value + "&csrfmiddlewaretoken=" + encodeURIComponent(csrfToken)
+                    })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        _reloadEbConfig(data);
+                        _showFeedback(
+                            data.is_intensive
+                                ? "Jornada intensiva activada. Horario actualizado."
+                                : "Jornada partida activada. Horario actualizado.",
+                            false
+                        );
+                    })
+                    .catch(function () {
+                        _showFeedback("Error al guardar el tipo de jornada. Recarga la página.", true);
+                        toggle.checked = !toggle.checked;
+                    });
+                });
+            }());
+            </script>
+
+            {# ================================================================ #}
             {# SECTION 1b — Lunch break / Pausa de comida                      #}
             {# Pre-filled from operator WorkdaySchedule (split shift only).    #}
             {# Left empty for intensive shifts — operator may fill manually.   #}
@@ -606,7 +732,9 @@ window.EB_CONFIG = {
     endTimeMorning:     "{{ end_time_morning }}",
     endTimeAfternoon:   "{{ end_time_afternoon }}",
     personalAssetCode:  "{{ personal_asset_code }}",
-    absenceCategories:  {{ absence_categories|default:'[]'|safe }}
+    absenceCategories:  {{ absence_categories|default:'[]'|safe }},
+    intensiveToggleUrl: "{% url 'panel:operator_intensive_toggle' %}",
+    isIntensiveOverride: {{ is_intensive_override|yesno:"true,false" }}
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>

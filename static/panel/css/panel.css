@@ -694,3 +694,21 @@ input[type="time"].eb-field.field-flagged:valid {
 .lab-table-wrap-hidden {
     display: none;
 }
+
+/* Analytics Lab — profile selector width.
+   Analytics Lab — ancho del selector de plantillas. */
+.lab-profile-select {
+    width: 160px;
+}
+
+/* Analytics Lab — delete profile button, hidden by default.
+   Analytics Lab — botón eliminar plantilla, oculto por defecto. */
+.lab-btn-delete-profile {
+    display: none;
+}
+
+/* Analytics Lab — field limit warning, hidden by default.
+   Analytics Lab — aviso de límite de campos, oculto por defecto. */
+.lab-field-limit {
+    display: none;
+}

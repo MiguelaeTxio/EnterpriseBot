@@ -67,6 +67,7 @@ from panel.views_operator import (
     WorkdayGapResolutionView,
     WorkshopAssetDetailView,
     WorkOrderDescriptionAutocompleteView,
+    WorkshopIntensiveToggleView,
 )
 
 # --- Re-exports Fase C: views_workorders ---

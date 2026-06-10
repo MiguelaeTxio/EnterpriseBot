@@ -70,6 +70,7 @@ from panel.views import (
     MachineAssetListView,
     MachineAssetAnalyticsView,
     WorkOrderDescriptionAutocompleteView,
+    WorkshopIntensiveToggleView,
     MachineAssetCreateView,
     MachineAssetUpdateView,
     MachineAssetDeactivateView,
@@ -228,6 +229,7 @@ urlpatterns = [
     # Description typeahead autocomplete — Autocompletado de descripciones (fault_description / repair_notes).
     # Tercer Fleco — Hito 7 (2026-05-05)
     path("operator/descriptions/", WorkOrderDescriptionAutocompleteView.as_view(), name="operator_descriptions"),
+    path("operator/intensive-toggle/", WorkshopIntensiveToggleView.as_view(), name="operator_intensive_toggle"),
 
     # WorkOrder management — PDFs de partes de trabajo (rol SUPERVISOR y ADMIN).
     # Paso 7 — Hito 6 (2026-04-22) | Bloque G — Hito 8 (2026-04-28)

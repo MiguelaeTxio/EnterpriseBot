@@ -412,6 +412,7 @@
 ./ivr_config/migrations/0030_company_labor_calendar_company_operation_bases.py
 ./ivr_config/migrations/0015_workerabsence_workperiod.py
 ./ivr_config/migrations/0006_callflow_voiceprofile_add_backup_fields.py
+./ivr_config/migrations/0033_companyuser_is_intensive_override.py
 ./ivr_config/migrations/0032_add_section_is_broadcast_enabled.py
 ./ivr_config/migrations/0005_corporatevoiceprofile_add_voice_name.py
 ./ivr_config/migrations/0012_callflow_backup_name.py

@@ -11,6 +11,7 @@ from django.utils.decorators import method_decorator
 from panel.mixins import SupervisorAccessMixin
 from ivr_config.models import (
     CompanyUser,
+    PresenceStatus,
     Section,
 )
 from work_order_processor.models import (

@@ -284,6 +284,19 @@ class CompanyUser(models.Model):
             "Si tampoco existe horario por defecto, Gate 4 se omite completamente."
         ),
     )
+    is_intensive_override = models.BooleanField(
+        default=False,
+        verbose_name="Jornada intensiva activa",
+        help_text=(
+            "Indica si este operario está en jornada intensiva (verano). "
+            "El operario puede activarlo o desactivarlo desde el formulario "
+            "de parte. El supervisor o administrador puede cambiarlo desde "
+            "el panel de gestión de usuarios. Cuando está activo, Gate 4 "
+            "resuelve el WorkdaySchedule con is_intensive=True de la empresa "
+            "en lugar del horario partido (invierno). El estado persiste "
+            "entre sesiones hasta que se modifique explícitamente."
+        ),
+    )
     alias = models.CharField(
         max_length=50,
         blank=True,
