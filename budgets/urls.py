@@ -160,6 +160,14 @@ urlpatterns = [
         name="insurer_update",
     ),
 
+    # Insurer clone — POST, clona aseguradora con nombre nuevo. Solo ADMIN.
+    # Insurer clone — POST, clones insurer with new name. ADMIN only.
+    path(
+        "insurers/<int:pk>/clone/",
+        views.InsurerCloneView.as_view(),
+        name="insurer_clone",
+    ),
+
     # Insurer toggle — HTMX POST, alterna is_active, devuelve badge.
     # Insurer toggle — HTMX POST, toggles is_active, returns badge fragment.
     path(

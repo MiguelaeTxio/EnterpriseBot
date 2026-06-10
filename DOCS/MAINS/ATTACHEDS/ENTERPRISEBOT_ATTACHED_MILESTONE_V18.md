@@ -60,6 +60,71 @@
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesion
+## Hoja de Ruta para la Siguiente Sesion (S008)
 
-Sin tareas pendientes en este hito.
+### CONTEXTO DE LA REACTIVACION
+
+En S007 se acuerda reactivar V18 para implementar:
+1. Visualizacion de rutas en mapa estilo Google Maps integrada en el wizard
+   de presupuestos: ruta con peajes (azul marino) y ruta sin peajes
+   (azul celeste), con eleccion de ruta por parte del operario.
+2. Calculo del coste de peajes en ambos casos (con y sin peajes) usando
+   tabla propia poblada mediante web scraping de tarifas oficiales.
+3. Web scraping de tarifas de peajes espanoles para poblar la BD.
+
+### BLOQUE 1 -- Investigacion y diseno previo (OBLIGATORIO ANTES DE CODIFICAR)
+
+Antes de escribir una sola linea de codigo, el modelo debe:
+
+1. Actualizar conocimiento de la Google Maps/Routes API para visualizacion
+   de rutas alternativas: buscar documentacion actual sobre Routes API v2
+   (alternativeRoutes, polyline encoding, renderizado en Maps JavaScript API).
+2. Investigar fuentes de tarifas de peajes espanoles susceptibles de scraping:
+   - ministerio de transportes (mitma.gob.es)
+   - operadoras: Abertis, Globalvia, Sacyr, AP-7, AP-2, etc.
+   - APIs abiertas o datasets descargables si existen.
+3. Presentar a Miguel Angel el diseno tecnico antes de implementar:
+   - Modelo TollSegment propuesto (campos, relaciones).
+   - Estrategia de scraping (fuente, frecuencia de actualizacion, formato).
+   - Integracion en el wizard: donde se muestra el mapa, como se elige ruta,
+     como se traspasa el coste de peajes al presupuesto.
+   - Flujo de calculo: ruta con peajes (Routes API ya devuelve toll_cost) vs
+     ruta sin peajes (Routes API con AVOID_TOLLS + calculo propio desde tabla).
+   Esperar confirmacion de Miguel Angel antes de continuar.
+
+### BLOQUE 2 -- Modelo TollSegment y migracion
+
+Segun diseno confirmado en BLOQUE 1. Campos minimos esperados:
+road_code (CharField), km_start (DecimalField), km_end (DecimalField),
+toll_name (CharField), price_car (DecimalField), price_van (DecimalField),
+price_truck (DecimalField), direction (CharField, choices: AB/BA/BOTH),
+is_active (BooleanField), updated_at (DateTimeField auto).
+Ejecutar makemigrations + migrate. Registrar en PROJECT_DIRECTORY.
+
+### BLOQUE 3 -- Script de web scraping
+
+Desarrollar siguiendo el protocolo WSCR (skill wscr):
+- Ejecucion local obligatoria (Edge Processing).
+- Salida: script Ready-to-Deploy que popula la tabla TollSegment via
+  Django ORM (shell script o management command).
+- Verificar con Miguel Angel el resultado antes de poblar produccion.
+
+### BLOQUE 4 -- Visualizacion de rutas en wizard
+
+Modificar el wizard de presupuestos para mostrar ambas rutas en mapa:
+- Llamada a Routes API con alternativeRoutes=true.
+- Ruta con peajes: polyline azul marino (#003580 o similar).
+- Ruta sin peajes (AVOID_TOLLS): polyline azul celeste (#4A90D9 o similar).
+- El operario elige una de las dos rutas haciendo clic en ella o mediante
+  selector de radio button junto al mapa.
+- Al elegir ruta: actualizar km_phase1, route_toll_cost y route_calculation_mode
+  en el formulario. Si elige ruta sin peajes: calcular coste desde tabla
+  TollSegment y mostrarlo igualmente como informacion al operario.
+
+### BLOQUE 5 -- Integracion coste de peajes en presupuesto
+
+Independientemente de la ruta elegida, el coste de peajes debe reflejarse
+en el presupuesto como concepto separado si la aseguradora lo contempla.
+Definir con Miguel Angel si el coste de peajes es:
+- Un concepto facturable anadido automaticamente al BudgetLine, o
+- Un campo informativo visible solo en el desglose ADMIN.

@@ -498,62 +498,85 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     base_total = Decimal("0.00")
 
     # ------------------------------------------------------------------
-    # 1. DEPARTURE(S)
-    # If overnight: 2 departures (one per phase). Otherwise: 1.
-    # Si pernocta: 2 salidas (una por fase). Si no: 1.
+    # 1. DEPARTURE(S) or SERVICE_LOCAL forfait
+    # If km_total <= insurer.local_service_km_threshold AND the tariff
+    # includes a SERVICE_LOCAL line: apply the forfait (no departure, no km).
+    # Otherwise: apply DEPARTURE normally and proceed to km calculation.
+    #
+    # Si km_total <= insurer.local_service_km_threshold Y la tarifa incluye
+    # una linea SERVICE_LOCAL: aplicar el forfait (sin salida, sin km).
+    # En caso contrario: aplicar DEPARTURE normalmente y calcular km.
     # ------------------------------------------------------------------
     departure_line = active_lines_map.get(TariffLine.CONCEPT_DEPARTURE)
     service_local_line = active_lines_map.get(TariffLine.CONCEPT_SERVICE_LOCAL)
+    km_total = Decimal(str(budget.km_total))
 
-    if departure_line:
-        num_departures = Decimal("2") if budget.is_overnight else Decimal("1")
-        base_total += _add_line(
-            TariffLine.CONCEPT_DEPARTURE,
-            "Salida / Enganche",
-            num_departures,
-            Decimal(str(departure_line.price)),
-        )
-    elif service_local_line:
-        # Some tariffs use SERVICE_LOCAL (forfait, no km) instead of DEPARTURE.
-        # Algunas tarifas usan SERVICE_LOCAL (forfait sin km) en lugar de DEPARTURE.
-        num_departures = Decimal("2") if budget.is_overnight else Decimal("1")
+    # Determine whether this service qualifies as local (forfait).
+    # A service is local when: the insurer has a configured threshold,
+    # the tariff includes a SERVICE_LOCAL line, and km_total is within
+    # that threshold (0 km included — operators enter 0 for urban jobs).
+    #
+    # Determinar si el servicio califica como local (forfait).
+    # Es local cuando: la aseguradora tiene umbral configurado, la tarifa
+    # incluye linea SERVICE_LOCAL, y km_total esta dentro del umbral
+    # (0 km incluido — los operarios introducen 0 en trabajos urbanos).
+    _local_threshold = insurer.local_service_km_threshold
+    _is_local_service = (
+        _local_threshold is not None
+        and service_local_line is not None
+        and km_total <= Decimal(str(_local_threshold))
+    )
+
+    if _is_local_service:
+        # Forfait: SERVICE_LOCAL replaces both DEPARTURE and km.
+        # Forfait: SERVICE_LOCAL sustituye tanto a DEPARTURE como a los km.
+        num_units = Decimal("2") if budget.is_overnight else Decimal("1")
         base_total += _add_line(
             TariffLine.CONCEPT_SERVICE_LOCAL,
             "Servicio local / Urbano",
-            num_departures,
+            num_units,
             Decimal(str(service_local_line.price)),
         )
+    else:
+        # Standard service: apply DEPARTURE and km normally.
+        # Servicio estandar: aplicar DEPARTURE y km normalmente.
+        if departure_line:
+            num_departures = Decimal("2") if budget.is_overnight else Decimal("1")
+            base_total += _add_line(
+                TariffLine.CONCEPT_DEPARTURE,
+                "Salida / Enganche",
+                num_departures,
+                Decimal(str(departure_line.price)),
+            )
 
-    # ------------------------------------------------------------------
-    # 2. KILOMETRES
-    # Select KM_NORMAL or KM_LONG based on km_total vs km_threshold.
-    # Seleccionar KM_NORMAL o KM_LONG en funcion de km_total vs km_threshold.
-    # ------------------------------------------------------------------
-    km_total = Decimal(str(budget.km_total))
+        # ------------------------------------------------------------------
+        # 2. KILOMETRES
+        # Select KM_NORMAL or KM_LONG based on km_total vs km_threshold.
+        # Seleccionar KM_NORMAL o KM_LONG en funcion de km_total vs km_threshold.
+        # ------------------------------------------------------------------
+        km_long_line = active_lines_map.get(TariffLine.CONCEPT_KM_LONG)
+        km_normal_line = active_lines_map.get(TariffLine.CONCEPT_KM_NORMAL)
 
-    km_long_line = active_lines_map.get(TariffLine.CONCEPT_KM_LONG)
-    km_normal_line = active_lines_map.get(TariffLine.CONCEPT_KM_NORMAL)
-
-    km_line_to_use = None
-    if km_long_line and km_long_line.km_threshold is not None:
-        threshold = Decimal(str(km_long_line.km_threshold))
-        if km_total > threshold:
-            km_line_to_use = km_long_line
-            km_label = "Kilometros largo recorrido"
-        else:
+        km_line_to_use = None
+        if km_long_line and km_long_line.km_threshold is not None:
+            threshold = Decimal(str(km_long_line.km_threshold))
+            if km_total > threshold:
+                km_line_to_use = km_long_line
+                km_label = "Kilometros largo recorrido"
+            else:
+                km_line_to_use = km_normal_line
+                km_label = "Kilometros"
+        elif km_normal_line:
             km_line_to_use = km_normal_line
             km_label = "Kilometros"
-    elif km_normal_line:
-        km_line_to_use = km_normal_line
-        km_label = "Kilometros"
 
-    if km_line_to_use and km_total > 0:
-        base_total += _add_line(
-            km_line_to_use.concept,
-            km_label,
-            km_total,
-            Decimal(str(km_line_to_use.price)),
-        )
+        if km_line_to_use and km_total > 0:
+            base_total += _add_line(
+                km_line_to_use.concept,
+                km_label,
+                km_total,
+                Decimal(str(km_line_to_use.price)),
+            )
 
     # ------------------------------------------------------------------
     # 3. UNLOCK

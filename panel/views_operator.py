@@ -185,11 +185,15 @@ class WorkshopAssetAutocompleteView (WorkshopRequiredMixin ,View ):
             # matrícula (LNNNNLL, NNNNLLL, LLLNNNN, etc.).
             _q_digits = "".join(ch for ch in q if ch.isdigit())
             _plate_filter = django_models.Q(plate__icontains=q)
-            if _q_digits and _q_digits != q:
-                # Query contains a mix of letters and digits, or is digits
-                # only: add digit-only substring match as an extra OR branch.
-                # El query contiene letras y dígitos, o solo dígitos: añadir
-                # búsqueda por subcadena de dígitos como rama OR adicional.
+            if len(_q_digits) >= 4:
+                # Only activate digit-substring plate search when the query
+                # contains at least 4 consecutive digit characters. Shorter
+                # digit sequences (e.g. 'G12') produce too many false positives
+                # because they match any plate containing those digits.
+                # Solo activar la búsqueda por subcadena de dígitos en
+                # matrícula cuando el query contiene al menos 4 dígitos.
+                # Secuencias más cortas (ej: 'G12') generan demasiados falsos
+                # positivos al coincidir con cualquier matrícula que las contenga.
                 _plate_filter = (
                     django_models.Q(plate__icontains=q)
                     | django_models.Q(plate__icontains=_q_digits)

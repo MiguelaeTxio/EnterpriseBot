@@ -164,27 +164,40 @@ S003   | 2026-06-10 | Incidencias previas (0.2 completado) + incidencia is_inten
 S004   | 2026-06-10 | Incidencias (Bloque 0 + HTMX toggle parcial) | Fix Gate 1 _resolve_operator_schedule: condicional is_intensive_override vs schedule intensivo individual (cu=14, cu=12). Implementacion HTMX toggle jornada intensiva: partial _schedule_fields_fragment.html, WorkshopIntensiveToggleView convierte de JSON a render HTML, form_entry.html usa hx-post/hx-target. Fix form_entry_assets.js: prereelleno HC/HF bloques adicionales corregido (EB_CONFIG en tiempo de click, logica tarde/manana). Actualizacion ped-format.skill. Toggle HTMX reporta error en produccion -- diagnostico pendiente S005.
 S005   | 2026-06-10 | Incidencias (Bloque 0 parcial) | Diagnostico error toggle HTMX jornada intensiva: causa raiz identificada como conflicto entre JS nativo fetch+json y respuesta HTML de WorkshopIntensiveToggleView. Eliminado bloque <script> nativo del toggle en form_entry.html (115 lineas). Anadido hx-on::after-request al checkbox para feedback visual via HTMX puro. PMA aplicado y validado con djlint + integridad OK. Pendientes S006: Issue A (campos pausa duplicados al volver de intensiva a partida) e Issue B (HF Tarea 1 muestra end_time_afternoon en lugar de end_time_morning al desmarcar intensiva).
 S006   | 2026-06-10 | Incidencias previas (B0 duplicidad pausa + autocomplete matricula) | Fix duplicidad visual inputs pausa comida: causa raiz doble div#schedule-dependent-fields en _schedule_fields_fragment.html introducida por modelo anterior. Eliminado div duplicado via PMA. Fix widget TimePicker: MutationObserver deferia con setTimeout(0) para estabilizar DOM tras swap HTMX; guarda tp-wrapper en initAll() para evitar doble envoltorio; inputs de pausa marcados d-none en HTML para ocultar nativo sin depender de JS. Fix autocompletado matricula: WorkshopAssetAutocompleteView ampliado con rama _q_digits para buscar subcadena numerica en plate (encuentra AB1234C escribiendo 1234). Fix re-adjuncion autocomplete tras swap HTMX: MutationObserver en form_entry_assets.js re-adjunta attachAutocomplete a inputs .asset-search nuevos insertados por HTMX.
+S007   | 2026-06-10 | Incidencias + Bloque 1 parcial + Paso 10 | Fix autocompletado de maquina en partes: guardia idempotente data-ac-attached en attachAutocomplete + filtro de mutaciones .asset-dropdown en MutationObserver para evitar listeners duplicados. Restriccion busqueda por digitos de matricula a minimo 4 digitos consecutivos en WorkshopAssetAutocompleteView. Campo local_service_km_threshold (PositiveSmallIntegerField, default=20, nullable) anadido a Insurer, migracion 0016 generada y aplicada. Motor services.py: logica _is_local_service sustituye DEPARTURE+km por forfait SERVICE_LOCAL cuando km_total <= umbral. InsurerCloneView implementada: clona Insurer con catalogo VehicleType, InsurerTariff activa, TariffLines e InsurerBase links; ruta insurer_clone registrada en urls.py. Skill pisa blindada con seccion de prohibicion absoluta de re-solicitud de documentos de sesion e invencion de rutas; empaquetada con skill-creator.
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S007)
+## 5. Hoja de Ruta para la Siguiente Sesion (S008)
 
-### BLOQUE 0 -- Confirmar campo local_service con responsables
+### CONTEXTO
 
-Antes de ejecutar makemigrations, confirmar con los responsables si el
-campo de servicios locales (distancia < 20 km) es:
-- BooleanField simple (local_service) en WorkOrderAssistanceUnit, o
-- Umbral numerico configurable por empresa.
+En S007 se completaron las incidencias de autocompletado, el campo
+local_service_km_threshold en Insurer con migracion 0016, la logica
+de forfait SERVICE_LOCAL en el motor de presupuestos, y la
+InsurerCloneView. El hito queda pausado. La siguiente sesion sobre
+V17 debe retomar los pasos formales pendientes:
 
-### BLOQUE 1 -- Modelos y migracion (Paso 1 del Hito)
+### BLOQUE 1 -- Confirmar campo diferido
 
-1. Solicitar budgets/models.py completo para obtener anclas reales.
-2. Anadir los cuatro modelos nuevos al final mediante PMA:
-   WorkOrderAssistance, WorkOrderAssistanceUnit,
-   WorkOrderAssistanceSignature, WorkOrderAssistanceIncidence.
-   Arquitectura exacta en seccion 2.2 de este anexo.
-3. Incorporar campo local_service en WorkOrderAssistanceUnit
-   segun confirmacion del BLOQUE 0.
-4. Ejecutar makemigrations y migrate. Verificar sin errores.
-5. Registrar migraciones en PROJECT_DIRECTORY.
-6. Continuar con Paso 2 -- Vistas y URLs.
+Verificar con responsables si el campo diferido del PDF Allianz Partners
+es sinonimo de is_overnight (ya existe en WorkOrderAssistance) o requiere
+campo independiente en el modelo. Hasta confirmar, no ejecutar makemigrations
+sobre WorkOrderAssistance.
+
+### BLOQUE 2 -- Pasos pendientes del hito
+
+Con los modelos ya en BD (WorkOrderAssistance, WorkOrderAssistanceUnit,
+WorkOrderAssistanceSignature, WorkOrderAssistanceIncidence desde S001),
+las vistas y URLs ya implementadas (Paso 2 completado en sesiones previas),
+continuar por este orden:
+
+- Paso 3: Template movil operario (albaran_operario.html mobile-first,
+  integracion con AlbaranApp Android).
+- Paso 4: Notificacion WhatsApp al operario al asignar unidad.
+- Paso 5: Exportacion PDF (albaran_pdf.html + WorkOrderPdfView weasyprint).
+- Paso 6: Boton Generar orden de trabajo en BudgetResultView cuando
+  budget.status == ACCEPTED.
+- Paso 9: Modelo NightSchedule con nombre, hora_inicio, hora_fin y grupo
+  (choices: INSURER / INDIVIDUAL). CRUD desde el panel. Vinculado al
+  calculo de tarifas nocturnas en WorkOrderAssistanceUnit.

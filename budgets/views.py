@@ -1817,6 +1817,163 @@ class BudgetBulkDeleteView(AdminRoleRequiredMixin, View):
 
 
 # ---------------------------------------------------------------------------
+# Insurer clone — clones an insurer with all its tariff data. ADMIN only.
+# Clonado de aseguradora — clona una aseguradora con toda su tarifa. Solo ADMIN.
+# ---------------------------------------------------------------------------
+
+
+class InsurerCloneView(AdminRoleRequiredMixin, View):
+    """
+    Clones an existing Insurer together with its active InsurerTariff,
+    all TariffLine records, VehicleType catalogue and InsurerBase links.
+    The operator provides only the new combined name
+    ('<Aseguradora> / <Empresa prestadora>') via a POST form.
+    All other fields are copied verbatim from the source insurer.
+    The cloned insurer is created with is_active=True and the cloned
+    tariff starts on today's date with valid_to=None.
+    Redirects to the edit view of the new insurer on success.
+    ---
+    Clona una Insurer existente junto con su InsurerTariff activa,
+    todos los registros TariffLine, el catálogo VehicleType y los
+    vínculos InsurerBase.
+    El operario únicamente proporciona el nuevo nombre combinado
+    ('<Aseguradora> / <Empresa prestadora>') mediante un formulario POST.
+    El resto de campos se copian literalmente de la aseguradora origen.
+    La aseguradora clonada se crea con is_active=True y la tarifa clonada
+    arranca en la fecha de hoy con valid_to=None.
+    Redirige a la vista de edición de la nueva aseguradora en éxito.
+    """
+
+    def post(self, request, pk):
+        """
+        Clone the insurer identified by pk. Requires 'new_name' in POST data.
+        ---
+        Clona la aseguradora identificada por pk. Requiere 'new_name' en POST.
+        """
+        import datetime as _dt
+        from budgets.models import InsurerTariff, TariffLine, VehicleType, InsurerBase
+
+        company_user = _get_company_user(request)
+        source = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+
+        new_name = request.POST.get("new_name", "").strip()
+        if not new_name:
+            messages.error(
+                request,
+                "El nombre combinado de la nueva aseguradora es obligatorio.",
+            )
+            return redirect("budgets:insurer_detail", pk=pk)
+
+        # Guard: name must be unique within the company.
+        # Guardia: el nombre debe ser único dentro de la empresa.
+        if Insurer.objects.filter(
+            company=company_user.company,
+            name=new_name,
+        ).exists():
+            messages.error(
+                request,
+                f"Ya existe una aseguradora con el nombre '{new_name}' en esta empresa.",
+            )
+            return redirect("budgets:insurer_detail", pk=pk)
+
+        # Guard: code derived from new_name must be unique within the company.
+        # Use the source code suffixed with '_CLONE' as a safe fallback.
+        # Guardia: el código derivado del nuevo nombre debe ser único en la empresa.
+        # Usar el código origen con sufijo '_CLONE' como fallback seguro.
+        new_code_base = new_name.upper().replace(" ", "_")[:40]
+        new_code = new_code_base
+        suffix = 1
+        while Insurer.objects.filter(
+            company=company_user.company,
+            code=new_code,
+        ).exists():
+            new_code = f"{new_code_base}_{suffix}"
+            suffix += 1
+
+        with transaction.atomic():
+            # --- Clone the Insurer record ---
+            # --- Clonar el registro Insurer ---
+            clone = Insurer.objects.create(
+                company=source.company,
+                name=new_name,
+                insurer_company_name=source.insurer_company_name,
+                service_company_name=source.service_company_name,
+                code=new_code,
+                management_fee_percent=source.management_fee_percent,
+                surcharges_are_cumulative=source.surcharges_are_cumulative,
+                is_active=True,
+                is_insurance_company=source.is_insurance_company,
+                always_apply_iva=source.always_apply_iva,
+                special_night_holiday_tariff=source.special_night_holiday_tariff,
+                local_service_km_threshold=source.local_service_km_threshold,
+                notes=source.notes,
+            )
+
+            # --- Clone VehicleType catalogue ---
+            # Map source_vt_pk -> clone_vt for use when cloning TariffLine FKs.
+            # --- Clonar catálogo VehicleType ---
+            # Mapa source_vt_pk -> clone_vt para usar al clonar las FK de TariffLine.
+            vt_map = {}
+            for vt in source.vehicle_types.all().order_by("sort_order", "name"):
+                clone_vt = VehicleType.objects.create(
+                    insurer=clone,
+                    name=vt.name,
+                    sort_order=vt.sort_order,
+                    is_active=vt.is_active,
+                )
+                vt_map[vt.pk] = clone_vt
+
+            # --- Clone active InsurerTariff + TariffLines ---
+            # --- Clonar InsurerTariff activa + TariffLines ---
+            source_tariff = InsurerTariff.objects.filter(
+                insurer=source,
+                valid_to__isnull=True,
+            ).prefetch_related("lines").first()
+
+            if source_tariff:
+                clone_tariff = InsurerTariff.objects.create(
+                    insurer=clone,
+                    year=source_tariff.year,
+                    valid_from=_dt.date.today(),
+                    valid_to=None,
+                    notes=source_tariff.notes,
+                )
+                for line in source_tariff.lines.all():
+                    TariffLine.objects.create(
+                        tariff=clone_tariff,
+                        vehicle_type=(
+                            vt_map.get(line.vehicle_type_id)
+                            if line.vehicle_type_id else None
+                        ),
+                        concept=line.concept,
+                        unit=line.unit,
+                        price=line.price,
+                        km_threshold=line.km_threshold,
+                        min_units=line.min_units,
+                        requires_authorization=line.requires_authorization,
+                    )
+
+            # --- Clone InsurerBase links ---
+            # --- Clonar vínculos InsurerBase ---
+            for ib in InsurerBase.objects.filter(insurer=source):
+                InsurerBase.objects.create(
+                    insurer=clone,
+                    base=ib.base,
+                    is_active=ib.is_active,
+                )
+
+        messages.success(
+            request,
+            f"Aseguradora '{new_name}' creada correctamente como clon de '{source.name}'.",
+        )
+        return redirect("budgets:insurer_update", pk=clone.pk)
+
+
+# ---------------------------------------------------------------------------
 # Insurer detail — read-only tariff view. ADMIN only.
 # Vista de detalle de aseguradora — solo lectura. Solo ADMIN.
 # ---------------------------------------------------------------------------

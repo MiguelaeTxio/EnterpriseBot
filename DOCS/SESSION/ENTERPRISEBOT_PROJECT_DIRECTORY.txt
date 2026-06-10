@@ -368,6 +368,7 @@
 ./budgets/migrations/0012_add_dest_location_to_budget.py
 ./budgets/migrations/0005_budget_total_amount_with_iva.py
 ./budgets/migrations/__init__.py
+./budgets/migrations/0016_insurer_local_service_km_threshold.py
 ./budgets/migrations/0003_insurer_is_insurance_company.py
 ./budgets/migrations/0004_insurer_company_and_service_name.py
 ./budgets/migrations/0002_budget_apply_iva.py

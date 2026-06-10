@@ -90,6 +90,10 @@
     function attachAutocomplete(input) {
         var dropdown = input.parentElement.querySelector(".asset-dropdown");
         if (!dropdown) { return; }
+        /* Idempotency guard: skip if listeners already attached to this input.
+           Guardia de idempotencia: salir si ya se adjuntaron listeners a este input. */
+        if (input.dataset.acAttached === "1") { return; }
+        input.dataset.acAttached = "1";
 
         var lastQuery  = "";
         /* Guard flag: true while the user is pressing a dropdown option.
@@ -363,14 +367,26 @@
     var _autocompleteObserver = new MutationObserver(function (mutations) {
         var needsAttach = false;
         mutations.forEach(function (m) {
-            if (m.addedNodes.length) { needsAttach = true; }
+            /* Ignore mutations originating inside a dropdown — they are caused
+               by fetchAndRender itself and must not trigger re-attachment.
+               Ignorar mutaciones originadas dentro de un dropdown — las provoca
+               el propio fetchAndRender y no deben disparar re-adjuncion. */
+            if (!m.addedNodes.length) { return; }
+            var inDropdown = false;
+            m.addedNodes.forEach(function (node) {
+                if (inDropdown) { return; }
+                var el = node.nodeType === 1 ? node : node.parentElement;
+                if (el && el.closest && el.closest(".asset-dropdown")) {
+                    inDropdown = true;
+                }
+            });
+            if (!inDropdown) { needsAttach = true; }
         });
         if (needsAttach) {
             setTimeout(function () {
                 document.querySelectorAll(".asset-search").forEach(function (inp) {
-                    // attachAutocomplete is idempotent via the dropdown guard:
-                    // if dropdown is absent or already has listeners, it returns.
-                    // attachAutocomplete es idempotente via la guarda del dropdown.
+                    // attachAutocomplete is now truly idempotent via data-ac-attached.
+                    // attachAutocomplete es verdaderamente idempotente via data-ac-attached.
                     attachAutocomplete(inp);
                 });
             }, 0);

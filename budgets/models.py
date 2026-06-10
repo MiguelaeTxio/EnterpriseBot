@@ -148,6 +148,20 @@ class Insurer(models.Model):
             "por franja horaria."
         ),
     )
+    # Km threshold below which a service is considered local (SERVICE_LOCAL forfait).
+    # Umbral de km por debajo del cual el servicio se considera local (forfait SERVICE_LOCAL).
+    local_service_km_threshold = models.PositiveSmallIntegerField(
+        default=20,
+        null=True,
+        blank=True,
+        verbose_name="Umbral servicio local (km)",
+        help_text=(
+            "Kilometraje total máximo (fase 1 + fase 2) para considerar el servicio "
+            "como local y aplicar el forfait SERVICE_LOCAL de la tarifa. "
+            "Valor por defecto: 20 km. "
+            "Dejar vacío (null) si esta aseguradora no contempla servicio local."
+        ),
+    )
     notes = models.TextField(
         blank=True,
         default="",
