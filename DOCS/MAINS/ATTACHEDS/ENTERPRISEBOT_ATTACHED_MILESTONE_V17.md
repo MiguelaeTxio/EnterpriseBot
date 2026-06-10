@@ -161,44 +161,30 @@ Sesion | Fecha      | Pasos trabajados | Resumen
 S001   | 2026-06-02 | Ninguno (diseno) | Hito iniciado. Rediseno completo arquitectura modelos: N vehiculos por servicio, estrategia offline Android nativa, identificacion campos adicionales PDF Allianz. Incidencias paralelas: fix nocturno/festivo wizard, fix redirect operario, prototipo AlbaranApp Android compilado y desplegado, 6 skills Android creadas, PEE y PICP actualizados.
 S002   | 2026-06-09 | Incidencias previas (0.1 y parcial) | Sidebar acordeon Bootstrap Collapse con 9 secciones, persistencia sessionStorage y chevron animado. Fusion IVR+WhatsApp en seccion Telefonia. Iconos homogeneizados: bi-buildings-fill en cabecera sidebar y login, bi-truck-flatbed en acordeon Asistencia, bi-bar-chart en acordeon Analitica, bi-building reservado para Aseguradoras. Bloque 0.2 (autocompletado matricula) pendiente para S003.
 S003   | 2026-06-10 | Incidencias previas (0.2 completado) + incidencia is_intensive_override | Fix autocompletado matricula: threshold 2 caracteres, reset lastQuery, busqueda por plate en WorkshopAssetAutocompleteView, matricula visible en dropdown. Fix NameError PresenceStatus en views_workorders.py. Nuevo campo is_intensive_override en CompanyUser (migracion 0033). WorkshopIntensiveToggleView: endpoint POST que persiste el flag y devuelve campos de horario actualizados. Checkbox jornada intensiva en form_entry.html con handler JS que recarga EB_CONFIG y actualiza DOM sin recarga de pagina. Correccion is_default WINTER/SUMMER en BD. PENDIENTE S004: corregir schedule para operarios con workday_schedule_id=2 asignado individualmente que ignoran el override.
+S004   | 2026-06-10 | Incidencias (Bloque 0 + HTMX toggle parcial) | Fix Gate 1 _resolve_operator_schedule: condicional is_intensive_override vs schedule intensivo individual (cu=14, cu=12). Implementacion HTMX toggle jornada intensiva: partial _schedule_fields_fragment.html, WorkshopIntensiveToggleView convierte de JSON a render HTML, form_entry.html usa hx-post/hx-target. Fix form_entry_assets.js: prereelleno HC/HF bloques adicionales corregido (EB_CONFIG en tiempo de click, logica tarde/manana). Actualizacion ped-format.skill. Toggle HTMX reporta error en produccion -- diagnostico pendiente S005.
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S004)
+## 5. Hoja de Ruta para la Siguiente Sesion (S005)
 
-### BLOQUE 0 -- Incidencia pendiente: override ignorado para operarios con schedule individual
+### BLOQUE 0 -- Diagnostico error HTMX toggle jornada intensiva
 
 **Contexto exacto del problema:**
-Los operarios cu=14 (Alejandro Garcia) y cu=12 (Pablo Canamero) tienen
-workday_schedule_id=2 (SUMMER, is_intensive=True) asignado individualmente
-en CompanyUser.workday_schedule. La cadena Gate 4 en _resolve_operator_schedule
-evalua Gate 0 (is_intensive_override) correctamente, pero si is_intensive_override=True
-y el schedule intensivo existe, devuelve id=2 (correcto). El problema real es el
-inverso: cuando is_intensive_override=False, Gate 1 devuelve workday_schedule_id=2
-(SUMMER) porque tienen ese schedule asignado individualmente, ignorando el override.
-
-**Fix requerido en _resolve_operator_schedule (views_operator.py):**
-Gate 1 debe condicionarse: solo aplicar CompanyUser.workday_schedule si
-is_intensive_override es coherente con el schedule asignado. Logica exacta:
-  - Si is_intensive_override=False y cu.workday_schedule.is_intensive=True:
-    ignorar Gate 1 y continuar a Gate 2/3 para resolver el schedule partido.
-  - Si is_intensive_override=True y cu.workday_schedule.is_intensive=True:
-    Gate 1 aplica normalmente (coherencia).
-  - Si cu.workday_schedule.is_intensive=False: Gate 1 aplica siempre
-    (el schedule individual es el partido, coherente con override=False).
+El toggle HTMX de jornada intensiva persiste correctamente en BD pero la respuesta del servidor devuelve error al renderizar el partial `_schedule_fields_fragment.html`. El mensaje visible en produccion es: "Error al guardar el tipo de jornada. Recarga la pagina."
 
 **Pasos:**
-1. Solicitar ancla de Gate 1 en _resolve_operator_schedule via grep.
-2. PMA sobre panel/views_operator.py con la logica condicional descrita.
-3. Verificar con shell que cu=14 y cu=12 resuelven correctamente en ambos
-   estados del override.
-4. Reload y verificar en produccion con los operarios afectados.
+1. Revisar el log de errores del servidor para obtener el traceback exacto:
+   `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log`
+2. Identificar la causa raiz (importacion faltante, contexto incompleto, AbsenceCategory sin campo `requires_note`, etc.).
+3. Aplicar el fix correspondiente sobre `views_operator.py`.
+4. Verificar con djlint el partial y con py_compile la vista.
+5. Reload y confirmar que el toggle actualiza pausa de comida y HC/HF del primer bloque sin recargar la pagina.
 
 ### BLOQUE 1 -- Modelos y migracion (Paso 1)
 
-Confirmar con responsables si el campo de servicios locales es BooleanField
-simple (local_service) o umbral numerico configurable por empresa, antes de
-ejecutar makemigrations.
+Solo iniciar tras confirmar BLOQUE 0 resuelto.
+
+Confirmar con responsables si el campo de servicios locales es BooleanField simple (local_service) o umbral numerico configurable por empresa, antes de ejecutar makemigrations.
 
 1. Solicitar budgets/models.py completo para obtener anclas reales.
 2. Anadir los cuatro modelos nuevos al final mediante PMA:

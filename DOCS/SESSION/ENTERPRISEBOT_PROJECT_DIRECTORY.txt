@@ -104,6 +104,7 @@
 ./panel/templates/panel/_tour_driver_cdn.html
 ./panel/templates/panel/operator/history.html
 ./panel/templates/panel/operator/gap_resolution.html
+./panel/templates/panel/operator/_schedule_fields_fragment.html
 ./panel/templates/panel/operator/merge_entry.html
 ./panel/templates/panel/operator/form_entry.html
 ./panel/templates/panel/operator/confirm_entry.html

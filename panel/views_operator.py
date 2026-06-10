@@ -378,8 +378,38 @@ def _resolve_operator_schedule (cu ,company ):
         if _intensive is not None :
             return _intensive 
 
-    if cu .workday_schedule_id :
-        return cu .workday_schedule 
+    # Gate 1 — individual schedule assignment.
+    # Only apply if the assigned schedule is coherent with
+    # is_intensive_override:
+    #   - override=True  + intensive schedule  -> Gate 0 already
+    #     returned; reaching here means no intensive schedule
+    #     exists, so Gate 1 applies normally.
+    #   - override=False + intensive schedule  -> incoherent;
+    #     skip Gate 1 and fall through to Gate 2/3.
+    #   - override=False + non-intensive schedule -> coherent;
+    #     Gate 1 applies normally.
+    # ---
+    # Gate 1 — asignacion individual de horario.
+    # Solo aplica si el horario asignado es coherente con
+    # is_intensive_override:
+    #   - override=True  + horario intensivo  -> Gate 0 ya retorno;
+    #     llegar aqui significa que no existe horario intensivo,
+    #     Gate 1 aplica normalmente.
+    #   - override=False + horario intensivo  -> incoherente;
+    #     se ignora Gate 1 y se continua a Gate 2/3.
+    #   - override=False + horario no intensivo -> coherente;
+    #     Gate 1 aplica normalmente.
+    if cu.workday_schedule_id:
+        _cu_sched = cu.workday_schedule
+        _override_active = getattr(cu, 'is_intensive_override', False)
+        _sched_is_intensive = getattr(
+            _cu_sched, 'is_intensive', False
+        )
+        _gate1_coherent = not (
+            not _override_active and _sched_is_intensive
+        )
+        if _gate1_coherent:
+            return _cu_sched
 
     contact =(
     _Contact_R .objects 
@@ -6124,12 +6154,39 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             elif schedule .is_intensive and schedule .end_time_morning :
                 end_time_afternoon =_fmt (schedule .end_time_morning )
 
-        return JsonResponse ({
-            "is_intensive":activate ,
-            "lunch_break_start":lunch_break_start ,
-            "lunch_break_end":lunch_break_end ,
-            "end_time_morning":end_time_morning ,
-            "end_time_afternoon":end_time_afternoon ,
-            "first_hc":first_hc ,
-        })
+        # -- Build schedule context for the HTMX partial. --
+        # -- Construir contexto de horario para el partial HTMX. --
+        from django .shortcuts import render as _render
+        from ivr_config .models import AbsenceCategory as _AbsCat
+
+        _absence_cats = list (
+            _AbsCat .objects
+            .filter (company =company ,is_active =True )
+            .order_by ('label')
+            .values ('id','label','requires_note')
+        )
+
+        _first_hc = first_hc
+        _first_hf = (
+            end_time_afternoon
+            if end_time_afternoon
+            else end_time_morning
+        )
+
+        _ctx = {
+            'is_intensive_override': activate ,
+            'show_lunch_break': bool (lunch_break_start ),
+            'lunch_break_start': lunch_break_start ,
+            'lunch_break_end': lunch_break_end ,
+            'end_time_morning': end_time_morning ,
+            'end_time_afternoon': end_time_afternoon ,
+            'first_block_hc': _first_hc ,
+            'first_block_hf': _first_hf ,
+            'absence_categories': _absence_cats ,
+        }
+        return _render (
+            request ,
+            'panel/operator/_schedule_fields_fragment.html',
+            _ctx ,
+        )
 

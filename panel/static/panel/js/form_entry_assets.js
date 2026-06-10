@@ -586,16 +586,37 @@
             var nextIdx = current + 1;
             numEntradasInput.value = nextIdx;
             /* Pre-fill HC/HF before appendChild so TimePicker reads the value on init.
-               Prerrellenar HC/HF antes de appendChild para que TimePicker lea el valor al inicializar. */
+               Read EB_CONFIG at click time (not at module init) so that changes made
+               by the intensive-shift toggle are reflected immediately.
+               Prerrellenar HC/HF antes de appendChild para que TimePicker lea el valor
+               al inicializar. Se lee EB_CONFIG en el momento del click (no al cargar
+               el modulo) para reflejar los cambios del toggle de jornada intensiva. */
             var endTimeMorning   = (window.EB_CONFIG && window.EB_CONFIG.endTimeMorning)   || "";
             var endTimeAfternoon = (window.EB_CONFIG && window.EB_CONFIG.endTimeAfternoon) || "";
+            var afternoonStart   = (window.EB_CONFIG && window.EB_CONFIG.lunchBreakEnd)    || "";
             var prevHfInput = document.querySelector('[name="entrada_' + current + '_hf"]');
-            var suggestedHc = prevHfInput ? prevHfInput.value : "";
+            var rawPrevHf   = prevHfInput ? prevHfInput.value : "";
+            var suggestedHc = "";
             var suggestedHf = "";
-            if (suggestedHc && endTimeMorning && suggestedHc < endTimeMorning) {
+            if (rawPrevHf && endTimeMorning && rawPrevHf < endTimeMorning) {
+                /* Previous block ends before morning end: this block starts
+                   where the previous ended and covers until morning end.
+                   El bloque anterior termina antes del fin de manana: este
+                   bloque empieza donde termino el anterior y cubre hasta el
+                   fin del tramo de manana. */
+                suggestedHc = rawPrevHf;
                 suggestedHf = endTimeMorning;
-            } else if (endTimeAfternoon) {
-                suggestedHf = endTimeAfternoon;
+            } else if (rawPrevHf) {
+                /* Previous block ends at or after morning end: we are in the
+                   afternoon tract. HC is forced to afternoon start, HF to
+                   afternoon end. In intensive shift afternoonStart and
+                   endTimeAfternoon are both empty so HC/HF stay empty.
+                   El bloque anterior termina a la hora de fin de manana o
+                   despues: estamos en el tramo de tarde. HC se fuerza al
+                   inicio de tarde, HF al fin de tarde. En jornada intensiva
+                   ambos estan vacios, por lo que HC/HF quedan vacios. */
+                suggestedHc = afternoonStart   || "";
+                suggestedHf = endTimeAfternoon || "";
             }
             var row = _buildBlockRow(nextIdx, suggestedHc, suggestedHf);
             extraBlocksCont.appendChild(row);

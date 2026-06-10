@@ -1,0 +1,185 @@
+{# _schedule_fields_fragment.html #}
+{# HTMX partial — rendered by WorkshopIntensiveToggleView after persisting  #}
+{# is_intensive_override. Replaces #schedule-dependent-fields in-place.     #}
+{# Partial HTMX — renderizado por WorkshopIntensiveToggleView tras persistir #}
+{# is_intensive_override. Sustituye #schedule-dependent-fields en su lugar. #}
+<div id="schedule-dependent-fields">
+
+    {# ================================================================ #}
+    {# SECTION 1b — Lunch break / Pausa de comida                      #}
+    {# Pre-filled from operator WorkdaySchedule (split shift only).    #}
+    {# Left empty for intensive shifts — operator may fill manually.   #}
+    {# Prerrellenada desde WorkdaySchedule del operario (jornada       #}
+    {# partida). Vacía en jornada intensiva — el operario puede        #}
+    {# rellenarla manualmente si ha parado a comer.                    #}
+    {# ================================================================ #}
+    <div class="card border-0 shadow-sm mb-4" id="lunch-break-card">
+        <div class="card-header bg-white border-bottom py-3">
+            <h6 class="mb-0 fw-semibold">
+                <i class="bi bi-cup-hot me-2 text-warning"></i>
+                Pausa de comida
+                <span class="text-muted fw-normal fs-6 ms-2">— opcional</span>
+            </h6>
+        </div>
+        <div class="card-body p-4">
+            {% if show_lunch_break %}
+            {# Split shift only: show "no lunch" checkbox. #}
+            {# Solo jornada partida: mostrar checkbox sin pausa. #}
+            <div class="form-check mb-3" id="no-lunch-check-wrapper">
+                <input class="form-check-input" type="checkbox"
+                       id="id_no_lunch_toggle">
+                <input type="hidden" id="id_no_lunch_break_value"
+                       name="no_lunch_break" value="0">
+                <label class="form-check-label fw-medium" for="id_no_lunch_toggle">
+                    No he parado a comer
+                </label>
+                <div class="form-text">
+                    Marca esta casilla si no has hecho pausa de comida.
+                    El sistema contará todas tus horas como trabajadas
+                    y no validará la ventana de mediodía.
+                </div>
+            </div>
+            {% endif %}
+            <p class="text-muted small mb-3">
+                Indica la hora de inicio y fin de tu pausa de comida.
+                {% if not show_lunch_break %}
+                Si no has parado a comer, deja estos campos vacíos.
+                {% endif %}
+                El sistema descontará automáticamente la pausa de las
+                tareas que la cubran.
+            </p>
+            <div class="row g-3" id="lunch-break-times">
+                <div class="col-6 col-md-2">
+                    <label class="form-label fw-medium">Inicio pausa</label>
+                    <input type="time" step="1800"
+                           id="id_lunch_break_start"
+                           name="lunch_break_start"
+                           class="form-control eb-field"
+                           value="{{ lunch_break_start }}">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label fw-medium">Fin pausa</label>
+                    <input type="time" step="1800"
+                           id="id_lunch_break_end"
+                           name="lunch_break_end"
+                           class="form-control eb-field"
+                           value="{{ lunch_break_end }}">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ================================================================ #}
+    {# First work block / Primer bloque de trabajo                     #}
+    {# Rendered only on GET (no entradas_enriched). HC/HF pre-filled   #}
+    {# from resolved WorkdaySchedule via WorkshopIntensiveToggleView.  #}
+    {# Renderizado solo en GET (sin entradas_enriched). HC/HF          #}
+    {# prerrellenados desde WorkdaySchedule resuelto.                  #}
+    {# ================================================================ #}
+    <div class="confirm-block mb-4 pb-4" id="block-1">
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge bg-dark">Tarea 1</span>
+        </div>
+        <div class="row g-3">
+            <div class="col-12 col-md-4">
+                <label class="form-label fw-medium">
+                    Máquina o Sección <span class="text-danger">*</span>
+                </label>
+                <div class="position-relative">
+                    <input type="text"
+                           name="entrada_1_machine_raw"
+                           class="form-control asset-search eb-field"
+                           value=""
+                           placeholder="Código de máquina"
+                           autocomplete="off">
+                    <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label fw-medium">
+                    H.C. <span class="text-danger">*</span>
+                </label>
+                <input type="time"
+                       step="1800"
+                       name="entrada_1_hc"
+                       class="form-control eb-field"
+                       value="{{ first_block_hc }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label fw-medium">
+                    H.F. <span class="text-danger">*</span>
+                </label>
+                <input type="time"
+                       step="1800"
+                       name="entrada_1_hf"
+                       class="form-control eb-field"
+                       value="{{ first_block_hf }}">
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label fw-medium">O.R.</label>
+                <input type="text"
+                       name="entrada_1_or_val"
+                       class="form-control field-optional"
+                       value=""
+                       placeholder="Referencia O.R. (opcional)">
+            </div>
+            {# ---- Lecturas de contadores bloque 1 — ocultas por defecto ---- #}
+            <div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="1">
+                <label class="form-label fw-medium">Km actuales <span class="text-danger meter-required">*</span></label>
+                <input type="number" step="0.1" min="0"
+                       name="entrada_1_odometer_reading"
+                       class="form-control horometro-input"
+                       placeholder="Lectura km">
+            </div>
+            <div class="col-12 col-md-3 meter-field meter-engine d-none" data-block-idx="1">
+                <label class="form-label fw-medium">Horómetro motor (h) <span class="text-danger meter-required">*</span></label>
+                <input type="number" step="0.1" min="0"
+                       name="entrada_1_engine_hours_reading"
+                       class="form-control horometro-input"
+                       placeholder="Horas motor">
+            </div>
+            <div class="col-12 col-md-3 meter-field meter-crane d-none" data-block-idx="1">
+                <label class="form-label fw-medium">Horómetro grúa (h) <span class="text-danger meter-required">*</span></label>
+                <input type="number" step="0.1" min="0"
+                       name="entrada_1_crane_hours_reading"
+                       class="form-control horometro-input"
+                       placeholder="Horas grúa">
+            </div>
+            <div class="col-12 col-md-6 absence-selector-wrap d-none" id="absence-selector-wrap-1">
+                <label class="form-label fw-medium">
+                    Categoría de ausencia <span class="text-danger">*</span>
+                </label>
+                <select name="entrada_1_absence_category"
+                        id="entrada_1_absence_category"
+                        class="form-select eb-field">
+                    <option value="">-- Selecciona una categoría --</option>
+                    {% for cat in absence_categories %}
+                        <option value="{{ cat.id }}"
+                                data-requires-note="{% if cat.requires_note %}1{% else %}0{% endif %}">
+                            {{ cat.label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-6" id="fault-description-wrap-1">
+                <label class="form-label fw-medium">
+                    Descripción avería <span class="text-danger">*</span>
+                </label>
+                <textarea name="entrada_1_fault_description"
+                          class="form-control desc-search eb-field"
+                          rows="3"
+                          placeholder="Descripción de la avería o tarea"
+                          data-desc-field="fault_description"></textarea>
+            </div>
+            <div class="col-12 col-md-6" id="repair-notes-wrap-1">
+                <label class="form-label fw-medium" id="repair-notes-label-1">Reparación realizada <span class="text-danger">*</span></label>
+                <textarea name="entrada_1_repair_notes"
+                          class="form-control desc-search eb-field"
+                          rows="3"
+                          placeholder="Descripción de la reparación"
+                          data-desc-field="repair_notes"></textarea>
+            </div>
+        </div>
+    </div>
+
+</div>
