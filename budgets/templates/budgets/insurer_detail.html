@@ -16,15 +16,6 @@
     <div class="col-12 col-lg-10">
 
       {# ── Guía del pastor — insurer_detail ──────────────────────────────── #}
-              </div>
-        <button type="button"
-                class="btn-close btn-sm"
-                aria-label="Cerrar guía"
-                onclick="cerrarGuiaInsurerDetail()"></button>
-      </div>
-              </div>
-        <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert" aria-label="Cerrar guía"></button>
-      </div>
 
       {# ── Cabecera ─────────────────────────────────────────────────── #}
       <div class="d-flex align-items-center justify-content-between mb-4">
@@ -139,6 +130,32 @@
               <span class="small">{{ insurer.notes }}</span>
             </div>
             {% endif %}
+
+            {# ── Horario nocturno ──────────────────────────────────── #}
+            {# Night schedule resolved: insurer-specific, company default or none. #}
+            {# Horario nocturno resuelto: especifico, por defecto de empresa o sin configurar. #}
+            <div class="col-12">
+              <span class="text-muted d-block">Horario nocturno</span>
+              {% if night_schedule_display.source == 'insurer' %}
+              <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                <i class="bi bi-moon-stars me-1"></i>
+                {{ night_schedule_display.name }}
+                — {{ night_schedule_display.night_start }}–{{ night_schedule_display.night_end }}
+              </span>
+              {% elif night_schedule_display.source == 'company_default' %}
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                <i class="bi bi-moon me-1"></i>
+                {{ night_schedule_display.name }}
+                — {{ night_schedule_display.night_start }}–{{ night_schedule_display.night_end }}
+                <span class="ms-1 fst-italic">(por defecto empresa)</span>
+              </span>
+              {% else %}
+              <span class="text-muted small">
+                <i class="bi bi-dash-circle me-1"></i>Sin configurar
+              </span>
+              {% endif %}
+            </div>
+
           </div>
         </div>
       </div>
@@ -391,7 +408,6 @@
     </div>
   </div>
 </div>
-
 
 {% block extra_scripts %}
 <script>

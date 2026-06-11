@@ -2255,7 +2255,7 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
         """
         company_user = _get_company_user(request)
         insurer = get_object_or_404(
-            Insurer,
+            Insurer.objects.select_related('night_schedule'),
             pk=pk,
             company=company_user.company,
         )
@@ -2326,6 +2326,52 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
             company=company_user.company, is_active=True
         ).order_by("name")
         base_form = BaseForm()
+
+        # Resolve night schedule display data for the template.
+        # The resolution order follows the engine: insurer.night_schedule
+        # -> company default NightSchedule -> not configured.
+        # Resolver datos de horario nocturno para el template.
+        # El orden sigue al motor: insurer.night_schedule
+        # -> NightSchedule por defecto de empresa -> sin configurar.
+        if insurer.night_schedule and insurer.night_schedule.is_active:
+            # Insurer has an explicit active night schedule assigned.
+            # La aseguradora tiene un horario nocturno activo asignado.
+            night_schedule_display = {
+                "source": "insurer",
+                "name": insurer.night_schedule.name,
+                "night_start": (
+                    insurer.night_schedule.night_start
+                    .strftime("%H:%M")
+                ),
+                "night_end": (
+                    insurer.night_schedule.night_end
+                    .strftime("%H:%M")
+                ),
+            }
+        else:
+            # Fall back to the company default NightSchedule.
+            # Usar el NightSchedule por defecto de la empresa como fallback.
+            default_ns = NightSchedule.objects.filter(
+                company=company_user.company,
+                is_default=True,
+                is_active=True,
+            ).first()
+            if default_ns:
+                night_schedule_display = {
+                    "source": "company_default",
+                    "name": default_ns.name,
+                    "night_start": (
+                        default_ns.night_start.strftime("%H:%M")
+                    ),
+                    "night_end": (
+                        default_ns.night_end.strftime("%H:%M")
+                    ),
+                }
+            else:
+                # Neither insurer nor company has a configured schedule.
+                # Ni la aseguradora ni la empresa tienen horario configurado.
+                night_schedule_display = {"source": "none"}
+
         ctx = _build_base_context(request, {
             "insurer": insurer,
             "insurer_bases": insurer_bases,
@@ -2337,6 +2383,7 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
             "special_generic_lines": special_generic_lines,
             "bases": bases,
             "base_form": base_form,
+            "night_schedule_display": night_schedule_display,
             "active_nav": "insurer_list",
         })
         return render(request, self.template_name, ctx)

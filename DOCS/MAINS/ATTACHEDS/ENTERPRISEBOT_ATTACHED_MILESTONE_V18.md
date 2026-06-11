@@ -86,95 +86,143 @@
 - UX botones tabla bases: columnas th/td con width:1% nowrap, botones en d-flex gap-1.
 - Skill PED reforzada con Regla 8: verificacion obligatoria de salida integra antes de continuar.
 
+### COMPLETADAS EN S011
+- PASO 0: fix vista de detalle de aseguradora (InsurerDetailView). Añadido
+  select_related('night_schedule') en la query. Calculado night_schedule_display
+  en la vista con resolución en tres niveles: insurer.night_schedule activo →
+  NightSchedule is_default=True de empresa → {"source": "none"}. Inyectado en
+  el contexto. Template insurer_detail.html: nuevo bloque en card Datos generales
+  que muestra badge azul (horario propio), badge gris (por defecto empresa) o
+  texto sin configurar según source. Saneado de errores djlint preexistentes:
+  tags huérfanos del bloque guía del pastor eliminados, &mdash; sustituidos
+  por carácter Unicode directo, línea en blanco extra eliminada.
+  0 errores djlint al cerrar.
+- Actualización en línea Routes API v2: confirmado que para España la API
+  no devuelve coste de peajes. Decisión de arquitectura para BLOQUE 4:
+  dos llamadas separadas a la API (ruta normal + avoidTolls:true), cruce
+  de coste con tabla TollSegment en BD (418 tramos, 10 autopistas).
+  Auditoría BD: AP-46, AP-51, AP-53, AP-6, AP-61, AP-66, AP-68, AP-7,
+  AP-71, AP-9. Solo nombres textuales, sin coordenadas geográficas.
+  Sesión cerrada por agotamiento de cuota antes de implementar services.py.
+
 ### PENDIENTES
 - PRIORIDAD 2 — Peajes por tabla propia: aplazado por decision de negocio. La Routes API indica presencia de peajes (has_tolls=True) y el operario introduce el importe manualmente. Sin tabla TollSegment por el momento.
 - PRIORIDAD 3 — Boton sync calendarios: implementado en S004 como BaseSyncCalendarsView.
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesion (S011)
+## Hoja de Ruta para la Siguiente Sesion (S012)
 
-### CONTEXTO S011
+### CONTEXTO S012
 
-S010 completo: tabla TollSegment operativa con ordenacion y UX mejorada,
-horarios nocturnos centralizados en aseguradoras con calculo automatico,
-fondo verde menta en inputs del panel. El BLOQUE 4 del wizard (visualizacion
-dual de rutas) y el BLOQUE 5 (integracion peajes en presupuesto) quedan
-pendientes y son la prioridad de S011.
+S011 completo: PASO 0 cerrado (vista detalle aseguradora muestra horario
+nocturno, 0 errores djlint). Actualizacion en linea Routes API confirmada:
+para Espana la API no devuelve coste de peajes. Arquitectura del BLOQUE 4
+decidida: dos llamadas separadas (ruta normal + avoidTolls) + cruce de coste
+con TollSegment en BD. services.py no fue modificado por agotamiento de cuota.
 
-### PASO 0 — Fix vista de detalle de aseguradora (PRIORIDAD ANTES DEL BLOQUE 4)
+### DECISION DE NEGOCIO PREVIA (OBLIGATORIA ANTES DE IMPLEMENTAR)
 
-La vista de detalle de aseguradora (InsurerDetailView, template insurer_detail.html,
-accesible mediante el boton de ojito en el listado de aseguradoras) no muestra
-el horario nocturno asignado. Anadir en el bloque de datos generales de la vista
-de detalle la informacion del NightSchedule:
-- Si insurer.night_schedule esta asignado: mostrar nombre, night_start, night_end.
-- Si no esta asignado: mostrar "Horario por defecto de la empresa" con el nombre
-  y franja del NightSchedule is_default=True de la empresa, o "Sin configurar"
-  si tampoco existe horario por defecto.
-Archivos afectados: budgets/templates/budgets/insurer_detail.html.
-La vista InsurerDetailView ya pasa el objeto insurer al contexto — no requiere
-cambios en views.py salvo verificar que night_schedule esta en los datos
-disponibles (FK con select_related si procede).
+El BLOQUE 5 requiere decision de Miguel Angel antes de implementar:
+- Opcion A: coste de peajes como concepto facturable (BudgetLine) anadido
+  automaticamente al presupuesto.
+- Opcion B: campo informativo visible solo en el desglose ADMIN.
+Esta decision condiciona el diseno de calculate_route() y BudgetRouteDualView.
+Presentar y obtener confirmacion al inicio de S012 antes de codificar.
 
 ### BLOQUE 4 — Visualizacion dual de rutas en el wizard (PRIORIDAD MAXIMA)
 
-Antes de codificar, el modelo DEBE actualizar en linea la documentacion
-de la Routes API v2 (Paso 0 del BLOQUE 1 del anexo original ya completado
-en S009 — usar ese analisis como base pero verificar cambios desde entonces).
+Arquitectura verificada en S011. Dos llamadas separadas a Routes API v2:
+- Llamada 1 (ruta normal): payload con TRAFFIC_AWARE, extraComputations
+  omitido (API no devuelve coste para Espana), FieldMask:
+  `routes.distanceMeters,routes.polyline.encodedPolyline,routes.travelAdvisory.tollInfo`.
+  Extraer: distance_km, encoded_polyline, has_tolls (de travelAdvisory.tollInfo
+  o de la presencia/ausencia de la seccion tollInfo en la respuesta).
+- Llamada 2 (ruta sin peajes): mismo payload pero con
+  `"routeModifiers": {"avoidTolls": true}`. FieldMask identico.
+  Extraer: distance_km, encoded_polyline, has_tolls=False.
 
-#### Paso 1 — Modificar calculate_route() en budgets/services.py
+#### Paso 1 — Leer budgets/services.py
 
-Anadir parametro `compute_alternative=True` a la llamada Routes API:
-- Incluir `"computeAlternativeRoutes": True` en el payload JSON.
-- Anadir `"routes.polyline.encodedPolyline"` al X-Goog-FieldMask.
-- Devolver en el dict de resultado: `route_with_tolls` y `route_without_tolls`,
-  cada uno con sus campos: `distance_km`, `toll_cost`, `has_tolls`,
-  `encoded_polyline`, `mode`.
-- La ruta sin peajes se obtiene con una segunda llamada Routes API con
-  `"routeModifiers": {"avoidTolls": true}` — o si la API devuelve
-  alternativas suficientes, usar la alternativa sin peajes de la misma
-  llamada. Investigar en linea cual es el comportamiento real de la API
-  para rutas espanolas antes de decidir el enfoque.
+Solicitar services.py al inicio de sesion (no fue leido en S011).
+Localizar calculate_route() y entender su estructura actual antes de
+modificarla. Construir anclas desde el archivo real en disco.
 
-#### Paso 2 — Nuevo endpoint HTMX BudgetRouteDualView en budgets/views.py
+#### Paso 2 — Modificar calculate_route() en budgets/services.py
 
-Vista GET que recibe los mismos parametros que BudgetRouteCalcView pero
-devuelve un fragmento HTML con:
-- Mapa Leaflet.js con dos polylines: azul marino (#003580) para ruta con
-  peajes, azul celeste (#4A90D9) para ruta sin peajes (AVOID_TOLLS).
-- Selector de radio button: "Ruta con peajes (X km, Y euros)" vs
-  "Ruta sin peajes (X km, sin coste adicional)".
-- Al seleccionar una ruta: actualizar los hidden inputs del wizard
-  km_phase1, route_toll_cost, route_calculation_mode y route_distance_km.
+Refactorizar calculate_route() para devolver un dict con dos entradas:
+
+```python
+{
+    "route_with_tolls": {
+        "distance_km": Decimal,
+        "has_tolls": bool,
+        "encoded_polyline": str,
+    },
+    "route_without_tolls": {
+        "distance_km": Decimal,
+        "has_tolls": False,
+        "encoded_polyline": str,
+    },
+    "error": str | None,
+}
+```
+
+La segunda llamada (avoidTolls) solo se ejecuta si la primera devuelve
+has_tolls=True. Si has_tolls=False, route_without_tolls = None (no hay
+ruta alternativa que mostrar, la ruta normal ya es sin peajes).
+
+Compatibilidad: BudgetRouteCalcView existente usa calculate_route() —
+verificar que sigue funcionando con el nuevo dict de retorno o adaptar
+BudgetRouteCalcView al nuevo contrato antes de entregar.
+
+#### Paso 3 — Nuevo endpoint HTMX BudgetRouteDualView en budgets/views.py
+
+Vista GET que recibe los mismos parametros que BudgetRouteCalcView:
+base_id, road_name, pk_km, dest_location, service_datetime.
+Llama a calculate_route() y devuelve _route_dual_fragment.html con:
+- Si route_without_tolls is None: mostrar solo la ruta normal (sin
+  selector dual — no hay alternativa).
+- Si route_without_tolls existe: mapa Leaflet con dos polylines +
+  radio buttons de seleccion.
+- Colores: azul marino #003580 (ruta con peajes), azul celeste #4A90D9
+  (ruta sin peajes).
+- Al seleccionar: actualizar hidden inputs km_phase1, route_toll_cost,
+  route_calculation_mode, route_distance_km del wizard.
 - Ruta: `budgets/route-dual/` con name `route_dual`.
 
-#### Paso 3 — Template _route_dual_fragment.html (Neonato Puro)
+#### Paso 4 — Template _route_dual_fragment.html (Neonato Puro)
 
 Fragmento HTMX con:
-- Contenedor del mapa Leaflet (altura fija 280px, clase css definida en
-  panel.css).
-- Importar Leaflet desde CDN solo en este fragmento.
-- Radio buttons con detalle de distancia y coste de cada opcion.
-- JS inline: inicializar mapa, renderizar polylines, manejar seleccion
-  y actualizar hidden inputs del wizard.
+- Contenedor mapa Leaflet altura fija 280px. Clase CSS map-route-dual
+  definida en panel.css (anadir en el mismo patcher del CSS si aplica).
+- Importar Leaflet CDN solo en este fragmento.
+- Radio buttons con etiquetas: "Con peajes (X,X km)" y
+  "Sin peajes (X,X km)" pasados como variables de contexto
+  route_with_tolls y route_without_tolls desde la vista.
+- JS inline: inicializar mapa Leaflet, decodificar polylines con
+  L.Polyline desde encoded_polyline (requiere plugin leaflet-encoded
+  o decodificacion manual), renderizar ambas polylines, manejar
+  seleccion de radio y actualizar hidden inputs del formulario wizard.
+- Dumb template: toda la logica de presentacion calculada en la vista.
 
-#### Paso 4 — Modificar wizard.html y _wizard_steps_fragment.html
+#### Paso 5 — Modificar wizard.html y _wizard_steps_fragment.html
 
 En el paso 4b del wizard (step-route):
-- Reemplazar el boton "Calcular ruta" + div `route-result-section` por
-  el nuevo endpoint HTMX `route-dual/`.
-- El fragmento dual sustituye al _route_calc_fragment.html existente
+- Reemplazar el boton "Calcular ruta" + div route-result-section por
+  el nuevo endpoint HTMX route-dual/ con hx-get y hx-trigger=load.
+- El fragmento dual sustituye completamente a _route_calc_fragment.html
   en ese contenedor.
 
-#### Paso 5 — Registrar en urls.py y PROJECT_DIRECTORY
+#### Paso 6 — Registrar en urls.py y ejecutar PAM
 
-Anadir ruta `route-dual/` en budgets/urls.py. Registrar
-`_route_dual_fragment.html` en PROJECT_DIRECTORY via PAM al finalizar.
+Anadir ruta route-dual/ en budgets/urls.py. Ejecutar PAM al finalizar
+el bloque completo para actualizar PROJECT_DIRECTORY con el nuevo template.
 
-### BLOQUE 5 — Integracion coste de peajes en presupuesto (PENDIENTE)
+### BLOQUE 5 — Integracion coste de peajes en presupuesto
 
-Pendiente de decision de negocio por parte de Miguel Angel:
-- Opcion A: concepto facturable anadido automaticamente como BudgetLine.
-- Opcion B: campo informativo visible solo en el desglose ADMIN.
-Presentar la decision al inicio de S011 antes de implementar.
+Implementar segun la decision de negocio obtenida al inicio de S012.
+Si Opcion A (BudgetLine): anadir logica en calculate_budget() para crear
+una BudgetLine con concepto TOLL_COST cuando route_toll_cost > 0.
+Si Opcion B (campo informativo): mostrar route_toll_cost en la vista de
+resultado del presupuesto solo para rol ADMIN, sin afectar al total.
