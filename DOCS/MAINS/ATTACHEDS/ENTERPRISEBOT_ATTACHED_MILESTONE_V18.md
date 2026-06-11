@@ -72,6 +72,34 @@ En S007 se acuerda reactivar V18 para implementar:
    tabla propia poblada mediante web scraping de tarifas oficiales.
 3. Web scraping de tarifas de peajes espanoles para poblar la BD.
 
+### BLOQUE 0 -- Modelo NightSchedule (incorporado desde Hito 17, Paso 9)
+
+Implementar el modelo NightSchedule y su CRUD antes de abordar los bloques
+de mapas y peajes, ya que el calculo de tarifas nocturnas en
+WorkOrderAssistanceUnit depende de el y debe estar operativo antes de
+construir la logica de presupuestacion de ordenes de trabajo.
+
+Campos del modelo NightSchedule:
+- name (CharField): nombre descriptivo del horario nocturno.
+- start_time (TimeField): hora de inicio del tramo nocturno.
+- end_time (TimeField): hora de fin del tramo nocturno.
+- group (CharField, choices: INSURER / INDIVIDUAL): ambito de aplicacion.
+  INSURER: aplica a todos los servicios de una aseguradora.
+  INDIVIDUAL: aplica a un operario concreto.
+- company (FK a Company): ambito de empresa.
+- is_active (BooleanField, default=True).
+- created_at / updated_at (DateTimeField auto).
+
+Pasos:
+1. Solicitar budgets/models.py para obtener anclas reales.
+2. Anadir NightSchedule al final de budgets/models.py mediante PMA.
+3. makemigrations + migrate. Registrar migracion en PROJECT_DIRECTORY.
+4. CRUD desde el panel ADMIN: NightScheduleListView, NightScheduleCreateView,
+   NightScheduleUpdateView, NightScheduleDeleteView en budgets/views.py.
+   URLs correspondientes en budgets/urls.py.
+5. Vincular NightSchedule al calculo de tarifas nocturnas en
+   WorkOrderAssistanceUnit (campo FK nullable a NightSchedule).
+
 ### BLOQUE 1 -- Investigacion y diseno previo (OBLIGATORIO ANTES DE CODIFICAR)
 
 Antes de escribir una sola linea de codigo, el modelo debe:
