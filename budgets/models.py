@@ -168,6 +168,25 @@ class Insurer(models.Model):
         verbose_name="Notas internas",
         help_text="Observaciones internas sobre esta aseguradora. No visible al operario.",
     )
+    # Night schedule assigned to this insurer. When null, the engine falls back
+    # to the company default NightSchedule (is_default=True), and further to
+    # Company.night_start / Company.night_end for full backwards compatibility.
+    # Horario nocturno asignado a esta aseguradora. Si es nulo, el motor usa el
+    # NightSchedule por defecto de la empresa (is_default=True) y, en su defecto,
+    # Company.night_start / Company.night_end para compatibilidad hacia atrás.
+    night_schedule = models.ForeignKey(
+        "NightSchedule",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="insurers",
+        verbose_name="Horario nocturno",
+        help_text=(
+            "Franja horaria nocturna asignada a esta aseguradora. "
+            "Si no se asigna, el motor usa el horario nocturno por defecto "
+            "de la empresa. Si tampoco existe, usa Company.night_start/night_end."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificación")
 
@@ -2672,3 +2691,129 @@ class WorkOrderAssistanceIncidence(models.Model):
 
     def __str__(self):
         return f"Incidencia — {self.unit} — {self.recorded_by}"
+
+
+# ---------------------------------------------------------------------------
+# 21. NIGHT SCHEDULE — Configurable night-time window per company, assignable
+#     to individual insurers.
+#     Franja horaria nocturna configurable por empresa, asignable por aseguradora.
+# ---------------------------------------------------------------------------
+
+class NightSchedule(models.Model):
+    """
+    Defines a named night-time window for the ASISTENCIA budget engine.
+    Scoped to a Company and optionally assigned to individual Insurer records.
+    The resolution order in the engine is:
+      1. insurer.night_schedule (if assigned)
+      2. Company NightSchedule with is_default=True
+      3. Company.night_start / Company.night_end (backwards compatibility)
+
+    Only one NightSchedule per company may have is_default=True.
+    The save() method enforces this constraint automatically.
+    ---
+    Define una franja horaria nocturna con nombre para el motor de presupuestos
+    ASISTENCIA. Con ámbito de empresa y asignable opcionalmente a instancias
+    individuales de Insurer.
+    Orden de resolución en el motor:
+      1. insurer.night_schedule (si tiene horario asignado)
+      2. NightSchedule de la empresa con is_default=True
+      3. Company.night_start / Company.night_end (compatibilidad hacia atrás)
+
+    Solo un NightSchedule por empresa puede tener is_default=True.
+    El método save() impone esta restricción automáticamente.
+    """
+
+    company = models.ForeignKey(
+        "ivr_config.Company",
+        on_delete=models.CASCADE,
+        related_name="night_schedules",
+        verbose_name="Empresa",
+        help_text="Empresa a la que pertenece este horario nocturno.",
+    )
+    name = models.CharField(
+        max_length=100,
+        verbose_name="Nombre",
+        help_text=(
+            "Nombre descriptivo del horario nocturno "
+            "(ej: \"Nocturno estándar 18h–06h\", \"Nocturno amplio 20h–08h\")."
+        ),
+    )
+    # Start of the night window. Services at or after this time are night services.
+    # Inicio de la franja nocturna. Servicios a esta hora o después son nocturnos.
+    night_start = models.TimeField(
+        verbose_name="Inicio franja nocturna",
+        help_text=(
+            "Hora de inicio de la franja nocturna. "
+            "Los servicios a esta hora o después se marcan como nocturnos."
+        ),
+    )
+    # End of the night window. Services before this time are night services.
+    # Fin de la franja nocturna. Servicios antes de esta hora son nocturnos.
+    night_end = models.TimeField(
+        verbose_name="Fin franja nocturna",
+        help_text=(
+            "Hora de fin de la franja nocturna. "
+            "Los servicios antes de esta hora se marcan como nocturnos."
+        ),
+    )
+    # When True, this schedule is used as the company fallback for insurers
+    # that have no explicit night_schedule assigned.
+    # Enforced unique-per-company via save().
+    # Cuando es True, se usa como fallback de empresa para aseguradoras sin
+    # horario nocturno explícito. Unicidad por empresa impuesta vía save().
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name="Horario por defecto",
+        help_text=(
+            "Si está activo, este horario se aplica a las aseguradoras de la empresa "
+            "que no tengan horario nocturno explícitamente asignado. "
+            "Solo puede haber un horario por defecto activo por empresa."
+        ),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activo",
+        help_text=(
+            "Desactivar para retirar el horario del motor sin eliminarlo. "
+            "Un horario inactivo no se usa aunque sea el asignado de una aseguradora."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Horario nocturno"
+        verbose_name_plural = "Horarios nocturnos"
+        ordering = ["company__name", "-is_default", "name"]
+
+    def save(self, *args, **kwargs):
+        """
+        Enforces the single-default constraint: when this instance is saved
+        with is_default=True, all other NightSchedule records of the same
+        company are set to is_default=False before persisting.
+        ---
+        Impone la restricción de horario único por defecto: cuando esta instancia
+        se guarda con is_default=True, todos los demás registros NightSchedule
+        de la misma empresa se ponen a is_default=False antes de persistir.
+        """
+        if self.is_default:
+            NightSchedule.objects.filter(
+                company=self.company,
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        default_marker = " [por defecto]" if self.is_default else ""
+        active_marker = "" if self.is_active else " [inactivo]"
+        return (
+            f"{self.company.name} — {self.name} "
+            f"({self.night_start.strftime('%H:%M')}–{self.night_end.strftime('%H:%M')})"
+            f"{default_marker}{active_marker}"
+        )

@@ -36,6 +36,25 @@
 - Validacion service_datetime futuro en BudgetRouteCalcView.
 - Mensajes Django en wizard.html.
 
+### COMPLETADAS EN S008
+- Modelo NightSchedule creado en budgets/models.py con campos: company (FK Company),
+  name, night_start, night_end, is_default, is_active, created_at, updated_at.
+  Método save() impone restricción de único is_default=True por empresa.
+- FK night_schedule (nullable) añadida al modelo Insurer.
+- Migración 0017_add_night_schedule aplicada correctamente.
+- Comando seed_night_schedules creado y ejecutado: dos horarios sembrados
+  para Grupo Álvarez (18h-06h por defecto, 20h-08h secundario).
+- Vistas CRUD NightSchedule añadidas a budgets/views.py:
+  NightScheduleForm, NightScheduleListView, NightScheduleUpdateView,
+  NightScheduleDeleteView.
+- Rutas night-schedules/ registradas en budgets/urls.py.
+- Template night_schedule_list.html creado con tabla de horarios y modal
+  de creación/edición.
+- Campo night_schedule añadido a InsurerForm.Meta.fields y renderizado
+  en _insurer_fields_partial.html con selector desplegable.
+- Enlace 'Gestionar horarios nocturnos' pendiente de aplicar en
+  panel/company/settings.html (patcher falló por ancla Unicode).
+
 ### COMPLETADAS EN S004
 - Fix calculate_route(): bloque _road insertado, bloque debug eliminado, distancia × 2.
 - Fix User-Agent en sync_base_calendars para evitar 403 desde PythonAnywhere.
@@ -60,17 +79,83 @@
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesion (S008)
+## Hoja de Ruta para la Siguiente Sesion (S009)
 
-### CONTEXTO DE LA REACTIVACION
+### CONTEXTO S009
 
-En S007 se acuerda reactivar V18 para implementar:
-1. Visualizacion de rutas en mapa estilo Google Maps integrada en el wizard
-   de presupuestos: ruta con peajes (azul marino) y ruta sin peajes
-   (azul celeste), con eleccion de ruta por parte del operario.
-2. Calculo del coste de peajes en ambos casos (con y sin peajes) usando
-   tabla propia poblada mediante web scraping de tarifas oficiales.
-3. Web scraping de tarifas de peajes espanoles para poblar la BD.
+S008 completó el modelo NightSchedule, seed, CRUD y template. Queda pendiente
+aplicar el enlace en settings.html. S009 arranca con ese fix y continúa
+con los bloques de mapas y peajes.
+
+### PENDIENTE DE S008 (PRIORIDAD MAXIMA)
+
+El patcher de settings.html falló por ancla Unicode. Aplicar manualmente
+o con nuevo patcher al inicio de S009:
+- Archivo: panel/templates/panel/company/settings.html
+- Modificación: en el bloque 'Franja horaria nocturna', envolver el label
+  en un div d-flex justify-content-between y añadir enlace al lado:
+  <a href="{% url 'budgets:night_schedule_list' %}" class="btn btn-sm
+  btn-outline-primary">Gestionar horarios nocturnos</a>
+- Verificar que el selector night_schedule en el formulario de aseguradora
+  recibe el queryset night_schedules desde InsurerUpdateView (ya implementado)
+  pero NO desde InsurerCreateView (falta añadir night_schedules al contexto
+  del GET de InsurerCreateView).
+
+### BLOQUE 1 -- Investigacion y diseno previo (OBLIGATORIO ANTES DE CODIFICAR)
+
+Antes de escribir una sola linea de codigo, el modelo debe:
+
+1. Actualizar conocimiento de la Google Maps/Routes API para visualizacion
+   de rutas alternativas: buscar documentacion actual sobre Routes API v2
+   (alternativeRoutes, polyline encoding, renderizado en Maps JavaScript API).
+2. Investigar fuentes de tarifas de peajes espanoles susceptibles de scraping:
+   - ministerio de transportes (mitma.gob.es)
+   - operadoras: Abertis, Globalvia, Sacyr, AP-7, AP-2, etc.
+   - APIs abiertas o datasets descargables si existen.
+3. Presentar a Miguel Angel el diseno tecnico antes de implementar:
+   - Modelo TollSegment propuesto (campos, relaciones).
+   - Estrategia de scraping (fuente, frecuencia de actualizacion, formato).
+   - Integracion en el wizard: donde se muestra el mapa, como se elige ruta,
+     como se traspasa el coste de peajes al presupuesto.
+   - Flujo de calculo: ruta con peajes (Routes API ya devuelve toll_cost) vs
+     ruta sin peajes (Routes API con AVOID_TOLLS + calculo propio desde tabla).
+   Esperar confirmacion de Miguel Angel antes de continuar.
+
+### BLOQUE 2 -- Modelo TollSegment y migracion
+
+Segun diseno confirmado en BLOQUE 1. Campos minimos esperados:
+road_code (CharField), km_start (DecimalField), km_end (DecimalField),
+toll_name (CharField), price_car (DecimalField), price_van (DecimalField),
+price_truck (DecimalField), direction (CharField, choices: AB/BA/BOTH),
+is_active (BooleanField), updated_at (DateTimeField auto).
+Ejecutar makemigrations + migrate. Registrar en PROJECT_DIRECTORY.
+
+### BLOQUE 3 -- Script de web scraping
+
+Desarrollar siguiendo el protocolo WSCR (skill wscr):
+- Ejecucion local obligatoria (Edge Processing).
+- Salida: script Ready-to-Deploy que popula la tabla TollSegment via
+  Django ORM (shell script o management command).
+- Verificar con Miguel Angel el resultado antes de poblar produccion.
+
+### BLOQUE 4 -- Visualizacion de rutas en wizard
+
+Modificar el wizard de presupuestos para mostrar ambas rutas en mapa:
+- Llamada a Routes API con alternativeRoutes=true.
+- Ruta con peajes: polyline azul marino (#003580 o similar).
+- Ruta sin peajes (AVOID_TOLLS): polyline azul celeste (#4A90D9 o similar).
+- El operario elige una de las dos rutas haciendo clic en ella o mediante
+  selector de radio button junto al mapa.
+- Al elegir ruta: actualizar km_phase1, route_toll_cost y route_calculation_mode
+  en el formulario.
+
+### BLOQUE 5 -- Integracion coste de peajes en presupuesto
+
+Independientemente de la ruta elegida, el coste de peajes debe reflejarse
+en el presupuesto como concepto separado si la aseguradora lo contempla.
+Definir con Miguel Angel si el coste de peajes es:
+- Un concepto facturable anadido automaticamente al BudgetLine, o
+- Un campo informativo visible solo en el desglose ADMIN.
 
 ### BLOQUE 0 -- Modelo NightSchedule (incorporado desde Hito 17, Paso 9)
 

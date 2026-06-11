@@ -185,6 +185,35 @@ urlpatterns = [
     ),
 
     # ---------------------------------------------------------------------------
+    # Night schedule management routes — ADMIN only
+    # Rutas de gestión de horarios nocturnos — solo ADMIN
+    # ---------------------------------------------------------------------------
+
+    # Night schedule list + create — GET lista, POST crea nuevo horario.
+    # Night schedule list + create — GET list, POST creates new schedule.
+    path(
+        "night-schedules/",
+        views.NightScheduleListView.as_view(),
+        name="night_schedule_list",
+    ),
+
+    # Night schedule update — GET formulario, POST guarda cambios.
+    # Night schedule update — GET form, POST saves changes.
+    path(
+        "night-schedules/<int:pk>/edit/",
+        views.NightScheduleUpdateView.as_view(),
+        name="night_schedule_update",
+    ),
+
+    # Night schedule delete — POST elimina si no hay aseguradoras vinculadas.
+    # Night schedule delete — POST deletes if no linked insurers.
+    path(
+        "night-schedules/<int:pk>/delete/",
+        views.NightScheduleDeleteView.as_view(),
+        name="night_schedule_delete",
+    ),
+
+    # ---------------------------------------------------------------------------
     # Tariff management routes — ADMIN only
     # Rutas de gestion de tarifas y lineas — solo ADMIN
     # ---------------------------------------------------------------------------

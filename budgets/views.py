@@ -37,6 +37,7 @@ from budgets.models import (
     Insurer,
     InsurerBase,
     InsurerTariff,
+    NightSchedule,
     TariffLine,
     VehicleType,
 )
@@ -1078,6 +1079,7 @@ class InsurerForm(django_forms.ModelForm):
             "is_insurance_company",
             "always_apply_iva",
             "special_night_holiday_tariff",
+            "night_schedule",
             "notes",
         ]
 
@@ -1304,6 +1306,13 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
                     'lines': vt_lines,
                 })
 
+        # Night schedules for the selector in the insurer form.
+        # Horarios nocturnos para el selector en el formulario de aseguradora.
+        night_schedules = NightSchedule.objects.filter(
+            company=insurer.company,
+            is_active=True,
+        ).order_by("-is_default", "name")
+
         return _build_base_context(request, {
             'form': form,
             'insurer': insurer,
@@ -1315,6 +1324,7 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
             'vehicle_types': vehicle_types,
             'concept_choices': TariffLine.CONCEPT_CHOICES,
             'unit_choices': TariffLine.UNIT_CHOICES,
+            'night_schedules': night_schedules,
         })
 
     def get(self, request, pk):
@@ -1366,6 +1376,203 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
                 )
         ctx = self._build_edit_context(request, insurer, form)
         return render(request, self.template_name, ctx)
+
+
+# ---------------------------------------------------------------------------
+# Night schedule management views — ADMIN only
+# Vistas de gestión de horarios nocturnos — solo ADMIN
+# ---------------------------------------------------------------------------
+
+
+class NightScheduleForm(django_forms.ModelForm):
+    """
+    ModelForm for the NightSchedule model. Scoped to the company of the
+    authenticated CompanyUser. company field is excluded and assigned
+    automatically in the view.
+    ---
+    ModelForm para el modelo NightSchedule. Con ámbito de la empresa del
+    CompanyUser autenticado. El campo company se excluye y se asigna
+    automáticamente en la vista.
+    """
+
+    class Meta:
+        model = NightSchedule
+        fields = ["name", "night_start", "night_end", "is_default", "is_active"]
+        widgets = {
+            "night_start": django_forms.TimeInput(
+                attrs={"type": "time"},
+                format="%H:%M",
+            ),
+            "night_end": django_forms.TimeInput(
+                attrs={"type": "time"},
+                format="%H:%M",
+            ),
+        }
+
+
+class NightScheduleListView(AdminRoleRequiredMixin, View):
+    """
+    Lists all NightSchedule records for the company and renders the
+    creation form for inline modal creation. On POST creates a new
+    record and redirects to the list.
+    ---
+    Lista todos los registros NightSchedule de la empresa y renderiza
+    el formulario de creación. En POST crea un nuevo registro y redirige
+    al listado.
+    """
+
+    template_name = "budgets/night_schedule_list.html"
+
+    def _get_context(self, request, form=None):
+        """
+        Build the full context for the list view.
+        ---
+        Construye el contexto completo para la vista de lista.
+        """
+        cu = request.user.company_user
+        schedules = NightSchedule.objects.filter(
+            company=cu.company,
+        ).order_by("-is_default", "name")
+        return _build_base_context(request, {
+            "schedules": schedules,
+            "form": form or NightScheduleForm(),
+            "active_nav": "budgets_insurers",
+        })
+
+    def get(self, request):
+        """
+        Render the full night schedule list page.
+        ---
+        Renderiza la página completa de lista de horarios nocturnos.
+        """
+        return render(
+            request,
+            self.template_name,
+            self._get_context(request),
+        )
+
+    def post(self, request):
+        """
+        Create a new NightSchedule from the form. On success redirects
+        to the list. On error re-renders with validation errors.
+        ---
+        Crea un nuevo NightSchedule desde el formulario. En caso de
+        éxito redirige al listado. En error re-renderiza con errores.
+        """
+        cu = request.user.company_user
+        form = NightScheduleForm(request.POST)
+        if form.is_valid():
+            schedule = form.save(commit=False)
+            schedule.company = cu.company
+            schedule.save()
+            messages.success(
+                request,
+                f"Horario '{schedule.name}' creado correctamente.",
+            )
+            return redirect("budgets:night_schedule_list")
+        return render(
+            request,
+            self.template_name,
+            self._get_context(request, form=form),
+        )
+
+
+class NightScheduleUpdateView(AdminRoleRequiredMixin, View):
+    """
+    Renders and processes the edit form for an existing NightSchedule.
+    On GET: renders the form pre-filled. On POST: validates, saves and
+    redirects back to the list.
+    ---
+    Renderiza y procesa el formulario de edición de un NightSchedule.
+    En GET: renderiza el formulario pre-rellenado. En POST: valida,
+    guarda y redirige al listado.
+    """
+
+    template_name = "budgets/night_schedule_list.html"
+
+    def get(self, request, pk):
+        """
+        Render the edit form for the given NightSchedule pk.
+        ---
+        Renderiza el formulario de edición para el pk dado.
+        """
+        cu = request.user.company_user
+        schedule = get_object_or_404(
+            NightSchedule, pk=pk, company=cu.company,
+        )
+        form = NightScheduleForm(instance=schedule)
+        schedules = NightSchedule.objects.filter(
+            company=cu.company,
+        ).order_by("-is_default", "name")
+        ctx = _build_base_context(request, {
+            "schedules": schedules,
+            "form": form,
+            "edit_schedule": schedule,
+            "active_nav": "budgets_insurers",
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request, pk):
+        """
+        Validate and save the updated NightSchedule. Redirects to list.
+        ---
+        Valida y guarda el NightSchedule actualizado. Redirige al listado.
+        """
+        cu = request.user.company_user
+        schedule = get_object_or_404(
+            NightSchedule, pk=pk, company=cu.company,
+        )
+        form = NightScheduleForm(request.POST, instance=schedule)
+        if form.is_valid():
+            form.save()
+            messages.success(
+                request,
+                f"Horario '{schedule.name}' actualizado correctamente.",
+            )
+            return redirect("budgets:night_schedule_list")
+        schedules = NightSchedule.objects.filter(
+            company=cu.company,
+        ).order_by("-is_default", "name")
+        ctx = _build_base_context(request, {
+            "schedules": schedules,
+            "form": form,
+            "edit_schedule": schedule,
+            "active_nav": "budgets_insurers",
+        })
+        return render(request, self.template_name, ctx)
+
+
+class NightScheduleDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes a NightSchedule if it has no linked Insurer records.
+    ---
+    Elimina un NightSchedule si no tiene registros Insurer vinculados.
+    """
+
+    def post(self, request, pk):
+        """
+        Delete the NightSchedule if no insurers reference it.
+        ---
+        Elimina el NightSchedule si no hay aseguradoras que lo referencien.
+        """
+        cu = request.user.company_user
+        schedule = get_object_or_404(
+            NightSchedule, pk=pk, company=cu.company,
+        )
+        if schedule.insurers.exists():
+            messages.error(
+                request,
+                f"No se puede eliminar '{schedule.name}': "
+                "tiene aseguradoras vinculadas. Desvínculalas primero.",
+            )
+        else:
+            name = schedule.name
+            schedule.delete()
+            messages.success(
+                request,
+                f"Horario '{name}' eliminado correctamente.",
+            )
+        return redirect("budgets:night_schedule_list")
 
 
 class InsurerToggleView(AdminRoleRequiredMixin, View):

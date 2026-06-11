@@ -209,6 +209,37 @@
   </div>
 </div>
 
+{# --- night_schedule --- #}
+<div class="mb-3">
+  <label for="id_night_schedule" class="form-label">
+    Horario nocturno
+  </label>
+  <select
+    id="id_night_schedule"
+    name="night_schedule"
+    class="form-select {% if form.night_schedule.errors %}is-invalid{% endif %}"
+  >
+    <option value="">— Usar horario por defecto de la empresa —</option>
+    {% for s in night_schedules %}
+    <option value="{{ s.pk }}"
+      {% if form.night_schedule.value|stringformat:'s' == s.pk|stringformat:'s' %}selected{% endif %}>
+      {{ s.name }} ({{ s.night_start|time:'H:i' }}–{{ s.night_end|time:'H:i' }})
+      {% if s.is_default %}[por defecto]{% endif %}
+    </option>
+    {% endfor %}
+  </select>
+  <div class="form-text text-muted small">
+    Franja horaria nocturna específica para esta aseguradora.
+    Si no se selecciona ninguna, el motor usará el horario por defecto de la empresa.
+    <a href="{% url 'budgets:night_schedule_list' %}" target="_blank">
+      Gestionar horarios nocturnos
+    </a>
+  </div>
+  {% for error in form.night_schedule.errors %}
+  <div class="invalid-feedback">{{ error }}</div>
+  {% endfor %}
+</div>
+
 {# --- notes --- #}
 <div class="mb-3">
   <label for="id_notes" class="form-label">Notas internas</label>

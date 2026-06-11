@@ -347,6 +347,7 @@
 ./budgets/templates/budgets/albaran_pdf.html
 ./budgets/templates/budgets/bases.html
 ./budgets/templates/budgets/result.html
+./budgets/templates/budgets/night_schedule_list.html
 ./budgets/templates/budgets/work_order_detail.html
 ./budgets/templates/budgets/albaran_demo.html
 ./budgets/templates/budgets/_wizard_steps_fragment.html
@@ -366,6 +367,7 @@
 ./budgets/migrations/0008_base_model.py
 ./budgets/migrations/0009_budget_base_fk.py
 ./budgets/migrations/0012_add_dest_location_to_budget.py
+./budgets/migrations/0017_add_night_schedule.py
 ./budgets/migrations/0005_budget_total_amount_with_iva.py
 ./budgets/migrations/__init__.py
 ./budgets/migrations/0016_insurer_local_service_km_threshold.py
@@ -381,6 +383,7 @@
 ./budgets/management/commands/__init__.py
 ./budgets/management/commands/seed_bases.py
 ./budgets/management/commands/seed_insurer_tariffs.py
+./budgets/management/commands/seed_night_schedules.py
 ./budgets/management/commands/sync_base_calendars.py
 ./budgets/management/commands/seed_unlock_lines.py
 ./budgets/management/__init__.py
