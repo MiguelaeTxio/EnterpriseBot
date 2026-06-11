@@ -650,7 +650,9 @@ class Budget(models.Model):
         ),
     )
     # Toll cost in EUR returned by the Routes API for this service.
+    # Kept for backwards compatibility — mirrors route_toll_budget_cost.
     # Coste de peajes en EUR devuelto por la Routes API para este servicio.
+    # Mantenido por compatibilidad — refleja route_toll_budget_cost.
     route_toll_cost = models.DecimalField(
         max_digits=8,
         decimal_places=2,
@@ -658,10 +660,52 @@ class Budget(models.Model):
         blank=True,
         verbose_name="Coste de peajes",
         help_text=(
-            "Coste estimado de peajes en EUR devuelto por la Routes API. "
-            "Null cuando no hay peajes o el calculo es manual."
+            "Coste estimado de peajes en EUR. Alias de route_toll_budget_cost "
+            "mantenido por compatibilidad con presupuestos anteriores."
         ),
     )
+
+    # Budgeted toll cost: full tariff for each traversed TollSegment,
+    # regardless of time of service (free-night windows are ignored).
+    # This is the amount added to the budget total and the BudgetLine.
+    # Coste de peajes presupuestado: tarifa completa de cada tramo atravesado,
+    # ignorando los tramos gratuitos nocturnos. Es el importe que se suma
+    # al total del presupuesto y a la línea BudgetLine TOLL_COST.
+    route_toll_budget_cost = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Coste peajes presupuestado",
+        help_text=(
+            "Coste de peajes que se añade al presupuesto. "
+            "Aplica la tarifa completa del tramo sin tener en cuenta "
+            "la gratuidad nocturna. Null cuando no hay peajes o el cálculo "
+            "es manual."
+        ),
+    )
+
+    # Real toll cost: applies free-night windows per TollSegment.
+    # Informational only — never added to total_amount.
+    # Only populated when route_calculation_mode=API and has_tolls=True.
+    # Shown in BudgetLine ADMIN breakdown as is_informational=True.
+    # Coste de peajes real: aplica gratuidad nocturna por tramo.
+    # Solo informativo — nunca se suma a total_amount.
+    # Solo se rellena cuando route_calculation_mode=API y has_tolls=True.
+    # Aparece en el desglose ADMIN como línea is_informational=True.
+    route_toll_real_cost = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Coste peajes real",
+        help_text=(
+            "Coste real de peajes aplicando gratuidad nocturna por tramo. "
+            "Solo informativo: no se suma al total del presupuesto. "
+            "Visible únicamente en el desglose ADMIN."
+        ),
+    )
+
     # How km were calculated: MANUAL (operator input) or API (Routes API).
     # Como se calcularon los km: MANUAL (entrada operario) o API (Routes API).
     ROUTE_MODE_MANUAL = "MANUAL"
@@ -906,6 +950,25 @@ class BudgetLine(models.Model):
             "Inactivo para conceptos base (salida, km, desbloqueo, etc.)."
         ),
     )
+
+    # Informational lines are shown in the ADMIN breakdown but never
+    # added to total_amount. Used for the real toll cost line that shows
+    # the actual cost after applying free-night windows, contrasted
+    # against the budgeted toll cost line (is_informational=False).
+    # Las líneas informativas aparecen en el desglose ADMIN pero nunca
+    # se suman a total_amount. Se usan para la línea de coste real de
+    # peajes tras aplicar gratuidad nocturna, contrastada con la línea
+    # de coste presupuestado (is_informational=False).
+    is_informational = models.BooleanField(
+        default=False,
+        verbose_name="Solo informativo",
+        help_text=(
+            "Si es True, esta línea aparece en el desglose ADMIN pero "
+            "no se suma al total del presupuesto. Reservado para la "
+            "línea de coste real de peajes con gratuidad nocturna aplicada."
+        ),
+    )
+
     sort_order = models.PositiveSmallIntegerField(
         default=0,
         verbose_name="Orden",
@@ -2880,6 +2943,61 @@ class TollSegment(models.Model):
         verbose_name="Destino",
         help_text="Nombre del peaje o salida de destino del recorrido.",
         db_index=True,
+    )
+
+    # Geographic coordinates of the origin toll point.
+    # Populated by the geocode_toll_segments management command via
+    # the Google Geocoding API. Used to cross-reference the Routes API
+    # polyline with toll segments in calculate_route().
+    # Coordenadas geográficas del punto de peaje origen.
+    # Pobladas por el comando geocode_toll_segments vía la Geocoding API.
+    # Usadas para cruzar la polyline de la Routes API con los tramos.
+    origin_lat = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Latitud origen",
+        help_text=(
+            "Latitud del punto de peaje origen. "
+            "Poblada automáticamente por geocode_toll_segments."
+        ),
+    )
+    origin_lng = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Longitud origen",
+        help_text=(
+            "Longitud del punto de peaje origen. "
+            "Poblada automáticamente por geocode_toll_segments."
+        ),
+    )
+
+    # Geographic coordinates of the destination toll point.
+    # Coordenadas geográficas del punto de peaje destino.
+    dest_lat = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Latitud destino",
+        help_text=(
+            "Latitud del punto de peaje destino. "
+            "Poblada automáticamente por geocode_toll_segments."
+        ),
+    )
+    dest_lng = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Longitud destino",
+        help_text=(
+            "Longitud del punto de peaje destino. "
+            "Poblada automáticamente por geocode_toll_segments."
+        ),
     )
 
     # Fare for light vehicles (category 1.0): motorcycles, cars, vans

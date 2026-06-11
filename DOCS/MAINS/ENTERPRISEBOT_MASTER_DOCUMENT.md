@@ -272,4 +272,40 @@ para usar datos actuales de implementación en lugar de datos obsoletos.
 - Vista de tres paneles: laboratorio superior + informe + gráficas, con divisor
   arrastrable y pantalla completa independiente por panel.
 
+---
+
+## [!!] 4.6. DIRECTRIZ CRITICA — MIGRACIONES DJANGO
+
+### [PROHIBICION ABSOLUTA] EL MODELO JAMAS GENERA MIGRACIONES MANUALMENTE
+
+**Las migraciones de Django SE GENERAN Única y EXCLUSIVAMENTE**
+**mediante el comando de gestión de Django:**
+
+```bash
+python -m dotenv run python manage.py makemigrations
+```
+
+**QUEDA TERMINANTEMENTE PROHIBIDO** escribir, crear, dictar o entregar
+archivos de migración (`0XXX_*.py`) en ninguna caja de código,
+bajo ninguna circunstancia, sin importar cuán obvia parezca la migración.
+
+**Flujo estándar obligatorio e irrompible:**
+1. El modelo modifica `models.py` mediante PMA.
+2. El usuario ejecuta `makemigrations` en su consola.
+3. Django genera el archivo de migración automáticamente.
+4. El usuario ejecuta `migrate` para aplicarla.
+
+**Únicas excepciones permitidas** (requieren autorización explícita
+de Miguel Ángel en el mismo prompt):
+- Reparación de historial de migraciones corrupto.
+- Uso de `--fake` o `--fake-initial`.
+- Squash de migraciones.
+- Cualquier otra operación excepcional sobre el historial de Django.
+
+**Penalización:** Generar una migración sin autorización explícita
+es un **ERROR CRÍTICO** de sesión. Sin excepciones. Sin urgencias
+que lo justifiquen. Sin ningún pretexto.
+
+---
+
 ## 5. Sistema de Ruegos y Preguntas (Stand-by)
