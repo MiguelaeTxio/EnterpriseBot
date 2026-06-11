@@ -185,6 +185,37 @@ urlpatterns = [
     ),
 
     # ---------------------------------------------------------------------------
+    # Toll segment management routes — ADMIN only
+    # Rutas de gestión de tramos de peaje — solo ADMIN
+    # ---------------------------------------------------------------------------
+
+    # Toll segment list + create — GET lista con filtros, POST crea nuevo tramo.
+    # Toll segment list + create — GET filtered list, POST creates new segment.
+    path(
+        "toll-segments/",
+        views.TollSegmentListView.as_view(),
+        name="toll_segment_list",
+    ),
+
+    # Toll segment update — GET formulario, POST guarda cambios.
+    # Toll segment update — GET form, POST saves changes.
+    path(
+        "toll-segments/<int:pk>/edit/",
+        views.TollSegmentUpdateView.as_view(),
+        name="toll_segment_update",
+    ),
+
+    # Toll segment delete — POST desactiva (action=deactivate) o elimina
+    # fisicamente (action=delete) el tramo.
+    # Toll segment delete — POST deactivates (action=deactivate) or hard
+    # deletes (action=delete) the segment.
+    path(
+        "toll-segments/<int:pk>/delete/",
+        views.TollSegmentDeleteView.as_view(),
+        name="toll_segment_delete",
+    ),
+
+    # ---------------------------------------------------------------------------
     # Night schedule management routes — ADMIN only
     # Rutas de gestión de horarios nocturnos — solo ADMIN
     # ---------------------------------------------------------------------------

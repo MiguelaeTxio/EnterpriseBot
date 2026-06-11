@@ -33,13 +33,14 @@
       </div>
       <div class="col-12 col-md-6">
         <label class="form-label small text-muted" for="id_service_time">
-          Hora (para cálculo de ruta y peajes)
+          Hora del servicio *
         </label>
         <input
           type="time"
           class="form-control"
           name="service_time"
           id="id_service_time"
+          required
         >
       </div>
     </div>
@@ -210,44 +211,6 @@
     </div>
     <div class="form-text text-muted mt-1">
       No marcar para remolques (se enganchan en quinta rueda sin eslingas).
-    </div>
-  </div>
-</div>
-
-{# ── PASO 6: Nocturno/Festivo ───────────────────────────────────────────────── #}
-{# El checkbox es siempre visible y editable por el operario.                  #}
-{# Cuando hay fecha+hora en el paso 2b, se pre-marca segun calculo automatico  #}
-{# y se muestra un badge informativo. El operario puede sobreescribirlo.        #}
-<div class="card mb-3" id="step-nyf">
-  <div class="card-body">
-    <div class="d-flex align-items-center gap-2 mb-2">
-      <div class="form-check form-switch mb-0">
-        <input
-          class="form-check-input"
-          type="checkbox"
-          name="is_night"
-          id="id_is_night"
-          value="1"
-          {% if is_night_auto %}checked{% endif %}
-        >
-        <label class="form-check-label fw-semibold" for="id_is_night">
-          6. ¿Servicio nocturno / festivo?
-        </label>
-      </div>
-      {% if has_service_time %}
-      <span class="badge bg-primary-subtle text-primary border border-primary-subtle small">
-        <i class="bi bi-magic me-1"></i>Auto
-      </span>
-      {% endif %}
-    </div>
-    <div class="form-text text-muted">
-      {% if has_service_time %}
-        Pre-marcado automáticamente según la hora y el calendario de la base.
-        Puedes modificarlo si es necesario.
-      {% else %}
-        Introduce la hora en el paso 2b para la detección automática.
-        Los festivos del calendario de la base siempre se aplican automáticamente.
-      {% endif %}
     </div>
   </div>
 </div>

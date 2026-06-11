@@ -455,6 +455,16 @@
                         <i class="bi bi-file-earmark-text"></i>Albarán (demo)
                     </a>
                 </li>
+                {% if company_user.role == 'ADMIN' %}
+                {# Peajes — gestion de tramos de peaje MITMA. Solo ADMIN.                 #}
+                {# Toll segments — MITMA toll segment management. ADMIN only.             #}
+                <li class="nav-item">
+                    <a class="nav-link {% if active_nav == 'budgets_toll_segments' %}active{% endif %}"
+                       href="{% url 'budgets:toll_segment_list' %}">
+                        <i class="bi bi-signpost-split"></i>Peajes
+                    </a>
+                </li>
+                {% endif %}
             </ul>
         </div>
     </li>
@@ -506,7 +516,8 @@
         'budgets_history':          'acc-asistencia',
         'budgets_insurers':         'acc-asistencia',
         'budgets_bases':            'acc-asistencia',
-        'albaran_demo':             'acc-asistencia'
+        'albaran_demo':             'acc-asistencia',
+        'budgets_toll_segments':    'acc-asistencia'
     };
 
     var STORAGE_PREFIX = 'sidebar_acc_';

@@ -2817,3 +2817,224 @@ class NightSchedule(models.Model):
             f"({self.night_start.strftime('%H:%M')}–{self.night_end.strftime('%H:%M')})"
             f"{default_marker}{active_marker}"
         )
+
+
+class TollSegment(models.Model):
+    """
+    Represents a single origin-destination toll fare segment on a Spanish
+    toll road, as published by MITMA (Ministerio de Transportes). Each row
+    encodes the toll price for all vehicle categories for a given OD pair
+    on a specific road and tariff level.
+    ---
+    Representa un tramo tarifario origen-destino de una autopista de peaje
+    española, según publicación del MITMA. Cada fila codifica el importe
+    del peaje para todas las categorías de vehículo de un par OD dado en
+    una vía y nivel tarifario concretos.
+    """
+
+    # Tariff level choices — normal (year-round for habituals + low season
+    # for all) vs special (high season for non-habitual users).
+    # Opciones de nivel tarifario — normal (todo el año para habituales +
+    # temporada baja para todos) vs especial (temporada alta para
+    # no habituales).
+    TARIFF_NORMAL = "NORMAL"
+    TARIFF_SPECIAL = "SPECIAL"
+    TARIFF_LEVEL_CHOICES = [
+        (TARIFF_NORMAL, "Normal"),
+        (TARIFF_SPECIAL, "Especial (temporada alta)"),
+    ]
+
+    # Road identifier — e.g. 'AP-7', 'AP-68', 'AP-9'.
+    # Identificador de la vía — p.ej. 'AP-7', 'AP-68', 'AP-9'.
+    road_code = models.CharField(
+        max_length=20,
+        verbose_name="Código de vía",
+        help_text="Identificador oficial de la autopista. Ej: AP-7, AP-68.",
+        db_index=True,
+    )
+
+    # Human-readable name of the road section from the PDF.
+    # Nombre legible del tramo de la vía según el PDF oficial.
+    section_name = models.CharField(
+        max_length=150,
+        verbose_name="Nombre del tramo",
+        help_text=(
+            "Nombre del tramo tal como aparece en el PDF del MITMA. "
+            "Ej: Málaga - Estepona."
+        ),
+    )
+
+    # Origin toll point name — as it appears in the MITMA PDF table.
+    # Nombre del punto de peaje origen — tal como aparece en la tabla PDF.
+    origin_name = models.CharField(
+        max_length=150,
+        verbose_name="Origen",
+        help_text="Nombre del peaje o salida de origen del recorrido.",
+        db_index=True,
+    )
+
+    # Destination toll point name.
+    # Nombre del punto de peaje destino.
+    dest_name = models.CharField(
+        max_length=150,
+        verbose_name="Destino",
+        help_text="Nombre del peaje o salida de destino del recorrido.",
+        db_index=True,
+    )
+
+    # Fare for light vehicles (category 1.0): motorcycles, cars, vans
+    # up to 2 axles without twin-wheel trailer.
+    # Tarifa para vehículos ligeros (cat. 1.0): motos, turismos, furgonetas
+    # de hasta 2 ejes sin remolque de rueda gemela.
+    price_light = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        verbose_name="Precio ligeros (€)",
+        help_text="Tarifa para turismos, motos y furgonetas ligeras.",
+    )
+
+    # Fare for heavy vehicles category 1 (2.1 / 2.2): 2-3 axle trucks
+    # and coaches, or light vehicle with single-axle twin-wheel trailer.
+    # Tarifa para pesados categoría 1 (2.1 / 2.2): camiones y autocares
+    # de 2-3 ejes, o ligero con remolque de 1 eje con rueda gemela.
+    price_heavy_1 = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        verbose_name="Precio pesados 1 (€)",
+        help_text=(
+            "Tarifa para camiones/autocares de 2-3 ejes (categorías 2.1 y 2.2)."
+        ),
+    )
+
+    # Fare for heavy vehicles category 2 (3.1 / 3.2): trucks/coaches
+    # with 4+ axles total, or light vehicle with 2+ axle twin-wheel trailer.
+    # Tarifa para pesados categoría 2 (3.1 / 3.2): camiones/autocares con
+    # 4+ ejes en total, o ligero con remolque de 2+ ejes con rueda gemela.
+    price_heavy_2 = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        verbose_name="Precio pesados 2 (€)",
+        help_text=(
+            "Tarifa para camiones/autocares de 4 o más ejes totales "
+            "(categorías 3.1 y 3.2)."
+        ),
+    )
+
+    # Tariff level: NORMAL (default) or SPECIAL (high season surcharge
+    # applied by some MITMA roads to non-habitual users).
+    # Nivel tarifario: NORMAL (por defecto) o SPECIAL (recargo en temporada
+    # alta aplicado por algunas vías MITMA a usuarios no habituales).
+    tariff_level = models.CharField(
+        max_length=10,
+        choices=TARIFF_LEVEL_CHOICES,
+        default=TARIFF_NORMAL,
+        verbose_name="Nivel tarifario",
+        help_text=(
+            "Normal: todo el año para habituales y temporada baja para todos. "
+            "Especial: temporada alta para usuarios no habituales."
+        ),
+    )
+
+    # Whether tolls are free on this road during night hours
+    # (SEITT-managed roads are free 00:00-06:00 every day).
+    # Si los peajes son gratuitos en esta vía en franja nocturna
+    # (las vías SEITT son gratuitas de 00:00 a 06:00 todos los días).
+    has_free_night = models.BooleanField(
+        default=False,
+        verbose_name="Gratuito nocturno",
+        help_text=(
+            "Si es True, el peaje es gratuito durante la franja nocturna "
+            "definida en free_night_start / free_night_end."
+        ),
+    )
+
+    # Start of the free night window (inclusive). Null if has_free_night=False.
+    # Inicio de la franja nocturna gratuita (inclusive). Null si no aplica.
+    free_night_start = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Inicio gratuito nocturno",
+        help_text=(
+            "Hora de inicio de la franja gratuita nocturna (inclusive). "
+            "Típicamente 00:00 en vías SEITT."
+        ),
+    )
+
+    # End of the free night window (exclusive). Null if has_free_night=False.
+    # Fin de la franja nocturna gratuita (exclusive). Null si no aplica.
+    free_night_end = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fin gratuito nocturno",
+        help_text=(
+            "Hora de fin de la franja gratuita nocturna (exclusive). "
+            "Típicamente 06:00 en vías SEITT."
+        ),
+    )
+
+    # Date from which these fares are valid. Used to track tariff updates.
+    # Fecha desde la que estas tarifas están vigentes. Permite seguimiento
+    # de actualizaciones tarifarias anuales.
+    valid_from = models.DateField(
+        verbose_name="Vigente desde",
+        help_text=(
+            "Fecha de inicio de vigencia de la tarifa. "
+            "Ej: 2026-01-01 para tarifas aprobadas para 2026."
+        ),
+    )
+
+    # Soft-delete flag: set to False when a toll road is liberalised
+    # (concession expires) without deleting historical records.
+    # Borrado lógico: se pone a False cuando una vía se libera
+    # (vence la concesión) sin eliminar registros históricos.
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activo",
+        db_index=True,
+        help_text=(
+            "Desactivar cuando la concesión expire y la vía quede libre "
+            "de peaje, sin eliminar el histórico tarifario."
+        ),
+    )
+
+    # Auto-updated timestamp for auditing tariff changes.
+    # Marca de tiempo actualizada automáticamente para auditoría de cambios.
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última actualización",
+    )
+
+    class Meta:
+        verbose_name = "Tramo de peaje"
+        verbose_name_plural = "Tramos de peaje"
+        ordering = ["road_code", "section_name", "origin_name", "dest_name"]
+        indexes = [
+            models.Index(
+                fields=["road_code", "tariff_level", "is_active"],
+                name="toll_road_tariff_active_idx",
+            ),
+            models.Index(
+                fields=["origin_name", "dest_name"],
+                name="toll_od_pair_idx",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "road_code",
+                    "origin_name",
+                    "dest_name",
+                    "tariff_level",
+                    "valid_from",
+                ],
+                name="toll_segment_unique_od_tariff_date",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.road_code} | "
+            f"{self.origin_name} → {self.dest_name} "
+            f"[{self.tariff_level}] "
+            f"€{self.price_light}/{self.price_heavy_1}/{self.price_heavy_2}"
+        )

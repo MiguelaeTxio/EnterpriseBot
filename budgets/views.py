@@ -334,7 +334,6 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             service_date = _dt.date.fromisoformat(service_date_str)
             is_overnight = data.get("is_overnight") == "1"
             has_unlock   = data.get("has_unlock") == "1"
-            is_night_manual = data.get("is_night") == "1"
             is_loaded       = data.get("is_loaded") == "1"
             base_id = data.get("base_id") or None
             if base_id:
@@ -352,16 +351,14 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         dest_location          = data.get("dest_location", "").strip()
         pk_km_raw              = data.get("pk_km", "").strip()
         service_date_raw       = data.get("service_date", "").strip()
-        # The operator's explicit checkbox choice (is_night_manual) is the
-        # authoritative source of truth. The automatic night/holiday detection
-        # only runs in BudgetStepsView (HTMX GET) to pre-check the checkbox
-        # before the operator sees it. Whatever the operator submits in the
-        # POST is their final decision and must not be overridden here.
-        # La eleccion explicita del operario (is_night_manual) es la fuente
-        # de verdad. La deteccion automatica solo opera en BudgetStepsView
-        # (GET HTMX) para pre-marcar el checkbox. Lo que el operario envia
-        # en el POST es su decision final y no debe sobreescribirse aqui.
-        is_night = is_night_manual
+        # Resolve is_night automatically from the insurer's NightSchedule.
+        # The operator no longer has a manual checkbox — the system decides.
+        # Resolution: insurer.night_schedule if set, else company default.
+        # Resolver is_night automáticamente desde el NightSchedule de la
+        # aseguradora. El operario ya no tiene checkbox manual — el sistema
+        # decide. Resolución: insurer.night_schedule si tiene, si no el
+        # horario por defecto de la empresa.
+        is_night = False
         route_distance_km_raw  = data.get("route_distance_km", "").strip()
         route_toll_cost_raw    = data.get("route_toll_cost", "").strip()
         route_calculation_mode = data.get("route_calculation_mode", "MANUAL").strip()
@@ -369,6 +366,29 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         route_distance_km = _Dec(route_distance_km_raw) if route_distance_km_raw else None
         route_toll_cost   = _Dec(route_toll_cost_raw)   if route_toll_cost_raw   else None
         service_time_obj  = _dt.time.fromisoformat(service_time_raw) if service_time_raw else None
+
+        # --- Resolve is_night from NightSchedule ---
+        # --- Resolver is_night desde NightSchedule ---
+        # service_time is now required, so service_time_obj should always
+        # be set at this point. Defensive None check kept for safety.
+        # service_time es ahora obligatorio, por lo que service_time_obj
+        # debería estar siempre disponible. Se mantiene el None check defensivo.
+        if service_time_obj is not None:
+            from budgets.services import _resolve_night_schedule
+            _insurer_for_night = get_object_or_404(Insurer, pk=insurer_id)
+            _ns_obj = _resolve_night_schedule(_insurer_for_night)
+            if _ns_obj is not None:
+                _ns = _ns_obj.night_start
+                _ne = _ns_obj.night_end
+                if _ns <= _ne:
+                    is_night = _ns <= service_time_obj <= _ne
+                else:
+                    # Interval crosses midnight.
+                    # El intervalo cruza la medianoche.
+                    is_night = (
+                        service_time_obj >= _ns
+                        or service_time_obj <= _ne
+                    )
 
         # When Modo B is active, use route_distance_km as km_phase1.
         # En Modo B activo, usar route_distance_km como km_phase1.
@@ -801,29 +821,7 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         # El template lo usa para el badge y el pre-marcado del paso 6.
         service_time_str  = request.GET.get("service_time", "").strip()
         service_date_str  = request.GET.get("service_date", "").strip()
-        is_night_auto     = False
-        if service_time_str and service_date_str:
-            try:
-                import datetime as _dt_steps
-                _svc_date  = _dt_steps.date.fromisoformat(service_date_str)
-                _svc_time  = _dt_steps.time.fromisoformat(service_time_str)
-                _company   = company_user.company
-                _ns        = _company.night_start
-                _ne        = _company.night_end
-                if _ns <= _ne:
-                    _is_night_hour = _ns <= _svc_time <= _ne
-                else:
-                    _is_night_hour = _svc_time >= _ns or _svc_time <= _ne
-                _is_hol = _is_holiday(_svc_date, None)
-                if base_id:
-                    try:
-                        _b = Base.objects.get(pk=int(base_id), company=_company)
-                        _is_hol = _is_holiday(_svc_date, _b)
-                    except (Base.DoesNotExist, ValueError, TypeError):
-                        pass
-                is_night_auto = _is_night_hour or _is_hol
-            except (ValueError, AttributeError):
-                pass
+        insurer_id_str    = request.GET.get("insurer_id", "").strip()
 
         return render(request, self.template_name, {
             "concepts":          concepts,
@@ -831,8 +829,6 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
             "loaded_percent":    loaded_percent,
             "always_apply_iva":  always_apply_iva,
             "base_has_coords":   base_has_coords,
-            "has_service_time":  bool(service_time_str),
-            "is_night_auto":     is_night_auto,
         })
 
 
@@ -1183,15 +1179,23 @@ class InsurerCreateView(AdminRoleRequiredMixin, View):
 
     def get(self, request):
         """
-        Render the empty creation form.
+        Render the empty creation form with night schedules for the
+        insurer night_schedule selector.
         ---
-        Renderiza el formulario de creacion vacio.
+        Renderiza el formulario de creacion vacio con los horarios
+        nocturnos para el selector night_schedule de la aseguradora.
         """
+        company_user = _get_company_user(request)
         form = InsurerForm()
+        night_schedules = NightSchedule.objects.filter(
+            company=company_user.company,
+            is_active=True,
+        ).order_by("-is_default", "name")
         ctx = _build_base_context(request, {
             "form": form,
             "mode": "create",
             "active_nav": "budgets_insurers",
+            "night_schedules": night_schedules,
         })
         return render(request, self.template_name, ctx)
 
@@ -1406,6 +1410,50 @@ class NightScheduleForm(django_forms.ModelForm):
             "night_end": django_forms.TimeInput(
                 attrs={"type": "time"},
                 format="%H:%M",
+            ),
+        }
+
+
+class TollSegmentForm(django_forms.ModelForm):
+    """
+    ModelForm for the TollSegment model. Exposes all editable fields
+    for the CRUD panel. valid_from defaults to today if not provided.
+    ---
+    ModelForm para el modelo TollSegment. Expone todos los campos
+    editables para el panel CRUD. valid_from toma hoy por defecto
+    si no se proporciona.
+    """
+
+    class Meta:
+        from budgets.models import TollSegment as _TollSegment
+        model = _TollSegment
+        fields = [
+            "road_code",
+            "section_name",
+            "origin_name",
+            "dest_name",
+            "price_light",
+            "price_heavy_1",
+            "price_heavy_2",
+            "tariff_level",
+            "has_free_night",
+            "free_night_start",
+            "free_night_end",
+            "valid_from",
+            "is_active",
+        ]
+        widgets = {
+            "free_night_start": django_forms.TimeInput(
+                attrs={"type": "time"},
+                format="%H:%M",
+            ),
+            "free_night_end": django_forms.TimeInput(
+                attrs={"type": "time"},
+                format="%H:%M",
+            ),
+            "valid_from": django_forms.DateInput(
+                attrs={"type": "date"},
+                format="%Y-%m-%d",
             ),
         }
 
@@ -3705,6 +3753,466 @@ class WorkOrderAlbaranView(AssistanceRequiredMixin, View):
                 )
         messages.success(request, "Albarán guardado y firmado correctamente.")
         return redirect("budgets:work_order_detail", pk=unit.work_order.pk)
+
+
+class TollSegmentListView(AdminRoleRequiredMixin, View):
+    """
+    Lists all TollSegment records with filtering by road_code and
+    tariff_level. Supports inline creation via POST.
+    Accessible to ADMIN role only.
+    ---
+    Lista todos los registros TollSegment con filtrado por road_code y
+    tariff_level. Soporta creacion inline via POST.
+    Accesible solo para el rol ADMIN.
+    """
+
+    template_name = "budgets/toll_segment_list.html"
+
+    def get(self, request):
+        """
+        Render the toll segment list with optional filters and creation form.
+        ---
+        Renderiza el listado de tramos de peaje con filtros opcionales
+        y el formulario de creacion.
+        """
+        from budgets.models import TollSegment
+        road_filter = request.GET.get("road_code", "").strip().upper()
+        level_filter = request.GET.get("tariff_level", "").strip()
+        active_filter = request.GET.get("is_active", "1").strip()
+
+        qs = TollSegment.objects.all().order_by(
+            "road_code", "section_name", "origin_name", "dest_name",
+        )
+        if road_filter:
+            qs = qs.filter(road_code=road_filter)
+        if level_filter:
+            qs = qs.filter(tariff_level=level_filter)
+        if active_filter == "1":
+            qs = qs.filter(is_active=True)
+        elif active_filter == "0":
+            qs = qs.filter(is_active=False)
+
+        road_codes = (
+            TollSegment.objects
+            .values_list("road_code", flat=True)
+            .distinct()
+            .order_by("road_code")
+        )
+
+        form = TollSegmentForm()
+        ctx = _build_base_context(request, {
+            "segments": qs,
+            "form": form,
+            "road_codes": road_codes,
+            "road_filter": road_filter,
+            "level_filter": level_filter,
+            "active_filter": active_filter,
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request):
+        """
+        Create a new TollSegment from the inline form.
+        On success redirects to the list. On error re-renders with errors.
+        ---
+        Crea un nuevo TollSegment desde el formulario inline.
+        En exito redirige al listado. En error re-renderiza con errores.
+        """
+        from budgets.models import TollSegment
+        form = TollSegmentForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(
+                request,
+                "Tramo de peaje creado correctamente.",
+            )
+            return redirect("budgets:toll_segment_list")
+
+        road_codes = (
+            TollSegment.objects
+            .values_list("road_code", flat=True)
+            .distinct()
+            .order_by("road_code")
+        )
+        qs = TollSegment.objects.filter(is_active=True).order_by(
+            "road_code", "section_name", "origin_name", "dest_name",
+        )
+        ctx = _build_base_context(request, {
+            "segments": qs,
+            "form": form,
+            "road_codes": road_codes,
+            "road_filter": "",
+            "level_filter": "",
+            "active_filter": "1",
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
+        })
+        return render(request, self.template_name, ctx)
+
+
+class TollSegmentUpdateView(AdminRoleRequiredMixin, View):
+    """
+    Renders and processes the edit form for an existing TollSegment.
+    Accessible to ADMIN role only.
+    ---
+    Renderiza y procesa el formulario de edicion de un TollSegment existente.
+    Accesible solo para el rol ADMIN.
+    """
+
+    template_name = "budgets/toll_segment_list.html"
+
+    def get(self, request, pk):
+        """
+        Render the edit form pre-filled with the TollSegment instance.
+        ---
+        Renderiza el formulario de edicion con los datos del TollSegment.
+        """
+        from budgets.models import TollSegment
+        segment = get_object_or_404(TollSegment, pk=pk)
+        form = TollSegmentForm(instance=segment)
+        road_codes = (
+            TollSegment.objects
+            .values_list("road_code", flat=True)
+            .distinct()
+            .order_by("road_code")
+        )
+        qs = TollSegment.objects.filter(is_active=True).order_by(
+            "road_code", "section_name", "origin_name", "dest_name",
+        )
+        ctx = _build_base_context(request, {
+            "segments": qs,
+            "form": form,
+            "editing": segment,
+            "road_codes": road_codes,
+            "road_filter": "",
+            "level_filter": "",
+            "active_filter": "1",
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request, pk):
+        """
+        Validate and save the updated TollSegment. Redirects to list.
+        ---
+        Valida y guarda el TollSegment actualizado. Redirige al listado.
+        """
+        from budgets.models import TollSegment
+        segment = get_object_or_404(TollSegment, pk=pk)
+        form = TollSegmentForm(request.POST, instance=segment)
+        if form.is_valid():
+            form.save()
+            messages.success(
+                request,
+                f"Tramo {segment.road_code} "
+                f"{segment.origin_name} → {segment.dest_name} "
+                f"actualizado correctamente.",
+            )
+            return redirect("budgets:toll_segment_list")
+
+        road_codes = (
+            TollSegment.objects
+            .values_list("road_code", flat=True)
+            .distinct()
+            .order_by("road_code")
+        )
+        qs = TollSegment.objects.filter(is_active=True).order_by(
+            "road_code", "section_name", "origin_name", "dest_name",
+        )
+        ctx = _build_base_context(request, {
+            "segments": qs,
+            "form": form,
+            "editing": segment,
+            "road_codes": road_codes,
+            "road_filter": "",
+            "level_filter": "",
+            "active_filter": "1",
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
+        })
+        return render(request, self.template_name, ctx)
+
+
+class TollSegmentDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Soft-deletes (is_active=False) or hard-deletes a TollSegment.
+    POST with action=deactivate sets is_active=False.
+    POST with action=delete performs hard delete.
+    Accessible to ADMIN role only.
+    ---
+    Borra logicamente (is_active=False) o fisicamente un TollSegment.
+    POST con action=deactivate pone is_active=False.
+    POST con action=delete realiza borrado fisico.
+    Accesible solo para el rol ADMIN.
+    """
+
+    def post(self, request, pk):
+        """
+        Process deactivation or deletion of the TollSegment.
+        ---
+        Procesa la desactivacion o eliminacion del TollSegment.
+        """
+        from budgets.models import TollSegment
+        segment = get_object_or_404(TollSegment, pk=pk)
+        action = request.POST.get("action", "deactivate")
+
+        if action == "delete":
+            label = (
+                f"{segment.road_code} "
+                f"{segment.origin_name} → {segment.dest_name}"
+            )
+            segment.delete()
+            messages.success(
+                request,
+                f"Tramo {label} eliminado permanentemente.",
+            )
+        else:
+            segment.is_active = False
+            segment.save()
+            messages.success(
+                request,
+                f"Tramo {segment.road_code} "
+                f"{segment.origin_name} → {segment.dest_name} "
+                f"desactivado correctamente.",
+            )
+        return redirect("budgets:toll_segment_list")
+
+
+class TollSegmentListView(AdminRoleRequiredMixin, View):
+    """
+    Lists all TollSegment records with filtering by road_code and
+    tariff_level. Supports inline creation via POST.
+    Accessible to ADMIN role only.
+    ---
+    Lista todos los registros TollSegment con filtrado por road_code y
+    tariff_level. Soporta creacion inline via POST.
+    Accesible solo para el rol ADMIN.
+    """
+
+    template_name = "budgets/toll_segment_list.html"
+
+    def get(self, request):
+        """
+        Render the toll segment list with optional filters and creation form.
+        ---
+        Renderiza el listado de tramos de peaje con filtros opcionales
+        y el formulario de creacion.
+        """
+        from budgets.models import TollSegment
+        road_filter = request.GET.get("road_code", "").strip().upper()
+        level_filter = request.GET.get("tariff_level", "").strip()
+        active_filter = request.GET.get("is_active", "1").strip()
+
+        qs = TollSegment.objects.all().order_by(
+            "road_code", "section_name", "origin_name", "dest_name",
+        )
+        if road_filter:
+            qs = qs.filter(road_code=road_filter)
+        if level_filter:
+            qs = qs.filter(tariff_level=level_filter)
+        if active_filter == "1":
+            qs = qs.filter(is_active=True)
+        elif active_filter == "0":
+            qs = qs.filter(is_active=False)
+
+        road_codes = (
+            TollSegment.objects
+            .values_list("road_code", flat=True)
+            .distinct()
+            .order_by("road_code")
+        )
+
+        form = TollSegmentForm()
+        ctx = _build_base_context(request, {
+            "segments": qs,
+            "form": form,
+            "road_codes": road_codes,
+            "road_filter": road_filter,
+            "level_filter": level_filter,
+            "active_filter": active_filter,
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request):
+        """
+        Create a new TollSegment from the inline form.
+        On success redirects to the list. On error re-renders with errors.
+        ---
+        Crea un nuevo TollSegment desde el formulario inline.
+        En exito redirige al listado. En error re-renderiza con errores.
+        """
+        from budgets.models import TollSegment
+        form = TollSegmentForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(
+                request,
+                "Tramo de peaje creado correctamente.",
+            )
+            return redirect("budgets:toll_segment_list")
+
+        road_codes = (
+            TollSegment.objects
+            .values_list("road_code", flat=True)
+            .distinct()
+            .order_by("road_code")
+        )
+        qs = TollSegment.objects.filter(is_active=True).order_by(
+            "road_code", "section_name", "origin_name", "dest_name",
+        )
+        ctx = _build_base_context(request, {
+            "segments": qs,
+            "form": form,
+            "road_codes": road_codes,
+            "road_filter": "",
+            "level_filter": "",
+            "active_filter": "1",
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
+        })
+        return render(request, self.template_name, ctx)
+
+
+class TollSegmentUpdateView(AdminRoleRequiredMixin, View):
+    """
+    Renders and processes the edit form for an existing TollSegment.
+    Accessible to ADMIN role only.
+    ---
+    Renderiza y procesa el formulario de edicion de un TollSegment existente.
+    Accesible solo para el rol ADMIN.
+    """
+
+    template_name = "budgets/toll_segment_list.html"
+
+    def get(self, request, pk):
+        """
+        Render the edit form pre-filled with the TollSegment instance.
+        ---
+        Renderiza el formulario de edicion con los datos del TollSegment.
+        """
+        from budgets.models import TollSegment
+        segment = get_object_or_404(TollSegment, pk=pk)
+        form = TollSegmentForm(instance=segment)
+        road_codes = (
+            TollSegment.objects
+            .values_list("road_code", flat=True)
+            .distinct()
+            .order_by("road_code")
+        )
+        qs = TollSegment.objects.filter(is_active=True).order_by(
+            "road_code", "section_name", "origin_name", "dest_name",
+        )
+        ctx = _build_base_context(request, {
+            "segments": qs,
+            "form": form,
+            "editing": segment,
+            "road_codes": road_codes,
+            "road_filter": "",
+            "level_filter": "",
+            "active_filter": "1",
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request, pk):
+        """
+        Validate and save the updated TollSegment. Redirects to list.
+        ---
+        Valida y guarda el TollSegment actualizado. Redirige al listado.
+        """
+        from budgets.models import TollSegment
+        segment = get_object_or_404(TollSegment, pk=pk)
+        form = TollSegmentForm(request.POST, instance=segment)
+        if form.is_valid():
+            form.save()
+            messages.success(
+                request,
+                f"Tramo {segment.road_code} "
+                f"{segment.origin_name} → {segment.dest_name} "
+                f"actualizado correctamente.",
+            )
+            return redirect("budgets:toll_segment_list")
+
+        road_codes = (
+            TollSegment.objects
+            .values_list("road_code", flat=True)
+            .distinct()
+            .order_by("road_code")
+        )
+        qs = TollSegment.objects.filter(is_active=True).order_by(
+            "road_code", "section_name", "origin_name", "dest_name",
+        )
+        ctx = _build_base_context(request, {
+            "segments": qs,
+            "form": form,
+            "editing": segment,
+            "road_codes": road_codes,
+            "road_filter": "",
+            "level_filter": "",
+            "active_filter": "1",
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
+        })
+        return render(request, self.template_name, ctx)
+
+
+class TollSegmentDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Soft-deletes (is_active=False) or hard-deletes a TollSegment.
+    POST with action=deactivate sets is_active=False.
+    POST with action=delete performs hard delete.
+    Accessible to ADMIN role only.
+    ---
+    Borra logicamente (is_active=False) o fisicamente un TollSegment.
+    POST con action=deactivate pone is_active=False.
+    POST con action=delete realiza borrado fisico.
+    Accesible solo para el rol ADMIN.
+    """
+
+    def post(self, request, pk):
+        """
+        Process deactivation or deletion of the TollSegment.
+        ---
+        Procesa la desactivacion o eliminacion del TollSegment.
+        """
+        from budgets.models import TollSegment
+        segment = get_object_or_404(TollSegment, pk=pk)
+        action = request.POST.get("action", "deactivate")
+
+        if action == "delete":
+            label = (
+                f"{segment.road_code} "
+                f"{segment.origin_name} → {segment.dest_name}"
+            )
+            segment.delete()
+            messages.success(
+                request,
+                f"Tramo {label} eliminado permanentemente.",
+            )
+        else:
+            segment.is_active = False
+            segment.save()
+            messages.success(
+                request,
+                f"Tramo {segment.road_code} "
+                f"{segment.origin_name} → {segment.dest_name} "
+                f"desactivado correctamente.",
+            )
+        return redirect("budgets:toll_segment_list")
 
 
 class WorkOrderPdfView(AssistanceRequiredMixin, View):

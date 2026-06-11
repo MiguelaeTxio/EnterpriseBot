@@ -1,3 +1,4 @@
+./toll_segments.json
 ./requirements.in
 ./voice_orchestrator.py
 ./vox_bridge/urls.py
@@ -347,6 +348,7 @@
 ./budgets/templates/budgets/albaran_pdf.html
 ./budgets/templates/budgets/bases.html
 ./budgets/templates/budgets/result.html
+./budgets/templates/budgets/toll_segment_list.html
 ./budgets/templates/budgets/night_schedule_list.html
 ./budgets/templates/budgets/work_order_detail.html
 ./budgets/templates/budgets/albaran_demo.html
@@ -373,6 +375,7 @@
 ./budgets/migrations/0016_insurer_local_service_km_threshold.py
 ./budgets/migrations/0003_insurer_is_insurance_company.py
 ./budgets/migrations/0004_insurer_company_and_service_name.py
+./budgets/migrations/0018_add_toll_segment.py
 ./budgets/migrations/0002_budget_apply_iva.py
 ./budgets/migrations/0015_workorderassistanceunit_closed_at_and_more.py
 ./budgets/migrations/0001_initial.py
@@ -380,6 +383,7 @@
 ./budgets/migrations/0011_budget_route_fields.py
 ./budgets/templatetags/__init__.py
 ./budgets/templatetags/budgets_extras.py
+./budgets/management/commands/import_toll_segments.py
 ./budgets/management/commands/__init__.py
 ./budgets/management/commands/seed_bases.py
 ./budgets/management/commands/seed_insurer_tariffs.py
@@ -388,6 +392,7 @@
 ./budgets/management/commands/seed_unlock_lines.py
 ./budgets/management/__init__.py
 ./budgets/services.py
+./web_scrapping/scrape_toll_pdfs.py
 ./ivr_config/signals.py
 ./ivr_config/admin.py
 ./ivr_config/__init__.py

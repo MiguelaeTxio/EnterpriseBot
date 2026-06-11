@@ -143,7 +143,7 @@ body {
 .presence-BUSY_UNTIL       { background-color: #f8d7da; color: #58151c; }
 .presence-ABSENT_SCHEDULED { background-color: #cfe2ff; color: #084298; }
 .presence-ABSENT_VACATION  { background-color: #e2d9f3; color: #432874; }
-.presence-unknown          { background-color: #e9ecef; color: #495057; }
+.presence-unknown          { background-color: #e9ecef !important; color: #495057; }
 
 /* -----------------------------------------------------------------------
    Utility classes — replacing inline styles across all templates.
@@ -193,7 +193,7 @@ body {
 .presence-circle-busy        { background-color: #f8d7da; }
 .presence-circle-absent      { background-color: #cfe2ff; }
 .presence-circle-vacation    { background-color: #e2d9f3; }
-.presence-circle-unknown     { background-color: #e9ecef; }
+.presence-circle-unknown     { background-color: #e9ecef !important; }
 /* Icon colour override for vacation state — Vacaciones usa púrpura (#7c3aed) */
 .presence-icon-vacation      { color: #7c3aed; }
 
@@ -638,7 +638,7 @@ input[type="time"].eb-field.field-flagged:valid {
 }
 
 .chat-members-toggle:hover {
-    background-color: #e9ecef;
+    background-color: #e9ecef !important;
     color: #343a40;
 }
 
@@ -711,4 +711,105 @@ input[type="time"].eb-field.field-flagged:valid {
    Analytics Lab — aviso de límite de campos, oculto por defecto. */
 .lab-field-limit {
     display: none;
+}
+
+/* ── Toll segment list table — sortable headers and column widths.
+   ── Tabla de tramos de peaje — cabeceras ordenables y anchos de columna. */
+
+/* Sortable header: pointer cursor and no text wrap.
+   Cabecera ordenable: cursor de puntero y sin salto de línea. */
+.ts-sortable {
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Sort direction icon: subtle muted color.
+   Icono de dirección de ordenación: color atenuado discreto. */
+.ts-icon {
+    color: #adb5bd;
+    font-style: normal;
+    margin-left: 0.2rem;
+}
+
+/* Road code column: narrow, no wrap.
+   Columna código de vía: estrecha, sin salto. */
+.ts-col-via {
+    width: 6%;
+    white-space: nowrap;
+}
+
+/* Section name column: medium width.
+   Columna nombre de tramo: ancho medio. */
+.ts-col-tramo {
+    width: 14%;
+}
+
+/* Origin/destination columns: medium width, shared class.
+   Columnas origen/destino: ancho medio, clase compartida. */
+.ts-col-lugar {
+    width: 13%;
+}
+
+/* Price columns: narrow, no wrap, right-aligned via Bootstrap text-end.
+   Columnas de precio: estrechas, sin salto, alineadas a la derecha. */
+.ts-col-precio {
+    width: 6%;
+    white-space: nowrap;
+}
+
+/* Tariff level column: narrow, no wrap.
+   Columna nivel tarifario: estrecha, sin salto. */
+.ts-col-nivel {
+    width: 7%;
+    white-space: nowrap;
+}
+
+/* Night rate column: narrow, no wrap.
+   Columna tarifa nocturna: estrecha, sin salto. */
+.ts-col-noct {
+    width: 5%;
+    white-space: nowrap;
+}
+
+/* Valid-from date column: narrow, no wrap.
+   Columna fecha de vigencia: estrecha, sin salto. */
+.ts-col-vigente {
+    width: 8%;
+    white-space: nowrap;
+}
+
+/* Status column: narrow, no wrap.
+   Columna estado: estrecha, sin salto. */
+.ts-col-estado {
+    width: 7%;
+    white-space: nowrap;
+}
+
+/* Actions column: shrink to content, no wrap.
+   Columna acciones: contraer al contenido, sin salto. */
+.ts-col-actions {
+    width: 1%;
+    white-space: nowrap;
+}
+/* Toll segment table — alternating row stripe for readability.
+   Tabla de tramos — franja alterna de fila para facilitar la lectura.
+   Only applied to active rows; inactive rows keep their table-secondary
+   background from Bootstrap and are not overridden here.
+   Solo se aplica a filas activas; las inactivas conservan table-secondary.
+   Higher specificity (table.table) overrides Bootstrap's tbody/tr rules. */
+table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
+    background-color: #e9ecef !important;
+}
+
+/* Panel form inputs — soft mint green background for all text inputs and selects.
+   Inputs del panel — fondo verde menta suave para todos los inputs y selects.
+   Low specificity — overridden by .eb-field, .field-flagged, .field-optional
+   and any other higher-specificity rules already defined above.
+   Baja especificidad — sobreescrita por .eb-field, .field-flagged, .field-optional
+   y cualquier otra regla de mayor especificidad ya definida. */
+.form-control,
+.form-select {
+    background-color: #f0fdf4;
 }

@@ -167,6 +167,53 @@ def _is_holiday(date: datetime.date, base) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Night schedule resolver
+# Resolutor de horario nocturno
+# ---------------------------------------------------------------------------
+
+
+def _resolve_night_schedule(insurer):
+    """
+    Return the NightSchedule that applies to the given insurer.
+    Resolution order:
+      1. If the insurer has a NightSchedule assigned (insurer.night_schedule),
+         return it regardless of is_default.
+      2. Otherwise return the company-level default NightSchedule
+         (is_default=True, is_active=True) for the insurer's company.
+      3. If no default exists, return None.
+    ---
+    Devuelve el NightSchedule que aplica a la aseguradora dada.
+    Orden de resolución:
+      1. Si la aseguradora tiene NightSchedule asignado (insurer.night_schedule),
+         devolverlo independientemente de is_default.
+      2. Si no, devolver el NightSchedule por defecto de la empresa
+         (is_default=True, is_active=True) para la empresa de la aseguradora.
+      3. Si no existe ninguno por defecto, devolver None.
+    """
+    from budgets.models import NightSchedule
+
+    # 1. Insurer-specific schedule takes priority.
+    # 1. El horario específico de la aseguradora tiene prioridad.
+    if insurer.night_schedule_id is not None:
+        try:
+            return insurer.night_schedule
+        except NightSchedule.DoesNotExist:
+            pass
+
+    # 2. Fall back to company-level default.
+    # 2. Recurrir al horario por defecto de la empresa.
+    return (
+        NightSchedule.objects
+        .filter(
+            company=insurer.company,
+            is_default=True,
+            is_active=True,
+        )
+        .first()
+    )
+
+
+# ---------------------------------------------------------------------------
 # Route calculation — Google Routes API integration
 # Calculo de ruta — integracion con Google Routes API
 # ---------------------------------------------------------------------------

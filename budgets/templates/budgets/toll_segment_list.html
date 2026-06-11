@@ -1,0 +1,424 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/toll_segment_list.html #}
+{#                                                                                                        #}
+{# Toll segment CRUD — list, create, edit and deactivate/delete TollSegment records.                     #}
+{# Listado CRUD de tramos de peaje — lista, crea, edita y desactiva/elimina TollSegment.                 #}
+{# Hito 18 S009                                                                                           #}
+{% extends "panel/base.html" %}
+
+{% block title %}Tramos de peaje{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">
+      <i class="bi bi-signpost-split me-2"></i>Tramos de peaje
+    </h4>
+    <span class="badge bg-secondary">{{ total }} tramo{{ total|pluralize:"s" }}</span>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {# ── Filtros ──────────────────────────────────────────────────────────────── #}
+  <div class="card mb-3">
+    <div class="card-body py-2">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-auto">
+          <label class="form-label small text-muted mb-1">Vía</label>
+          <select name="road_code" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">Todas</option>
+            {% for code in road_codes %}
+              <option value="{{ code }}" {% if road_filter == code %}selected{% endif %}>{{ code }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-auto">
+          <label class="form-label small text-muted mb-1">Nivel tarifario</label>
+          <select name="tariff_level" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">Todos</option>
+            {% for val, label in tariff_level_choices %}
+              <option value="{{ val }}" {% if level_filter == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-auto">
+          <label class="form-label small text-muted mb-1">Estado</label>
+          <select name="is_active" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="1" {% if active_filter == "1" %}selected{% endif %}>Activos</option>
+            <option value="0" {% if active_filter == "0" %}selected{% endif %}>Inactivos</option>
+            <option value="" {% if active_filter == "" %}selected{% endif %}>Todos</option>
+          </select>
+        </div>
+        <div class="col-auto">
+          <a href="{% url 'budgets:toll_segment_list' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-x-circle me-1"></i>Limpiar
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Formulario creación / edición ────────────────────────────────────────── #}
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">
+      <i class="bi bi-plus-circle me-1"></i>
+      {% if editing %}Editar tramo{% else %}Nuevo tramo{% endif %}
+    </div>
+    <div class="card-body">
+      <form method="post"
+            action="{% if editing %}{% url 'budgets:toll_segment_update' editing.pk %}{% else %}{% url 'budgets:toll_segment_list' %}{% endif %}">
+        {% csrf_token %}
+        <div class="row g-2">
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted">Vía *</label>
+            <input type="text" name="road_code"
+              value="{{ form.road_code.value|default:'' }}"
+              class="form-control form-control-sm {% if form.road_code.errors %}is-invalid{% endif %}"
+              placeholder="AP-7">
+            {% if form.road_code.errors %}<div class="invalid-feedback">{{ form.road_code.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Tramo</label>
+            <input type="text" name="section_name"
+              value="{{ form.section_name.value|default:'' }}"
+              class="form-control form-control-sm"
+              placeholder="Málaga - Estepona">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Origen *</label>
+            <input type="text" name="origin_name"
+              value="{{ form.origin_name.value|default:'' }}"
+              class="form-control form-control-sm {% if form.origin_name.errors %}is-invalid{% endif %}"
+              placeholder="MALAGA">
+            {% if form.origin_name.errors %}<div class="invalid-feedback">{{ form.origin_name.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Destino *</label>
+            <input type="text" name="dest_name"
+              value="{{ form.dest_name.value|default:'' }}"
+              class="form-control form-control-sm {% if form.dest_name.errors %}is-invalid{% endif %}"
+              placeholder="ESTEPONA">
+            {% if form.dest_name.errors %}<div class="invalid-feedback">{{ form.dest_name.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-4 col-md-2">
+            <label class="form-label small text-muted">€ Ligeros *</label>
+            <input type="number" step="0.01" name="price_light"
+              value="{{ form.price_light.value|default:'' }}"
+              class="form-control form-control-sm {% if form.price_light.errors %}is-invalid{% endif %}">
+            {% if form.price_light.errors %}<div class="invalid-feedback">{{ form.price_light.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-4 col-md-2">
+            <label class="form-label small text-muted">€ Pesados 1 *</label>
+            <input type="number" step="0.01" name="price_heavy_1"
+              value="{{ form.price_heavy_1.value|default:'' }}"
+              class="form-control form-control-sm {% if form.price_heavy_1.errors %}is-invalid{% endif %}">
+            {% if form.price_heavy_1.errors %}<div class="invalid-feedback">{{ form.price_heavy_1.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-4 col-md-2">
+            <label class="form-label small text-muted">€ Pesados 2 *</label>
+            <input type="number" step="0.01" name="price_heavy_2"
+              value="{{ form.price_heavy_2.value|default:'' }}"
+              class="form-control form-control-sm {% if form.price_heavy_2.errors %}is-invalid{% endif %}">
+            {% if form.price_heavy_2.errors %}<div class="invalid-feedback">{{ form.price_heavy_2.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted">Nivel tarifario *</label>
+            <select name="tariff_level"
+              class="form-select form-select-sm {% if form.tariff_level.errors %}is-invalid{% endif %}">
+              {% for val, label in tariff_level_choices %}
+                <option value="{{ val }}"
+                  {% if form.tariff_level.value == val %}selected{% endif %}>
+                  {{ label }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted">Vigente desde *</label>
+            <input type="date" name="valid_from"
+              value="{{ form.valid_from.value|default:'' }}"
+              class="form-control form-control-sm {% if form.valid_from.errors %}is-invalid{% endif %}">
+            {% if form.valid_from.errors %}<div class="invalid-feedback">{{ form.valid_from.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-6 col-md-2 d-flex align-items-end gap-2">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" name="has_free_night"
+                id="id_has_free_night"
+                {% if form.has_free_night.value %}checked{% endif %}>
+              <label class="form-check-label small" for="id_has_free_night">Gratuito nocturno</label>
+            </div>
+          </div>
+          <div class="col-4 col-md-2">
+            <label class="form-label small text-muted">Inicio gratuito</label>
+            <input type="time" name="free_night_start"
+              value="{{ form.free_night_start.value|default:'' }}"
+              class="form-control form-control-sm">
+          </div>
+          <div class="col-4 col-md-2">
+            <label class="form-label small text-muted">Fin gratuito</label>
+            <input type="time" name="free_night_end"
+              value="{{ form.free_night_end.value|default:'' }}"
+              class="form-control form-control-sm">
+          </div>
+          <div class="col-4 col-md-2 d-flex align-items-end gap-2">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" name="is_active"
+                id="id_is_active"
+                {% if form.is_active.value %}checked{% endif %}>
+              <label class="form-check-label small" for="id_is_active">Activo</label>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 d-flex gap-2">
+          <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-floppy me-1"></i>
+            {% if editing %}Guardar cambios{% else %}Crear tramo{% endif %}
+          </button>
+          {% if editing %}
+            <a href="{% url 'budgets:toll_segment_list' %}" class="btn btn-sm btn-outline-secondary">
+              Cancelar
+            </a>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Tabla de tramos ──────────────────────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-body p-0">
+      {% if segments %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light" id="toll-thead">
+              <tr>
+                <th class="ts-sortable ts-col-via" data-col="0" title="Ordenar por Vía">Vía <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-tramo" data-col="1" title="Ordenar por Tramo">Tramo <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-lugar" data-col="2" title="Ordenar por Origen">Origen <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-lugar" data-col="3" title="Ordenar por Destino">Destino <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable text-end ts-col-precio" data-col="4" data-type="num" title="Ordenar por precio ligero">€ Lig. <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable text-end ts-col-precio" data-col="5" data-type="num" title="Ordenar por precio pesado 1">€ P1 <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable text-end ts-col-precio" data-col="6" data-type="num" title="Ordenar por precio pesado 2">€ P2 <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-nivel" data-col="7" title="Ordenar por nivel tarifario">Nivel <span class="ts-icon">⇕</span></th>
+                <th class="text-center ts-col-noct">Noct.</th>
+                <th class="ts-sortable ts-col-vigente" data-col="9" title="Ordenar por fecha de vigencia">Vigente <span class="ts-icon">⇕</span></th>
+                <th class="text-center ts-sortable ts-col-estado" data-col="10" title="Ordenar por estado">Estado <span class="ts-icon">⇕</span></th>
+                <th class="text-center ts-col-actions">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for seg in segments %}
+                <tr {% if not seg.is_active %}class="table-secondary text-muted"{% endif %}>
+                  <td class="fw-semibold">{{ seg.road_code }}</td>
+                  <td class="small">{{ seg.section_name }}</td>
+                  <td class="small">{{ seg.origin_name }}</td>
+                  <td class="small">{{ seg.dest_name }}</td>
+                  <td class="text-end small">{{ seg.price_light }}</td>
+                  <td class="text-end small">{{ seg.price_heavy_1 }}</td>
+                  <td class="text-end small">{{ seg.price_heavy_2 }}</td>
+                  <td>
+                    {% if seg.tariff_level == "NORMAL" %}
+                      <span class="badge bg-success">Normal</span>
+                    {% else %}
+                      <span class="badge bg-warning text-dark">Especial</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-center">
+                    {% if seg.has_free_night %}
+                      <span class="badge bg-info text-dark"
+                        title="{{ seg.free_night_start }}-{{ seg.free_night_end }}">
+                        <i class="bi bi-moon-stars"></i>
+                      </span>
+                    {% else %}
+                      <span class="text-muted small">—</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">{{ seg.valid_from|date:"d/m/Y" }}</td>
+                  <td class="text-center">
+                    {% if seg.is_active %}
+                      <span class="badge bg-success">Activo</span>
+                    {% else %}
+                      <span class="badge bg-secondary">Inactivo</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-center ts-col-actions">
+                    <a href="{% url 'budgets:toll_segment_update' seg.pk %}"
+                      class="btn btn-xs btn-outline-primary btn-sm py-0 px-1"
+                      title="Editar">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+                    <form method="post"
+                      action="{% url 'budgets:toll_segment_delete' seg.pk %}"
+                      class="d-inline"
+                      onsubmit="return confirm('¿Desactivar este tramo?')">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="deactivate">
+                      <button type="submit"
+                        class="btn btn-xs btn-outline-warning btn-sm py-0 px-1"
+                        title="Desactivar">
+                        <i class="bi bi-eye-slash"></i>
+                      </button>
+                    </form>
+                    <form method="post"
+                      action="{% url 'budgets:toll_segment_delete' seg.pk %}"
+                      class="d-inline"
+                      onsubmit="return confirm('¿Eliminar permanentemente este tramo?')">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="delete">
+                      <button type="submit"
+                        class="btn btn-xs btn-outline-danger btn-sm py-0 px-1"
+                        title="Eliminar">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-muted p-3 mb-0">No hay tramos de peaje con los filtros aplicados.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{# ── Ordenación client-side de la tabla de tramos ────────────────────────── #}
+<script>
+(function () {
+  'use strict';
+
+  // State: { colIndex, direction ('asc'|'desc') }
+  // Estado: { colIndex, direction ('asc'|'desc') }
+  var sortState = { col: -1, dir: 'asc' };
+
+  // Icons rendered into each sortable <th> span
+  // Iconos inyectados en cada <span> de cabecera ordenable
+  var ICON_NEUTRAL = '⇕';
+  var ICON_ASC     = '↑';
+  var ICON_DESC    = '↓';
+
+  /**
+   * Parse a cell value for sorting. Numeric columns return a float;
+   * date columns (dd/mm/yyyy) return a comparable string (yyyy-mm-dd);
+   * all others return lowercased text.
+   * ---
+   * Parsea el valor de una celda para ordenar. Las columnas numéricas
+   * devuelven float; las de fecha (dd/mm/yyyy) devuelven yyyy-mm-dd;
+   * el resto devuelve texto en minúscula.
+   *
+   * @param {HTMLTableCellElement} cell
+   * @param {boolean} isNum
+   * @param {boolean} isDate
+   * @returns {number|string}
+   */
+  function cellValue(cell, isNum, isDate) {
+    var raw = (cell.textContent || cell.innerText || '').trim();
+    if (isNum) {
+      var n = parseFloat(raw.replace(',', '.'));
+      return isNaN(n) ? 0 : n;
+    }
+    if (isDate) {
+      // dd/mm/yyyy -> yyyy-mm-dd for lexicographic comparison
+      // dd/mm/yyyy -> yyyy-mm-dd para comparacion lexicografica
+      var parts = raw.split('/');
+      if (parts.length === 3) return parts[2] + '-' + parts[1] + '-' + parts[0];
+    }
+    // Badge text: extract visible badge label, skip icon-only cells
+    // Texto de badge: extraer etiqueta visible, ignorar celdas solo-icono
+    var badge = cell.querySelector('.badge');
+    if (badge) return badge.textContent.trim().toLowerCase();
+    return raw.toLowerCase();
+  }
+
+  /**
+   * Sort the table body rows by the given column index and direction.
+   * ---
+   * Ordena las filas del tbody por el índice de columna y dirección dados.
+   *
+   * @param {HTMLTableElement} table
+   * @param {number} colIdx
+   * @param {'asc'|'desc'} direction
+   * @param {boolean} isNum
+   * @param {boolean} isDate
+   */
+  function sortTable(table, colIdx, direction, isNum, isDate) {
+    var tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    rows.sort(function (a, b) {
+      var cellA = a.querySelectorAll('td')[colIdx];
+      var cellB = b.querySelectorAll('td')[colIdx];
+      if (!cellA || !cellB) return 0;
+      var valA = cellValue(cellA, isNum, isDate);
+      var valB = cellValue(cellB, isNum, isDate);
+      if (valA < valB) return direction === 'asc' ? -1 : 1;
+      if (valA > valB) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    rows.forEach(function (row) { tbody.appendChild(row); });
+  }
+
+  /**
+   * Reset all sortable header icons to the neutral state.
+   * ---
+   * Resetea todos los iconos de cabeceras ordenables al estado neutro.
+   *
+   * @param {NodeList} headers
+   */
+  function resetIcons(headers) {
+    headers.forEach(function (th) {
+      var icon = th.querySelector('.ts-icon');
+      if (icon) icon.textContent = ICON_NEUTRAL;
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var thead = document.getElementById('toll-thead');
+    if (!thead) return;
+    var table = thead.closest('table');
+    if (!table) return;
+    var headers = thead.querySelectorAll('th.ts-sortable');
+
+    headers.forEach(function (th) {
+      th.addEventListener('click', function () {
+        var colIdx  = parseInt(th.getAttribute('data-col'), 10);
+        var isNum   = th.getAttribute('data-type') === 'num';
+        // Column 9 (Vigente) contains dates in dd/mm/yyyy format
+        // La columna 9 (Vigente) contiene fechas en formato dd/mm/yyyy
+        var isDate  = (colIdx === 9);
+
+        // Toggle direction when clicking the same column;
+        // reset to 'asc' when switching to a new column.
+        // Alterna dirección al hacer clic en la misma columna;
+        // resetea a 'asc' al cambiar a una columna distinta.
+        if (sortState.col === colIdx) {
+          sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortState.col = colIdx;
+          sortState.dir = 'asc';
+        }
+
+        resetIcons(headers);
+        var icon = th.querySelector('.ts-icon');
+        if (icon) {
+          icon.textContent = sortState.dir === 'asc' ? ICON_ASC : ICON_DESC;
+        }
+
+        sortTable(table, colIdx, sortState.dir, isNum, isDate);
+      });
+    });
+  });
+}());
+</script>
+
+{% endblock %}

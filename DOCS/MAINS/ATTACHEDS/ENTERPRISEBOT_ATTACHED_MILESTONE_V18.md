@@ -36,6 +36,19 @@
 - Validacion service_datetime futuro en BudgetRouteCalcView.
 - Mensajes Django en wizard.html.
 
+### COMPLETADAS EN S010
+- Tabla TollSegment: ordenacion client-side por todas las columnas con iconos
+  neutrales/ascendente/descendente. Anchos de columna fijos via clases CSS
+  ts-col-* en panel.css. 0 errores djlint: form huerfano H025 resuelto
+  (action condicional inline), inline styles eliminados de los <th>.
+- Filas alternas en gris #e9ecef sobre <td> via selector CSS con especificidad
+  suficiente para superar a Bootstrap.
+- Horarios nocturnos centralizados en aseguradoras: helper _resolve_night_schedule()
+  en budgets/services.py — prioridad insurer.night_schedule, fallback is_default
+  de la empresa. service_time obligatorio en el wizard. Checkbox manual is_night
+  eliminado. Card "Franja horaria nocturna" eliminada de settings.html.
+- Fondo verde menta #f0fdf4 en .form-control y .form-select del panel (UX global).
+
 ### COMPLETADAS EN S008
 - Modelo NightSchedule creado en budgets/models.py con campos: company (FK Company),
   name, night_start, night_end, is_default, is_active, created_at, updated_at.
@@ -79,165 +92,89 @@
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesion (S009)
+## Hoja de Ruta para la Siguiente Sesion (S011)
 
-### CONTEXTO S009
+### CONTEXTO S011
 
-S008 completó el modelo NightSchedule, seed, CRUD y template. Queda pendiente
-aplicar el enlace en settings.html. S009 arranca con ese fix y continúa
-con los bloques de mapas y peajes.
+S010 completo: tabla TollSegment operativa con ordenacion y UX mejorada,
+horarios nocturnos centralizados en aseguradoras con calculo automatico,
+fondo verde menta en inputs del panel. El BLOQUE 4 del wizard (visualizacion
+dual de rutas) y el BLOQUE 5 (integracion peajes en presupuesto) quedan
+pendientes y son la prioridad de S011.
 
-### PENDIENTE DE S008 (PRIORIDAD MAXIMA)
+### PASO 0 — Fix vista de detalle de aseguradora (PRIORIDAD ANTES DEL BLOQUE 4)
 
-El patcher de settings.html falló por ancla Unicode. Aplicar manualmente
-o con nuevo patcher al inicio de S009:
-- Archivo: panel/templates/panel/company/settings.html
-- Modificación: en el bloque 'Franja horaria nocturna', envolver el label
-  en un div d-flex justify-content-between y añadir enlace al lado:
-  <a href="{% url 'budgets:night_schedule_list' %}" class="btn btn-sm
-  btn-outline-primary">Gestionar horarios nocturnos</a>
-- Verificar que el selector night_schedule en el formulario de aseguradora
-  recibe el queryset night_schedules desde InsurerUpdateView (ya implementado)
-  pero NO desde InsurerCreateView (falta añadir night_schedules al contexto
-  del GET de InsurerCreateView).
+La vista de detalle de aseguradora (InsurerDetailView, template insurer_detail.html,
+accesible mediante el boton de ojito en el listado de aseguradoras) no muestra
+el horario nocturno asignado. Anadir en el bloque de datos generales de la vista
+de detalle la informacion del NightSchedule:
+- Si insurer.night_schedule esta asignado: mostrar nombre, night_start, night_end.
+- Si no esta asignado: mostrar "Horario por defecto de la empresa" con el nombre
+  y franja del NightSchedule is_default=True de la empresa, o "Sin configurar"
+  si tampoco existe horario por defecto.
+Archivos afectados: budgets/templates/budgets/insurer_detail.html.
+La vista InsurerDetailView ya pasa el objeto insurer al contexto — no requiere
+cambios en views.py salvo verificar que night_schedule esta en los datos
+disponibles (FK con select_related si procede).
 
-### BLOQUE 1 -- Investigacion y diseno previo (OBLIGATORIO ANTES DE CODIFICAR)
+### BLOQUE 4 — Visualizacion dual de rutas en el wizard (PRIORIDAD MAXIMA)
 
-Antes de escribir una sola linea de codigo, el modelo debe:
+Antes de codificar, el modelo DEBE actualizar en linea la documentacion
+de la Routes API v2 (Paso 0 del BLOQUE 1 del anexo original ya completado
+en S009 — usar ese analisis como base pero verificar cambios desde entonces).
 
-1. Actualizar conocimiento de la Google Maps/Routes API para visualizacion
-   de rutas alternativas: buscar documentacion actual sobre Routes API v2
-   (alternativeRoutes, polyline encoding, renderizado en Maps JavaScript API).
-2. Investigar fuentes de tarifas de peajes espanoles susceptibles de scraping:
-   - ministerio de transportes (mitma.gob.es)
-   - operadoras: Abertis, Globalvia, Sacyr, AP-7, AP-2, etc.
-   - APIs abiertas o datasets descargables si existen.
-3. Presentar a Miguel Angel el diseno tecnico antes de implementar:
-   - Modelo TollSegment propuesto (campos, relaciones).
-   - Estrategia de scraping (fuente, frecuencia de actualizacion, formato).
-   - Integracion en el wizard: donde se muestra el mapa, como se elige ruta,
-     como se traspasa el coste de peajes al presupuesto.
-   - Flujo de calculo: ruta con peajes (Routes API ya devuelve toll_cost) vs
-     ruta sin peajes (Routes API con AVOID_TOLLS + calculo propio desde tabla).
-   Esperar confirmacion de Miguel Angel antes de continuar.
+#### Paso 1 — Modificar calculate_route() en budgets/services.py
 
-### BLOQUE 2 -- Modelo TollSegment y migracion
+Anadir parametro `compute_alternative=True` a la llamada Routes API:
+- Incluir `"computeAlternativeRoutes": True` en el payload JSON.
+- Anadir `"routes.polyline.encodedPolyline"` al X-Goog-FieldMask.
+- Devolver en el dict de resultado: `route_with_tolls` y `route_without_tolls`,
+  cada uno con sus campos: `distance_km`, `toll_cost`, `has_tolls`,
+  `encoded_polyline`, `mode`.
+- La ruta sin peajes se obtiene con una segunda llamada Routes API con
+  `"routeModifiers": {"avoidTolls": true}` — o si la API devuelve
+  alternativas suficientes, usar la alternativa sin peajes de la misma
+  llamada. Investigar en linea cual es el comportamiento real de la API
+  para rutas espanolas antes de decidir el enfoque.
 
-Segun diseno confirmado en BLOQUE 1. Campos minimos esperados:
-road_code (CharField), km_start (DecimalField), km_end (DecimalField),
-toll_name (CharField), price_car (DecimalField), price_van (DecimalField),
-price_truck (DecimalField), direction (CharField, choices: AB/BA/BOTH),
-is_active (BooleanField), updated_at (DateTimeField auto).
-Ejecutar makemigrations + migrate. Registrar en PROJECT_DIRECTORY.
+#### Paso 2 — Nuevo endpoint HTMX BudgetRouteDualView en budgets/views.py
 
-### BLOQUE 3 -- Script de web scraping
+Vista GET que recibe los mismos parametros que BudgetRouteCalcView pero
+devuelve un fragmento HTML con:
+- Mapa Leaflet.js con dos polylines: azul marino (#003580) para ruta con
+  peajes, azul celeste (#4A90D9) para ruta sin peajes (AVOID_TOLLS).
+- Selector de radio button: "Ruta con peajes (X km, Y euros)" vs
+  "Ruta sin peajes (X km, sin coste adicional)".
+- Al seleccionar una ruta: actualizar los hidden inputs del wizard
+  km_phase1, route_toll_cost, route_calculation_mode y route_distance_km.
+- Ruta: `budgets/route-dual/` con name `route_dual`.
 
-Desarrollar siguiendo el protocolo WSCR (skill wscr):
-- Ejecucion local obligatoria (Edge Processing).
-- Salida: script Ready-to-Deploy que popula la tabla TollSegment via
-  Django ORM (shell script o management command).
-- Verificar con Miguel Angel el resultado antes de poblar produccion.
+#### Paso 3 — Template _route_dual_fragment.html (Neonato Puro)
 
-### BLOQUE 4 -- Visualizacion de rutas en wizard
+Fragmento HTMX con:
+- Contenedor del mapa Leaflet (altura fija 280px, clase css definida en
+  panel.css).
+- Importar Leaflet desde CDN solo en este fragmento.
+- Radio buttons con detalle de distancia y coste de cada opcion.
+- JS inline: inicializar mapa, renderizar polylines, manejar seleccion
+  y actualizar hidden inputs del wizard.
 
-Modificar el wizard de presupuestos para mostrar ambas rutas en mapa:
-- Llamada a Routes API con alternativeRoutes=true.
-- Ruta con peajes: polyline azul marino (#003580 o similar).
-- Ruta sin peajes (AVOID_TOLLS): polyline azul celeste (#4A90D9 o similar).
-- El operario elige una de las dos rutas haciendo clic en ella o mediante
-  selector de radio button junto al mapa.
-- Al elegir ruta: actualizar km_phase1, route_toll_cost y route_calculation_mode
-  en el formulario.
+#### Paso 4 — Modificar wizard.html y _wizard_steps_fragment.html
 
-### BLOQUE 5 -- Integracion coste de peajes en presupuesto
+En el paso 4b del wizard (step-route):
+- Reemplazar el boton "Calcular ruta" + div `route-result-section` por
+  el nuevo endpoint HTMX `route-dual/`.
+- El fragmento dual sustituye al _route_calc_fragment.html existente
+  en ese contenedor.
 
-Independientemente de la ruta elegida, el coste de peajes debe reflejarse
-en el presupuesto como concepto separado si la aseguradora lo contempla.
-Definir con Miguel Angel si el coste de peajes es:
-- Un concepto facturable anadido automaticamente al BudgetLine, o
-- Un campo informativo visible solo en el desglose ADMIN.
+#### Paso 5 — Registrar en urls.py y PROJECT_DIRECTORY
 
-### BLOQUE 0 -- Modelo NightSchedule (incorporado desde Hito 17, Paso 9)
+Anadir ruta `route-dual/` en budgets/urls.py. Registrar
+`_route_dual_fragment.html` en PROJECT_DIRECTORY via PAM al finalizar.
 
-Implementar el modelo NightSchedule y su CRUD antes de abordar los bloques
-de mapas y peajes, ya que el calculo de tarifas nocturnas en
-WorkOrderAssistanceUnit depende de el y debe estar operativo antes de
-construir la logica de presupuestacion de ordenes de trabajo.
+### BLOQUE 5 — Integracion coste de peajes en presupuesto (PENDIENTE)
 
-Campos del modelo NightSchedule:
-- name (CharField): nombre descriptivo del horario nocturno.
-- start_time (TimeField): hora de inicio del tramo nocturno.
-- end_time (TimeField): hora de fin del tramo nocturno.
-- group (CharField, choices: INSURER / INDIVIDUAL): ambito de aplicacion.
-  INSURER: aplica a todos los servicios de una aseguradora.
-  INDIVIDUAL: aplica a un operario concreto.
-- company (FK a Company): ambito de empresa.
-- is_active (BooleanField, default=True).
-- created_at / updated_at (DateTimeField auto).
-
-Pasos:
-1. Solicitar budgets/models.py para obtener anclas reales.
-2. Anadir NightSchedule al final de budgets/models.py mediante PMA.
-3. makemigrations + migrate. Registrar migracion en PROJECT_DIRECTORY.
-4. CRUD desde el panel ADMIN: NightScheduleListView, NightScheduleCreateView,
-   NightScheduleUpdateView, NightScheduleDeleteView en budgets/views.py.
-   URLs correspondientes en budgets/urls.py.
-5. Vincular NightSchedule al calculo de tarifas nocturnas en
-   WorkOrderAssistanceUnit (campo FK nullable a NightSchedule).
-
-### BLOQUE 1 -- Investigacion y diseno previo (OBLIGATORIO ANTES DE CODIFICAR)
-
-Antes de escribir una sola linea de codigo, el modelo debe:
-
-1. Actualizar conocimiento de la Google Maps/Routes API para visualizacion
-   de rutas alternativas: buscar documentacion actual sobre Routes API v2
-   (alternativeRoutes, polyline encoding, renderizado en Maps JavaScript API).
-2. Investigar fuentes de tarifas de peajes espanoles susceptibles de scraping:
-   - ministerio de transportes (mitma.gob.es)
-   - operadoras: Abertis, Globalvia, Sacyr, AP-7, AP-2, etc.
-   - APIs abiertas o datasets descargables si existen.
-3. Presentar a Miguel Angel el diseno tecnico antes de implementar:
-   - Modelo TollSegment propuesto (campos, relaciones).
-   - Estrategia de scraping (fuente, frecuencia de actualizacion, formato).
-   - Integracion en el wizard: donde se muestra el mapa, como se elige ruta,
-     como se traspasa el coste de peajes al presupuesto.
-   - Flujo de calculo: ruta con peajes (Routes API ya devuelve toll_cost) vs
-     ruta sin peajes (Routes API con AVOID_TOLLS + calculo propio desde tabla).
-   Esperar confirmacion de Miguel Angel antes de continuar.
-
-### BLOQUE 2 -- Modelo TollSegment y migracion
-
-Segun diseno confirmado en BLOQUE 1. Campos minimos esperados:
-road_code (CharField), km_start (DecimalField), km_end (DecimalField),
-toll_name (CharField), price_car (DecimalField), price_van (DecimalField),
-price_truck (DecimalField), direction (CharField, choices: AB/BA/BOTH),
-is_active (BooleanField), updated_at (DateTimeField auto).
-Ejecutar makemigrations + migrate. Registrar en PROJECT_DIRECTORY.
-
-### BLOQUE 3 -- Script de web scraping
-
-Desarrollar siguiendo el protocolo WSCR (skill wscr):
-- Ejecucion local obligatoria (Edge Processing).
-- Salida: script Ready-to-Deploy que popula la tabla TollSegment via
-  Django ORM (shell script o management command).
-- Verificar con Miguel Angel el resultado antes de poblar produccion.
-
-### BLOQUE 4 -- Visualizacion de rutas en wizard
-
-Modificar el wizard de presupuestos para mostrar ambas rutas en mapa:
-- Llamada a Routes API con alternativeRoutes=true.
-- Ruta con peajes: polyline azul marino (#003580 o similar).
-- Ruta sin peajes (AVOID_TOLLS): polyline azul celeste (#4A90D9 o similar).
-- El operario elige una de las dos rutas haciendo clic en ella o mediante
-  selector de radio button junto al mapa.
-- Al elegir ruta: actualizar km_phase1, route_toll_cost y route_calculation_mode
-  en el formulario. Si elige ruta sin peajes: calcular coste desde tabla
-  TollSegment y mostrarlo igualmente como informacion al operario.
-
-### BLOQUE 5 -- Integracion coste de peajes en presupuesto
-
-Independientemente de la ruta elegida, el coste de peajes debe reflejarse
-en el presupuesto como concepto separado si la aseguradora lo contempla.
-Definir con Miguel Angel si el coste de peajes es:
-- Un concepto facturable anadido automaticamente al BudgetLine, o
-- Un campo informativo visible solo en el desglose ADMIN.
+Pendiente de decision de negocio por parte de Miguel Angel:
+- Opcion A: concepto facturable anadido automaticamente como BudgetLine.
+- Opcion B: campo informativo visible solo en el desglose ADMIN.
+Presentar la decision al inicio de S011 antes de implementar.
