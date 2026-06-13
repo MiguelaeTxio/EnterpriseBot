@@ -706,6 +706,45 @@ class Budget(models.Model):
         ),
     )
 
+    # Ordered list of route waypoints for the multi-stop planner.
+    # Populated when route_calculation_mode=API and the operator uses the
+    # interactive map in the wizard. Each element encodes one stop along
+    # the closed circuit Base → stops → Base.
+    # is_base_return=True marks an intermediate return to base (overnight
+    # service): the engine splits the leg list at that waypoint to compute
+    # km_phase1 and km_phase2 independently and sets is_overnight=True.
+    #
+    # Lista ordenada de paradas del planificador multi-parada.
+    # Se rellena cuando route_calculation_mode=API y el operario usa el
+    # mapa interactivo del wizard. Cada elemento codifica una parada del
+    # circuito cerrado Base → paradas → Base.
+    # is_base_return=True marca un retorno intermedio a base (servicio de
+    # pernocta): el motor divide la lista de tramos en ese waypoint para
+    # calcular km_phase1 y km_phase2 de forma independiente y activa
+    # is_overnight=True.
+    #
+    # JSON schema per waypoint / Esquema JSON por parada:
+    # {
+    #   "label":          "Recogida — A-45 P.K. 127.5, Antequera",
+    #   "address":        "A-45, P.K. 127.5, Antequera, Málaga",
+    #   "lat":            37.0123,
+    #   "lng":            -4.5590,
+    #   "is_base_return": false
+    # }
+    waypoints_json = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Paradas de ruta",
+        help_text=(
+            "Lista ordenada de paradas del planificador multi-parada. "
+            "Cada elemento: {label, address, lat, lng, is_base_return}. "
+            "is_base_return=True indica retorno intermedio a base (pernocta): "
+            "el motor divide los tramos en ese punto para calcular km_phase1 "
+            "y km_phase2 de forma independiente y activa is_overnight=True. "
+            "Null en presupuestos con modo MANUAL o ruta punto a punto legacy."
+        ),
+    )
+
     # How km were calculated: MANUAL (operator input) or API (Routes API).
     # Como se calcularon los km: MANUAL (entrada operario) o API (Routes API).
     ROUTE_MODE_MANUAL = "MANUAL"
@@ -3156,3 +3195,4 @@ class TollSegment(models.Model):
             f"[{self.tariff_level}] "
             f"€{self.price_light}/{self.price_heavy_1}/{self.price_heavy_2}"
         )
+

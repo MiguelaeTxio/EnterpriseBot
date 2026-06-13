@@ -55,6 +55,32 @@ urlpatterns = [
         name="route_dual",
     ),
 
+    # HTMX endpoint — inicializa el planificador de ruta multi-parada con
+    # las coordenadas de la base seleccionada. GET. Devuelve el fragmento
+    # _route_multileg_fragment.html con el mapa Google Maps listo.
+    # HTMX endpoint — initialises the multi-stop route planner with the
+    # selected base coordinates. GET. Returns the _route_multileg_fragment.html
+    # with the Google Maps panel ready.
+    path(
+        "route-multileg-init/",
+        views.BudgetRouteMultilegInitView.as_view(),
+        name="route_multileg_init",
+    ),
+
+    # HTMX endpoint — calcula la ruta multi-parada (circuito cerrado
+    # Base → paradas → Base) via Routes API. POST. Recibe base_id,
+    # waypoints_json, service_date y service_time. Devuelve el fragmento
+    # de resultado con distancia, km por fase, flag de pernocta y polyline.
+    # HTMX endpoint — calculates the multi-stop route (closed circuit
+    # Base → stops → Base) via Routes API. POST. Receives base_id,
+    # waypoints_json, service_date and service_time. Returns the result
+    # fragment with distance, km per phase, overnight flag and polyline.
+    path(
+        "waypoints/",
+        views.BudgetWaypointView.as_view(),
+        name="waypoints",
+    ),
+
     # HTMX endpoint — devuelve los tipos de vehiculo para la aseguradora
     # seleccionada en el paso 1. Usado por el formulario secuencial.
     # HTMX endpoint — returns vehicle types for the selected insurer (step 1).

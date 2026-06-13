@@ -614,6 +614,367 @@ def calculate_route(
 
 
 # ---------------------------------------------------------------------------
+# Multi-leg route calculation — planificador multi-parada
+# Calculo de ruta multi-tramo — planificador de ruta multi-parada
+# ---------------------------------------------------------------------------
+
+
+def _call_routes_multileg(
+    origin_lat: float,
+    origin_lng: float,
+    intermediates: list[dict],
+    dest_lat: float,
+    dest_lng: float,
+    departure_time_str: str,
+    api_key: str,
+) -> dict:
+    """
+    Execute a single Google Routes API call with intermediate waypoints
+    and return a normalised result dict.
+
+    The route is always a closed circuit: origin and destination share
+    the same coordinates (the service base). Intermediate waypoints
+    define the stops along the route (pickup, drop-off points).
+
+    Returns:
+    {
+        "distance_km":      Decimal,   # total distance of the full circuit
+        "legs_distance_km": list[Decimal],  # distance per leg
+        "has_tolls":        bool,
+        "encoded_polyline": str,       # full circuit encoded polyline
+    }
+    Raises RouteCalculationError on any HTTP or network failure.
+    ---
+    Ejecuta una llamada a la Google Routes API con waypoints intermedios
+    y devuelve un dict normalizado.
+
+    La ruta es siempre un circuito cerrado: origen y destino comparten
+    las mismas coordenadas (la base de servicio). Los waypoints intermedios
+    definen las paradas del recorrido (recogida, puntos de entrega).
+
+    Devuelve el dict descrito arriba.
+    Lanza RouteCalculationError ante cualquier fallo HTTP o de red.
+    """
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    routes_url = (
+        "https://routes.googleapis.com/directions/v2:computeRoutes"
+    )
+
+    # Build intermediates payload — each waypoint as latLng location.
+    # Construir payload de intermediates — cada waypoint como latLng.
+    intermediates_payload = [
+        {
+            "location": {
+                "latLng": {
+                    "latitude": wp["lat"],
+                    "longitude": wp["lng"],
+                }
+            }
+        }
+        for wp in intermediates
+    ]
+
+    payload: dict = {
+        "origin": {
+            "location": {
+                "latLng": {
+                    "latitude": origin_lat,
+                    "longitude": origin_lng,
+                }
+            }
+        },
+        "destination": {
+            "location": {
+                "latLng": {
+                    "latitude": dest_lat,
+                    "longitude": dest_lng,
+                }
+            }
+        },
+        "travelMode": "DRIVE",
+        "routingPreference": "TRAFFIC_AWARE",
+        "departureTime": departure_time_str,
+        "extraComputations": ["TOLLS"],
+    }
+
+    if intermediates_payload:
+        payload["intermediates"] = intermediates_payload
+
+    routes_headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        # Request route-level distance + polyline + toll advisory,
+        # plus per-leg distance for phase splitting.
+        # Solicitar distancia de ruta + polyline + peajes,
+        # mas distancia por tramo para separacion de fases.
+        "X-Goog-FieldMask": (
+            "routes.distanceMeters,"
+            "routes.duration,"
+            "routes.polyline.encodedPolyline,"
+            "routes.travelAdvisory.tollInfo,"
+            "routes.legs.distanceMeters"
+        ),
+    }
+
+    routes_request = urllib.request.Request(
+        routes_url,
+        data=_json.dumps(payload).encode("utf-8"),
+        headers=routes_headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(routes_request, timeout=20) as resp:
+            routes_data = _json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RouteCalculationError(
+            f"Routes API (multileg): HTTP {exc.code} — {body[:300]}"
+        ) from exc
+    except Exception as exc:
+        raise RouteCalculationError(
+            f"Routes API (multileg): error de red — {exc}"
+        ) from exc
+
+    routes = routes_data.get("routes", [])
+    if not routes:
+        raise RouteCalculationError(
+            "Routes API (multileg): la respuesta no contiene ninguna ruta. "
+            f"Respuesta completa: {str(routes_data)[:300]}"
+        )
+    route = routes[0]
+
+    # Total circuit distance — does NOT multiply by 2 because the route
+    # is already a closed circuit (origin == destination == base).
+    # Distancia total del circuito — NO se multiplica por 2 porque la
+    # ruta ya es un circuito cerrado (origen == destino == base).
+    distance_meters = route.get("distanceMeters", 0)
+    distance_km = _round2(
+        Decimal(str(distance_meters)) / Decimal("1000")
+    )
+
+    # Per-leg distances for phase splitting (overnight detection).
+    # Distancias por tramo para separacion de fases (deteccion de pernocta).
+    legs_distance_km: list[Decimal] = []
+    for leg in route.get("legs", []):
+        leg_meters = leg.get("distanceMeters", 0)
+        legs_distance_km.append(
+            _round2(Decimal(str(leg_meters)) / Decimal("1000"))
+        )
+
+    # Full circuit encoded polyline.
+    # Polyline codificada del circuito completo.
+    encoded_polyline: str = (
+        route.get("polyline", {}).get("encodedPolyline", "")
+    )
+
+    # Toll detection — tollInfo presence in travelAdvisory signals tolls.
+    # Deteccion de peajes — presencia de tollInfo en travelAdvisory.
+    has_tolls = False
+    try:
+        _toll_info = route["travelAdvisory"]["tollInfo"]
+        has_tolls = True
+    except (KeyError, TypeError):
+        pass
+
+    return {
+        "distance_km": distance_km,
+        "legs_distance_km": legs_distance_km,
+        "has_tolls": has_tolls,
+        "encoded_polyline": encoded_polyline,
+    }
+
+
+def calculate_route_multileg(
+    base,
+    waypoints: list[dict],
+    service_datetime: datetime.datetime,
+    api_key: str,
+) -> dict:
+    """
+    Orchestrate one or two Routes API calls to compute the full closed-circuit
+    route for an ASISTENCIA service.
+
+    The circuit is always: Base → [stops] → Base.
+    Waypoints must be provided in service order (pickup first, drop-off last).
+    Each waypoint is a dict: {lat, lng, label, address, is_base_return}.
+
+    Overnight detection: if any waypoint has is_base_return=True, the list
+    is split at that point into two independent legs:
+      - Leg 1: Base → stops-before-split → Base  (km_phase1)
+      - Leg 2: Base → stops-after-split  → Base  (km_phase2)
+    Two separate Routes API calls are made, one per leg.
+    If no waypoint has is_base_return=True, a single call computes the full
+    circuit and km_phase2 is None.
+
+    Returns:
+    {
+        "distance_km":   Decimal,        # km_phase1 total (== full distance
+                                         # when no overnight split)
+        "km_phase1":     Decimal,
+        "km_phase2":     Decimal | None,
+        "is_overnight":  bool,
+        "has_tolls":     bool,
+        "encoded_polyline": str,
+        "error":         None | str,
+    }
+    ---
+    Orquesta una o dos llamadas a la Routes API para calcular el circuito
+    cerrado completo de un servicio de ASISTENCIA.
+
+    El circuito es siempre: Base → [paradas] → Base.
+    Los waypoints deben entregarse en orden de servicio (recogida primero,
+    entrega al final). Cada waypoint es un dict:
+    {lat, lng, label, address, is_base_return}.
+
+    Deteccion de pernocta: si algun waypoint tiene is_base_return=True, la
+    lista se divide en ese punto en dos tramos independientes:
+      - Tramo 1: Base → paradas-antes-del-corte → Base  (km_phase1)
+      - Tramo 2: Base → paradas-despues-del-corte → Base (km_phase2)
+    Se realizan dos llamadas separadas a la Routes API, una por tramo.
+    Si ningun waypoint tiene is_base_return=True, una sola llamada calcula
+    el circuito completo y km_phase2 es None.
+    """
+    import os
+
+    if not api_key:
+        api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    if not api_key:
+        return {
+            "distance_km": Decimal("0"),
+            "km_phase1": Decimal("0"),
+            "km_phase2": None,
+            "is_overnight": False,
+            "has_tolls": False,
+            "encoded_polyline": "",
+            "error": (
+                "GOOGLE_MAPS_API_KEY no configurada en el entorno."
+            ),
+        }
+
+    # Ensure base coordinates are available.
+    # Asegurar que la base tiene coordenadas.
+    if not base.latitude or not base.longitude:
+        return {
+            "distance_km": Decimal("0"),
+            "km_phase1": Decimal("0"),
+            "km_phase2": None,
+            "is_overnight": False,
+            "has_tolls": False,
+            "encoded_polyline": "",
+            "error": (
+                f"La base '{base.name}' no tiene coordenadas. "
+                "Geocodifica la base desde el panel antes de calcular."
+            ),
+        }
+
+    origin_lat = float(base.latitude)
+    origin_lng = float(base.longitude)
+    departure_time_str = service_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Detect overnight split: find first waypoint with is_base_return=True.
+    # Detectar corte de pernocta: primer waypoint con is_base_return=True.
+    split_index: int | None = None
+    for idx, wp in enumerate(waypoints):
+        if wp.get("is_base_return"):
+            split_index = idx
+            break
+
+    try:
+        if split_index is None:
+            # ── Single-leg service ─────────────────────────────────────
+            # Servicio de tramo unico.
+            # All waypoints are intermediates; circuit closes at Base.
+            # Todos los waypoints son intermedios; el circuito cierra en
+            # Base.
+            result = _call_routes_multileg(
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
+                intermediates=waypoints,
+                dest_lat=origin_lat,
+                dest_lng=origin_lng,
+                departure_time_str=departure_time_str,
+                api_key=api_key,
+            )
+            return {
+                "distance_km": result["distance_km"],
+                "km_phase1": result["distance_km"],
+                "km_phase2": None,
+                "is_overnight": False,
+                "has_tolls": result["has_tolls"],
+                "encoded_polyline": result["encoded_polyline"],
+                "error": None,
+            }
+
+        else:
+            # ── Overnight service — two independent legs ────────────────
+            # Servicio de pernocta — dos tramos independientes.
+            leg1_waypoints = waypoints[:split_index]
+            leg2_waypoints = waypoints[split_index + 1:]
+
+            # Phase 1: Base → pickups/stops → Base.
+            # Fase 1: Base → recogida/paradas → Base.
+            result1 = _call_routes_multileg(
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
+                intermediates=leg1_waypoints,
+                dest_lat=origin_lat,
+                dest_lng=origin_lng,
+                departure_time_str=departure_time_str,
+                api_key=api_key,
+            )
+
+            # Phase 2: Base → delivery stops → Base.
+            # Use same departure_time for API consistency; actual day
+            # does not affect distance calculation (only toll timing).
+            # Fase 2: Base → puntos de entrega → Base.
+            # Se usa el mismo departureTime por consistencia con la API;
+            # el dia real no afecta al calculo de distancia (solo peajes).
+            result2 = _call_routes_multileg(
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
+                intermediates=leg2_waypoints,
+                dest_lat=origin_lat,
+                dest_lng=origin_lng,
+                departure_time_str=departure_time_str,
+                api_key=api_key,
+            )
+
+            # Combine polylines: phase 1 then phase 2.
+            # Combinar polylines: fase 1 seguida de fase 2.
+            combined_polyline = (
+                result1["encoded_polyline"]
+                + "|"
+                + result2["encoded_polyline"]
+            )
+
+            return {
+                "distance_km": result1["distance_km"],
+                "km_phase1": result1["distance_km"],
+                "km_phase2": result2["distance_km"],
+                "is_overnight": True,
+                "has_tolls": (
+                    result1["has_tolls"] or result2["has_tolls"]
+                ),
+                "encoded_polyline": combined_polyline,
+                "error": None,
+            }
+
+    except RouteCalculationError as exc:
+        return {
+            "distance_km": Decimal("0"),
+            "km_phase1": Decimal("0"),
+            "km_phase2": None,
+            "is_overnight": False,
+            "has_tolls": False,
+            "encoded_polyline": "",
+            "error": str(exc),
+        }
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 

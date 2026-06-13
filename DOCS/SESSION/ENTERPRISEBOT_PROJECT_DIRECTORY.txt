@@ -367,6 +367,7 @@
 ./budgets/migrations/0013_workorderassistance.py
 ./budgets/migrations/0007_budget_is_night.py
 ./budgets/migrations/0010_base_insurerbase_refactor.py
+./budgets/migrations/0020_budget_waypoints_json.py
 ./budgets/migrations/0008_base_model.py
 ./budgets/migrations/0009_budget_base_fk.py
 ./budgets/migrations/0012_add_dest_location_to_budget.py

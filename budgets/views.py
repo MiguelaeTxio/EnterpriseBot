@@ -832,6 +832,230 @@ class BudgetRouteDualView(AssistanceRequiredMixin, View):
 
 
 # ---------------------------------------------------------------------------
+# HTMX endpoint — multi-leg route planner init (GET)
+# Endpoint HTMX — inicializacion del planificador multi-parada (GET)
+# ---------------------------------------------------------------------------
+
+
+class BudgetRouteMultilegInitView(AssistanceRequiredMixin, View):
+    """
+    HTMX GET endpoint. Returns the multi-leg route planner fragment
+    initialised with the base coordinates for the given base_id.
+    The fragment renders the interactive Google Maps panel, the waypoint
+    list and the Calcular ruta button.
+
+    Query params: base_id (int), insurer_id (int, optional for context).
+    ---
+    Endpoint GET HTMX. Devuelve el fragmento del planificador multi-parada
+    inicializado con las coordenadas de la base para el base_id dado.
+    El fragmento renderiza el panel Google Maps interactivo, la lista de
+    paradas y el boton Calcular ruta.
+
+    Parametros de consulta: base_id (int), insurer_id (int, opcional).
+    """
+
+    template_name = "budgets/_route_multileg_fragment.html"
+
+    def get(self, request):
+        """
+        Return the planner fragment with base coordinates and Maps API key.
+        ---
+        Devuelve el fragmento del planificador con coordenadas de base y
+        clave de Maps API.
+        """
+        company_user = _get_company_user(request)
+        base_id = request.GET.get("base_id", "").strip()
+
+        if not base_id:
+            return render(request, self.template_name, {
+                "error": "base_id requerido.",
+                "base": None,
+            })
+
+        try:
+            base = Base.objects.get(
+                pk=int(base_id),
+                company=company_user.company,
+            )
+        except (Base.DoesNotExist, ValueError):
+            return render(request, self.template_name, {
+                "error": "Base no encontrada.",
+                "base": None,
+            })
+
+        if not base.latitude or not base.longitude:
+            return render(request, self.template_name, {
+                "error": (
+                    f"La base '{base.name}' no tiene coordenadas. "
+                    "Geocodifícala desde el panel antes de usar el "
+                    "planificador de ruta."
+                ),
+                "base": base,
+            })
+
+        google_maps_api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+        google_maps_map_id = os.environ.get("GOOGLE_MAPS_MAP_ID", "")
+
+        return render(request, self.template_name, {
+            "base": base,
+            "base_lat": float(base.latitude),
+            "base_lng": float(base.longitude),
+            "google_maps_api_key": google_maps_api_key,
+            "google_maps_map_id": google_maps_map_id,
+            "error": None,
+        })
+
+
+# ---------------------------------------------------------------------------
+# HTMX endpoint — multi-leg route calculation (POST)
+# Endpoint HTMX — calculo de ruta multi-parada (POST)
+# ---------------------------------------------------------------------------
+
+
+class BudgetWaypointView(AssistanceRequiredMixin, View):
+    """
+    HTMX POST endpoint. Receives base_id, waypoints_json, service_date and
+    service_time. Calls calculate_route_multileg() and returns the result
+    fragment with distance, phase km, overnight flag and encoded polyline.
+    Returns an error context on RouteCalculationError or validation failure.
+
+    POST params:
+      - base_id:        int
+      - waypoints_json: JSON string — list of {lat, lng, label, address,
+                        is_base_return}
+      - service_date:   ISO date string (YYYY-MM-DD)
+      - service_time:   ISO time string (HH:MM)
+    ---
+    Endpoint POST HTMX. Recibe base_id, waypoints_json, service_date y
+    service_time. Llama a calculate_route_multileg() y devuelve el fragmento
+    de resultado con distancia, km por fase, flag de pernocta y polyline.
+    Devuelve contexto de error en RouteCalculationError o fallo de validacion.
+    """
+
+    template_name = "budgets/_route_multileg_fragment.html"
+
+    def post(self, request):
+        """
+        Validate inputs, call calculate_route_multileg() and return the
+        result fragment with all flags resolved for the template.
+        ---
+        Valida los parametros, llama a calculate_route_multileg() y devuelve
+        el fragmento de resultado con todos los flags resueltos para el template.
+        """
+        import datetime as _dt
+        import json as _json
+
+        company_user = _get_company_user(request)
+        data = request.POST
+
+        base_id           = data.get("base_id", "").strip()
+        waypoints_json_str = data.get("waypoints_json", "").strip()
+        service_date_str  = data.get("service_date", "").strip()
+        service_time_str  = data.get("service_time", "").strip()
+
+        # Validate required fields.
+        # Validar campos obligatorios.
+        if not all([base_id, waypoints_json_str,
+                    service_date_str, service_time_str]):
+            return render(request, self.template_name, {
+                "error": (
+                    "Faltan datos: base, paradas, fecha y hora "
+                    "son obligatorios."
+                ),
+                "base": None,
+            })
+
+        # Resolve base.
+        # Resolver la base.
+        try:
+            base = Base.objects.get(
+                pk=int(base_id),
+                company=company_user.company,
+            )
+        except (Base.DoesNotExist, ValueError):
+            return render(request, self.template_name, {
+                "error": "Base no encontrada.",
+                "base": None,
+            })
+
+        # Parse waypoints JSON.
+        # Parsear JSON de waypoints.
+        try:
+            waypoints: list[dict] = _json.loads(waypoints_json_str)
+            if not isinstance(waypoints, list) or not waypoints:
+                raise ValueError("La lista de paradas esta vacia.")
+        except (ValueError, _json.JSONDecodeError) as exc:
+            return render(request, self.template_name, {
+                "error": f"Paradas inválidas: {exc}",
+                "base": base,
+            })
+
+        # Parse service datetime.
+        # Parsear fecha y hora del servicio.
+        try:
+            service_date = _dt.date.fromisoformat(service_date_str)
+            service_time_obj = _dt.time.fromisoformat(service_time_str)
+            service_datetime = _dt.datetime.combine(
+                service_date, service_time_obj,
+            )
+        except Exception as exc:
+            return render(request, self.template_name, {
+                "error": f"Fecha u hora inválidas: {exc}",
+                "base": base,
+            })
+
+        # Validate future datetime (Routes API requirement for toll data).
+        # Validar que sea futuro (requisito de Routes API para datos de peajes).
+        if service_datetime <= _dt.datetime.utcnow():
+            return render(request, self.template_name, {
+                "error": (
+                    "La fecha y hora del servicio deben ser futuras "
+                    "para calcular la ruta. "
+                    "Ajusta la fecha u hora en el paso 2b."
+                ),
+                "base": base,
+            })
+
+        api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+        google_maps_map_id = os.environ.get("GOOGLE_MAPS_MAP_ID", "")
+
+        from budgets.services import calculate_route_multileg
+        result = calculate_route_multileg(
+            base=base,
+            waypoints=waypoints,
+            service_datetime=service_datetime,
+            api_key=api_key,
+        )
+
+        if result.get("error"):
+            return render(request, self.template_name, {
+                "error": result["error"],
+                "base": base,
+                "base_lat": float(base.latitude),
+                "base_lng": float(base.longitude),
+                "google_maps_api_key": api_key,
+                "google_maps_map_id": google_maps_map_id,
+                "waypoints": waypoints,
+            })
+
+        return render(request, self.template_name, {
+            "base": base,
+            "base_lat": float(base.latitude),
+            "base_lng": float(base.longitude),
+            "google_maps_api_key": api_key,
+            "google_maps_map_id": google_maps_map_id,
+            "waypoints": waypoints,
+            "distance_km": result["distance_km"],
+            "km_phase1": result["km_phase1"],
+            "km_phase2": result["km_phase2"],
+            "is_overnight": result["is_overnight"],
+            "has_tolls": result["has_tolls"],
+            "encoded_polyline": result["encoded_polyline"],
+            "error": None,
+        })
+
+
+# ---------------------------------------------------------------------------
 # HTMX partial — vehicle types for selected insurer
 # ---------------------------------------------------------------------------
 
