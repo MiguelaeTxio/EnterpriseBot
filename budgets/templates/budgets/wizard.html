@@ -1,6 +1,3 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/wizard.html #}
-{#                                                                                   #}
-{# Budget wizard — formulario secuencial guiado paso a paso para el operario        #}
 {# ASSISTANCE. Cada paso se carga via HTMX encadenado al completar el anterior.     #}
 {# Paso 1 (aseguradora) es estatico. Los pasos siguientes se inyectan via HTMX:     #}
 {#   1b (base) <- BudgetBasesView                                                    #}
@@ -17,6 +14,16 @@
 {% load static %}
 
 {% block title %}Nuevo presupuesto{% endblock %}
+
+{# Leaflet CSS — cargado en el <head> del wizard para que este disponible  #}
+{# antes de que cualquier fragmento HTMX intente usar L.                   #}
+{# Leaflet CSS — loaded in wizard <head> so L is available before any      #}
+{# HTMX fragment tries to use it.                                          #}
+{% block extra_head %}
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin="" />
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-3 py-3">
@@ -42,6 +49,7 @@
         id="budget-form"
         data-always-iva-map="{{ always_iva_map|escape }}"
         data-url-route-calc="{% url 'budgets:route_calc' %}"
+        data-url-route-dual="{% url 'budgets:route_dual' %}"
       >
         {% csrf_token %}
 
@@ -91,5 +99,12 @@
 {% endblock %}
 
 {% block extra_scripts %}
+{# Leaflet JS — cargado antes de wizard.js para que L este definido        #}
+{# cuando los fragmentos HTMX lo usen. Sin integrity — unpkg puede         #}
+{# servir el archivo con variaciones menores que invalidan el hash SRI.    #}
+{# Leaflet JS — loaded before wizard.js so L is defined when HTMX         #}
+{# fragments use it. No integrity — unpkg may serve minor variations.      #}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin=""></script>
 <script src="{% static 'panel/js/wizard.js' %}"></script>
 {% endblock %}

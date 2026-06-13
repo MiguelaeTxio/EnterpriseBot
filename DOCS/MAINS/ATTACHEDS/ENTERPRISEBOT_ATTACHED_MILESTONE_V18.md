@@ -131,129 +131,114 @@
   introduce el importe manualmente. Sin tabla TollSegment por el momento.
 - PRIORIDAD 3 — Boton sync calendarios: implementado en S004 como BaseSyncCalendarsView.
 
+### NOTA DE DESVÍO DE SESIÓN
+
+Durante una sesión con el Hito 18 EN PROGRESO, el trabajo se desvió por
+completo a atender una incidencia crítica del módulo de partes digitales
+(Hito 7 — Partes Diarios de Reparación). No se ejecutó la hoja de ruta del
+Hito 18 en esa sesión.
+
+Resumen breve de la incidencia atendida: eliminación del sistema "Gate 4"
+de resolución de lagunas, unificación de la vista de creación y edición de
+partes digitales para todos los roles, corrección de duplicidad de fecha y
+fecha futura, modal guardián de validación con justificación de ausencias
+(código PERSONAL), auto-relleno de horarios, copia de seguridad de partes
+en logs y batería de smoke tests de validación.
+
+El detalle completo, con pelos y señales, está registrado en el anexo del
+Hito 7 (`ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`).
+
 ---
 
-## Hoja de Ruta para la Siguiente Sesion (S013)
+## DIRECTRIZ TÉCNICA VINCULANTE — API de Mapas, Geocodificación y Rutas
 
-### CONTEXTO S013
+**De OBLIGADO CUMPLIMIENTO en todo el proyecto, sin excepción.**
 
-S012 completo: tres fixes de BD aplicados directamente en MySQL (is_informational
-DEFAULT 0, DROP COLUMN insurer_id, is_active DEFAULT 1). Decisión de negocio
-BLOQUE 5 confirmada: peajes siempre facturados cuando hay ruta API. Nuevo
-sistema de trabajo PEW adoptado: los archivos se editan en workspace del modelo.
-services.py fue leído en S012 pero NO modificado — el patcher falló por el
-sistema de trabajo anterior. En S013 se usa PEW desde el primer archivo.
+1. **Google Maps Platform es la ÚNICA API permitida** para cualquier
+   funcionalidad de mapas, geocodificación, autocompletado de direcciones,
+   cálculo de rutas y matrices de distancia en EnterpriseBot.
 
-### SISTEMA DE TRABAJO S013 — OBLIGATORIO
+2. **QUEDA TERMINANTEMENTE PROHIBIDO** el uso de OpenStreetMap, Leaflet.js,
+   Nominatim, Mapbox o cualquier otro proveedor de mapas o geocodificación.
+   La geolocalización de bases (`BaseGlobalView`) ya usa Google Maps
+   correctamente; el módulo de presupuestos (`budgets`) debe alinearse con
+   este mismo proveedor.
 
-**PEW activo.** Para cualquier archivo de código (.py, .html, .js, .css):
-1. El usuario sube el archivo al workspace vía upload o sftp get + upload.
-2. El modelo lo edita en workspace con str_replace o reescritura completa.
-3. py_compile / djlint en workspace antes de entregar.
-4. present_files → usuario descarga → backup en SWAP → sftp put al servidor.
+3. **APIs concretas de Google Maps Platform a utilizar:**
+   - Maps JavaScript API — renderizado del mapa interactivo.
+   - Places API — autocompletado y geocodificación de direcciones.
+   - Geocoding API — conversión dirección estructurada ↔ coordenadas.
+   - Routes API (Directions) — cálculo de ruta multi-parada, km y peajes.
 
-No se usan patchers remotos, heredocs ni bloques OLD/NEW en SWAP.
+4. **API key:** existe una única API key de Google Maps Platform con
+   facturación activada y en uso. Toda nueva funcionalidad reutiliza esa
+   misma key. No se crean keys adicionales ni se mezclan proveedores.
 
-### BLOQUE 4 — Visualización dual de rutas en el wizard (PRIORIDAD MÁXIMA)
+5. **Incumplir esta directriz es un ERROR CRÍTICO.** Cualquier referencia
+   residual a Leaflet/Nominatim en el módulo de presupuestos debe eliminarse
+   durante la implementación de este hito.
 
-#### Paso 1 — Modificar calculate_route() en budgets/services.py (PEW)
+---
 
-El archivo services.py fue leído en S012 (EnterpriseBot07.txt en uploads).
-Solicitar el archivo actualizado al inicio de S013 (puede haber cambiado).
+## Hoja de Ruta para la Siguiente Sesión (Sesión de Definición Total)
 
-Refactorizar en workspace:
-- Extraer helper privado _call_routes_api() antes de calculate_route().
-  Firma: _call_routes_api(origin_lat, origin_lng, dest_lat, dest_lng,
-  departure_time_str, api_key, avoid_tolls=False) -> dict.
-  Devuelve: {"distance_km": Decimal, "has_tolls": bool, "encoded_polyline": str}.
-  FieldMask obligatorio: routes.distanceMeters, routes.duration,
-  routes.polyline.encodedPolyline, routes.travelAdvisory.tollInfo.
-  Si avoid_tolls=True: añadir "routeModifiers": {"avoidTolls": true} al payload.
+### CONTEXTO
 
-- calculate_route() pasa a orquestar dos llamadas:
-  Llamada 1: _call_routes_api(..., avoid_tolls=False) → route_with_tolls.
-  Llamada 2: solo si route_with_tolls["has_tolls"]=True →
-             _call_routes_api(..., avoid_tolls=True) → route_without_tolls.
-             Forzar route_without_tolls["has_tolls"] = False.
-  Si has_tolls=False: route_without_tolls = None.
+Cambio de enfoque mayor en el sistema de ruta de presupuestos. La hoja de
+ruta anterior (S013, visualización dual de rutas con Leaflet) queda
+SUPERADA y se descarta: introducía Leaflet en el módulo de presupuestos,
+en contra de la Directriz Técnica Vinculante recién establecida.
 
-- Nuevo contrato de retorno:
-  {
-      "route_with_tolls": {"distance_km": Decimal, "has_tolls": bool, "encoded_polyline": str},
-      "route_without_tolls": {"distance_km": Decimal, "has_tolls": False, "encoded_polyline": str} | None,
-      "error": None,
-  }
+El nuevo sistema sustituye el cálculo punto-a-punto por un **planificador
+de ruta multi-parada estilo Google Maps**, alineado con la geolocalización
+de bases que ya usa Google Maps Platform.
 
-- Compatibilidad BudgetRouteCalcView: esta vista usa calculate_route() —
-  leer views.py para ver cómo consume el retorno actual y adaptar si es
-  necesario al nuevo contrato antes de entregar.
+La sesión siguiente es de **DEFINICIÓN TOTAL**: al arrancar el PISA se
+cargarán los modelos de la app `budgets`, las tarifas de desplazamiento en
+BD y la geolocalización de bases. Con ese mapa completo en el workspace se
+redactará la hoja de ruta técnica detallada (nombres de campos, modelos,
+endpoints y lógica exactos). Lo que sigue son los OBJETIVOS del hito.
 
-#### Paso 2 — Adaptar BudgetRouteCalcView en budgets/views.py (PEW)
+### OBJETIVOS DEL NUEVO SISTEMA DE RUTA
 
-Leer views.py (solicitar al inicio si no está en uploads).
-Localizar BudgetRouteCalcView y adaptar el consumo de calculate_route()
-al nuevo dict dual. El fragmento _route_calc_fragment.html puede seguir
-mostrando solo la ruta primaria (route_with_tolls) — no cambia su interfaz.
+1. **Migración a Google Maps en presupuestos.** Eliminar toda referencia a
+   Leaflet/Nominatim del módulo `budgets`. El mapa del wizard de presupuestos
+   pasa a Maps JavaScript API, reutilizando la API key existente.
 
-#### Paso 3 — Nuevo endpoint BudgetRouteDualView en budgets/views.py (PEW)
+2. **Dirección estructurada.** El input de ubicación actual se sustituye por
+   una dirección estructurada de tres campos:
+   - Nombre de vía.
+   - Punto kilométrico (P.K.).
+   - Municipio.
+   Con geocodificación (Geocoding/Places API) a coordenadas para el mapa.
 
-Añadir en views.py (mismo archivo, mismo PEW):
-Vista GET. Parámetros: base_id, road_name, pk_km, dest_location, service_datetime.
-Llama a calculate_route(). Devuelve _route_dual_fragment.html con contexto:
-  - route_with_tolls: dict con distance_km, has_tolls, encoded_polyline.
-  - route_without_tolls: dict o None.
-  - show_dual: bool — True solo cuando route_without_tolls is not None.
-Toda la lógica de presentación en la vista (Dumb Template).
+3. **Planificador de ruta multi-parada.** Igual que planificar una ruta con
+   paradas en Google Maps:
+   - **Origen:** geolocalización de la base (ya en BD, punto fijo de partida).
+   - **Paradas intermedias:** múltiples puntos añadibles, bien introduciendo
+     la dirección estructurada (vía + P.K. + municipio), bien pinchando
+     directamente sobre el mapa.
+   - **Destino final:** último punto de la ruta.
+   - Paradas reordenables.
 
-#### Paso 4 — Template _route_dual_fragment.html (Neonato PEW)
+4. **Cálculo de ruta.** Routes API calcula la ruta completa origen →
+   paradas → destino, devolviendo distancia/km totales (y peajes si los hay).
 
-Crear en workspace. Fragmento HTMX. Estructura:
-- Si show_dual=False: mostrar solo ruta normal con distancia. Sin mapa ni
-  radio buttons. Mensaje: "Ruta calculada: X,X km (sin peajes)".
-- Si show_dual=True:
-  - Contenedor mapa Leaflet altura 280px. Clase CSS: map-route-dual.
-  - Importar Leaflet CDN (https://unpkg.com/leaflet@1.9.4/dist/leaflet.js
-    y leaflet.css) solo en este fragmento.
-  - Radio buttons:
-    id="route-opt-tolls" → "Con peajes (X,X km)" (marcado por defecto).
-    id="route-opt-notolls" → "Sin peajes (X,X km)".
-  - JS inline: inicializar mapa Leaflet, decodificar encoded_polyline con
-    función manual (Google Encoded Polyline Algorithm — no requiere plugin),
-    renderizar polyline con peajes en #003580 y sin peajes en #4A90D9,
-    al cambiar radio button actualizar hidden inputs del wizard:
-    #id_km_phase1, #id_route_toll_cost, #id_route_calculation_mode,
-    #id_route_distance_km.
-  - Variables de contexto pasadas desde la vista como JSON en data attributes
-    del contenedor (data-route-with-tolls, data-route-without-tolls) para
-    evitar interpolación Django en JS inline.
-- Dumb template: ninguna lógica de presentación en el template.
-- 0 errores djlint al cerrar.
+5. **Integración con tarifas en BD.** Los km totales de la ruta se cruzan
+   con las **tarifas de desplazamiento ya existentes en BD** para calcular
+   el coste del servicio, que se vuelca al presupuesto.
 
-#### Paso 5 — Modificar wizard.html y _wizard_steps_fragment.html (PEW)
+### PRIMER PASO DE LA SESIÓN DE DEFINICIÓN
 
-Solicitar ambos archivos. En el paso 4b (step-route):
-- Eliminar el botón "Calcular ruta" y el div route-result-section.
-- Sustituir por: hx-get="{% url 'budgets:route_dual' %}" con los mismos
-  parámetros que BudgetRouteCalcView. hx-trigger="load" para calcular
-  automáticamente al cargar el paso.
-- El fragmento _route_dual_fragment.html sustituye a _route_calc_fragment.html.
+Al arrancar, solicitar y cargar en el workspace: modelos de `budgets`
+(Budget, BudgetLine, tarifas, Base con su geolocalización), `budgets/services.py`,
+`budgets/views.py`, `budgets/urls.py`, el wizard y sus fragmentos. Con esos
+modelos a la vista, redactar la hoja de ruta técnica detallada paso a paso.
 
-#### Paso 6 — Registrar en urls.py y ejecutar PAM
+### NOTA DE DISEÑO
 
-Añadir en budgets/urls.py:
-  path("route-dual/", views.BudgetRouteDualView.as_view(), name="route_dual"),
-
-Ejecutar PAM al finalizar para actualizar PROJECT_DIRECTORY con el nuevo template.
-
-### BLOQUE 5 — Integración coste de peajes en presupuesto (PEW)
-
-Decisión confirmada: peajes siempre facturados cuando hay ruta API.
-Implementar en budgets/services.py dentro de calculate_budget():
-- Después del bloque de km, si budget.route_calculation_mode == "API"
-  y budget.route_toll_cost > 0:
-  _add_line("TOLL_COST", "Peajes de autopista", Decimal("1"),
-            budget.route_toll_cost, is_surcharge=False)
-- El campo route_toll_cost del Budget se rellena en BudgetWizardView.post()
-  con el valor del hidden input #id_route_toll_cost que actualiza el JS
-  del fragmento dual al seleccionar la ruta.
-- is_informational=False en esta BudgetLine — es facturable.
+El cálculo de ruta multi-parada debe hacerse en UNA sola llamada a Routes API
+(Compute Routes con waypoints: origen + paradas + destino), nunca recalculando
+en cada cambio de parada. El recálculo se dispara con acción explícita del
+usuario (botón "Calcular ruta") o con debounce, no automáticamente en cada
+clic. Es buena praxis de uso de la API.

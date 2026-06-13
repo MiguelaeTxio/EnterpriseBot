@@ -227,3 +227,97 @@ de exportación por plantillas con modelo ExportTemplate en work_order_processor
 filtro por familia de avería, campo de búsqueda libre (fault_description + repair_notes),
 acción desmarcar revisado y sustitución completa del sistema de exportación existente.
 Todo ello se promovió al Hito 19. El Hito 7 queda PAUSADO en este punto.
+
+### S045 — 2026-06-13
+**Título:** Eliminación del Gate 4, vista única de partes digitales y refuerzo de validación al cierre
+
+**Descripción:** Sesión incidencia del Hito 7 atendida mientras el hito en
+progreso era el Hito 18 (Gestión de Mapas y Geolocalización). El trabajo se
+desvió íntegramente a resolver una incidencia crítica del módulo de partes
+digitales: el sistema "Gate 4" de resolución de lagunas estaba borrando
+partes al editarlos. Se acometió una reingeniería completa del flujo de
+creación y edición de partes digitales. Detalle:
+
+**1. Eliminación total del Gate 4.** Se eliminaron de `panel/views_operator.py`
+la clase `WorkdayGapResolutionView` completa y la clase `WorkOrderEntryMergeView`
+completa, junto con los bloques del POST de `WorkOrderEntryConfirmView` y
+`WorkOrderEntryFormView` que detectaban lagunas de jornada y desviaban a un
+`WorkOrder` borrador en estado `PENDING_GAPS`. Se eliminaron también las
+funciones huérfanas asociadas (`_detect_workday_gaps`, `_detect_overlaps`,
+`_serialize_pending_lines`) y las rutas `operator/gaps/` y `operator/merge/`
+de `panel/urls.py`, así como los imports correspondientes en `panel/views.py`.
+El "Camino B — Detección automática (Gate 4)" descrito en la sección
+"Arquitectura I6 — Ausencias en Partes Diarios" de este anexo QUEDA OBSOLETO:
+ya no existe detección automática de lagunas. Subsiste únicamente el "Camino A
+— Declaración voluntaria", donde el operario añade una tarea con activo
+PERSONAL y categoría de ausencia.
+
+**2. Vista única de creación y edición.** Se unificó el formulario de partes
+digitales: `WorkOrderEntryFormView` es ahora la única vista de creación y
+edición para todos los roles (WORKSHOP, SUPERVISOR, ADMIN). `WorkOrderEditView`
+queda reservada exclusivamente para partes de origen PDF histórico. Se recuperó
+del commit `76c184a` (previo a la introducción del Gate 4) la estructura del
+template `form_entry.html` con su primer bloque renderizado server-side, y se
+reconstruyó el JS `form_entry_assets.js` sobre esa base.
+
+**3. Validación de fecha al cierre.** Se corrigió la detección de fecha
+duplicada para excluir correctamente los partes `IN_PROGRESS` propios y el
+parte en edición (evitaba el bloqueo erróneo y los duplicados). Se añadió
+validación de fecha futura (rechazo de fechas posteriores a hoy) tanto en
+`WorkOrderEntryConfirmView` como en `WorkOrderEntryFormView`, preservando los
+datos introducidos en el formulario al devolver el error.
+
+**4. Modal guardián de cierre.** El modal de validación informa al operario de
+lagunas, solapamientos y jornada incompleta (mínimo 8 h) sin permitir cerrar
+el parte hasta corregirlos. El mensaje de jornada incompleta indica que se
+añada una tarea o se justifique la ausencia con código PERSONAL en el campo
+Máquina/Centro de Gasto. En jornada intensiva se permite añadir una tarea
+vespertina siempre que se cumplan las 8 h.
+
+**5. Selector de ausencias.** Al introducir PERSONAL en el campo Máquina se
+despliega el selector de categoría de ausencia (con foco automático). El campo
+de motivo solo se exige cuando la categoría tiene `requires_note=True`. La
+validación server-side y client-side exime la descripción de avería en tareas
+de ausencia y exige en su lugar la categoría. Se corrigió la serialización de
+`absence_categories` a JSON válido (comillas dobles, booleanos JS) y se
+desdobló el contexto en `absence_categories` (JSON para EB_CONFIG) y
+`absence_categories_list` (lista Python para el fragment).
+
+**6. Pausa de comida según jornada.** Checkbox "No he parado a comer" en jornada
+partida (pausa activa por defecto, se oculta al marcar) y checkbox "He parado
+a comer" en jornada intensiva (pausa oculta por defecto, se despliega vacía al
+marcar, para registrar averías de tarde). Reinicialización de la lógica tras
+cada swap HTMX del fragment de horario.
+
+**7. Auto-relleno de horarios al añadir tarea.** La H.C. de la nueva tarea toma
+la H.F. de la tarea anterior; si esta acabó al fin del periodo de mañana y hay
+pausa activa, la nueva tarea arranca en el inicio de la tarde
+(`start_time_afternoon`). La H.F. toma el fin del periodo donde cae la H.C. Es
+un prerrelleno orientativo y editable; el modal guardián valida al cerrar.
+
+**8. Directriz de proveedor de mapas.** A raíz de detectar que el módulo de
+presupuestos usaba Leaflet/Nominatim mientras la geolocalización de bases ya
+usa Google Maps, se estableció en el anexo del Hito 18 una Directriz Técnica
+Vinculante: Google Maps Platform como único proveedor de mapas, geocodificación
+y rutas en todo el proyecto.
+
+**9. Copia de seguridad en logs.** Cada parte cerrado registra en el log del
+servidor una línea `# [PARTE-BACKUP]` con el payload completo en JSON (fecha,
+operario, pausa, y cada tarea con máquina, horas, O.R., avería, reparación y
+ausencia), como copia de recuperación temporal.
+
+**10. Smoke test de validación.** Se creó una batería de smoke tests (test
+client de Django, transacciones revertidas) que verifica el bloqueo al cierre
+en los casos: fecha vacía, fecha futura, tarea sin máquina, sin H.C., sin H.F.,
+H.F. anterior a H.C., tareas solapadas, sin descripción de avería y jornada
+incompleta (<8 h). Resultado: 9/9 correctos.
+
+**11. Unificación de nomenclatura.** Todo "bloque" visible en la interfaz pasó
+a "tarea" (Añadir tarea, Guardar tareas, Eliminar tarea, Tarea N) en template,
+fragment, JS y mensajes de validación de servidor y cliente.
+
+**Archivos tocados:** `panel/views_operator.py`, `panel/views.py`,
+`panel/urls.py`, `panel/templates/panel/operator/form_entry.html`,
+`panel/templates/panel/operator/_schedule_fields_fragment.html`,
+`panel/static/panel/js/form_entry_assets.js`. Smoke test entregado en SWAP.
+El detalle del desvío de sesión queda anotado en el anexo del Hito 18.

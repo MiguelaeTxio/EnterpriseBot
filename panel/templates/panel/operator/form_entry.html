@@ -1,24 +1,20 @@
 <!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/form_entry.html -->
 <!--                                                                                             -->
 <!-- Work-order structured form — Via A entry path (Paso 7, Hito 7, 2026-04-30).               -->
-<!-- Allows WORKSHOP and ADMIN users to submit a daily work-order part directly via a           -->
-<!-- multi-block web form with no AI dependency and zero cost.                                  -->
+<!-- Single view for creation and editing of digital work orders (all roles).                   -->
 <!--                                                                                             -->
 <!-- Features:                                                                                   -->
-<!--   A) Date field with format hint.                                                           -->
-<!--   B) One default work block rendered server-side; additional blocks added via JS.           -->
-<!--   C) Spare-parts section with "Anadir repuesto" dynamic button.                            -->
-<!--   D) Asset autocomplete shared with Via C (WorkshopAssetAutocompleteView).                 -->
-<!--   E) Client-side integrity validation mirroring server-side gate.                           -->
-<!--   F) Server-side integrity gate in WorkOrderEntryFormView.post().                          -->
+<!--   A) Date field with min_date enforcement.                                                  -->
+<!--   B) First work block rendered server-side; additional blocks added via JS.                 -->
+<!--   C) Spare-parts section with dynamic rows.                                                 -->
+<!--   D) Asset autocomplete (WorkshopAssetAutocompleteView).                                    -->
+<!--   E) Client-side integrity validation — modal guardian.                                     -->
+<!--   F) Server-side integrity gate in WorkOrderEntryFormView.post().                           -->
 <!--                                                                                             -->
-<!-- Formulario estructurado de partes — via de entrada A (Paso 7, Hito 7, 2026-04-30).        -->
-<!-- Permite a usuarios WORKSHOP y ADMIN enviar un parte diario mediante un formulario          -->
-<!-- web multi-bloque sin dependencia de IA y con coste cero.                                   -->
 {% extends "panel/base.html" %}
 
-{% block title %}Nuevo parte — Formulario{% endblock %}
-{% block page_title %}Nuevo parte — Formulario{% endblock %}
+{% block title %}{% if edit_mode %}Editar parte{% else %}Nuevo parte — Formulario{% endif %}{% endblock %}
+{% block page_title %}{% if edit_mode %}Editar parte{% else %}Nuevo parte — Formulario{% endif %}{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -28,9 +24,9 @@
         {# Back link / Enlace de retorno                                       #}
         {# ------------------------------------------------------------------ #}
         <div class="mb-3">
-            <a href="{% url 'panel:operator_dashboard' %}"
+            <a href="{% url 'panel:operator_history' %}"
                class="text-muted text-decoration-none">
-                <i class="bi bi-arrow-left me-1"></i>Volver al selector
+                <i class="bi bi-arrow-left me-1"></i>Volver al historial
             </a>
         </div>
 
@@ -50,21 +46,20 @@
             {# Hidden counters updated by JS / Contadores ocultos actualizados por JS #}
             <input type="hidden" name="num_entradas"  id="num-entradas-input"  value="{{ num_entradas }}">
             <input type="hidden" name="num_repuestos" id="num-repuestos-input" value="{{ num_repuestos }}">
-            {# Edit mode: transmit original WorkOrder pk so POST deletes it before creating new. #}
-            {# Modo edicion: transmitir pk del WorkOrder original para que el POST lo elimine.   #}
+            {# Edit mode: transmit original WorkOrder pk. #}
+            {# Modo edicion: transmitir pk del WorkOrder original. #}
             {% if edit_mode %}
             <input type="hidden" name="edit_wo_pk" value="{{ edit_wo_pk }}">
             {% endif %}
-            {# Progressive save: form_action (save_blocks / close_order) and IN_PROGRESS pk. #}
-            {# Guardado progresivo: form_action y pk del parte IN_PROGRESS.                  #}
+            {# form_action: close_order (default) or save_blocks. #}
+            {# form_action: close_order (por defecto) o save_blocks. #}
             <input type="hidden" id="form-action-input" name="form_action" value="close_order">
             {% if in_progress_mode %}
             <input type="hidden" name="in_progress_wo_pk" value="{{ in_progress_wo_pk }}">
             {% endif %}
 
             {# ================================================================ #}
-            {# SECTION 0 — Repair order selector / Selector de OT             #}
-            {# Hito 14 Paso 5 (2026-05-21)                                     #}
+            {# SECTION 0 — Repair order selector / Selector de OT              #}
             {# ================================================================ #}
             {% if repair_orders %}
             <div class="card border-0 shadow-sm mb-4" id="repair-order-card">
@@ -77,10 +72,9 @@
                 <div class="card-body p-4">
                     <p class="text-muted small mb-3">
                         Selecciona una orden de reparación para prerrellenar automáticamente
-                        los campos del primer bloque de trabajo.
+                        los campos de la primera tarea.
                     </p>
-                    <select id="repair-order-select" name="repair_order_pk"
-                            class="form-select">
+                    <select id="repair-order-select" name="repair_order_pk" class="form-select">
                         <option value="">-- Sin orden de reparación --</option>
                         {% for ot in repair_orders %}
                         <option
@@ -144,9 +138,7 @@
             </div>
 
             {# ================================================================ #}
-            {# SECTION 1b-bis — Intensive shift toggle / Jornada intensiva     #}
-            {# Persists via WorkshopIntensiveToggleView. Reloads EB_CONFIG      #}
-            {# without full page refresh. Admin can also toggle from user panel.#}
+            {# SECTION 1b — Intensive shift toggle / Jornada intensiva          #}
             {# ================================================================ #}
             <div class="card border-0 shadow-sm mb-4" id="intensive-shift-card">
                 <div class="card-header bg-white border-bottom py-3">
@@ -179,32 +171,21 @@
                                        setTimeout(function(){ fb.classList.add('d-none'); }, 3000);
                                    }
                                ">
-                        <label class="form-check-label fw-medium"
-                               for="id_intensive_shift_toggle">
+                        <label class="form-check-label fw-medium" for="id_intensive_shift_toggle">
                             Jornada intensiva (verano)
                         </label>
                     </div>
                     <div class="form-text text-muted">
                         <i class="bi bi-info-circle me-1"></i>
-                        Los turnos se alternan entre jornada intensiva
-                        (mañana) y jornada partida (mañana y tarde). Marca o desmarca
-                        según el horario que te corresponda. El cambio se guarda
-                        automáticamente y se mantiene hasta que lo modifiques.
+                        Los turnos se alternan entre jornada intensiva (mañana) y jornada partida
+                        (mañana y tarde). Marca o desmarca según el horario que te corresponda.
+                        El cambio se guarda automáticamente y se mantiene hasta que lo modifiques.
                     </div>
                     <div id="intensive-shift-feedback" class="mt-2 small d-none"></div>
                 </div>
             </div>
-{# JS nativo del toggle eliminado en S005: HTMX gestiona el swap completo. #}
-{# El hx-on::after-request del checkbox maneja el feedback visual.         #}
-{# Native toggle JS removed in S005: HTMX handles the full swap.           #}
-{# The hx-on::after-request on the checkbox handles visual feedback.       #}
 
-            {# ================================================================ #}
-            {# SCHEDULE-DEPENDENT FIELDS — HTMX swap target                   #}
-            {# Replaced in-place by WorkshopIntensiveToggleView on toggle.     #}
-            {# Sustituido en su lugar por WorkshopIntensiveToggleView al       #}
-            {# cambiar el toggle de jornada intensiva.                         #}
-            {# ================================================================ #}
+            {# SCHEDULE-DEPENDENT FIELDS — HTMX swap target #}
             {% if not entradas_enriched %}
             {% include "panel/operator/_schedule_fields_fragment.html" %}
             {% endif %}
@@ -221,14 +202,113 @@
                 </div>
                 <div class="card-body p-4">
 
-                    {# Container for dynamically added blocks / Contenedor de bloques anadidos dinamicamente #}
+                    {# Server-rendered blocks on validation failure or edit mode #}
+                    {# Bloques renderizados por servidor en fallo de validacion o modo edicion #}
+                    {% if entradas_enriched %}
+                        {% for entrada in entradas_enriched %}
+                        <div class="confirm-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %}" id="block-{{ entrada.idx }}">
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <span class="badge bg-dark">Tarea {{ entrada.idx }}</span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">
+                                        Máquina o Sección <span class="text-danger">*</span>
+                                    </label>
+                                    <div class="position-relative">
+                                        <input type="text"
+                                               name="entrada_{{ entrada.idx }}_machine_raw"
+                                               class="form-control eb-field asset-search {% if not entrada.machine_raw %}field-flagged{% endif %}"
+                                               value="{{ entrada.machine_raw }}"
+                                               placeholder="Código de máquina"
+                                               autocomplete="off">
+                                        <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">
+                                        H.C. <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="time" step="1800"
+                                           name="entrada_{{ entrada.idx }}_hc"
+                                           class="form-control eb-field {% if not entrada.hc %}field-flagged{% endif %}"
+                                           value="{{ entrada.hc }}">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label fw-medium">
+                                        H.F. <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="time" step="1800"
+                                           name="entrada_{{ entrada.idx }}_hf"
+                                           class="form-control eb-field {% if not entrada.hf %}field-flagged{% endif %}"
+                                           value="{{ entrada.hf }}">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-medium">O.R.</label>
+                                    <input type="text"
+                                           name="entrada_{{ entrada.idx }}_or_val"
+                                           class="form-control eb-field"
+                                           value="{{ entrada.or_val }}"
+                                           placeholder="Referencia O.R. (opcional)">
+                                </div>
+                                {# Meter fields #}
+                                <div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="{{ entrada.idx }}">
+                                    <label class="form-label fw-medium">Km actuales <span class="text-danger meter-required">*</span></label>
+                                    <input type="number" step="0.1" min="0"
+                                           name="entrada_{{ entrada.idx }}_odometer_reading"
+                                           class="form-control horometro-input"
+                                           value="{{ entrada.odometer_reading }}"
+                                           placeholder="Lectura km">
+                                </div>
+                                <div class="col-12 col-md-3 meter-field meter-engine d-none" data-block-idx="{{ entrada.idx }}">
+                                    <label class="form-label fw-medium">Horómetro motor (h) <span class="text-danger meter-required">*</span></label>
+                                    <input type="number" step="0.1" min="0"
+                                           name="entrada_{{ entrada.idx }}_engine_hours_reading"
+                                           class="form-control horometro-input"
+                                           value="{{ entrada.engine_hours_reading }}"
+                                           placeholder="Horas motor">
+                                </div>
+                                <div class="col-12 col-md-3 meter-field meter-crane d-none" data-block-idx="{{ entrada.idx }}">
+                                    <label class="form-label fw-medium">Horómetro grúa (h) <span class="text-danger meter-required">*</span></label>
+                                    <input type="number" step="0.1" min="0"
+                                           name="entrada_{{ entrada.idx }}_crane_hours_reading"
+                                           class="form-control horometro-input"
+                                           value="{{ entrada.crane_hours_reading }}"
+                                           placeholder="Horas grúa">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-medium">
+                                        Descripción avería <span class="text-danger">*</span>
+                                    </label>
+                                    <textarea name="entrada_{{ entrada.idx }}_fault_description"
+                                              class="form-control eb-field desc-search {% if not entrada.fault_description %}field-flagged{% endif %}"
+                                              rows="3"
+                                              placeholder="Descripción de la avería o tarea"
+                                              data-desc-field="fault_description">{{ entrada.fault_description }}</textarea>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-medium">
+                                        Reparación realizada <span class="text-danger">*</span>
+                                    </label>
+                                    <textarea name="entrada_{{ entrada.idx }}_repair_notes"
+                                              class="form-control eb-field desc-search {% if not entrada.repair_notes %}field-flagged{% endif %}"
+                                              rows="3"
+                                              placeholder="Descripción de la reparación"
+                                              data-desc-field="repair_notes">{{ entrada.repair_notes }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+
+                    {# Container for dynamically added blocks / Contenedor de bloques añadidos dinámicamente #}
                     <div id="extra-blocks-container"></div>
 
-                    {# Add block button / Boton anadir bloque #}
+                    {# Add block button / Botón añadir bloque #}
                     <div class="d-flex justify-content-start mt-2">
                         <button type="button" id="btn-add-block"
                                 class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-plus-lg me-1"></i>Anadir bloque
+                            <i class="bi bi-plus-lg me-1"></i>Añadir tarea
                         </button>
                     </div>
 
@@ -247,8 +327,6 @@
                 </div>
                 <div class="card-body p-4">
 
-                    {# Server-rendered spare-part rows on validation failure #}
-                    {# Filas de repuesto renderizadas en fallo de validacion #}
                     {% if repuestos_enriched %}
                         {% for rep in repuestos_enriched %}
                         <div class="confirm-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %} extra-repuesto-row">
@@ -306,7 +384,7 @@
                                         {% for entrada in entradas_enriched %}
                                         <option value="{{ entrada.idx }}"
                                             {% if rep.ridx == entrada.idx %}selected{% endif %}>
-                                            Bloque {{ entrada.idx }}
+                                            Tarea {{ entrada.idx }}
                                             {% if entrada.machine_raw %}— {{ entrada.machine_raw }}{% endif %}
                                         </option>
                                         {% endfor %}
@@ -322,15 +400,12 @@
                     </p>
                     {% endif %}
 
-                    {# Container for dynamically added spare-part rows #}
-                    {# Contenedor de filas de repuesto anadidas dinamicamente #}
                     <div id="extra-repuestos-container"></div>
 
-                    {# Add spare-part row button / Boton anadir repuesto #}
                     <div class="d-flex justify-content-start mt-3">
                         <button type="button" id="btn-add-repuesto"
                                 class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-plus-lg me-1"></i>Anadir repuesto
+                            <i class="bi bi-plus-lg me-1"></i>Añadir repuesto
                         </button>
                     </div>
 
@@ -346,28 +421,22 @@
             </div>
 
             {# ================================================================ #}
-            {# Submit buttons / Botones de envio                               #}
+            {# Submit buttons / Botones de envío                               #}
             {# ================================================================ #}
-            {# Hidden fields for modal confirmation flow. #}
-            {# Campos hidden para el flujo de confirmacion modal. #}
             <input type="hidden" id="save-confirmed-input"        name="save_confirmed"       value="">
             <input type="hidden" id="zero-meters-confirmed-input" name="zero_meters_confirmed" value="">
 
             <div class="d-flex gap-2 justify-content-end mb-5">
-                <a href="{% url 'panel:operator_dashboard' %}"
+                <a href="{% url 'panel:operator_history' %}"
                    class="btn btn-outline-secondary">
                     <i class="bi bi-x-lg me-1"></i>Cancelar
                 </a>
                 {% if not edit_mode %}
-                {# Progressive save: save blocks and continue adding more. #}
-                {# Guardado progresivo: guardar bloques y continuar añadiendo. #}
                 <button type="button" id="btn-save-blocks"
                         class="btn btn-outline-primary px-4">
-                    <i class="bi bi-floppy me-1"></i>Guardar bloques
+                    <i class="bi bi-floppy me-1"></i>Guardar tareas
                 </button>
                 {% endif %}
-                {# Close order: apply Gate 4 and finalise the part. #}
-                {# Cerrar parte: aplicar Gate 4 y finalizar el parte. #}
                 <button type="button" id="btn-form-submit" class="btn btn-success px-4">
                     <i class="bi bi-check-lg me-1"></i>
                     {% if edit_mode %}Guardar parte{% else %}Cerrar parte{% endif %}
@@ -379,34 +448,31 @@
 </div>
 
 {# ================================================================ #}
-{# Asset data for autocomplete / Datos de activos para autocompletado #}
-{# ================================================================ #}
-{# ================================================================ #}
-{# JS configuration — URLs injected for static JS files             #}
-{# Configuración JS — URLs inyectadas para archivos JS estáticos    #}
+{# JS configuration                                                  #}
 {# ================================================================ #}
 {% load static %}
 <script>
 window.EB_CONFIG = {
-    assetsUrl:       "{% url 'panel:operator_assets' %}",
-    assetDetailUrl:  "{% url 'panel:operator_asset_detail' %}",
-    descriptionsUrl: "{% url 'panel:operator_descriptions' %}",
+    assetsUrl:          "{% url 'panel:operator_assets' %}",
+    assetDetailUrl:     "{% url 'panel:operator_asset_detail' %}",
+    descriptionsUrl:    "{% url 'panel:operator_descriptions' %}",
     lunchBreakStart:    "{{ lunch_break_start }}",
     lunchBreakEnd:      "{{ lunch_break_end }}",
     noLunchBreak:       false,
     endTimeMorning:     "{{ end_time_morning }}",
     endTimeAfternoon:   "{{ end_time_afternoon }}",
+    startTimeAfternoon: "{{ start_time_afternoon }}",
     personalAssetCode:  "{{ personal_asset_code }}",
-    absenceCategories:  {{ absence_categories|default:'[]'|safe }},
+    absenceCategories:  JSON.parse('{{ absence_categories|default:"[]"|escapejs }}'),
     intensiveToggleUrl: "{% url 'panel:operator_intensive_toggle' %}",
-    isIntensiveOverride: {{ is_intensive_override|yesno:"true,false" }}
+    isIntensiveOverride: {{ is_intensive_override|default:False|yesno:"true,false" }}
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_modal.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_tour.js' %}"></script>
 
-{# Repair order prefill — prerelleno del primer bloque desde data-* de la OT seleccionada #}
+{# Repair order prefill #}
 <script>
 (function () {
     var sel = document.getElementById("repair-order-select");
@@ -414,24 +480,21 @@ window.EB_CONFIG = {
 
     function applyRepairOrder(opt) {
         if (!opt || !opt.value) {
-            document.getElementById("repair-order-summary").classList.add("d-none");
+            var sd = document.getElementById("repair-order-summary");
+            if (sd) sd.classList.add("d-none");
             return;
         }
         var machineCode  = opt.dataset.machineCode  || "";
         var machineRaw   = opt.dataset.machineRaw   || machineCode;
         var faultSummary = opt.dataset.faultSummary || "";
 
-        /* Prefill first block machine input — uppercase to match fleet catalogue. */
-        /* Prerrellenar campo de maquina del primer bloque — mayusculas para coincidir con el catalogo. */
         var machineInput = document.querySelector('input[name="entrada_1_machine_raw"]');
         if (machineInput) machineInput.value = (machineCode || machineRaw).toUpperCase();
 
-        /* Prefill first block fault description */
         var faultInput = document.querySelector('textarea[name="entrada_1_fault_description"]');
         if (faultInput) faultInput.value = faultSummary;
 
-        /* Show summary panel */
-        var summaryDiv = document.getElementById("repair-order-summary");
+        var summaryDiv  = document.getElementById("repair-order-summary");
         var summarySpan = document.getElementById("rot-fault-summary");
         if (summaryDiv && summarySpan) {
             summarySpan.textContent = faultSummary || "—";
@@ -446,11 +509,56 @@ window.EB_CONFIG = {
 }());
 </script>
 
-{# Modales de confirmacion de guardado — Modal partials for save confirmation flow #}
+{# ================================================================ #}
+{# Modales                                                           #}
+{# ================================================================ #}
+
+{# Gap / hours warning modal — triggered by JS when workday coverage #}
+{# is incomplete. JS fills the list dynamically (no server template  #}
+{# variables needed — Gate 4 server flow has been removed).          #}
+{# Modal de lagunas/horas — disparado por JS cuando la cobertura de  #}
+{# jornada es incompleta. JS rellena la lista dinámicamente.         #}
+<div class="modal fade" id="gapWarningModal" tabindex="-1"
+     aria-labelledby="gapWarningModalLabel" aria-modal="true" role="dialog">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-warning">
+      <div class="modal-header bg-warning bg-opacity-10 border-bottom border-warning">
+        <h5 class="modal-title fw-semibold" id="gapWarningModalLabel">
+          <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+          No se puede cerrar el parte
+        </h5>
+        <button type="button" class="btn-close"
+                data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-3">
+          Se han detectado las siguientes lagunas en tu jornada. Debes
+          cubrirlas antes de cerrar el parte:
+        </p>
+        <ul class="list-group list-group-flush mb-3" id="gap-warning-list">
+        </ul>
+        <div class="alert alert-info small mb-0">
+          <i class="bi bi-info-circle-fill me-2"></i>
+          <strong>Cómo resolverlo:</strong> Añade una tarea
+          para el periodo sin cubrir. En el campo <strong>Máquina</strong>
+          escribe <code>PERSONAL</code> y selecciona el motivo de ausencia
+          (médico, gestiones, etc.). Cuando todas las horas estén cubiertas
+          podrás cerrar el parte.
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-warning"
+                data-bs-dismiss="modal">
+          <i class="bi bi-pencil me-1"></i>Corregir el parte
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% include "panel/_zero_meter_modal.html" %}
 {% include "panel/_confirm_save_modal.html" %}
 
-{# Time Picker Widget — restricts time inputs to 00/30 minutes only #}
-{# Widget Selector de Hora — restringe inputs de hora a minutos 00/30 #}
+{# Time Picker Widget #}
 {% include "panel/_time_picker_widget.html" %}
 {% endblock %}

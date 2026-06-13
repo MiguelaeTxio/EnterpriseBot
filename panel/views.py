@@ -63,8 +63,6 @@ from panel.views_operator import (
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
     WorkOrderEntryHistoryView,
-    WorkOrderEntryMergeView,
-    WorkdayGapResolutionView,
     WorkshopAssetDetailView,
     WorkOrderDescriptionAutocompleteView,
     WorkshopIntensiveToggleView,

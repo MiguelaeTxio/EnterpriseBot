@@ -1,0 +1,232 @@
+{% load l10n %}
+{% if error %}
+  {# Error state — show alert only, no map. #}
+  {# Estado de error — mostrar solo alerta, sin mapa. #}
+  <div class="alert alert-danger py-2 mb-0">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ error }}
+  </div>
+{% else %}
+  {# Route result — map is ALWAYS rendered regardless of toll presence. #}
+  {# Resultado de ruta — el mapa se renderiza SIEMPRE independientemente de peajes. #}
+
+  {# Leaflet CSS is loaded by wizard.html via extra_head — not needed here. #}
+  {# El CSS de Leaflet lo carga wizard.html via extra_head — no se necesita aqui. #}
+
+  {# Calendar warning — shown when stored labor_calendar year differs from service year. #}
+  {# Aviso de calendario caducado — se muestra cuando el anio del calendario no coincide. #}
+  {% if calendar_warning %}
+  <div class="alert alert-warning py-2 mb-2 small">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>Calendario laboral desactualizado.</strong>
+    El calendario de esta base corresponde a {{ calendar_warning_year }}
+    y la fecha del servicio es de {{ service_year }}.
+    Los festivos de fecha fija se detectan correctamente,
+    pero los festivos móviles (Jueves y Viernes Santo) pueden ser inexactos.
+    Contacta con el administrador para actualizar el calendario.
+  </div>
+  {% endif %}
+
+  <div class="mb-3" id="route-dual-result">
+
+    {# Route info header — distance + toll badge. #}
+    {# Cabecera de resultado — distancia + badge de peajes. #}
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <span class="fw-semibold">
+        <i class="bi bi-signpost-2 me-1 text-info"></i>
+        {{ route_with_tolls.distance_km|unlocalize }} km
+      </span>
+      {% if show_dual %}
+        <span class="badge bg-warning text-dark">Con peajes</span>
+      {% else %}
+        <span class="badge bg-success">Sin peajes</span>
+      {% endif %}
+    </div>
+
+    {# Radio buttons — only when a toll-free alternative exists. #}
+    {# Radio buttons — solo cuando existe alternativa sin peajes. #}
+    {% if show_dual %}
+    <div class="mb-2">
+      <div class="form-check form-check-inline">
+        <input class="form-check-input"
+               type="radio"
+               name="route_option"
+               id="route-opt-tolls"
+               value="tolls"
+               checked />
+        <label class="form-check-label" for="route-opt-tolls">
+          Con peajes
+          (<strong>{{ route_with_tolls.distance_km|unlocalize }} km</strong>)
+        </label>
+      </div>
+      <div class="form-check form-check-inline">
+        <input class="form-check-input"
+               type="radio"
+               name="route_option"
+               id="route-opt-notolls"
+               value="notolls" />
+        <label class="form-check-label" for="route-opt-notolls">
+          Sin peajes
+          (<strong>{{ route_without_tolls.distance_km|unlocalize }} km</strong>)
+        </label>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Map container — no data attributes; JSON injected directly into JS. #}
+    {# Contenedor del mapa — sin data attributes; JSON inyectado directo en JS. #}
+    {# djlint:off H021 #}
+    <div id="map-route-dual"
+         class="map-route-dual"
+         style="height:280px;width:100%;border-radius:6px;">
+    </div>
+    {# djlint:on #}
+  </div>
+
+  {# Leaflet JS is loaded by wizard.html via extra_scripts — not needed here. #}
+  {# El JS de Leaflet lo carga wizard.html via extra_scripts — no se necesita aqui. #}
+
+  <script>
+    (function () {
+      "use strict";
+
+      /* ------------------------------------------------------------------ */
+      /* Route data injected directly from Django context — avoids HTML      */
+      /* attribute escaping issues with JSON strings containing quotes.      */
+      /* Datos de ruta inyectados directamente desde contexto Django —       */
+      /* evita problemas de escape de atributos HTML con JSON con comillas.  */
+      /* ------------------------------------------------------------------ */
+      var showDual = {{ show_dual|yesno:"true,false" }};
+      var routeWithTolls = JSON.parse("{{ route_with_tolls_json|escapejs }}");
+      var routeWithoutTolls = showDual
+        ? JSON.parse("{{ route_without_tolls_json|escapejs }}")
+        : null;
+
+      /* ------------------------------------------------------------------ */
+      /* Google Encoded Polyline Algorithm decoder.                          */
+      /* Decodificador del algoritmo de polyline codificada de Google.       */
+      /* ------------------------------------------------------------------ */
+      function decodePolyline(encoded) {
+        var points = [];
+        var index  = 0;
+        var len    = encoded.length;
+        var lat    = 0;
+        var lng    = 0;
+        while (index < len) {
+          var shift  = 0;
+          var result = 0;
+          var b;
+          do {
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+          } while (b >= 0x20);
+          var dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+          lat += dlat;
+          shift  = 0;
+          result = 0;
+          do {
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+          } while (b >= 0x20);
+          var dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+          lng += dlng;
+          points.push([lat / 1e5, lng / 1e5]);
+        }
+        return points;
+      }
+
+
+      /* ------------------------------------------------------------------ */
+      /* Initialise Leaflet map.                                             */
+      /* Inicializar mapa Leaflet.                                           */
+      /* ------------------------------------------------------------------ */
+      var map = L.map("map-route-dual");
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+        maxZoom: 18,
+      }).addTo(map);
+      /* Force Leaflet to recalculate container size after HTMX swap. */
+      /* Forzar a Leaflet a recalcular el tamano del contenedor tras el swap HTMX. */
+      setTimeout(function () { map.invalidateSize(); }, 50);
+
+      var COLOR_TOLLS      = "#003580";
+      var COLOR_NOTOLLS    = "#4A90D9";
+      var WEIGHT_ACTIVE    = 5;
+      var WEIGHT_INACTIVE  = 3;
+      var OPACITY_INACTIVE = 0.4;
+
+      /* Primary polyline — always rendered. */
+      /* Polyline primaria — se renderiza siempre. */
+      var pointsWith   = decodePolyline(routeWithTolls.encoded_polyline);
+      var polylineWith = L.polyline(pointsWith, {
+        color:   COLOR_TOLLS,
+        weight:  WEIGHT_ACTIVE,
+        opacity: 1,
+      }).addTo(map);
+      map.fitBounds(polylineWith.getBounds(), { padding: [20, 20] });
+
+      /* Secondary polyline — only when toll-free alternative exists. */
+      /* Polyline secundaria — solo cuando existe alternativa sin peajes. */
+      var polylineWithout = null;
+      if (showDual && routeWithoutTolls) {
+        var pointsWithout = decodePolyline(routeWithoutTolls.encoded_polyline);
+        polylineWithout   = L.polyline(pointsWithout, {
+          color:   COLOR_NOTOLLS,
+          weight:  WEIGHT_INACTIVE,
+          opacity: OPACITY_INACTIVE,
+        }).addTo(map);
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Set wizard hidden inputs ONCE from the primary route (with tolls).  */
+      /* Budget always uses the with-tolls distance — this never changes.    */
+      /* Fijar inputs ocultos del wizard UNA VEZ con la ruta con peajes.     */
+      /* El presupuesto siempre usa la distancia con peajes — no cambia.     */
+      /* ------------------------------------------------------------------ */
+      (function setWizardInputs() {
+        var kmPhase1  = document.getElementById("id_km_phase1");
+        var routeDist = document.getElementById("id_route_distance_km");
+        var routeToll = document.getElementById("id_route_toll_cost");
+        var routeMode = document.getElementById("id_route_calculation_mode");
+        if (kmPhase1)  { kmPhase1.value  = Math.round(routeWithTolls.distance_km); }
+        if (routeDist) { routeDist.value = routeWithTolls.distance_km; }
+        if (routeToll) { routeToll.value = "0"; }
+        if (routeMode) { routeMode.value = "API"; }
+      }());
+
+      /* ------------------------------------------------------------------ */
+      /* Radio button change handler — map visualisation only.               */
+      /* Radio buttons change which polyline is highlighted on the map.      */
+      /* They do NOT affect budget calculation inputs.                       */
+      /* Manejador de radio button — solo visualizacion del mapa.            */
+      /* Los radio buttons cambian que polyline se resalta en el mapa.       */
+      /* NO afectan a los inputs de calculo del presupuesto.                 */
+      /* ------------------------------------------------------------------ */
+      if (showDual && polylineWithout) {
+        function onRouteOptionChange(evt) {
+          if (evt.target.value === "tolls") {
+            polylineWith.setStyle({ weight: WEIGHT_ACTIVE, opacity: 1 });
+            polylineWithout.setStyle({
+              weight:  WEIGHT_INACTIVE,
+              opacity: OPACITY_INACTIVE,
+            });
+            map.fitBounds(polylineWith.getBounds(), { padding: [20, 20] });
+          } else {
+            polylineWithout.setStyle({ weight: WEIGHT_ACTIVE, opacity: 1 });
+            polylineWith.setStyle({
+              weight:  WEIGHT_INACTIVE,
+              opacity: OPACITY_INACTIVE,
+            });
+            map.fitBounds(polylineWithout.getBounds(), { padding: [20, 20] });
+          }
+        }
+        var radioTolls   = document.getElementById("route-opt-tolls");
+        var radioNoTolls = document.getElementById("route-opt-notolls");
+        if (radioTolls)   { radioTolls.addEventListener("change", onRouteOptionChange); }
+        if (radioNoTolls) { radioNoTolls.addEventListener("change", onRouteOptionChange); }
+      }
+
+    }());
+  </script>
+{% endif %}

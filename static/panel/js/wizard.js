@@ -1,4 +1,3 @@
-// /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/wizard.js
 //
 // Budget wizard — minimal client-side logic.
 // Step sequencing is handled entirely by chained HTMX attributes in the templates.
@@ -42,28 +41,47 @@
     if (!fields) return;
     fields.classList.toggle('d-none', !active);
     if (!active) {
+      // Clear route result and reset all route-related hidden inputs.
+      // Limpiar el resultado de ruta y resetear los inputs ocultos de ruta.
       var resultSection = document.getElementById('route-result-section');
       if (resultSection) resultSection.innerHTML = '';
       ['id_route_calculation_mode', 'id_route_distance_km',
-       'id_route_toll_cost', 'id_road_name', 'id_pk_km', 'id_dest_location'
+       'id_route_toll_cost', 'id_road_name', 'id_pk_km', 'id_dest_location',
+       'id_km_phase1',
       ].forEach(function (id) {
         var el = document.getElementById(id);
-        if (el) el.value = id === 'id_route_calculation_mode' ? 'MANUAL' : '';
+        if (!el) return;
+        el.value = id === 'id_route_calculation_mode' ? 'MANUAL' : '';
       });
     }
   }
   window.toggleRouteCalc = toggleRouteCalc;
 
   // ---------------------------------------------------------------------------
-  // Modo B — HTMX route calculation POST
-  // Modo B — POST HTMX de calculo de ruta
+  // Modo B — dual route calculation GET (route-dual/ endpoint)
+  // Modo B — calculo de ruta dual GET (endpoint route-dual/)
+  //
+  // Calls BudgetRouteDualView via HTMX GET and injects the dual fragment into
+  // #route-result-section. The fragment renders a Leaflet map with two
+  // polylines (with tolls / without tolls) for visual reference only.
+  // Budget inputs (km_phase1, route_distance_km) are always set from the
+  // primary route (with tolls) — radio buttons only control map highlight.
+  //
+  // Llama a BudgetRouteDualView via HTMX GET e inyecta el fragmento dual en
+  // #route-result-section. El fragmento muestra un mapa Leaflet con dos
+  // polylines (con peajes / sin peajes) solo para referencia visual.
+  // Los inputs del presupuesto (km_phase1, route_distance_km) se fijan siempre
+  // con la ruta primaria (con peajes) — los radio buttons solo controlan el
+  // resaltado del mapa.
   // ---------------------------------------------------------------------------
 
   function calcularRuta() {
-    var form        = document.getElementById('budget-form');
-    var baseIdInput = document.querySelector('[name=base_id]');
-    var roadName    = document.getElementById('id_road_name_calc').value.trim();
-    var destLocation = (document.getElementById('id_dest_location_calc') || {value: ''}).value.trim();
+    var form         = document.getElementById('budget-form');
+    var baseIdInput  = document.querySelector('[name=base_id]');
+    var roadName     = document.getElementById('id_road_name_calc').value.trim();
+    var destLocation = (
+      document.getElementById('id_dest_location_calc') || { value: '' }
+    ).value.trim();
     var pkKm        = document.getElementById('id_pk_km_calc').value.trim();
     var serviceDate = (document.getElementById('id_service_date') || {}).value || '';
     var serviceTime = (document.getElementById('id_service_time') || {}).value || '';
@@ -73,25 +91,36 @@
       return;
     }
     if (!serviceDate || !serviceTime) {
-      alert('Introduce la fecha y hora del servicio en el paso 2b antes de calcular la ruta.');
+      alert(
+        'Introduce la fecha y hora del servicio en el paso 2b ' +
+        'antes de calcular la ruta.'
+      );
       return;
     }
 
-    var csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-    var postValues = {
-      base_id:             baseIdInput ? baseIdInput.value : '',
-      road_name:           roadName,
-      dest_location:       destLocation,
-      pk_km:               pkKm,
-      service_date:        serviceDate,
-      service_time:        serviceTime,
-      csrfmiddlewaretoken: csrfToken,
-    };
+    // Sync hidden POST inputs from the visible calc fields before the request.
+    // Sincronizar los inputs ocultos POST desde los campos visibles de calculo.
+    var hiddenRoad = document.getElementById('id_road_name');
+    var hiddenPk   = document.getElementById('id_pk_km');
+    var hiddenDest = document.getElementById('id_dest_location');
+    if (hiddenRoad) hiddenRoad.value = roadName;
+    if (hiddenPk)   hiddenPk.value   = pkKm;
+    if (hiddenDest) hiddenDest.value = destLocation;
 
-    htmx.ajax('POST', form.dataset.urlRouteCalc, {
+    var baseId  = baseIdInput ? baseIdInput.value : '';
+    var urlBase = form.dataset.urlRouteDual;
+    var params  = [
+      'base_id='       + encodeURIComponent(baseId),
+      'road_name='     + encodeURIComponent(roadName),
+      'dest_location=' + encodeURIComponent(destLocation),
+      'pk_km='         + encodeURIComponent(pkKm),
+      'service_date='  + encodeURIComponent(serviceDate),
+      'service_time='  + encodeURIComponent(serviceTime),
+    ].join('&');
+
+    htmx.ajax('GET', urlBase + '?' + params, {
       target: '#route-result-section',
       swap:   'innerHTML',
-      values: postValues,
     });
   }
   window.calcularRuta = calcularRuta;

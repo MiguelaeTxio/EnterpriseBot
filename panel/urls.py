@@ -62,8 +62,6 @@ from panel.views import (
     WorkOrderEntryUploadView,
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
-    WorkOrderEntryMergeView,
-    WorkdayGapResolutionView,
     WorkOrderEntryHistoryView,
     WorkOrderAdminHistoryView,
     WorkerAbsenceCreateView,
@@ -220,11 +218,9 @@ urlpatterns = [
 
     # Operator merge — Resolucion de conflicto de parte duplicado (rol WORKSHOP y ADMIN).
     # Primera Accion — Hito 7 Sesion 018 (2026-05-11)
-    path("operator/merge/<int:entry_pk>/", WorkOrderEntryMergeView.as_view(), name="operator_merge"),
 
     # Operator gap resolution — Justificación de lagunas de jornada detectadas por Gate 4.
     # Paso E — CUARTA ACCION Hito 7 Sesion 029 (2026-05-14)
-    path("operator/gaps/<int:wo_draft_pk>/", WorkdayGapResolutionView.as_view(), name="operator_gap_resolution"),
 
     # Description typeahead autocomplete — Autocompletado de descripciones (fault_description / repair_notes).
     # Tercer Fleco — Hito 7 (2026-05-05)
@@ -382,3 +378,4 @@ urlpatterns = [
     # Export by template — Generación de Excel desde plantilla (Hito 19 / P6).
     path("work-orders/export-by-template/", WorkOrderAdminExportByTemplateView.as_view(), name="work_order_export_by_template"),
 ]
+

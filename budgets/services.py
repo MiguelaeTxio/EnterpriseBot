@@ -1,4 +1,3 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/services.py
 """
 Budget calculation engine for the ASISTENCIA section.
 Applies insurer tariff lines to operator input data and produces
@@ -132,15 +131,45 @@ def _is_holiday(date: datetime.date, base) -> bool:
     """
     Return True if the given date is a Saturday, Sunday, or a public holiday
     listed in base.labor_calendar. The calendar is stored as a JSON list of
-    ISO date strings populated by the sync_base_calendars management command.
+    ISO date strings ('YYYY-MM-DD') populated by sync_base_calendars.
+
+    Detection strategy (two-pass):
+      1. Exact match 'YYYY-MM-DD' -- covers all holidays when the stored year
+         matches the requested date year (standard case).
+      2. Month-day match 'MM-DD' -- covers fixed-date holidays (e.g. Dec 25,
+         May 1, local patron saint days) even when the calendar year differs.
+         Mobile holidays (Easter Thursday/Friday) are year-dependent and
+         will only be detected correctly when the calendar year matches.
+
+    If the stored calendar year differs from the requested date year, a WARNING
+    is logged so the operator knows the calendar may be stale. The budget
+    calculation proceeds regardless -- the two-pass logic provides best-effort
+    coverage for fixed-date holidays across years.
+
     If base is None or labor_calendar is empty, only weekend detection applies.
     ---
     Devuelve True si la fecha dada es sabado, domingo o festivo listado en
     base.labor_calendar. El calendario se almacena como lista JSON de fechas
-    ISO poblada por el comando de gestion sync_base_calendars.
+    ISO ('YYYY-MM-DD') poblada por sync_base_calendars.
+
+    Estrategia de deteccion (dos pasadas):
+      1. Coincidencia exacta 'YYYY-MM-DD' -- cubre todos los festivos cuando
+         el anio almacenado coincide con el de la fecha solicitada (caso normal).
+      2. Coincidencia de mes-dia 'MM-DD' -- cubre festivos de fecha fija
+         (25-dic, 1-may, patron local) aunque el anio del calendario difiera.
+         Los festivos moviles (Jueves/Viernes Santo) solo se detectan
+         correctamente cuando el anio coincide.
+
+    Si el anio almacenado difiere del solicitado se emite un WARNING en logs
+    para que el operario sepa que el calendario puede estar caducado. El calculo
+    del presupuesto continua en cualquier caso.
+
     Si base es None o labor_calendar esta vacio, solo se aplica la deteccion
     de fin de semana.
     """
+    import logging
+    _log = logging.getLogger(__name__)
+
     # Weekend check.
     # Comprobacion de fin de semana.
     if date.weekday() in (5, 6):
@@ -156,21 +185,51 @@ def _is_holiday(date: datetime.date, base) -> bool:
     try:
         holidays: list[str] = json.loads(calendar_json)
     except (json.JSONDecodeError, TypeError):
-        # Malformed calendar — degrade gracefully to weekend-only detection.
-        # Calendario malformado — degradar a deteccion solo de fin de semana.
+        # Malformed calendar -- degrade gracefully to weekend-only detection.
+        # Calendario malformado -- degradar a deteccion solo de fin de semana.
         return False
 
-    # ISO date string for the given date: 'YYYY-MM-DD'.
-    # Cadena de fecha ISO para la fecha dada: 'YYYY-MM-DD'.
-    date_iso = date.isoformat()
-    return date_iso in holidays
+    if not holidays:
+        return False
 
+    # Detect the year stored in the calendar (year of the first entry).
+    # Detectar el anio almacenado en el calendario (anio del primer registro).
+    try:
+        stored_year = int(holidays[0][:4])
+    except (ValueError, IndexError):
+        stored_year = None
 
-# ---------------------------------------------------------------------------
-# Night schedule resolver
-# Resolutor de horario nocturno
-# ---------------------------------------------------------------------------
+    # Emit WARNING when the calendar year does not match the requested year.
+    # Mobile holidays (Easter) may be incorrect in this case.
+    # Emitir WARNING cuando el anio del calendario no coincide con el solicitado.
+    # Los festivos moviles (Semana Santa) pueden ser incorrectos en este caso.
+    if stored_year is not None and stored_year != date.year:
+        _log.warning(
+            "Calendario laboral caducado para la base '%s' (pk=%s): "
+            "almacenado para %s, fecha solicitada %s. "
+            "Festivos de fecha fija detectados por MM-DD; "
+            "festivos moviles (Jueves/Viernes Santo) pueden ser inexactos. "
+            "Ejecuta: sync_base_calendars --year %s --force --base-id %s",
+            getattr(base, "name", base),
+            getattr(base, "pk", "?"),
+            stored_year,
+            date.year,
+            date.year,
+            getattr(base, "pk", "?"),
+        )
 
+    # Pass 1 -- exact match for the full ISO date (standard case, same year).
+    # Pasada 1 -- coincidencia exacta con la fecha ISO completa (caso normal).
+    if date.isoformat() in holidays:
+        return True
+
+    # Pass 2 -- month-day match for fixed-date holidays across calendar years.
+    # Build a set of 'MM-DD' fragments from the stored list for fast lookup.
+    # Pasada 2 -- coincidencia MM-DD para festivos de fecha fija entre anios.
+    # Construir conjunto de fragmentos 'MM-DD' del calendario para busqueda rapida.
+    month_day = date.strftime("%m-%d")
+    stored_month_days = {h[5:] for h in holidays if len(h) == 10}
+    return month_day in stored_month_days
 
 def _resolve_night_schedule(insurer):
     """
@@ -229,154 +288,81 @@ class RouteCalculationError(Exception):
     pass
 
 
-def calculate_route(
-    base,
-    road_name: str,
-    pk_km: Decimal,
-    service_datetime: datetime.datetime,
-    dest_location: str = "",
+def _call_routes_api(
+    origin_lat: float,
+    origin_lng: float,
+    dest_lat: float,
+    dest_lng: float,
+    departure_time_str: str,
+    api_key: str,
+    avoid_tolls: bool = False,
 ) -> dict:
     """
-    Calculate the route from a service base to a kilometre marker on a road
-    using the Google Routes API. Returns a dict with distance_km, toll_cost
-    and mode='API'. Raises RouteCalculationError on any failure.
-
-    If base.latitude / base.longitude are null, geocodes the base municipality
-    via the Geocoding API and persists the result before calling Routes API.
-
-    The departureTime is built from service_datetime (UTC — PythonAnywhere
-    runs in UTC) to ensure toll costs are time-dependent.
+    Execute a single Google Routes API call and return a normalised result dict.
+    The FieldMask requests distanceMeters, duration, polyline.encodedPolyline
+    and travelAdvisory.tollInfo.
+    If avoid_tolls=True, the routeModifiers.avoidTolls flag is set in the
+    request payload.
+    Returns: {"distance_km": Decimal, "has_tolls": bool, "encoded_polyline": str}
+    Raises RouteCalculationError on any HTTP or network failure.
     ---
-    Calcula la ruta desde una base de servicio hasta un punto kilometrico en
-    una carretera usando la Google Routes API. Devuelve un dict con
-    distance_km, toll_cost y mode='API'. Lanza RouteCalculationError ante
-    cualquier fallo.
-
-    Si base.latitude / base.longitude son nulos, geocodifica el municipio
-    de la base via la Geocoding API y persiste el resultado antes de llamar
-    a la Routes API.
-
-    El departureTime se construye desde service_datetime (UTC — PythonAnywhere
-    opera en UTC) para que los peajes sean dependientes de la hora.
+    Ejecuta una llamada individual a la Google Routes API y devuelve un dict
+    normalizado. El FieldMask solicita distanceMeters, duration,
+    polyline.encodedPolyline y travelAdvisory.tollInfo.
+    Si avoid_tolls=True, se activa el flag routeModifiers.avoidTolls en el
+    payload de la peticion.
+    Devuelve: {"distance_km": Decimal, "has_tolls": bool, "encoded_polyline": str}
+    Lanza RouteCalculationError ante cualquier fallo HTTP o de red.
     """
-    import os
     import json
     import urllib.request
-    import urllib.parse
     import urllib.error
 
-    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
-    if not api_key:
-        raise RouteCalculationError(
-            "GOOGLE_MAPS_API_KEY no configurada en el entorno."
-        )
-
-    # ── Step 1: ensure base has coordinates ─────────────────────────────
-    # Paso 1: asegurar que la base tiene coordenadas.
-    if not base.latitude or not base.longitude:
-        # Geocode the base municipality and persist.
-        # Geocodificar el municipio de la base y persistir.
-        geocode_query = urllib.parse.urlencode({
-            "address": f"{base.municipality}, España",
-            "key": api_key,
-            "language": "es",
-            "region": "es",
-        })
-        geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?{geocode_query}"
-        try:
-            with urllib.request.urlopen(geocode_url, timeout=10) as resp:
-                geo_data = json.loads(resp.read().decode("utf-8"))
-        except Exception as exc:
-            raise RouteCalculationError(
-                f"Geocoding API: error de red geocodificando la base '{base.name}': {exc}"
-            ) from exc
-        if geo_data.get("status") != "OK" or not geo_data.get("results"):
-            raise RouteCalculationError(
-                f"Geocoding API: no se encontraron coordenadas para "
-                f"'{base.municipality}' (status: {geo_data.get('status')})."
-            )
-        geo_loc = geo_data["results"][0]["geometry"]["location"]
-        base.latitude  = Decimal(str(geo_loc["lat"])).quantize(Decimal("0.000001"))
-        base.longitude = Decimal(str(geo_loc["lng"])).quantize(Decimal("0.000001"))
-        base.save(update_fields=["latitude", "longitude", "updated_at"])
-
-    origin_lat = float(base.latitude)
-    origin_lng = float(base.longitude)
-
-    # ── Step 2: geocode the kilometre marker on the road ─────────────────
-    # Paso 2: geocodificar el punto kilometrico en la carretera.
-    import re as _re
-    _road = road_name.strip().upper()
-    _road = _re.sub(r'\s+', ' ', _road)
-    _road = _re.sub(r'^([A-Z]+)-?([0-9])', r'\1-\2', _road)
-    pk_int = int(pk_km)
-    if dest_location:
-        dest_query_str = f"{_road}, PK {pk_int}, {dest_location}, España"
-    else:
-        dest_query_str = f"{_road}, {pk_int}, España"
-    geocode_dest_query = urllib.parse.urlencode({
-        "address": dest_query_str,
-        "key": api_key,
-        "language": "es",
-        "region": "es",
-    })
-    geocode_dest_url = (
-        f"https://maps.googleapis.com/maps/api/geocode/json?{geocode_dest_query}"
+    routes_url = (
+        "https://routes.googleapis.com/directions/v2:computeRoutes"
     )
-    try:
-        with urllib.request.urlopen(geocode_dest_url, timeout=10) as resp:
-            dest_data = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:
-        raise RouteCalculationError(
-            f"Geocoding API: error de red geocodificando el punto "
-            f"'{dest_query_str}': {exc}"
-        ) from exc
-    if dest_data.get("status") != "OK" or not dest_data.get("results"):
-        raise RouteCalculationError(
-            f"Geocoding API: no se encontraron coordenadas para "
-            f"'{dest_query_str}' (status: {dest_data.get('status')})."
-        )
-    dest_loc = dest_data["results"][0]["geometry"]["location"]
-    dest_lat = dest_loc["lat"]
-    dest_lng = dest_loc["lng"]
 
-    # ── Step 3: build departureTime in RFC 3339 UTC ───────────────────────
-    # Paso 3: construir departureTime en RFC 3339 UTC.
-    # PythonAnywhere operates in UTC — no conversion needed.
-    # PythonAnywhere opera en UTC — no se necesita conversion.
-    departure_time_str = service_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    # ── Step 4: call Routes API ───────────────────────────────────────────
-    # Paso 4: llamar a la Routes API.
-    routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
-    routes_payload = json.dumps({
+    payload: dict = {
         "origin": {
             "location": {
-                "latLng": {"latitude": origin_lat, "longitude": origin_lng}
+                "latLng": {
+                    "latitude": origin_lat,
+                    "longitude": origin_lng,
+                }
             }
         },
         "destination": {
             "location": {
-                "latLng": {"latitude": dest_lat, "longitude": dest_lng}
+                "latLng": {
+                    "latitude": dest_lat,
+                    "longitude": dest_lng,
+                }
             }
         },
         "travelMode": "DRIVE",
         "routingPreference": "TRAFFIC_AWARE",
         "departureTime": departure_time_str,
         "extraComputations": ["TOLLS"],
-    }).encode("utf-8")
+    }
+
+    if avoid_tolls:
+        # Request a toll-free alternative route.
+        # Solicitar una ruta alternativa sin peajes.
+        payload["routeModifiers"] = {"avoidTolls": True}
+
     routes_headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
         "X-Goog-FieldMask": (
             "routes.distanceMeters,"
             "routes.duration,"
+            "routes.polyline.encodedPolyline,"
             "routes.travelAdvisory.tollInfo"
         ),
     }
     routes_request = urllib.request.Request(
         routes_url,
-        data=routes_payload,
+        data=json.dumps(payload).encode("utf-8"),
         headers=routes_headers,
         method="POST",
     )
@@ -393,8 +379,6 @@ def calculate_route(
             f"Routes API: error de red — {exc}"
         ) from exc
 
-    # ── Step 5: extract distance and tolls ───────────────────────────────
-    # Paso 5: extraer distancia y peajes.
     routes = routes_data.get("routes", [])
     if not routes:
         raise RouteCalculationError(
@@ -403,39 +387,229 @@ def calculate_route(
         )
     route = routes[0]
 
+    # Extract distance.
+    # Extraer distancia.
     distance_meters = route.get("distanceMeters", 0)
     distance_km = _round2(Decimal(str(distance_meters)) / Decimal("1000"))
 
-    # Extract toll cost and toll presence indicator.
-    # has_tolls=True when tollInfo exists in response, even if estimatedPrice
-    # is empty (Google Routes API does not cover Spanish toll pricing).
-    # Extraer coste de peajes e indicador de presencia de peajes.
-    # has_tolls=True cuando tollInfo existe en la respuesta, aunque estimatedPrice
-    # este vacio (la Routes API no cubre tarifas de peajes en Espana).
-    toll_cost = Decimal("0")
+    # Extract encoded polyline for map rendering.
+    # Extraer polyline codificada para renderizado en mapa.
+    encoded_polyline: str = (
+        route.get("polyline", {}).get("encodedPolyline", "")
+    )
+
+    # Detect toll presence: tollInfo in travelAdvisory signals a toll route.
+    # Google Routes API does not return toll prices for Spain — has_tolls
+    # is used as a boolean flag only.
+    # Detectar presencia de peajes: tollInfo en travelAdvisory indica ruta
+    # de peaje. La API no devuelve precios de peajes en Espana — has_tolls
+    # se usa exclusivamente como indicador booleano.
     has_tolls = False
     try:
-        toll_info = route["travelAdvisory"]["tollInfo"]
-        # tollInfo present in response means the route has tolls.
-        # tollInfo presente en la respuesta indica que la ruta tiene peajes.
+        _toll_info = route["travelAdvisory"]["tollInfo"]
         has_tolls = True
-        estimated_prices = toll_info.get("estimatedPrice", [])
-        if estimated_prices:
-            units = estimated_prices[0].get("units", "0")
-            nanos = estimated_prices[0].get("nanos", 0)
-            toll_cost = Decimal(str(units)) + _round2(
-                Decimal(str(nanos)) / Decimal("1000000000")
-            )
-    except (KeyError, TypeError, IndexError):
-        # No toll info in response — route has no tolls.
-        # Sin informacion de peajes en la respuesta — la ruta no tiene peajes.
+    except (KeyError, TypeError):
         pass
 
     return {
         "distance_km": _round2(distance_km * 2),
-        "toll_cost":   _round2(toll_cost),
-        "has_tolls":   has_tolls,
-        "mode":        "API",
+        "has_tolls": has_tolls,
+        "encoded_polyline": encoded_polyline,
+    }
+
+
+def calculate_route(
+    base,
+    road_name: str,
+    pk_km: Decimal,
+    service_datetime: datetime.datetime,
+    dest_location: str = "",
+) -> dict:
+    """
+    Orchestrate up to two Google Routes API calls to obtain a dual route result:
+    one with tolls (primary) and, if the primary has tolls, one without tolls
+    (secondary). Returns a contract dict:
+    {
+        "route_with_tolls": {
+            "distance_km": Decimal,
+            "has_tolls": bool,
+            "encoded_polyline": str,
+        },
+        "route_without_tolls": {
+            "distance_km": Decimal,
+            "has_tolls": False,
+            "encoded_polyline": str,
+        } | None,
+        "error": None,
+    }
+    If the primary route has no tolls, route_without_tolls is None.
+    Raises RouteCalculationError on any failure in the primary call.
+    Errors in the secondary (avoid_tolls) call are silenced — route_without_tolls
+    is set to None so the wizard can still proceed with the primary route.
+
+    If base.latitude / base.longitude are null, geocodes the base municipality
+    via the Geocoding API and persists the result before calling Routes API.
+    ---
+    Orquesta hasta dos llamadas a la Google Routes API para obtener un resultado
+    de ruta dual: una con peajes (primaria) y, si la primaria tiene peajes, una
+    sin peajes (secundaria). Devuelve el dict de contrato descrito arriba.
+    Si la ruta primaria no tiene peajes, route_without_tolls es None.
+    Lanza RouteCalculationError ante cualquier fallo en la llamada primaria.
+    Los errores en la llamada secundaria (avoid_tolls) se silencian — se
+    establece route_without_tolls a None para que el wizard pueda continuar
+    con la ruta primaria.
+
+    Si base.latitude / base.longitude son nulos, geocodifica el municipio
+    de la base via la Geocoding API y persiste el resultado antes de llamar
+    a la Routes API.
+    """
+    import os
+    import json
+    import urllib.request
+    import urllib.parse
+    import urllib.error
+    import re as _re
+
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    if not api_key:
+        raise RouteCalculationError(
+            "GOOGLE_MAPS_API_KEY no configurada en el entorno."
+        )
+
+    # Step 1: ensure base has coordinates.
+    # Paso 1: asegurar que la base tiene coordenadas.
+    if not base.latitude or not base.longitude:
+        # Geocode the base municipality and persist.
+        # Geocodificar el municipio de la base y persistir.
+        geocode_query = urllib.parse.urlencode({
+            "address": f"{base.municipality}, España",
+            "key": api_key,
+            "language": "es",
+            "region": "es",
+        })
+        geocode_url = (
+            "https://maps.googleapis.com/maps/api/geocode/json"
+            f"?{geocode_query}"
+        )
+        try:
+            with urllib.request.urlopen(geocode_url, timeout=10) as resp:
+                geo_data = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise RouteCalculationError(
+                "Geocoding API: error de red geocodificando la base "
+                f"'{base.name}': {exc}"
+            ) from exc
+        if (
+            geo_data.get("status") != "OK"
+            or not geo_data.get("results")
+        ):
+            raise RouteCalculationError(
+                "Geocoding API: no se encontraron coordenadas para "
+                f"'{base.municipality}' "
+                f"(status: {geo_data.get('status')})."
+            )
+        geo_loc = geo_data["results"][0]["geometry"]["location"]
+        base.latitude = Decimal(
+            str(geo_loc["lat"])
+        ).quantize(Decimal("0.000001"))
+        base.longitude = Decimal(
+            str(geo_loc["lng"])
+        ).quantize(Decimal("0.000001"))
+        base.save(update_fields=["latitude", "longitude", "updated_at"])
+
+    origin_lat = float(base.latitude)
+    origin_lng = float(base.longitude)
+
+    # Step 2: geocode the kilometre marker on the road.
+    # Paso 2: geocodificar el punto kilometrico en la carretera.
+    _road = road_name.strip().upper()
+    _road = _re.sub(r'\s+', ' ', _road)
+    _road = _re.sub(r'^([A-Z]+)-?([0-9])', r'\1-\2', _road)
+    pk_int = int(pk_km)
+    if dest_location:
+        dest_query_str = (
+            f"{_road}, PK {pk_int}, {dest_location}, España"
+        )
+    else:
+        dest_query_str = f"{_road}, {pk_int}, España"
+    geocode_dest_query = urllib.parse.urlencode({
+        "address": dest_query_str,
+        "key": api_key,
+        "language": "es",
+        "region": "es",
+    })
+    geocode_dest_url = (
+        "https://maps.googleapis.com/maps/api/geocode/json"
+        f"?{geocode_dest_query}"
+    )
+    try:
+        with urllib.request.urlopen(geocode_dest_url, timeout=10) as resp:
+            dest_data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        raise RouteCalculationError(
+            "Geocoding API: error de red geocodificando el punto "
+            f"'{dest_query_str}': {exc}"
+        ) from exc
+    if (
+        dest_data.get("status") != "OK"
+        or not dest_data.get("results")
+    ):
+        raise RouteCalculationError(
+            "Geocoding API: no se encontraron coordenadas para "
+            f"'{dest_query_str}' "
+            f"(status: {dest_data.get('status')})."
+        )
+    dest_loc = dest_data["results"][0]["geometry"]["location"]
+    dest_lat = dest_loc["lat"]
+    dest_lng = dest_loc["lng"]
+
+    # Step 3: build departureTime in RFC 3339 UTC.
+    # Paso 3: construir departureTime en RFC 3339 UTC.
+    # PythonAnywhere operates in UTC — no conversion needed.
+    # PythonAnywhere opera en UTC — no se necesita conversion.
+    departure_time_str = service_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Step 4: primary call (with tolls).
+    # Paso 4: llamada primaria (con peajes).
+    route_with_tolls = _call_routes_api(
+        origin_lat,
+        origin_lng,
+        dest_lat,
+        dest_lng,
+        departure_time_str,
+        api_key,
+        avoid_tolls=False,
+    )
+
+    # Step 5: secondary call (without tolls) — only when needed.
+    # Paso 5: llamada secundaria (sin peajes) — solo si la primaria
+    # tiene peajes.
+    route_without_tolls = None
+    if route_with_tolls["has_tolls"]:
+        try:
+            route_without_tolls = _call_routes_api(
+                origin_lat,
+                origin_lng,
+                dest_lat,
+                dest_lng,
+                departure_time_str,
+                api_key,
+                avoid_tolls=True,
+            )
+            # Force has_tolls=False on the toll-free route regardless of
+            # what the API returns (should be False, but we guarantee it).
+            # Forzar has_tolls=False en la ruta sin peajes aunque la API
+            # devolviera True (no deberia, pero lo garantizamos).
+            route_without_tolls["has_tolls"] = False
+        except RouteCalculationError:
+            # Secondary call failure is non-fatal.
+            # El fallo de la llamada secundaria no es fatal.
+            route_without_tolls = None
+
+    return {
+        "route_with_tolls": route_with_tolls,
+        "route_without_tolls": route_without_tolls,
+        "error": None,
     }
 
 

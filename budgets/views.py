@@ -1,4 +1,4 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/views.py
+
 """
 View definitions for the budgets application.
 Implements the sequential budget wizard, HTMX partial endpoints,
@@ -361,11 +361,26 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         is_night = False
         route_distance_km_raw  = data.get("route_distance_km", "").strip()
         route_toll_cost_raw    = data.get("route_toll_cost", "").strip()
-        route_calculation_mode = data.get("route_calculation_mode", "MANUAL").strip()
-        service_time_raw       = data.get("service_time", "").strip()
-        route_distance_km = _Dec(route_distance_km_raw) if route_distance_km_raw else None
-        route_toll_cost   = _Dec(route_toll_cost_raw)   if route_toll_cost_raw   else None
-        service_time_obj  = _dt.time.fromisoformat(service_time_raw) if service_time_raw else None
+        route_calculation_mode = data.get(
+            "route_calculation_mode", "MANUAL"
+        ).strip()
+        service_time_raw = data.get("service_time", "").strip()
+        # Normalise decimal separator: JS may write '.' or ','
+        # depending on the browser locale.
+        # Normalizar separador decimal: el JS puede escribir '.' o ','
+        # segun el locale del navegador.
+        route_distance_km = (
+            _Dec(route_distance_km_raw.replace(",", "."))
+            if route_distance_km_raw else None
+        )
+        route_toll_cost = (
+            _Dec(route_toll_cost_raw.replace(",", "."))
+            if route_toll_cost_raw else None
+        )
+        service_time_obj = (
+            _dt.time.fromisoformat(service_time_raw)
+            if service_time_raw else None
+        )
 
         # --- Resolve is_night from NightSchedule ---
         # --- Resolver is_night desde NightSchedule ---
@@ -391,12 +406,28 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
                     )
 
         # When Modo B is active, use route_distance_km as km_phase1.
+        # Route API returns a Decimal with up to 2 decimal places.
+        # km_phase1 is an IntegerField — round using ROUND_HALF_UP
+        # (standard arithmetic rounding: 33.5 → 34, 33.4 → 33).
+        # Python's built-in round() uses banker's rounding — avoid it.
         # En Modo B activo, usar route_distance_km como km_phase1.
+        # La Routes API devuelve un Decimal con hasta 2 decimales.
+        # km_phase1 es un IntegerField — redondear con ROUND_HALF_UP
+        # (redondeo aritmético estándar: 33.5 → 34, 33.4 → 33).
+        # El round() de Python usa banker's rounding — no usar.
         if route_calculation_mode == "API" and route_distance_km:
-            km_phase1 = float(route_distance_km)
+            from decimal import ROUND_HALF_UP
+            km_phase1 = int(
+                _Dec(str(route_distance_km)).quantize(
+                    _Dec("1"), rounding=ROUND_HALF_UP
+                )
+            )
         else:
             try:
-                km_phase1 = float(data["km_phase1"])
+                # Normalise decimal separator before conversion.
+                # Normalizar separador decimal antes de la conversion.
+                _km1_raw = str(data.get("km_phase1", "")).strip()
+                km_phase1 = float(_km1_raw.replace(",", "."))
             except (KeyError, ValueError):
                 messages.error(
                     request,
@@ -407,11 +438,15 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         km_phase2 = None
         if is_overnight:
             try:
-                km_phase2 = float(data["km_phase2"])
+                # Normalise decimal separator before conversion.
+                # Normalizar separador decimal antes de la conversion.
+                _km2_raw = str(data.get("km_phase2", "")).strip()
+                km_phase2 = float(_km2_raw.replace(",", "."))
             except (KeyError, ValueError):
                 messages.error(
                     request,
-                    "Introduce los kilómetros de la fase 2 para servicios de pernocta.",
+                    "Introduce los kilómetros de la fase 2 "
+                    "para servicios de pernocta.",
                 )
                 return redirect("budgets:wizard")
 
@@ -586,22 +621,213 @@ class BudgetRouteCalcView(AssistanceRequiredMixin, View):
 
         from budgets.services import calculate_route, RouteCalculationError
         try:
-            result = calculate_route(base, road_name, pk_km, service_datetime, dest_location=dest_location)
+            result = calculate_route(
+                base,
+                road_name,
+                pk_km,
+                service_datetime,
+                dest_location=dest_location,
+            )
         except RouteCalculationError as exc:
             return render(request, self.template_name, {
                 "error": str(exc),
             })
 
+        # Extract primary route from the new dual contract.
+        # Extraer la ruta primaria del nuevo contrato dual.
+        primary = result["route_with_tolls"]
         return render(request, self.template_name, {
-            "distance_km":  result["distance_km"],
-            "toll_cost":    result["toll_cost"],
-            "has_tolls":    result["has_tolls"],
+            "distance_km":  primary["distance_km"],
+            "has_tolls":    primary["has_tolls"],
             "road_name":    road_name,
             "pk_km":        pk_km,
             "service_time": service_time_str,
             "base_name":    base.name,
             "base_lat":     base.latitude,
             "base_lng":     base.longitude,
+        })
+
+
+# ---------------------------------------------------------------------------
+# HTMX endpoint — dual route visualisation (with tolls vs without tolls)
+# Endpoint HTMX — visualizacion dual de rutas (con peajes vs sin peajes)
+# ---------------------------------------------------------------------------
+
+class BudgetRouteDualView(AssistanceRequiredMixin, View):
+    """
+    HTMX GET endpoint. Receives base_id, road_name, pk_km, dest_location
+    and service_datetime as query parameters. Calls calculate_route() and
+    returns the dual route fragment _route_dual_fragment.html.
+
+    Context flags computed in the view (Dumb Template):
+      - route_with_tolls: primary route dict.
+      - route_without_tolls: secondary route dict or None.
+      - show_dual: True only when route_without_tolls is not None.
+    ---
+    Endpoint GET HTMX. Recibe base_id, road_name, pk_km, dest_location
+    y service_datetime como parametros de consulta. Llama a calculate_route()
+    y devuelve el fragmento de ruta dual _route_dual_fragment.html.
+
+    Flags de contexto calculados en la vista (Dumb Template):
+      - route_with_tolls: dict de la ruta primaria.
+      - route_without_tolls: dict de la ruta secundaria o None.
+      - show_dual: True solo cuando route_without_tolls no es None.
+    """
+
+    template_name = "budgets/_route_dual_fragment.html"
+
+    def get(self, request):
+        """
+        Validate inputs, call calculate_route() and return the dual
+        route fragment with all presentation flags resolved.
+        ---
+        Valida los parametros, llama a calculate_route() y devuelve el
+        fragmento de ruta dual con todos los flags de presentacion resueltos.
+        """
+        import datetime as _dt
+        import json
+        from decimal import Decimal
+
+        company_user = _get_company_user(request)
+        params = request.GET
+
+        base_id           = params.get("base_id", "").strip()
+        road_name         = params.get("road_name", "").strip()
+        dest_location     = params.get("dest_location", "").strip()
+        pk_km_raw         = params.get("pk_km", "").strip()
+        service_date_str  = params.get("service_date", "").strip()
+        service_time_str  = params.get("service_time", "").strip()
+
+        if not all([
+            base_id,
+            road_name,
+            pk_km_raw,
+            service_date_str,
+            service_time_str,
+        ]):
+            return render(request, self.template_name, {
+                "error": (
+                    "Rellena carretera, punto kilométrico, "
+                    "fecha y hora del servicio."
+                ),
+                "show_dual": False,
+                "route_with_tolls": None,
+                "route_without_tolls": None,
+            })
+
+        try:
+            base = Base.objects.get(
+                pk=int(base_id),
+                company=company_user.company,
+            )
+            pk_km = Decimal(pk_km_raw.replace(",", "."))
+            service_date = _dt.date.fromisoformat(service_date_str)
+            service_time_obj = _dt.time.fromisoformat(service_time_str)
+            service_datetime = _dt.datetime.combine(
+                service_date, service_time_obj,
+            )
+        except Exception as exc:
+            return render(request, self.template_name, {
+                "error": f"Datos inválidos: {exc}",
+                "show_dual": False,
+                "route_with_tolls": None,
+                "route_without_tolls": None,
+            })
+
+        # Validate that service_datetime is in the future.
+        # Validar que service_datetime sea futuro.
+        if service_datetime <= _dt.datetime.utcnow():
+            return render(request, self.template_name, {
+                "error": (
+                    "La fecha y hora del servicio deben ser futuras "
+                    "para calcular la ruta con peajes. "
+                    "Ajusta la fecha u hora en el paso 2b."
+                ),
+                "show_dual": False,
+                "route_with_tolls": None,
+                "route_without_tolls": None,
+            })
+
+        from budgets.services import calculate_route, RouteCalculationError
+        try:
+            result = calculate_route(
+                base,
+                road_name,
+                pk_km,
+                service_datetime,
+                dest_location=dest_location,
+            )
+        except RouteCalculationError as exc:
+            return render(request, self.template_name, {
+                "error": str(exc),
+                "show_dual": False,
+                "route_with_tolls": None,
+                "route_without_tolls": None,
+            })
+
+        route_with_tolls = result["route_with_tolls"]
+        route_without_tolls = result["route_without_tolls"]
+        show_dual = route_without_tolls is not None
+
+        # Compute calendar_warning: True when the stored labor_calendar year
+        # does not match the requested service_date year. Passed to the
+        # template so the operator sees a visible alert in the UI.
+        # Mobile holidays (Easter) may be inaccurate when calendar is stale.
+        # Calcular calendar_warning: True cuando el anio del labor_calendar
+        # almacenado no coincide con el anio de service_date. Se pasa al
+        # template para que el operario vea un aviso visible en la UI.
+        # Los festivos moviles (Semana Santa) pueden ser inexactos si caducado.
+        calendar_warning = False
+        calendar_warning_year = None
+        _cal_json = (base.labor_calendar or "").strip()
+        if _cal_json:
+            try:
+                import json as _json_cal
+                _holidays_cal = _json_cal.loads(_cal_json)
+                if _holidays_cal:
+                    _stored_year = int(_holidays_cal[0][:4])
+                    if _stored_year != service_date.year:
+                        calendar_warning = True
+                        calendar_warning_year = _stored_year
+            except (ValueError, IndexError, Exception):
+                pass
+
+        # Serialise route dicts to JSON for data attributes in the template.
+        # The JS layer reads these to avoid Django/JS interpolation conflicts.
+        # Serializar los dicts de ruta a JSON para data attributes en el template.
+        # La capa JS los lee para evitar conflictos de interpolacion Django/JS.
+        # Use float() for distance_km so json.dumps always serialises
+        # with a decimal point regardless of Django locale settings.
+        # Usar float() para distance_km para que json.dumps serialice
+        # siempre con punto decimal independientemente del locale Django.
+        route_with_tolls_json = json.dumps({
+            "distance_km": float(route_with_tolls["distance_km"]),
+            "has_tolls": route_with_tolls["has_tolls"],
+            "encoded_polyline": route_with_tolls["encoded_polyline"],
+        })
+        route_without_tolls_json = json.dumps(
+            {
+                "distance_km": float(
+                    route_without_tolls["distance_km"]
+                ),
+                "has_tolls": route_without_tolls["has_tolls"],
+                "encoded_polyline": (
+                    route_without_tolls["encoded_polyline"]
+                ),
+            }
+            if route_without_tolls else None
+        )
+
+        return render(request, self.template_name, {
+            "route_with_tolls":         route_with_tolls,
+            "route_without_tolls":      route_without_tolls,
+            "show_dual":                show_dual,
+            "route_with_tolls_json":    route_with_tolls_json,
+            "route_without_tolls_json": route_without_tolls_json,
+            "calendar_warning":         calendar_warning,
+            "calendar_warning_year":    calendar_warning_year,
+            "service_year":             service_date.year,
+            "error":                    None,
         })
 
 

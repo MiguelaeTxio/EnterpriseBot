@@ -1037,7 +1037,27 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
 
         if _gate0_work_date is not None :
 
-
+            # Gate 0a — reject future dates.
+            # Gate 0a — rechazar fechas futuras.
+            from datetime import date as _date_today_c 
+            if _gate0_work_date >_date_today_c .today ():
+                context =self ._get_context_base (request )
+                context .update ({
+                "error":(
+                f"No puedes introducir un parte con fecha futura "
+                f"({_gate0_work_date.strftime('%d/%m/%Y')}). "
+                f"La fecha del parte no puede ser posterior a hoy."
+                ),
+                "fecha":_gate0_fecha_str ,
+                "uncertain_date":False ,
+                "confidence":"",
+                "entradas_enriched":[],
+                "repuestos_enriched":[],
+                "num_entradas":0 ,
+                "num_repuestos":0 ,
+                "min_date":_get_min_allowed_date (cu ).isoformat ()if _get_min_allowed_date (cu )else "",
+                })
+                return render (request ,self .template_name ,context )
 
             _min_date_c =_get_min_allowed_date (cu )
             if _min_date_c is not None and _gate0_work_date <_min_date_c :
@@ -1077,21 +1097,33 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
             ).select_related ("work_order").first ()
 
             if _existing_entry0 is not None :
-
-
-                _gate0_lines =_parse_entry_lines_from_post (POST ,company )
-                _gate0_spare =_parse_spare_parts_from_post (
-                POST ,company ,entry_lines_data =_gate0_lines 
+                # Duplicate date — error returned in the same form.
+                # Fecha duplicada — error devuelto en el mismo formulario.
+                _extraction_cm = request .session .get (
+                    "operator_upload_extraction", {}
                 )
-                request .session ["pending_merge_lines"]=_serialize_pending_lines (
-                _gate0_lines ,_gate0_spare ,_gate0_work_date 
-                )
-                return redirect (
-                _rev0 (
-                "panel:operator_merge",
-                kwargs ={"entry_pk":_existing_entry0 .pk },
-                )
-                )
+                context = self ._get_context_base (request )
+                context .update ({
+                    "error": (
+                        "Ya existe un parte para la fecha "
+                        f"{_gate0_work_date.strftime('%d/%m/%Y')}. "
+                        "Si quieres editarlo, ve al historial y pulsa "
+                        "'Editar' en el parte correspondiente."
+                    ),
+                    "extraction": _extraction_cm ,
+                    "fecha": _gate0_fecha_str ,
+                    "uncertain_date": False ,
+                    "confidence": "",
+                    "entradas_enriched": [],
+                    "repuestos_enriched": [],
+                    "num_entradas": 0 ,
+                    "num_repuestos": 0 ,
+                    "min_date": (
+                        _get_min_allowed_date (cu ).isoformat ()
+                        if _get_min_allowed_date (cu ) else ""
+                    ),
+                })
+                return render (request , self .template_name , context )
 
 
 
@@ -1169,7 +1201,7 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
             )
 
         for ld in entry_lines_data :
-            blk =f"Bloque {ld['line_number']}"
+            blk =f"Tarea {ld['line_number']}"
             if not ld ["machine_raw"]:
                 integrity_errors .append (
                 f"{blk}: el código de máquina es obligatorio."
@@ -1194,14 +1226,30 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
                     f"{blk}: la H.F. debe ser posterior a la H.C. "
                     f"(Δ horas calculado: {ld['delta_hours']})."
                     )
-            if not ld ["fault_description"]:
-                integrity_errors .append (
-                f"{blk}: la descripción de la avería es obligatoria."
-                )
-            if not ld ["repair_notes"]:
-                integrity_errors .append (
-                f"{blk}: la descripción de la reparación realizada es obligatoria."
-                )
+            _is_absence_blk =ld .get ("absence_category")is not None 
+            if _is_absence_blk :
+                # Absence block: fault_description not required (auto-filled
+                # with category label). repair_notes optional unless the
+                # category requires a note.
+                # Bloque de ausencia: descripción de avería no obligatoria
+                # (se autorrellena con la etiqueta de la categoría).
+                # repair_notes opcional salvo que la categoría requiera nota.
+                _abs_cat =ld .get ("absence_category")
+                if (getattr (_abs_cat ,"requires_note",False )
+                        and not ld ["repair_notes"]):
+                    integrity_errors .append (
+                    f"{blk}: esta categoría de ausencia requiere que "
+                    f"describas brevemente el motivo."
+                    )
+            else :
+                if not ld ["fault_description"]:
+                    integrity_errors .append (
+                    f"{blk}: la descripción de la avería es obligatoria."
+                    )
+                if not ld ["repair_notes"]:
+                    integrity_errors .append (
+                    f"{blk}: la descripción de la reparación realizada es obligatoria."
+                    )
 
 
 
@@ -1212,7 +1260,7 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
         for ld in entry_lines_data :
             if ld ["machine_asset"]is not None :
                 asset =ld ["machine_asset"]
-                blk =f"Bloque {ld['line_number']}"
+                blk =f"Tarea {ld['line_number']}"
                 if asset .has_odometer :
                     reading =ld .get ("odometer_reading")
                     if reading is None :
@@ -1754,8 +1802,9 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
                 f"La jornada del parte suma {_total_hours_c2} h, "
                 f"pero se requieren al menos 8 h. "
                 f"Faltan {_missing_c2} h para completar la jornada. "
-                f"Añade los bloques de trabajo que faltan o registra "
-                f"una ausencia justificada para esta fecha."
+                f"Añade los bloques que faltan o, si hubo ausencia, "
+                f"añade un bloque con código PERSONAL en el campo "
+                f"Máquina/Centro de Gasto y selecciona el motivo."
                 ),
                 "extraction":extraction ,
                 "fecha":POST .get ("fecha",""),
@@ -1783,116 +1832,6 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
 
 
 
-        if work_date is not None :
-            from ivr_config .models import WorkdaySchedule as _WDS_C2 
-            from django .urls import reverse as _rev_g4c2 
-            _schedule_g4c2 =(
-            cu .workday_schedule 
-            if cu .workday_schedule_id 
-            else (
-
-
-
-
-            next (
-            (
-            _sec .workday_schedule 
-            for _sec in (
-            _contact_g4c2 .sections 
-            .filter (is_active =True ,workday_schedule__isnull =False )
-            .select_related ("workday_schedule")
-            .order_by ("name")
-            )
-            ),
-            None ,
-            )
-            if (_contact_g4c2 :=(
-            Contact .objects .filter (company_user =cu )
-            .prefetch_related ("sections__workday_schedule")
-            .first ()
-            ))is not None 
-            else None 
-            )or _WDS_C2 .objects .filter (
-            company =company ,is_default =True 
-            ).first ()
-            )
-            _gaps_g4c2 =_detect_workday_gaps (
-            entry_lines_data ,_schedule_g4c2 ,work_date 
-            )
-            if _gaps_g4c2 :
-
-
-
-
-                from django .db import transaction as _tx_g4c2 
-                _worker_name_g4 =(
-                cu .user .get_full_name ()or cu .user .username 
-                ).upper ()
-                _date_tag_g4 =work_date .strftime ("%d-%m-%Y")
-                _synth_g4 =f"{_worker_name_g4}_{_date_tag_g4}_DRAFT.pdf"
-                with _tx_g4c2 .atomic ():
-                    _wo_draft =WorkOrder (
-                    company =company ,
-                    uploaded_by =cu ,
-                    source =WorkOrder .Source .DIGITAL ,
-                    status =WorkOrder .Status .PENDING_GAPS ,
-                    total_pages =1 ,
-                    processed_pages =1 ,
-                    reviewed =False ,
-                    )
-                    _wo_draft .source_pdf .name =_synth_g4 
-                    _wo_draft .save ()
-                    _entry_draft =WorkOrderEntry .objects .create (
-                    work_order =_wo_draft ,
-                    page_number =1 ,
-                    worker_name =_worker_name_g4 ,
-                    work_date =work_date ,
-                    uncertain_date =False ,
-                    extraction_confidence =WorkOrderEntry .Confidence .HIGH ,
-                    raw_gemini_response =None ,
-                    )
-                    _line_num_g4 =1 
-                    for _ld in entry_lines_data :
-                        _ln =WorkOrderEntryLine .objects .create (
-                        entry =_entry_draft ,
-                        line_number =_line_num_g4 ,
-                        machine_asset =_ld .get ("machine_asset"),
-                        machine_raw =_ld .get ("machine_raw",""),
-                        machine_norm ="",
-                        fault_description =_ld .get ("fault_description",""),
-                        repair_notes =_ld .get ("repair_notes",""),
-                        hc =_ld .get ("hc"),
-                        hf =_ld .get ("hf"),
-                        or_val =_ld .get ("or_val",""),
-                        delta_hours =_ld .get ("delta_hours"),
-                        flags =[],
-                        odometer_reading =_ld .get ("odometer_reading"),
-                        engine_hours_reading =_ld .get ("engine_hours_reading"),
-                        crane_hours_reading =_ld .get ("crane_hours_reading"),
-                        )
-                        _line_num_g4 +=1 
-                    from work_order_processor .models import WorkdayGap as _WDG_C2 
-                    for _gap in _gaps_g4c2 :
-                        _WDG_C2 .objects .create (
-                        work_order =_wo_draft ,
-                        gap_type =_gap ["gap_type"],
-                        gap_start =_gap ["gap_start"],
-                        gap_end =_gap ["gap_end"],
-                        duration_minutes =_gap ["duration_minutes"],
-                        )
-                request .session ["pending_gaps_wo_pk"]=_wo_draft .pk 
-                request .session .modified =True 
-                logger .info (
-                "# [ConfirmView/Gate4] PENDING_GAPS borrador pk=%d creado. "
-                "%d gap(s) detectado(s). Redirigiendo a resolución.",
-                _wo_draft .pk ,len (_gaps_g4c2 ),
-                )
-                return redirect (
-                _rev_g4c2 (
-                "panel:operator_gap_resolution",
-                kwargs ={"wo_draft_pk":_wo_draft .pk },
-                )
-                )
 
 
         request .session .pop ("operator_upload_extraction",None )
@@ -2045,12 +1984,21 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         .select_related ("machine","section")
         .order_by ("-urgency","created_at")
         )
+        import json as _json_ctx 
+        from ivr_config .models import AbsenceCategory as _AbsCatCtx 
+        _absence_cats_ctx =list (
+            _AbsCatCtx .objects .filter (company =company ,is_active =True )
+            .order_by ("order","label")
+            .values ("id","label","requires_note")
+        )
         return {
         "company":company ,
         "company_user":cu ,
         "active_nav":"operator_dashboard",
         "assets":assets ,
         "repair_orders":repair_orders ,
+        "absence_categories":_json_ctx .dumps (_absence_cats_ctx ),
+        "absence_categories_list":_absence_cats_ctx ,
         }
 
     def get (self ,request ,*args ,**kwargs ):
@@ -2182,6 +2130,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             "show_lunch_break":_show_lunch_edit ,
             "end_time_morning":_end_time_morning_edit ,
             "end_time_afternoon":_end_time_afternoon_edit ,
+            "start_time_afternoon":_lunch_end_edit ,
             })
             return render (request ,self .template_name ,context )
 
@@ -2273,6 +2222,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             _ip_lunch_start ,_ip_lunch_end ,
             )
             context =self ._get_context_base (request )
+            import json as _json_fix 
             from ivr_config .models import AbsenceCategory as _AbsCat 
             from fleet .models import MachineAsset as _MA 
             from work_order_processor .management .commands .seed_personal_asset import PERSONAL_ASSET_CODE 
@@ -2298,7 +2248,8 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             "show_lunch_break":_ip_show_lunch ,
             "end_time_morning":_ip_end_time_morning ,
             "end_time_afternoon":_ip_end_time_afternoon ,
-            "absence_categories":_json_fix .dumps (_absence_cats ),
+            "start_time_afternoon":_ip_lunch_end ,
+            "absence_categories":_json_fix .dumps (_absence_cats) ,
             "personal_asset_code":PERSONAL_ASSET_CODE ,
             })
             return render (request ,self .template_name ,context )
@@ -2357,7 +2308,8 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         "show_lunch_break":bool (_lunch_start ),
         "end_time_morning":_end_time_morning_create ,
         "end_time_afternoon":_end_time_afternoon_create ,
-        "absence_categories":_json_fix .dumps (_absence_cats ),
+        "start_time_afternoon":_lunch_end ,
+        "absence_categories":_json_fix .dumps (_absence_cats) ,
         "personal_asset_code":PERSONAL_ASSET_CODE ,
         "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
         })
@@ -2465,6 +2417,44 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         work_date ,_form_action ,
         )
         if work_date is not None :
+            # Gate 0a — reject future dates.
+            # Gate 0a — rechazar fechas futuras.
+            from datetime import date as _date_today_fa 
+            if work_date >_date_today_fa .today ():
+                _eld_future =_parse_entry_lines_from_post (POST ,company )
+                _entradas_future =[
+                {
+                    "idx":ld ["line_number"],
+                    "machine_raw":ld ["machine_raw"],
+                    "machine_asset":ld ["machine_asset"],
+                    "fault_description":ld ["fault_description"],
+                    "repair_notes":ld ["repair_notes"],
+                    "hc":ld ["hc"].strftime ("%H:%M")if ld ["hc"]else "",
+                    "hf":ld ["hf"].strftime ("%H:%M")if ld ["hf"]else "",
+                    "or_val":ld ["or_val"],
+                    "flags":[],
+                }
+                for ld in _eld_future
+                ]
+                context =self ._get_context_base (request )
+                context .update ({
+                "error":(
+                f"No puedes introducir un parte con fecha futura "
+                f"({work_date.strftime('%d/%m/%Y')}). "
+                f"La fecha del parte no puede ser posterior a hoy."
+                ),
+                "fecha":fecha_str ,
+                "entradas_enriched":_entradas_future ,
+                "repuestos_enriched":[],
+                "num_entradas":max (1 ,len (_entradas_future )),
+                "num_repuestos":0 ,
+                "min_date":_get_min_allowed_date (cu ).isoformat ()if _get_min_allowed_date (cu )else "",
+                "lunch_break_start":_post_lb_start ,
+                "lunch_break_end":_post_lb_end ,
+                "show_lunch_break":_post_show_lunch ,
+                })
+                return render (request ,self .template_name ,context )
+
             _min_date =_get_min_allowed_date (cu )
             logger .info (
             "# [I2-DIAG-MINDATE] work_date=%r _min_date=%r form_action=%r",
@@ -2503,6 +2493,10 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
 
+        # Non-destructive pre-edit check: verify the work order exists and
+        # belongs to the operator. Never delete — data must never be lost.
+        # Comprobacion pre-edicion no destructiva: verificar que el parte existe
+        # y pertenece al operario. Nunca borrar — la informacion no debe perderse.
         _edit_wo_pk_pre =POST .get ("edit_wo_pk","").strip ()
         if _edit_wo_pk_pre :
             try :
@@ -2516,10 +2510,14 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                 WorkOrder .Source .GENERATED ,
                 ],
                 )
-                _wo_orig_pre .delete ()
+                # Parte verificado — no se borra. El flujo continua.
+                # Work order verified — not deleted. Flow continues.
+                logger .info (
+                "# [FormView/pre-edit] WorkOrder pk=%d verificado. "
+                "No se borra — edicion no destructiva.",
+                _wo_orig_pre .pk ,
+                )
             except (WorkOrder .DoesNotExist ,ValueError ):
-
-
                 pass 
 
 
@@ -2537,54 +2535,88 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
         if work_date is not None :
-            from django .urls import reverse as _rev0 
             from work_order_processor .models import WorkOrder as _WO0 ,WorkOrderEntry as _WOE0 
-            _existing_entry0 =_WOE0 .objects .filter (
-            work_order__company =company ,
-            work_order__uploaded_by =cu ,
-            work_order__source__in =[
-            _WO0 .Source .DIGITAL ,
-            _WO0 .Source .GENERATED ,
-            ],
-            work_order__reviewed =False ,
-            work_date =work_date ,
+            _excl_pks = set ()
+            _edit_wo_pk_ck = POST .get ("edit_wo_pk", "").strip ()
+            _ip_wo_pk_ck   = POST .get ("in_progress_wo_pk", "").strip ()
+            if _edit_wo_pk_ck :
+                try :
+                    _excl_pks .add (int (_edit_wo_pk_ck ))
+                except ValueError :
+                    pass
+            if _ip_wo_pk_ck :
+                try :
+                    _excl_pks .add (int (_ip_wo_pk_ck ))
+                except ValueError :
+                    pass
+            _ip_pks = list (
+                _WO0 .objects .filter (
+                    company =company ,
+                    uploaded_by =cu ,
+                    status =_WO0 .Status .IN_PROGRESS ,
+                ).values_list ("pk", flat =True )
+            )
+            _excl_pks .update (_ip_pks )
+            _existing_entry0 = _WOE0 .objects .filter (
+                work_order__company =company ,
+                work_order__uploaded_by =cu ,
+                work_order__source__in =[
+                    _WO0 .Source .DIGITAL ,
+                    _WO0 .Source .GENERATED ,
+                ],
+                work_order__reviewed =False ,
+                work_date =work_date ,
+            ).exclude (
+                work_order__pk__in =_excl_pks ,
             ).select_related ("work_order").first ()
 
             if _existing_entry0 is not None :
-
-
-
-
-
-
-
-
-
-                _is_own_in_progress =(
-                _existing_entry0 .work_order .status ==_WO0 .Status .IN_PROGRESS 
-                and _existing_entry0 .work_order .uploaded_by_id ==cu .pk 
+                # Duplicate date — error returned in the same form.
+                # Fecha duplicada — error devuelto en el mismo formulario.
+                _is_editing_this = (
+                    bool (_edit_wo_pk_ck)
+                    and str (_existing_entry0 .work_order .pk) == _edit_wo_pk_ck
                 )
-                if not _is_own_in_progress :
+                if not _is_editing_this :
                     logger .info (
-                    "# [I2-DIAG-GATE0] duplicado detectado. form_action=%r "
-                    "existing_entry0_pk=%r is_own_in_progress=%r",
-                    _form_action ,_existing_entry0 .pk ,_is_own_in_progress ,
+                    "# [FormView/Gate0] Fecha duplicada. "
+                    "form_action=%r existing_entry0_pk=%r",
+                    _form_action , _existing_entry0 .pk ,
                     )
-
-
-                    _gate0_lines =_parse_entry_lines_from_post (POST ,company )
-                    _gate0_spare =_parse_spare_parts_from_post (
-                    POST ,company ,entry_lines_data =_gate0_lines 
-                    )
-                    request .session ["pending_merge_lines"]=_serialize_pending_lines (
-                    _gate0_lines ,_gate0_spare ,work_date 
-                    )
-                    return redirect (
-                    _rev0 (
-                    "panel:operator_merge",
-                    kwargs ={"entry_pk":_existing_entry0 .pk },
-                    )
-                    )
+                    _entradas_err = [
+                    {
+                        "idx": ld ["line_number"],
+                        "machine_raw": ld ["machine_raw"],
+                        "machine_asset": ld ["machine_asset"],
+                        "fault_description": ld ["fault_description"],
+                        "repair_notes": ld ["repair_notes"],
+                        "hc": ld ["hc"].strftime ("%H:%M") if ld ["hc"] else "",
+                        "hf": ld ["hf"].strftime ("%H:%M") if ld ["hf"] else "",
+                        "or_val": ld ["or_val"],
+                        "flags": [],
+                    }
+                    for ld in _parse_entry_lines_from_post (POST , company )
+                    ]
+                    context = self ._get_context_base (request )
+                    context .update ({
+                        "error": (
+                            "Ya existe un parte para la fecha "
+                            f"{work_date.strftime('%d/%m/%Y')}. "
+                            "Si quieres editarlo, ve al historial y pulsa "
+                            "'Editar' en el parte correspondiente."
+                        ),
+                        "fecha": fecha_str ,
+                        "entradas_enriched": _entradas_err ,
+                        "repuestos_enriched": [],
+                        "num_entradas": len (_entradas_err ),
+                        "num_repuestos": 0 ,
+                        "lunch_break_start": _post_lb_start ,
+                        "lunch_break_end": _post_lb_end ,
+                        "show_lunch_break": _post_show_lunch ,
+                        "min_date": _get_min_allowed_date (cu ).isoformat ()
+                        if _get_min_allowed_date (cu ) else "",
+                    })
+                    return render (request , self .template_name , context )
 
 
 
@@ -2601,6 +2633,44 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         POST ,company ,entry_lines_data =entry_lines_data 
         )
 
+        # SAFETY LOG — full part content logged before any DB operation.
+        # Allows data recovery from server.log if a bug causes data loss.
+        # LOG DE SEGURIDAD — contenido completo del parte antes de cualquier
+        # operacion en BD. Permite recuperar datos desde server.log si un
+        # bug provoca perdida de informacion.
+        _log_edit_pk =POST .get ("edit_wo_pk","").strip ()or POST .get ("in_progress_wo_pk","").strip ()
+        logger .info (
+        "# [SAFETY-LOG] form_action=%r edit_wo_pk=%r fecha=%r "
+        "num_bloques=%d num_repuestos=%d",
+        _form_action ,_log_edit_pk ,fecha_str ,
+        len (entry_lines_data ),len (spare_parts_data ),
+        )
+        for _sld in entry_lines_data :
+            logger .info (
+            "# [SAFETY-LOG] BLOQUE %d | maquina=%r | hc=%r | hf=%r | "
+            "delta_h=%r | averia=%r | reparacion=%r | or=%r",
+            _sld .get ("line_number"),
+            _sld .get ("machine_raw"),
+            _sld ["hc"].strftime ("%H:%M")if _sld .get ("hc")else None ,
+            _sld ["hf"].strftime ("%H:%M")if _sld .get ("hf")else None ,
+            _sld .get ("delta_hours"),
+            _sld .get ("fault_description"),
+            _sld .get ("repair_notes"),
+            _sld .get ("or_val"),
+            )
+        for _ssp in spare_parts_data :
+            logger .info (
+            "# [SAFETY-LOG] REPUESTO %d | material=%r | cantidad=%r | "
+            "referencia=%r | proveedor=%r | origen=%r",
+            _ssp .get ("line_number"),
+            _ssp .get ("material"),
+            _ssp .get ("quantity"),
+            _ssp .get ("referencia"),
+            _ssp .get ("supplier"),
+            _ssp .get ("source"),
+            )
+
+
 
 
 
@@ -2616,7 +2686,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             integrity_errors .append ("El parte debe contener al menos un bloque de trabajo.")
 
         for ld in entry_lines_data :
-            blk =f"Bloque {ld['line_number']}"
+            blk =f"Tarea {ld['line_number']}"
             if not ld ["machine_raw"]:
                 integrity_errors .append (f"{blk}: el codigo de maquina es obligatorio.")
             elif ld ["machine_asset"]is None :
@@ -2652,7 +2722,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         for ld in entry_lines_data :
             if ld ["machine_asset"]is not None :
                 asset =ld ["machine_asset"]
-                blk =f"Bloque {ld['line_number']}"
+                blk =f"Tarea {ld['line_number']}"
                 if asset .has_odometer :
                     reading =ld .get ("odometer_reading")
                     if reading is None :
@@ -2916,8 +2986,9 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                 f"La jornada del parte suma {_total_hours_c} h, "
                 f"pero se requieren al menos 8 h. "
                 f"Faltan {_missing_c} h para completar la jornada. "
-                f"Añade los bloques de trabajo que faltan o registra "
-                f"una ausencia justificada para esta fecha."
+                f"Añade los bloques que faltan o, si hubo ausencia, "
+                f"añade un bloque con código PERSONAL en el campo "
+                f"Máquina/Centro de Gasto y selecciona el motivo."
                 ),
                 "fecha":fecha_str ,
                 "entradas_enriched":entradas_post_c ,
@@ -2937,116 +3008,6 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
 
-        if work_date is not None and _form_action !="save_blocks":
-            from ivr_config .models import WorkdaySchedule as _WDS_FA 
-            from django .urls import reverse as _rev_g4fa 
-            _schedule_g4fa =(
-            cu .workday_schedule 
-            if cu .workday_schedule_id 
-            else (
-
-
-
-
-            next (
-            (
-            _sec .workday_schedule 
-            for _sec in (
-            _contact_g4fa .sections 
-            .filter (is_active =True ,workday_schedule__isnull =False )
-            .select_related ("workday_schedule")
-            .order_by ("name")
-            )
-            ),
-            None ,
-            )
-            if (_contact_g4fa :=(
-            Contact .objects .filter (company_user =cu )
-            .prefetch_related ("sections__workday_schedule")
-            .first ()
-            ))is not None 
-            else None 
-            )or _WDS_FA .objects .filter (
-            company =company ,is_default =True 
-            ).first ()
-            )
-
-
-
-
-            _gaps_g4fa =[]if _no_lunch_break else _detect_workday_gaps (
-            entry_lines_data ,_schedule_g4fa ,work_date 
-            )
-            if _gaps_g4fa :
-                from django .db import transaction as _tx_g4fa 
-                _worker_name_g4fa =(
-                cu .user .get_full_name ()or cu .user .username 
-                ).upper ()
-                _date_tag_g4fa =work_date .strftime ("%d-%m-%Y")
-                _synth_g4fa =f"{_worker_name_g4fa}_{_date_tag_g4fa}_DRAFT.pdf"
-                with _tx_g4fa .atomic ():
-                    _wo_draft_fa =WorkOrder (
-                    company =company ,
-                    uploaded_by =cu ,
-                    source =WorkOrder .Source .DIGITAL ,
-                    status =WorkOrder .Status .PENDING_GAPS ,
-                    total_pages =1 ,
-                    processed_pages =1 ,
-                    reviewed =False ,
-                    )
-                    _wo_draft_fa .source_pdf .name =_synth_g4fa 
-                    _wo_draft_fa .save ()
-                    _entry_draft_fa =WorkOrderEntry .objects .create (
-                    work_order =_wo_draft_fa ,
-                    page_number =1 ,
-                    worker_name =_worker_name_g4fa ,
-                    work_date =work_date ,
-                    uncertain_date =False ,
-                    extraction_confidence =WorkOrderEntry .Confidence .HIGH ,
-                    raw_gemini_response =None ,
-                    )
-                    _line_num_g4fa =1 
-                    for _ld in entry_lines_data :
-                        WorkOrderEntryLine .objects .create (
-                        entry =_entry_draft_fa ,
-                        line_number =_line_num_g4fa ,
-                        machine_asset =_ld .get ("machine_asset"),
-                        machine_raw =_ld .get ("machine_raw",""),
-                        machine_norm ="",
-                        fault_description =_ld .get ("fault_description",""),
-                        repair_notes =_ld .get ("repair_notes",""),
-                        hc =_ld .get ("hc"),
-                        hf =_ld .get ("hf"),
-                        or_val =_ld .get ("or_val",""),
-                        delta_hours =_ld .get ("delta_hours"),
-                        flags =[],
-                        odometer_reading =_ld .get ("odometer_reading"),
-                        engine_hours_reading =_ld .get ("engine_hours_reading"),
-                        crane_hours_reading =_ld .get ("crane_hours_reading"),
-                        )
-                        _line_num_g4fa +=1 
-                    from work_order_processor .models import WorkdayGap as _WDG_FA 
-                    for _gap in _gaps_g4fa :
-                        _WDG_FA .objects .create (
-                        work_order =_wo_draft_fa ,
-                        gap_type =_gap ["gap_type"],
-                        gap_start =_gap ["gap_start"],
-                        gap_end =_gap ["gap_end"],
-                        duration_minutes =_gap ["duration_minutes"],
-                        )
-                request .session ["pending_gaps_wo_pk"]=_wo_draft_fa .pk 
-                request .session .modified =True 
-                logger .info (
-                "# [FormView/Gate4] PENDING_GAPS borrador pk=%d creado. "
-                "%d gap(s) detectado(s). Redirigiendo a resolución.",
-                _wo_draft_fa .pk ,len (_gaps_g4fa ),
-                )
-                return redirect (
-                _rev_g4fa (
-                "panel:operator_gap_resolution",
-                kwargs ={"wo_draft_pk":_wo_draft_fa .pk },
-                )
-                )
 
 
 
@@ -3460,10 +3421,17 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
 
+        # Non-destructive close: reuse the existing IN_PROGRESS work order
+        # (or any digital WO for this operator) — set status to DONE and
+        # append a new entry. Never delete — data must never be lost.
+        # Cierre no destructivo: reutilizar el WorkOrder IN_PROGRESS existente
+        # (o cualquier parte digital del operario) — cambiar status a DONE y
+        # anadir una nueva entry. Nunca borrar — la informacion no debe perderse.
         edit_wo_pk =POST .get ("edit_wo_pk","").strip ()or _ip_wo_pk_close 
+        _reuse_wo =None 
         if edit_wo_pk :
             try :
-                _wo_orig =WorkOrder .objects .get (
+                _reuse_wo =WorkOrder .objects .get (
                 pk =int (edit_wo_pk ),
                 company =company ,
                 uploaded_by =cu ,
@@ -3473,11 +3441,13 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                 WorkOrder .Source .GENERATED ,
                 ],
                 )
-                _wo_orig .delete ()
+                logger .info (
+                "# [FormView/close] Reutilizando WorkOrder pk=%d. "
+                "No se borra — cierre no destructivo.",
+                _reuse_wo .pk ,
+                )
             except (WorkOrder .DoesNotExist ,ValueError ):
-
-
-                pass 
+                _reuse_wo =None 
 
         try :
             with transaction .atomic ():
@@ -3485,35 +3455,85 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                 cu .user .get_full_name ()or cu .user .username 
                 ).upper ()
 
-                work_order =WorkOrder (
-                company =company ,
-                uploaded_by =cu ,
-                source =WorkOrder .Source .DIGITAL ,
-                status =WorkOrder .Status .DONE ,
-                total_pages =1 ,
-                processed_pages =1 ,
-                reviewed =False ,
-                )
-
-
-
-
-
-
-
-
-
                 date_tag =(
                 work_date .strftime ("%d-%m-%Y")if work_date else "SIN-FECHA"
                 )
                 synthetic_name =f"{worker_name}_{date_tag}.pdf"
 
-                work_order .source_pdf .name =synthetic_name 
-                work_order .save ()
+                if _reuse_wo is not None :
+                    # Reuse existing work order — update status to DONE.
+                    # Reutilizar parte existente — actualizar status a DONE.
+                    work_order =_reuse_wo 
+                    work_order .status =WorkOrder .Status .DONE 
+                    work_order .save (update_fields =["status"])
+                else :
+                    # No existing WO found — create a new one.
+                    # No se encontro parte existente — crear uno nuevo.
+                    work_order =WorkOrder (
+                    company =company ,
+                    uploaded_by =cu ,
+                    source =WorkOrder .Source .DIGITAL ,
+                    status =WorkOrder .Status .DONE ,
+                    total_pages =1 ,
+                    processed_pages =1 ,
+                    reviewed =False ,
+                    )
+                    work_order .source_pdf .name =synthetic_name 
+                    work_order .save ()
+
+                # Determine next page number for the new entry.
+                # Determinar el numero de pagina siguiente para la nueva entry.
+                _next_page =work_order .entries .count ()+1 
+
+                # Backup log — record full part payload before persisting.
+                # Serves as a temporary recovery copy in the server log.
+                # Log de respaldo — registrar el payload completo del parte
+                # antes de persistir. Sirve de copia de recuperación temporal
+                # en el log del servidor.
+                try :
+                    import json as _json_bk 
+                    _bk_blocks =[
+                    {
+                        "n":_bk_ld ["line_number"],
+                        "machine":_bk_ld ["machine_raw"],
+                        "hc":(_bk_ld ["hc"].strftime ("%H:%M")
+                              if _bk_ld ["hc"]else None ),
+                        "hf":(_bk_ld ["hf"].strftime ("%H:%M")
+                              if _bk_ld ["hf"]else None ),
+                        "or_val":_bk_ld ["or_val"],
+                        "fault":_bk_ld ["fault_description"],
+                        "repair":_bk_ld ["repair_notes"],
+                        "absence":(_bk_ld ["absence_category"].label
+                                   if _bk_ld .get ("absence_category")else None ),
+                    }
+                    for _bk_ld in entry_lines_data 
+                    ]
+                    _bk_payload ={
+                    "wo_pk":work_order .pk ,
+                    "company":company .pk ,
+                    "user":cu .user .username ,
+                    "worker_name":worker_name ,
+                    "work_date":work_date .isoformat (),
+                    "lunch_start":(_lb_start .strftime ("%H:%M")
+                                   if _lb_start else None ),
+                    "lunch_end":(_lb_end .strftime ("%H:%M")
+                                 if _lb_end else None ),
+                    "no_lunch_break":_no_lunch_break ,
+                    "blocks":_bk_blocks ,
+                    }
+                    logger .info (
+                    "# [PARTE-BACKUP] %s",
+                    _json_bk .dumps (_bk_payload ,ensure_ascii =False ),
+                    )
+                except Exception as _bk_exc :
+                    logger .warning (
+                    "# [PARTE-BACKUP] No se pudo registrar el respaldo: %s",
+                    _bk_exc ,
+                    )
 
                 entry =WorkOrderEntry .objects .create (
                 work_order =work_order ,
-                page_number =1 ,
+                page_number =_next_page ,
                 worker_name =worker_name ,
                 work_date =work_date ,
                 uncertain_date =False ,
@@ -4225,67 +4245,6 @@ class WorkOrderEntryHistoryView (WorkshopRequiredMixin ,View ):
         return render (request ,self .template_name ,context )
 
 
-def _serialize_pending_lines (parsed_lines ,parsed_repuestos ,parsed_date ):
-    """
-    Serialises the incoming form lines and spare parts into a JSON-safe
-    list of dicts suitable for storage in the Django session.
-
-    Each line dict contains:
-        machine_raw, machine_asset_pk, fault_description, repair_notes,
-        hc ("HH:MM"|null), hf ("HH:MM"|null), delta_hours (str|null),
-        odometer_reading (str|null), engine_hours_reading (str|null),
-        crane_hours_reading (str|null),
-        repuestos: [{material, reference, quantity, source,
-                     supplier, unit_price}]
-
-    The date is stored as an ISO string so the merge view can
-    reconstruct it.
-    ---
-    Serializa las lineas del formulario entrante y los repuestos en una
-    lista de dicts JSON-safe apta para su almacenamiento en la sesion.
-
-    La fecha se almacena como cadena ISO para que la vista de merge
-    pueda reconstruirla.
-    """
-    serialized =[]
-    for ld in parsed_lines :
-        hc_val =ld ["hc"].strftime ("%H:%M")if ld ["hc"]else None 
-        hf_val =ld ["hf"].strftime ("%H:%M")if ld ["hf"]else None 
-
-
-
-        line_repuestos =[]
-        for spd in parsed_repuestos :
-            unit_price_val =str (spd ["unit_price"])if spd .get ("unit_price")is not None else None 
-            line_repuestos .append ({
-            "material":spd ["material"],
-            "reference":spd ["referencia"],
-            "quantity":str (spd ["quantity"])if spd ["quantity"]is not None else None ,
-            "source":spd ["source"],
-            "supplier":spd ["supplier"],
-            "unit_price":unit_price_val ,
-            })
-
-        serialized .append ({
-        "machine_raw":ld ["machine_raw"],
-        "machine_asset_pk":ld ["machine_asset"].pk if ld ["machine_asset"]else None ,
-        "fault_description":ld ["fault_description"],
-        "repair_notes":ld ["repair_notes"],
-        "hc":hc_val ,
-        "hf":hf_val ,
-        "delta_hours":str (ld ["delta_hours"])if ld ["delta_hours"]is not None else None ,
-        "odometer_reading":str (ld ["odometer_reading"])if ld .get ("odometer_reading")is not None else None ,
-        "engine_hours_reading":str (ld ["engine_hours_reading"])if ld .get ("engine_hours_reading")is not None else None ,
-        "crane_hours_reading":str (ld ["crane_hours_reading"])if ld .get ("crane_hours_reading")is not None else None ,
-        "repuestos":line_repuestos ,
-        })
-
-    return {
-    "lines":serialized ,
-    "work_date":parsed_date .isoformat ()if parsed_date else None ,
-    }
-
-
 def _get_min_allowed_date (cu ):
 
 
@@ -4312,1587 +4271,6 @@ def _get_min_allowed_date (cu ):
     if last_reviewed is None :
         return None 
     return last_reviewed +timedelta (days =1 )
-
-
-def _detect_workday_gaps (entry_lines ,schedule ,work_date ):
-    """
-    Detects workday gaps and deviations in a set of parsed entry lines
-    against a WorkdaySchedule reference timetable.
-
-    Supports both intensive (single morning tract) and split-shift schedules
-    (morning + afternoon tracts). The midday window in split-shift mode is
-    classified as LUNCH_BREAK — not a blocking GAP — to allow the operator
-    to justify it with a simplified lunch confirmation dialog.
-
-    Checks performed (all require schedule to be non-None):
-      LATE_START   — first block starts after start_time_morning + tolerance.
-      EARLY_END    — last block ends before effective end_time - tolerance.
-                     Intensive: end_time_morning. Split: end_time_afternoon.
-      LUNCH_BREAK  — split-shift only: midday window between end_time_morning
-                     and start_time_afternoon not covered by work blocks.
-      GAP          — uncovered interval >= tolerance_minutes between consecutive
-                     blocks, excluding the lunch window in split-shift mode.
-
-    Lines with null hc or hf are silently ignored in all checks.
-
-    Parameters:
-        entry_lines (list[dict]) — parsed line dicts with keys 'hc' and 'hf'
-                                   (time objects or HH:MM strings).
-        schedule    (WorkdaySchedule | None) — reference timetable. If None,
-                                   the function returns an empty list
-                                   (Gate 4 disabled).
-        work_date   (date)        — date of the work order (reserved for
-                                   future use, e.g. holiday calendars).
-
-    Returns:
-        list[dict] — one dict per detected gap/deviation, each with keys:
-            gap_type         (str)  — "GAP" | "LATE_START" | "EARLY_END"
-                                      | "LUNCH_BREAK"
-            gap_start        (time) — start of the uncovered interval.
-            gap_end          (time) — end of the uncovered interval.
-            duration_minutes (int)  — duration in minutes.
-
-    ---
-
-    Detecta lagunas y desviaciones de jornada en un conjunto de líneas de
-    entrada parseadas contra un horario de referencia WorkdaySchedule.
-
-    Soporta jornada intensiva (solo tramo de mañana) y turno partido
-    (tramo de mañana + tarde). La ventana de mediodía en turno partido se
-    clasifica como LUNCH_BREAK — no como GAP bloqueante — para permitir al
-    operario justificarla con un diálogo simplificado de confirmación de comida.
-
-    Comprobaciones realizadas (todas requieren schedule no nulo):
-      LATE_START   — el primer bloque comienza después de start_time_morning
-                     + tolerancia.
-      EARLY_END    — el último bloque termina antes de la hora de salida
-                     efectiva - tolerancia. Intensiva: end_time_morning.
-                     Partida: end_time_afternoon.
-      LUNCH_BREAK  — solo turno partido: ventana de mediodía entre
-                     end_time_morning y start_time_afternoon no cubierta
-                     por bloques de trabajo.
-      GAP          — intervalo sin cubrir >= tolerance_minutes entre bloques
-                     consecutivos, excluyendo la ventana de comida en turno
-                     partido.
-
-    Las líneas con hc o hf nulos se ignoran silenciosamente en todas las
-    comprobaciones.
-
-    Parámetros:
-        entry_lines (list[dict]) — dicts de líneas parseadas con claves 'hc' y
-                                   'hf' (objetos time o cadenas HH:MM).
-        schedule    (WorkdaySchedule | None) — horario de referencia. Si es
-                                   None, la función devuelve lista vacía
-                                   (Gate 4 desactivado).
-        work_date   (date)        — fecha del parte (reservado para uso futuro,
-                                   p. ej. calendarios de festivos).
-
-    Retorna:
-        list[dict] — un dict por laguna/desviación detectada, con claves:
-            gap_type         (str)  — "GAP" | "LATE_START" | "EARLY_END"
-                                      | "LUNCH_BREAK"
-            gap_start        (time) — inicio del intervalo sin cubrir.
-            gap_end          (time) — fin del intervalo sin cubrir.
-            duration_minutes (int)  — duración en minutos.
-    """
-    from datetime import datetime as _dt_gaps ,time as _time_gaps 
-
-
-
-    if schedule is None :
-        return []
-
-    def _to_t (val ):
-        """
-        Coerces a time object or HH:MM string to a time instance.
-        Returns None on failure.
-        ---
-        Convierte un objeto time o cadena HH:MM a una instancia time.
-        Devuelve None en caso de fallo.
-        """
-        if val is None :
-            return None 
-        if hasattr (val ,"hour"):
-            return val 
-        try :
-            return _dt_gaps .strptime (str (val ).strip (),"%H:%M").time ()
-        except ValueError :
-            return None 
-
-    def _mins (t ):
-        """
-        Converts a time object to total minutes since midnight.
-        ---
-        Convierte un objeto time a minutos totales desde medianoche.
-        """
-        return t .hour *60 +t .minute 
-
-
-
-
-
-
-
-
-
-
-
-
-    start_morning =getattr (schedule ,"start_time_morning",None )or getattr (schedule ,"start_time",None )
-    end_morning =getattr (schedule ,"end_time_morning",None )or getattr (schedule ,"end_time",None )
-    is_intensive =getattr (schedule ,"is_intensive",True )
-    start_afternoon =None if is_intensive else getattr (schedule ,"start_time_afternoon",None )
-    end_afternoon =None if is_intensive else getattr (schedule ,"end_time_afternoon",None )
-
-    if start_morning is None or end_morning is None :
-
-
-        return []
-
-
-
-    effective_end =end_afternoon if (not is_intensive and end_afternoon )else end_morning 
-
-
-
-
-
-    valid_blocks =[]
-    for ld in entry_lines :
-        hc =_to_t (ld .get ("hc"))
-        hf =_to_t (ld .get ("hf"))
-        if hc is not None and hf is not None :
-            valid_blocks .append ((hc ,hf ))
-
-    if not valid_blocks :
-        return []
-
-    valid_blocks .sort (key =lambda b :_mins (b [0 ]))
-
-    gaps =[]
-    tol =schedule .tolerance_minutes 
-
-
-
-
-
-    first_hc =valid_blocks [0 ][0 ]
-    if _mins (first_hc )>_mins (start_morning )+tol :
-        gaps .append ({
-        "gap_type":"LATE_START",
-        "gap_start":start_morning ,
-        "gap_end":first_hc ,
-        "duration_minutes":_mins (first_hc )-_mins (start_morning ),
-        })
-
-
-
-
-
-    last_hf =valid_blocks [-1 ][1 ]
-    if _mins (last_hf )<_mins (effective_end )-tol :
-        gaps .append ({
-        "gap_type":"EARLY_END",
-        "gap_start":last_hf ,
-        "gap_end":effective_end ,
-        "duration_minutes":_mins (effective_end )-_mins (last_hf ),
-        })
-
-
-
-
-
-
-
-
-
-
-
-
-    if not is_intensive and start_afternoon and end_morning :
-        lunch_start_m =_mins (end_morning )
-        lunch_end_m =_mins (start_afternoon )
-
-
-        lunch_covered =any (
-        _mins (hf )>=lunch_start_m and _mins (hc )<=lunch_end_m 
-        for hc ,hf in valid_blocks 
-        )
-        if not lunch_covered :
-            gaps .append ({
-            "gap_type":"LUNCH_BREAK",
-            "gap_start":end_morning ,
-            "gap_end":start_afternoon ,
-            "duration_minutes":lunch_end_m -lunch_start_m ,
-            })
-
-
-
-
-
-
-
-    for i in range (len (valid_blocks )-1 ):
-        hf_curr =valid_blocks [i ][1 ]
-        hc_next =valid_blocks [i +1 ][0 ]
-        gap_mins =_mins (hc_next )-_mins (hf_curr )
-
-        if gap_mins <tol :
-            continue 
-
-
-
-
-
-        if not is_intensive and start_afternoon and end_morning :
-            lunch_start_m =_mins (end_morning )
-            lunch_end_m =_mins (start_afternoon )
-            gap_start_m =_mins (hf_curr )
-            gap_end_m =_mins (hc_next )
-            if gap_start_m >=lunch_start_m and gap_end_m <=lunch_end_m :
-                continue 
-
-        gaps .append ({
-        "gap_type":"GAP",
-        "gap_start":hf_curr ,
-        "gap_end":hc_next ,
-        "duration_minutes":gap_mins ,
-        })
-
-    return gaps 
-
-
-def _detect_overlaps (existing_lines ,new_lines ):
-    """
-    Detects time overlaps between existing WorkOrderEntryLine records
-    and a list of new line dicts from the session pending_merge_lines.
-
-    Overlap condition (open intervals): hc_e < hf_n AND hc_n < hf_e.
-    Lines with null hc or hf are silently ignored.
-
-    Returns a list of tuples:
-        (idx_e, idx_n, hc_e_str, hf_e_str, hc_n_str, hf_n_str)
-    where idx_e is 1-based into existing_lines and idx_n is 1-based
-    into new_lines.
-    ---
-    Detecta solapamientos temporales entre WorkOrderEntryLine existentes
-    y la lista de dicts de lineas nuevas del payload pending_merge_lines.
-
-    Condicion (intervalos abiertos): hc_e < hf_n AND hc_n < hf_e.
-    Las lineas con hc o hf nulos se ignoran.
-
-    Devuelve lista de tuplas:
-        (idx_e, idx_n, hc_e_str, hf_e_str, hc_n_str, hf_n_str)
-    """
-    from datetime import datetime as _dt_ov 
-
-    def _t (val ):
-        """
-        Parses HH:MM string to time, returns None on failure.
-        ---
-        Parsea cadena HH:MM a time, devuelve None en fallo.
-        """
-        if val is None :
-            return None 
-        try :
-            return _dt_ov .strptime (str (val ).strip (),"%H:%M").time ()
-        except ValueError :
-            return None 
-
-    conflicts =[]
-    for idx_e ,existing_line in enumerate (existing_lines ,start =1 ):
-        hc_e =existing_line .hc 
-        hf_e =existing_line .hf 
-        if hc_e is None or hf_e is None :
-            continue 
-        for idx_n ,new_line in enumerate (new_lines ,start =1 ):
-            hc_n =_t (new_line .get ("hc"))
-            hf_n =_t (new_line .get ("hf"))
-            if hc_n is None or hf_n is None :
-                continue 
-
-
-            if hc_e <hf_n and hc_n <hf_e :
-                conflicts .append ((
-                idx_e ,
-                idx_n ,
-                hc_e .strftime ("%H:%M"),
-                hf_e .strftime ("%H:%M"),
-                hc_n .strftime ("%H:%M"),
-                hf_n .strftime ("%H:%M"),
-                ))
-    return conflicts 
-
-
-class WorkOrderEntryMergeView (WorkshopRequiredMixin ,View ):
-    """
-    Merge view for resolving conflicts when an operator tries to submit
-    a new work order on a date that already has an unreviewed digital or
-    generated entry. Presents existing and incoming lines side by side
-    so the operator can choose one of three actions:
-
-      discard_new      — keep existing entry, discard incoming lines.
-      discard_existing — delete existing WorkOrder (CASCADE) and create
-                         a new one from the pending session lines.
-      merge            — append incoming lines to the existing entry.
-                         Only available when no time overlaps exist.
-
-    The operator may edit hc/hf before choosing an action.
-    Client-side JS recalculates overlaps in real time; the server
-    revalidates on every merge POST.
-
-    GET  /panel/operator/merge/<int:entry_pk>/
-    POST /panel/operator/merge/<int:entry_pk>/
-         merge_action: discard_new | discard_existing | merge
-
-    Accessible to WORKSHOP and ADMIN roles (WorkshopRequiredMixin).
-    ---
-    Vista de merge para resolver conflictos cuando un operario envia
-    un parte en una fecha con entrada digital sin revisar preexistente.
-
-    GET  /panel/operator/merge/<int:entry_pk>/
-    POST /panel/operator/merge/<int:entry_pk>/
-         merge_action: discard_new | discard_existing | merge
-
-    Accesible para roles WORKSHOP y ADMIN (WorkshopRequiredMixin).
-    """
-
-    template_name ="panel/operator/merge_entry.html"
-
-
-
-
-
-    def _get_pending (self ,request ):
-        """
-        Returns the pending_merge_lines dict from the session, or None.
-        ---
-        Devuelve el dict pending_merge_lines de la sesion, o None.
-        """
-        return request .session .get ("pending_merge_lines")
-
-    def _clear_pending (self ,request ):
-        """
-        Removes pending_merge_lines from the session.
-        ---
-        Elimina pending_merge_lines de la sesion.
-        """
-        request .session .pop ("pending_merge_lines",None )
-        request .session .modified =True 
-
-    def _resolve_entry (self ,entry_pk ,company ,cu ):
-        """
-        Retrieves the WorkOrderEntry by pk, scoped to operator company
-        and user. Returns None if not found or inaccessible.
-        ---
-        Recupera el WorkOrderEntry por pk, acotado a empresa y usuario
-        del operario. Devuelve None si no existe o no es accesible.
-        """
-        try :
-            return WorkOrderEntry .objects .select_related ("work_order").get (
-            pk =entry_pk ,
-            work_order__company =company ,
-            work_order__uploaded_by =cu ,
-            work_order__source__in =[
-            WorkOrder .Source .DIGITAL ,
-            WorkOrder .Source .GENERATED ,
-            ],
-            work_order__reviewed =False ,
-            )
-        except WorkOrderEntry .DoesNotExist :
-            return None 
-
-    def _parse_time_str (self ,val ):
-        """
-        Parses HH:MM string to datetime.time, returns None on failure.
-        ---
-        Parsea cadena HH:MM a datetime.time, devuelve None en fallo.
-        """
-        from datetime import time as _time 
-        if not val :
-            return None 
-        try :
-            parts =str (val ).strip ().split (":")
-            return _time (int (parts [0 ]),int (parts [1 ]))
-        except (ValueError ,IndexError ):
-            return None 
-
-    def _to_decimal (self ,val ):
-        """
-        Converts str/int/float to Decimal, returns None on failure.
-        ---
-        Convierte str/int/float a Decimal, devuelve None en fallo.
-        """
-        from decimal import Decimal ,InvalidOperation 
-        if val is None :
-            return None 
-        try :
-            return Decimal (str (val ))
-        except InvalidOperation :
-            return None 
-
-    def _parse_edited_hc_hf (self ,POST ,prefix ,count ):
-        """
-        Parses operator-edited hc/hf from POST for a set of lines
-        identified by prefix and count (1-based).
-        Returns a list of dicts: [{hc: HH:MM|None, hf: HH:MM|None}].
-        ---
-        Parsea hc/hf editados del POST para un conjunto de lineas
-        identificadas por prefix y count (base 1).
-        """
-        result =[]
-        for i in range (1 ,count +1 ):
-            hc_raw =POST .get (f"{prefix}{i}_hc","").strip ()or None 
-            hf_raw =POST .get (f"{prefix}{i}_hf","").strip ()or None 
-            result .append ({"hc":hc_raw ,"hf":hf_raw })
-        return result 
-
-    def _build_context (self ,company ,cu ,existing_entry ,existing_lines ,
-    new_lines ,work_date_iso ,conflicts ,merge_error =None ):
-        """
-        Builds the template context dict for the merge view.
-        ---
-        Construye el dict de contexto del template para la vista de merge.
-        """
-        return {
-        "company":company ,
-        "company_user":cu ,
-        "active_nav":"operator_dashboard",
-        "existing_entry":existing_entry ,
-        "existing_lines":existing_lines ,
-        "new_lines":new_lines ,
-        "work_date":work_date_iso ,
-        "conflicts":conflicts ,
-        "has_conflicts":bool (conflicts ),
-        "merge_error":merge_error ,
-        }
-
-    def _create_lines_from_session (self ,new_lines ,edited_new ,
-    target_entry ,start_line_number ,company ):
-        """
-        Creates WorkOrderEntryLine and SparePartLine records from the
-        session pending data inside an already-open atomic block.
-        edited_new may provide operator-corrected hc/hf values.
-        ---
-        Crea WorkOrderEntryLine y SparePartLine desde los datos pendientes
-        de la sesion dentro de un bloque atomico ya abierto.
-        edited_new puede aportar hc/hf corregidos por el operario.
-        """
-        from fleet .models import MachineAsset 
-        from work_order_processor .models import SparePartLine 
-        from work_order_processor .services import (
-        _normalise_machine_code ,
-        _compute_delta_hours ,
-        )
-
-        for idx ,line_data in enumerate (new_lines ):
-            edits =edited_new [idx ]if idx <len (edited_new )else {}
-            hc_str =edits .get ("hc")or line_data .get ("hc")
-            hf_str =edits .get ("hf")or line_data .get ("hf")
-            hc_val =self ._parse_time_str (hc_str )
-            hf_val =self ._parse_time_str (hf_str )
-            delta =_compute_delta_hours (hc_val ,hf_val ,deduct_lunch =False )
-
-
-
-            asset =None 
-            _asset_pk =line_data .get ("machine_asset_pk")
-            if _asset_pk is not None :
-                try :
-                    asset =MachineAsset .objects .get (
-                    pk =_asset_pk ,company =company 
-                    )
-                except MachineAsset .DoesNotExist :
-                    pass 
-
-            machine_raw =line_data .get ("machine_raw","")
-            machine_norm =_normalise_machine_code (machine_raw )
-
-            new_line =WorkOrderEntryLine .objects .create (
-            entry =target_entry ,
-            line_number =start_line_number +idx ,
-            machine_asset =asset ,
-            machine_raw =machine_raw ,
-            machine_norm =machine_norm or "",
-            fault_description =line_data .get ("fault_description",""),
-            repair_notes =line_data .get ("repair_notes",""),
-            hc =hc_val ,
-            hf =hf_val ,
-            or_val ="",
-            delta_hours =delta ,
-            flags =[],
-            odometer_reading =self ._to_decimal (line_data .get ("odometer_reading")),
-            engine_hours_reading =self ._to_decimal (line_data .get ("engine_hours_reading")),
-            crane_hours_reading =self ._to_decimal (line_data .get ("crane_hours_reading")),
-            )
-
-
-
-            for rep_idx ,rep in enumerate (line_data .get ("repuestos",[]),start =1 ):
-                SparePartLine .objects .create (
-                entry_line =new_line ,
-                line_number =rep_idx ,
-                reference =rep .get ("reference",""),
-                vehicle =None ,
-                material =rep .get ("material",""),
-                quantity =self ._to_decimal (rep .get ("quantity")),
-                source =rep .get ("source","WAREHOUSE"),
-                supplier =rep .get ("supplier",""),
-                flags =[],
-                )
-
-
-
-
-
-    def get (self ,request ,entry_pk ,*args ,**kwargs ):
-        """
-        Renders the merge resolution page. Detects initial overlaps.
-        Redirects to operator history with an error if session data is
-        missing or the entry is inaccessible.
-        ---
-        Renderiza la pagina de resolucion de merge. Detecta solapamientos
-        iniciales. Redirige al historial si faltan datos o el entry no
-        es accesible.
-        """
-        from django .urls import reverse 
-
-        cu =request .user .company_user 
-        company =cu .company 
-
-        pending =self ._get_pending (request )
-        if not pending :
-            django_messages .error (
-            request ,
-            "No hay datos de parte pendiente en sesion. "
-            "El formulario ha expirado o fue enviado ya.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-        existing_entry =self ._resolve_entry (entry_pk ,company ,cu )
-        if existing_entry is None :
-            self ._clear_pending (request )
-            django_messages .error (
-            request ,
-            "El parte existente no se ha encontrado o no es accesible.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-        existing_lines =list (existing_entry .lines .order_by ("line_number"))
-        new_lines =pending .get ("lines",[])
-        work_date_iso =pending .get ("work_date")
-
-        conflicts =_detect_overlaps (existing_lines ,new_lines )
-
-        context =self ._build_context (
-        company ,cu ,existing_entry ,existing_lines ,
-        new_lines ,work_date_iso ,conflicts ,
-        )
-        return render (request ,self .template_name ,context )
-
-    def post (self ,request ,entry_pk ,*args ,**kwargs ):
-        """
-        Processes the merge action chosen by the operator.
-
-        discard_new      — Clears the session and redirects to history.
-        discard_existing — Deletes the existing WorkOrder (CASCADE) and
-                           creates a new one from the pending session data.
-        merge            — Re-validates overlaps with edited hc/hf values.
-                           Appends new lines to existing entry if no conflicts.
-        ---
-        Procesa la accion de merge elegida por el operario.
-
-        discard_new      — Limpia sesion y redirige al historial.
-        discard_existing — Elimina WorkOrder existente y crea nuevo desde sesion.
-        merge            — Revalida solapamientos con hc/hf editados. Anade
-                           lineas al entry existente si no hay conflictos.
-        """
-        from datetime import datetime as _dtp 
-        from django .db import transaction 
-        from django .urls import reverse 
-        from work_order_processor .services import generate_work_order_excel 
-
-        cu =request .user .company_user 
-        company =cu .company 
-
-        pending =self ._get_pending (request )
-        if not pending :
-            django_messages .error (
-            request ,
-            "No hay datos de parte pendiente en sesion. "
-            "El formulario ha expirado o fue enviado ya.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-        existing_entry =self ._resolve_entry (entry_pk ,company ,cu )
-        if existing_entry is None :
-            self ._clear_pending (request )
-            django_messages .error (
-            request ,
-            "El parte existente no se ha encontrado o no es accesible.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-        merge_action =request .POST .get ("merge_action","").strip ()
-        existing_lines =list (existing_entry .lines .order_by ("line_number"))
-        new_lines =pending .get ("lines",[])
-        work_date_iso =pending .get ("work_date")
-
-
-
-
-        if merge_action =="discard_new":
-            self ._clear_pending (request )
-            django_messages .success (
-            request ,
-            "Parte nuevo descartado. Se conserva el parte existente.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        if merge_action in ("discard_existing","merge"):
-            _work_date_g4mv =None 
-            if work_date_iso :
-                try :
-                    _work_date_g4mv =_dtp .strptime (work_date_iso ,"%Y-%m-%d").date ()
-                except ValueError :
-                    pass 
-
-            if _work_date_g4mv is not None :
-                from ivr_config .models import WorkdaySchedule as _WDS_MV 
-                from django .urls import reverse as _rev_g4mv 
-                _schedule_g4mv =(
-                cu .workday_schedule 
-                if cu .workday_schedule_id 
-                else (
-
-
-
-
-                next (
-                (
-                _sec .workday_schedule 
-                for _sec in (
-                _contact_g4mv .sections 
-                .filter (is_active =True ,workday_schedule__isnull =False )
-                .select_related ("workday_schedule")
-                .order_by ("name")
-                )
-                ),
-                None ,
-                )
-                if (_contact_g4mv :=(
-                Contact .objects .filter (company_user =cu )
-                .prefetch_related ("sections__workday_schedule")
-                .first ()
-                ))is not None 
-                else None 
-                )or _WDS_MV .objects .filter (
-                company =company ,is_default =True 
-                ).first ()
-                )
-                _gaps_g4mv =_detect_workday_gaps (
-                new_lines ,_schedule_g4mv ,_work_date_g4mv 
-                )
-                if _gaps_g4mv :
-                    from django .db import transaction as _tx_g4mv 
-                    _worker_name_g4mv =(
-                    cu .user .get_full_name ()or cu .user .username 
-                    ).upper ()
-                    _date_tag_g4mv =_work_date_g4mv .strftime ("%d-%m-%Y")
-                    _synth_g4mv =(
-                    f"{_worker_name_g4mv}_{_date_tag_g4mv}_MERGE_DRAFT.pdf"
-                    )
-                    with _tx_g4mv .atomic ():
-                        _wo_draft_mv =WorkOrder (
-                        company =company ,
-                        uploaded_by =cu ,
-                        source =WorkOrder .Source .DIGITAL ,
-                        status =WorkOrder .Status .PENDING_GAPS ,
-                        total_pages =1 ,
-                        processed_pages =1 ,
-                        reviewed =False ,
-                        )
-                        _wo_draft_mv .source_pdf .name =_synth_g4mv 
-                        _wo_draft_mv .save ()
-                        _entry_draft_mv =WorkOrderEntry .objects .create (
-                        work_order =_wo_draft_mv ,
-                        page_number =1 ,
-                        worker_name =_worker_name_g4mv ,
-                        work_date =_work_date_g4mv ,
-                        uncertain_date =False ,
-                        extraction_confidence =WorkOrderEntry .Confidence .HIGH ,
-                        raw_gemini_response =None ,
-                        )
-                        _line_num_g4mv =1 
-                        for _nd in new_lines :
-                            _ma_pk =_nd .get ("machine_asset_pk")
-                            _ma_mv =None 
-                            if _ma_pk :
-                                try :
-                                    from fleet .models import MachineAsset as _MA_MV 
-                                    _ma_mv =_MA_MV .objects .filter (
-                                    pk =_ma_pk ,company =company 
-                                    ).first ()
-                                except Exception :
-                                    pass 
-                            from datetime import datetime as _dtm_mv 
-                            def _tp (v ):
-                                if not v :
-                                    return None 
-                                try :
-                                    return _dtm_mv .strptime (str (v ).strip (),"%H:%M").time ()
-                                except ValueError :
-                                    return None 
-                            from decimal import Decimal as _Dec_mv 
-                            WorkOrderEntryLine .objects .create (
-                            entry =_entry_draft_mv ,
-                            line_number =_line_num_g4mv ,
-                            machine_asset =_ma_mv ,
-                            machine_raw =_nd .get ("machine_raw",""),
-                            machine_norm ="",
-                            fault_description =_nd .get ("fault_description",""),
-                            repair_notes =_nd .get ("repair_notes",""),
-                            hc =_tp (_nd .get ("hc")),
-                            hf =_tp (_nd .get ("hf")),
-                            or_val ="",
-                            delta_hours =(
-                            _Dec_mv (_nd ["delta_hours"])
-                            if _nd .get ("delta_hours")else None 
-                            ),
-                            flags =[],
-                            odometer_reading =(
-                            _Dec_mv (_nd ["odometer_reading"])
-                            if _nd .get ("odometer_reading")else None 
-                            ),
-                            engine_hours_reading =(
-                            _Dec_mv (_nd ["engine_hours_reading"])
-                            if _nd .get ("engine_hours_reading")else None 
-                            ),
-                            crane_hours_reading =(
-                            _Dec_mv (_nd ["crane_hours_reading"])
-                            if _nd .get ("crane_hours_reading")else None 
-                            ),
-                            )
-                            _line_num_g4mv +=1 
-                        from work_order_processor .models import WorkdayGap as _WDG_MV 
-                        for _gap in _gaps_g4mv :
-                            _WDG_MV .objects .create (
-                            work_order =_wo_draft_mv ,
-                            gap_type =_gap ["gap_type"],
-                            gap_start =_gap ["gap_start"],
-                            gap_end =_gap ["gap_end"],
-                            duration_minutes =_gap ["duration_minutes"],
-                            )
-                    request .session ["pending_gaps_wo_pk"]=_wo_draft_mv .pk 
-                    request .session .modified =True 
-                    logger .info (
-                    "# [MergeView/Gate4] PENDING_GAPS borrador pk=%d creado. "
-                    "%d gap(s) detectado(s). Redirigiendo a resolución.",
-                    _wo_draft_mv .pk ,len (_gaps_g4mv ),
-                    )
-                    return redirect (
-                    _rev_g4mv (
-                    "panel:operator_gap_resolution",
-                    kwargs ={"wo_draft_pk":_wo_draft_mv .pk },
-                    )
-                    )
-
-
-
-
-        if merge_action =="discard_existing":
-            work_date =None 
-            if work_date_iso :
-                try :
-                    work_date =_dtp .strptime (work_date_iso ,"%Y-%m-%d").date ()
-                except ValueError :
-                    pass 
-
-            try :
-                with transaction .atomic ():
-
-
-                    existing_entry .work_order .delete ()
-
-                    worker_name =(
-                    cu .user .get_full_name ()or cu .user .username 
-                    ).upper ()
-                    date_tag =(
-                    work_date .strftime ("%d-%m-%Y")if work_date else "SIN-FECHA"
-                    )
-                    synthetic_name =f"{worker_name}_{date_tag}.pdf"
-
-                    new_wo =WorkOrder (
-                    company =company ,
-                    uploaded_by =cu ,
-                    source =WorkOrder .Source .DIGITAL ,
-                    status =WorkOrder .Status .DONE ,
-                    total_pages =1 ,
-                    processed_pages =1 ,
-                    reviewed =False ,
-                    )
-                    new_wo .source_pdf .name =synthetic_name 
-                    new_wo .save ()
-
-                    new_entry =WorkOrderEntry .objects .create (
-                    work_order =new_wo ,
-                    page_number =1 ,
-                    worker_name =worker_name ,
-                    work_date =work_date ,
-                    uncertain_date =False ,
-                    extraction_confidence =WorkOrderEntry .Confidence .HIGH ,
-                    raw_gemini_response =None ,
-                    )
-
-
-
-                    self ._create_lines_from_session (
-                    new_lines ,[],new_entry ,1 ,company 
-                    )
-
-            except Exception as exc :
-                logger .error (
-                "# [MergeView] Error en discard_existing: %s",exc ,exc_info =True 
-                )
-                django_messages .error (
-                request ,
-                f"Error al procesar el merge: {exc}. Intentalo de nuevo.",
-                )
-                return redirect (reverse ("panel:operator_history"))
-
-            self ._clear_pending (request )
-
-
-
-
-
-            for _line in new_entry .lines .all ():
-                _cached =find_cached_classification (
-                fault_description =_line .fault_description ,
-                repair_notes =_line .repair_notes ,
-                company =company ,
-                )
-                if _cached :
-                    WorkOrderEntryLine .objects .filter (pk =_line .pk ).update (
-                    fault_category =_cached [0 ],
-                    fault_subcategory =_cached [1 ],
-                    )
-                    logger .info (
-                    "# [MergeView/discard_existing] Clasificación copiada "
-                    "desde caché para WorkOrderEntryLine pk=%d: "
-                    "category=%s subcategory=%s.",
-                    _line .pk ,_cached [0 ],_cached [1 ],
-                    )
-                else :
-                    classify_fault_line .apply_async (
-                    args =[_line .pk ],
-                    queue ="work_orders",
-                    )
-                    logger .info (
-                    "# [MergeView/discard_existing] classify_fault_line "
-                    "encolada para WorkOrderEntryLine pk=%d.",
-                    _line .pk ,
-                    )
-
-            try :
-                generate_work_order_excel (new_wo .pk )
-            except Exception as exc :
-                logger .warning (
-                "# [MergeView] Excel no generado para WorkOrder #%d: %s",
-                new_wo .pk ,exc ,
-                )
-            django_messages .success (
-            request ,
-            "Parte existente sustituido correctamente. "
-            "El nuevo parte ha sido registrado.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-
-
-
-        if merge_action =="merge":
-            edited_existing =self ._parse_edited_hc_hf (
-            request .POST ,"existing_line_",len (existing_lines )
-            )
-            edited_new =self ._parse_edited_hc_hf (
-            request .POST ,"new_line_",len (new_lines )
-            )
-
-
-
-            class _LineCopy :
-                pass 
-
-            existing_copies =[]
-            for line ,edits in zip (existing_lines ,edited_existing ):
-                copy =_LineCopy ()
-                copy .hc =self ._parse_time_str (edits ["hc"])if edits ["hc"]else line .hc 
-                copy .hf =self ._parse_time_str (edits ["hf"])if edits ["hf"]else line .hf 
-                existing_copies .append (copy )
-
-            new_copies =[]
-            for nd ,edits in zip (new_lines ,edited_new ):
-                new_copies .append ({
-                "hc":edits ["hc"]if edits ["hc"]else nd .get ("hc"),
-                "hf":edits ["hf"]if edits ["hf"]else nd .get ("hf"),
-                })
-
-            conflicts =_detect_overlaps (existing_copies ,new_copies )
-
-            if conflicts :
-                context =self ._build_context (
-                company ,cu ,existing_entry ,existing_lines ,
-                new_lines ,work_date_iso ,conflicts ,
-                merge_error =(
-                "No es posible fusionar: existen solapamientos horarios. "
-                "Edita los horarios para resolver los conflictos."
-                ),
-                )
-                return render (request ,self .template_name ,context )
-
-
-
-            try :
-                with transaction .atomic ():
-                    start_number =existing_entry .lines .count ()+1 
-                    self ._create_lines_from_session (
-                    new_lines ,edited_new ,existing_entry ,start_number ,company 
-                    )
-            except Exception as exc :
-                logger .error (
-                "# [MergeView] Error en merge: %s",exc ,exc_info =True 
-                )
-                django_messages .error (
-                request ,
-                f"Error al fusionar el parte: {exc}. Intentalo de nuevo.",
-                )
-                return redirect (reverse ("panel:operator_history"))
-
-            self ._clear_pending (request )
-
-
-
-
-
-
-
-            _total_lines =existing_entry .lines .count ()
-            _new_start_nr =_total_lines -len (new_lines )+1 
-            for _line in existing_entry .lines .filter (line_number__gte =_new_start_nr ):
-                _cached =find_cached_classification (
-                fault_description =_line .fault_description ,
-                repair_notes =_line .repair_notes ,
-                company =company ,
-                )
-                if _cached :
-                    WorkOrderEntryLine .objects .filter (pk =_line .pk ).update (
-                    fault_category =_cached [0 ],
-                    fault_subcategory =_cached [1 ],
-                    )
-                    logger .info (
-                    "# [MergeView/merge] Clasificación copiada desde caché "
-                    "para WorkOrderEntryLine pk=%d: "
-                    "category=%s subcategory=%s.",
-                    _line .pk ,_cached [0 ],_cached [1 ],
-                    )
-                else :
-                    classify_fault_line .apply_async (
-                    args =[_line .pk ],
-                    queue ="work_orders",
-                    )
-                    logger .info (
-                    "# [MergeView/merge] classify_fault_line encolada "
-                    "para WorkOrderEntryLine pk=%d.",
-                    _line .pk ,
-                    )
-
-            try :
-                generate_work_order_excel (existing_entry .work_order .pk )
-            except Exception as exc :
-                logger .warning (
-                "# [MergeView] Excel no regenerado para WorkOrder #%d: %s",
-                existing_entry .work_order .pk ,exc ,
-                )
-            django_messages .success (
-            request ,
-            f"Parte fusionado correctamente. Tareas anadidas al parte del "
-            f"{work_date_iso or 'fecha desconocida'}.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-
-
-        django_messages .warning (
-        request ,
-        "Accion de merge no reconocida. No se ha realizado ningun cambio.",
-        )
-        return redirect (reverse ("panel:operator_history"))
-
-
-class WorkdayGapResolutionView (WorkshopRequiredMixin ,View ):
-    """
-    Allows a WORKSHOP operator to justify each workday gap detected by Gate 4
-    before the draft work order is promoted from PENDING_GAPS to DONE.
-
-    GET  /panel/operator/gaps/<int:wo_draft_pk>/
-         Retrieves the pending WorkdayGap records for the draft WorkOrder and
-         renders the resolution form. Each unresolved gap is presented with an
-         AbsenceCategory selector and an optional note field.
-         Redirects to operator_history if the draft is not found or does not
-         belong to the authenticated operator.
-
-    POST /panel/operator/gaps/<int:wo_draft_pk>/
-         Validates that every gap has an AbsenceCategory assigned, and that a
-         note is provided when AbsenceCategory.requires_note=True.
-         On success:
-           - Persists AbsenceCategory + note on each WorkdayGap.
-           - Marks all gaps as resolved=True.
-           - Promotes the WorkOrder from PENDING_GAPS to DONE.
-           - Clears the pending_gaps_wo_pk session key.
-           - Enqueues classify_fault_line for each entry line.
-           - Generates the Excel report synchronously.
-           - Redirects to operator_history with a success message.
-         The "Volver y editar" action (POST field back_to_form=1) discards
-         the draft WorkOrder and redirects to operator_dashboard so the
-         operator can resubmit with corrected times.
-
-    ---
-
-    Permite a un operario WORKSHOP justificar cada laguna de jornada detectada
-    por Gate 4 antes de que el borrador de parte sea promovido de PENDING_GAPS
-    a DONE.
-
-    GET  /panel/operator/gaps/<int:wo_draft_pk>/
-         Recupera los registros WorkdayGap pendientes del WorkOrder borrador y
-         renderiza el formulario de resolución. Cada gap no resuelto se presenta
-         con un selector de AbsenceCategory y un campo de nota opcional.
-         Redirige a operator_history si el borrador no se encuentra o no
-         pertenece al operario autenticado.
-
-    POST /panel/operator/gaps/<int:wo_draft_pk>/
-         Valida que cada gap tenga una AbsenceCategory asignada, y que se
-         proporcione nota cuando AbsenceCategory.requires_note=True.
-         En caso de éxito:
-           - Persiste AbsenceCategory + nota en cada WorkdayGap.
-           - Marca todos los gaps como resolved=True.
-           - Promueve el WorkOrder de PENDING_GAPS a DONE.
-           - Limpia la clave de sesión pending_gaps_wo_pk.
-           - Encola classify_fault_line para cada línea del entry.
-           - Genera el informe Excel de forma síncrona.
-           - Redirige a operator_history con mensaje de éxito.
-         La acción "Volver y editar" (campo POST back_to_form=1) descarta el
-         borrador WorkOrder y redirige a operator_dashboard para que el operario
-         pueda reenviar con horas corregidas.
-    """
-
-    template_name ="panel/operator/gap_resolution.html"
-
-    def _get_draft (self ,wo_draft_pk ,company ,cu ):
-        """
-        Resolves the PENDING_GAPS WorkOrder draft by pk, scoped to the
-        authenticated operator and company. Returns None if not found.
-        ---
-        Resuelve el borrador WorkOrder PENDING_GAPS por pk, acotado al operario
-        autenticado y la empresa. Devuelve None si no se encuentra.
-        """
-        return WorkOrder .objects .filter (
-        pk =wo_draft_pk ,
-        company =company ,
-        uploaded_by =cu ,
-        status =WorkOrder .Status .PENDING_GAPS ,
-        source__in =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ],
-        ).first ()
-
-    def get (self ,request ,wo_draft_pk ,*args ,**kwargs ):
-        """
-        Renders the gap resolution form for the given PENDING_GAPS draft.
-        ---
-        Renderiza el formulario de resolución de gaps para el borrador dado.
-        """
-        from django .urls import reverse 
-        from ivr_config .models import AbsenceCategory 
-        from work_order_processor .models import WorkdayGap 
-
-        cu =request .user .company_user 
-        company =cu .company 
-
-        draft =self ._get_draft (wo_draft_pk ,company ,cu )
-        if draft is None :
-            django_messages .error (
-            request ,
-            "El parte borrador no se ha encontrado o ya fue procesado.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-        gaps =WorkdayGap .objects .filter (
-        work_order =draft ,resolved =False 
-        ).order_by ("gap_start")
-
-        absence_categories =AbsenceCategory .objects .filter (
-        company =company ,is_active =True 
-        ).order_by ("order","label")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        first_entry =draft .entries .first ()
-        raw_lines =(
-        list (first_entry .lines .order_by ("hc"))
-        if first_entry else []
-        )
-
-
-
-        gaps_list =list (gaps )
-        gap_by_start ={g .gap_start :g for g in gaps_list }
-
-
-
-
-
-
-
-
-
-
-
-
-
-        for line in raw_lines :
-            matched =gap_by_start .get (line .hf )
-
-
-
-
-
-
-
-
-
-            line .next_gap =(
-            matched 
-            if matched and matched .gap_type =="GAP"
-            else None 
-            )
-
-
-
-
-
-
-
-
-        late_start_gap =next (
-        (g for g in gaps_list if g .gap_type =="LATE_START"),None 
-        )
-        early_end_gap =next (
-        (g for g in gaps_list if g .gap_type =="EARLY_END"),None 
-        )
-
-        context ={
-        "company":company ,
-        "company_user":cu ,
-        "active_nav":"operator_dashboard",
-        "draft":draft ,
-        "gaps":gaps_list ,
-        "absence_categories":absence_categories ,
-        "work_date":first_entry .work_date if first_entry else None ,
-        "entry_lines":raw_lines ,
-        "late_start_gap":late_start_gap ,
-        "early_end_gap":early_end_gap ,
-        }
-        return render (request ,self .template_name ,context )
-
-    def post (self ,request ,wo_draft_pk ,*args ,**kwargs ):
-        """
-        Processes the gap resolution form. On "Volver y editar" discards
-        the draft. Otherwise validates and persists all gap justifications,
-        promotes the WorkOrder to DONE and enqueues post-processing tasks.
-        ---
-        Procesa el formulario de resolución de gaps. Con "Volver y editar"
-        descarta el borrador. Si no, valida y persiste todas las justificaciones,
-        promueve el WorkOrder a DONE y encola las tareas de post-procesamiento.
-        """
-        from django .urls import reverse 
-        from django .db import transaction 
-        from ivr_config .models import AbsenceCategory 
-        from work_order_processor .models import WorkdayGap 
-        from work_order_processor .services import (
-        generate_work_order_excel ,
-        find_cached_classification ,
-        )
-
-        cu =request .user .company_user 
-        company =cu .company 
-
-        draft =self ._get_draft (wo_draft_pk ,company ,cu )
-        if draft is None :
-            django_messages .error (
-            request ,
-            "El parte borrador no se ha encontrado o ya fue procesado.",
-            )
-            return redirect (reverse ("panel:operator_history"))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        if request .POST .get ("back_to_form"):
-            from django .urls import reverse as _rev_btf 
-            from work_order_processor .models import WorkOrder as _WO_BTF 
-
-
-
-
-            _WO_BTF .objects .filter (pk =draft .pk ).update (
-            status =_WO_BTF .Status .DONE ,
-            )
-            request .session .pop ("pending_gaps_wo_pk",None )
-            request .session .modified =True 
-            django_messages .info (
-            request ,
-            "Puedes corregir las horas del parte y enviarlo de nuevo.",
-            )
-            return redirect (
-            _rev_btf ("panel:operator_form_edit",kwargs ={"wo_pk":draft .pk })
-            )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        gaps =list (
-        WorkdayGap .objects .filter (
-        work_order =draft ,resolved =False 
-        ).order_by ("gap_start")
-        )
-
-        validation_errors =[]
-        resolutions =[]
-
-        for gap in gaps :
-            label_gap =f"Laguna {gap.gap_start:%H:%M}–{gap.gap_end:%H:%M}"
-
-            if gap .gap_type ==WorkdayGap .GapType .LUNCH_BREAK :
-
-
-
-
-                lunch_had_raw =request .POST .get (f"gap_{gap.pk}_lunch_had","").strip ()
-                note_val =request .POST .get (f"gap_{gap.pk}_note","").strip ()
-                lunch_time_raw =request .POST .get (f"gap_{gap.pk}_lunch_time","").strip ()
-
-                if lunch_had_raw not in ("yes","no"):
-                    validation_errors .append (
-                    f"{label_gap}: debes indicar si has parado a comer."
-                    )
-                    continue 
-
-                lunch_had =lunch_had_raw =="yes"
-
-                if not lunch_had and not note_val :
-                    validation_errors .append (
-                    f"{label_gap}: si no has parado a comer, debes indicar el motivo."
-                    )
-                    continue 
-
-
-
-                lunch_time =None 
-                if lunch_had and lunch_time_raw :
-                    from datetime import datetime as _dt_lt 
-                    try :
-                        lunch_time =_dt_lt .strptime (lunch_time_raw ,"%H:%M").time ()
-                    except ValueError :
-                        lunch_time =None 
-
-                resolutions .append ((gap ,{
-                "type":"lunch",
-                "lunch_had":lunch_had ,
-                "lunch_time":lunch_time ,
-                "note":note_val ,
-                }))
-
-            else :
-
-
-
-
-                field_cat =f"gap_{gap.pk}_category"
-                field_note =f"gap_{gap.pk}_note"
-
-                cat_pk_raw =request .POST .get (field_cat ,"").strip ()
-                note_val =request .POST .get (field_note ,"").strip ()
-
-                if not cat_pk_raw :
-                    validation_errors .append (
-                    f"{label_gap}: debes seleccionar un motivo de ausencia."
-                    )
-                    continue 
-
-                try :
-                    absence_cat =AbsenceCategory .objects .get (
-                    pk =int (cat_pk_raw ),company =company ,is_active =True 
-                    )
-                except (AbsenceCategory .DoesNotExist ,ValueError ,TypeError ):
-                    validation_errors .append (
-                    f"{label_gap}: la categoría seleccionada no es válida."
-                    )
-                    continue 
-
-                if absence_cat .requires_note and not note_val :
-                    validation_errors .append (
-                    f"{label_gap}: la categoría '{absence_cat.label}' "
-                    f"requiere una nota explicativa."
-                    )
-                    continue 
-
-                resolutions .append ((gap ,{
-                "type":"standard",
-                "absence_cat":absence_cat ,
-                "note":note_val ,
-                }))
-
-        if validation_errors :
-
-
-            from ivr_config .models import AbsenceCategory as _AC 
-            absence_categories =_AC .objects .filter (
-            company =company ,is_active =True 
-            ).order_by ("order","label")
-            first_entry =draft .entries .first ()
-            context ={
-            "company":company ,
-            "company_user":cu ,
-            "active_nav":"operator_dashboard",
-            "draft":draft ,
-            "gaps":gaps ,
-            "absence_categories":absence_categories ,
-            "work_date":first_entry .work_date if first_entry else None ,
-            "entry_lines":list (first_entry .lines .order_by ("hc"))if first_entry else [],
-            "errors":validation_errors ,
-            }
-            return render (request ,self .template_name ,context )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        from work_order_processor .management .commands .seed_personal_asset import (
-        PERSONAL_ASSET_CODE as _PERSONAL_CODE_GR ,
-        )
-        from fleet .models import MachineAsset as _MA_GR 
-        from work_order_processor .services import _compute_delta_hours as _cdh_gr 
-        try :
-            _personal_asset_gr =_MA_GR .objects .get (
-            code__iexact =_PERSONAL_CODE_GR ,company =company 
-            )
-        except _MA_GR .DoesNotExist :
-            _personal_asset_gr =None 
-            logger .warning (
-            "# [GapResolutionView] Activo PERSONAL no encontrado para empresa pk=%r. "
-            "Las líneas PERSONAL no se crearán.",
-            company .pk ,
-            )
-        try :
-            with transaction .atomic ():
-                first_entry_gr =draft .entries .first ()
-
-
-                _next_line_num =1 
-                if first_entry_gr :
-                    existing_max =(
-                    first_entry_gr .lines 
-                    .order_by ("-line_number")
-                    .values_list ("line_number",flat =True )
-                    .first ()
-                    )
-                    _next_line_num =(existing_max or 0 )+1 
-                for gap ,res in resolutions :
-                    if res ["type"]=="lunch":
-                        gap .lunch_had =res ["lunch_had"]
-                        gap .lunch_time =res ["lunch_time"]
-                        gap .note =res ["note"]
-                        gap .resolved =True 
-                        gap .save (update_fields =["lunch_had","lunch_time","note","resolved"])
-                    else :
-                        gap .absence_category =res ["absence_cat"]
-                        gap .note =res ["note"]
-                        gap .resolved =True 
-                        gap .save (update_fields =["absence_category","note","resolved"])
-
-
-
-
-
-
-
-
-
-                        if first_entry_gr is not None and _personal_asset_gr is not None :
-                            _gr_delta =_cdh_gr (
-                            gap .gap_start ,gap .gap_end ,deduct_lunch =False 
-                            )
-                            WorkOrderEntryLine .objects .create (
-                            entry =first_entry_gr ,
-                            line_number =_next_line_num ,
-                            machine_asset =_personal_asset_gr ,
-                            machine_raw =_personal_asset_gr .code ,
-                            machine_norm =_personal_asset_gr .code ,
-                            fault_description =res ["absence_cat"].label ,
-                            repair_notes =res ["note"],
-                            hc =gap .gap_start ,
-                            hf =gap .gap_end ,
-                            or_val ="",
-                            delta_hours =_gr_delta ,
-                            flags =[],
-                            )
-                            logger .info (
-                            "# [GapResolutionView] WorkOrderEntryLine PERSONAL creado. "
-                            "entry_pk=%r line_number=%r hc=%r hf=%r absence_cat=%r",
-                            first_entry_gr .pk ,_next_line_num ,
-                            gap .gap_start ,gap .gap_end ,
-                            res ["absence_cat"].label ,
-                            )
-                            _next_line_num +=1 
-
-                draft .status =WorkOrder .Status .DONE 
-                draft .save (update_fields =["status"])
-
-        except Exception as exc :
-            logger .error (
-            "# [GapResolutionView] Error al persistir resoluciones: %s",
-            exc ,exc_info =True ,
-            )
-            django_messages .error (
-            request ,
-            f"Error al guardar la justificación: {exc}. "
-            "Por favor, inténtalo de nuevo.",
-            )
-            return redirect (
-            reverse (
-            "panel:operator_gap_resolution",
-            kwargs ={"wo_draft_pk":wo_draft_pk },
-            )
-            )
-
-
-
-        request .session .pop ("pending_gaps_wo_pk",None )
-        request .session .modified =True 
-
-
-
-
-
-        first_entry =draft .entries .first ()
-        if first_entry :
-            for _line in first_entry .lines .all ():
-                _cached =find_cached_classification (
-                fault_description =_line .fault_description ,
-                repair_notes =_line .repair_notes ,
-                company =company ,
-                )
-                if _cached :
-                    WorkOrderEntryLine .objects .filter (pk =_line .pk ).update (
-                    fault_category =_cached [0 ],
-                    fault_subcategory =_cached [1 ],
-                    )
-                    logger .info (
-                    "# [GapResolutionView] Clasificación copiada desde caché "
-                    "para WorkOrderEntryLine pk=%d: category=%s subcategory=%s.",
-                    _line .pk ,_cached [0 ],_cached [1 ],
-                    )
-                else :
-                    classify_fault_line .apply_async (
-                    args =[_line .pk ],
-                    queue ="work_orders",
-                    )
-                    logger .info (
-                    "# [GapResolutionView] classify_fault_line encolada "
-                    "para WorkOrderEntryLine pk=%d.",
-                    _line .pk ,
-                    )
-
-        try :
-            generate_work_order_excel (draft .pk )
-            logger .info (
-            "# [GapResolutionView] Excel generado para WorkOrder #%d.",
-            draft .pk ,
-            )
-        except Exception as exc :
-            logger .warning (
-            "# [GapResolutionView] Excel no generado para WorkOrder #%d: %s.",
-            draft .pk ,exc ,
-            )
-
-        django_messages .success (
-        request ,
-        f"Parte #{draft.pk} registrado correctamente. "
-        f"Todas las lagunas de jornada han sido justificadas.",
-        )
-        return redirect (reverse ("panel:operator_history"))
 
 
 class WorkshopAssetDetailView (WorkshopRequiredMixin ,View ):
@@ -6167,6 +4545,7 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
         lunch_break_end =""
         end_time_morning =""
         end_time_afternoon =""
+        start_time_afternoon =""
         first_hc =""
 
         if schedule is not None :
@@ -6175,6 +4554,7 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
                 lunch_break_start =_fmt (schedule .end_time_morning )
                 lunch_break_end =_fmt (schedule .start_time_afternoon )
                 end_time_morning =_fmt (schedule .end_time_morning )
+                start_time_afternoon =_fmt (schedule .start_time_afternoon )
             if schedule .end_time_afternoon :
                 end_time_afternoon =_fmt (schedule .end_time_afternoon )
             elif schedule .is_intensive and schedule .end_time_morning :
@@ -6209,13 +4589,17 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             'lunch_break_end': lunch_break_end ,
             'end_time_morning': end_time_morning ,
             'end_time_afternoon': end_time_afternoon ,
+            'start_time_afternoon': start_time_afternoon ,
             'first_block_hc': _first_hc ,
             'first_block_hf': _first_hf ,
-            'absence_categories': _absence_cats ,
+            'absence_categories': _json .dumps (_absence_cats) ,
+            'absence_categories_list': _absence_cats ,
         }
         return _render (
             request ,
             'panel/operator/_schedule_fields_fragment.html',
             _ctx ,
         )
+
+
 

@@ -357,6 +357,7 @@
 ./budgets/templates/budgets/_base_selector_fragment.html
 ./budgets/templates/budgets/_vehicle_types_fragment.html
 ./budgets/templates/budgets/_optional_concepts_fragment.html
+./budgets/templates/budgets/_route_dual_fragment.html
 ./budgets/admin.py
 ./budgets/__init__.py
 ./budgets/views.py

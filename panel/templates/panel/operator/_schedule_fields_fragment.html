@@ -25,8 +25,8 @@
         </div>
         <div class="card-body p-4">
             {% if show_lunch_break %}
-            {# Split shift only: show "no lunch" checkbox. #}
-            {# Solo jornada partida: mostrar checkbox sin pausa. #}
+            {# Split shift: show "no lunch" checkbox (lunch ON by default). #}
+            {# Jornada partida: checkbox "sin pausa" (pausa activa por defecto). #}
             <div class="form-check mb-3" id="no-lunch-check-wrapper">
                 <input class="form-check-input" type="checkbox"
                        id="id_no_lunch_toggle">
@@ -39,6 +39,25 @@
                     Marca esta casilla si no has hecho pausa de comida.
                     El sistema contará todas tus horas como trabajadas
                     y no validará la ventana de mediodía.
+                </div>
+            </div>
+            {% else %}
+            {# Intensive shift: show "had lunch" checkbox (lunch OFF by default). #}
+            {# Lets an operator log an afternoon repair during intensive shift.  #}
+            {# Jornada intensiva: checkbox "he parado a comer" (sin pausa por    #}
+            {# defecto). Permite registrar una avería de tarde en intensiva.     #}
+            <div class="form-check mb-3" id="had-lunch-check-wrapper">
+                <input class="form-check-input" type="checkbox"
+                       id="id_had_lunch_toggle">
+                <input type="hidden" id="id_no_lunch_break_value"
+                       name="no_lunch_break" value="1">
+                <label class="form-check-label fw-medium" for="id_had_lunch_toggle">
+                    He parado a comer
+                </label>
+                <div class="form-text">
+                    Marca esta casilla si has hecho pausa de comida durante
+                    la jornada intensiva (por ejemplo, si atiendes una avería
+                    por la tarde). Indica entonces el inicio y fin de la pausa.
                 </div>
             </div>
             {% endif %}
@@ -155,7 +174,7 @@
                         id="entrada_1_absence_category"
                         class="form-select eb-field">
                     <option value="">-- Selecciona una categoría --</option>
-                    {% for cat in absence_categories %}
+                    {% for cat in absence_categories_list %}
                         <option value="{{ cat.id }}"
                                 data-requires-note="{% if cat.requires_note %}1{% else %}0{% endif %}">
                             {{ cat.label }}

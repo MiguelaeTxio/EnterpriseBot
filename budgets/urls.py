@@ -1,4 +1,3 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/urls.py
 """
 URL configuration for the budgets application.
 All routes are prefixed with /panel/budgets/ via enterprise_core/urls.py.
@@ -42,6 +41,18 @@ urlpatterns = [
         "route-calc/",
         views.BudgetRouteCalcView.as_view(),
         name="route_calc",
+    ),
+
+    # HTMX endpoint — calcula la ruta dual (con peajes / sin peajes) via
+    # Routes API. Devuelve el fragmento de visualizacion dual con mapa Leaflet
+    # y radio buttons de seleccion al paso 4b del wizard.
+    # HTMX endpoint — calculates dual route (with tolls / without tolls) via
+    # Routes API. Returns the dual visualisation fragment with Leaflet map
+    # and selection radio buttons to wizard step 4b.
+    path(
+        "route-dual/",
+        views.BudgetRouteDualView.as_view(),
+        name="route_dual",
     ),
 
     # HTMX endpoint — devuelve los tipos de vehiculo para la aseguradora

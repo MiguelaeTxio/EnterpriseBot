@@ -817,9 +817,109 @@
                 }
             }
 
+            // Gate A — overlap detection between blocks.
+            // Deteccion de solapamientos entre bloques.
+            var _blocks = [];
+            for (var oi = 1; oi <= numEntradas; oi++) {
+                var _ohc = _val("entrada_" + oi + "_hc");
+                var _ohf = _val("entrada_" + oi + "_hf");
+                if (_ohc && _ohf && _ohf > _ohc) {
+                    _blocks.push({ idx: oi, hc: _ohc, hf: _ohf });
+                }
+            }
+            _blocks.sort(function (a, b) { return a.hc < b.hc ? -1 : 1; });
+            for (var bi = 0; bi < _blocks.length - 1; bi++) {
+                if (_blocks[bi].hf > _blocks[bi + 1].hc) {
+                    errors.push(
+                        "Bloque " + _blocks[bi].idx + " y Bloque " + _blocks[bi + 1].idx +
+                        ": los horarios se solapan (" + _blocks[bi].hf + " > " + _blocks[bi + 1].hc + ")."
+                    );
+                }
+            }
+
+            // Gate B — workday coverage check (close_order only).
+            // Comprobacion de cobertura de jornada (solo en close_order).
+            var _formAction = (document.getElementById("form-action-input") || {}).value || "";
+            if (_formAction !== "save_blocks" && errors.length === 0) {
+                var _cfg = window.EB_CONFIG || {};
+                var _isIntensive = !!_cfg.isIntensiveOverride;
+                var _endTime = _isIntensive
+                    ? (_cfg.endTimeMorning || "")
+                    : (_cfg.endTimeAfternoon || _cfg.endTimeMorning || "");
+                var _startTime = _cfg.lunchBreakStart
+                    ? (_cfg.lunchBreakStart)
+                    : "";
+                // Calculate total effective minutes from all blocks.
+                // Calcular total de minutos efectivos de todos los bloques.
+                function _toMin(t) {
+                    if (!t) { return 0; }
+                    var p = t.split(":");
+                    return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
+                }
+                var _noLunchEl = document.getElementById("id_no_lunch_break_value");
+                var _noLunch = _noLunchEl && _noLunchEl.value === "1";
+                var _lbStart = _noLunch ? "" : (_val("lunch_break_start") || LUNCH_BREAK_START);
+                var _lbEnd   = _noLunch ? "" : (_val("lunch_break_end")   || LUNCH_BREAK_END);
+                var _totalMin = 0;
+                for (var gi = 1; gi <= numEntradas; gi++) {
+                    var _ghc = _val("entrada_" + gi + "_hc");
+                    var _ghf = _val("entrada_" + gi + "_hf");
+                    if (!_ghc || !_ghf) { continue; }
+                    var _gross = _toMin(_ghf) - _toMin(_ghc);
+                    if (_gross <= 0) { continue; }
+                    // Deduct lunch overlap.
+                    // Descontar solapamiento con pausa.
+                    var _overlap = 0;
+                    if (_lbStart && _lbEnd) {
+                        _overlap = Math.max(0,
+                            Math.min(_toMin(_ghf), _toMin(_lbEnd)) -
+                            Math.max(_toMin(_ghc), _toMin(_lbStart))
+                        );
+                    }
+                    _totalMin += (_gross - _overlap);
+                }
+                if (_endTime) {
+                    // Last block must cover until effective end time.
+                    // El ultimo bloque debe cubrir hasta la hora de salida efectiva.
+                    var _lastHf = _blocks.length > 0 ? _blocks[_blocks.length - 1].hf : "";
+                    var _endMin = _toMin(_endTime);
+                    var _lastMin = _toMin(_lastHf);
+                    if (_lastHf && _lastMin < _endMin - 14) {
+                        // More than 15 min gap to end of shift.
+                        // Mas de 15 min hasta el fin de jornada.
+                        var _missingMin = _endMin - _lastMin;
+                        var _missingH = (_missingMin / 60).toFixed(2).replace(".", ",");
+                        errors.push(
+                            "Cierre anticipado: tu ultimo bloque termina a las " + _lastHf +
+                            " pero la jornada acaba a las " + _endTime +
+                            " (faltan " + _missingMin + " min). " +
+                            "Aniade un bloque o justifica la ausencia con codigo PERSONAL."
+                        );
+                    }
+                }
+            }
+
             if (errors.length > 0) {
                 e.preventDefault();
-                _showAlert(errors.join(" | "));
+                // Show gap warning modal instead of inline alert banner.
+                // Mostrar modal de lagunas en lugar del banner de alerta inline.
+                var _gapModal = document.getElementById("gapWarningModal");
+                var _gapList  = _gapModal ? _gapModal.querySelector("ul.list-group") : null;
+                if (_gapModal && _gapList && window.bootstrap && bootstrap.Modal) {
+                    _gapList.innerHTML = "";
+                    errors.forEach(function (msg) {
+                        var li = document.createElement("li");
+                        li.className = "list-group-item ps-0 border-0 py-1";
+                        li.innerHTML = '<i class="bi bi-clock text-warning me-2"></i>' + msg;
+                        _gapList.appendChild(li);
+                    });
+                    var _m = bootstrap.Modal.getOrCreateInstance(_gapModal);
+                    _m.show();
+                } else {
+                    // Fallback: inline alert if modal not available.
+                    // Fallback: alerta inline si el modal no esta disponible.
+                    _showAlert(errors.join(" | "));
+                }
             }
         });
     }
@@ -979,3 +1079,4 @@
     }
 
 }());
+
