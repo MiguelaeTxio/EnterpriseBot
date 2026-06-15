@@ -36,6 +36,10 @@
           <a href="{% url 'budgets:insurer_update' insurer.pk %}" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-pencil me-1"></i>Editar
           </a>
+          <button type="button" class="btn btn-sm btn-outline-success"
+                  data-bs-toggle="modal" data-bs-target="#cloneInsurerModal">
+            <i class="bi bi-copy me-1"></i>Clonar
+          </button>
           <div class="dropdown">
             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
               <i class="bi bi-download me-1"></i>Exportar tarifa
@@ -409,7 +413,100 @@
   </div>
 </div>
 
+
+{# ── Modal clonación de aseguradora ──────────────────────────────── #}
+<div class="modal fade" id="cloneInsurerModal" tabindex="-1"
+     aria-labelledby="cloneInsurerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="cloneInsurerModalLabel">
+          <i class="bi bi-copy me-2"></i>Clonar aseguradora
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">
+          Se creará una copia de <strong>{{ insurer.name }}</strong> con la tarifa
+          completa, tipos de vehículo y bases. Introduce los datos de la nueva aseguradora.
+        </p>
+        <div class="mb-3">
+          <label for="cloneInsurerCompanyName" class="form-label fw-semibold small">
+            Nombre aseguradora <span class="text-danger">*</span>
+          </label>
+          <input type="text" class="form-control form-control-sm"
+                 id="cloneInsurerCompanyName"
+                 placeholder="Ej: Europ Assistance"
+                 value="{{ insurer.insurer_company_name }}">
+          <div class="form-text">Nombre de la compañía aseguradora pura.</div>
+        </div>
+        <div class="mb-3">
+          <label for="cloneServiceCompanyName" class="form-label fw-semibold small">
+            Empresa prestadora
+          </label>
+          <input type="text" class="form-control form-control-sm"
+                 id="cloneServiceCompanyName"
+                 placeholder="Ej: Transgrual"
+                 value="{{ insurer.service_company_name }}">
+          <div class="form-text">Empresa que presta el servicio en campo.</div>
+        </div>
+        <div id="cloneNamePreview" class="alert alert-info py-2 small d-none">
+          Nombre resultante: <strong id="cloneNamePreviewText"></strong>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                data-bs-dismiss="modal">Cancelar</button>
+        <form id="cloneInsurerForm" method="post"
+              action="{% url 'budgets:insurer_clone' insurer.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="insurer_company_name" id="cloneInsurerCompanyNameHidden">
+          <input type="hidden" name="service_company_name" id="cloneServiceCompanyNameHidden">
+          <button type="submit" class="btn btn-sm btn-success" id="cloneSubmitBtn" disabled>
+            <i class="bi bi-copy me-1"></i>Clonar aseguradora
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% block extra_scripts %}
+<script>
+(function () {
+  const insurerInput  = document.getElementById("cloneInsurerCompanyName");
+  const serviceInput  = document.getElementById("cloneServiceCompanyName");
+  const preview       = document.getElementById("cloneNamePreview");
+  const previewText   = document.getElementById("cloneNamePreviewText");
+  const submitBtn     = document.getElementById("cloneSubmitBtn");
+  const hiddenInsurer = document.getElementById("cloneInsurerCompanyNameHidden");
+  const hiddenService = document.getElementById("cloneServiceCompanyNameHidden");
+
+  function updatePreview() {
+    const ins = insurerInput.value.trim();
+    const svc = serviceInput.value.trim();
+    if (ins) {
+      const combined = svc ? ins + " / " + svc : ins;
+      previewText.textContent = combined;
+      preview.classList.remove("d-none");
+      submitBtn.disabled = false;
+      hiddenInsurer.value = ins;
+      hiddenService.value = svc;
+    } else {
+      preview.classList.add("d-none");
+      submitBtn.disabled = true;
+    }
+  }
+
+  insurerInput.addEventListener("input", updatePreview);
+  serviceInput.addEventListener("input", updatePreview);
+
+  // Init preview on modal open with prefilled values.
+  document.getElementById("cloneInsurerModal").addEventListener("shown.bs.modal", function () {
+    updatePreview();
+  });
+})();
+</script>
 <script>
 
 document.addEventListener("DOMContentLoaded", function () {

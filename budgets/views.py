@@ -2530,33 +2530,68 @@ class BudgetBulkDeleteView(AdminRoleRequiredMixin, View):
 class InsurerCloneView(AdminRoleRequiredMixin, View):
     """
     Clones an existing Insurer together with its active InsurerTariff,
-    all TariffLine records, VehicleType catalogue and InsurerBase links.
-    The operator provides only the new combined name
-    ('<Aseguradora> / <Empresa prestadora>') via a POST form.
+    all TariffLine records, VehicleType catalogue, SpecialRateTariff,
+    SpecialRateLines and InsurerBase links.
+    The operator provides insurer_company_name and service_company_name
+    via a POST form. The combined name and code are derived automatically.
     All other fields are copied verbatim from the source insurer.
     The cloned insurer is created with is_active=True and the cloned
     tariff starts on today's date with valid_to=None.
     Redirects to the edit view of the new insurer on success.
     ---
     Clona una Insurer existente junto con su InsurerTariff activa,
-    todos los registros TariffLine, el catálogo VehicleType y los
-    vínculos InsurerBase.
-    El operario únicamente proporciona el nuevo nombre combinado
-    ('<Aseguradora> / <Empresa prestadora>') mediante un formulario POST.
+    todos los registros TariffLine, el catálogo VehicleType,
+    SpecialRateTariff, SpecialRateLine y los vínculos InsurerBase.
+    El operario proporciona insurer_company_name y service_company_name
+    mediante un formulario POST. El nombre combinado y el código se
+    derivan automáticamente.
     El resto de campos se copian literalmente de la aseguradora origen.
     La aseguradora clonada se crea con is_active=True y la tarifa clonada
     arranca en la fecha de hoy con valid_to=None.
     Redirige a la vista de edición de la nueva aseguradora en éxito.
     """
 
+    @staticmethod
+    def _derive_code(insurer_company_name, service_company_name):
+        """
+        Derives a code from insurer_company_name and service_company_name
+        following the project convention: INSURERNAME_SERVICENAME.
+        Strips spaces, hyphens, dots and parentheses; uppercases the result.
+        Example: 'Europ Assistance' + 'Transgrual' -> 'EUROP_TRANSGRUAL'
+        ---
+        Deriva el código a partir de insurer_company_name y service_company_name
+        siguiendo la convención del proyecto: ASEGURADORA_PRESTADORA.
+        Elimina espacios, guiones, puntos y paréntesis; convierte a mayúsculas.
+        Ejemplo: 'Europ Assistance' + 'Transgrual' -> 'EUROP_TRANSGRUAL'
+        """
+        import re as _re
+        def _normalize(s):
+            s = s.upper()
+            s = _re.sub(r"[\s\-\.\(\)\/]+", "_", s)
+            s = _re.sub(r"_+", "_", s)
+            return s.strip("_")
+
+        insurer_part = _normalize(insurer_company_name)[:25]
+        service_part = _normalize(service_company_name)[:20] if service_company_name else ""
+        if service_part:
+            return f"{insurer_part}_{service_part}"
+        return insurer_part
+
     def post(self, request, pk):
         """
-        Clone the insurer identified by pk. Requires 'new_name' in POST data.
+        Clone the insurer identified by pk.
+        Requires 'insurer_company_name' and optionally 'service_company_name'
+        in POST data.
         ---
-        Clona la aseguradora identificada por pk. Requiere 'new_name' en POST.
+        Clona la aseguradora identificada por pk.
+        Requiere 'insurer_company_name' y opcionalmente 'service_company_name'
+        en los datos POST.
         """
         import datetime as _dt
-        from budgets.models import InsurerTariff, TariffLine, VehicleType, InsurerBase
+        from budgets.models import (
+            InsurerTariff, TariffLine, VehicleType, InsurerBase,
+            SpecialRateTariff, SpecialRateLine,
+        )
 
         company_user = _get_company_user(request)
         source = get_object_or_404(
@@ -2565,16 +2600,25 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
             company=company_user.company,
         )
 
-        new_name = request.POST.get("new_name", "").strip()
-        if not new_name:
+        new_insurer_name = request.POST.get("insurer_company_name", "").strip()
+        new_service_name = request.POST.get("service_company_name", "").strip()
+
+        if not new_insurer_name:
             messages.error(
                 request,
-                "El nombre combinado de la nueva aseguradora es obligatorio.",
+                "El nombre de la aseguradora es obligatorio.",
             )
             return redirect("budgets:insurer_detail", pk=pk)
 
-        # Guard: name must be unique within the company.
-        # Guardia: el nombre debe ser único dentro de la empresa.
+        # Build combined name following project convention.
+        # Construir nombre combinado siguiendo la convención del proyecto.
+        if new_service_name:
+            new_name = f"{new_insurer_name} / {new_service_name}"
+        else:
+            new_name = new_insurer_name
+
+        # Guard: combined name must be unique within the company.
+        # Guardia: el nombre combinado debe ser único dentro de la empresa.
         if Insurer.objects.filter(
             company=company_user.company,
             name=new_name,
@@ -2585,11 +2629,11 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
             )
             return redirect("budgets:insurer_detail", pk=pk)
 
-        # Guard: code derived from new_name must be unique within the company.
-        # Use the source code suffixed with '_CLONE' as a safe fallback.
-        # Guardia: el código derivado del nuevo nombre debe ser único en la empresa.
-        # Usar el código origen con sufijo '_CLONE' como fallback seguro.
-        new_code_base = new_name.upper().replace(" ", "_")[:40]
+        # Derive code from insurer_company_name + service_company_name.
+        # If collision, append numeric suffix until unique.
+        # Derivar código de insurer_company_name + service_company_name.
+        # Si hay colisión, añadir sufijo numérico hasta encontrar uno libre.
+        new_code_base = self._derive_code(new_insurer_name, new_service_name)[:45]
         new_code = new_code_base
         suffix = 1
         while Insurer.objects.filter(
@@ -2605,8 +2649,8 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
             clone = Insurer.objects.create(
                 company=source.company,
                 name=new_name,
-                insurer_company_name=source.insurer_company_name,
-                service_company_name=source.service_company_name,
+                insurer_company_name=new_insurer_name,
+                service_company_name=new_service_name,
                 code=new_code,
                 management_fee_percent=source.management_fee_percent,
                 surcharges_are_cumulative=source.surcharges_are_cumulative,
@@ -2619,9 +2663,11 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
             )
 
             # --- Clone VehicleType catalogue ---
-            # Map source_vt_pk -> clone_vt for use when cloning TariffLine FKs.
+            # Map source_vt_pk -> clone_vt for use when cloning TariffLine
+            # and SpecialRateLine FKs.
             # --- Clonar catálogo VehicleType ---
-            # Mapa source_vt_pk -> clone_vt para usar al clonar las FK de TariffLine.
+            # Mapa source_vt_pk -> clone_vt para las FK de TariffLine
+            # y SpecialRateLine.
             vt_map = {}
             for vt in source.vehicle_types.all().order_by("sort_order", "name"):
                 clone_vt = VehicleType.objects.create(
@@ -2639,6 +2685,7 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
                 valid_to__isnull=True,
             ).prefetch_related("lines").first()
 
+            clone_tariff = None
             if source_tariff:
                 clone_tariff = InsurerTariff.objects.create(
                     insurer=clone,
@@ -2661,6 +2708,36 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
                         min_units=line.min_units,
                         requires_authorization=line.requires_authorization,
                     )
+
+                # --- Clone SpecialRateTariff + SpecialRateLines (if present) ---
+                # SpecialRateTariff is a OneToOneField on InsurerTariff
+                # (related_name='special_rate'). Only exists when
+                # insurer.special_night_holiday_tariff is True.
+                # --- Clonar SpecialRateTariff + SpecialRateLines (si existe) ---
+                # SpecialRateTariff es un OneToOneField sobre InsurerTariff
+                # (related_name='special_rate'). Solo existe cuando
+                # insurer.special_night_holiday_tariff es True.
+                try:
+                    source_srt = source_tariff.special_rate
+                    clone_srt = SpecialRateTariff.objects.create(
+                        insurer_tariff=clone_tariff,
+                        notes=source_srt.notes,
+                    )
+                    for srl in source_srt.lines.all():
+                        SpecialRateLine.objects.create(
+                            special_rate_tariff=clone_srt,
+                            vehicle_type=(
+                                vt_map.get(srl.vehicle_type_id)
+                                if srl.vehicle_type_id else None
+                            ),
+                            concept=srl.concept,
+                            unit=srl.unit,
+                            price=srl.price,
+                            km_threshold=srl.km_threshold,
+                            min_units=srl.min_units,
+                        )
+                except SpecialRateTariff.DoesNotExist:
+                    pass
 
             # --- Clone InsurerBase links ---
             # --- Clonar vínculos InsurerBase ---
