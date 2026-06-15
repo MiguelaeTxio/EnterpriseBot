@@ -1,3 +1,4 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_operator.py
 from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View
 from django.shortcuts import redirect, render
@@ -2131,6 +2132,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             "end_time_morning":_end_time_morning_edit ,
             "end_time_afternoon":_end_time_afternoon_edit ,
             "start_time_afternoon":_lunch_end_edit ,
+            "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
             })
             return render (request ,self .template_name ,context )
 
@@ -2251,6 +2253,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             "start_time_afternoon":_ip_lunch_end ,
             "absence_categories":_json_fix .dumps (_absence_cats) ,
             "personal_asset_code":PERSONAL_ASSET_CODE ,
+            "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
             })
             return render (request ,self .template_name ,context )
 
@@ -2872,7 +2875,23 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
         num_entradas_post =int (POST .get ("num_entradas",len (entry_lines_data )))
         _blocks =parse_blocks_from_post (POST ,num_entradas_post ,entry_lines_data =entry_lines_data )
-        _intra =run_intra_part_validation (_blocks )
+
+        # Resolve the operator's actual configured lunch-break window for the
+        # R3 split-shift gap exception in validate_intra_gaps. No hardcoded
+        # default window — None means no exception applies.
+        #
+        # Resolver la ventana de comida realmente configurada del operario
+        # para la excepción de laguna de turno partido (R3) en
+        # validate_intra_gaps. Sin ventana por defecto hardcodeada — None
+        # significa que no se aplica ninguna excepción.
+        _lunch_window =None
+        if not _no_lunch_break and _lb_start and _lb_end :
+            _lunch_window =(_lb_start ,_lb_end )
+        elif _post_schedule and not _post_schedule .is_intensive :
+            if _post_schedule .end_time_morning and _post_schedule .start_time_afternoon :
+                _lunch_window =(_post_schedule .end_time_morning ,_post_schedule .start_time_afternoon )
+
+        _intra =run_intra_part_validation (_blocks ,lunch_window =_lunch_window )
 
         if not _intra .ok :
 

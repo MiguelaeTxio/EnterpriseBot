@@ -470,6 +470,18 @@
     </li>
     {% endif %}
 
+    {# ------------------------------------------------------------------ #}
+    {# Enlace al admin de Django — exclusivo para alvarez_admin            #}
+    {# Django admin link — alvarez_admin only                              #}
+    {# ------------------------------------------------------------------ #}
+    {% if request.user.username == 'alvarez_admin' %}
+    <li class="nav-item mt-2">
+        <a class="nav-link" href="/admin/" target="_blank" rel="noopener noreferrer">
+            <i class="bi bi-shield-lock"></i>Django Admin
+        </a>
+    </li>
+    {% endif %}
+
 </ul>
 
 {# ================================================================== #}

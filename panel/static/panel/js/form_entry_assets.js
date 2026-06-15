@@ -1,8 +1,8 @@
 (function () {
     "use strict";
 
-    var ASSETS_URL       = "{% url 'panel:operator_assets' %}";
-    var ASSET_DETAIL_URL = "{% url 'panel:operator_asset_detail' %}";
+    var ASSETS_URL       = (window.EB_CONFIG && window.EB_CONFIG.assetsUrl)     || "/panel/operator/assets/";
+    var ASSET_DETAIL_URL = (window.EB_CONFIG && window.EB_CONFIG.assetDetailUrl) || "/panel/operator/asset-detail/";
 
     /*
      * Reveals or hides meter-reading fields for the given block index.
@@ -78,6 +78,7 @@
         }
 
         function fetchAndRender(q) {
+            if (q !== input.value.trim()) { lastQuery = ""; }
             if (q === lastQuery) { return; }
             lastQuery = q;
             fetch(ASSETS_URL + "?q=" + encodeURIComponent(q))
@@ -100,10 +101,12 @@
                            pointerdown se dispara antes que blur en todas las plataformas
                            incluido Android Chrome — la guardia evita que blur cierre el
                            dropdown antes de que se confirme la seleccion. */
-                        btn.addEventListener("pointerdown", function (e) {
-                            e.preventDefault();
+                        btn.addEventListener("pointerdown", function () {
                             _selecting = true;
                         });
+                        btn.addEventListener("touchstart", function () {
+                            _selecting = true;
+                        }, { passive: true });
                         btn.addEventListener("click", function () {
                             input.value = asset.code;
                             lastQuery   = asset.code;
@@ -150,11 +153,11 @@
 
         var debouncedFetch = debounce(function () {
             var q = input.value.trim();
-            if (q.length === 0) { dropdown.classList.add("d-none"); return; }
+            if (q.length < 2) { dropdown.classList.add("d-none"); return; }
             fetchAndRender(q);
         }, 250);
 
-        input.addEventListener("input", function () {
+        function _onInputChange() {
             debouncedFetch();
             // Trigger absence mode when value is PERSONAL.
             // Activar modo ausencia cuando el valor es PERSONAL.
@@ -166,7 +169,15 @@
                     _toggleAbsenceMode(bIdx, val === "PERSONAL");
                 }
             }
-        });
+        }
+        // "input" covers desktop and most mobile browsers.
+        // "keyup" is a fallback for Android virtual keyboards that fire
+        // compositionend instead of "input" (keyCode 229 / IME events).
+        // "input" cubre escritorio y la mayoría de móviles.
+        // "keyup" es un respaldo para teclados virtuales Android que disparan
+        // compositionend en lugar de "input" (keyCode 229 / eventos IME).
+        input.addEventListener("input", _onInputChange);
+        input.addEventListener("keyup",  _onInputChange);
         input.addEventListener("blur",  function () {
             /* Only hide if the user is NOT in the middle of selecting an option.
                Solo ocultar si el usuario NO esta en proceso de seleccionar una opcion. */
@@ -617,6 +628,8 @@
             var _endM    = _cfgAdd.endTimeMorning || "";
             var _endA    = _cfgAdd.endTimeAfternoon || "";
             var _startA  = _cfgAdd.startTimeAfternoon || "";
+            var _lbStart = _cfgAdd.lunchBreakStart || "";
+            var _lbEnd   = _cfgAdd.lunchBreakEnd   || "";
             // Lunch active? Split shift not flagged "no lunch", or intensive
             // with "had lunch" checked.
             // ¿Pausa activa? Jornada partida sin "no he parado a comer", o
@@ -626,7 +639,14 @@
 
             var newHc = prevHf;
             var newHf = "";
-            if (prevHf && _endM && prevHf === _endM && _lunchActive && _startA) {
+            if (prevHf && _lbStart && _lbEnd && prevHf === _lbStart && _lunchActive) {
+                // Previous block ended exactly when the declared lunch break starts:
+                // next block starts after the lunch break ends.
+                // El bloque anterior terminó justo cuando empieza la pausa declarada:
+                // el nuevo bloque arranca al fin de la pausa.
+                newHc = _lbEnd;
+                newHf = _endA || "";
+            } else if (prevHf && _endM && prevHf === _endM && _lunchActive && _startA) {
                 // Previous block ended at end of morning and there is a lunch
                 // break: next block starts at the afternoon start time.
                 // El bloque anterior acabó al fin de la mañana y hay pausa:

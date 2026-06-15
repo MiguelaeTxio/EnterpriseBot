@@ -1,34 +1,8 @@
-/*
- * form_entry_assets.js — Via A work-order form: asset autocomplete,
- * dynamic block/spare-part rows, meter-reading fields, client-side
- * integrity validation and description typeahead.
- *
- * form_entry_assets.js — Formulario Via A: autocompletado de activos,
- * filas dinámicas de bloque/repuesto, campos de contadores, validación
- * de integridad client-side y typeahead de descripciones.
- *
- * Requires window.EB_CONFIG.assetsUrl and window.EB_CONFIG.assetDetailUrl
- * to be set before this script loads (injected inline by the template).
- * Requiere que window.EB_CONFIG.assetsUrl y window.EB_CONFIG.assetDetailUrl
- * estén definidos antes de cargar este script (inyectados inline por el template).
- */
 (function () {
     "use strict";
 
-    var ASSETS_URL       = (window.EB_CONFIG && window.EB_CONFIG.assetsUrl)      || "";
-    var ASSET_DETAIL_URL = (window.EB_CONFIG && window.EB_CONFIG.assetDetailUrl) || "";
-
-    /*
-     * Lunch break interval from the operator WorkdaySchedule.
-     * Pre-filled by the server via window.EB_CONFIG. Empty strings when the
-     * operator has an intensive shift or no schedule assigned.
-     *
-     * Intervalo de pausa de comida del WorkdaySchedule del operario.
-     * Prerrellenado por el servidor via window.EB_CONFIG. Cadenas vacias
-     * cuando el operario tiene jornada intensiva o no tiene horario asignado.
-     */
-    var LUNCH_BREAK_START = (window.EB_CONFIG && window.EB_CONFIG.lunchBreakStart) || "";
-    var LUNCH_BREAK_END   = (window.EB_CONFIG && window.EB_CONFIG.lunchBreakEnd)   || "";
+    var ASSETS_URL       = (window.EB_CONFIG && window.EB_CONFIG.assetsUrl)     || "/panel/operator/assets/";
+    var ASSET_DETAIL_URL = (window.EB_CONFIG && window.EB_CONFIG.assetDetailUrl) || "/panel/operator/asset-detail/";
 
     /*
      * Reveals or hides meter-reading fields for the given block index.
@@ -90,10 +64,6 @@
     function attachAutocomplete(input) {
         var dropdown = input.parentElement.querySelector(".asset-dropdown");
         if (!dropdown) { return; }
-        /* Idempotency guard: skip if listeners already attached to this input.
-           Guardia de idempotencia: salir si ya se adjuntaron listeners a este input. */
-        if (input.dataset.acAttached === "1") { return; }
-        input.dataset.acAttached = "1";
 
         var lastQuery  = "";
         /* Guard flag: true while the user is pressing a dropdown option.
@@ -123,8 +93,7 @@
                         var btn = document.createElement("button");
                         btn.type      = "button";
                         btn.className = "list-group-item list-group-item-action text-sm py-1 px-2";
-                        var plate = asset.plate ? " (" + asset.plate + ")" : "";
-                        btn.textContent = asset.code + " — " + asset.brand_model + plate;
+                        btn.textContent = asset.code + " — " + asset.brand_model;
 
                         /* pointerdown fires before blur on all platforms including
                            Android Chrome — set guard so blur does not close dropdown
@@ -132,10 +101,12 @@
                            pointerdown se dispara antes que blur en todas las plataformas
                            incluido Android Chrome — la guardia evita que blur cierre el
                            dropdown antes de que se confirme la seleccion. */
-                        btn.addEventListener("pointerdown", function (e) {
-                            e.preventDefault();
+                        btn.addEventListener("pointerdown", function () {
                             _selecting = true;
                         });
+                        btn.addEventListener("touchstart", function () {
+                            _selecting = true;
+                        }, { passive: true });
                         btn.addEventListener("click", function () {
                             input.value = asset.code;
                             lastQuery   = asset.code;
@@ -146,9 +117,23 @@
                             if (blockDiv) {
                                 var bIdx = (blockDiv.id || "").replace("block-", "");
                                 if (bIdx) {
-                                    var isPersonal = asset.code === EB_CONFIG.personalAssetCode;
+                                    // Toggle absence mode if PERSONAL selected.
+                                    // Activar modo ausencia si se selecciona PERSONAL.
+                                    var EB_CFG    = window.EB_CONFIG || {};
+                                    var isPersonal = asset.code === (EB_CFG.personalAssetCode || "PERSONAL");
                                     _toggleAbsenceMode(bIdx, isPersonal);
-                                    if (!isPersonal) {
+                                    if (isPersonal) {
+                                        // Focus the absence selector or fault description.
+                                        // Centrar el foco en el selector de ausencia o descripción.
+                                        var catSel = document.getElementById("entrada_" + bIdx + "_absence_category");
+                                        var faultTa = blockDiv.querySelector("[name=\"entrada_" + bIdx + "_fault_description\"]");
+                                        setTimeout(function () {
+                                            if (catSel) { catSel.focus(); }
+                                            else if (faultTa) { faultTa.focus(); }
+                                        }, 50);
+                                    } else {
+                                        // Reveal/hide meter fields for this block.
+                                        // Revelar/ocultar campos de contadores del bloque.
                                         fetch(ASSET_DETAIL_URL + "?code=" + encodeURIComponent(asset.code))
                                             .then(function (r) { return r.json(); })
                                             .then(function (d) { _applyMeterFields(bIdx, d); })
@@ -172,7 +157,27 @@
             fetchAndRender(q);
         }, 250);
 
-        input.addEventListener("input", debouncedFetch);
+        function _onInputChange() {
+            debouncedFetch();
+            // Trigger absence mode when value is PERSONAL.
+            // Activar modo ausencia cuando el valor es PERSONAL.
+            var blockDiv = input.closest("[id^=\"block-\"]");
+            if (blockDiv) {
+                var bIdx = (blockDiv.id || "").replace("block-", "");
+                if (bIdx) {
+                    var val = input.value.trim().toUpperCase();
+                    _toggleAbsenceMode(bIdx, val === "PERSONAL");
+                }
+            }
+        }
+        // "input" covers desktop and most mobile browsers.
+        // "keyup" is a fallback for Android virtual keyboards that fire
+        // compositionend instead of "input" (keyCode 229 / IME events).
+        // "input" cubre escritorio y la mayoría de móviles.
+        // "keyup" es un respaldo para teclados virtuales Android que disparan
+        // compositionend en lugar de "input" (keyCode 229 / eventos IME).
+        input.addEventListener("input", _onInputChange);
+        input.addEventListener("keyup",  _onInputChange);
         input.addEventListener("blur",  function () {
             /* Only hide if the user is NOT in the middle of selecting an option.
                Solo ocultar si el usuario NO esta en proceso de seleccionar una opcion. */
@@ -188,51 +193,67 @@
     // ==================================================================
     // _toggleAbsenceMode
     // Switches a work block between repair mode and absence mode.
-    // When isPersonal=true: hides fault_description, shows absence
-    // category selector. Adjusts repair_notes based on requires_note.
+    // When isPersonal=true: hides fault_description textarea, shows
+    // absence category selector with a brief-note placeholder.
     //
     // Alterna un bloque entre modo reparación y modo ausencia.
-    // Con isPersonal=true: oculta fault_description, muestra selector
-    // de categoría. Ajusta repair_notes según requires_note.
+    // Con isPersonal=true: oculta textarea de avería, muestra selector
+    // de categoría con placeholder de nota breve.
     // ==================================================================
     function _toggleAbsenceMode(idx, isPersonal) {
-        var absWrap    = document.getElementById('absence-selector-wrap-' + idx);
-        var faultWrap  = document.getElementById('fault-description-wrap-' + idx);
-        var repairWrap = document.getElementById('repair-notes-wrap-' + idx);
-        var repairLbl  = document.getElementById('repair-notes-label-' + idx);
-        if (isPersonal && !absWrap) {
-            var blockDiv = document.getElementById('block-' + idx);
-            if (blockDiv && EB_CONFIG.absenceCategories) {
-                var faultDiv = document.getElementById('fault-description-wrap-' + idx);
+        var absWrap    = document.getElementById("absence-selector-wrap-" + idx);
+        var faultWrap  = document.getElementById("fault-description-wrap-" + idx);
+        var repairWrap = document.getElementById("repair-notes-wrap-" + idx);
+        var repairLbl  = document.getElementById("repair-notes-label-" + idx);
+        var EB_CFG     = window.EB_CONFIG || {};
+
+        if (isPersonal && (!absWrap || absWrap.innerHTML.trim() === "")) {
+            var blockDiv = document.getElementById("block-" + idx);
+            if (blockDiv && EB_CFG.absenceCategories) {
+                // Use pre-existing empty wrapper (dynamic blocks) or insert before faultDiv.
+                // Usar wrapper vacío pre-existente (bloques dinámicos) o insertar antes de faultDiv.
+                var faultDiv = document.getElementById("fault-description-wrap-" + idx);
                 if (!faultDiv) {
-                    var fdr = blockDiv.querySelector('[name="entrada_' + idx + '_fault_description"]');
+                    var fdr = blockDiv.querySelector("[name=\"entrada_" + idx + "_fault_description\"]");
                     if (fdr && fdr.parentElement) {
-                        fdr.parentElement.id = 'fault-description-wrap-' + idx;
+                        fdr.parentElement.id = "fault-description-wrap-" + idx;
                         faultDiv = fdr.parentElement;
                     }
                 }
-                if (faultDiv) {
-                    var opts = '<option value="">— Selecciona una categoría —</option>';
-                    EB_CONFIG.absenceCategories.forEach(function (cat) {
-                        opts += '<option value="' + cat.id + '" data-requires-note="' +
-                            (cat.requires_note ? '1' : '0') + '">' + cat.label + '</option>';
-                    });
-                    var nad = document.createElement('div');
-                    nad.className = 'col-12 col-md-6 absence-selector-wrap d-none';
-                    nad.id = 'absence-selector-wrap-' + idx;
-                    nad.innerHTML =
-                        '<label class="form-label fw-medium">' +
-                        'Categoría de ausencia <span class="text-danger">*</span></label>' +
-                        '<select name="entrada_' + idx + '_absence_category" ' +
-                        'id="entrada_' + idx + '_absence_category" ' +
-                        'class="form-select eb-field">' + opts + '</select>';
+                var opts = "<option value=\"\">— Selecciona el motivo de ausencia —</option>";
+                EB_CFG.absenceCategories.forEach(function (cat) {
+                    opts += "<option value=\"" + cat.id + "\" data-requires-note=\"" +
+                        (cat.requires_note ? "1" : "0") + "\">" + cat.label + "</option>";
+                });
+                var absContent =
+                    "<label class=\"form-label fw-medium\">" +
+                    "Categoría de ausencia <span class=\"text-danger\">*</span></label>" +
+                    "<select name=\"entrada_" + idx + "_absence_category\" " +
+                    "id=\"entrada_" + idx + "_absence_category\" " +
+                    "class=\"form-select eb-field\">" + opts + "</select>" +
+                    "<div class=\"form-text text-muted mt-1\">" +
+                    "Selecciona el motivo. Describe brevemente en el campo de reparación si lo requiere." +
+                    "</div>";
+                if (absWrap) {
+                    // Dynamic block: fill pre-existing empty wrapper.
+                    absWrap.innerHTML = absContent;
+                } else if (faultDiv) {
+                    // Static block: create and insert wrapper.
+                    var nad = document.createElement("div");
+                    nad.className = "col-12 col-md-6 absence-selector-wrap d-none";
+                    nad.id = "absence-selector-wrap-" + idx;
+                    nad.innerHTML = absContent;
                     faultDiv.parentElement.insertBefore(nad, faultDiv);
                     absWrap = nad;
-                    var rdr = blockDiv.querySelector('[name="entrada_' + idx + '_repair_notes"]');
-                    if (rdr && rdr.parentElement) {
-                        rdr.parentElement.id = 'repair-notes-wrap-' + idx;
-                        var lbl = rdr.parentElement.querySelector('label');
-                        if (lbl) { lbl.id = 'repair-notes-label-' + idx; }
+                }
+                absWrap = document.getElementById("absence-selector-wrap-" + idx);
+                var rdr = blockDiv.querySelector("[name=\"entrada_" + idx + "_repair_notes\"]");
+                if (rdr) {
+                    rdr.placeholder = "Describe brevemente el motivo de la ausencia (opcional).";
+                    if (rdr.parentElement) {
+                        if (!rdr.parentElement.id) { rdr.parentElement.id = "repair-notes-wrap-" + idx; }
+                        var lbl = rdr.parentElement.querySelector("label");
+                        if (lbl && !lbl.id) { lbl.id = "repair-notes-label-" + idx; }
                         repairWrap = rdr.parentElement;
                         repairLbl  = lbl;
                     }
@@ -241,37 +262,50 @@
         }
         if (!absWrap || !faultWrap) { return; }
         if (isPersonal) {
-            absWrap.classList.remove('d-none');
-            faultWrap.classList.add('d-none');
-            var catSel = document.getElementById('entrada_' + idx + '_absence_category');
+            absWrap.classList.remove("d-none");
+            faultWrap.classList.add("d-none");
+            // Keep repair_notes visible as the "brief reason" field.
+            // Mantener repair_notes visible como campo de "motivo breve".
+            var rdrPersonal = document.querySelector("[name=\"entrada_" + idx + "_repair_notes\"]");
+            if (rdrPersonal) {
+                rdrPersonal.placeholder = "Describe brevemente el motivo de la ausencia.";
+            }
+            if (repairLbl) {
+                repairLbl.innerHTML = "Motivo de la ausencia <span class=\"text-danger\">*</span>";
+            }
+            if (repairWrap) { repairWrap.classList.remove("d-none"); }
+            var catSel = document.getElementById("entrada_" + idx + "_absence_category");
             if (catSel) {
-                catSel.addEventListener('change', function () { _adjustRepairNotes(idx, catSel); });
-                _adjustRepairNotes(idx, catSel);
+                catSel.addEventListener("change", function () { _adjustRepairNotes(idx, catSel); });
             }
         } else {
-            absWrap.classList.add('d-none');
-            faultWrap.classList.remove('d-none');
-            if (repairLbl) { repairLbl.innerHTML = 'Reparación realizada <span class=\"text-danger\">*</span>'; }
-            if (repairWrap) { repairWrap.classList.remove('d-none'); }
+            absWrap.classList.add("d-none");
+            faultWrap.classList.remove("d-none");
+            var rdrReset = document.querySelector("[name=\"entrada_" + idx + "_repair_notes\"]");
+            if (rdrReset) { rdrReset.placeholder = "Descripción de la reparación"; }
+            if (repairLbl) { repairLbl.innerHTML = "Reparación realizada <span class=\"text-danger\">*</span>"; }
+            if (repairWrap) { repairWrap.classList.remove("d-none"); }
         }
     }
 
     // ==================================================================
     // _adjustRepairNotes
-    // Adjusts repair_notes visibility and label based on requires_note.
+    // Adjusts repair_notes visibility based on requires_note flag.
     // Ajusta repair_notes según el flag requires_note de la categoría.
     // ==================================================================
     function _adjustRepairNotes(idx, catSel) {
-        var repairWrap = document.getElementById('repair-notes-wrap-' + idx);
-        var repairLbl  = document.getElementById('repair-notes-label-' + idx);
+        var repairWrap = document.getElementById("repair-notes-wrap-" + idx);
+        var repairLbl  = document.getElementById("repair-notes-label-" + idx);
         if (!repairWrap) { return; }
         var selOpt = catSel.options[catSel.selectedIndex];
-        var requiresNote = selOpt && selOpt.dataset.requiresNote === '1';
+        var requiresNote = selOpt && selOpt.dataset.requiresNote === "1";
         if (requiresNote) {
-            repairWrap.classList.remove('d-none');
-            if (repairLbl) { repairLbl.innerHTML = 'Observaciones <span class=\"text-danger\">*</span>'; }
+            repairWrap.classList.remove("d-none");
+            if (repairLbl) {
+                repairLbl.innerHTML = "Observaciones <span class=\"text-danger\">*</span>";
+            }
         } else {
-            repairWrap.classList.add('d-none');
+            repairWrap.classList.add("d-none");
         }
     }
 
@@ -354,49 +388,6 @@
     // Asociar autocompletado a todos los inputs pre-renderizados.
     document.querySelectorAll(".asset-search").forEach(attachAutocomplete);
 
-    // Re-attach autocomplete after HTMX outerHTML swaps (e.g. intensive-shift
-    // toggle replaces #schedule-dependent-fields, destroying the first block
-    // input and inserting a new one without data-tp-init or the autocomplete
-    // event listeners). MutationObserver deferred via setTimeout so the full
-    // subtree is in the DOM before querySelectorAll runs.
-    // Re-adjuntar autocompletado tras swaps HTMX outerHTML (el toggle de jornada
-    // intensiva reemplaza #schedule-dependent-fields destruyendo el input del
-    // primer bloque e insertando uno nuevo sin listeners de autocompletado).
-    // MutationObserver diferido via setTimeout para que el subarbol completo
-    // este en el DOM antes de que corra querySelectorAll.
-    var _autocompleteObserver = new MutationObserver(function (mutations) {
-        var needsAttach = false;
-        mutations.forEach(function (m) {
-            /* Ignore mutations originating inside a dropdown — they are caused
-               by fetchAndRender itself and must not trigger re-attachment.
-               Ignorar mutaciones originadas dentro de un dropdown — las provoca
-               el propio fetchAndRender y no deben disparar re-adjuncion. */
-            if (!m.addedNodes.length) { return; }
-            var inDropdown = false;
-            m.addedNodes.forEach(function (node) {
-                if (inDropdown) { return; }
-                var el = node.nodeType === 1 ? node : node.parentElement;
-                if (el && el.closest && el.closest(".asset-dropdown")) {
-                    inDropdown = true;
-                }
-            });
-            if (!inDropdown) { needsAttach = true; }
-        });
-        if (needsAttach) {
-            setTimeout(function () {
-                document.querySelectorAll(".asset-search").forEach(function (inp) {
-                    // attachAutocomplete is now truly idempotent via data-ac-attached.
-                    // attachAutocomplete es verdaderamente idempotente via data-ac-attached.
-                    attachAutocomplete(inp);
-                });
-            }, 0);
-        }
-    });
-    _autocompleteObserver.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-
     // On page load, reveal meter fields for any block that already has a
     // machine_raw value (server re-render after validation error).
     // Al cargar la página, revelar campos de contador para cualquier bloque
@@ -447,9 +438,7 @@
      * Construye un nodo DOM de bloque de trabajo para el idx dado.
      * Replica los nombres de campo esperados por WorkOrderEntryFormView.post().
      */
-    function _buildBlockRow(idx, initHc, initHf) {
-        initHc = initHc || "";
-        initHf = initHf || "";
+    function _buildBlockRow(idx) {
         var div = document.createElement("div");
         div.className = "confirm-block mb-4 pb-4 border-bottom extra-block-row";
         div.id = "block-" + idx;
@@ -457,7 +446,7 @@
             '<div class="d-flex align-items-center gap-2 mb-3">' +
                 '<span class="badge bg-dark">Tarea ' + idx + '</span>' +
                 '<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-2 btn-remove-block">' +
-                    '<i class="bi bi-trash"></i> Eliminar bloque' +
+                    '<i class="bi bi-trash"></i> Eliminar tarea' +
                 '</button>' +
             '</div>' +
             '<div class="row g-3">' +
@@ -465,23 +454,23 @@
                     '<label class="form-label fw-medium">Máquina o Sección <span class="text-danger">*</span></label>' +
                     '<div class="position-relative">' +
                         '<input type="text" name="entrada_' + idx + '_machine_raw" ' +
-                               'class="form-control asset-search eb-field" ' +
-                               'placeholder="Código de máquina" autocomplete="off">' +
+                               'class="form-control asset-search" ' +
+                               'placeholder="Codigo de maquina" autocomplete="off">' +
                         '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
                     '</div>' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">H.C. <span class="text-danger">*</span></label>' +
-                    '<input type="time" step="1800" name="entrada_' + idx + '_hc" class="form-control eb-field" value="' + initHc + '">' +
+                    '<input type="time" step="1800" name="entrada_' + idx + '_hc" class="form-control">' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">H.F. <span class="text-danger">*</span></label>' +
-                    '<input type="time" step="1800" name="entrada_' + idx + '_hf" class="form-control eb-field" value="' + initHf + '">' +
+                    '<input type="time" step="1800" name="entrada_' + idx + '_hf" class="form-control">' +
                 '</div>' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">O.R.</label>' +
                     '<input type="text" name="entrada_' + idx + '_or_val" ' +
-                           'class="form-control field-optional" placeholder="Referencia O.R. (opcional)">' +
+                           'class="form-control" placeholder="Referencia O.R. (opcional)">' +
                 '</div>' +
                 // Meter readings — ocultos por defecto, revelados por _applyMeterFields().
                 '<div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="' + idx + '">' +
@@ -496,32 +485,18 @@
                     '<label class="form-label fw-medium">Horómetro grúa (h) <span class=\"text-danger meter-required\">*</span></label>' +
                     '<input type="number" step="0.1" min="0" name="entrada_' + idx + '_crane_hours_reading" class="form-control horometro-input" placeholder="Horas grúa">' +
                 '</div>' +
-                '<div class="col-12 col-md-6 absence-selector-wrap d-none" id="absence-selector-wrap-' + idx + '">' +
-                    '<label class="form-label fw-medium">Categoría de ausencia <span class="text-danger">*</span></label>' +
-                    (function () {
-                        var opts = '<option value="">— Selecciona una categoría —</option>';
-                        if (EB_CONFIG.absenceCategories) {
-                            EB_CONFIG.absenceCategories.forEach(function (cat) {
-                                opts += '<option value="' + cat.id + '" data-requires-note="' +
-                                    (cat.requires_note ? '1' : '0') + '">' + cat.label + '</option>';
-                            });
-                        }
-                        return '<select name="entrada_' + idx + '_absence_category" ' +
-                               'id="entrada_' + idx + '_absence_category" ' +
-                               'class="form-select eb-field">' + opts + '</select>';
-                    }()) +
-                '</div>' +
+                '<div class="col-12 col-md-6 absence-selector-wrap d-none" id="absence-selector-wrap-' + idx + '"></div>' +
                 '<div class="col-12 col-md-6" id="fault-description-wrap-' + idx + '">' +
                     '<label class="form-label fw-medium">Descripción avería <span class="text-danger">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_fault_description" ' +
-                              'class="form-control desc-search eb-field" rows="3" ' +
+                              'class="form-control eb-field desc-search" rows="3" ' +
                               'data-desc-field="fault_description" ' +
                               'placeholder="Descripción de la avería o tarea"></textarea>' +
                 '</div>' +
                 '<div class="col-12 col-md-6" id="repair-notes-wrap-' + idx + '">' +
-                    '<label class="form-label fw-medium" id="repair-notes-label-' + idx + '">Reparación realizada <span class=\"text-danger\">*</span></label>' +
+                    '<label class="form-label fw-medium" id="repair-notes-label-' + idx + '">Reparación realizada <span class="text-danger">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_repair_notes" ' +
-                              'class="form-control desc-search eb-field" rows="3" ' +
+                              'class="form-control eb-field desc-search" rows="3" ' +
                               'data-desc-field="repair_notes" ' +
                               'placeholder="Descripción de la reparación"></textarea>' +
                 '</div>' +
@@ -578,7 +553,7 @@
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
                     '<input type="text" name="repuesto_' + ridx + '_material" ' +
-                           'class="form-control" placeholder="Descripción del material">' +
+                           'class="form-control" placeholder="Descripcion del material">' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">Unidades <span class="text-danger">*</span></label>' +
@@ -632,42 +607,72 @@
             var current = parseInt(numEntradasInput.value, 10) || 1;
             var nextIdx = current + 1;
             numEntradasInput.value = nextIdx;
-            /* Pre-fill HC/HF before appendChild so TimePicker reads the value on init.
-               Read EB_CONFIG at click time (not at module init) so that changes made
-               by the intensive-shift toggle are reflected immediately.
-               Prerrellenar HC/HF antes de appendChild para que TimePicker lea el valor
-               al inicializar. Se lee EB_CONFIG en el momento del click (no al cargar
-               el modulo) para reflejar los cambios del toggle de jornada intensiva. */
-            var endTimeMorning   = (window.EB_CONFIG && window.EB_CONFIG.endTimeMorning)   || "";
-            var endTimeAfternoon = (window.EB_CONFIG && window.EB_CONFIG.endTimeAfternoon) || "";
-            var afternoonStart   = (window.EB_CONFIG && window.EB_CONFIG.lunchBreakEnd)    || "";
-            var prevHfInput = document.querySelector('[name="entrada_' + current + '_hf"]');
-            var rawPrevHf   = prevHfInput ? prevHfInput.value : "";
-            var suggestedHc = "";
-            var suggestedHf = "";
-            if (rawPrevHf && endTimeMorning && rawPrevHf < endTimeMorning) {
-                /* Previous block ends before morning end: this block starts
-                   where the previous ended and covers until morning end.
-                   El bloque anterior termina antes del fin de manana: este
-                   bloque empieza donde termino el anterior y cubre hasta el
-                   fin del tramo de manana. */
-                suggestedHc = rawPrevHf;
-                suggestedHf = endTimeMorning;
-            } else if (rawPrevHf) {
-                /* Previous block ends at or after morning end: we are in the
-                   afternoon tract. HC is forced to afternoon start, HF to
-                   afternoon end. In intensive shift afternoonStart and
-                   endTimeAfternoon are both empty so HC/HF stay empty.
-                   El bloque anterior termina a la hora de fin de manana o
-                   despues: estamos en el tramo de tarde. HC se fuerza al
-                   inicio de tarde, HF al fin de tarde. En jornada intensiva
-                   ambos estan vacios, por lo que HC/HF quedan vacios. */
-                suggestedHc = afternoonStart   || "";
-                suggestedHf = endTimeAfternoon || "";
-            }
-            var row = _buildBlockRow(nextIdx, suggestedHc, suggestedHf);
-            extraBlocksCont.appendChild(row);
 
+            // Compute suggested HC/HF for the new block based on the previous
+            // block's HF and the operator's schedule periods. This is only a
+            // pre-fill hint — the operator may override it, and the closing
+            // guardian modal validates gaps/overlaps and the 8h minimum.
+            //
+            // Calcular HC/HF sugeridos para el nuevo bloque a partir de la HF
+            // del bloque anterior y los periodos del horario. Es solo una
+            // ayuda de prerrelleno — el operario puede cambiarla, y el modal
+            // guardián valida lagunas/solapamientos y el mínimo de 8h.
+            var prevHf = "";
+            var prevBlock = document.getElementById("block-" + current);
+            if (prevBlock) {
+                var prevHfInput = prevBlock.querySelector("[name=\"entrada_" + current + "_hf\"]");
+                if (prevHfInput && prevHfInput.value) { prevHf = prevHfInput.value; }
+            }
+
+            var _cfgAdd  = window.EB_CONFIG || {};
+            var _endM    = _cfgAdd.endTimeMorning || "";
+            var _endA    = _cfgAdd.endTimeAfternoon || "";
+            var _startA  = _cfgAdd.startTimeAfternoon || "";
+            var _lbStart = _cfgAdd.lunchBreakStart || "";
+            var _lbEnd   = _cfgAdd.lunchBreakEnd   || "";
+            // Lunch active? Split shift not flagged "no lunch", or intensive
+            // with "had lunch" checked.
+            // ¿Pausa activa? Jornada partida sin "no he parado a comer", o
+            // intensiva con "he parado a comer" marcado.
+            var _noLunchEl  = document.getElementById("id_no_lunch_break_value");
+            var _lunchActive = !(_noLunchEl && _noLunchEl.value === "1");
+
+            var newHc = prevHf;
+            var newHf = "";
+            if (prevHf && _lbStart && _lbEnd && prevHf === _lbStart && _lunchActive) {
+                // Previous block ended exactly when the declared lunch break starts:
+                // next block starts after the lunch break ends.
+                // El bloque anterior terminó justo cuando empieza la pausa declarada:
+                // el nuevo bloque arranca al fin de la pausa.
+                newHc = _lbEnd;
+                newHf = _endA || "";
+            } else if (prevHf && _endM && prevHf === _endM && _lunchActive && _startA) {
+                // Previous block ended at end of morning and there is a lunch
+                // break: next block starts at the afternoon start time.
+                // El bloque anterior acabó al fin de la mañana y hay pausa:
+                // el nuevo bloque arranca al inicio de la tarde.
+                newHc = _startA;
+                newHf = _endA || "";
+            } else if (prevHf && _endM && prevHf < _endM) {
+                // HC falls in the morning period — HF defaults to end morning.
+                // La HC cae en el periodo de mañana — HF por defecto fin mañana.
+                newHf = _endM;
+            } else {
+                // HC falls in the afternoon period — HF defaults to end afternoon.
+                // La HC cae en el periodo de tarde — HF por defecto fin tarde.
+                newHf = _endA || _endM || "";
+            }
+
+            var row = _buildBlockRow(nextIdx);
+            extraBlocksCont.appendChild(row);
+            if (newHc) {
+                var newHcInput = row.querySelector("[name=\"entrada_" + nextIdx + "_hc\"]");
+                if (newHcInput) { newHcInput.value = newHc; }
+            }
+            if (newHf) {
+                var newHfInput = row.querySelector("[name=\"entrada_" + nextIdx + "_hf\"]");
+                if (newHfInput) { newHfInput.value = newHf; }
+            }
             // Attach autocomplete to new input.
             // Asociar autocompletado al nuevo input.
             var newInput = row.querySelector(".asset-search");
@@ -771,34 +776,40 @@
 
             // Gate 2 — Work blocks / Bloques de trabajo.
             var numEntradas = parseInt(_val("num_entradas"), 10) || 1;
-
+            var _cfgVal     = window.EB_CONFIG || {};
+            var _personalCode = (_cfgVal.personalAssetCode || "PERSONAL").toUpperCase();
             for (var i = 1; i <= numEntradas; i++) {
-                var blk  = "Bloque " + i;
+                var blk  = "Tarea " + i;
                 var maq  = _val("entrada_" + i + "_machine_raw");
                 var hc   = _val("entrada_" + i + "_hc");
                 var hf   = _val("entrada_" + i + "_hf");
                 var desc = _val("entrada_" + i + "_fault_description");
+                var isAbsenceBlk = maq.trim().toUpperCase() === _personalCode;
+                var absCat = _val("entrada_" + i + "_absence_category");
 
-                _markField("entrada_" + i + "_machine_raw",        !maq);
-                _markField("entrada_" + i + "_hc",                 !hc);
-                _markField("entrada_" + i + "_hf",                 !hf);
-                _markField("entrada_" + i + "_fault_description", !desc);
+                _markField("entrada_" + i + "_machine_raw", !maq);
+                _markField("entrada_" + i + "_hc",          !hc);
+                _markField("entrada_" + i + "_hf",          !hf);
 
                 if (!maq)  { errors.push(blk + ": codigo de maquina obligatorio."); }
                 if (!hc)   { errors.push(blk + ": H.C. obligatoria."); }
                 if (!hf)   { errors.push(blk + ": H.F. obligatoria."); }
-                if (!desc) { errors.push(blk + ": descripcion de averia obligatoria."); }
-                var rep_notes = _val("entrada_" + i + "_repair_notes");
-                _markField("entrada_" + i + "_repair_notes", !rep_notes);
-                if (!rep_notes) { errors.push(blk + ": descripcion de reparacion obligatoria."); }
+                if (isAbsenceBlk) {
+                    // Absence block: require category, not fault description.
+                    // Bloque de ausencia: exigir categoría, no descripción avería.
+                    _markField("entrada_" + i + "_absence_category", !absCat);
+                    if (!absCat) {
+                        errors.push(blk + ": selecciona una categoria de ausencia.");
+                    }
+                } else {
+                    _markField("entrada_" + i + "_fault_description", !desc);
+                    if (!desc) { errors.push(blk + ": descripcion de averia obligatoria."); }
+                }
                 if (hc && hf && hf <= hc) {
                     _markField("entrada_" + i + "_hf", true);
                     errors.push(blk + ": H.F. debe ser posterior a H.C.");
                 }
             }
-            // Inject lunch overlap hidden inputs before close_order submit.
-            // Inyectar inputs de solapamiento antes del submit close_order.
-            _computeAndInjectLunchOverlaps(numEntradas);
 
             // Gate 3 — Spare parts / Repuestos.
             var numRepuestos = parseInt(_val("num_repuestos"), 10) || 0;
@@ -818,7 +829,6 @@
             }
 
             // Gate A — overlap detection between blocks.
-            // Deteccion de solapamientos entre bloques.
             var _blocks = [];
             for (var oi = 1; oi <= numEntradas; oi++) {
                 var _ohc = _val("entrada_" + oi + "_hc");
@@ -831,35 +841,32 @@
             for (var bi = 0; bi < _blocks.length - 1; bi++) {
                 if (_blocks[bi].hf > _blocks[bi + 1].hc) {
                     errors.push(
-                        "Bloque " + _blocks[bi].idx + " y Bloque " + _blocks[bi + 1].idx +
+                        "Tarea " + _blocks[bi].idx + " y Tarea " + _blocks[bi + 1].idx +
                         ": los horarios se solapan (" + _blocks[bi].hf + " > " + _blocks[bi + 1].hc + ")."
                     );
                 }
             }
 
             // Gate B — workday coverage check (close_order only).
-            // Comprobacion de cobertura de jornada (solo en close_order).
-            var _formAction = (document.getElementById("form-action-input") || {}).value || "";
+            var _formActionEl = document.getElementById("form-action-input");
+            var _formAction   = _formActionEl ? _formActionEl.value : "";
+            var _gapErrors    = [];
             if (_formAction !== "save_blocks" && errors.length === 0) {
-                var _cfg = window.EB_CONFIG || {};
+                var _cfg         = window.EB_CONFIG || {};
                 var _isIntensive = !!_cfg.isIntensiveOverride;
-                var _endTime = _isIntensive
+                var _endTime     = _isIntensive
                     ? (_cfg.endTimeMorning || "")
                     : (_cfg.endTimeAfternoon || _cfg.endTimeMorning || "");
-                var _startTime = _cfg.lunchBreakStart
-                    ? (_cfg.lunchBreakStart)
-                    : "";
-                // Calculate total effective minutes from all blocks.
-                // Calcular total de minutos efectivos de todos los bloques.
                 function _toMin(t) {
                     if (!t) { return 0; }
                     var p = t.split(":");
                     return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
                 }
+                var _lbStart  = (_cfg.lunchBreakStart || "");
+                var _lbEnd    = (_cfg.lunchBreakEnd   || "");
                 var _noLunchEl = document.getElementById("id_no_lunch_break_value");
-                var _noLunch = _noLunchEl && _noLunchEl.value === "1";
-                var _lbStart = _noLunch ? "" : (_val("lunch_break_start") || LUNCH_BREAK_START);
-                var _lbEnd   = _noLunch ? "" : (_val("lunch_break_end")   || LUNCH_BREAK_END);
+                var _noLunch  = _noLunchEl && _noLunchEl.value === "1";
+                if (_noLunch) { _lbStart = ""; _lbEnd = ""; }
                 var _totalMin = 0;
                 for (var gi = 1; gi <= numEntradas; gi++) {
                     var _ghc = _val("entrada_" + gi + "_hc");
@@ -867,8 +874,6 @@
                     if (!_ghc || !_ghf) { continue; }
                     var _gross = _toMin(_ghf) - _toMin(_ghc);
                     if (_gross <= 0) { continue; }
-                    // Deduct lunch overlap.
-                    // Descontar solapamiento con pausa.
                     var _overlap = 0;
                     if (_lbStart && _lbEnd) {
                         _overlap = Math.max(0,
@@ -878,22 +883,39 @@
                     }
                     _totalMin += (_gross - _overlap);
                 }
-                if (_endTime) {
-                    // Last block must cover until effective end time.
-                    // El ultimo bloque debe cubrir hasta la hora de salida efectiva.
-                    var _lastHf = _blocks.length > 0 ? _blocks[_blocks.length - 1].hf : "";
-                    var _endMin = _toMin(_endTime);
+                if (_totalMin < 480) {
+                    var _missingMin = 480 - _totalMin;
+                    var _missingH   = Math.floor(_missingMin / 60);
+                    var _missingM   = _missingMin % 60;
+                    var _missingStr = _missingH > 0
+                        ? (_missingH + " h " + (_missingM > 0 ? _missingM + " min" : ""))
+                        : (_missingM + " min");
+                    _gapErrors.push(
+                        "La jornada suma " + (_totalMin / 60).toFixed(2).replace(".", ",") +
+                        " h, pero se requieren al menos 8 h. " +
+                        "Faltan " + _missingStr + " para completar la jornada. " +
+                        "Aniade las tareas que faltan o, si hubo ausencia, " +
+                        "aniade una tarea con codigo PERSONAL en el campo " +
+                        "Maquina/Centro de Gasto y selecciona el motivo."
+                    );
+                }
+                // Early-close check. Skip when total >= 8h: the operator
+                // may legitimately add an afternoon block in intensive shift
+                // as long as the 8h are met.
+                // Comprobación de cierre anticipado. Se omite si total >= 8h:
+                // el operario puede añadir un bloque vespertino en jornada
+                // intensiva siempre que se cumplan las 8h.
+                if (_endTime && _totalMin < 480) {
+                    var _lastHf  = _blocks.length > 0 ? _blocks[_blocks.length - 1].hf : "";
+                    var _endMin  = _toMin(_endTime);
                     var _lastMin = _toMin(_lastHf);
                     if (_lastHf && _lastMin < _endMin - 14) {
-                        // More than 15 min gap to end of shift.
-                        // Mas de 15 min hasta el fin de jornada.
-                        var _missingMin = _endMin - _lastMin;
-                        var _missingH = (_missingMin / 60).toFixed(2).replace(".", ",");
-                        errors.push(
+                        var _missEndMin = _endMin - _lastMin;
+                        _gapErrors.push(
                             "Cierre anticipado: tu ultimo bloque termina a las " + _lastHf +
                             " pero la jornada acaba a las " + _endTime +
-                            " (faltan " + _missingMin + " min). " +
-                            "Aniade un bloque o justifica la ausencia con codigo PERSONAL."
+                            " (faltan " + _missEndMin + " min). " +
+                            "Aniade una tarea o justifica la ausencia con codigo PERSONAL."
                         );
                     }
                 }
@@ -901,13 +923,17 @@
 
             if (errors.length > 0) {
                 e.preventDefault();
-                // Show gap warning modal instead of inline alert banner.
-                // Mostrar modal de lagunas en lugar del banner de alerta inline.
+                _showAlert(errors.join(" | "));
+                return;
+            }
+
+            if (_gapErrors.length > 0) {
+                e.preventDefault();
                 var _gapModal = document.getElementById("gapWarningModal");
-                var _gapList  = _gapModal ? _gapModal.querySelector("ul.list-group") : null;
+                var _gapList  = document.getElementById("gap-warning-list");
                 if (_gapModal && _gapList && window.bootstrap && bootstrap.Modal) {
                     _gapList.innerHTML = "";
-                    errors.forEach(function (msg) {
+                    _gapErrors.forEach(function (msg) {
                         var li = document.createElement("li");
                         li.className = "list-group-item ps-0 border-0 py-1";
                         li.innerHTML = '<i class="bi bi-clock text-warning me-2"></i>' + msg;
@@ -916,167 +942,73 @@
                     var _m = bootstrap.Modal.getOrCreateInstance(_gapModal);
                     _m.show();
                 } else {
-                    // Fallback: inline alert if modal not available.
-                    // Fallback: alerta inline si el modal no esta disponible.
-                    _showAlert(errors.join(" | "));
+                    _showAlert(_gapErrors.join(" | "));
                 }
             }
         });
     }
 
     // ==================================================================
-    // No-lunch-break toggle / Toggle sin pausa de comida
-    // Only present in split-shift mode (when #lunch-break-times exists).
-    // Solo en jornada partida (cuando existe #lunch-break-times).
-    // ==================================================================
-    // ==================================================================
-    // No-lunch-break toggle — delegated to document so it survives HTMX
-    // outerHTML swaps that replace #schedule-dependent-fields in-place.
-    // References captured at module load time become stale (zombie nodes)
-    // after HTMX replaces the DOM subtree. Event delegation on document
-    // always targets the live node, regardless of how many swaps occurred.
+    // _initLunchBreak
+    // Manages lunch-break field visibility and auto-fill based on shift.
+    // - Split shift: show pre-filled lunch times from schedule.
+    // - Intensive shift: no lunch — fields stay hidden.
+    // - "No lunch" checkbox: hides times and flags no_lunch_break=1.
     //
-    // Toggle sin pausa de comida — delegado al document para que sobreviva
-    // los swaps HTMX outerHTML que reemplazan #schedule-dependent-fields.
-    // Las referencias capturadas al cargar el módulo quedan obsoletas (nodos
-    // zombie) tras el swap HTMX. La delegación sobre document siempre
-    // apunta al nodo vivo, independientemente del número de swaps ocurridos.
+    // Gestiona visibilidad y auto-relleno de pausa según jornada.
+    // - Jornada partida: mostrar pausa prerrellenada del horario.
+    // - Jornada intensiva: sin pausa — campos ocultos.
+    // - Checkbox "no he parado a comer": oculta pausa y marca flag.
     // ==================================================================
-    document.addEventListener("change", function (evt) {
-        if (!evt.target || evt.target.id !== "id_no_lunch_toggle") { return; }
+    function _initLunchBreak() {
+        var lbStart    = document.getElementById("id_lunch_break_start");
+        var lbEnd      = document.getElementById("id_lunch_break_end");
+        var noLunchCb  = document.getElementById("id_no_lunch_toggle");
+        var hadLunchCb = document.getElementById("id_had_lunch_toggle");
+        var noLunchVal = document.getElementById("id_no_lunch_break_value");
+        if (!lbStart || !lbEnd) { return; }
 
-        // Re-query live DOM on every change event — nodes may have been
-        // replaced by a prior HTMX swap.
-        // Re-consultar el DOM vivo en cada evento change — los nodos pueden
-        // haber sido reemplazados por un swap HTMX anterior.
-        var noLunchHidden = document.getElementById("id_no_lunch_break_value");
-        var lunchTimesDiv = document.getElementById("lunch-break-times");
-        var lbStartInput  = document.getElementById("id_lunch_break_start");
-        var lbEndInput    = document.getElementById("id_lunch_break_end");
-
-        if (!noLunchHidden || !lunchTimesDiv) { return; }
-
-        if (evt.target.checked) {
-            // Operator skipped lunch: hide time fields, clear values, flag 1.
-            // El operario no ha parado: ocultar campos, vaciar valores, flag 1.
-            lunchTimesDiv.classList.add("d-none");
-            noLunchHidden.value = "1";
-            if (lbStartInput) { lbStartInput.value = ""; }
-            if (lbEndInput)   { lbEndInput.value   = ""; }
-        } else {
-            // Operator had lunch: show time fields, restore schedule values.
-            // El operario ha parado: mostrar campos, restaurar valores de horario.
-            lunchTimesDiv.classList.remove("d-none");
-            noLunchHidden.value = "0";
-            if (lbStartInput && window.EB_CONFIG && window.EB_CONFIG.lunchBreakStart) {
-                lbStartInput.value = window.EB_CONFIG.lunchBreakStart;
+        function _applyVisibility() {
+            var showTimes;
+            if (hadLunchCb) {
+                // Intensive shift: lunch OFF by default, shown when checked.
+                // Jornada intensiva: sin pausa por defecto, visible al marcar.
+                showTimes = hadLunchCb.checked;
+                if (noLunchVal) { noLunchVal.value = showTimes ? "0" : "1"; }
+            } else if (noLunchCb) {
+                // Split shift: lunch ON by default, hidden when checked.
+                // Jornada partida: pausa por defecto, oculta al marcar.
+                showTimes = !noLunchCb.checked && lbStart.value && lbEnd.value;
+                if (noLunchVal) { noLunchVal.value = noLunchCb.checked ? "1" : "0"; }
+            } else {
+                showTimes = lbStart.value && lbEnd.value;
             }
-            if (lbEndInput && window.EB_CONFIG && window.EB_CONFIG.lunchBreakEnd) {
-                lbEndInput.value = window.EB_CONFIG.lunchBreakEnd;
+            if (showTimes) {
+                lbStart.classList.remove("d-none");
+                lbEnd.classList.remove("d-none");
+            } else {
+                lbStart.classList.add("d-none");
+                lbEnd.classList.add("d-none");
             }
+        }
+
+        _applyVisibility();
+
+        if (noLunchCb)  { noLunchCb.addEventListener("change", _applyVisibility); }
+        if (hadLunchCb) { hadLunchCb.addEventListener("change", _applyVisibility); }
+    }
+
+    // Run on load and re-run after each HTMX swap of the schedule fragment.
+    // Ejecutar al cargar y tras cada swap HTMX del fragment de horario.
+    _initLunchBreak();
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.target && evt.target.id === "schedule-dependent-fields") {
+            _initLunchBreak();
+            // Re-attach autocomplete to the new first block input.
+            // Re-asociar autocompletado al nuevo input del primer bloque.
+            var newFirst = evt.target.querySelector(".asset-search");
+            if (newFirst) { attachAutocomplete(newFirst); }
         }
     });
 
-    // ==================================================================
-    // _computeAndInjectLunchOverlaps
-    // Computes the overlap in minutes between each work block [hc, hf]
-    // and the lunch break window, injects the result into a hidden input
-    // (lunch_overlap_N) for backend deduction. Called from both the
-    // close_order submit handler and the save_blocks click handler.
-    //
-    // Calcula el solapamiento en minutos entre cada bloque [hc, hf] y la
-    // ventana de pausa de comida, e inyecta el resultado en un input oculto
-    // (lunch_overlap_N) para el descuento en backend. Se llama desde
-    // close_order y save_blocks para garantizar descuento coherente.
-    // ==================================================================
-    function _computeAndInjectLunchOverlaps(numBlocks) {
-        function _lunchOverlapMinutes(hc, hf, lunchStart, lunchEnd) {
-            if (!hc || !hf || !lunchStart || !lunchEnd) { return 0; }
-            function _toMin(t) {
-                var parts = t.split(":");
-                return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-            }
-            var blockStart   = _toMin(hc);
-            var blockEnd     = _toMin(hf);
-            var lunchS       = _toMin(lunchStart);
-            var lunchE       = _toMin(lunchEnd);
-            var overlapStart = Math.max(blockStart, lunchS);
-            var overlapEnd   = Math.min(blockEnd,   lunchE);
-            return Math.max(0, overlapEnd - overlapStart);
-        }
-        var noLunchEl  = document.getElementById("id_no_lunch_break_value");
-        var noLunch    = noLunchEl && noLunchEl.value === "1";
-        var lunchStart = noLunch ? "" : (_val("lunch_break_start") || LUNCH_BREAK_START);
-        var lunchEnd   = noLunch ? "" : (_val("lunch_break_end")   || LUNCH_BREAK_END);
-        for (var i = 1; i <= numBlocks; i++) {
-            var hc         = _val("entrada_" + i + "_hc");
-            var hf         = _val("entrada_" + i + "_hf");
-            var overlapMin = _lunchOverlapMinutes(hc, hf, lunchStart, lunchEnd);
-            var overlapId  = "lunch_overlap_" + i;
-            var overlapEl  = document.getElementById(overlapId);
-            if (!overlapEl) {
-                overlapEl      = document.createElement("input");
-                overlapEl.type = "hidden";
-                overlapEl.id   = overlapId;
-                overlapEl.name = "lunch_overlap_" + i;
-                document.getElementById("form-entry").appendChild(overlapEl);
-            }
-            overlapEl.value = overlapMin;
-        }
-    }
-
-    // Progressive save: "Guardar bloques" button.
-    // Guardado progresivo: boton Guardar bloques.
-    var btnSaveBlocks   = document.getElementById("btn-save-blocks");
-    var formActionInput = document.getElementById("form-action-input");
-
-    if (btnSaveBlocks && formActionInput && form) {
-        btnSaveBlocks.addEventListener("click", function () {
-            _clearAlert();
-            var sbErrors = [];
-            var sbNum = parseInt(_val("num_entradas"), 10) || 1;
-            var sbFecha = _val("fecha");
-            if (!sbFecha) {
-                _showAlert("La fecha del parte es obligatoria antes de guardar bloques.");
-                return;
-            }
-            for (var sb = 1; sb <= sbNum; sb++) {
-                var sbLabel = "Bloque " + sb;
-                var sbMaq   = _val("entrada_" + sb + "_machine_raw");
-                var sbHc    = _val("entrada_" + sb + "_hc");
-                var sbHf    = _val("entrada_" + sb + "_hf");
-                var sbDesc  = _val("entrada_" + sb + "_fault_description");
-                var sbNotes = _val("entrada_" + sb + "_repair_notes");
-                _markField("entrada_" + sb + "_machine_raw",       !sbMaq);
-                _markField("entrada_" + sb + "_hc",                !sbHc);
-                _markField("entrada_" + sb + "_hf",                !sbHf);
-                _markField("entrada_" + sb + "_fault_description", !sbDesc);
-                _markField("entrada_" + sb + "_repair_notes",      !sbNotes);
-                if (!sbMaq)   { sbErrors.push(sbLabel + ": codigo de maquina obligatorio."); }
-                if (!sbHc)    { sbErrors.push(sbLabel + ": H.C. obligatoria."); }
-                if (!sbHf)    { sbErrors.push(sbLabel + ": H.F. obligatoria."); }
-                if (!sbDesc)  { sbErrors.push(sbLabel + ": descripcion de averia obligatoria."); }
-                if (!sbNotes) { sbErrors.push(sbLabel + ": descripcion de reparacion obligatoria."); }
-                if (sbHc && sbHf && sbHf <= sbHc) {
-                    _markField("entrada_" + sb + "_hf", true);
-                    sbErrors.push(sbLabel + ": H.F. debe ser posterior a H.C.");
-                }
-            }
-            if (sbErrors.length > 0) {
-                _showAlert(sbErrors.join(" | "));
-                return;
-            }
-            // Inject lunch overlap inputs before save_blocks submit.
-            // Inyectar inputs de solapamiento antes del submit save_blocks.
-            _computeAndInjectLunchOverlaps(sbNum);
-            formActionInput.value = "save_blocks";
-            form.submit();
-        });
-    }
-
-    if (formActionInput) {
-        formActionInput.value = "close_order";
-    }
-
 }());
-

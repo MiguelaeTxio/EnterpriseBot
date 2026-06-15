@@ -268,53 +268,45 @@ def validate_hf_after_hc(blocks: List[TimeBlock]) -> List[ValidationError]:
 # R3 — Intra-part gap / Laguna intra-parte
 # ---------------------------------------------------------------------------
 
-# Lunch break window boundaries (minutes since midnight).
-# The gap between consecutive blocks is tolerated (single use per part)
-# when it falls entirely within this window, regardless of its duration.
-# This matches the configurable WorkdaySchedule split-shift window used by
-# Gate 4 in panel/views.py — no hardcoded duration or minimum-hours check.
-#
-# Límites de la franja horaria de comida (minutos desde medianoche).
-# La laguna entre bloques consecutivos se tolera (uso único por parte)
-# cuando cae completamente dentro de esta ventana, sin importar su duración.
-# Coincide con la ventana de turno partido del WorkdaySchedule configurable
-# usado por Gate 4 en panel/views.py — sin duración fija ni mínimo de horas.
-_LUNCH_WINDOW_START_MIN = 13 * 60        # 13:00
-_LUNCH_WINDOW_END_MIN   = 15 * 60 + 30  # 15:30
-
-
-def _is_lunch_gap(gap_start_min: int, gap_end_min: int) -> bool:
+def _is_lunch_gap(gap_start_min: int, gap_end_min: int, lunch_window) -> bool:
     """
-    Returns True when the gap falls entirely within the tolerated lunch
-    window [_LUNCH_WINDOW_START_MIN, _LUNCH_WINDOW_END_MIN].
-    No duration restriction is applied — the window boundaries are the
-    only criterion, matching the configurable WorkdaySchedule split-shift
-    window used by Gate 4.
+    Returns True when the gap falls entirely within the given lunch window.
+    If lunch_window is None, no lunch exception applies and this always
+    returns False — the caller is responsible for resolving the operator's
+    actual configured split-shift window (WorkdaySchedule) before calling
+    validate_intra_gaps. No hardcoded default window is ever assumed here.
 
     ---
 
     Devuelve True cuando la laguna cae completamente dentro de la ventana
-    de comida tolerada [_LUNCH_WINDOW_START_MIN, _LUNCH_WINDOW_END_MIN].
-    No se aplica restricción de duración — los límites de la ventana son
-    el único criterio, alineado con la ventana de turno partido del
-    WorkdaySchedule configurable usado por Gate 4.
+    de comida indicada. Si lunch_window es None, no se aplica ninguna
+    excepción de comida y siempre devuelve False — es responsabilidad del
+    llamante resolver la ventana de turno partido configurada para el
+    operario (WorkdaySchedule) antes de llamar a validate_intra_gaps. Nunca
+    se asume aquí una ventana por defecto hardcodeada.
     """
+    if lunch_window is None:
+        return False
+
+    window_start_min, window_end_min = lunch_window
     return (
-        gap_start_min >= _LUNCH_WINDOW_START_MIN
-        and gap_end_min <= _LUNCH_WINDOW_END_MIN
+        gap_start_min >= window_start_min
+        and gap_end_min <= window_end_min
     )
 
 
-def validate_intra_gaps(blocks: List[TimeBlock]) -> List[ValidationError]:
+def validate_intra_gaps(blocks: List[TimeBlock], lunch_window=None) -> List[ValidationError]:
     """
     Detects uncovered gaps >= _GAP_THRESHOLD_MINUTES between consecutive blocks
     when sorted by start time. A gap means no block covers the time interval
     [hf_prev, hc_next).
 
-    Regla A — Lunch break exception: a single gap falling entirely within the
-    lunch window [_LUNCH_WINDOW_START_MIN, _LUNCH_WINDOW_END_MIN] is tolerated
-    without error (single use per part). No duration restriction or minimum
-    worked-hours check is applied.
+    Regla A — Lunch break exception: a single gap falling entirely within
+    lunch_window (a tuple of (start_min, end_min) since midnight, resolved
+    by the caller from the operator's configured WorkdaySchedule) is
+    tolerated without error (single use per part). If lunch_window is None,
+    no exception applies. No duration restriction or minimum worked-hours
+    check is applied.
 
     The operator must fill any other gap with an AUSENCIA JUSTIFICADA or
     AUSENCIA NO JUSTIFICADA block before the part can be saved.
@@ -328,9 +320,11 @@ def validate_intra_gaps(blocks: List[TimeBlock]) -> List[ValidationError]:
     bloque cubre el intervalo [hf_prev, hc_next).
 
     Regla A — Excepción de comida: una única laguna que cae completamente
-    dentro de la ventana de comida [_LUNCH_WINDOW_START_MIN,
-    _LUNCH_WINDOW_END_MIN] se tolera sin error (uso único por parte). No se
-    aplica restricción de duración ni mínimo de horas trabajadas.
+    dentro de lunch_window (una tupla (inicio_min, fin_min) desde medianoche,
+    resuelta por el llamante a partir del WorkdaySchedule configurado del
+    operario) se tolera sin error (uso único por parte). Si lunch_window es
+    None, no se aplica ninguna excepción. No se aplica restricción de
+    duración ni mínimo de horas trabajadas.
 
     El operario debe rellenar cualquier otra laguna con un bloque de AUSENCIA
     JUSTIFICADA o AUSENCIA NO JUSTIFICADA antes de poder guardar el parte.
@@ -359,7 +353,7 @@ def validate_intra_gaps(blocks: List[TimeBlock]) -> List[ValidationError]:
 
         # Regla A — Lunch break exception (single use per part).
         # Regla A — Excepción de pausa de comida (uso único por parte).
-        if not lunch_exception_used and _is_lunch_gap(hf_curr, hc_next):
+        if not lunch_exception_used and _is_lunch_gap(hf_curr, hc_next, lunch_window):
             lunch_exception_used = True
             continue
 
@@ -681,7 +675,7 @@ def validate_inter_overlap(
 # Fachada pública
 # ---------------------------------------------------------------------------
 
-def run_intra_part_validation(blocks: List[TimeBlock]) -> IntraPartResult:
+def run_intra_part_validation(blocks: List[TimeBlock], lunch_window=None) -> IntraPartResult:
     """
     Runs all intra-part validation rules (R2, R1, R3, R6, R7, R8) in priority
     order and returns an IntraPartResult.
@@ -689,6 +683,9 @@ def run_intra_part_validation(blocks: List[TimeBlock]) -> IntraPartResult:
     R2 is checked first because an invalid HF/HC pair makes R1 and R3
     results unreliable. R6, R7, R8 are meter-reading rules independent of
     time structure and are always evaluated regardless of R1/R2/R3 outcome.
+
+    lunch_window is forwarded to validate_intra_gaps (R3) — see that
+    function's docstring. If None, no lunch-break gap exception applies.
 
     ---
 
@@ -699,6 +696,10 @@ def run_intra_part_validation(blocks: List[TimeBlock]) -> IntraPartResult:
     de R1 y R3 sean poco fiables. R6, R7, R8 son reglas de lecturas de contadores
     independientes de la estructura temporal y se evalúan siempre con independencia
     del resultado de R1/R2/R3.
+
+    lunch_window se propaga a validate_intra_gaps (R3) — ver el docstring de
+    esa función. Si es None, no se aplica ninguna excepción de laguna por
+    comida.
     """
     errors:   List[ValidationError] = []
     warnings: List[ValidationError] = []
@@ -712,7 +713,7 @@ def run_intra_part_validation(blocks: List[TimeBlock]) -> IntraPartResult:
     # Solo continuar con R1 y R3 si todos los intervalos son estructuralmente válidos.
     if not errors:
         errors.extend(validate_intra_overlap(blocks))
-        errors.extend(validate_intra_gaps(blocks))
+        errors.extend(validate_intra_gaps(blocks, lunch_window=lunch_window))
 
     # R6, R7, R8 — meter readings: always evaluated, independent of time rules.
     # R6, R7, R8 — lecturas de contadores: siempre evaluadas, independientes de reglas temporales.
