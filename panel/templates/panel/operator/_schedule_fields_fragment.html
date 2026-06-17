@@ -97,6 +97,7 @@
     {# Renderizado solo en GET (sin entradas_enriched). HC/HF          #}
     {# prerrellenados desde WorkdaySchedule resuelto.                  #}
     {# ================================================================ #}
+    {% if not entradas_enriched %}
     <div class="confirm-block mb-4 pb-4" id="block-1">
         <div class="d-flex align-items-center gap-2 mb-3">
             <span class="badge bg-dark">Tarea 1</span>
@@ -202,5 +203,6 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
 </div>

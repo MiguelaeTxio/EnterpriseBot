@@ -46,8 +46,7 @@
         font-size: 0.875rem;
     }
     /* Overtime value — Valor de horas extra */
-    .overtime-positive { color: #dc3545; font-weight: 700; }
-    .overtime-negative { color: #198754; font-weight: 700; }
+    .overtime-positive { color: #198754; font-weight: 700; }
     .overtime-zero     { color: #6c757d; font-weight: 600; }
 </style>
 {% endblock %}
@@ -327,15 +326,15 @@
                 <div class="col-12 col-md-4">
                     <div class="card border-0 shadow-sm h-100">
                         <div class="card-body text-center py-4">
-                            <div class="rounded-3 p-3 mb-3 {% if overtime_hours > 0 %}stat-bg-red{% elif overtime_hours < 0 %}stat-bg-green{% else %}stat-bg-blue{% endif %} d-inline-flex">
-                                <i class="bi bi-graph-up-arrow fs-3 {% if overtime_hours > 0 %}text-danger{% elif overtime_hours < 0 %}text-success{% else %}text-primary{% endif %}"></i>
+                            <div class="rounded-3 p-3 mb-3 {% if overtime_hours > 0 %}stat-bg-green{% else %}stat-bg-blue{% endif %} d-inline-flex">
+                                <i class="bi bi-graph-up-arrow fs-3 {% if overtime_hours > 0 %}text-success{% else %}text-primary{% endif %}"></i>
                             </div>
                             <h6 class="fw-semibold text-muted mb-1">Horas extra</h6>
-                            <p class="fs-3 mb-0 {% if overtime_hours > 0 %}overtime-positive{% elif overtime_hours < 0 %}overtime-negative{% else %}overtime-zero{% endif %}">
+                            <p class="fs-3 mb-0 {% if overtime_hours > 0 %}overtime-positive{% else %}overtime-zero{% endif %}">
                                 {% if overtime_hours > 0 %}+{% endif %}{{ overtime_hours|floatformat:1 }} h
                             </p>
                             <small class="text-muted">
-                                {% if overtime_hours > 0 %}Por encima de la jornada estándar{% elif overtime_hours < 0 %}Por debajo de la jornada estándar{% else %}Jornada exacta{% endif %}
+                                {% if overtime_hours > 0 %}Por encima de la jornada estándar{% else %}Jornada exacta{% endif %}
                             </small>
                         </div>
                     </div>

@@ -8,17 +8,39 @@
      * Reveals or hides meter-reading fields for the given block index.
      * Revela u oculta los campos de contadores para el índice de bloque dado.
      */
+    /*
+     * Sets a hidden input's value, creating it if it doesn't exist yet.
+     * Used to send the reference meter value alongside the actual reading
+     * so the server can detect unchanged (unmodified) readings.
+     *
+     * Establece el valor de un hidden input, creándolo si no existe.
+     * Se usa para enviar el valor de referencia del contador junto con
+     * la lectura real para que el servidor detecte lecturas no modificadas.
+     */
+    function _setRefHidden(form, name, value) {
+        var hidden = form ? form.querySelector('[name="' + name + '"]') : null;
+        if (!hidden) {
+            hidden = document.createElement("input");
+            hidden.type  = "hidden";
+            hidden.name  = name;
+            if (form) { form.appendChild(hidden); }
+        }
+        hidden.value = (value != null) ? value : "";
+    }
+
     function _applyMeterFields(blockIdx, data) {
         var sel     = '[data-block-idx="' + blockIdx + '"]';
         var odoEl   = document.querySelector('.meter-odometer' + sel);
         var engEl   = document.querySelector('.meter-engine'   + sel);
         var craneEl = document.querySelector('.meter-crane'    + sel);
+        var _form   = document.getElementById("form-entry");
         if (odoEl) {
             odoEl.classList.toggle("d-none", !data.has_odometer);
             var odoInput = odoEl.querySelector("input");
             if (odoInput && data.mileage != null) {
                 odoInput.dataset.refValue = data.mileage;
                 odoInput.value = data.mileage;
+                _setRefHidden(_form, "entrada_" + blockIdx + "_odometer_ref", data.mileage);
             }
         }
         if (engEl) {
@@ -27,6 +49,7 @@
             if (engInput && data.hours != null) {
                 engInput.dataset.refValue = data.hours;
                 engInput.value = data.hours;
+                _setRefHidden(_form, "entrada_" + blockIdx + "_engine_hours_ref", data.hours);
             }
         }
         if (craneEl) {
@@ -35,6 +58,7 @@
             if (craneInput && data.hours != null) {
                 craneInput.dataset.refValue = data.hours;
                 craneInput.value = data.hours;
+                _setRefHidden(_form, "entrada_" + blockIdx + "_crane_hours_ref", data.hours);
             }
         }
     }
@@ -692,6 +716,26 @@
             }
         });
     }
+
+    // -- Remove static block handler (server-rendered blocks in edit/validation mode).
+    // Manejador de eliminacion de bloques estaticos (renderizados por servidor en modo
+    // edicion o tras fallo de validacion). A diferencia de los bloques dinamicos
+    // (gestionados por el handler de btn-add-block), estos estan en el DOM principal
+    // y no en extra-blocks-container, por lo que se eliminan con row.remove().
+    // --
+    document.querySelectorAll(".btn-remove-block-static").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var blockId = btn.getAttribute("data-block-id");
+            var row = document.getElementById("block-" + blockId);
+            if (row) {
+                row.remove();
+                var current = parseInt(numEntradasInput.value, 10) || 1;
+                if (current > 1) { numEntradasInput.value = current - 1; }
+            }
+        });
+    });
 
     // -- Add repuesto handler / Manejador anadir repuesto --
     if (btnAddRepuesto) {

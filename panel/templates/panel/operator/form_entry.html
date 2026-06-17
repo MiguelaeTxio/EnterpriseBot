@@ -209,6 +209,12 @@
                         <div class="confirm-block mb-4 pb-4 {% if not forloop.last %}border-bottom{% endif %}" id="block-{{ entrada.idx }}">
                             <div class="d-flex align-items-center gap-2 mb-3">
                                 <span class="badge bg-dark">Tarea {{ entrada.idx }}</span>
+                                <button type="button"
+                                        class="btn btn-link btn-sm text-danger p-0 ms-2 btn-remove-block-static"
+                                        data-block-id="{{ entrada.idx }}"
+                                        title="Eliminar esta tarea">
+                                    <i class="bi bi-trash"></i> Eliminar tarea
+                                </button>
                             </div>
                             <div class="row g-3">
                                 <div class="col-12 col-md-4">
@@ -257,7 +263,7 @@
                                     <input type="number" step="0.1" min="0"
                                            name="entrada_{{ entrada.idx }}_odometer_reading"
                                            class="form-control horometro-input"
-                                           value="{{ entrada.odometer_reading }}"
+                                           value="{{ entrada.odometer_reading|stringformat:'g' }}"
                                            placeholder="Lectura km">
                                 </div>
                                 <div class="col-12 col-md-3 meter-field meter-engine d-none" data-block-idx="{{ entrada.idx }}">
@@ -265,7 +271,7 @@
                                     <input type="number" step="0.1" min="0"
                                            name="entrada_{{ entrada.idx }}_engine_hours_reading"
                                            class="form-control horometro-input"
-                                           value="{{ entrada.engine_hours_reading }}"
+                                           value="{{ entrada.engine_hours_reading|stringformat:'g' }}"
                                            placeholder="Horas motor">
                                 </div>
                                 <div class="col-12 col-md-3 meter-field meter-crane d-none" data-block-idx="{{ entrada.idx }}">
@@ -273,7 +279,7 @@
                                     <input type="number" step="0.1" min="0"
                                            name="entrada_{{ entrada.idx }}_crane_hours_reading"
                                            class="form-control horometro-input"
-                                           value="{{ entrada.crane_hours_reading }}"
+                                           value="{{ entrada.crane_hours_reading|stringformat:'g' }}"
                                            placeholder="Horas grúa">
                                 </div>
                                 <div class="col-12 col-md-6">
@@ -423,8 +429,9 @@
             {# ================================================================ #}
             {# Submit buttons / Botones de envío                               #}
             {# ================================================================ #}
-            <input type="hidden" id="save-confirmed-input"        name="save_confirmed"       value="">
-            <input type="hidden" id="zero-meters-confirmed-input" name="zero_meters_confirmed" value="">
+            <input type="hidden" id="save-confirmed-input"          name="save_confirmed"           value="">
+            <input type="hidden" id="zero-meters-confirmed-input"  name="zero_meters_confirmed"    value="">
+            <input type="hidden" id="meter-warnings-confirmed-input" name="meter_warnings_confirmed" value="">
 
             <div class="d-flex gap-2 justify-content-end mb-5">
                 <a href="{% url 'panel:operator_history' %}"
@@ -465,7 +472,8 @@ window.EB_CONFIG = {
     personalAssetCode:  "{{ personal_asset_code }}",
     absenceCategories:  JSON.parse('{{ absence_categories|default:"[]"|escapejs }}'),
     intensiveToggleUrl: "{% url 'panel:operator_intensive_toggle' %}",
-    isIntensiveOverride: {{ is_intensive_override|default:False|yesno:"true,false" }}
+    isIntensiveOverride: {{ is_intensive_override|default:False|yesno:"true,false" }},
+    meterWarnings: {{ meter_warnings|default:"[]"|safe }}
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>
@@ -556,9 +564,91 @@ window.EB_CONFIG = {
   </div>
 </div>
 
+{# Meter warning modal #}
+<div class="modal fade" id="meterWarningModal" tabindex="-1"
+     aria-labelledby="meterWarningModalLabel" aria-modal="true" role="dialog">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-warning">
+      <div class="modal-header bg-warning bg-opacity-10 border-bottom border-warning">
+        <h5 class="modal-title fw-semibold" id="meterWarningModalLabel">
+          <i class="bi bi-speedometer2 text-warning me-2"></i>
+          Lecturas de contadores
+        </h5>
+        <button type="button" class="btn-close"
+                data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-3">
+          Se han detectado lecturas de contadores en cero para activos con
+          partes anteriores registrados:
+        </p>
+        <ul class="list-group list-group-flush mb-3" id="meter-warning-list">
+        </ul>
+        <div class="alert alert-warning small mb-0">
+          <i class="bi bi-info-circle-fill me-2"></i>
+          Puedes <strong>volver a introducir los valores</strong> o
+          <strong>guardar igualmente</strong> si la lectura es correcta.
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0 gap-2">
+        <button type="button" class="btn btn-outline-secondary"
+                data-bs-dismiss="modal">
+          <i class="bi bi-pencil me-1"></i>Revisar valores
+        </button>
+        <button type="button" class="btn btn-warning" id="btn-meter-continue">
+          <i class="bi bi-check-lg me-1"></i>Guardar igualmente
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+    var _mw = (window.EB_CONFIG && window.EB_CONFIG.meterWarnings) || [];
+    if (!_mw.length) { return; }
+    var _list = document.getElementById("meter-warning-list");
+    if (_list) {
+        _mw.forEach(function (msg) {
+            var li = document.createElement("li");
+            li.className = "list-group-item ps-0 border-0 py-1";
+            li.innerHTML = '<i class="bi bi-exclamation-circle text-warning me-2"></i>' + msg;
+            _list.appendChild(li);
+        });
+    }
+    function _showMeterModal() {
+        var _modalEl = document.getElementById("meterWarningModal");
+        if (_modalEl && window.bootstrap && bootstrap.Modal) {
+            bootstrap.Modal.getOrCreateInstance(_modalEl).show();
+        }
+    }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", _showMeterModal);
+    } else {
+        setTimeout(_showMeterModal, 100);
+    }
+    var _btnContinue = document.getElementById("btn-meter-continue");
+    var _confirmedInput = document.getElementById("meter-warnings-confirmed-input");
+    var _saveInput = document.getElementById("save-confirmed-input");
+    var _formEl = document.getElementById("form-entry");
+    if (_btnContinue && _confirmedInput && _formEl) {
+        _btnContinue.addEventListener("click", function () {
+            _confirmedInput.value = "1";
+            if (_saveInput) { _saveInput.value = "1"; }
+            var _modal = document.getElementById("meterWarningModal");
+            if (_modal && window.bootstrap && bootstrap.Modal) {
+                bootstrap.Modal.getOrCreateInstance(_modal).hide();
+            }
+            _formEl.submit();
+        });
+    }
+}());
+</script>
+
 {% include "panel/_zero_meter_modal.html" %}
 {% include "panel/_confirm_save_modal.html" %}
 
 {# Time Picker Widget #}
 {% include "panel/_time_picker_widget.html" %}
 {% endblock %}
+

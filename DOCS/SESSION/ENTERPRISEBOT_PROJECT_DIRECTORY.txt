@@ -117,6 +117,7 @@
 ./panel/static/panel/js/gap_resolution.js
 ./panel/static/panel/js/wizard.js
 ./panel/static/panel/js/form_entry_assets.js
+./panel/static/panel/js/wizard_map.js
 ./panel/static/panel/js/form_entry_tour.js
 ./panel/static/panel/js/sw_albaran.js
 ./panel/static/panel/js/chat.js
@@ -179,6 +180,7 @@
 ./static/panel/js/gap_resolution.js
 ./static/panel/js/wizard.js
 ./static/panel/js/form_entry_assets.js
+./static/panel/js/wizard_map.js
 ./static/panel/js/form_entry_tour.js
 ./static/panel/js/sw_albaran.js
 ./static/panel/js/chat.js
@@ -339,6 +341,7 @@
 ./budgets/templates/budgets/_insurer_fields_partial.html
 ./budgets/templates/budgets/insurer_list.html
 ./budgets/templates/budgets/insurer_form.html
+./budgets/templates/budgets/_route_multileg_fragment.html
 ./budgets/templates/budgets/insurer_detail.html
 ./budgets/templates/budgets/_tariff_line_row_fragment.html
 ./budgets/templates/budgets/partials/base_list_fragment.html
@@ -387,6 +390,7 @@
 ./budgets/templatetags/__init__.py
 ./budgets/templatetags/budgets_extras.py
 ./budgets/management/commands/import_toll_segments.py
+./budgets/management/commands/geocode_toll_segments.py
 ./budgets/management/commands/__init__.py
 ./budgets/management/commands/seed_bases.py
 ./budgets/management/commands/seed_insurer_tariffs.py

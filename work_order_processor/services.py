@@ -2521,6 +2521,7 @@ def build_export_from_template(template, work_orders_qs):
       estado      — WorkOrder.reviewed (Revisado / Pendiente)
       familia     — WorkOrderEntryLine.fault_category
       origen      — WorkOrder.source
+      horas_extra — horas sobre jornada estándar de 8h (max(0, sum(delta_hours) - 8) por entry)
 
     Returns an openpyxl.Workbook instance ready for streaming.
     ---
@@ -2575,6 +2576,16 @@ def build_export_from_template(template, work_orders_qs):
                                             )),
         "familia":     ("Familia avería",   lambda wo, entry, line: line.fault_category or ""),
         "origen":      ("Origen",           lambda wo, entry, line: wo.source or ""),
+        "horas_extra": ("H. Extra",          lambda wo, entry, line: (
+                                                float(max(
+                                                    Decimal("0"),
+                                                    sum(
+                                                        (l.delta_hours for l in entry.lines.all()
+                                                         if l.delta_hours is not None),
+                                                        Decimal("0"),
+                                                    ) - Decimal("8")
+                                                ))
+                                            )),
     }
 
     # Resolve active column definitions in template order.
@@ -2632,6 +2643,29 @@ def build_export_from_template(template, work_orders_qs):
             cell.alignment = center_align
 
     # ------------------------------------------------------------------
+    # Helper: autofit column widths based on header and content.
+    # Auxiliar: autoajustar ancho de columnas según cabecera y contenido.
+    # ------------------------------------------------------------------
+    def _autofit_columns(ws):
+        """
+        Sets each column width to the maximum of its header length and the
+        longest cell value in that column, with a minimum of 10 and a cap of 60.
+        ---
+        Ajusta el ancho de cada columna al máximo entre la longitud de la
+        cabecera y el valor más largo de la columna, con mínimo 10 y máximo 60.
+        """
+        from openpyxl.utils import get_column_letter
+        for col_cells in ws.columns:
+            max_len = 10
+            col_letter = get_column_letter(col_cells[0].column)
+            for cell in col_cells:
+                if cell.value is not None:
+                    cell_len = len(str(cell.value))
+                    if cell_len > max_len:
+                        max_len = cell_len
+            ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+
+    # ------------------------------------------------------------------
     # SHEET FORMAT: single_sheet
     # FORMATO DE HOJA: single_sheet
     # ------------------------------------------------------------------
@@ -2672,6 +2706,7 @@ def build_export_from_template(template, work_orders_qs):
                 ws.cell(row=current_row, column=col_idx, value=extractor(wo, entry, line))
             current_row += 1
 
+        _autofit_columns(ws)
         return wb
 
     # ------------------------------------------------------------------
@@ -2707,4 +2742,6 @@ def build_export_from_template(template, work_orders_qs):
             ws.cell(row=current_row, column=col_idx, value=extractor(wo, entry, line))
         current_row += 1
 
+    for sheet in wb.worksheets:
+        _autofit_columns(sheet)
     return wb

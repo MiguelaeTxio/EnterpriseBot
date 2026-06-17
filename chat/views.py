@@ -623,9 +623,13 @@ class ChatSendView(CompanyUserRequiredMixin, View):
                 continue
 
             # --- Case 2: Alias present, outside 24h window — send chat_session_renewal. ---
-            # The message is also sent after the renewal to ensure delivery.
+            # The message body is queued in pending_broadcast_messages so that
+            # when the contact accepts the renewal (opt_in), the original message
+            # is delivered automatically.
             # --- Caso 2: Alias presente, fuera de ventana 24h — enviar chat_session_renewal. ---
-            # El mensaje también se envía tras el renewal para garantizar la entrega.
+            # El cuerpo del mensaje se encola en pending_broadcast_messages para que,
+            # cuando el contacto acepte el renewal (opt_in), el mensaje original se
+            # entregue automáticamente.
             if not has_active_session:
                 try:
                     if _renewal_template:
@@ -639,6 +643,38 @@ class ChatSendView(CompanyUserRequiredMixin, View):
                             "# [CHAT SEND] chat_session_renewal enviado a %s (%s) — fuera de ventana.",
                             _receiver_alias, phone_number,
                         )
+                        # Queue the message for delivery on opt_in.
+                        # Encolar el mensaje para entrega al hacer opt_in.
+                        try:
+                            _pending_session = WhatsAppSession.objects.filter(
+                                company=company,
+                                phone_number=phone_number,
+                            ).order_by("-session_start").first()
+                            if _pending_session is not None:
+                                _existing = list(
+                                    _pending_session.pending_broadcast_messages or []
+                                )
+                                _existing.append({
+                                    "body": prefixed_body,
+                                    "created_at": now().isoformat(),
+                                })
+                                _pending_session.pending_broadcast_messages = _existing
+                                _pending_session.save(
+                                    update_fields=["pending_broadcast_messages"]
+                                )
+                                logger.info(
+                                    "# [CHAT SEND] Mensaje encolado en pending_broadcast_messages "
+                                    "para %s (%s).",
+                                    _receiver_alias, phone_number,
+                                )
+                        except Exception as _queue_exc:
+                            logger.error(
+                                "# [CHAT SEND] Error encolando mensaje pendiente para %s: %s",
+                                phone_number, _queue_exc,
+                            )
+                        out_of_window.append(_receiver_alias)
+                        skipped += 1
+                        continue
                     else:
                         logger.warning(
                             "# [CHAT SEND] Template chat_session_renewal no encontrado "

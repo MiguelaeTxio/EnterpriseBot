@@ -235,6 +235,7 @@
 
     document.addEventListener("DOMContentLoaded", function () {
         initBulkGroup("pending");
+        initBulkGroup("reviewed");
         initBulkGroup("history");
         initMachineAutocomplete();
     });

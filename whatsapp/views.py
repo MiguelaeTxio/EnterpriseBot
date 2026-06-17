@@ -346,21 +346,6 @@ class IncomingWhatsAppView(View):
                         _active_session.save(
                             update_fields=["pending_albaran_units"]
                         )
-                else:
-                    # No pending albarán units — send generic confirmation.
-                    # Sin unidades pendientes — enviar confirmación genérica.
-                    try:
-                        WhatsAppChatService.send_reply(
-                            from_number=to_number,
-                            to_number=from_number,
-                            reply_text="Perfecto, te mantendremos informado/a.",
-                        )
-                    except Exception as _exc:
-                        logger.error(
-                            "# [WHATSAPP] Error enviando confirmación opt_in a %s: %s",
-                            from_number, _exc,
-                        )
-
                 # Deliver pending broadcast messages queued while outside 24h window.
                 # Messages older than 48h are discarded — considered expired.
                 # ---

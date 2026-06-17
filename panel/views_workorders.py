@@ -3799,6 +3799,7 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
             "operator_pk":wo .uploaded_by .pk if wo .uploaded_by else None ,
             "num_bloques":num_bloques ,
             "horas_totales":horas_totales ,
+            "horas_extra":max (Decimal ("0"),horas_totales -Decimal ("8")),
             "reviewed":wo .reviewed ,
             "reviewed_by":(
             wo .reviewed_by .user .get_full_name ()or wo .reviewed_by .user .username 
@@ -3905,7 +3906,7 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
 
 
         _VALID_SORT_COLS =frozenset (
-        ("fecha","operator_name","horas_totales","reviewed","fault_category")
+        ("fecha","operator_name","horas_totales","horas_extra","reviewed","fault_category")
         )
         _VALID_SORT_DIRS =frozenset (("asc","desc"))
 
@@ -5687,6 +5688,7 @@ class ExportTemplateListView (SupervisorAccessMixin ,View ):
         ("estado","Estado"),
         ("familia","Familia avería"),
         ("origen","Origen"),
+        ("horas_extra","H. Extra"),
         ],
         }
         return render (request ,self .template_name ,context )

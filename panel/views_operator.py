@@ -2722,6 +2722,13 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
 
+        # Meter warnings — non-blocking. Missing or zero readings are
+        # reported as warnings that the operator can acknowledge and
+        # override. They do NOT prevent the work order from being saved.
+        # Avisos de contadores — no bloqueantes. Las lecturas ausentes o
+        # en cero se informan como avisos que el operario puede confirmar
+        # y omitir. NO impiden guardar el parte.
+        meter_warnings = []
         for ld in entry_lines_data :
             if ld ["machine_asset"]is not None :
                 asset =ld ["machine_asset"]
@@ -2729,35 +2736,38 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                 if asset .has_odometer :
                     reading =ld .get ("odometer_reading")
                     if reading is None :
-                        integrity_errors .append (
-                        f"{blk}: lectura de km (odometro) obligatoria para {asset.code}."
+                        meter_warnings .append (
+                        f"{blk}: no has introducido la lectura de km (cuentakilómetros) "
+                        f"para {asset.code}. Se recomienda registrarla para el seguimiento del vehículo."
                         )
                     elif reading ==0 and not asset .first_repair :
-                        integrity_errors .append (
-                        f"{blk}: la lectura de km no puede ser cero para {asset.code} "
-                        f"(ya tiene partes anteriores registrados)."
+                        meter_warnings .append (
+                        f"{blk}: la lectura de km es cero para {asset.code} "
+                        f"(ya tiene partes anteriores). Comprueba si es correcta."
                         )
                 if asset .has_engine_hours :
                     reading =ld .get ("engine_hours_reading")
                     if reading is None :
-                        integrity_errors .append (
-                        f"{blk}: lectura de horometro motor obligatoria para {asset.code}."
+                        meter_warnings .append (
+                        f"{blk}: no has introducido la lectura del horómetro motor "
+                        f"para {asset.code}. Se recomienda registrarla."
                         )
                     elif reading ==0 and not asset .first_repair :
-                        integrity_errors .append (
-                        f"{blk}: la lectura de horometro motor no puede ser cero "
-                        f"para {asset.code} (ya tiene partes anteriores registrados)."
+                        meter_warnings .append (
+                        f"{blk}: la lectura del horómetro motor es cero para {asset.code} "
+                        f"(ya tiene partes anteriores). Comprueba si es correcta."
                         )
                 if asset .has_crane_hours :
                     reading =ld .get ("crane_hours_reading")
                     if reading is None :
-                        integrity_errors .append (
-                        f"{blk}: lectura de horometro grua obligatoria para {asset.code}."
+                        meter_warnings .append (
+                        f"{blk}: no has introducido la lectura del horómetro grúa "
+                        f"para {asset.code}. Se recomienda registrarla."
                         )
                     elif reading ==0 and not asset .first_repair :
-                        integrity_errors .append (
-                        f"{blk}: la lectura de horometro grua no puede ser cero "
-                        f"para {asset.code} (ya tiene partes anteriores registrados)."
+                        meter_warnings .append (
+                        f"{blk}: la lectura del horómetro grúa es cero para {asset.code} "
+                        f"(ya tiene partes anteriores). Comprueba si es correcta."
                         )
 
         for spd in spare_parts_data :
@@ -2804,6 +2814,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             context =self ._get_context_base (request )
             context .update ({
             "error":" | ".join (integrity_errors ),
+            "meter_warnings":meter_warnings ,
             "fecha":fecha_str ,
             "entradas_enriched":entradas_post ,
             "repuestos_enriched":repuestos_post ,
@@ -2818,6 +2829,60 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
 
+
+        # If there are meter warnings and the operator has not yet
+        # confirmed them, re-render the form so the JS can display
+        # the meterWarningModal. Once the operator dismisses it and
+        # clicks "Continuar de todas formas", the form is re-submitted
+        # with meter_warnings_confirmed=1 and this block is skipped.
+        # Si hay avisos de contadores y el operario aún no los ha
+        # confirmado, re-renderizar para que el JS muestre el modal
+        # de aviso. Al pulsar "Continuar de todas formas" el formulario
+        # se reenvía con meter_warnings_confirmed=1 y se salta este bloque.
+        _meter_confirmed =POST .get ("meter_warnings_confirmed","")=="1"
+        if meter_warnings and not _meter_confirmed :
+            entradas_post =[
+            {
+            "idx":ld ["line_number"],
+            "machine_raw":ld ["machine_raw"],
+            "machine_asset":ld ["machine_asset"],
+            "fault_description":ld ["fault_description"],
+            "repair_notes":ld ["repair_notes"],
+            "hc":ld ["hc"].strftime ("%H:%M")if ld ["hc"]else "",
+            "hf":ld ["hf"].strftime ("%H:%M")if ld ["hf"]else "",
+            "or_val":ld ["or_val"],
+            "flags":[],
+            }
+            for ld in entry_lines_data 
+            ]
+            repuestos_post =[
+            {
+            "ridx":spd ["line_number"],
+            "referencia":spd ["referencia"],
+            "vehiculo_raw":spd ["vehiculo_raw"],
+            "vehicle_asset":spd ["vehicle_asset"],
+            "material":spd ["material"],
+            "unidades":str (spd ["quantity"])if spd ["quantity"]is not None else "",
+            "origen":spd ["source"],
+            "proveedor":spd ["supplier"],
+            "flags":[],
+            }
+            for spd in spare_parts_data 
+            ]
+            context =self ._get_context_base (request )
+            context .update ({
+            "error":None ,
+            "meter_warnings":meter_warnings ,
+            "fecha":fecha_str ,
+            "entradas_enriched":entradas_post ,
+            "repuestos_enriched":repuestos_post ,
+            "num_entradas":len (entry_lines_data ),
+            "num_repuestos":len (spare_parts_data ),
+            "lunch_break_start":_post_lb_start ,
+            "lunch_break_end":_post_lb_end ,
+            "show_lunch_break":_post_show_lunch ,
+            })
+            return render (request ,self .template_name ,context )
 
         if not POST .get ("save_confirmed"):
             entradas_post =[
@@ -2851,6 +2916,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             context =self ._get_context_base (request )
             context .update ({
             "error":None ,
+            "meter_warnings":[] ,
             "fecha":fecha_str ,
             "entradas_enriched":entradas_post ,
             "repuestos_enriched":repuestos_post ,
@@ -3480,9 +3546,12 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                 synthetic_name =f"{worker_name}_{date_tag}.pdf"
 
                 if _reuse_wo is not None :
-                    # Reuse existing work order — update status to DONE.
-                    # Reutilizar parte existente — actualizar status a DONE.
+                    # Reuse existing work order — delete previous entries first
+                    # to prevent duplication, then update status to DONE.
+                    # Reutilizar parte existente — borrar las entries previas
+                    # para evitar duplicación, luego actualizar status a DONE.
                     work_order =_reuse_wo 
+                    work_order .entries .all ().delete ()
                     work_order .status =WorkOrder .Status .DONE 
                     work_order .save (update_fields =["status"])
                 else :
@@ -4224,8 +4293,15 @@ class WorkOrderEntryHistoryView (WorkshopRequiredMixin ,View ):
         working_days_count =self ._count_working_days (
         period_start_for_calc ,period_end_for_calc 
         )
-        expected_hours =Decimal (working_days_count )*Decimal ("8")
-        overtime_hours =current_period_hours -expected_hours 
+        # Horas extra = suma de (horas_parte - 8) para cada parte con más de 8h.
+        # Los días sin parte NO se descuentan. Solo se suman los excesos.
+        # Overtime = sum of (part_hours - 8) for each part exceeding 8h.
+        # Missing parts are NOT deducted. Only surpluses are summed.
+        overtime_hours =sum (
+        (wo ["horas_totales"]-Decimal ("8"))
+        for wo in current_period_list 
+        if wo .get ("horas_totales")is not None and wo ["horas_totales"]>Decimal ("8")
+        )or Decimal ("0")
 
 
 
