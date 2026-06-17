@@ -15,14 +15,16 @@
 
 {% block title %}Nuevo presupuesto{% endblock %}
 
-{# Leaflet CSS — cargado en el <head> del wizard para que este disponible  #}
-{# antes de que cualquier fragmento HTMX intente usar L.                   #}
-{# Leaflet CSS — loaded in wizard <head> so L is available before any      #}
-{# HTMX fragment tries to use it.                                          #}
+{# Maps JS API — Dynamic Library Import (recommended pattern).              #}
+{# Loaded in <head> so the google.maps namespace is available before        #}
+{# any HTMX fragment or wizard_map.js tries to use it.                     #}
+{# The API key is injected server-side from settings; the loading script    #}
+{# is async + defer so it does not block the wizard render.                #}
 {% block extra_head %}
-<link rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      crossorigin="" />
+<script>
+  (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
+  ({key: "{{ google_maps_api_key }}", v: "weekly"});
+</script>
 {% endblock %}
 
 {% block content %}
@@ -96,15 +98,26 @@
     </div>
   </div>
 </div>
+
+{# ── MODAL: Planificador de ruta multi-parada ────────────────────────── #}
+{# Wrapper Bootstrap 5 fullscreen-lg. El contenido del modal              #}
+{# (_route_multileg_fragment.html) incluye la UI de paradas y el mapa.   #}
+<div class="modal fade"
+     id="routePlannerModal"
+     tabindex="-1"
+     aria-labelledby="routePlannerModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen-lg-down modal-xl">
+    <div class="modal-content">
+      {% include "budgets/_route_multileg_fragment.html" %}
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
-{# Leaflet JS — cargado antes de wizard.js para que L este definido        #}
-{# cuando los fragmentos HTMX lo usen. Sin integrity — unpkg puede         #}
-{# servir el archivo con variaciones menores que invalidan el hash SRI.    #}
-{# Leaflet JS — loaded before wizard.js so L is defined when HTMX         #}
-{# fragments use it. No integrity — unpkg may serve minor variations.      #}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        crossorigin=""></script>
+{# wizard.js — lógica principal del wizard (IVA, ruta manual, HTMX hooks). #}
 <script src="{% static 'panel/js/wizard.js' %}"></script>
+{# wizard_map.js — lógica del planificador de ruta multi-parada (Maps API). #}
+<script src="{% static 'panel/js/wizard_map.js' %}"></script>
 {% endblock %}

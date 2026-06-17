@@ -813,3 +813,185 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .form-select {
     background-color: #f0fdf4;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   ROUTE PLANNER — Modal multi-parada (Hito 18)
+   Planificador de ruta: panel de paradas (izq.) + mapa Google Maps (der.)
+   Layout en dos columnas, colapsable en movil (panel arriba, mapa abajo).
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Contenedor general — altura fija dentro del modal-xl para que el mapa
+   tenga espacio real sin que el modal crezca sin control.
+   General container — fixed height inside modal-xl so the map gets real
+   space without the modal growing unbounded. */
+.route-planner-body {
+    min-height: 70vh;
+}
+
+/* Panel izquierdo de paradas — scroll propio, separado visualmente del mapa
+   con un borde sutil. En movil pasa a ancho completo y altura limitada.
+   Left stops panel — own scroll, subtle border separating it from the map.
+   On mobile, full width and capped height. */
+.route-planner-stops {
+    padding: 1rem;
+    border-right: 1px solid #dee2e6;
+    max-height: 70vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+@media (max-width: 991.98px) {
+    .route-planner-stops {
+        border-right: none;
+        border-bottom: 1px solid #dee2e6;
+        max-height: 40vh;
+    }
+}
+
+.route-planner-stops-header {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #495057;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* Fila de parada — base, individual o vuelta a base. Estructura compartida,
+   diferenciada por icono y clases modificadoras.
+   Stop row — base, regular or base-return. Shared structure, differentiated
+   by icon and modifier classes. */
+.route-stop {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: 0.375rem;
+    background-color: #fff;
+    border: 1px solid #e9ecef;
+    margin-bottom: 0.35rem;
+    font-size: 0.9rem;
+}
+
+.route-stop-base {
+    background-color: #f0fdf4;
+    border-color: #c3e9d0;
+    font-weight: 600;
+}
+
+.route-stop-return {
+    background-color: #fff7ed;
+    border-color: #fde0b8;
+}
+
+.route-stop-icon {
+    flex: 0 0 auto;
+    width: 1.5rem;
+    text-align: center;
+    color: #fd7e14;
+}
+
+.route-stop-base .route-stop-icon {
+    color: #16a34a;
+}
+
+.route-stop-label {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.route-stop-tag {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #16a34a;
+}
+
+.route-stop-remove {
+    flex: 0 0 auto;
+    border: none;
+    background: none;
+    color: #adb5bd;
+    padding: 0.1rem 0.3rem;
+    line-height: 1;
+}
+
+.route-stop-remove:hover {
+    color: #dc3545;
+}
+
+.route-stops-list {
+    flex: 0 0 auto;
+}
+
+.route-stops-empty {
+    font-size: 0.85rem;
+    color: #adb5bd;
+    text-align: center;
+    padding: 1rem 0.5rem;
+    margin: 0;
+}
+
+.route-stop-search {
+    margin-top: 0.5rem;
+}
+
+/* Resumen de ruta — tarjeta destacada con acento verde, coherente con el
+   fondo mint del resto del panel pero con mas contraste para resaltar
+   los datos que se vuelcan a facturacion.
+   Route summary — accent card in green, consistent with the panel's mint
+   tone but higher contrast to highlight billing-bound data. */
+.route-summary {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    background-color: #f0fdf4;
+    border: 1px solid #c3e9d0;
+}
+
+.route-summary-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #15803d;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.route-summary-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    padding: 0.15rem 0;
+}
+
+.route-summary-label {
+    color: #495057;
+}
+
+.route-summary-value {
+    font-weight: 600;
+    color: #212529;
+}
+
+/* Mapa — ocupa el resto del modal, sin padding para maximizar area visible.
+   Map — fills the rest of the modal, no padding to maximize visible area. */
+.route-planner-map {
+    padding: 0;
+}
+
+.route-planner-map-canvas {
+    width: 100%;
+    height: 70vh;
+}
+
+@media (max-width: 991.98px) {
+    .route-planner-map-canvas {
+        height: 50vh;
+    }
+}
+

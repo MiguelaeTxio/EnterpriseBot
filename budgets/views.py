@@ -308,6 +308,7 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             "insurer_label": insurer_label,
             "always_iva_map": always_iva_map,
             "active_nav": "budgets_wizard",
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
         })
         return render(request, self.template_name, ctx)
 
@@ -364,6 +365,34 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         route_calculation_mode = data.get(
             "route_calculation_mode", "MANUAL"
         ).strip()
+
+        # --- Read multi-stop planner fields (Modo B / route_calculation_mode=API) ---
+        # --- Leer campos del planificador multi-parada (Modo B / mode=API) ---
+        # waypoints_json: JSON string serialised by wizard_map.js confirmRoute().
+        # is_overnight_route: "true"/"false" string set by the modal, overrides
+        #   the manual is_overnight checkbox when mode=API.
+        # km_phase2_route: phase-2 distance set by the modal for overnight routes.
+        # route_toll_budget_cost_raw: budget toll cost returned by BudgetWaypointView.
+        import json as _json
+        waypoints_json_raw = data.get("waypoints_json", "").strip()
+        waypoints_json = None
+        if route_calculation_mode == "API" and waypoints_json_raw:
+            try:
+                waypoints_json = _json.loads(waypoints_json_raw)
+            except _json.JSONDecodeError:
+                waypoints_json = None
+            # Override is_overnight from the modal hidden input.
+            _is_overnight_api = data.get("is_overnight_route", "false").strip().lower()
+            is_overnight = _is_overnight_api == "true"
+
+        route_toll_budget_cost_raw = data.get(
+            "route_toll_budget_cost", ""
+        ).strip()
+        route_toll_budget_cost = (
+            _Dec(route_toll_budget_cost_raw.replace(",", "."))
+            if route_toll_budget_cost_raw else None
+        )
+
         service_time_raw = data.get("service_time", "").strip()
         # Normalise decimal separator: JS may write '.' or ','
         # depending on the browser locale.
@@ -437,18 +466,27 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
 
         km_phase2 = None
         if is_overnight:
-            try:
-                # Normalise decimal separator before conversion.
-                # Normalizar separador decimal antes de la conversion.
-                _km2_raw = str(data.get("km_phase2", "")).strip()
-                km_phase2 = float(_km2_raw.replace(",", "."))
-            except (KeyError, ValueError):
-                messages.error(
-                    request,
-                    "Introduce los kilómetros de la fase 2 "
-                    "para servicios de pernocta.",
-                )
-                return redirect("budgets:wizard")
+            if route_calculation_mode == "API":
+                # km_phase2 is set by the modal into the hidden input km_phase2_route.
+                # km_phase2 lo vuelca el modal en el hidden input km_phase2_route.
+                try:
+                    _km2_raw = str(data.get("km_phase2_route", "")).strip()
+                    km_phase2 = float(_km2_raw.replace(",", ".")) if _km2_raw else None
+                except (KeyError, ValueError):
+                    km_phase2 = None
+            else:
+                try:
+                    # Normalise decimal separator before conversion.
+                    # Normalizar separador decimal antes de la conversion.
+                    _km2_raw = str(data.get("km_phase2", "")).strip()
+                    km_phase2 = float(_km2_raw.replace(",", "."))
+                except (KeyError, ValueError):
+                    messages.error(
+                        request,
+                        "Introduce los kilómetros de la fase 2 "
+                        "para servicios de pernocta.",
+                    )
+                    return redirect("budgets:wizard")
 
         # --- Resolve FK objects ---
         # --- Resolver objetos FK ---
@@ -500,8 +538,14 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             pk_km=_Dec(pk_km_raw.replace(",", ".")) if pk_km_raw else None,
             route_distance_km=route_distance_km,
             route_toll_cost=route_toll_cost,
+            route_toll_budget_cost=(
+                route_toll_budget_cost
+                if route_calculation_mode == "API"
+                else None
+            ),
             route_calculation_mode=route_calculation_mode,
             service_time=service_time_obj,
+            waypoints_json=waypoints_json,
             # Placeholders — set by the engine before save.
             # Valores provisionales — el motor los establece antes de guardar.
             total_amount=0,
@@ -936,34 +980,46 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
 
     def post(self, request):
         """
-        Validate inputs, call calculate_route_multileg() and return the
-        result fragment with all flags resolved for the template.
+        Validate inputs, call calculate_route_multileg() and return a
+        JsonResponse with all route fields for wizard_map.js confirmRoute().
         ---
         Valida los parametros, llama a calculate_route_multileg() y devuelve
-        el fragmento de resultado con todos los flags resueltos para el template.
+        un JsonResponse con todos los campos de ruta para confirmRoute().
         """
         import datetime as _dt
         import json as _json
+        from django.http import JsonResponse
 
         company_user = _get_company_user(request)
-        data = request.POST
 
-        base_id           = data.get("base_id", "").strip()
-        waypoints_json_str = data.get("waypoints_json", "").strip()
-        service_date_str  = data.get("service_date", "").strip()
-        service_time_str  = data.get("service_time", "").strip()
+        # Request body is JSON (sent by wizard_map.js fetch with
+        # Content-Type: application/json). request.POST is empty.
+        # El body es JSON enviado por wizard_map.js — request.POST está vacío.
+        try:
+            body = _json.loads(request.body)
+        except (_json.JSONDecodeError, ValueError):
+            return JsonResponse(
+                {"error": "Cuerpo de la petición inválido."}, status=400
+            )
+
+        base_id            = str(body.get("base_id", "")).strip()
+        waypoints_json_str = body.get("waypoints_json", "")
+        service_date_str   = str(body.get("service_date", "")).strip()
+        service_time_str   = str(body.get("service_time", "")).strip()
 
         # Validate required fields.
         # Validar campos obligatorios.
         if not all([base_id, waypoints_json_str,
                     service_date_str, service_time_str]):
-            return render(request, self.template_name, {
-                "error": (
-                    "Faltan datos: base, paradas, fecha y hora "
-                    "son obligatorios."
-                ),
-                "base": None,
-            })
+            return JsonResponse(
+                {
+                    "error": (
+                        "Faltan datos: base, paradas, fecha y hora "
+                        "son obligatorios."
+                    )
+                },
+                status=400,
+            )
 
         # Resolve base.
         # Resolver la base.
@@ -973,10 +1029,7 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
                 company=company_user.company,
             )
         except (Base.DoesNotExist, ValueError):
-            return render(request, self.template_name, {
-                "error": "Base no encontrada.",
-                "base": None,
-            })
+            return JsonResponse({"error": "Base no encontrada."}, status=404)
 
         # Parse waypoints JSON.
         # Parsear JSON de waypoints.
@@ -985,39 +1038,38 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
             if not isinstance(waypoints, list) or not waypoints:
                 raise ValueError("La lista de paradas esta vacia.")
         except (ValueError, _json.JSONDecodeError) as exc:
-            return render(request, self.template_name, {
-                "error": f"Paradas inválidas: {exc}",
-                "base": base,
-            })
+            return JsonResponse(
+                {"error": f"Paradas inválidas: {exc}"}, status=400
+            )
 
         # Parse service datetime.
         # Parsear fecha y hora del servicio.
         try:
-            service_date = _dt.date.fromisoformat(service_date_str)
+            service_date     = _dt.date.fromisoformat(service_date_str)
             service_time_obj = _dt.time.fromisoformat(service_time_str)
             service_datetime = _dt.datetime.combine(
                 service_date, service_time_obj,
             )
         except Exception as exc:
-            return render(request, self.template_name, {
-                "error": f"Fecha u hora inválidas: {exc}",
-                "base": base,
-            })
+            return JsonResponse(
+                {"error": f"Fecha u hora inválidas: {exc}"}, status=400
+            )
 
         # Validate future datetime (Routes API requirement for toll data).
         # Validar que sea futuro (requisito de Routes API para datos de peajes).
         if service_datetime <= _dt.datetime.utcnow():
-            return render(request, self.template_name, {
-                "error": (
-                    "La fecha y hora del servicio deben ser futuras "
-                    "para calcular la ruta. "
-                    "Ajusta la fecha u hora en el paso 2b."
-                ),
-                "base": base,
-            })
+            return JsonResponse(
+                {
+                    "error": (
+                        "La fecha y hora del servicio deben ser futuras "
+                        "para calcular la ruta. "
+                        "Ajusta la fecha u hora en el paso 2b."
+                    )
+                },
+                status=400,
+            )
 
         api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
-        google_maps_map_id = os.environ.get("GOOGLE_MAPS_MAP_ID", "")
 
         from budgets.services import calculate_route_multileg
         result = calculate_route_multileg(
@@ -1028,30 +1080,16 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
         )
 
         if result.get("error"):
-            return render(request, self.template_name, {
-                "error": result["error"],
-                "base": base,
-                "base_lat": float(base.latitude),
-                "base_lng": float(base.longitude),
-                "google_maps_api_key": api_key,
-                "google_maps_map_id": google_maps_map_id,
-                "waypoints": waypoints,
-            })
+            return JsonResponse({"error": result["error"]}, status=502)
 
-        return render(request, self.template_name, {
-            "base": base,
-            "base_lat": float(base.latitude),
-            "base_lng": float(base.longitude),
-            "google_maps_api_key": api_key,
-            "google_maps_map_id": google_maps_map_id,
-            "waypoints": waypoints,
-            "distance_km": result["distance_km"],
-            "km_phase1": result["km_phase1"],
-            "km_phase2": result["km_phase2"],
-            "is_overnight": result["is_overnight"],
-            "has_tolls": result["has_tolls"],
-            "encoded_polyline": result["encoded_polyline"],
-            "error": None,
+        return JsonResponse({
+            "route_distance_km":      result["distance_km"],
+            "km_phase1":              result["km_phase1"],
+            "km_phase2":              result["km_phase2"],
+            "is_overnight":           result["is_overnight"],
+            "has_tolls":              result["has_tolls"],
+            "route_toll_budget_cost": result.get("route_toll_budget_cost"),
+            "encoded_polyline":       result.get("encoded_polyline"),
         })
 
 
@@ -1255,6 +1293,10 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         # Resolve whether the selected base has coordinates.
         # Resolver si la base seleccionada tiene coordenadas.
         base_has_coords = False
+        base_lat = None
+        base_lng = None
+        base_name = ""
+        base_id_int = None
         if base_id:
             try:
                 base = Base.objects.get(
@@ -1262,8 +1304,15 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
                     company=company_user.company,
                 )
                 base_has_coords = bool(base.latitude and base.longitude)
+                if base_has_coords:
+                    base_lat    = float(base.latitude)
+                    base_lng    = float(base.longitude)
+                    base_name   = base.name
+                    base_id_int = base.pk
             except Base.DoesNotExist:
                 pass
+
+        google_maps_map_id = os.environ.get("GOOGLE_MAPS_MAP_ID", "")
 
         # Determine whether the operator has provided a service time (step 2b).
         # Used by the template for step 6 badge and pre-check logic.
@@ -1274,11 +1323,16 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         insurer_id_str    = request.GET.get("insurer_id", "").strip()
 
         return render(request, self.template_name, {
-            "concepts":          concepts,
+            "concepts":             concepts,
             "has_loaded_surcharge": has_loaded,
-            "loaded_percent":    loaded_percent,
-            "always_apply_iva":  always_apply_iva,
-            "base_has_coords":   base_has_coords,
+            "loaded_percent":       loaded_percent,
+            "always_apply_iva":     always_apply_iva,
+            "base_has_coords":      base_has_coords,
+            "base_id":              base_id_int,
+            "base_lat":             base_lat,
+            "base_lng":             base_lng,
+            "base_name":            base_name,
+            "google_maps_map_id":   google_maps_map_id,
         })
 
 

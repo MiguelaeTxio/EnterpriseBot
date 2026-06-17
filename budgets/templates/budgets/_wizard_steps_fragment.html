@@ -140,58 +140,115 @@
       </label>
     </div>
     <div id="route-calc-fields" class="d-none">
-      <div class="row g-2 mb-2">
-        <div class="col-12 col-md-6">
-          <label class="form-label small">Carretera</label>
-          <input
-            type="text"
-            class="form-control"
-            id="id_road_name_calc"
-            placeholder="Ej: A-45, N-331"
-          >
-        </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label small">Municipio / provincia del destino <span class="text-muted">(opcional)</span></label>
-          <input
-            type="text"
-            class="form-control"
-            id="id_dest_location_calc"
-            placeholder="Ej: Lucena, Córdoba"
-          >
-        </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label small">Punto kilométrico</label>
-          <input
-            type="number"
-            class="form-control"
-            id="id_pk_km_calc"
-            step="0.001"
-            min="0"
-            placeholder="Ej: 127.5"
-          >
+
+      {# ── Modo B: Planificador de ruta multi-parada (Google Maps) ─── #}
+      <div class="mb-3">
+        <button
+          type="button"
+          class="btn btn-info text-white w-100"
+          data-bs-toggle="modal"
+          data-bs-target="#routePlannerModal"
+        >
+          <i class="bi bi-map me-2"></i>Planificar ruta
+        </button>
+        <div class="form-text text-muted mt-1">
+          <i class="bi bi-info-circle me-1"></i>
+          Añade paradas en el mapa para calcular la ruta real por carretera.
         </div>
       </div>
-      <div class="form-text text-muted mb-2">
-        <i class="bi bi-info-circle me-1"></i>
-        Se usará la fecha y hora del paso 2b para calcular peajes.
+
+      {# ── Resumen de ruta confirmada (se rellena tras confirmar en el modal) ── #}
+      <div id="route-confirmed-summary" class="d-none alert alert-success py-2 px-3 mb-3">
+        <i class="bi bi-check-circle me-1"></i>
+        <span id="route-confirmed-text"></span>
       </div>
-      <button
-        type="button"
-        class="btn btn-outline-info btn-sm"
-        onclick="calcularRuta()"
-      >
-        <i class="bi bi-signpost-2 me-1"></i>Calcular ruta
-      </button>
-      <div id="route-result-section" class="mt-2"></div>
+
+      {# ── Separador: modo manual alternativo ──────────────────────── #}
+      <details class="mb-2">
+        <summary class="form-text text-muted cursor-pointer">
+          Introducir kilómetros manualmente en su lugar
+        </summary>
+        <div class="mt-2">
+          <div class="row g-2 mb-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label small">Carretera</label>
+              <input
+                type="text"
+                class="form-control"
+                id="id_road_name_calc"
+                placeholder="Ej: A-45, N-331"
+              >
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small">Municipio / provincia del destino <span class="text-muted">(opcional)</span></label>
+              <input
+                type="text"
+                class="form-control"
+                id="id_dest_location_calc"
+                placeholder="Ej: Lucena, Córdoba"
+              >
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small">Punto kilométrico</label>
+              <input
+                type="number"
+                class="form-control"
+                id="id_pk_km_calc"
+                step="0.001"
+                min="0"
+                placeholder="Ej: 127.5"
+              >
+            </div>
+          </div>
+          <div class="form-text text-muted mb-2">
+            <i class="bi bi-info-circle me-1"></i>
+            Se usará la fecha y hora del paso 2b para calcular peajes.
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-info btn-sm"
+            onclick="calcularRuta()"
+          >
+            <i class="bi bi-signpost-2 me-1"></i>Calcular ruta
+          </button>
+          <div id="route-result-section" class="mt-2"></div>
+        </div>
+      </details>
+
+      {# ── Hidden inputs — rellenados por wizard_map.js (Modo B) ─────────── #}
+      {# o por calcularRuta() (modo manual). route_calculation_mode          #}
+      {# distingue cuál de los dos los escribió.                             #}
       <input type="hidden" name="road_name"              id="id_road_name"              value="">
       <input type="hidden" name="pk_km"                  id="id_pk_km"                  value="">
       <input type="hidden" name="dest_location"          id="id_dest_location"          value="">
       <input type="hidden" name="route_distance_km"      id="id_route_distance_km"      value="">
       <input type="hidden" name="route_toll_cost"        id="id_route_toll_cost"        value="">
       <input type="hidden" name="route_calculation_mode" id="id_route_calculation_mode" value="MANUAL">
+      <input type="hidden" name="waypoints_json"         id="id_waypoints_json"         value="">
+      <input type="hidden" name="km_phase1_route"        id="id_km_phase1_route"        value="">
+      <input type="hidden" name="km_phase2_route"        id="id_km_phase2_route"        value="">
+      <input type="hidden" name="is_overnight_route"     id="id_is_overnight_route"     value="">
+      <input type="hidden" name="route_toll_budget_cost" id="id_route_toll_budget_cost" value="">
     </div>
   </div>
 </div>
+
+{# ── CONFIG para wizard_map.js — inyectada server-side ───────────────── #}
+{# Solo se emite cuando la base tiene coordenadas (mismo guard que arriba).#}
+<script>
+  window.ROUTE_PLANNER_CONFIG = {
+    base: {
+      id:   {{ base_id }},
+      lat:  {{ base_lat|stringformat:".6f" }},
+      lng:  {{ base_lng|stringformat:".6f" }},
+      name: "{{ base_name|escapejs }}"
+    },
+    mapId:              "{{ google_maps_map_id }}",
+    confirmUrl:         "{% url 'budgets:waypoints' %}",
+    serviceDateFieldId: "id_service_date",
+    serviceTimeFieldId: "id_service_time"
+  };
+</script>
 {% endif %}
 
 {# ── PASO 5: Desbloqueo ─────────────────────────────────────────────────────── #}

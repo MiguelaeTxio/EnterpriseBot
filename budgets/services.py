@@ -698,6 +698,11 @@ def _call_routes_multileg(
         "routingPreference": "TRAFFIC_AWARE",
         "departureTime": departure_time_str,
         "extraComputations": ["TOLLS"],
+        "routeModifiers": {
+            "avoidTolls": False,
+            "avoidHighways": False,
+            "avoidFerries": False,
+        },
     }
 
     if intermediates_payload:
@@ -785,6 +790,171 @@ def _call_routes_multileg(
         "has_tolls": has_tolls,
         "encoded_polyline": encoded_polyline,
     }
+
+
+def _decode_polyline(encoded: str) -> list[tuple[float, float]]:
+    """
+    Decode a Google Maps Encoded Polyline string into a list of (lat, lng)
+    tuples. Pure Python implementation — no external dependencies.
+    ---
+    Decodifica una cadena de polyline codificada de Google Maps en una
+    lista de tuplas (lat, lng). Implementación Python pura.
+    """
+    points: list[tuple[float, float]] = []
+    index = 0
+    lat = 0
+    lng = 0
+    while index < len(encoded):
+        # Decode latitude
+        result = 0
+        shift = 0
+        while True:
+            b = ord(encoded[index]) - 63
+            index += 1
+            result |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlat = ~(result >> 1) if result & 1 else result >> 1
+        lat += dlat
+        # Decode longitude
+        result = 0
+        shift = 0
+        while True:
+            b = ord(encoded[index]) - 63
+            index += 1
+            result |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlng = ~(result >> 1) if result & 1 else result >> 1
+        lng += dlng
+        points.append((lat / 1e5, lng / 1e5))
+    return points
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """
+    Return the great-circle distance in km between two points.
+    ---
+    Devuelve la distancia ortodrómica en km entre dos puntos.
+    """
+    import math
+    R = 6371.0
+    d_lat = math.radians(lat2 - lat1)
+    d_lng = math.radians(lng2 - lng1)
+    a = (math.sin(d_lat / 2) ** 2
+         + math.cos(math.radians(lat1))
+         * math.cos(math.radians(lat2))
+         * math.sin(d_lng / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _compute_toll_cost(encoded_polyline: str) -> Decimal:
+    """
+    Cross-reference the route polyline with the TollSegment table to
+    compute the total toll cost for a heavy vehicle (price_heavy_1).
+
+    Algorithm:
+    1. Decode the polyline into lat/lng points.
+    2. For each geocoded TollSegment (origin_lat/lng + dest_lat/lng not null):
+       - Find the polyline point closest to the segment origin.
+       - Find the polyline point closest to the segment destination.
+       - If both are within SNAP_KM and origin point comes before destination
+         point in the polyline order → the route traverses this segment → add
+         price_heavy_1 to the total.
+    3. Return the sum as Decimal, rounded to 2 dp.
+
+    SNAP_KM: maximum distance (km) from a polyline point to a toll point to
+    consider it a match. 1.5 km gives a good balance between precision and
+    tolerance for motorway access ramps.
+    ---
+    Cruza la polyline de la ruta con la tabla TollSegment para calcular
+    el coste total de peajes para un vehículo pesado (price_heavy_1).
+    """
+    from budgets.models import TollSegment
+
+    if not encoded_polyline:
+        return Decimal("0.00")
+
+    try:
+        points = _decode_polyline(encoded_polyline)
+    except Exception:
+        return Decimal("0.00")
+
+    if not points:
+        return Decimal("0.00")
+
+    SNAP_KM = 1.5
+
+    # Load all geocoded active segments regardless of tariff level.
+    # Cargar todos los segmentos geocodificados activos independientemente
+    # del nivel tarifario.
+    segments = TollSegment.objects.filter(
+        origin_lat__isnull=False,
+        origin_lng__isnull=False,
+        dest_lat__isnull=False,
+        dest_lng__isnull=False,
+        is_active=True,
+    ).only(
+        "origin_lat", "origin_lng",
+        "dest_lat", "dest_lng",
+        "price_heavy_1",
+    )
+
+    total = Decimal("0.00")
+
+    for seg in segments:
+        o_lat = float(seg.origin_lat)
+        o_lng = float(seg.origin_lng)
+        d_lat = float(seg.dest_lat)
+        d_lng = float(seg.dest_lng)
+
+        # Find best matching polyline index for origin and destination.
+        # Encontrar el índice de polyline más cercano para origen y destino.
+        best_o_idx = None
+        best_o_dist = float("inf")
+        best_d_idx = None
+        best_d_dist = float("inf")
+
+        for i, (p_lat, p_lng) in enumerate(points):
+            dist_o = _haversine_km(p_lat, p_lng, o_lat, o_lng)
+            if dist_o < best_o_dist:
+                best_o_dist = dist_o
+                best_o_idx = i
+            dist_d = _haversine_km(p_lat, p_lng, d_lat, d_lng)
+            if dist_d < best_d_dist:
+                best_d_dist = dist_d
+                best_d_idx = i
+
+        # Segment is traversed if both endpoints snap within SNAP_KM
+        # and origin comes before destination in the route order.
+        # For single-point tolls (origin == destination same coords),
+        # it suffices that any polyline point is within SNAP_KM.
+        # ---
+        # El tramo se recorre si ambos extremos encajan en SNAP_KM y
+        # el origen aparece antes que el destino en el orden de la ruta.
+        # Para peajes de punto único (origen == destino mismas coords),
+        # basta con que algún punto de la polyline esté en SNAP_KM.
+        same_point = (
+            abs(o_lat - d_lat) < 0.0001
+            and abs(o_lng - d_lng) < 0.0001
+        )
+
+        if same_point:
+            # Single-point toll: traversed if the polyline passes nearby.
+            if best_o_dist <= SNAP_KM:
+                total += _round2(Decimal(str(seg.price_heavy_1)))
+        elif (
+            best_o_dist <= SNAP_KM
+            and best_d_dist <= SNAP_KM
+            and best_o_idx is not None
+            and best_d_idx is not None
+            and best_o_idx < best_d_idx
+        ):
+            total += _round2(Decimal(str(seg.price_heavy_1)))
+
+    return _round2(total)
 
 
 def calculate_route_multileg(
@@ -904,6 +1074,10 @@ def calculate_route_multileg(
                 "km_phase2": None,
                 "is_overnight": False,
                 "has_tolls": result["has_tolls"],
+                "route_toll_budget_cost": (
+                    _compute_toll_cost(result["encoded_polyline"])
+                    if result["has_tolls"] else Decimal("0.00")
+                ),
                 "encoded_polyline": result["encoded_polyline"],
                 "error": None,
             }
@@ -950,14 +1124,21 @@ def calculate_route_multileg(
                 + result2["encoded_polyline"]
             )
 
+            has_tolls = result1["has_tolls"] or result2["has_tolls"]
+            toll_cost = Decimal("0.00")
+            if has_tolls:
+                toll_cost = (
+                    _compute_toll_cost(result1["encoded_polyline"])
+                    + _compute_toll_cost(result2["encoded_polyline"])
+                )
+
             return {
                 "distance_km": result1["distance_km"],
                 "km_phase1": result1["distance_km"],
                 "km_phase2": result2["distance_km"],
                 "is_overnight": True,
-                "has_tolls": (
-                    result1["has_tolls"] or result2["has_tolls"]
-                ),
+                "has_tolls": has_tolls,
+                "route_toll_budget_cost": _round2(toll_cost),
                 "encoded_polyline": combined_polyline,
                 "error": None,
             }
@@ -969,6 +1150,7 @@ def calculate_route_multileg(
             "km_phase2": None,
             "is_overnight": False,
             "has_tolls": False,
+            "route_toll_budget_cost": Decimal("0.00"),
             "encoded_polyline": "",
             "error": str(exc),
         }
@@ -1161,7 +1343,32 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
             )
 
     # ------------------------------------------------------------------
-    # 3. UNLOCK
+    # 3. TOLL COST (Modo B — route_calculation_mode=API)
+    # If the budget has a route_toll_budget_cost, add it as a direct
+    # BudgetLine. The amount comes from BudgetWaypointView (Routes API
+    # v2 server-side via TollSegment table) — not from TariffLine.
+    # It is added to base_total so surcharges and fees apply on top.
+    # ---
+    # Si el budget tiene route_toll_budget_cost, añadirlo como BudgetLine
+    # directa. El importe viene de BudgetWaypointView (Routes API v2
+    # server-side via tabla TollSegment) — no de TariffLine.
+    # Se suma a base_total para que los recargos y comisiones se apliquen
+    # encima.
+    # ------------------------------------------------------------------
+    if budget.route_toll_budget_cost and budget.route_toll_budget_cost > 0:
+        toll_amount = _round2(Decimal(str(budget.route_toll_budget_cost)))
+        base_total += _add_line(
+            "TOLL_COST",
+            "Peajes de ruta",
+            Decimal("1"),
+            toll_amount,
+        )
+        budget.total_amount = _round2(
+            budget.total_amount if budget.total_amount else Decimal("0")
+        )
+
+    # ------------------------------------------------------------------
+    # 5. UNLOCK
     # Only if has_unlock and the tariff includes an UNLOCK line.
     # Solo si has_unlock y la tarifa incluye una linea UNLOCK.
     # ------------------------------------------------------------------
@@ -1176,7 +1383,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
             )
 
     # ------------------------------------------------------------------
-    # 4. OPTIONAL CONCEPTS
+    # 6. OPTIONAL CONCEPTS
     # Each is included only if the operator provided a value > 0
     # and the tariff has a matching line.
     # Cada uno se incluye solo si el operario proporciono un valor > 0
@@ -1209,7 +1416,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         )
 
     # ------------------------------------------------------------------
-    # 5. SURCHARGES — NYF and/or loaded vehicle
+    # 7. SURCHARGES — NYF and/or loaded vehicle
     # Applied as a percentage over base_total.
     # Rules:
     #   - If insurer.surcharges_are_cumulative: both surcharges are summed.
@@ -1284,7 +1491,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     subtotal_after_surcharges = base_total + surcharge_total
 
     # ------------------------------------------------------------------
-    # 6. MANAGEMENT FEE
+    # 8. MANAGEMENT FEE
     # Only if insurer.management_fee_percent > 0 (e.g. COVEI 5%).
     # Solo si insurer.management_fee_percent > 0 (ej: COVEI 5%).
     # ------------------------------------------------------------------
@@ -1303,12 +1510,12 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         )
 
     # ------------------------------------------------------------------
-    # 7. TOTAL (base, before IVA)
+    # 9. TOTAL (base, before IVA)
     # ------------------------------------------------------------------
     budget.total_amount = _round2(subtotal_after_surcharges + management_fee_total)
 
     # ------------------------------------------------------------------
-    # 8. IVA (optional — controlled by budget.apply_iva)
+    # 10. IVA (optional — controlled by budget.apply_iva)
     # Applied over total_amount. Result stored as instance attribute
     # total_amount_with_iva (not persisted in DB).
     # Aplicado sobre total_amount. Resultado almacenado como atributo de

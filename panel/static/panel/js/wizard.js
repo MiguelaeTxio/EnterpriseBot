@@ -23,10 +23,17 @@
     if (!phase2) return;
     if (isOvernight) {
       phase2.classList.remove('d-none');
-      if (km2Input) km2Input.required = true;
+      if (km2Input) {
+        km2Input.required = true;
+        km2Input.disabled = false;
+      }
     } else {
       phase2.classList.add('d-none');
-      if (km2Input) { km2Input.required = false; km2Input.value = ''; }
+      if (km2Input) {
+        km2Input.required = false;
+        km2Input.disabled = true;
+        km2Input.value = '';
+      }
     }
   }
   window.toggleOvernightFields = toggleOvernightFields;
