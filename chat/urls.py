@@ -15,10 +15,12 @@ from chat.views import (
     ChatMessagesPollingView,
     ChatSendView,
     ChatAliasSetView,
+    BreakdownRoomManageView,
+)
+from chat.views_tickets import (
     BreakdownTicketListView,
     BreakdownTicketDetailView,
     BreakdownTicketCreateView,
-    BreakdownRoomManageView,
 )
 
 app_name = "chat"

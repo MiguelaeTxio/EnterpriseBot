@@ -251,14 +251,30 @@ class IncomingWhatsAppView(View):
         #   opt_in  — reactivates the WhatsApp session window for the contact.
         #   opt_out — sets contact.opt_out_broadcast = True to exclude from broadcasts.
         # Both branches return HTTP 200 immediately, consuming the message.
+        # EXCEPTION: if the contact is in AWAITING_BREAKDOWN_CONFIRM state, the
+        # opt_in payload is the breakdown confirmation Quick Reply — do NOT intercept
+        # here; let the IRC dispatcher handle it via _resolve_pending_routing.
         # --- Paso 4b-bis: Gestionar ButtonPayload para chat_session_renewal — Hito 13, Paso 10. ---
         # Intercepta pulsaciones de botón Quick Reply del template chat_session_renewal
         # ANTES del despachador IRC y del pipeline del chatbot del Hito 4. Dos payloads:
         #   opt_in  — reactiva la ventana de sesión WhatsApp del contacto.
         #   opt_out — establece contact.opt_out_broadcast = True para excluirle de broadcasts.
         # Ambas ramas devuelven HTTP 200 inmediatamente, consumiendo el mensaje.
+        # EXCEPCIÓN: si el contacto está en estado AWAITING_BREAKDOWN_CONFIRM, el payload
+        # opt_in corresponde al Quick Reply de confirmación de avería — NO interceptar aquí;
+        # dejar que el despachador IRC lo gestione a través de _resolve_pending_routing.
         _button_payload = request.POST.get("ButtonPayload", "").strip()
-        if _button_payload in ("opt_in", "opt_out"):
+        _skip_opt_for_breakdown = False
+        if _button_payload == "opt_in":
+            from ivr_config.models import Contact as _ContactCheck
+            _contact_check = _ContactCheck.objects.filter(
+                company=company, phone_number=from_number,
+            ).only("routing_state").first()
+            if (_contact_check is not None
+                    and _contact_check.routing_state
+                    == _ContactCheck.ROUTING_STATE_AWAITING_BREAKDOWN_CONFIRM):
+                _skip_opt_for_breakdown = True
+        if _button_payload in ("opt_in", "opt_out") and not _skip_opt_for_breakdown:
             if _button_payload == "opt_in":
                 # Reactivate the WhatsApp session window for this operator.
                 # Reactivar la ventana de sesión WhatsApp para este operario.

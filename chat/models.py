@@ -6,6 +6,12 @@ ChatRoom, ChatMessage, BreakdownTicket, BreakdownConversationTurn.
 All entities are scoped to a Company. ChatRoom instances are created
 idempotently via the init_chat_rooms management command, and also
 automatically via the post_save signal on Section (chat/signals.py).
+
+BreakdownTicket lifecycle (Hito 14 redesign):
+  OPEN → IN_PROGRESS (operario asignado) → CLOSED
+  OPEN/IN_PROGRESS → PAUSED (operario reasignado a otro ticket)
+  ticket_date_code: YYYYMMDD-NN (diario por empresa, ej. 20260618-01)
+  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp)
 ---
 Modelos de datos para el módulo de chat de EnterpriseBot.
 Define el grafo de entidades para las salas de chat IRC por sección:
@@ -13,9 +19,16 @@ ChatRoom, ChatMessage, BreakdownTicket, BreakdownConversationTurn.
 Todas las entidades pertenecen a una Company. Las instancias de ChatRoom
 se crean de forma idempotente mediante el comando init_chat_rooms, y también
 de forma automática mediante la signal post_save sobre Section (chat/signals.py).
+
+Ciclo de vida BreakdownTicket (rediseño Hito 14):
+  OPEN → IN_PROGRESS (operario asignado) → CLOSED
+  OPEN/IN_PROGRESS → PAUSED (operario reasignado a otro ticket)
+  ticket_date_code: YYYYMMDD-NN (diario por empresa, ej. 20260618-01)
+  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp)
 """
 
 from django.db import models
+from django.utils import timezone
 
 from ivr_config.models import Company, CompanyUser, Contact, Section
 
@@ -223,32 +236,53 @@ class ChatMessage(models.Model):
 
 class BreakdownTicket(models.Model):
     """
-    Represents a breakdown ticket created when a WhatsApp contact initiates
-    a breakdown report via the BREAKDOWNS room.
-    The Gemini conversational agent collects the required fields one by one
-    via natural dialogue. The SUPERVISOR closes the ticket from the panel
-    once the breakdown has been attended.
-    Status lifecycle: OPEN → IN_PROGRESS → RESOLVED.
+    Represents a breakdown ticket created either manually from the panel or
+    automatically by the Gemini WhatsApp agent via the BREAKDOWNS room.
+
+    Status lifecycle (Hito 14 redesign):
+      OPEN        — ticket created, no operator assigned.
+      IN_PROGRESS — operator assigned; ticket is an active repair order (OT).
+      PAUSED      — operator was reassigned to another ticket; awaiting a new one.
+      CLOSED      — work finished; resolved_by and resolved_at are set.
+
+    ticket_date_code: human-readable identifier YYYYMMDD-NN, daily sequential
+    per company (e.g. 20260618-01). Assigned automatically on first save().
+
+    origin: MANUAL (panel creation) | CHATBOT (Gemini WhatsApp agent).
+
     BreakdownTickets are never automatically purged.
     ---
-    Representa un ticket de avería creado cuando un contacto de WhatsApp inicia
-    un reporte de avería a través de la sala BREAKDOWNS.
-    El agente conversacional Gemini recoge los campos requeridos uno a uno
-    mediante diálogo natural. El SUPERVISOR cierra el ticket desde el panel
-    una vez atendida la avería.
-    Ciclo de vida del estado: OPEN → IN_PROGRESS → RESOLVED.
+    Representa un ticket de avería creado manualmente desde el panel o
+    automáticamente por el agente Gemini de WhatsApp a través de la sala
+    BREAKDOWNS.
+
+    Ciclo de vida del estado (rediseño Hito 14):
+      OPEN        — ticket creado, sin operario asignado.
+      IN_PROGRESS — operario asignado; el ticket es una OT activa.
+      PAUSED      — el operario fue reasignado a otro ticket; espera uno nuevo.
+      CLOSED      — trabajo finalizado; resolved_by y resolved_at asignados.
+
+    ticket_date_code: identificador legible YYYYMMDD-NN, secuencial diario
+    por empresa (ej. 20260618-01). Se asigna automáticamente en el primer save().
+
+    origin: MANUAL (creación desde panel) | CHATBOT (agente Gemini WhatsApp).
+
     Los BreakdownTicket nunca se eliminan automáticamente.
     """
 
+    # --- Status choices ---------------------------------------------------
     STATUS_OPEN        = "OPEN"
     STATUS_IN_PROGRESS = "IN_PROGRESS"
-    STATUS_RESOLVED    = "RESOLVED"
+    STATUS_PAUSED      = "PAUSED"
+    STATUS_CLOSED      = "CLOSED"
     STATUS_CHOICES     = [
         (STATUS_OPEN,        "Abierto"),
         (STATUS_IN_PROGRESS, "En curso"),
-        (STATUS_RESOLVED,    "Resuelto"),
+        (STATUS_PAUSED,      "Pausado"),
+        (STATUS_CLOSED,      "Cerrado"),
     ]
 
+    # --- Urgency choices --------------------------------------------------
     URGENCY_LOW      = "LOW"
     URGENCY_MEDIUM   = "MEDIUM"
     URGENCY_HIGH     = "HIGH"
@@ -260,17 +294,26 @@ class BreakdownTicket(models.Model):
         (URGENCY_CRITICAL, "Crítica"),
     ]
 
-    # --- ticket_number: auto-incremental por empresa. ---
-    # Se inicializa en save() si es None usando MAX(ticket_number)+1 dentro
-    # de la empresa, o 1 si no existe ningún ticket previo.
-    ticket_number = models.PositiveIntegerField(
-        null=True,
+    # --- Origin choices ---------------------------------------------------
+    ORIGIN_MANUAL  = "MANUAL"
+    ORIGIN_CHATBOT = "CHATBOT"
+    ORIGIN_CHOICES = [
+        (ORIGIN_MANUAL,  "Manual"),
+        (ORIGIN_CHATBOT, "Chatbot"),
+    ]
+
+    # --- ticket_date_code: YYYYMMDD-NN daily sequential per company. ------
+    # Assigned automatically in save() when blank, using the count of tickets
+    # already created today for this company to build the ordinal (01-99).
+    ticket_date_code = models.CharField(
+        max_length=11,
         blank=True,
-        verbose_name="Número de ticket",
+        default="",
+        verbose_name="Código de ticket",
         help_text=(
-            "Número de ticket autoincremental por empresa. Se asigna "
-            "automáticamente en el primer save() mediante MAX+1 dentro "
-            "del scope de la empresa."
+            "Identificador legible del ticket: YYYYMMDD-NN. "
+            "Secuencial diario por empresa. Se asigna automáticamente "
+            "en el primer save()."
         ),
     )
     room = models.ForeignKey(
@@ -286,6 +329,18 @@ class BreakdownTicket(models.Model):
         related_name="breakdown_tickets",
         verbose_name="Contacto",
         help_text="Contacto de WhatsApp que inició el reporte de avería.",
+    )
+    reported_by = models.ForeignKey(
+        Contact,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reported_breakdown_tickets",
+        verbose_name="Detectado por",
+        help_text=(
+            "Contacto que detectó la avería. Puede diferir del contacto "
+            "que abrió el ticket (ej. chofer que llama vs. jefe de taller)."
+        ),
     )
     section = models.ForeignKey(
         "ivr_config.Section",
@@ -307,16 +362,25 @@ class BreakdownTicket(models.Model):
         related_name="breakdown_tickets",
         verbose_name="Máquina / Centro de gasto",
         help_text=(
-            "MachineAsset resuelto por el agente Gemini a partir de machine_raw. "
-            "Null hasta que el agente identifica la máquina en el catálogo."
+            "MachineAsset resuelto a partir de machine_raw. "
+            "Null hasta que se identifica la máquina en el catálogo."
         ),
     )
-    is_repair_order = models.BooleanField(
-        default=False,
-        verbose_name="Convertido en orden de reparación",
+    origin = models.CharField(
+        max_length=8,
+        choices=ORIGIN_CHOICES,
+        default=ORIGIN_MANUAL,
+        verbose_name="Origen",
+        help_text="Indica si el ticket fue creado manualmente o por el chatbot.",
+    )
+    fault_category = models.CharField(
+        max_length=30,
+        blank=True,
+        default="",
+        verbose_name="Categoría de avería",
         help_text=(
-            "True cuando el SUPERVISOR ha pulsado 'Convertir en orden de "
-            "reparación' desde la vista de detalle del ticket."
+            "Categoría principal de la avería. Usa los mismos códigos que "
+            "FaultCategory en work_order_processor (ej. HYDRAULIC, ELECTRICAL_ELECTRONIC)."
         ),
     )
     photos = models.JSONField(
@@ -324,8 +388,8 @@ class BreakdownTicket(models.Model):
         verbose_name="Fotos adjuntas",
         help_text=(
             "Lista de rutas o URLs de las fotos adjuntas enviadas por el "
-            "contacto durante el diálogo de recogida de avería. "
-            "El agente Gemini acepta hasta 3 imágenes vía WhatsApp Media."
+            "contacto durante el diálogo. El agente Gemini acepta hasta 3 "
+            "imágenes vía WhatsApp Media."
         ),
     )
     status = models.CharField(
@@ -333,20 +397,26 @@ class BreakdownTicket(models.Model):
         choices=STATUS_CHOICES,
         default=STATUS_OPEN,
         verbose_name="Estado",
-        help_text="Estado actual del ticket. Ciclo: OPEN → IN_PROGRESS → RESOLVED.",
+        help_text=(
+            "Estado actual del ticket. "
+            "Ciclo: OPEN → IN_PROGRESS → CLOSED | OPEN/IN_PROGRESS → PAUSED."
+        ),
     )
     machine_raw = models.CharField(
         max_length=200,
         blank=True,
         default="",
         verbose_name="Máquina / Vehículo",
-        help_text="Identificación de la máquina o vehículo afectado tal como la describe el contacto.",
+        help_text=(
+            "Identificación de la máquina o vehículo afectado tal como "
+            "la describe el contacto o el agente."
+        ),
     )
     fault_summary = models.TextField(
         blank=True,
         default="",
         verbose_name="Resumen de la avería",
-        help_text="Descripción de la avería recogida por el agente Gemini mediante diálogo natural.",
+        help_text="Descripción de la avería recogida mediante diálogo o entrada manual.",
     )
     location = models.CharField(
         max_length=200,
@@ -361,13 +431,13 @@ class BreakdownTicket(models.Model):
         blank=True,
         default="",
         verbose_name="Urgencia",
-        help_text="Nivel de urgencia. El agente Gemini sugiere y el contacto confirma.",
+        help_text="Nivel de urgencia.",
     )
     notes = models.TextField(
         blank=True,
         default="",
         verbose_name="Notas adicionales",
-        help_text="Observaciones adicionales del operario recogidas durante el diálogo.",
+        help_text="Observaciones adicionales recogidas durante el diálogo o la gestión.",
     )
     assigned_to = models.ForeignKey(
         CompanyUser,
@@ -377,8 +447,17 @@ class BreakdownTicket(models.Model):
         related_name="assigned_breakdown_tickets",
         verbose_name="Asignado a",
         help_text=(
-            "WORKSHOPBOSS al que se ha asignado este ticket para su atención. "
-            "Null cuando el ticket está disponible para cualquier jefe de taller."
+            "Operario de taller (WORKSHOPBOSS) al que se ha asignado este ticket. "
+            "Null cuando el ticket está disponible para asignar."
+        ),
+    )
+    paused_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de pausa",
+        help_text=(
+            "Timestamp en que el ticket pasó a estado PAUSED por "
+            "reasignación del operario a otro ticket."
         ),
     )
     resolved_by = models.ForeignKey(
@@ -387,14 +466,14 @@ class BreakdownTicket(models.Model):
         null=True,
         blank=True,
         related_name="resolved_breakdown_tickets",
-        verbose_name="Resuelto por",
-        help_text="Usuario del panel (SUPERVISOR) que cerró el ticket.",
+        verbose_name="Cerrado por",
+        help_text="Usuario del panel que cerró el ticket.",
     )
     resolved_at = models.DateTimeField(
         null=True,
         blank=True,
-        verbose_name="Fecha de resolución",
-        help_text="Timestamp en que el SUPERVISOR marcó el ticket como RESOLVED.",
+        verbose_name="Fecha de cierre",
+        help_text="Timestamp en que se marcó el ticket como CLOSED.",
     )
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -410,9 +489,33 @@ class BreakdownTicket(models.Model):
         verbose_name_plural = "Tickets de avería"
         ordering = ["-created_at"]
 
+    def save(self, *args, **kwargs):
+        """
+        Assigns ticket_date_code on first save if not already set.
+        Format: YYYYMMDD-NN — daily sequential per company (01-99).
+        ---
+        Asigna ticket_date_code en el primer save si no está asignado.
+        Formato: YYYYMMDD-NN — secuencial diario por empresa (01-99).
+        """
+        if not self.ticket_date_code:
+            today = timezone.localdate()
+            date_str = today.strftime("%Y%m%d")
+            company = self.room.company if self.room_id else None
+            if company:
+                existing = BreakdownTicket.objects.filter(
+                    room__company=company,
+                    ticket_date_code__startswith=date_str,
+                ).count()
+                ordinal = existing + 1
+            else:
+                ordinal = 1
+            self.ticket_date_code = f"{date_str}-{ordinal:02d}"
+        super().save(*args, **kwargs)
+
     def __str__(self):
+        code = self.ticket_date_code or f"pk:{self.pk}"
         return (
-            f"[{self.get_status_display()}] {self.contact.name} — "
+            f"[{code}] [{self.get_status_display()}] "
             f"{self.machine_raw or 'Máquina no identificada'}"
         )
 
@@ -477,3 +580,4 @@ class BreakdownConversationTurn(models.Model):
 
     def __str__(self):
         return f"[{self.ticket}] {self.get_role_display()} — {self.created_at:%Y-%m-%d %H:%M}"
+

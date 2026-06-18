@@ -110,10 +110,12 @@ from chat.views import (
     ChatMessagesPollingView,
     ChatSendView,
     ChatAliasSetView,
+    BreakdownRoomManageView,
+)
+from chat.views_tickets import (
     BreakdownTicketListView,
     BreakdownTicketDetailView,
     BreakdownTicketCreateView,
-    BreakdownRoomManageView,
 )
 
 app_name = "panel"
@@ -378,4 +380,3 @@ urlpatterns = [
     # Export by template — Generación de Excel desde plantilla (Hito 19 / P6).
     path("work-orders/export-by-template/", WorkOrderAdminExportByTemplateView.as_view(), name="work_order_export_by_template"),
 ]
-

@@ -1,42 +1,68 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/chat/breakdown_ticket_detail.html #}
-{# Detalle de ticket de avería — Hito 13 Paso 12 (2026-05-18) #}
+{# Detalle de ticket de avería — Hito 14 rediseño (2026-06-18) #}
 {% extends "panel/base.html" %}
 
-{% block title %}Ticket #{{ ticket.ticket_number|default:ticket.pk }}{% endblock %}
+{% block title %}Ticket {{ ticket.ticket_date_code|default:ticket.pk }}{% endblock %}
+{% block page_title %}Ticket {{ ticket.ticket_date_code|default:ticket.pk }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
+<div class="container-fluid px-0">
 
-  <div class="d-flex align-items-center gap-3 mb-4">
-    <a href="{% url 'panel:breakdown_ticket_list' %}" class="btn btn-sm btn-outline-secondary">← Volver</a>
-    <h4 class="mb-0">Ticket de Avería #{{ ticket.ticket_number|default:ticket.pk }}</h4>
+  {# ---- Cabecera ---- #}
+  <div class="d-flex align-items-center gap-3 px-4 pt-4 pb-3 flex-wrap">
+    <a href="{% url 'panel:breakdown_ticket_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Volver
+    </a>
+    <h6 class="fw-semibold mb-0">
+      Ticket {{ ticket.ticket_date_code|default:ticket.pk }}
+    </h6>
     {% if ticket.status == "OPEN" %}
       <span class="badge bg-danger">Abierto</span>
     {% elif ticket.status == "IN_PROGRESS" %}
       <span class="badge bg-warning text-dark">En curso</span>
-    {% else %}
-      <span class="badge bg-success">Resuelto</span>
+    {% elif ticket.status == "PAUSED" %}
+      <span class="badge bg-secondary">Pausado</span>
+    {% elif ticket.status == "CLOSED" %}
+      <span class="badge bg-success">Cerrado</span>
     {% endif %}
-    {% if ticket.is_repair_order %}
-      <span class="badge bg-primary">Orden de Reparación</span>
+    {% if ticket.origin == "CHATBOT" %}
+      <span class="badge bg-success"><i class="bi bi-whatsapp me-1"></i>WhatsApp</span>
+    {% else %}
+      <span class="badge bg-light text-dark border"><i class="bi bi-person-fill me-1"></i>Manual</span>
     {% endif %}
   </div>
 
-  <div class="row g-4">
+  <div class="row g-4 px-4 pb-4">
 
-    {# Datos del ticket #}
+    {# ---- Columna izquierda: datos + acciones ---- #}
     <div class="col-md-6">
-      <div class="card">
-        <div class="card-header fw-semibold">Datos de la avería</div>
-        <div class="card-body">
-          <dl class="row mb-0">
-            <dt class="col-sm-4">Contacto</dt>
-            <dd class="col-sm-8">{{ ticket.contact.name }} <span class="text-muted small">({{ ticket.contact.phone_number }})</span></dd>
 
-            <dt class="col-sm-4">Sección</dt>
+      {# Datos del ticket #}
+      <div class="card border-0 shadow-sm">
+        <div class="card-header fw-semibold border-bottom py-3">
+          <i class="bi bi-info-circle me-2"></i>Datos de la avería
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0 small">
+
+            <dt class="col-sm-4 text-muted">Código</dt>
+            <dd class="col-sm-8 font-monospace">{{ ticket.ticket_date_code|default:"—" }}</dd>
+
+            <dt class="col-sm-4 text-muted">Contacto</dt>
+            <dd class="col-sm-8">
+              {{ ticket.contact.name }}
+              <span class="text-muted">({{ ticket.contact.phone_number }})</span>
+            </dd>
+
+            {% if ticket.reported_by and ticket.reported_by != ticket.contact %}
+            <dt class="col-sm-4 text-muted">Detectado por</dt>
+            <dd class="col-sm-8">{{ ticket.reported_by.name }}</dd>
+            {% endif %}
+
+            <dt class="col-sm-4 text-muted">Sección</dt>
             <dd class="col-sm-8">{{ ticket.section.name|default:"—" }}</dd>
 
-            <dt class="col-sm-4">Máquina</dt>
+            <dt class="col-sm-4 text-muted">Máquina</dt>
             <dd class="col-sm-8">
               {% if ticket.machine %}
                 {{ ticket.machine.code }} — {{ ticket.machine.brand_model }}
@@ -45,136 +71,175 @@
               {% endif %}
             </dd>
 
-            <dt class="col-sm-4">Problema</dt>
+            <dt class="col-sm-4 text-muted">Avería</dt>
             <dd class="col-sm-8">{{ ticket.fault_summary|default:"—" }}</dd>
 
-            <dt class="col-sm-4">Ubicación</dt>
+            {% if ticket.fault_category %}
+            <dt class="col-sm-4 text-muted">Categoría</dt>
+            <dd class="col-sm-8">{{ ticket.fault_category }}</dd>
+            {% endif %}
+
+            <dt class="col-sm-4 text-muted">Ubicación</dt>
             <dd class="col-sm-8">{{ ticket.location|default:"—" }}</dd>
 
-            <dt class="col-sm-4">Urgencia</dt>
+            <dt class="col-sm-4 text-muted">Urgencia</dt>
             <dd class="col-sm-8">
-              {% if ticket.urgency %}
-                {{ ticket.get_urgency_display }}
-              {% else %}
-                —
-              {% endif %}
+              {% if ticket.urgency %}{{ ticket.get_urgency_display }}{% else %}—{% endif %}
             </dd>
 
-            <dt class="col-sm-4">Notas</dt>
-            <dd class="col-sm-8">{{ ticket.notes|default:"—" }}</dd>
-
-            <dt class="col-sm-4">Asignado a</dt>
+            <dt class="col-sm-4 text-muted">Asignado a</dt>
             <dd class="col-sm-8">
               {% if ticket.assigned_to %}
                 {{ ticket.assigned_to.user.get_full_name|default:ticket.assigned_to.user.username }}
-                <span class="text-muted small">(Jefe de taller)</span>
               {% else %}
-                <span class="text-muted">— Sin asignar</span>
+                <span class="text-muted">Sin asignar</span>
               {% endif %}
             </dd>
 
-            <dt class="col-sm-4">Creado</dt>
+            <dt class="col-sm-4 text-muted">Notas</dt>
+            <dd class="col-sm-8">{{ ticket.notes|default:"—" }}</dd>
+
+            <dt class="col-sm-4 text-muted">Creado</dt>
             <dd class="col-sm-8">{{ ticket.created_at|date:"d/m/Y H:i" }}</dd>
 
-            {% if ticket.status == "RESOLVED" %}
-            <dt class="col-sm-4">Resuelto por</dt>
+            {% if ticket.paused_at %}
+            <dt class="col-sm-4 text-muted">Pausado</dt>
+            <dd class="col-sm-8">{{ ticket.paused_at|date:"d/m/Y H:i" }}</dd>
+            {% endif %}
+
+            {% if ticket.status == "CLOSED" and ticket.resolved_by %}
+            <dt class="col-sm-4 text-muted">Cerrado por</dt>
             <dd class="col-sm-8">
               {{ ticket.resolved_by.user.get_full_name|default:ticket.resolved_by.user.username }}
-              <span class="text-muted small">{{ ticket.resolved_at|date:"d/m/Y H:i" }}</span>
+              <span class="text-muted">{{ ticket.resolved_at|date:"d/m/Y H:i" }}</span>
             </dd>
             {% endif %}
+
           </dl>
         </div>
       </div>
 
-      {# Acciones #}
-      {% if ticket.status != "RESOLVED" %}
-      <div class="card mt-3">
-        <div class="card-header fw-semibold">Acciones</div>
-        <div class="card-body d-flex gap-2 flex-wrap">
-          {% if not ticket.is_repair_order %}
-          <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="convert_repair">
-            <button type="submit" class="btn btn-sm btn-primary">
-              Convertir en Orden de Reparación
-            </button>
-          </form>
-          {% endif %}
-          <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="close">
-            <button type="submit" class="btn btn-sm btn-success"
-                    onclick="return confirm('¿Cerrar este ticket?')">
-              Cerrar ticket
-            </button>
-          </form>
-        </div>
-      </div>
+      {# Acciones — solo si no está cerrado #}
+      {% if ticket.status != "CLOSED" %}
 
-      {# Asignación a WORKSHOPBOSS — solo ADMIN y SUPERVISOR #}
-      {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" %}
-      <div class="card mt-3">
-        <div class="card-header fw-semibold">Asignar a Jefe de taller</div>
-        <div class="card-body">
-          <form method="post" class="d-flex gap-2 align-items-center">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="assign">
-            <select name="assignee_pk" class="form-select form-select-sm w-auto">
-              <option value="">-- Sin asignar --</option>
-              {% for wb in workshopboss_users %}
-              <option value="{{ wb.pk }}" {% if ticket.assigned_to.pk == wb.pk %}selected{% endif %}>
-                {{ wb.user.get_full_name|default:wb.user.username }}
-              </option>
-              {% endfor %}
-            </select>
-            <button type="submit" class="btn btn-sm btn-outline-secondary">Asignar</button>
-          </form>
+        {# Autoasignación — WORKSHOPBOSS #}
+        {% if company_user.role == "WORKSHOPBOSS" and ticket.assigned_to != company_user %}
+        <div class="card border-0 shadow-sm mt-3">
+          <div class="card-body">
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="self_assign">
+              <button type="submit" class="btn btn-sm btn-primary w-100">
+                <i class="bi bi-person-check me-1"></i>Asignarme este ticket
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
-      {% endif %}
+        {% endif %}
 
-      {# Urgencia — ADMIN, SUPERVISOR y WORKSHOPBOSS #}
-      <div class="card mt-3">
-        <div class="card-header fw-semibold">Urgencia</div>
-        <div class="card-body">
-          <form method="post" class="d-flex gap-2 align-items-center">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="set_urgency">
-            <select name="urgency" class="form-select form-select-sm w-auto">
-              <option value="">-- Sin urgencia --</option>
-              {% for value, label in URGENCY_CHOICES %}
-              <option value="{{ value }}" {% if ticket.urgency == value %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-            <button type="submit" class="btn btn-sm btn-outline-secondary">Guardar</button>
-          </form>
+        {# Asignación a operario — ADMIN y SUPERVISOR #}
+        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" %}
+        <div class="card border-0 shadow-sm mt-3">
+          <div class="card-header fw-semibold border-bottom py-3">
+            <i class="bi bi-person-fill-gear me-2"></i>Asignar operario
+          </div>
+          <div class="card-body">
+            <form method="post" class="d-flex gap-2 align-items-center flex-wrap">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="assign">
+              <select name="assignee_pk" class="form-select form-select-sm" style="width:auto">
+                <option value="">— Sin asignar —</option>
+                {% for wb in workshopboss_users %}
+                <option value="{{ wb.pk }}"
+                  {% if ticket.assigned_to.pk == wb.pk %}selected{% endif %}>
+                  {{ wb.user.get_full_name|default:wb.user.username }}
+                </option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Asignar</button>
+            </form>
+          </div>
         </div>
-      </div>
+        {% endif %}
 
-      {% endif %}
+        {# Urgencia #}
+        <div class="card border-0 shadow-sm mt-3">
+          <div class="card-header fw-semibold border-bottom py-3">
+            <i class="bi bi-exclamation-circle me-2"></i>Urgencia
+          </div>
+          <div class="card-body">
+            <form method="post" class="d-flex gap-2 align-items-center flex-wrap">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="set_urgency">
+              <select name="urgency" class="form-select form-select-sm" style="width:auto">
+                <option value="">— Sin urgencia —</option>
+                {% for value, label in URGENCY_CHOICES %}
+                <option value="{{ value }}"
+                  {% if ticket.urgency == value %}selected{% endif %}>
+                  {{ label }}
+                </option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Guardar</button>
+            </form>
+          </div>
+        </div>
+
+        {# Pausar / Cerrar #}
+        <div class="card border-0 shadow-sm mt-3">
+          <div class="card-header fw-semibold border-bottom py-3">
+            <i class="bi bi-sliders me-2"></i>Gestión del ticket
+          </div>
+          <div class="card-body d-flex gap-2 flex-wrap">
+            {% if ticket.status == "IN_PROGRESS" or ticket.status == "OPEN" %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="pause">
+              <button type="submit" class="btn btn-sm btn-outline-warning"
+                      onclick="return confirm('¿Pausar este ticket?')">
+                <i class="bi bi-pause-circle me-1"></i>Pausar
+              </button>
+            </form>
+            {% endif %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="close">
+              <button type="submit" class="btn btn-sm btn-success"
+                      onclick="return confirm('¿Cerrar este ticket como resuelto?')">
+                <i class="bi bi-check-circle me-1"></i>Cerrar ticket
+              </button>
+            </form>
+          </div>
+        </div>
+
+      {% endif %}{# /status != CLOSED #}
 
       {# Fotos #}
       {% if ticket.photos %}
-      <div class="card mt-3">
-        <div class="card-header fw-semibold">Fotos adjuntas</div>
+      <div class="card border-0 shadow-sm mt-3">
+        <div class="card-header fw-semibold border-bottom py-3">
+          <i class="bi bi-images me-2"></i>Fotos adjuntas
+        </div>
         <div class="card-body d-flex flex-wrap gap-2">
           {% for photo_url in ticket.photos %}
           <a href="{{ photo_url }}" target="_blank">
             <img src="{{ photo_url }}" alt="Foto avería"
                  width="160" height="120"
-                 class="rounded object-fit-cover">
+                 class="rounded object-fit-cover border">
           </a>
           {% endfor %}
         </div>
       </div>
       {% endif %}
+
     </div>
 
-    {# Conversación #}
+    {# ---- Columna derecha: conversación ---- #}
     <div class="col-md-6">
-      <div class="card h-100">
-        <div class="card-header fw-semibold">Conversación con el agente</div>
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header fw-semibold border-bottom py-3">
+          <i class="bi bi-chat-dots me-2"></i>Conversación con el agente
+        </div>
         <div class="card-body p-0">
           {% if turns %}
           <ul class="list-group list-group-flush">
@@ -191,7 +256,7 @@
             {% endfor %}
           </ul>
           {% else %}
-          <p class="text-muted p-3 mb-0">Sin turnos de conversación registrados.</p>
+          <p class="text-muted p-3 mb-0 small">Sin turnos de conversación registrados.</p>
           {% endif %}
         </div>
       </div>

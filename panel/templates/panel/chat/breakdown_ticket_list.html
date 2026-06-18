@@ -1,126 +1,500 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/chat/breakdown_ticket_list.html #}
-{# Lista de tickets de avería — Hito 13 Paso 12 (2026-05-18) #}
+{#                                                                                                    #}
+{# Panel de Gestión de Tickets de Avería — Hito 14.                                                  #}
+{# Diseño de tres paneles idéntico al Laboratorio de Análisis:                                       #}
+{#   Top         — CRUD de tickets (listado, filtros, crear).                                        #}
+{#   Bottom left  — Operarios de taller con su estado actual.                                        #}
+{#   Bottom right — Tickets OPEN/PAUSED para asignar mediante drag & drop.                           #}
 {% extends "panel/base.html" %}
 
 {% block title %}Tickets de Avería{% endblock %}
+{% block page_title %}Tickets de Avería{% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
 
-  <div class="d-flex align-items-center justify-content-between mb-4">
-    <h4 class="mb-0">Tickets de Avería</h4>
-    <div class="d-flex gap-2">
-      {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
-      <a href="{% url 'panel:breakdown_ticket_create' %}" class="btn btn-sm btn-primary">
-        + Nuevo ticket de avería
-      </a>
-      {% endif %}
-      {% if company_user.role == "ADMIN" %}
-      <a href="{% url 'panel:breakdown_room_manage' %}" class="btn btn-sm btn-outline-secondary">
-        Gestionar membresía
-      </a>
-      {% endif %}
+<style>
+/* ============================================================
+   Tickets dashboard — mismo layout que analytics_lab
+   ============================================================ */
+#tk-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 0.75rem 0.75rem;
+    height: calc(100vh - 120px);
+    min-height: 600px;
+    box-sizing: border-box;
+}
+#tk-top {
+    flex: 0 0 auto;
+    background: var(--bs-body-bg, #fff);
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    transition: max-height 0.25s ease, padding 0.25s ease;
+    overflow: hidden;
+}
+#tk-top.collapsed { max-height: 2.6rem !important; padding-top: 0.35rem; padding-bottom: 0.35rem; }
+#tk-top.collapsed #tk-top-body { display: none; }
+#tk-bottom {
+    display: flex;
+    flex: 1 1 0;
+    gap: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+}
+#tk-operators {
+    flex: 0 0 38%;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    overflow: hidden;
+    border-right: 1px solid var(--bs-border-color, #dee2e6);
+}
+#tk-operators-header {
+    flex: 0 0 auto;
+    padding: 0.4rem 0.75rem;
+    background: var(--bs-light, #f8f9fa);
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    display: flex; align-items: center; justify-content: space-between;
+}
+#tk-operators-body {
+    flex: 1 1 0;
+    overflow-y: auto;
+    padding: 0.5rem;
+    display: flex; flex-direction: column; gap: 0.4rem;
+}
+#tk-divider {
+    flex: 0 0 6px;
+    cursor: col-resize;
+    background: var(--bs-border-color, #dee2e6);
+    transition: background 0.15s;
+    position: relative; z-index: 10;
+}
+#tk-divider:hover, #tk-divider.dragging { background: var(--bs-primary, #0d6efd); }
+#tk-divider::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px; height: 32px;
+    border-left: 2px dotted rgba(0,0,0,0.25);
+    border-right: 2px dotted rgba(0,0,0,0.25);
+}
+#tk-tickets {
+    flex: 1 1 0;
+    display: flex; flex-direction: column;
+    min-width: 200px; overflow: hidden;
+}
+#tk-tickets-header {
+    flex: 0 0 auto;
+    padding: 0.4rem 0.75rem;
+    background: var(--bs-light, #f8f9fa);
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    display: flex; align-items: center; justify-content: space-between;
+}
+#tk-tickets-body {
+    flex: 1 1 0;
+    overflow-y: auto;
+    padding: 0.5rem;
+    display: flex; flex-direction: column; gap: 0.4rem;
+}
+.op-card {
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.4rem;
+    padding: 0.5rem 0.65rem;
+    background: var(--bs-body-bg, #fff);
+    cursor: grab; user-select: none;
+    transition: box-shadow 0.15s;
+}
+.op-card:active { cursor: grabbing; }
+.op-card.dragging-op { opacity: 0.45; box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
+.op-card.op-free { border-left: 3px solid #198754; }
+.op-card.op-busy { border-left: 3px solid #fd7e14; }
+.tk-card {
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.4rem;
+    padding: 0.5rem 0.65rem;
+    background: var(--bs-body-bg, #fff);
+    transition: box-shadow 0.15s, border-color 0.15s, background 0.15s;
+}
+.tk-card.drag-over { background: #e7f1ff; border-color: #0d6efd; box-shadow: 0 0 0 2px rgba(13,110,253,0.25); }
+.tk-card.urgency-CRITICAL { border-left: 3px solid #dc3545; }
+.tk-card.urgency-HIGH     { border-left: 3px solid #fd7e14; }
+.tk-card.urgency-MEDIUM   { border-left: 3px solid #ffc107; }
+.tk-card.urgency-LOW, .tk-card.urgency- { border-left: 3px solid #dee2e6; }
+.tk-card.status-IN_PROGRESS { background: #f0fff4; }
+.tk-card.status-PAUSED      { background: #fffbf0; }
+#tk-table { font-size: 0.8rem; }
+#tk-table th { position: sticky; top: 0; background: var(--bs-light, #f8f9fa); z-index: 1; white-space: nowrap; }
+.tk-empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100%; color: var(--bs-secondary, #6c757d);
+    opacity: 0.5; user-select: none;
+}
+.tk-empty i { font-size: 2rem; margin-bottom: 0.4rem; }
+.btn-xs { padding: 0.1rem 0.35rem; font-size: 0.75rem; line-height: 1.4; border-radius: 0.25rem; }
+</style>
+
+<input type="hidden" id="tk-csrf" value="{{ csrf_token }}">
+
+<div id="tk-wrapper">
+
+  {# ================================================================ #}
+  {# TOP — CRUD de tickets                                            #}
+  {# ================================================================ #}
+  <div id="tk-top">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <span class="fw-semibold text-primary">
+        <i class="bi bi-exclamation-triangle me-1"></i>Tickets de Avería
+        <small class="text-muted fw-normal ms-2">{{ company_user.company.name }}</small>
+      </span>
+      <div class="d-flex align-items-center gap-1">
+        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
+        <a href="{% url 'panel:breakdown_ticket_create' %}" class="btn btn-sm btn-primary">
+          <i class="bi bi-plus-lg me-1"></i>Nuevo ticket
+        </a>
+        {% endif %}
+        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" %}
+        <a href="{% url 'panel:breakdown_room_manage' %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-people me-1"></i>Membresía
+        </a>
+        {% endif %}
+        <button class="btn btn-sm btn-outline-secondary" onclick="tkToggleTop()" title="Colapsar / expandir">
+          <i id="tk-collapse-icon" class="bi bi-chevron-up"></i>
+        </button>
+      </div>
     </div>
-  </div>
 
-  {# Filtros #}
-  <form method="get" class="row g-2 mb-4">
-    <div class="col-auto">
-      <select name="status" class="form-select form-select-sm">
-        <option value="">Todos los estados</option>
-        {% for value, label in STATUS_CHOICES %}
+    <div id="tk-top-body">
+      <form method="get" class="d-flex align-items-center gap-2 flex-wrap mb-2">
+        <select name="status" class="form-select form-select-sm" style="width:auto">
+          <option value="">Todos los estados</option>
+          {% for value, label in STATUS_CHOICES %}
           <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-auto">
-      <select name="is_repair_order" class="form-select form-select-sm">
-        <option value="">Todos</option>
-        <option value="1" {% if repair_filter == "1" %}selected{% endif %}>Solo órdenes de reparación</option>
-        <option value="0" {% if repair_filter == "0" %}selected{% endif %}>Sin convertir</option>
-      </select>
-    </div>
-    <div class="col-auto">
-      <button type="submit" class="btn btn-sm btn-primary">Filtrar</button>
-    </div>
-    {% if status_filter or repair_filter %}
-    <div class="col-auto">
-      <a href="{% url 'panel:breakdown_ticket_list' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
-    </div>
-    {% endif %}
-  </form>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-funnel me-1"></i>Filtrar
+        </button>
+        {% if status_filter %}
+        <a href="{% url 'panel:breakdown_ticket_list' %}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+        {% endif %}
+      </form>
 
-  {% if tickets %}
-  <div class="table-responsive">
-    <table class="table table-hover align-middle">
-      <thead class="table-light">
-        <tr>
-          <th>#</th>
-          <th>Estado</th>
-          <th>Contacto</th>
-          <th>Máquina</th>
-          <th>Urgencia</th>
-          <th>Sección</th>
-          <th>OT</th>
-          <th>Creado</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ticket in tickets %}
-        <tr>
-          <td class="text-muted small">#{{ ticket.ticket_number|default:"—" }}</td>
-          <td>
-            {% if ticket.status == "OPEN" %}
-              <span class="badge bg-danger">Abierto</span>
-            {% elif ticket.status == "IN_PROGRESS" %}
-              <span class="badge bg-warning text-dark">En curso</span>
+      {% if tickets %}
+      <div style="max-height:200px;overflow-y:auto;">
+        <table class="table table-sm table-hover align-middle mb-0" id="tk-table">
+          <thead class="table-light">
+            <tr>
+              <th>Código</th><th>Estado</th><th>Origen</th><th>Máquina</th>
+              <th>Contacto</th><th>Urgencia</th><th>Asignado a</th><th>Creado</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ticket in tickets %}
+            <tr>
+              <td class="font-monospace">{{ ticket.ticket_date_code|default:"—" }}</td>
+              <td>
+                {% if ticket.status == "OPEN" %}<span class="badge bg-danger">Abierto</span>
+                {% elif ticket.status == "IN_PROGRESS" %}<span class="badge bg-warning text-dark">En curso</span>
+                {% elif ticket.status == "PAUSED" %}<span class="badge bg-secondary">Pausado</span>
+                {% elif ticket.status == "CLOSED" %}<span class="badge bg-success">Cerrado</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if ticket.origin == "CHATBOT" %}<i class="bi bi-whatsapp text-success" title="WhatsApp"></i>
+                {% else %}<i class="bi bi-person-fill text-muted" title="Manual"></i>{% endif %}
+              </td>
+              <td>
+                {% if ticket.machine %}{{ ticket.machine.code }}
+                {% else %}<span class="text-muted">{{ ticket.machine_raw|default:"—" }}</span>{% endif %}
+              </td>
+              <td>{{ ticket.contact.name }}</td>
+              <td>
+                {% if ticket.urgency == "CRITICAL" %}<span class="badge bg-danger">{{ ticket.get_urgency_display }}</span>
+                {% elif ticket.urgency == "HIGH" %}<span class="badge text-white" style="background:#fd7e14">{{ ticket.get_urgency_display }}</span>
+                {% elif ticket.urgency == "MEDIUM" %}<span class="badge bg-warning text-dark">{{ ticket.get_urgency_display }}</span>
+                {% elif ticket.urgency == "LOW" %}<span class="badge bg-secondary">{{ ticket.get_urgency_display }}</span>
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td>
+                {% if ticket.assigned_to %}{{ ticket.assigned_to.user.get_full_name|default:ticket.assigned_to.user.username }}
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td class="text-muted">{{ ticket.created_at|date:"d/m/Y H:i" }}</td>
+              <td>
+                <a href="{% url 'panel:breakdown_ticket_detail' pk=ticket.pk %}"
+                   class="btn btn-xs btn-outline-primary">Ver</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted small mb-0">No hay tickets con los filtros seleccionados.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ================================================================ #}
+  {# BOTTOM — Operarios (izq.) + Divisor + Tickets asignables (dcha.) #}
+  {# ================================================================ #}
+  <div id="tk-bottom">
+
+    {# ---- Operarios ---- #}
+    <div id="tk-operators">
+      <div id="tk-operators-header">
+        <span class="fw-semibold small text-muted">
+          <i class="bi bi-people-fill me-1"></i>Operarios de taller
+        </span>
+        <span class="badge bg-secondary">{{ operators|length }}</span>
+      </div>
+      <div id="tk-operators-body">
+        {% for op in operators %}
+        <div class="op-card {% if op.active_ticket %}op-busy{% else %}op-free{% endif %}"
+             draggable="true"
+             data-op-pk="{{ op.pk }}"
+             data-op-name="{{ op.user.get_full_name|default:op.user.username }}">
+          <div class="d-flex align-items-center justify-content-between">
+            <span class="fw-semibold small">{{ op.user.get_full_name|default:op.user.username }}</span>
+            {% if op.active_ticket %}
+              <span class="badge bg-warning text-dark" style="font-size:0.68rem">Ocupado</span>
             {% else %}
-              <span class="badge bg-success">Resuelto</span>
+              <span class="badge bg-success" style="font-size:0.68rem">Libre</span>
             {% endif %}
-          </td>
-          <td>{{ ticket.contact.name }}</td>
-          <td>
-            {% if ticket.machine %}
-              <span title="{{ ticket.machine.brand_model }}">{{ ticket.machine.code }}</span>
-            {% else %}
-              <span class="text-muted">{{ ticket.machine_raw|default:"—" }}</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if ticket.urgency == "HIGH" or ticket.urgency == "CRITICAL" %}
-              <span class="badge bg-danger">{{ ticket.get_urgency_display }}</span>
-            {% elif ticket.urgency == "MEDIUM" %}
-              <span class="badge bg-warning text-dark">{{ ticket.get_urgency_display }}</span>
-            {% elif ticket.urgency == "LOW" %}
-              <span class="badge bg-secondary">{{ ticket.get_urgency_display }}</span>
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          <td>{{ ticket.section.name|default:"—" }}</td>
-          <td>
-            {% if ticket.is_repair_order %}
-              <span class="badge bg-primary">OT</span>
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          <td class="small text-muted">{{ ticket.created_at|date:"d/m/Y H:i" }}</td>
-          <td>
+          </div>
+          {% if op.active_ticket %}
+          <div class="text-muted mt-1" style="font-size:0.72rem">
+            <i class="bi bi-wrench me-1"></i>
+            {{ op.active_ticket.machine_raw|default:op.active_ticket.ticket_date_code }}
+          </div>
+          {% endif %}
+        </div>
+        {% empty %}
+        <div class="tk-empty">
+          <i class="bi bi-people"></i>
+          <span class="small">Sin operarios de taller</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# ---- Divisor ---- #}
+    <div id="tk-divider"></div>
+
+    {# ---- Tickets asignables ---- #}
+    <div id="tk-tickets">
+      <div id="tk-tickets-header">
+        <span class="fw-semibold small text-muted">
+          <i class="bi bi-card-list me-1"></i>Tickets / Órdenes de reparación
+        </span>
+        <span class="badge bg-secondary">{{ assignable_tickets|length }}</span>
+      </div>
+      <div id="tk-tickets-body">
+        {% for ticket in assignable_tickets %}
+        <div class="tk-card urgency-{{ ticket.urgency }} status-{{ ticket.status }}"
+             data-ticket-pk="{{ ticket.pk }}">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <span class="font-monospace fw-semibold" style="font-size:0.78rem">
+              {{ ticket.ticket_date_code|default:"—" }}
+            </span>
+            <div class="d-flex gap-1">
+              {% if ticket.status == "OPEN" %}
+                <span class="badge bg-danger" style="font-size:0.65rem">Abierto</span>
+              {% elif ticket.status == "IN_PROGRESS" %}
+                <span class="badge bg-warning text-dark" style="font-size:0.65rem">En curso</span>
+              {% elif ticket.status == "PAUSED" %}
+                <span class="badge bg-secondary" style="font-size:0.65rem">Pausado</span>
+              {% endif %}
+              {% if ticket.urgency == "CRITICAL" %}
+                <span class="badge bg-danger" style="font-size:0.65rem">Crítica</span>
+              {% elif ticket.urgency == "HIGH" %}
+                <span class="badge text-white" style="background:#fd7e14;font-size:0.65rem">Alta</span>
+              {% elif ticket.urgency == "MEDIUM" %}
+                <span class="badge bg-warning text-dark" style="font-size:0.65rem">Media</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="small text-truncate">
+            <i class="bi bi-wrench me-1 text-muted"></i>
+            {{ ticket.machine_raw|default:"Sin máquina" }}
+            {% if ticket.machine %}<span class="text-muted">({{ ticket.machine.code }})</span>{% endif %}
+          </div>
+          <div class="small text-muted text-truncate mt-1">
+            {{ ticket.fault_summary|default:"Sin descripción"|truncatechars:60 }}
+          </div>
+          {% if ticket.assigned_to %}
+          <div class="small text-muted mt-1">
+            <i class="bi bi-person-fill me-1"></i>
+            {{ ticket.assigned_to.user.get_full_name|default:ticket.assigned_to.user.username }}
+          </div>
+          {% endif %}
+          <div class="mt-1">
             <a href="{% url 'panel:breakdown_ticket_detail' pk=ticket.pk %}"
-               class="btn btn-sm btn-outline-primary">Ver</a>
-          </td>
-        </tr>
+               class="btn btn-xs btn-outline-primary">Ver detalle</a>
+          </div>
+        </div>
+        {% empty %}
+        <div class="tk-empty">
+          <i class="bi bi-check-circle"></i>
+          <span class="small">No hay tickets pendientes</span>
+        </div>
         {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <div class="text-center text-muted py-5">
-    <p class="mb-0">No hay tickets de avería con los filtros seleccionados.</p>
-  </div>
-  {% endif %}
+      </div>
+    </div>
 
+  </div>{# /tk-bottom #}
+</div>{# /tk-wrapper #}
+
+{# Modal confirmación asignación #}
+<div class="modal fade" id="tkAssignModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom py-3">
+        <h6 class="modal-title fw-semibold">
+          <i class="bi bi-person-check me-2"></i>Confirmar asignación
+        </h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+        <p class="mb-0 small" id="tkAssignMsg"></p>
+      </div>
+      <div class="modal-footer border-top py-3 gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary btn-sm" id="tkAssignConfirm">
+          <i class="bi bi-check-lg me-1"></i>Asignar
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
+
+<script>
+/* ================================================================
+   Tickets Dashboard — Hito 14
+   ================================================================ */
+var TK_CSRF       = document.getElementById('tk-csrf').value;
+var draggedOpPk   = null;
+var draggedOpName = null;
+
+function tkToggleTop() {
+    var top  = document.getElementById('tk-top');
+    var icon = document.getElementById('tk-collapse-icon');
+    top.classList.toggle('collapsed');
+    icon.className = top.classList.contains('collapsed') ? 'bi bi-chevron-down' : 'bi bi-chevron-up';
+}
+
+/* ---- Divisor arrastrable ---- */
+function tkInitDivider() {
+    var divider   = document.getElementById('tk-divider');
+    var operators = document.getElementById('tk-operators');
+    var bottom    = document.getElementById('tk-bottom');
+    var dragging  = false, startX = 0, startW = 0;
+
+    divider.addEventListener('mousedown', function (e) {
+        dragging = true;
+        startX   = e.clientX;
+        startW   = operators.getBoundingClientRect().width;
+        divider.classList.add('dragging');
+        document.body.style.cursor     = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', function (e) {
+        if (!dragging) return;
+        var totalW = bottom.getBoundingClientRect().width;
+        var newW   = Math.max(160, Math.min(startW + (e.clientX - startX), totalW - 200));
+        operators.style.flex = '0 0 ' + newW + 'px';
+    });
+    document.addEventListener('mouseup', function () {
+        if (!dragging) return;
+        dragging = false;
+        divider.classList.remove('dragging');
+        document.body.style.cursor    = '';
+        document.body.style.userSelect = '';
+    });
+}
+
+/* ---- Drag & Drop operario → ticket ---- */
+function tkInitDragDrop() {
+    document.querySelectorAll('.op-card').forEach(function (card) {
+        card.addEventListener('dragstart', function (e) {
+            draggedOpPk   = card.dataset.opPk;
+            draggedOpName = card.dataset.opName;
+            card.classList.add('dragging-op');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        card.addEventListener('dragend', function () {
+            card.classList.remove('dragging-op');
+        });
+    });
+
+    document.querySelectorAll('.tk-card').forEach(function (card) {
+        card.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            card.classList.add('drag-over');
+        });
+        card.addEventListener('dragleave', function () {
+            card.classList.remove('drag-over');
+        });
+        card.addEventListener('drop', function (e) {
+            e.preventDefault();
+            card.classList.remove('drag-over');
+            if (!draggedOpPk) return;
+            tkShowAssignModal(draggedOpPk, draggedOpName, card.dataset.ticketPk, card);
+        });
+    });
+}
+
+/* ---- Modal de confirmación ---- */
+function tkShowAssignModal(opPk, opName, ticketPk, card) {
+    var machine = card.querySelector('.small.text-truncate');
+    var mTxt    = machine ? machine.textContent.trim() : '—';
+    var codeEl  = card.querySelector('.font-monospace');
+    var code    = codeEl ? codeEl.textContent.trim() : ticketPk;
+
+    document.getElementById('tkAssignMsg').innerHTML =
+        'Asignar <strong>' + opName + '</strong> al ticket ' +
+        '<strong>' + code + '</strong> — ' + mTxt +
+        '.<br><span class="text-muted small">Si el operario tiene una OT activa, quedará pausada automáticamente.</span>';
+
+    document.getElementById('tkAssignConfirm').onclick = function () {
+        tkDoAssign(opPk, ticketPk);
+    };
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('tkAssignModal')).show();
+}
+
+/* ---- POST de asignación ---- */
+function tkDoAssign(opPk, ticketPk) {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('tkAssignModal')).hide();
+
+    var form = new FormData();
+    form.append('action',              'assign');
+    form.append('assignee_pk',         opPk);
+    form.append('csrfmiddlewaretoken', TK_CSRF);
+
+    fetch('/panel/chat/breakdowns/tickets/' + ticketPk + '/', {
+        method: 'POST', body: form, credentials: 'same-origin',
+    })
+    .then(function (r) {
+        if (r.ok || r.redirected) {
+            window.location.reload();
+        } else {
+            alert('Error al asignar el ticket. Inténtalo de nuevo.');
+        }
+    })
+    .catch(function () { alert('Error de red al asignar el ticket.'); });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    tkInitDivider();
+    tkInitDragDrop();
+});
+</script>
+
 {% endblock %}

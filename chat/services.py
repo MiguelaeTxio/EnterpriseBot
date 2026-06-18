@@ -365,26 +365,56 @@ def dispatch_inbound_message(
         and breakdown_room.breakdown_sections.filter(pk=section.pk).exists()
     )
 
-    # --- Rule 5a: Contact is AWAITING_ROUTE — process routing response. ---
-    # --- Regla 5a: Contacto en AWAITING_ROUTE — procesar respuesta de enrutamiento. ---
-    if contact.routing_state == contact.ROUTING_STATE_AWAITING_ROUTE:
-        consumed = _resolve_pending_routing(
+    # --- Rule 5a: Contact is AWAITING_BREAKDOWN_CONFIRM — process routing response. ---
+    # --- Regla 5a: Contacto en AWAITING_BREAKDOWN_CONFIRM — procesar respuesta. ---
+    if contact.routing_state == contact.ROUTING_STATE_AWAITING_BREAKDOWN_CONFIRM:
+        consumed = _resolve_breakdown_confirm(
             contact=contact,
-            section=section,
-            room=room,
-            breakdown_room=breakdown_room,
             body=body,
+            breakdown_room=breakdown_room,
             from_number=from_number,
             to_number=to_number,
         )
         return DispatchResult(consumed=consumed, room=room, contact=contact)
 
+    # --- Rule 5a-bis: Breakdown in progress — route directly to Gemini agent. ---
+    # --- Regla 5a-bis: Recogida de avería en curso — enrutar al agente Gemini. ---
+    if contact.routing_state == contact.ROUTING_STATE_BREAKDOWN_IN_PROGRESS:
+        if breakdown_room is not None:
+            from chat.models import BreakdownTicket as _BT
+            ticket = _BT.objects.filter(
+                room=breakdown_room,
+                contact=contact,
+                status__in=[_BT.STATUS_OPEN, _BT.STATUS_IN_PROGRESS],
+            ).order_by("-created_at").first()
+            if ticket is not None:
+                process_breakdown_turn(
+                    contact=contact,
+                    body=body,
+                    room=breakdown_room,
+                    to_number=to_number,
+                    from_number=from_number,
+                )
+                return DispatchResult(consumed=True, room=breakdown_room, contact=contact)
+        # Ticket not found — reset state and fall through.
+        # Ticket no encontrado — resetear estado y continuar.
+        contact.routing_state        = contact.ROUTING_STATE_NONE
+        contact.pending_routing_body = ""
+        contact.save(update_fields=["routing_state", "pending_routing_body"])
+
     # --- Rule 5b: Section has breakdown access — send routing Quick Reply. ---
-    # --- Regla 5b: Sección con acceso a BREAKDOWNS — enviar Quick Reply de enrutamiento. ---
-    if has_breakdown_access:
-        consumed = _handle_breakdown_routing(
+    # Only for EXTERNAL contacts (choferes, clientes). Internal contacts
+    # (workshop members) are routed directly to their SECTION room — they
+    # have breakdown_sections membership only for IRC read access, not to
+    # report breakdowns via WhatsApp.
+    # --- Regla 5b: Sección con acceso a BREAKDOWNS — enviar Quick Reply. ---
+    # Solo para contactos EXTERNOS (choferes, clientes). Los contactos internos
+    # (miembros del taller) se enrutan directamente a su sala SECTION — su
+    # membresía en breakdown_sections es solo para lectura IRC, no para
+    # reportar averías por WhatsApp.
+    if has_breakdown_access and not contact.is_internal:
+        consumed = _handle_breakdown_confirm(
             contact=contact,
-            section=section,
             body=body,
             from_number=from_number,
             to_number=to_number,
@@ -1108,13 +1138,22 @@ def _resolve_breakdown_confirm(
     body_norm    = body.strip().lower()
     pending_body = contact.pending_routing_body
 
-    affirmative = body_norm in (
-        "opt_in", "si", "s", "yes", "y",
-        "si, quiero recibirlos",
+    import unicodedata as _ud
+    body_plain = "".join(
+        c for c in _ud.normalize("NFD", body_norm)
+        if _ud.category(c) != "Mn"
     )
-    negative = body_norm in (
-        "opt_out", "no", "n",
-        "no, gracias",
+    affirmative = (
+        body_plain in ("opt_in", "si", "s", "yes", "y", "si, quiero recibirlos")
+        or body_plain.startswith("si,")
+        or body_plain.startswith("si ")
+        or body_plain == "si"
+    )
+    negative = (
+        body_plain in ("opt_out", "no", "n", "no, gracias")
+        or body_plain.startswith("no,")
+        or body_plain.startswith("no ")
+        or body_plain == "no"
     )
 
     if affirmative:
@@ -1263,26 +1302,20 @@ def process_breakdown_turn(
         for t in turns
     ]
 
-    # Build machine catalogue snippet.
-    catalogue_codes = list(
-        MachineAsset.objects.filter(company=company, is_active=True)
-        .values_list("code", flat=True).order_by("code")[:100]
-    )
-    machine_catalogue = ", ".join(catalogue_codes) if catalogue_codes else "Sin catalogo disponible"
-
-    # Build system prompt.
+    # Build system prompt — no catalogue passed; validation is done server-side.
+    # System prompt sin catálogo — la validación se hace en el servidor.
     system_prompt = (
         "Eres un asistente de gestion de averias de " + company.name + ". "
         "Tu mision es recoger los siguientes datos campo a campo mediante dialogo natural: "
-        "1) Maquina afectada (codigo o nombre). "
+        "1) Codigo de la maquina afectada (pide el codigo exacto tal como aparece en la maquina). "
         "2) Descripcion del problema o sintoma. "
-        "3) Urgencia (Alta/Media/Baja). "
+        "3) Urgencia (CRITICAL/HIGH/MEDIUM/LOW). "
         "4) Ubicacion actual de la maquina. "
         "Reglas: pregunta UN campo a la vez, maximo 2 frases por turno. "
-        "Catalogo de maquinas: " + machine_catalogue + ". "
+        "Acepta el codigo de maquina tal como lo escriba el contacto, sin validar. "
         "Cuando tengas los 4 campos responde EXCLUSIVAMENTE con: "
         "[TICKET_COMPLETE:{\"machine_raw\": \"X\", \"fault_summary\": \"X\", "
-        "\"urgency\": \"HIGH|MEDIUM|LOW\", \"location\": \"X\"}] "
+        "\"urgency\": \"HIGH|MEDIUM|LOW|CRITICAL\", \"location\": \"X\"}] "
         "sin ningun texto adicional. Si el contacto cancela responde: CANCELADO."
     )
 
@@ -1335,9 +1368,15 @@ def process_breakdown_turn(
         }
         urgency = urgency_map.get(urgency_raw, BreakdownTicket.URGENCY_MEDIUM)
 
-        machine_asset = MachineAsset.objects.filter(
-            company=company, code__iexact=machine_raw, is_active=True,
-        ).first()
+        # Resolve machine asset using the shared normalise+resolve pipeline.
+        # Resolver activo usando el pipeline compartido normalizar+resolver.
+        from work_order_processor.services import (
+            _normalise_machine_code,
+            _resolve_machine_asset,
+        )
+        machine_asset = _resolve_machine_asset(
+            _normalise_machine_code(machine_raw), company=company,
+        )
 
         ticket.machine_raw   = machine_raw
         ticket.fault_summary = fault_summary
@@ -1356,7 +1395,7 @@ def process_breakdown_turn(
         )
 
         contact_msg = (
-            "Averia registrada con el numero #" + str(ticket.ticket_number) + ". "
+            "Averia registrada con el numero #" + str(ticket.ticket_date_code) + ". "
             "Maquina: " + (machine_raw or "Sin identificar") + ". "
             "Urgencia: " + ticket.get_urgency_display() + ". "
             "El equipo de mantenimiento ha sido notificado."
@@ -1375,7 +1414,7 @@ def process_breakdown_turn(
         # Persistir resumen en sala BREAKDOWNS como OUTBOUND para historial del panel.
         from chat.models import ChatMessage as _CM
         supervisor_body = (
-            "Nuevo ticket de averia #" + str(ticket.ticket_number) + " | "
+            "Nuevo ticket de averia #" + str(ticket.ticket_date_code) + " | "
             "Contacto: " + (_resolve_alias(contact) or contact.name) + " | "
             "Maquina: " + (machine_raw or "Sin identificar") + " | "
             "Problema: " + fault_summary + " | "
@@ -1403,7 +1442,7 @@ def process_breakdown_turn(
 
         logger.info(
             "# [BREAKDOWN] Ticket pk=%s #%s finalizado para contacto pk=%s.",
-            ticket.pk, ticket.ticket_number, contact.pk,
+            ticket.pk, ticket.ticket_date_code, contact.pk,
         )
 
     else:
@@ -1507,58 +1546,69 @@ def _persist_inbound_only(room: ChatRoom, contact: Contact, body: str) -> None:
 
 def _dispatch_breakdown_card(ticket, contact, to_number: str) -> None:
     """
-    Sends the breakdown card 1:1 to all active CompanyUser members of the
-    workshop ChatRoom (SECTION) that matches the ticket machine family via
-    WorkshopFamilyMapping. Falls back to all SECTION rooms if no mapping found.
-    Each member receives an individual WhatsApp message from the bot number.
+    Sends the breakdown card 1:1 to all active members of the target workshop
+    ChatRoom and persists it as OUTBOUND in that room for panel history.
+
+    Routing logic (no WorkshopFamilyMapping required):
+      - family == 'PLATAFOR'  → room named 'Elevación'
+      - anything else         → room named 'Taller Mecánico'
+    If the target room is not found, falls back to any active SECTION room.
+
+    All CompanyUser members of the room receive an individual WhatsApp message,
+    regardless of role (ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP).
     ---
-    Envia la tarjeta de averia 1:1 a todos los CompanyUser activos del ChatRoom
-    de taller (SECTION) que corresponde a la familia de la maquina del ticket
-    segun WorkshopFamilyMapping. Si no hay mapeo, envia a todas las salas SECTION.
-    Cada miembro recibe un mensaje individual de WhatsApp desde el numero del bot.
+    Envía la tarjeta de avería 1:1 a todos los miembros activos de la ChatRoom
+    de taller destino y la persiste como OUTBOUND en esa sala para el historial.
+
+    Lógica de enrutamiento (sin WorkshopFamilyMapping):
+      - family == 'PLATAFOR'  → sala 'Elevación'
+      - cualquier otra        → sala 'Taller Mecánico'
+    Si no se encuentra la sala destino, usa cualquier sala SECTION activa.
+
+    Todos los CompanyUser miembros de la sala reciben un mensaje WhatsApp
+    individual, independientemente del rol.
     """
     from whatsapp.services import WhatsAppChatService
     from ivr_config.models import CompanyUser, Contact as _Contact
 
     company = contact.company
 
-    # Resolve target workshop ChatRoom via WorkshopFamilyMapping.
-    # Resolver ChatRoom de taller destino via WorkshopFamilyMapping.
-    target_room = None
-    if ticket.machine and ticket.machine.family:
-        try:
-            from ivr_config.models import WorkshopFamilyMapping
-            mapping = WorkshopFamilyMapping.objects.filter(
-                company=company,
-                catalogue_family__iexact=ticket.machine.family,
-            ).first()
-            if mapping:
-                target_room = ChatRoom.objects.filter(
-                    company=company,
-                    room_type=ChatRoom.ROOM_TYPE_SECTION,
-                    section__companyuser__workshop_family=mapping.workshop_family,
-                    is_active=True,
-                ).first()
-        except Exception as exc:
-            logger.warning(
-                "# [BREAKDOWN CARD] Error resolviendo WorkshopFamilyMapping: %s", exc,
-            )
+    # Resolve target room by machine family — no mapping table needed.
+    # Resolver sala destino por familia de máquina — sin tabla de mapeo.
+    family = (ticket.machine.family if ticket.machine else "") or ""
+    if family.upper() == "PLATAFOR":
+        target_name = "Elevación"
+    else:
+        target_name = "Taller Mecánico"
 
-    # Fallback: all active SECTION rooms.
-    # Fallback: todas las salas SECTION activas.
+    target_room = ChatRoom.objects.filter(
+        company=company,
+        room_type=ChatRoom.ROOM_TYPE_SECTION,
+        name=target_name,
+        is_active=True,
+    ).first()
+
+    # Fallback: first active SECTION room.
+    # Fallback: primera sala SECTION activa.
     if target_room is None:
-        rooms = ChatRoom.objects.filter(
+        target_room = ChatRoom.objects.filter(
             company=company,
             room_type=ChatRoom.ROOM_TYPE_SECTION,
             is_active=True,
+        ).first()
+
+    if target_room is None:
+        logger.warning(
+            "# [BREAKDOWN CARD] No hay sala SECTION activa para empresa pk=%s — "
+            "tarjeta no enviada.",
+            company.pk,
         )
-    else:
-        rooms = [target_room]
+        return
 
     # Build card text.
     # Construir texto de la tarjeta.
     card_text = (
-        "Averia #" + str(ticket.ticket_number) + "\n"
+        "Nueva averia #" + str(ticket.ticket_date_code) + "\n"
         "Maquina: " + (ticket.machine_raw or "Sin identificar") + "\n"
         "Problema: " + (ticket.fault_summary or "-") + "\n"
         "Ubicacion: " + (ticket.location or "-") + "\n"
@@ -1566,45 +1616,163 @@ def _dispatch_breakdown_card(ticket, contact, to_number: str) -> None:
         "Reportado por: " + (_resolve_alias(contact) or contact.name)
     )
 
-    # Dispatch 1:1 to all CompanyUser members of target rooms.
-    # Despachar 1:1 a todos los CompanyUser miembros de las salas destino.
-    sent_pks = set()
-    for room in rooms:
-        members = CompanyUser.objects.filter(
-            company=company,
-            sections__chat_rooms=room,
-            is_active=True,
-        ).exclude(pk__in=sent_pks).select_related("contact")
+    # Persist card as OUTBOUND in room for panel history (simulate group message).
+    # Persistir tarjeta como OUTBOUND en la sala para historial del panel.
+    ChatMessage.objects.create(
+        room=target_room,
+        direction=ChatMessage.DIRECTION_OUTBOUND,
+        body=card_text,
+        whatsapp_sid="",
+    )
 
-        for cu in members:
-            member_contact = _Contact.objects.filter(
-                company=company,
-                company_user=cu,
-            ).first()
-            if member_contact is None or not member_contact.phone_number:
-                continue
+    # Dispatch 1:1 WhatsApp to ALL CompanyUser members of the room, any role.
+    # Route: room.section → Contact (who has that section) → company_user.
+    # Respects the 24h WhatsApp session window:
+    #   - Active session   → send free-text card directly.
+    #   - Inactive session → send chat_session_renewal template + queue card
+    #                        in pending_broadcast_messages for delivery on opt_in.
+    # Despachar WhatsApp 1:1 a TODOS los miembros de la sala.
+    # Respeta la ventana de sesión de 24h de WhatsApp:
+    #   - Sesión activa   → enviar tarjeta como texto libre.
+    #   - Sesión inactiva → enviar plantilla chat_session_renewal + encolar tarjeta
+    #                       en pending_broadcast_messages para entrega al opt_in.
+    from whatsapp.models import WhatsAppSession, WhatsAppTemplate
+    import datetime as _dt
+    import json as _json_card
+
+    try:
+        renewal_template = WhatsAppTemplate.objects.get(
+            company=company,
+            name="chat_session_renewal",
+            is_active=True,
+        )
+    except WhatsAppTemplate.DoesNotExist:
+        renewal_template = None
+        logger.warning(
+            "# [BREAKDOWN CARD] Template chat_session_renewal no encontrado "
+            "para empresa pk=%s. Mensajes fuera de ventana omitidos.",
+            company.pk,
+        )
+
+    if target_room.section is not None:
+        members_qs = _Contact.objects.filter(
+            company=company,
+            sections=target_room.section,
+            company_user__isnull=False,
+            company_user__is_active=True,
+        ).select_related("company_user").distinct()
+    else:
+        members_qs = _Contact.objects.none()
+
+    sent = 0
+    renewed = 0
+    skipped = 0
+    sent_pks = set()
+
+    for member_contact in members_qs:
+        if not member_contact.phone_number or member_contact.pk in sent_pks:
+            continue
+
+        phone_number = member_contact.phone_number
+        _alias = (
+            member_contact.company_user.alias
+            if member_contact.company_user_id and member_contact.company_user
+            else member_contact.alias or ""
+        ) or member_contact.name or phone_number
+
+        has_active_session = WhatsAppSession.objects.filter(
+            company=company,
+            phone_number=phone_number,
+            is_active=True,
+        ).exists()
+
+        if has_active_session:
+            # Active session — send card as free-text message.
+            # Sesión activa — enviar tarjeta como mensaje de texto libre.
             try:
                 WhatsAppChatService.send_reply(
                     from_number=to_number,
-                    to_number=member_contact.phone_number,
+                    to_number=phone_number,
                     reply_text=card_text,
                 )
-                sent_pks.add(cu.pk)
+                sent_pks.add(member_contact.pk)
+                sent += 1
                 logger.info(
-                    "# [BREAKDOWN CARD] Tarjeta enviada a CompanyUser pk=%s (%s).",
-                    cu.pk, member_contact.phone_number,
+                    "# [BREAKDOWN CARD] Tarjeta enviada a Contact pk=%s (%s).",
+                    member_contact.pk, phone_number,
                 )
             except Exception as exc:
                 logger.error(
-                    "# [BREAKDOWN CARD] Error enviando tarjeta a CompanyUser pk=%s: %s",
-                    cu.pk, exc,
+                    "# [BREAKDOWN CARD] Error enviando tarjeta a Contact pk=%s: %s",
+                    member_contact.pk, exc,
+                )
+                skipped += 1
+        else:
+            # Inactive session — queue card and send renewal template.
+            # Sesión inactiva — encolar tarjeta y enviar plantilla renewal.
+            if renewal_template is None:
+                logger.warning(
+                    "# [BREAKDOWN CARD] Contact pk=%s fuera de ventana sin renewal — omitido.",
+                    member_contact.pk,
+                )
+                skipped += 1
+                continue
+
+            # Queue the card in WhatsAppSession.pending_broadcast_messages.
+            # Encolar la tarjeta en WhatsAppSession.pending_broadcast_messages.
+            session = WhatsAppSession.objects.filter(
+                company=company,
+                phone_number=phone_number,
+            ).order_by("-session_start").first()
+
+            pending_entry = {
+                "body":       card_text,
+                "created_at": _dt.datetime.utcnow().isoformat(),
+            }
+
+            if session is not None:
+                pending = list(session.pending_broadcast_messages or [])
+                pending.append(pending_entry)
+                session.pending_broadcast_messages = pending
+                session.save(update_fields=["pending_broadcast_messages"])
+            else:
+                # No session record — create one inactive so opt_in can find it.
+                # Sin registro de sesión — crear uno inactivo para que opt_in lo encuentre.
+                WhatsAppSession.objects.create(
+                    company=company,
+                    phone_number=phone_number,
+                    is_active=False,
+                    pending_broadcast_messages=[pending_entry],
                 )
 
-        # Persist card as OUTBOUND in room for panel history.
-        # Persistir tarjeta como OUTBOUND en la sala para historial del panel.
-        ChatMessage.objects.create(
-            room=room,
-            direction=ChatMessage.DIRECTION_OUTBOUND,
-            body=card_text,
-            whatsapp_sid="",
-        )
+            try:
+                WhatsAppChatService.send_template(
+                    from_number=to_number,
+                    to_number=phone_number,
+                    content_sid=renewal_template.content_sid,
+                    content_variables={
+                        "1": _alias,
+                        "2": company.name,
+                        "3": "https://enterprisebot-miguelaetxio.pythonanywhere.com/panel/",
+                    },
+                )
+                sent_pks.add(member_contact.pk)
+                renewed += 1
+                logger.info(
+                    "# [BREAKDOWN CARD] Renewal enviado a Contact pk=%s (%s) — "
+                    "tarjeta encolada.",
+                    member_contact.pk, phone_number,
+                )
+            except Exception as exc:
+                logger.error(
+                    "# [BREAKDOWN CARD] Error enviando renewal a Contact pk=%s: %s",
+                    member_contact.pk, exc,
+                )
+                skipped += 1
+
+    logger.info(
+        "# [BREAKDOWN CARD] Ticket pk=%s — enviados: %d, renewals: %d, omitidos: %d — "
+        "sala '%s'.",
+        ticket.pk, sent, renewed, skipped, target_room.name,
+    )
+

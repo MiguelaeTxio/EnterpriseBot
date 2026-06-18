@@ -228,6 +228,9 @@
                                                value="{{ entrada.machine_raw }}"
                                                placeholder="Código de máquina"
                                                autocomplete="off">
+                                        <small class="asset-label text-muted mt-1 d-block{% if not entrada.machine %} d-none{% endif %}">
+                                            {% if entrada.machine_raw and entrada.machine %}{{ entrada.machine_raw }} — {{ entrada.machine.brand_model }}{% endif %}
+                                        </small>
                                         <div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>
                                     </div>
                                 </div>

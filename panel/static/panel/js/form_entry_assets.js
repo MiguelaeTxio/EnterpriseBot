@@ -1,3 +1,4 @@
+// /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/form_entry_assets.js
 (function () {
     "use strict";
 
@@ -132,8 +133,14 @@
                             _selecting = true;
                         }, { passive: true });
                         btn.addEventListener("click", function () {
-                            input.value = asset.code;
+                            /* Show full label in the visible input for confirmation.
+                               The server resolves the asset even if the label arrives.
+                               Mostrar el label completo en el input como confirmación.
+                               El servidor resuelve el activo aunque llegue el label. */
+                            input.value = btn.textContent;
                             lastQuery   = asset.code;
+                            var labelSpan = input.parentElement.querySelector(".asset-label");
+                            if (labelSpan) { labelSpan.classList.add("d-none"); }
                             _selecting  = false;
                             _hideDropdown();
                             input.focus();
@@ -372,7 +379,7 @@
         var seen = [];
         var lastVal = "";
         document.querySelectorAll('.confirm-block [name$="_machine_raw"]').forEach(function (inp) {
-            var v = inp.value.trim();
+            var v = (inp.dataset.codeValue || inp.value).trim();
             if (v && seen.indexOf(v) === -1) { seen.push(v); lastVal = v; }
         });
         document.querySelectorAll(".repuesto-cdg-select").forEach(function (sel) {
@@ -480,6 +487,7 @@
                         '<input type="text" name="entrada_' + idx + '_machine_raw" ' +
                                'class="form-control asset-search" ' +
                                'placeholder="Codigo de maquina" autocomplete="off">' +
+                        '<small class="asset-label d-none text-muted mt-1 d-block"></small>' +
                         '<div class="asset-dropdown d-none list-group mt-1 confirm-dropdown"></div>' +
                     '</div>' +
                 '</div>' +
@@ -613,7 +621,7 @@
         var seen    = [];
         var lastVal = "";
         document.querySelectorAll('.confirm-block [name$="_machine_raw"]').forEach(function (inp) {
-            var v = inp.value.trim();
+            var v = (inp.dataset.codeValue || inp.value).trim();
             if (v && seen.indexOf(v) === -1) { seen.push(v); lastVal = v; }
         });
         var opts = "";
@@ -1055,4 +1063,10 @@
         }
     });
 
+    // No submit transformation needed — asset-search inputs always contain
+    // the bare code. The .asset-label span is display-only and not submitted.
+    // No se necesita transformación en submit — los inputs asset-search siempre
+    // contienen el código limpio. El span .asset-label es solo visual, no se envía.
+
 }());
+

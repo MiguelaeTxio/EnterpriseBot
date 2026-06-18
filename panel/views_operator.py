@@ -571,6 +571,35 @@ def _parse_entry_lines_from_post (POST ,company ):
                 code__iexact =machine_norm ,company =company 
                 ).first ()
 
+        # Pass 3 — label was submitted (e.g. "B43 — PALFINGER PK 72002"):
+        # extract the code before " — " and retry passes 1 and 2.
+        # Pasada 3 — se envió el label completo: extraer el código antes de " — "
+        # y reintentar las pasadas 1 y 2.
+        if machine_asset is None and machine_raw :
+            import re as _re
+            _label_match = _re.match(r"^([^—–\-]+?)\s*[—–]\s+", machine_raw)
+            if _label_match :
+                _code_from_label = _label_match .group (1).strip ()
+                _norm_from_label = _normalise_machine_code (_code_from_label )
+                machine_asset = MachineAsset .objects .filter (
+                    code__iexact =_code_from_label ,company =company ,
+                ).first ()
+                if machine_asset is None :
+                    machine_asset = MachineAsset .objects .filter (
+                        code__iexact =_norm_from_label ,company =company ,
+                    ).first ()
+
+        # Pass 4 — match by brand_model (exact or contains).
+        # Pasada 4 — coincidencia por brand_model (exacta o contenida).
+        if machine_asset is None and machine_raw :
+            machine_asset = MachineAsset .objects .filter (
+                brand_model__iexact =machine_raw ,company =company ,is_active =True ,
+            ).first ()
+            if machine_asset is None :
+                machine_asset = MachineAsset .objects .filter (
+                    brand_model__icontains =machine_raw ,company =company ,is_active =True ,
+                ).first ()
+
         delta_hours =_compute_delta_hours (hc ,hf ,deduct_lunch =False )
 
         try :
@@ -1948,15 +1977,15 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         """
         Returns the base template context with company and navigation data.
         Provides the list of active MachineAsset records for autocomplete and
-        the list of open repair orders (BreakdownTicket with is_repair_order=True
-        and status != RESOLVED) available to the authenticated operator.
+        the list of repair orders (BreakdownTicket with status IN_PROGRESS or
+        PAUSED) available to the authenticated operator.
         Repair orders without assigned_to are available to all operators.
         Repair orders assigned to this operator are included with priority.
         ---
         Devuelve el contexto base con empresa y datos de navegación.
         Proporciona la lista de MachineAsset activos para autocompletado y
-        la lista de órdenes de reparación abiertas (BreakdownTicket con
-        is_repair_order=True y status != RESOLVED) disponibles para el operario.
+        la lista de órdenes de reparación (BreakdownTicket con status
+        IN_PROGRESS o PAUSED) disponibles para el operario.
         Las OTs sin assigned_to están disponibles para cualquier operario.
         Las OTs asignadas a este operario se incluyen con prioridad.
         """
@@ -1976,9 +2005,11 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         BreakdownTicket .objects 
         .filter (
         room__company =company ,
-        is_repair_order =True ,
+        status__in =[
+            BreakdownTicket .STATUS_IN_PROGRESS ,
+            BreakdownTicket .STATUS_PAUSED ,
+        ],
         )
-        .exclude (status =BreakdownTicket .STATUS_RESOLVED )
         .filter (
         _Q (assigned_to__isnull =True )|_Q (assigned_to =cu )
         )
@@ -4695,6 +4726,7 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             'panel/operator/_schedule_fields_fragment.html',
             _ctx ,
         )
+
 
 
 
