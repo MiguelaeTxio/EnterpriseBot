@@ -1,3 +1,5 @@
+
+
 from django.contrib import messages as django_messages
 from django.views.generic import View, ListView
 from django.shortcuts import redirect, render
@@ -4102,6 +4104,10 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
             suggested_period_start =""
             suggested_period_end =""
 
+        from work_order_processor.models import ExportTemplate as _ET
+        _templates_propias = _ET.objects.filter(company_user=cu, is_global=False).order_by("-is_default", "name")
+        _templates_globales = _ET.objects.filter(company=cu.company, is_global=True).order_by("name")
+
         context ={
         "company":cu .company ,
         "company_user":cu ,
@@ -4134,6 +4140,23 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         "absences_list":absences_list ,
         "suggested_period_start":suggested_period_start ,
         "suggested_period_end":suggested_period_end ,
+        "templates_propias":_templates_propias ,
+        "templates_globales":_templates_globales ,
+        "is_admin":cu .role =="ADMIN",
+        "column_choices":[
+        ("fecha","Fecha"),
+        ("operario","Operario"),
+        ("maquina","Máquina / CdG"),
+        ("descripcion","Descripción avería"),
+        ("notas","Notas reparación"),
+        ("hc","H. inicio"),
+        ("hf","H. fin"),
+        ("delta_horas","Δ Horas"),
+        ("estado","Estado"),
+        ("familia","Familia avería"),
+        ("origen","Origen"),
+        ("horas_extra","H. Extra"),
+        ],
         }
         return render (request ,self .template_name ,context )
 
@@ -5631,67 +5654,81 @@ class ExportTemplateListView (SupervisorAccessMixin ,View ):
 
     template_name ="panel/export_templates/list.html"
 
-    def get (self ,request ,*args ,**kwargs ):
+    def get(self, request, *args, **kwargs):
         """
-        Returns the user's export templates as JSON or HTML.
-        Auto-creates the default template if the user has none.
+        Returns the user's export templates (personal + global) as JSON or HTML.
+        Auto-creates the default personal template if the user has none.
+        JSON response includes is_global flag so the frontend can distinguish both types.
         ---
-        Devuelve las plantillas del usuario como JSON o HTML.
-        Crea la plantilla por defecto si el usuario no tiene ninguna.
+        Devuelve las plantillas del usuario (personales + globales) como JSON o HTML.
+        Crea la plantilla personal por defecto si el usuario no tiene ninguna.
+        La respuesta JSON incluye is_global para que el frontend distinga ambos tipos.
         """
-        from django .http import JsonResponse 
-        from work_order_processor .models import ExportTemplate 
+        from django.http import JsonResponse
+        from work_order_processor.models import ExportTemplate
 
-        cu =request .user .company_user 
+        cu = request.user.company_user
+        company = cu.company
 
+        ExportTemplate.get_or_create_default(cu)
 
-        ExportTemplate .get_or_create_default (cu )
-        templates =ExportTemplate .objects .filter (company_user =cu ).order_by ("-is_default","name")
+        templates_propias = ExportTemplate.objects.filter(
+            company_user=cu,
+            is_global=False,
+        ).order_by("-is_default", "name")
 
-        if request .GET .get ("format")=="json":
-            data =[
-            {
-            "id":t .pk ,
-            "name":t .name ,
-            "is_default":t .is_default ,
-            "columns":t .columns ,
-            "sheet_format":t .sheet_format ,
-            "operator_scope":t .operator_scope ,
-            }
-            for t in templates 
-            ]
-            return JsonResponse ({"templates":data })
+        templates_globales = ExportTemplate.objects.filter(
+            company=company,
+            is_global=True,
+        ).order_by("name")
 
-        cu_obj =request .user .company_user 
-        context ={
-        "company":cu_obj .company ,
-        "company_user":cu_obj ,
-        "own_presence":PresenceStatus .objects .filter (
-        company_user =cu_obj ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first (),
-        "active_nav":"work_order_admin_history",
-        "templates":templates ,
+        if request.GET.get("format") == "json":
+            def _serialize(t, is_global=False):
+                return {
+                    "id": t.pk,
+                    "name": t.name,
+                    "is_default": t.is_default,
+                    "is_global": is_global,
+                    "columns": t.columns,
+                    "sheet_format": t.sheet_format,
+                    "operator_scope": t.operator_scope,
+                }
+            data = (
+                [_serialize(t, is_global=False) for t in templates_propias]
+                + [_serialize(t, is_global=True) for t in templates_globales]
+            )
+            return JsonResponse({"templates": data})
 
-
-        "column_choices":[
-        ("fecha","Fecha"),
-        ("operario","Operario"),
-        ("maquina","Máquina / CdG"),
-        ("descripcion","Descripción avería"),
-        ("notas","Notas reparación"),
-        ("hc","H. inicio"),
-        ("hf","H. fin"),
-        ("delta_horas","Δ Horas"),
-        ("estado","Estado"),
-        ("familia","Familia avería"),
-        ("origen","Origen"),
-        ("horas_extra","H. Extra"),
-        ],
+        _is_admin = cu.role == "ADMIN"
+        context = {
+            "company": company,
+            "company_user": cu,
+            "own_presence": PresenceStatus.objects.filter(
+                company_user=cu,
+                starts_at__lte=now(),
+            ).filter(
+                Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+            ).order_by("-starts_at").first(),
+            "active_nav": "work_order_admin_history",
+            "templates_propias": templates_propias,
+            "templates_globales": templates_globales,
+            "is_admin": _is_admin,
+            "column_choices": [
+                ("fecha", "Fecha"),
+                ("operario", "Operario"),
+                ("maquina", "Máquina / CdG"),
+                ("descripcion", "Descripción avería"),
+                ("notas", "Notas reparación"),
+                ("hc", "H. inicio"),
+                ("hf", "H. fin"),
+                ("delta_horas", "Δ Horas"),
+                ("estado", "Estado"),
+                ("familia", "Familia avería"),
+                ("origen", "Origen"),
+                ("horas_extra", "H. Extra"),
+            ],
         }
-        return render (request ,self .template_name ,context )
+        return render(request, self.template_name, context)
 
 
 class ExportTemplateCreateView (SupervisorAccessMixin ,View ):
@@ -5705,55 +5742,83 @@ class ExportTemplateCreateView (SupervisorAccessMixin ,View ):
     Devuelve JSON {id, name} en éxito o {error} en fallo.
     """
 
-    def post (self ,request ,*args ,**kwargs ):
+    def post(self, request, *args, **kwargs):
         """
         Validates and creates the ExportTemplate.
+        If the user is ADMIN and body includes is_global=true, creates a global
+        template linked to the company (company_user=None).
+        Otherwise creates a personal template for the authenticated user.
         ---
         Valida y crea la ExportTemplate.
+        Si el usuario es ADMIN y el body incluye is_global=true, crea una plantilla
+        global ligada a la empresa (company_user=None).
+        En caso contrario, crea una plantilla personal del usuario autenticado.
         """
-        import json as _json 
-        from django .http import JsonResponse 
-        from work_order_processor .models import ExportTemplate 
+        import json as _json
+        from django.http import JsonResponse
+        from work_order_processor.models import ExportTemplate
 
-        cu =request .user .company_user 
+        cu = request.user.company_user
+        company = cu.company
 
-        try :
-            body =_json .loads (request .body )
-        except (ValueError ,TypeError ):
-            body =request .POST 
+        try:
+            body = _json.loads(request.body)
+        except (ValueError, TypeError):
+            body = request.POST
 
-        name =str (body .get ("name","")).strip ()
-        columns =body .get ("columns",[])
-        sheet_format =str (body .get ("sheet_format",ExportTemplate .SheetFormat .SINGLE_SHEET )).strip ()
-        operator_scope =str (body .get ("operator_scope",ExportTemplate .OperatorScope .ALL )).strip ()
-        is_default =bool (body .get ("is_default",False ))
+        name = str(body.get("name", "")).strip()
+        columns = body.get("columns", [])
+        sheet_format = str(body.get("sheet_format", ExportTemplate.SheetFormat.SINGLE_SHEET)).strip()
+        operator_scope = str(body.get("operator_scope", ExportTemplate.OperatorScope.ALL)).strip()
+        is_default = bool(body.get("is_default", False))
+        want_global = bool(body.get("is_global", False)) and cu.role == "ADMIN"
 
-        if not name :
-            return JsonResponse ({"error":"El nombre es obligatorio."},status =400 )
-        if not columns :
-            return JsonResponse ({"error":"Selecciona al menos una columna."},status =400 )
-        if sheet_format not in ExportTemplate .SheetFormat .values :
-            return JsonResponse ({"error":"Formato de hoja no válido."},status =400 )
-        if operator_scope not in ExportTemplate .OperatorScope .values :
-            return JsonResponse ({"error":"Alcance de operarios no válido."},status =400 )
-        if ExportTemplate .objects .filter (company_user =cu ,name =name ).exists ():
-            return JsonResponse (
-            {"error":f"Ya existe una plantilla con el nombre '{name}'."},status =400 
+        if not name:
+            return JsonResponse({"error": "El nombre es obligatorio."}, status=400)
+        if not columns:
+            return JsonResponse({"error": "Selecciona al menos una columna."}, status=400)
+        if sheet_format not in ExportTemplate.SheetFormat.values:
+            return JsonResponse({"error": "Formato de hoja no válido."}, status=400)
+        if operator_scope not in ExportTemplate.OperatorScope.values:
+            return JsonResponse({"error": "Alcance de operarios no válido."}, status=400)
+
+        if want_global:
+            if ExportTemplate.objects.filter(company=company, is_global=True, name=name).exists():
+                return JsonResponse(
+                    {"error": f"Ya existe una plantilla global con el nombre '{name}'."},
+                    status=400,
+                )
+            template = ExportTemplate.objects.create(
+                company_user=None,
+                company=company,
+                is_global=True,
+                name=name,
+                columns=list(columns),
+                sheet_format=sheet_format,
+                operator_scope=operator_scope,
+                is_default=False,
             )
-
-        template =ExportTemplate .objects .create (
-        company_user =cu ,
-        name =name ,
-        columns =list (columns ),
-        sheet_format =sheet_format ,
-        operator_scope =operator_scope ,
-        is_default =is_default ,
+        else:
+            if ExportTemplate.objects.filter(company_user=cu, is_global=False, name=name).exists():
+                return JsonResponse(
+                    {"error": f"Ya existe una plantilla con el nombre '{name}'."},
+                    status=400,
+                )
+            template = ExportTemplate.objects.create(
+                company_user=cu,
+                company=None,
+                is_global=False,
+                name=name,
+                columns=list(columns),
+                sheet_format=sheet_format,
+                operator_scope=operator_scope,
+                is_default=is_default,
+            )
+        logger.info(
+            "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' creada por %s (global=%s).",
+            template.pk, template.name, cu.user.username, want_global,
         )
-        logger .info (
-        "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' creada por %s.",
-        template .pk ,template .name ,cu .user .username ,
-        )
-        return JsonResponse ({"id":template .pk ,"name":template .name },status =201 )
+        return JsonResponse({"id": template.pk, "name": template.name, "is_global": want_global}, status=201)
 
 
 class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
@@ -5765,61 +5830,109 @@ class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
     Devuelve JSON {ok: true} en éxito o {error} en fallo.
     """
 
-    def post (self ,request ,pk ,*args ,**kwargs ):
+    def post(self, request, pk, *args, **kwargs):
         """
         Validates and applies the update.
+        - Personal template: updated directly (must belong to the user).
+        - Global template + ADMIN: updated directly.
+        - Global template + non-ADMIN (SUPERVISOR): a personal copy is created
+          with name + " (copia)" instead of editing the original.
         ---
         Valida y aplica la actualización.
+        - Plantilla personal: se actualiza directamente (debe pertenecer al usuario).
+        - Plantilla global + ADMIN: se actualiza directamente.
+        - Plantilla global + no-ADMIN (SUPERVISOR): se crea una copia personal con
+          nombre + " (copia)" en lugar de editar la original.
         """
-        import json as _json 
-        from django .http import JsonResponse 
-        from work_order_processor .models import ExportTemplate 
+        import json as _json
+        from django.http import JsonResponse
+        from work_order_processor.models import ExportTemplate
 
-        cu =request .user .company_user 
+        cu = request.user.company_user
+        company = cu.company
 
-        try :
-            template =ExportTemplate .objects .get (pk =pk ,company_user =cu )
-        except ExportTemplate .DoesNotExist :
-            return JsonResponse ({"error":"Plantilla no encontrada."},status =404 )
+        # Resolve the template — either personal or global of the same company
+        try:
+            template = ExportTemplate.objects.get(pk=pk, company_user=cu, is_global=False)
+            is_own_personal = True
+        except ExportTemplate.DoesNotExist:
+            is_own_personal = False
+            try:
+                template = ExportTemplate.objects.get(pk=pk, company=company, is_global=True)
+            except ExportTemplate.DoesNotExist:
+                return JsonResponse({"error": "Plantilla no encontrada."}, status=404)
 
-        try :
-            body =_json .loads (request .body )
-        except (ValueError ,TypeError ):
-            body =request .POST 
+        try:
+            body = _json.loads(request.body)
+        except (ValueError, TypeError):
+            body = request.POST
 
-        name =str (body .get ("name",template .name )).strip ()
-        columns =body .get ("columns",template .columns )
-        sheet_format =str (body .get ("sheet_format",template .sheet_format )).strip ()
-        operator_scope =str (body .get ("operator_scope",template .operator_scope )).strip ()
-        is_default =bool (body .get ("is_default",template .is_default ))
+        name = str(body.get("name", template.name)).strip()
+        columns = body.get("columns", template.columns)
+        sheet_format = str(body.get("sheet_format", template.sheet_format)).strip()
+        operator_scope = str(body.get("operator_scope", template.operator_scope)).strip()
+        is_default = bool(body.get("is_default", template.is_default))
 
-        if not name :
-            return JsonResponse ({"error":"El nombre es obligatorio."},status =400 )
-        if not columns :
-            return JsonResponse ({"error":"Selecciona al menos una columna."},status =400 )
-        if sheet_format not in ExportTemplate .SheetFormat .values :
-            return JsonResponse ({"error":"Formato de hoja no válido."},status =400 )
-        if operator_scope not in ExportTemplate .OperatorScope .values :
-            return JsonResponse ({"error":"Alcance de operarios no válido."},status =400 )
-        if (
-        name !=template .name 
-        and ExportTemplate .objects .filter (company_user =cu ,name =name ).exists ()
-        ):
-            return JsonResponse (
-            {"error":f"Ya existe una plantilla con el nombre '{name}'."},status =400 
+        if not name:
+            return JsonResponse({"error": "El nombre es obligatorio."}, status=400)
+        if not columns:
+            return JsonResponse({"error": "Selecciona al menos una columna."}, status=400)
+        if sheet_format not in ExportTemplate.SheetFormat.values:
+            return JsonResponse({"error": "Formato de hoja no válido."}, status=400)
+        if operator_scope not in ExportTemplate.OperatorScope.values:
+            return JsonResponse({"error": "Alcance de operarios no válido."}, status=400)
+
+        # Global template + non-ADMIN → create personal copy, do not touch original
+        if template.is_global and cu.role != "ADMIN":
+            copy_name = f"{name} (copia)"
+            # If a personal copy with that name already exists, just return it
+            existing_copy = ExportTemplate.objects.filter(
+                company_user=cu, is_global=False, name=copy_name
+            ).first()
+            if existing_copy:
+                return JsonResponse({"ok": True, "copied": True, "id": existing_copy.pk, "name": existing_copy.name})
+            copy = ExportTemplate.objects.create(
+                company_user=cu,
+                company=None,
+                is_global=False,
+                name=copy_name,
+                columns=list(columns),
+                sheet_format=sheet_format,
+                operator_scope=operator_scope,
+                is_default=False,
             )
+            logger.info(
+                "# [EXPORT TEMPLATE] Copia personal pk=%s '%s' creada por %s desde global pk=%s.",
+                copy.pk, copy.name, cu.user.username, template.pk,
+            )
+            return JsonResponse({"ok": True, "copied": True, "id": copy.pk, "name": copy.name})
 
-        template .name =name 
-        template .columns =list (columns )
-        template .sheet_format =sheet_format 
-        template .operator_scope =operator_scope 
-        template .is_default =is_default 
-        template .save ()
-        logger .info (
-        "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' actualizada por %s.",
-        template .pk ,template .name ,cu .user .username ,
+        # Personal template or global + ADMIN → update directly
+        if is_own_personal and name != template.name:
+            if ExportTemplate.objects.filter(company_user=cu, is_global=False, name=name).exists():
+                return JsonResponse(
+                    {"error": f"Ya existe una plantilla con el nombre '{name}'."},
+                    status=400,
+                )
+        if template.is_global and name != template.name:
+            if ExportTemplate.objects.filter(company=company, is_global=True, name=name).exists():
+                return JsonResponse(
+                    {"error": f"Ya existe una plantilla global con el nombre '{name}'."},
+                    status=400,
+                )
+
+        template.name = name
+        template.columns = list(columns)
+        template.sheet_format = sheet_format
+        template.operator_scope = operator_scope
+        if not template.is_global:
+            template.is_default = is_default
+        template.save()
+        logger.info(
+            "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' actualizada por %s.",
+            template.pk, template.name, cu.user.username,
         )
-        return JsonResponse ({"ok":True })
+        return JsonResponse({"ok": True})
 
 
 class ExportTemplateDeleteView (SupervisorAccessMixin ,View ):
@@ -5916,7 +6029,12 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
 
         try :
             template_pk =int (request .POST .get ("template_pk",""))
-            template =ExportTemplate .objects .get (pk =template_pk ,company_user =cu )
+            # Resolve template: personal (company_user=cu) OR global (company, is_global=True)
+            # Resolver plantilla: personal (company_user=cu) O global (company, is_global=True)
+            try :
+                template =ExportTemplate .objects .get (pk =template_pk ,company_user =cu ,is_global =False )
+            except ExportTemplate .DoesNotExist :
+                template =ExportTemplate .objects .get (pk =template_pk ,company =company ,is_global =True )
         except (ValueError ,TypeError ,ExportTemplate .DoesNotExist ):
             return HttpResponseBadRequest (
             "# [EXPORT BY TEMPLATE] Plantilla no encontrada o no pertenece al usuario."

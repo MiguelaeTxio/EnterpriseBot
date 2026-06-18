@@ -1415,11 +1415,39 @@ class ExportTemplate(models.Model):
     company_user = models.ForeignKey(
         CompanyUser,
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="export_templates",
         verbose_name=_("Usuario"),
         help_text=_(
-            "Usuario propietario de esta plantilla. "
-            "Cada usuario gestiona sus propias plantillas de forma independiente."
+            "Usuario propietario de esta plantilla (plantillas personales). "
+            "Null para plantillas globales de empresa."
+        ),
+    )
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="global_export_templates",
+        verbose_name=_("Empresa"),
+        help_text=_(
+            "Empresa propietaria de la plantilla global. "
+            "Solo se usa cuando is_global=True. Null para plantillas personales."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Global flag / Indicador de plantilla global
+    # ------------------------------------------------------------------
+    is_global = models.BooleanField(
+        _("Plantilla global"),
+        default=False,
+        db_index=True,
+        help_text=_(
+            "Si True, esta plantilla pertenece a la empresa y es visible por todos "
+            "los supervisores en modo lectura. Solo los ADMIN pueden crearla o editarla. "
+            "Si un supervisor la edita, se crea automáticamente una copia personal."
         ),
     )
 
@@ -1488,29 +1516,37 @@ class ExportTemplate(models.Model):
     class Meta:
         verbose_name        = _("Plantilla de exportación")
         verbose_name_plural = _("Plantillas de exportación")
-        ordering            = ["company_user", "-is_default", "name"]
+        ordering            = ["-is_global", "company_user", "-is_default", "name"]
         constraints         = [
             models.UniqueConstraint(
                 fields=["company_user", "name"],
+                condition=models.Q(company_user__isnull=False),
                 name="unique_export_template_name_per_user",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "name"],
+                condition=models.Q(is_global=True),
+                name="unique_export_template_name_per_company_global",
             ),
         ]
 
     def __str__(self) -> str:
         default_marker = " ★" if self.is_default else ""
-        return f"{self.name}{default_marker} ({self.company_user.user.username})"
+        if self.is_global:
+            owner = self.company.name if self.company else "Global"
+            return f"{self.name}{default_marker} [Global · {owner}]"
+        owner = self.company_user.user.username if self.company_user else "?"
+        return f"{self.name}{default_marker} ({owner})"
 
     def save(self, *args, **kwargs):
         """
-        Ensures only one template per user is marked as default.
-        When is_default=True is set on this instance, all other templates
-        of the same user are automatically set to is_default=False.
+        Ensures only one template per user (personal) is marked as default.
+        Global templates do not participate in the is_default logic.
         ---
-        Garantiza que solo una plantilla por usuario esté marcada como
-        por defecto. Cuando is_default=True se establece en esta instancia,
-        todas las demás plantillas del mismo usuario se ponen a False.
+        Garantiza que solo una plantilla personal por usuario esté marcada como
+        por defecto. Las plantillas globales no participan en la lógica is_default.
         """
-        if self.is_default:
+        if self.is_default and self.company_user_id and not self.is_global:
             ExportTemplate.objects.filter(
                 company_user=self.company_user,
                 is_default=True,
@@ -1520,19 +1556,26 @@ class ExportTemplate(models.Model):
     @classmethod
     def get_or_create_default(cls, company_user):
         """
-        Returns the default ExportTemplate for the given company_user.
-        If no templates exist for the user, creates and returns a sensible
+        Returns the default ExportTemplate for the given company_user (personal only).
+        If no personal templates exist for the user, creates and returns a sensible
         default with all standard columns selected.
+        Global templates are never returned by this method.
         ---
-        Devuelve la ExportTemplate por defecto del company_user indicado.
-        Si el usuario no tiene ninguna plantilla, crea y devuelve una con
+        Devuelve la ExportTemplate por defecto del company_user indicado (solo personales).
+        Si el usuario no tiene ninguna plantilla personal, crea y devuelve una con
         todas las columnas estándar seleccionadas.
+        Las plantillas globales nunca son devueltas por este método.
         """
-        existing = cls.objects.filter(company_user=company_user).order_by("-is_default").first()
+        existing = cls.objects.filter(
+            company_user=company_user,
+            is_global=False,
+        ).order_by("-is_default").first()
         if existing:
             return existing
         return cls.objects.create(
             company_user   = company_user,
+            company        = None,
+            is_global      = False,
             name           = "Exportación estándar",
             is_default     = True,
             columns        = [
@@ -1627,4 +1670,6 @@ class OperatorMonthlyCost(models.Model):
             f'({self.year}-{self.month:02d}): '
             f'{self.monthly_cost} EUR'
         )
+
+
 

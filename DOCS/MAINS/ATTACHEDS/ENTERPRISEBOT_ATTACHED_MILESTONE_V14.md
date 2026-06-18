@@ -1,171 +1,198 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md
+---
+name: enterprisebot-annex-v14
+description: "Anexo del Hito 14 de EnterpriseBot (Gestión de Tickets de Avería y Órdenes de Reparación). Contiene el historial de sesiones y la arquitectura del módulo: BreakdownTicket, ciclo de vida, integración con partes digitales del operario, CRUD manual desde el panel y futura entrada vía WhatsApp. Activar cuando el enrutador indique que el Hito 14 está EN PROGRESO, o cuando se necesite consultar BreakdownTicket, BreakdownTicketCreateView, BreakdownTicketDetailView, breakdown_ticket_list.html, breakdown_ticket_detail.html, o el flujo de órdenes de reparación."
+---
 
 # ENTERPRISEBOT — ANEXO HITO 14
 ## Gestión de Tickets de Avería y Órdenes de Reparación
 
 ---
 
-## Estado de Pasos
+## PARTE 1 — COMPORTAMIENTO DE LA SKILL
 
-| Paso | Descripción | Estado |
-|------|-------------|--------|
-| 1 | Auditoría flujo creación automática `BreakdownTicket` desde BREAKDOWNS | COMPLETADO |
-| 2 | Campo `assigned_to` en `BreakdownTicket` + migración (`priority` cubierto por `urgency`) | COMPLETADO |
-| 3 | `BreakdownTicketCreateView` + formulario + URL + botón en listado | COMPLETADO |
-| 4 | Ciclo de vida: asignación, conversión a OT, urgencia inline, cierre | COMPLETADO |
-| 5 | Integración formulario de parte de operario con órdenes de reparación | COMPLETADO |
-| 6 | `OwnProfileView` — edición de alias de chat desde el panel | COMPLETADO |
-| 7 | Gestión sala BREAKDOWNS: todas las secciones (sin filtro `is_active`) | COMPLETADO |
-| 8 | Sincronización automática de contactos al añadir/quitar sección BREAKDOWNS | COMPLETADO |
-| 9 | Color diferencial rojo/naranja en secciones completas/incompletas | COMPLETADO |
-| 10 | Panel lateral de miembros en salas de sección y sala BREAKDOWNS | COMPLETADO |
-| 11 | Botón Gestionar membresía de Averías en lista de salas (solo ADMIN) | COMPLETADO |
+### RUTA EN PYTHONANYWHERE
+
+```
+/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md
+```
+
+### ACTIVACIÓN
+
+Esta skill se activa en dos casos:
+
+1. **El enrutador de anexos** indica que el Hito 14 está EN PROGRESO.
+2. **Cualquier skill o sesión** necesita consultar la arquitectura de
+   `BreakdownTicket`, `BreakdownTicketCreateView`, `BreakdownTicketDetailView`,
+   el flujo de órdenes de reparación o la integración con partes digitales.
+
+### PROTOCOLO DE CIERRE — LO QUE HACE ESTA SKILL AL SER INVOCADA POR PCS
+
+Al cierre de sesión, si se ha trabajado en este hito:
+
+#### PASO 1 — Redactar el registro de sesión
+
+Nueva fila en la tabla `## 7. Registro de Sesiones`.
+
+#### PASO 2 — Actualizar la Hoja de Ruta
+
+Reescribir la sección `## 8. Hoja de Ruta para la Siguiente Sesión`.
+
+#### PASO 3 — Reescribir el SKILL.md completo
+
+```
+/home/claude/skills/enterprisebot-annex-v14/SKILL.md
+```
+
+#### PASO 4 — Empaquetar
+
+```bash
+cd /mnt/skills/examples/skill-creator && \
+python -m scripts.package_skill \
+    /home/claude/skills/enterprisebot-annex-v14 \
+    /mnt/user-data/outputs/skills
+```
+
+#### PASO 5 — Presentar el `.skill` para descarga
+
+```python
+present_files(["/mnt/user-data/outputs/skills/enterprisebot-annex-v14.skill"])
+```
+
+#### PASO 6 — Backup en PythonAnywhere
+
+```sftp
+put "/sdcard/Download/EnterpriseBot_{NNN}_PUT.txt" "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md"
+exit
+```
 
 ---
 
-## Arquitectura Técnica
+## PARTE 2 — CONTENIDO DEL ANEXO
 
-### Contexto
+---
 
-Este hito nace de la promoción de la hoja de ruta de S010 del Hito 13.
-El modelo `BreakdownTicket` y la infraestructura de salas BREAKDOWNS
-están completamente operativos desde S009. Este hito extiende y completa
-el ciclo de vida del ticket sin modificar la arquitectura de chat.
+## 1. Título
 
-### Modelo `BreakdownTicket` — Estado actual conocido
+**Hito 14 — Gestión de Tickets de Avería y Órdenes de Reparación**
 
-Campos confirmados en S009:
+Estado: **PAUSADO** (trabajo en curso — nuevas fases previstas)
+
+---
+
+## 2. Descripción
+
+Módulo de gestión manual de tickets de avería desde el panel y su
+ciclo de vida como órdenes de reparación. Incluye la creación manual
+desde el panel (CRUD), el ciclo de vida completo (asignación, conversión
+a OT, urgencia, cierre), la integración con los partes digitales del
+operario, y la futura entrada automática vía WhatsApp.
+
+---
+
+## 3. Arquitectura Técnica
+
+### Modelo `BreakdownTicket` — Estado actual
+
+Campos confirmados tras S010:
 - `room` (FK `ChatRoom`)
 - `contact` (FK `Contact`)
 - `machine` (FK `MachineAsset`)
 - `section` (FK `Section`)
-- `status` — valores actuales por confirmar en auditoría (Paso 1)
+- `status` — choices: OPEN, IN_PROGRESS, CLOSED
 - `is_repair_order` (BooleanField)
 - `resolved_by` (FK `CompanyUser` nullable)
+- `assigned_to` (FK `CompanyUser` nullable, related_name `assigned_tickets`)
+- `urgency` — choices: LOW/MEDIUM/HIGH/CRITICAL (cubre el campo `priority` previsto)
 - `created_at`, `updated_at`
 
-Campos a añadir en Paso 2 (si no existen):
-- `assigned_to` (FK `CompanyUser` nullable, related_name `assigned_tickets`)
-- `priority` — choices: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`
+### Vistas actuales
 
-### Paso 1 — Auditoría flujo creación automática desde BREAKDOWNS
+- `BreakdownTicketCreateView` — creación manual desde panel
+- `BreakdownTicketDetailView` — detalle con acciones: `assign`, `convert_repair`, `set_urgency`, `close`
+- `breakdown_ticket_list.html` — listado con botón "Nuevo ticket"
+- `breakdown_ticket_detail.html` — detalle y acciones ciclo de vida
+- `breakdown_ticket_form.html` — formulario de creación
 
-Verificar en `chat/signals.py`, `chat/tasks.py` y `whatsapp/services.py`:
-- Qué componente crea el `BreakdownTicket` al detectar el patrón de avería
-  en un mensaje entrante de WhatsApp a la sala BREAKDOWNS.
-- Qué campos se rellenan automáticamente (`contact`, `machine`, `section`).
-- Qué valor de `status` se asigna al ticket recién creado.
-- Si existe notificación al `WORKSHOPBOSS` (WhatsApp o panel) en la creación.
+### Integración con partes digitales
 
-### Paso 2 — Campos `assigned_to` y `priority`
-
-- Verificar existencia de ambos campos en `chat/models.py` antes de crear migración.
-- Si no existen: añadir al modelo y generar migración con nombre descriptivo.
-- `assigned_to`: `ForeignKey('ivr_config.CompanyUser', null=True, blank=True, on_delete=SET_NULL, related_name='assigned_tickets')`.
-- `priority`: `CharField(max_length=10, choices=[('LOW','Baja'),('MEDIUM','Media'),('HIGH','Alta'),('CRITICAL','Crítica')], default='MEDIUM')`.
-
-### Paso 3 — `BreakdownTicketCreateView`
-
-- Vista basada en clase, mixin `SupervisorAccessMixin` (ADMIN, SUPERVISOR, WORKSHOPBOSS).
-- Formulario Django con campos: `contact`, `machine`, `section`, descripción inicial.
-- `contact` filtrado por empresa del usuario autenticado.
-- `machine` filtrado por activos (`is_active=True`) de la empresa.
-- `section` filtrada por secciones activas de la empresa.
-- URL: `panel/chat/breakdowns/tickets/create/` — nombre `panel:breakdown_ticket_create`.
-- Botón "Nuevo ticket de avería" en `breakdown_ticket_list.html` visible para
-  ADMIN, SUPERVISOR y WORKSHOPBOSS.
-- Tras creación exitosa: redirección a `panel:breakdown_ticket_detail`.
-
-### Paso 4 — Ciclo de vida del ticket
-
-Acciones en `BreakdownTicketDetailView` a revisar y completar:
-- **Asignar**: acción `assign` — asigna `assigned_to` a un WORKSHOPBOSS concreto
-  de la empresa. Solo ADMIN y SUPERVISOR pueden asignar.
-- **Conversión a OT**: acción `convert_repair` — activa `is_repair_order=True`
-  y actualiza `status` a valor apropiado. Revisar implementación actual.
-- **Cierre**: acción `close` — marca `resolved_by` con el usuario autenticado
-  y actualiza `status` a cerrado. Revisar implementación actual.
-- **Prioridad**: campo editable inline desde el detalle del ticket para ADMIN,
-  SUPERVISOR y WORKSHOPBOSS.
-
-### Paso 5 — Integración formulario de parte de operario
-
-En `OperatorDashboardView` y template `operator/form_entry.html`:
-- Nuevo desplegable "Orden de reparación" (opcional) que muestre:
-  - `BreakdownTicket` con `is_repair_order=True` y `status` abierto,
-    sin `assigned_to` (disponibles para cualquier operario de la empresa).
-  - `BreakdownTicket` con `is_repair_order=True` asignados al operario
-    autenticado (`assigned_to=company_user`), con badge de `priority`.
-- Al seleccionar una OT: prerelleno automático de `machine`, `section`
-  y descripción del parte vía atributos `data-*` en las opciones del
-  desplegable (sin fetch adicional, datos embebidos en el HTML).
-- El desplegable es opcional: si no se selecciona ninguna OT, el parte
-  se crea normalmente sin vinculación.
-
-### Paso 6 — `OwnProfileView`
-
-- Vista accesible para todos los roles con acceso al panel.
-- Formulario con campo `alias` editable.
-- Validación de unicidad de `alias` dentro de la empresa del usuario.
-- URL: `panel/profile/` — nombre `panel:own_profile`.
-- Entrada en sidebar bajo nueva sección "Mi perfil", visible para todos los roles.
-- Los mensajes históricos de `ChatMessage` mantienen el `sender_alias` con el que
-  fueron enviados (snapshot inmutable). El nuevo alias aplica solo a mensajes futuros.
+`_get_context_base` de `WorkOrderEntryFormView` enriquecido con
+`repair_orders` (OTs abiertas disponibles para el operario: sin
+`assigned_to` o asignadas a él), con prerelleno automático via `data-*`.
 
 ---
 
-## Archivos Previstos
+## 4. Funcionalidades Completadas
 
-- `chat/models.py` — campos `assigned_to` y `priority` (Paso 2)
-- `chat/migrations/XXXX_breakdownticket_assigned_priority.py` — migración (Paso 2)
-- `chat/views.py` — `BreakdownTicketCreateView` + acciones ciclo de vida (Pasos 3 y 4)
-- `chat/urls.py` — URL `breakdown_ticket_create` (Paso 3)
-- `panel/views.py` — `OwnProfileView` (Paso 6)
-- `panel/urls.py` — URL `own_profile` (Paso 6)
-- `panel/forms.py` — formulario `OwnProfileForm` (Paso 6)
-- `panel/templates/panel/chat/breakdown_ticket_list.html` — botón Nuevo ticket (Paso 3)
-- `panel/templates/panel/chat/breakdown_ticket_detail.html` — acciones ciclo de vida (Paso 4)
-- `panel/templates/panel/chat/breakdown_ticket_form.html` — Neonato Puro (Paso 3)
-- `panel/templates/panel/operator/form_entry.html` — desplegable OT (Paso 5)
-- `panel/templates/panel/profile/own_profile.html` — Neonato Puro (Paso 6)
-- `panel/templates/panel/_nav_items.html` — sección "Mi perfil" (Paso 6)
-
----
-
-## Nota de Cierre S010
-
-Arquitectura real implementada en S010 (2026-05-21):
-
-- `assigned_to` añadido al modelo `BreakdownTicket`. El campo `priority` del anexo
-  fue cubierto por el campo `urgency` ya existente (choices idénticos: LOW/MEDIUM/HIGH/CRITICAL).
-  No se creó campo duplicado.
-- Acciones POST de `BreakdownTicketDetailView`: `convert_repair` (pasa a IN_PROGRESS si OPEN),
-  `assign` (solo ADMIN/SUPERVISOR), `set_urgency`, `close`.
-- `_get_context_base` de `WorkOrderEntryFormView` enriquecido con `repair_orders` (OTs abiertas
-  disponibles para el operario autenticado — sin `assigned_to` o asignadas a él).
-- Gestión sala BREAKDOWNS: filtro `is_active` eliminado — todas las secciones de la empresa
-  aparecen independientemente de su estado en el IVR.
-- Color diferencial en secciones: rojo (completa) / naranja (incompleta: algún miembro excluido
-  individualmente) / verde Añadir (no añadida).
+| Paso | Descripción | Sesión |
+|------|-------------|--------|
+| 1 | Auditoría flujo creación automática `BreakdownTicket` desde BREAKDOWNS | S010 |
+| 2 | Campo `assigned_to` en `BreakdownTicket` + migración (`priority` cubierto por `urgency`) | S010 |
+| 3 | `BreakdownTicketCreateView` + formulario + URL + botón en listado | S010 |
+| 4 | Ciclo de vida: asignación, conversión a OT, urgencia inline, cierre | S010 |
+| 5 | Integración formulario de parte de operario con órdenes de reparación | S010 |
+| 6 | `OwnProfileView` — edición de alias de chat desde el panel | S010 |
+| 7 | Gestión sala BREAKDOWNS: todas las secciones (sin filtro `is_active`) | S010 |
+| 8 | Sincronización automática de contactos al añadir/quitar sección BREAKDOWNS | S010 |
+| 9 | Color diferencial rojo/naranja en secciones completas/incompletas | S010 |
+| 10 | Panel lateral de miembros en salas de sección y sala BREAKDOWNS | S010 |
+| 11 | Botón Gestionar membresía de Averías en lista de salas (solo ADMIN) | S010 |
 
 ---
 
-## Nota de Cierre S010 (continuación)
+## 5. Incidencias Activas
 
-Trabajo adicional completado en la misma sesión S010:
+### I-BUG-A — FieldError en BreakdownTicketCreateView
 
-- Sincronización automática de contactos: al añadir una sección a BREAKDOWNS,
-  todos sus contactos con teléfono se añaden automáticamente a `breakdown_contacts`.
-  Al quitar una sección, sus contactos se eliminan salvo que pertenezcan a otra
-  sección restante.
-- Color diferencial en botones de sección: rojo (completa) / naranja (incompleta).
-  Una sección es incompleta cuando alguno de sus contactos ha sido excluido
-  individualmente de `breakdown_contacts`.
-- Panel lateral de miembros refactorizado: para salas SECTION busca desde
-  `Contact.sections` M2M; para sala BREAKDOWNS construye la lista desde
-  `breakdown_sections` y `breakdown_contacts`. Template `room.html` actualizado
-  para usar `member.display` en lugar de `member.alias|default:member.user.username`.
-- Botón "Gestionar membresía de Averías" añadido en `room_list.html` bajo la
-  tarjeta de la sala BREAKDOWNS, visible exclusivamente para el rol ADMIN.
+**Síntoma:** `FieldError: Cannot resolve keyword 'asset_code' into field`
+al acceder a `GET /panel/chat/breakdowns/tickets/create/`.
 
-## Hito 14 completado en S010 (2026-05-21). Sin hoja de ruta para sesión siguiente.
+**Origen:** `BreakdownTicketCreateView` filtra o ordena `MachineAsset`
+por `asset_code`, campo que no existe en el modelo. Los campos válidos
+incluyen `code`, `type_code`, `company_code`, entre otros.
+
+**Fix:** Localizar en `chat/views.py` la referencia a `asset_code` y
+sustituirla por el campo correcto (`code` o el que corresponda según
+el contexto).
+
+---
+
+## 6. Registro de Sesiones
+
+| Sesión | Fecha | Resumen |
+|--------|-------|---------|
+| S010 | 2026-05-21 | Implementación completa de los pasos 1-11 originales del hito. Arquitectura base de BreakdownTicket operativa. |
+
+---
+
+## 7. Hoja de Ruta para la Siguiente Sesión
+
+### Paso 12 — Fix I-BUG-A: FieldError `asset_code` en BreakdownTicketCreateView
+
+Localizar en `chat/views.py` el filtro/orden por `asset_code` en el
+queryset de `MachineAsset` de `BreakdownTicketCreateView`. Sustituir
+por el campo correcto (`code`). Verificar que la vista GET responde
+sin errores tras el fix.
+
+### Paso 13 — Auditoría y smoke test del CRUD completo de tickets
+
+Tras el fix del Paso 12, recorrer el flujo completo:
+- Crear ticket manual desde el panel.
+- Asignar a WORKSHOPBOSS.
+- Convertir a OT (`is_repair_order=True`).
+- Establecer urgencia.
+- Cerrar ticket.
+- Verificar que la OT aparece en el desplegable del formulario de parte.
+
+### Paso 14 — CRUD de tickets desde el panel: mejoras UX
+
+Revisar y mejorar la interfaz de gestión de tickets:
+- Listado con filtros por estado, sección, urgencia y operario asignado.
+- Acciones bulk (cerrar varios tickets a la vez).
+- Vista de detalle completa con historial de cambios de estado.
+- Badge de urgencia con color diferencial en el listado.
+
+### Paso 15 — Entrada de tickets vía WhatsApp (robot)
+
+Diseño e implementación del flujo de creación automática de tickets
+desde mensajes entrantes de WhatsApp al robot de la sala BREAKDOWNS.
+(Alcance a definir en la sesión correspondiente.)
