@@ -1,18 +1,14 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/dashboard.html #}
 {#                                                                                          #}
 {# Operator dashboard — landing view for WORKSHOP role users.                               #}
-{# Displays a two-card selector for the work-order entry path:                             #}
-{#   - Vía A: Form   — structured web form (zero AI cost).                                 #}
-{#   - Vía C: Upload — photo or PDF processed by Gemini Vision.                            #}
-{# Via B (STT) removed in Hito 7 / S023.                                                   #}
-{# Also shows a read-only log of the operator's own work orders submitted today.           #}
+{# Displays the work-order entry card (Vía A — Form only).                                 #}
+{# Vía B (STT) removed in Hito 7 / S023.                                                   #}
+{# Vía C (Upload/Gemini Vision) deactivated in H07/S051 — code preserved for reactivation.#}
 {#                                                                                          #}
 {# Dashboard de operario — vista de aterrizaje para usuarios con rol WORKSHOP.             #}
-{# Muestra un selector de dos tarjetas para la vía de entrada del parte:                   #}
-{#   - Vía A: Form   — formulario web estructurado (coste IA cero).                        #}
-{#   - Vía C: Upload — foto o PDF procesado por Gemini Vision.                             #}
+{# Muestra únicamente la tarjeta de entrada por formulario (Vía A).                        #}
 {# Vía B (STT) eliminada en Hito 7 / S023.                                                 #}
-{# También muestra un registro de solo lectura de los partes del operario del día.         #}
+{# Vía C (Upload/Gemini Vision) desactivada en H07/S051 — código preservado para reactivar.#}
 {% extends "panel/base.html" %}
 
 {% block title %}Nuevo parte{% endblock %}
@@ -30,12 +26,13 @@
             Bienvenido, {{ request.user.get_full_name|default:request.user.username }}
         </h4>
         <p class="text-muted text-sm mb-0">
-            Selecciona la vía por la que quieres introducir tu parte de hoy.
+            Introduce tu parte de hoy usando el formulario.
         </p>
     </div>
 
     {# ------------------------------------------------------------------ #}
     {# Entry path selector — Selector de vía de entrada                   #}
+    {# Vía C (Upload) desactivada en H07/S051. Solo Vía A (Form) activa. #}
     {# ------------------------------------------------------------------ #}
     <div class="row g-3 mb-5">
 
@@ -59,27 +56,6 @@
             </div>
         </div>
 
-        {# Vía C — Upload #}
-        <div class="col-12 col-md-4" id="tour-via-upload">
-            <div class="card h-100 border-0 shadow-sm">
-                <div class="card-body d-flex flex-column align-items-start p-4">
-                    <div class="rounded-3 p-3 mb-3 stat-bg-yellow">
-                        <i class="bi bi-camera-fill fs-3 text-warning"></i>
-                    </div>
-                    <h5 class="fw-semibold mb-1">Foto o PDF</h5>
-                    <p class="text-muted text-sm flex-grow-1 mb-3">
-                        Sube una foto o PDF de tu parte manuscrito. El sistema
-                        extrae los datos automáticamente para que los revises
-                        antes de confirmar.
-                    </p>
-                    <a href="{% url 'panel:operator_upload' %}"
-                       class="btn btn-warning btn-sm px-3">
-                        <i class="bi bi-arrow-right-circle me-1"></i>Subir foto o PDF
-                    </a>
-                </div>
-            </div>
-        </div>
-
     </div>
 
 </div>
@@ -88,8 +64,9 @@
 {% block extra_scripts %}
 <script>
 /*
- * Tour steps for the operator dashboard (Via selector).
- * Pasos del tour para el dashboard del operario (selector de vias).
+ * Tour steps for the operator dashboard.
+ * Vía C (Upload) deactivated H07/S051 — tour step removed accordingly.
+ * Pasos del tour para el dashboard del operario.
  */
 document.addEventListener("DOMContentLoaded", function () {
 
@@ -98,7 +75,7 @@ document.addEventListener("DOMContentLoaded", function () {
             popover: {
                 title:       "Bienvenido al panel del operario",
                 description: "Desde aqui introduces tus partes de trabajo diarios. " +
-                             "Elige la via que mejor se adapte a tu situacion en cada momento.",
+                             "Usa el formulario para rellenar tu parte campo a campo.",
                 side:        "over",
                 align:       "center",
             },
@@ -106,19 +83,9 @@ document.addEventListener("DOMContentLoaded", function () {
         {
             element:  "#tour-via-form",
             popover: {
-                title:       "Via A — Formulario",
+                title:       "Formulario de parte",
                 description: "Rellena el parte campo a campo directamente en pantalla. " +
                              "Es la via mas rapida y precisa. Sin conexion a internet adicional ni esperas.",
-                side:        "bottom",
-                align:       "center",
-            },
-        },
-        {
-            element:  "#tour-via-upload",
-            popover: {
-                title:       "Via C — Foto o PDF",
-                description: "Sube una foto o PDF de tu parte manuscrito en papel. " +
-                             "Gemini Vision extrae los datos y te los muestra para que los revises antes de guardar.",
                 side:        "bottom",
                 align:       "center",
             },
@@ -129,3 +96,5 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 {% endblock %}
+
+

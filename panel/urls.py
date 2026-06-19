@@ -1,3 +1,4 @@
+
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/urls.py
 """
 URL configuration for the panel application.
@@ -209,8 +210,9 @@ urlpatterns = [
 
     # Operator entry paths — Vías de entrada de partes del operario (rol WORKSHOP y ADMIN).
     # Paso 5 — Hito 7 (2026-04-29) | Paso 7 — Hito 7 (2026-04-30)
-    path("operator/upload/", WorkOrderEntryUploadView.as_view(), name="operator_upload"),
-    path("operator/confirm/", WorkOrderEntryConfirmView.as_view(), name="operator_confirm"),
+    # Vía C (Upload + Confirm) desactivada en H07/S051 — código preservado para reactivación.
+    # path("operator/upload/", WorkOrderEntryUploadView.as_view(), name="operator_upload"),
+    # path("operator/confirm/", WorkOrderEntryConfirmView.as_view(), name="operator_confirm"),
     path("operator/assets/", WorkshopAssetAutocompleteView.as_view(), name="operator_assets"),
     path("operator/assets/detail/", WorkshopAssetDetailView.as_view(), name="operator_asset_detail"),  # PASO 4.1 — Hito 7 (sesión 011)
     path("operator/form/", WorkOrderEntryFormView.as_view(), name="operator_form"),
