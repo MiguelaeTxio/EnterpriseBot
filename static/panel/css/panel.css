@@ -814,6 +814,48 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     background-color: #f0fdf4;
 }
 
+/* -----------------------------------------------------------------------
+   Sidebar accordion — jerarquía visual cabecera / subsección (Hito 14).
+   Sidebar accordion — visual hierarchy header / subsection (Hito 14).
+
+   La regla genérica .sidebar .nav-link aplica el mismo color a cabeceras
+   y subsecciones. Estas reglas de mayor especificidad diferencian ambos
+   niveles sin alterar el color activo ni el hover ya definidos.
+
+   The generic .sidebar .nav-link applies the same colour to headers and
+   subsections. These higher-specificity rules differentiate both levels
+   without altering the already-defined active colour or hover state.
+   ----------------------------------------------------------------------- */
+
+/* Cabecera de sección del acordeón — ligeramente más brillante y en negrita
+   para destacar sobre las subsecciones.
+   Accordion section header — slightly brighter and bold to stand out. */
+.sidebar .sidebar-accordion-toggle,
+#sidebarOffcanvas .sidebar-accordion-toggle {
+    color: rgba(255, 255, 255, 0.82);
+    font-weight: 500;
+}
+
+/* Subsecciones expandidas — más apagadas y con fuente menor para subordinarse
+   visualmente a la cabecera de su sección padre.
+   Expanded subsections — more muted and smaller font to visually subordinate
+   to their parent section header. */
+.sidebar .sidebar-accordion-body .nav-link,
+#sidebarOffcanvas .sidebar-accordion-body .nav-link {
+    color: rgba(255, 255, 255, 0.48);
+    font-size: 0.835rem;
+}
+
+/* Hover y activo de subsecciones — mantiene coherencia con la regla global.
+   Subsection hover and active — keeps consistency with the global rule. */
+.sidebar .sidebar-accordion-body .nav-link:hover,
+.sidebar .sidebar-accordion-body .nav-link.active,
+#sidebarOffcanvas .sidebar-accordion-body .nav-link:hover,
+#sidebarOffcanvas .sidebar-accordion-body .nav-link.active {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    ROUTE PLANNER — Modal multi-parada (Hito 18)
    Planificador de ruta: panel de paradas (izq.) + mapa Google Maps (der.)

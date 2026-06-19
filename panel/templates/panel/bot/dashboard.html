@@ -181,11 +181,12 @@
         {% csrf_token %}
         <input type="hidden" name="action" value="direct_broadcast">
         <div class="mb-3">
-          <label for="direct_section" class="form-label">Filtrar por sección</label>
-          <select name="section_id" id="direct_section" class="form-select">
-            <option value="">— Todos los contactos —</option>
-            {% for section in sections %}
-            <option value="{{ section.pk }}">{{ section.name }}</option>
+        <div class="mb-3">
+          <label for="direct_user" class="form-label">Usuario</label>
+          <select name="company_user_pk" id="direct_user" class="form-select" required>
+            <option value="">— Selecciona un usuario —</option>
+            {% for cu in company_users %}
+            <option value="{{ cu.pk }}">{{ cu.alias|default:cu.user.get_full_name|default:cu.user.username }}</option>
             {% endfor %}
           </select>
         </div>
@@ -309,3 +310,4 @@
 
 </div>
 {% endblock %}
+

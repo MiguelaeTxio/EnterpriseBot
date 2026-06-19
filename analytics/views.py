@@ -1,4 +1,3 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/analytics/views.py
 """
 Views for the analytics application.
 Contains all analytical and bot-management views previously hosted in
@@ -2163,7 +2162,7 @@ class BotManagementView(CompanyUserRequiredMixin, View):
         qs = (
             BreakdownTicket.objects
             .filter(room__company=company_user.company)
-            .exclude(status=BreakdownTicket.STATUS_RESOLVED)
+            .exclude(status=BreakdownTicket.STATUS_CLOSED)
             .select_related("machine", "contact", "assigned_to")
             .order_by("-created_at")
         )
@@ -2236,6 +2235,14 @@ class BotManagementView(CompanyUserRequiredMixin, View):
             if (is_admin or is_supervisor) else []
         )
 
+        company_users = (
+            CompanyUser.objects
+            .filter(company=company_user.company, is_active=True)
+            .select_related("user")
+            .order_by("user__last_name", "user__first_name")
+            if can_manage else []
+        )
+
         return render(request, self.template_name, {
             "active_nav": "bot_management",
             "can_manage": can_manage,
@@ -2247,6 +2254,7 @@ class BotManagementView(CompanyUserRequiredMixin, View):
             "family_choices": family_choices,
             "family_filter": family_filter,
             "company_user": company_user,
+            "company_users": company_users,
         })
 
     def post(self, request, *args, **kwargs):
@@ -2547,8 +2555,8 @@ class BotManagementView(CompanyUserRequiredMixin, View):
             message_body = (
                 request.POST.get("message", "").strip()
             )
-            section_id = (
-                request.POST.get("section_id", "").strip()
+            company_user_pk = (
+                request.POST.get("company_user_pk", "").strip()
             )
             if not message_body:
                 django_messages.error(
@@ -2561,10 +2569,9 @@ class BotManagementView(CompanyUserRequiredMixin, View):
                 opt_out_broadcast=False,
             ).exclude(phone_number="")
 
-            if section_id:
+            if company_user_pk:
                 contacts_qs = contacts_qs.filter(
-                    section_assignments__section_id=section_id,
-                    section_assignments__section__company=company,
+                    company_user__pk=company_user_pk,
                 )
 
             sent_count = 0

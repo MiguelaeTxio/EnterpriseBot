@@ -94,7 +94,11 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
         # Panel de operarios: todos los WORKSHOPBOSS de la empresa con su ticket activo.
         operators_qs = (
             CU.objects
-            .filter(company=company, role=CU.ROLE_WORKSHOPBOSS, is_active=True)
+            .filter(
+                company=company,
+                role__in=[CU.ROLE_WORKSHOP, CU.ROLE_WORKSHOPBOSS],
+                is_active=True,
+            )
             .select_related("user")
             .order_by("user__last_name", "user__first_name")
         )
@@ -267,7 +271,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
                     assignee = CU.objects.get(
                         pk=assignee_pk,
                         company=company,
-                        role=CU.ROLE_WORKSHOPBOSS,
+                        role__in=[CU.ROLE_WORKSHOP, CU.ROLE_WORKSHOPBOSS],
                         is_active=True,
                     )
                     # If assignee already has an IN_PROGRESS ticket, pause it.
@@ -551,3 +555,4 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
             ticket.pk, company_user.pk,
         )
         return redirect("panel:breakdown_ticket_detail", pk=ticket.pk)
+

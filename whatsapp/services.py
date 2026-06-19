@@ -650,10 +650,52 @@ class WhatsAppChatService:
         )
         return message.sid
 
+    @classmethod
+    def send_template(
+        cls,
+        from_number: str,
+        to_number: str,
+        content_sid: str,
+        content_variables: dict,
+    ) -> str:
+        """
+        Sends a Meta-approved WhatsApp template message via the Twilio
+        Messaging API. Used for out-of-session messages (renewal, breakdown
+        card notification) that require a pre-approved Content Template.
 
+        content_variables is a dict mapping variable placeholders to their
+        runtime values, e.g. {"1": "Alejandro", "2": "Grupo Álvarez"}.
+        It is serialised to a JSON string as required by the Twilio SDK.
 
-# ---------------------------------------------------------------------------
-# PRESENCE RESPONSE SERVICE
+        Returns the Twilio message SID on success.
+        ---
+        Envía un template de WhatsApp aprobado por Meta vía la API de
+        Mensajería de Twilio. Usado para mensajes fuera de sesión (renewal,
+        notificación de tarjeta de avería) que requieren un Content Template
+        pre-aprobado.
+
+        content_variables es un dict que mapea los placeholders de variables
+        a sus valores en tiempo de ejecución, p. ej. {"1": "Alejandro"}.
+        Se serializa a cadena JSON tal como requiere el SDK de Twilio.
+
+        Devuelve el SID del mensaje Twilio en caso de éxito.
+        """
+        import json
+
+        twilio_client = _build_twilio_client()
+
+        message = twilio_client.messages.create(
+            from_=f"whatsapp:{from_number}",
+            to=f"whatsapp:{to_number}",
+            content_sid=content_sid,
+            content_variables=json.dumps(content_variables),
+        )
+        logger.info(
+            "# [WHATSAPP] Template enviado a %s — SID: %s",
+            to_number,
+            message.sid,
+        )
+        return message.sid
 # Processes inbound presence webhook responses (1h / 2h / disponible).
 # Procesa las respuestas entrantes del webhook de presencia (1h / 2h / disponible).
 # ---------------------------------------------------------------------------

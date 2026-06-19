@@ -2983,10 +2983,12 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         # significa que no se aplica ninguna excepción.
         _lunch_window =None
         if not _no_lunch_break and _lb_start and _lb_end :
-            _lunch_window =(_lb_start ,_lb_end )
+            _lunch_window =(_lb_start .hour *60 +_lb_start .minute ,_lb_end .hour *60 +_lb_end .minute )
         elif _post_schedule and not _post_schedule .is_intensive :
             if _post_schedule .end_time_morning and _post_schedule .start_time_afternoon :
-                _lunch_window =(_post_schedule .end_time_morning ,_post_schedule .start_time_afternoon )
+                _em =_post_schedule .end_time_morning
+                _sa =_post_schedule .start_time_afternoon
+                _lunch_window =(_em .hour *60 +_em .minute ,_sa .hour *60 +_sa .minute )
 
         _intra =run_intra_part_validation (_blocks ,lunch_window =_lunch_window )
 
