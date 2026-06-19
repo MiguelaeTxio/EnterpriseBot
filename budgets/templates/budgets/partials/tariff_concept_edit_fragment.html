@@ -1,0 +1,54 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/tariff_concept_edit_fragment.html #}
+{# HTMX fragment — inline edit form for a custom TariffConcept row.                                               #}
+{# Fragmento HTMX — formulario de edición inline para una fila de TariffConcept personalizado.                   #}
+<tr id="concept-row-{{ concept.pk }}">
+  <td class="ps-3 align-middle">
+    <input type="text"
+           name="label"
+           value="{{ concept.label }}"
+           class="form-control form-control-sm"
+           placeholder="Nombre del concepto"
+           id="concept-label-{{ concept.pk }}"
+           required>
+  </td>
+  <td class="align-middle text-muted font-monospace small">{{ concept.code }}</td>
+  <td class="align-middle">
+    <select name="default_unit"
+            class="form-select form-select-sm"
+            id="concept-unit-{{ concept.pk }}">
+      {% for val, label in unit_choices %}
+      <option value="{{ val }}" {% if val == concept.default_unit %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </td>
+  <td class="text-center align-middle">
+    <input type="number"
+           name="sort_order"
+           value="{{ concept.sort_order }}"
+           class="form-control form-control-sm text-center"
+           style="width: 70px;"
+           min="0"
+           id="concept-order-{{ concept.pk }}">
+  </td>
+  <td class="text-end pe-3 align-middle">
+    <div class="d-flex justify-content-end gap-1">
+      <button type="button"
+              class="btn btn-sm btn-success py-0 px-2"
+              hx-post="{% url 'budgets:tariff_concept_update' concept.pk %}"
+              hx-include="#concept-label-{{ concept.pk }}, #concept-unit-{{ concept.pk }}, #concept-order-{{ concept.pk }}"
+              hx-target="#concept-row-{{ concept.pk }}"
+              hx-swap="outerHTML"
+              title="Guardar">
+        <i class="bi bi-check-lg"></i>
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-secondary py-0 px-2"
+              hx-get="{% url 'budgets:tariff_concept_update' concept.pk %}"
+              hx-target="#concept-row-{{ concept.pk }}"
+              hx-swap="outerHTML"
+              title="Cancelar">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+  </td>
+</tr>

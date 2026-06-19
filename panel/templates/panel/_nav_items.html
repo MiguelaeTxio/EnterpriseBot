@@ -446,6 +446,12 @@
                         <i class="bi bi-geo-alt-fill"></i>Bases
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if active_nav == 'budgets_concepts' %}active{% endif %}"
+                       href="{% url 'budgets:tariff_concept_list' %}">
+                        <i class="bi bi-tag-fill"></i>Conceptos de tarifa
+                    </a>
+                </li>
                 {% endif %}
                 {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
                 {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
@@ -529,7 +535,8 @@
         'budgets_insurers':         'acc-asistencia',
         'budgets_bases':            'acc-asistencia',
         'albaran_demo':             'acc-asistencia',
-        'budgets_toll_segments':    'acc-asistencia'
+        'budgets_toll_segments':    'acc-asistencia',
+        'budgets_concepts':         'acc-asistencia'
     };
 
     var STORAGE_PREFIX = 'sidebar_acc_';

@@ -38,6 +38,7 @@ from budgets.models import (
     InsurerBase,
     InsurerTariff,
     NightSchedule,
+    TariffConcept,
     TariffLine,
     VehicleType,
 )
@@ -110,11 +111,11 @@ def _get_optional_concepts(insurer_id, vehicle_type_id):
     """
     from budgets.models import InsurerTariff
     optional_codes = [
-        TariffLine.CONCEPT_RESCUE_HOUR,
-        TariffLine.CONCEPT_WAIT_HOUR,
-        TariffLine.CONCEPT_WORKER_HOUR,
-        TariffLine.CONCEPT_ASSISTANT_HOUR,
-        TariffLine.CONCEPT_CUSTODY_DAY,
+        TariffConcept.CODE_RESCUE_HOUR,
+        TariffConcept.CODE_WAIT_HOUR,
+        TariffConcept.CODE_WORKER_HOUR,
+        TariffConcept.CODE_ASSISTANT_HOUR,
+        TariffConcept.CODE_CUSTODY_DAY,
     ]
     try:
         tariff = InsurerTariff.objects.get(
@@ -152,7 +153,7 @@ def _has_loaded_surcharge(insurer_id):
     except InsurerTariff.DoesNotExist:
         return False
     return tariff.lines.filter(
-        concept=TariffLine.CONCEPT_LOADED_PERCENT
+        concept=TariffConcept.CODE_LOADED_PERCENT
     ).exists()
 
 
@@ -206,31 +207,31 @@ def _build_base_context(request, extra=None):
 # ---------------------------------------------------------------------------
 
 OPTIONAL_CONCEPT_META = {
-    TariffLine.CONCEPT_RESCUE_HOUR: {
+    TariffConcept.CODE_RESCUE_HOUR: {
         "label": "Horas de rescate",
         "field": "rescue_hours",
         "input_type": "number",
         "step": "0.5",
     },
-    TariffLine.CONCEPT_WAIT_HOUR: {
+    TariffConcept.CODE_WAIT_HOUR: {
         "label": "Horas de espera",
         "field": "wait_hours",
         "input_type": "number",
         "step": "0.5",
     },
-    TariffLine.CONCEPT_WORKER_HOUR: {
+    TariffConcept.CODE_WORKER_HOUR: {
         "label": "Horas de mano de obra",
         "field": "worker_hours",
         "input_type": "number",
         "step": "0.5",
     },
-    TariffLine.CONCEPT_ASSISTANT_HOUR: {
+    TariffConcept.CODE_ASSISTANT_HOUR: {
         "label": "Horas de ayudante",
         "field": "assistant_hours",
         "input_type": "number",
         "step": "0.5",
     },
-    TariffLine.CONCEPT_CUSTODY_DAY: {
+    TariffConcept.CODE_CUSTODY_DAY: {
         "label": "Dias de custodia",
         "field": "custody_days",
         "input_type": "number",
@@ -570,7 +571,21 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         return redirect("budgets:result", pk=budget.pk)
 
 
-def _parse_decimal(raw, default="0"):
+def _get_concept_choices(company):
+    """
+    Return a list of (code, label) tuples for TariffConcept available for the
+    given company: system concepts (company=None) plus concepts owned by this
+    company. Used to populate the concept dropdown when adding or editing lines.
+    ---
+    Devuelve una lista de tuplas (code, label) de TariffConcept disponibles
+    para la empresa dada: conceptos de sistema (company=None) más los propios.
+    Se usa para poblar el desplegable de concepto al añadir o editar líneas.
+    """
+    from django.db.models import Q
+    qs = TariffConcept.objects.filter(
+        Q(company__isnull=True) | Q(company=company)
+    ).order_by("sort_order", "label")
+    return [(tc.code, tc.label) for tc in qs]
     """
     Normalise a raw decimal string from POST, replacing comma with period
     before conversion. Returns the normalised string for DB assignment.
@@ -1283,7 +1298,7 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
                     valid_to__isnull=True,
                 )
                 line = tariff.lines.filter(
-                    concept=TariffLine.CONCEPT_LOADED_PERCENT
+                    concept=TariffConcept.CODE_LOADED_PERCENT
                 ).first()
                 if line:
                     loaded_percent = line.price
@@ -1830,9 +1845,9 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
             'tariff_history': tariff_history,
             'tariff_line_groups': tariff_line_groups,
             'vehicle_types': vehicle_types,
-            'concept_choices': TariffLine.CONCEPT_CHOICES,
+            'vehicle_types_all': insurer.vehicle_types.order_by('sort_order', 'name'),
+            'concept_choices': _get_concept_choices(insurer.company),
             'unit_choices': TariffLine.UNIT_CHOICES,
-            'night_schedules': night_schedules,
         })
 
     def get(self, request, pk):
@@ -2230,7 +2245,9 @@ class TariffLineSaveView(AdminRoleRequiredMixin, View):
 
         # Update all editable fields atomically.
         # Actualizar todos los campos editables de forma atomica.
-        line.concept = data.get("concept", line.concept)
+        concept_code = data.get("concept", "")
+        if concept_code:
+            line.concept = get_object_or_404(TariffConcept, code=concept_code)
         line.unit = data.get("unit", line.unit)
         line.price = _parse_decimal(data.get("price", ""), default="0")
         km_threshold_raw = data.get("km_threshold", "").strip().replace(",", ".")
@@ -2244,7 +2261,7 @@ class TariffLineSaveView(AdminRoleRequiredMixin, View):
 
         ctx = {
             "line": line,
-            "concept_choices": TariffLine.CONCEPT_CHOICES,
+            "concept_choices": _get_concept_choices(line.tariff.insurer.company),
             "unit_choices": TariffLine.UNIT_CHOICES,
             "csrf_token": request.META.get("CSRF_COOKIE", ""),
         }
@@ -2326,7 +2343,7 @@ class TariffLineAddFormView(AdminRoleRequiredMixin, View):
         ctx = {
             "tariff": tariff,
             "vehicle_types": vehicle_types,
-            "concept_choices": TariffLine.CONCEPT_CHOICES,
+            "concept_choices": _get_concept_choices(company_user.company),
             "unit_choices": TariffLine.UNIT_CHOICES,
         }
         return render(
@@ -2380,10 +2397,15 @@ class TariffLineAddView(AdminRoleRequiredMixin, View):
             )
         km_threshold = data.get("km_threshold", "").strip()
         min_units = data.get("min_units", "").strip()
+        concept_code = data.get("concept", TariffConcept.CODE_DEPARTURE)
+        concept_obj = get_object_or_404(
+            TariffConcept,
+            code=concept_code,
+        )
         line = TariffLine.objects.create(
             tariff=tariff,
             vehicle_type=vehicle_type,
-            concept=data.get("concept", TariffLine.CONCEPT_DEPARTURE),
+            concept=concept_obj,
             unit=data.get("unit", TariffLine.UNIT_FIXED),
             price=_parse_decimal(data.get("price", ""), default="0"),
             km_threshold=(
@@ -2396,7 +2418,7 @@ class TariffLineAddView(AdminRoleRequiredMixin, View):
         )
         ctx = {
             "line": line,
-            "concept_choices": TariffLine.CONCEPT_CHOICES,
+            "concept_choices": _get_concept_choices(company_user.company),
             "unit_choices": TariffLine.UNIT_CHOICES,
             "csrf_token": request.META.get("CSRF_COOKIE", ""),
         }
@@ -2956,6 +2978,7 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
         ctx = _build_base_context(request, {
             "insurer": insurer,
             "insurer_bases": insurer_bases,
+            "insurer_vehicle_types": insurer.vehicle_types.order_by("sort_order", "name"),
             "tariff": tariff,
             "vehicle_types": vehicle_types,
             "generic_lines": generic_lines,
@@ -3301,6 +3324,422 @@ class BaseDeleteView(AdminRoleRequiredMixin, View):
 
 
 # ---------------------------------------------------------------------------
+# Vehicle type management — HTMX CRUD inline in InsurerDetailView
+# Gestión de tipos de vehículo — CRUD HTMX inline en InsurerDetailView
+# ---------------------------------------------------------------------------
+
+
+class VehicleTypeCreateView(AdminRoleRequiredMixin, View):
+    """
+    Creates a new VehicleType for the given insurer via HTMX POST.
+    Returns the updated vehicle type list fragment on success.
+    ---
+    Crea un nuevo VehicleType para la aseguradora dada via HTMX POST.
+    Devuelve el fragmento de lista actualizado en caso de éxito.
+    """
+
+    def post(self, request, pk):
+        """
+        Validate and create VehicleType. Returns HTMX list fragment.
+        ---
+        Valida y crea VehicleType. Devuelve fragmento de lista HTMX.
+        """
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        name = request.POST.get("name", "").strip()
+        sort_order_raw = request.POST.get("sort_order", "0").strip()
+        if not name:
+            from django.http import HttpResponseBadRequest
+            return HttpResponseBadRequest("El nombre del tipo de vehículo es obligatorio.")
+        try:
+            sort_order = int(sort_order_raw)
+        except ValueError:
+            sort_order = 0
+        VehicleType.objects.create(
+            insurer=insurer,
+            name=name,
+            sort_order=sort_order,
+            is_active=True,
+        )
+        vehicle_types = insurer.vehicle_types.order_by("sort_order", "name")
+        return render(
+            request,
+            "budgets/partials/vehicle_type_list_fragment.html",
+            {"insurer": insurer, "vehicle_types": vehicle_types},
+        )
+
+
+class VehicleTypeUpdateView(AdminRoleRequiredMixin, View):
+    """
+    Updates an existing VehicleType via HTMX POST.
+    Returns the updated row fragment on success.
+    ---
+    Actualiza un VehicleType existente via HTMX POST.
+    Devuelve el fragmento de fila actualizado en caso de éxito.
+    """
+
+    def get(self, request, pk):
+        """
+        Return the inline edit form fragment for the given VehicleType pk.
+        ---
+        Devuelve el fragmento de formulario de edición inline para el pk dado.
+        """
+        company_user = _get_company_user(request)
+        vt = get_object_or_404(
+            VehicleType,
+            pk=pk,
+            insurer__company=company_user.company,
+        )
+        return render(
+            request,
+            "budgets/partials/vehicle_type_edit_fragment.html",
+            {"vt": vt},
+        )
+
+    def post(self, request, pk):
+        """
+        Save updated VehicleType and return the updated row fragment.
+        ---
+        Guarda el VehicleType actualizado y devuelve el fragmento de fila.
+        """
+        company_user = _get_company_user(request)
+        vt = get_object_or_404(
+            VehicleType,
+            pk=pk,
+            insurer__company=company_user.company,
+        )
+        name = request.POST.get("name", "").strip()
+        sort_order_raw = request.POST.get("sort_order", "0").strip()
+        if not name:
+            from django.http import HttpResponseBadRequest
+            return HttpResponseBadRequest("El nombre del tipo de vehículo es obligatorio.")
+        try:
+            sort_order = int(sort_order_raw)
+        except ValueError:
+            sort_order = 0
+        vt.name = name
+        vt.sort_order = sort_order
+        vt.save(update_fields=["name", "sort_order"])
+        return render(
+            request,
+            "budgets/partials/vehicle_type_row_fragment.html",
+            {"vt": vt},
+        )
+
+
+class VehicleTypeToggleView(AdminRoleRequiredMixin, View):
+    """
+    Toggles the is_active flag of a VehicleType via HTMX POST.
+    Returns the updated row fragment.
+    ---
+    Alterna el flag is_active de un VehicleType via HTMX POST.
+    Devuelve el fragmento de fila actualizado.
+    """
+
+    def post(self, request, pk):
+        """
+        Toggle is_active and return updated row fragment.
+        ---
+        Alterna is_active y devuelve el fragmento de fila actualizado.
+        """
+        company_user = _get_company_user(request)
+        vt = get_object_or_404(
+            VehicleType,
+            pk=pk,
+            insurer__company=company_user.company,
+        )
+        vt.is_active = not vt.is_active
+        vt.save(update_fields=["is_active"])
+        return render(
+            request,
+            "budgets/partials/vehicle_type_row_fragment.html",
+            {"vt": vt},
+        )
+
+
+class VehicleTypeDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes a VehicleType via HTMX POST with modal confirmation.
+    Rejects deletion if the vehicle type has associated tariff lines or budgets.
+    Returns empty 200 response for HTMX row removal.
+    ---
+    Elimina un VehicleType via HTMX POST con confirmación modal.
+    Rechaza la eliminación si tiene líneas de tarifa o presupuestos asociados.
+    Devuelve respuesta 200 vacía para eliminación HTMX de la fila.
+    """
+
+    def post(self, request, pk):
+        """
+        Delete VehicleType if safe. Return empty response or error.
+        ---
+        Elimina VehicleType si es seguro. Devuelve respuesta vacía o error.
+        """
+        from django.http import HttpResponse
+        company_user = _get_company_user(request)
+        vt = get_object_or_404(
+            VehicleType,
+            pk=pk,
+            insurer__company=company_user.company,
+        )
+        if vt.tariff_lines.exists():
+            return HttpResponseBadRequest(
+                "No se puede eliminar un tipo de vehículo con líneas de tarifa asociadas. "
+                "Elimina primero las líneas de tarifa."
+            )
+        if vt.budgets.exists():
+            return HttpResponseBadRequest(
+                "No se puede eliminar un tipo de vehículo con presupuestos asociados."
+            )
+        vt.delete()
+        return HttpResponse(status=200)
+
+
+class TariffConceptCreateView(AdminRoleRequiredMixin, View):
+    """
+    Creates a new custom TariffConcept for the company owning the given insurer.
+    Accepts HTMX POST only. Returns empty 200 on success — the caller reloads.
+    Rejects creation if a concept with the same label already exists for the company.
+    ---
+    Crea un nuevo TariffConcept personalizado para la empresa de la aseguradora dada.
+    Solo acepta HTMX POST. Devuelve 200 vacío en éxito — el llamador recarga la página.
+    Rechaza la creación si ya existe un concepto con el mismo nombre para la empresa.
+    """
+
+    def post(self, request, pk):
+        """
+        Validate and create TariffConcept. Returns 200 or 400.
+        ---
+        Valida y crea TariffConcept. Devuelve 200 o 400.
+        """
+        from django.http import HttpResponse
+        import re
+        company_user = _get_company_user(request)
+        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        company = insurer.company
+
+        label = request.POST.get("label", "").strip()
+        default_unit = request.POST.get("default_unit", TariffLine.UNIT_FIXED).strip()
+
+        if not label:
+            return HttpResponseBadRequest("El nombre del concepto es obligatorio.")
+
+        # Generate a unique code from the label.
+        # Generar un código único a partir del nombre.
+        base_code = re.sub(r"[^A-Z0-9]", "_", label.upper())[:40]
+        code = base_code
+        counter = 1
+        while TariffConcept.objects.filter(code=code).exists():
+            code = f"{base_code}_{counter}"
+            counter += 1
+
+        # Reject if a concept with the same label already exists for this company.
+        # Rechazar si ya existe un concepto con el mismo nombre para esta empresa.
+        if TariffConcept.objects.filter(company=company, label__iexact=label).exists():
+            return HttpResponseBadRequest(
+                f"Ya existe un concepto con el nombre '{label}' para esta empresa."
+            )
+
+        TariffConcept.objects.create(
+            code=code,
+            label=label,
+            default_unit=default_unit,
+            is_system=False,
+            company=company,
+            sort_order=100,
+        )
+        return HttpResponse(status=200)
+
+
+class TariffConceptCreateGlobalView(AdminRoleRequiredMixin, View):
+    """
+    Creates a new custom TariffConcept for the authenticated user's company.
+    Used from the dedicated concept list page (no insurer_pk needed).
+    Returns the new row fragment for HTMX beforeend swap.
+    ---
+    Crea un nuevo TariffConcept personalizado para la empresa del usuario autenticado.
+    Usado desde la página dedicada de conceptos (sin insurer_pk).
+    Devuelve el fragmento de fila nuevo para swap HTMX beforeend.
+    """
+
+    def post(self, request):
+        """
+        Validate and create TariffConcept. Returns row fragment or 400.
+        ---
+        Valida y crea TariffConcept. Devuelve fragmento de fila o 400.
+        """
+        import re
+        company_user = _get_company_user(request)
+        company = company_user.company
+
+        label = request.POST.get("label", "").strip()
+        default_unit = request.POST.get("default_unit", TariffLine.UNIT_FIXED).strip()
+        sort_order_raw = request.POST.get("sort_order", "100").strip()
+
+        if not label:
+            return HttpResponseBadRequest("El nombre del concepto es obligatorio.")
+
+        try:
+            sort_order = int(sort_order_raw)
+        except ValueError:
+            sort_order = 100
+
+        # Generate unique code.
+        # Generar código único.
+        base_code = re.sub(r"[^A-Z0-9]", "_", label.upper())[:40]
+        code = base_code
+        counter = 1
+        while TariffConcept.objects.filter(code=code).exists():
+            code = f"{base_code}_{counter}"
+            counter += 1
+
+        if TariffConcept.objects.filter(company=company, label__iexact=label).exists():
+            return HttpResponseBadRequest(
+                f"Ya existe un concepto con el nombre '{label}' para esta empresa."
+            )
+
+        concept = TariffConcept.objects.create(
+            code=code,
+            label=label,
+            default_unit=default_unit,
+            is_system=False,
+            company=company,
+            sort_order=sort_order,
+        )
+        return render(
+            request,
+            "budgets/partials/tariff_concept_row_fragment.html",
+            {"concept": concept, "unit_choices": TariffLine.UNIT_CHOICES},
+        )
+
+
+class TariffConceptListView(AdminRoleRequiredMixin, View):
+    """
+    Dedicated page listing all TariffConcept available for the company:
+    system concepts (read-only) and custom concepts (editable/deletable).
+    ---
+    Página dedicada que lista todos los TariffConcept disponibles para la empresa:
+    conceptos de sistema (solo lectura) y personalizados (editables/eliminables).
+    """
+
+    template_name = "budgets/tariff_concept_list.html"
+
+    def get(self, request):
+        """
+        Render the concept list page.
+        ---
+        Renderiza la página de listado de conceptos.
+        """
+        company_user = _get_company_user(request)
+        from django.db.models import Q
+        concepts = TariffConcept.objects.filter(
+            Q(company__isnull=True) | Q(company=company_user.company)
+        ).order_by("sort_order", "label")
+        ctx = _build_base_context(request, {
+            "concepts": concepts,
+            "unit_choices": TariffLine.UNIT_CHOICES,
+            "active_nav": "budgets_concepts",
+        })
+        return render(request, self.template_name, ctx)
+
+
+class TariffConceptUpdateView(AdminRoleRequiredMixin, View):
+    """
+    Inline HTMX edit for a custom TariffConcept.
+    GET returns the edit row fragment. POST saves and returns the updated row.
+    System concepts (is_system=True) cannot be edited.
+    ---
+    Edición inline HTMX de un TariffConcept personalizado.
+    GET devuelve el fragmento de fila de edición. POST guarda y devuelve la fila.
+    Los conceptos de sistema (is_system=True) no pueden editarse.
+    """
+
+    def get(self, request, pk):
+        """
+        Return the inline edit form fragment.
+        ---
+        Devuelve el fragmento de formulario de edición inline.
+        """
+        company_user = _get_company_user(request)
+        concept = get_object_or_404(
+            TariffConcept,
+            pk=pk,
+            company=company_user.company,
+            is_system=False,
+        )
+        return render(
+            request,
+            "budgets/partials/tariff_concept_edit_fragment.html",
+            {"concept": concept, "unit_choices": TariffLine.UNIT_CHOICES},
+        )
+
+    def post(self, request, pk):
+        """
+        Save updated TariffConcept and return the updated row fragment.
+        ---
+        Guarda el TariffConcept actualizado y devuelve el fragmento de fila.
+        """
+        company_user = _get_company_user(request)
+        concept = get_object_or_404(
+            TariffConcept,
+            pk=pk,
+            company=company_user.company,
+            is_system=False,
+        )
+        label = request.POST.get("label", "").strip()
+        default_unit = request.POST.get("default_unit", concept.default_unit).strip()
+        sort_order_raw = request.POST.get("sort_order", "0").strip()
+        if not label:
+            return HttpResponseBadRequest("El nombre del concepto es obligatorio.")
+        try:
+            sort_order = int(sort_order_raw)
+        except ValueError:
+            sort_order = concept.sort_order
+        concept.label = label
+        concept.default_unit = default_unit
+        concept.sort_order = sort_order
+        concept.save(update_fields=["label", "default_unit", "sort_order"])
+        return render(
+            request,
+            "budgets/partials/tariff_concept_row_fragment.html",
+            {"concept": concept, "unit_choices": TariffLine.UNIT_CHOICES},
+        )
+
+
+class TariffConceptDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes a custom TariffConcept via HTMX POST.
+    Rejects deletion if the concept has associated tariff lines.
+    System concepts cannot be deleted.
+    ---
+    Elimina un TariffConcept personalizado via HTMX POST.
+    Rechaza la eliminación si el concepto tiene líneas de tarifa asociadas.
+    Los conceptos de sistema no pueden eliminarse.
+    """
+
+    def post(self, request, pk):
+        """
+        Delete concept if safe. Return empty response or error.
+        ---
+        Elimina el concepto si es seguro. Devuelve respuesta vacía o error.
+        """
+        from django.http import HttpResponse
+        company_user = _get_company_user(request)
+        concept = get_object_or_404(
+            TariffConcept,
+            pk=pk,
+            company=company_user.company,
+            is_system=False,
+        )
+        if concept.tariff_lines.exists() or concept.special_rate_lines.exists():
+            return HttpResponseBadRequest(
+                "No se puede eliminar un concepto con líneas de tarifa asociadas. "
+                "Elimina primero las líneas que usan este concepto."
+            )
+        concept.delete()
+        return HttpResponse(status=200)
+
+
+# ---------------------------------------------------------------------------
 # Export views — Insurer tariff and budget history exports (CSV, Excel, PDF, Word)
 # Vistas de exportacion — tarifas de aseguradora e historial de presupuestos
 # ---------------------------------------------------------------------------
@@ -3331,7 +3770,7 @@ def _insurer_tariff_rows(insurer, tariff):
             "Valida desde": tariff.valid_from.strftime("%d/%m/%Y"),
             "Valida hasta": tariff.valid_to.strftime("%d/%m/%Y") if tariff.valid_to else "Activa",
             "Tipo de vehiculo": line.vehicle_type.name if line.vehicle_type else "General",
-            "Concepto": line.get_concept_display(),
+            "Concepto": line.concept.label,
             "Unidad": line.get_unit_display(),
             "Precio": str(line.price),
             "Umbral km": str(line.km_threshold) if line.km_threshold is not None else "",
@@ -4612,235 +5051,6 @@ class TollSegmentDeleteView(AdminRoleRequiredMixin, View):
             )
         return redirect("budgets:toll_segment_list")
 
-
-class TollSegmentListView(AdminRoleRequiredMixin, View):
-    """
-    Lists all TollSegment records with filtering by road_code and
-    tariff_level. Supports inline creation via POST.
-    Accessible to ADMIN role only.
-    ---
-    Lista todos los registros TollSegment con filtrado por road_code y
-    tariff_level. Soporta creacion inline via POST.
-    Accesible solo para el rol ADMIN.
-    """
-
-    template_name = "budgets/toll_segment_list.html"
-
-    def get(self, request):
-        """
-        Render the toll segment list with optional filters and creation form.
-        ---
-        Renderiza el listado de tramos de peaje con filtros opcionales
-        y el formulario de creacion.
-        """
-        from budgets.models import TollSegment
-        road_filter = request.GET.get("road_code", "").strip().upper()
-        level_filter = request.GET.get("tariff_level", "").strip()
-        active_filter = request.GET.get("is_active", "1").strip()
-
-        qs = TollSegment.objects.all().order_by(
-            "road_code", "section_name", "origin_name", "dest_name",
-        )
-        if road_filter:
-            qs = qs.filter(road_code=road_filter)
-        if level_filter:
-            qs = qs.filter(tariff_level=level_filter)
-        if active_filter == "1":
-            qs = qs.filter(is_active=True)
-        elif active_filter == "0":
-            qs = qs.filter(is_active=False)
-
-        road_codes = (
-            TollSegment.objects
-            .values_list("road_code", flat=True)
-            .distinct()
-            .order_by("road_code")
-        )
-
-        form = TollSegmentForm()
-        ctx = _build_base_context(request, {
-            "segments": qs,
-            "form": form,
-            "road_codes": road_codes,
-            "road_filter": road_filter,
-            "level_filter": level_filter,
-            "active_filter": active_filter,
-            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav": "budgets_toll_segments",
-            "total": qs.count(),
-        })
-        return render(request, self.template_name, ctx)
-
-    def post(self, request):
-        """
-        Create a new TollSegment from the inline form.
-        On success redirects to the list. On error re-renders with errors.
-        ---
-        Crea un nuevo TollSegment desde el formulario inline.
-        En exito redirige al listado. En error re-renderiza con errores.
-        """
-        from budgets.models import TollSegment
-        form = TollSegmentForm(request.POST)
-        if form.is_valid():
-            form.save()
-            messages.success(
-                request,
-                "Tramo de peaje creado correctamente.",
-            )
-            return redirect("budgets:toll_segment_list")
-
-        road_codes = (
-            TollSegment.objects
-            .values_list("road_code", flat=True)
-            .distinct()
-            .order_by("road_code")
-        )
-        qs = TollSegment.objects.filter(is_active=True).order_by(
-            "road_code", "section_name", "origin_name", "dest_name",
-        )
-        ctx = _build_base_context(request, {
-            "segments": qs,
-            "form": form,
-            "road_codes": road_codes,
-            "road_filter": "",
-            "level_filter": "",
-            "active_filter": "1",
-            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav": "budgets_toll_segments",
-            "total": qs.count(),
-        })
-        return render(request, self.template_name, ctx)
-
-
-class TollSegmentUpdateView(AdminRoleRequiredMixin, View):
-    """
-    Renders and processes the edit form for an existing TollSegment.
-    Accessible to ADMIN role only.
-    ---
-    Renderiza y procesa el formulario de edicion de un TollSegment existente.
-    Accesible solo para el rol ADMIN.
-    """
-
-    template_name = "budgets/toll_segment_list.html"
-
-    def get(self, request, pk):
-        """
-        Render the edit form pre-filled with the TollSegment instance.
-        ---
-        Renderiza el formulario de edicion con los datos del TollSegment.
-        """
-        from budgets.models import TollSegment
-        segment = get_object_or_404(TollSegment, pk=pk)
-        form = TollSegmentForm(instance=segment)
-        road_codes = (
-            TollSegment.objects
-            .values_list("road_code", flat=True)
-            .distinct()
-            .order_by("road_code")
-        )
-        qs = TollSegment.objects.filter(is_active=True).order_by(
-            "road_code", "section_name", "origin_name", "dest_name",
-        )
-        ctx = _build_base_context(request, {
-            "segments": qs,
-            "form": form,
-            "editing": segment,
-            "road_codes": road_codes,
-            "road_filter": "",
-            "level_filter": "",
-            "active_filter": "1",
-            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav": "budgets_toll_segments",
-            "total": qs.count(),
-        })
-        return render(request, self.template_name, ctx)
-
-    def post(self, request, pk):
-        """
-        Validate and save the updated TollSegment. Redirects to list.
-        ---
-        Valida y guarda el TollSegment actualizado. Redirige al listado.
-        """
-        from budgets.models import TollSegment
-        segment = get_object_or_404(TollSegment, pk=pk)
-        form = TollSegmentForm(request.POST, instance=segment)
-        if form.is_valid():
-            form.save()
-            messages.success(
-                request,
-                f"Tramo {segment.road_code} "
-                f"{segment.origin_name} → {segment.dest_name} "
-                f"actualizado correctamente.",
-            )
-            return redirect("budgets:toll_segment_list")
-
-        road_codes = (
-            TollSegment.objects
-            .values_list("road_code", flat=True)
-            .distinct()
-            .order_by("road_code")
-        )
-        qs = TollSegment.objects.filter(is_active=True).order_by(
-            "road_code", "section_name", "origin_name", "dest_name",
-        )
-        ctx = _build_base_context(request, {
-            "segments": qs,
-            "form": form,
-            "editing": segment,
-            "road_codes": road_codes,
-            "road_filter": "",
-            "level_filter": "",
-            "active_filter": "1",
-            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav": "budgets_toll_segments",
-            "total": qs.count(),
-        })
-        return render(request, self.template_name, ctx)
-
-
-class TollSegmentDeleteView(AdminRoleRequiredMixin, View):
-    """
-    Soft-deletes (is_active=False) or hard-deletes a TollSegment.
-    POST with action=deactivate sets is_active=False.
-    POST with action=delete performs hard delete.
-    Accessible to ADMIN role only.
-    ---
-    Borra logicamente (is_active=False) o fisicamente un TollSegment.
-    POST con action=deactivate pone is_active=False.
-    POST con action=delete realiza borrado fisico.
-    Accesible solo para el rol ADMIN.
-    """
-
-    def post(self, request, pk):
-        """
-        Process deactivation or deletion of the TollSegment.
-        ---
-        Procesa la desactivacion o eliminacion del TollSegment.
-        """
-        from budgets.models import TollSegment
-        segment = get_object_or_404(TollSegment, pk=pk)
-        action = request.POST.get("action", "deactivate")
-
-        if action == "delete":
-            label = (
-                f"{segment.road_code} "
-                f"{segment.origin_name} → {segment.dest_name}"
-            )
-            segment.delete()
-            messages.success(
-                request,
-                f"Tramo {label} eliminado permanentemente.",
-            )
-        else:
-            segment.is_active = False
-            segment.save()
-            messages.success(
-                request,
-                f"Tramo {segment.road_code} "
-                f"{segment.origin_name} → {segment.dest_name} "
-                f"desactivado correctamente.",
-            )
-        return redirect("budgets:toll_segment_list")
 
 
 class WorkOrderPdfView(AssistanceRequiredMixin, View):

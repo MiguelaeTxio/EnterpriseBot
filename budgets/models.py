@@ -314,7 +314,110 @@ class InsurerTariff(models.Model):
 
 
 # ---------------------------------------------------------------------------
-# 4. TARIFF LINE — A single billable concept within a tariff.
+# 4. TARIFF CONCEPT — Catalogue of billable concept types.
+#    Catálogo de tipos de concepto facturable.
+# ---------------------------------------------------------------------------
+
+class TariffConcept(models.Model):
+    """
+    Defines a billable concept type that can appear as a TariffLine.
+    System concepts (is_system=True, company=None) represent the 12 built-in
+    codes that the calculation engine knows how to handle. Custom concepts
+    (is_system=False, company=FK) are defined per company and are treated
+    as FIXED or PER_HOUR amounts by the engine — they appear in the
+    add-line dropdown for that company's insurers only.
+    ---
+    Define un tipo de concepto facturable que puede aparecer como TariffLine.
+    Los conceptos de sistema (is_system=True, company=None) representan los
+    12 códigos internos que el motor de cálculo sabe manejar. Los conceptos
+    personalizados (is_system=False, company=FK) se definen por empresa y el
+    motor los trata como importe fijo o por hora — aparecen en el desplegable
+    de añadir línea únicamente para las aseguradoras de esa empresa.
+    """
+
+    # System concept codes — referenced by the calculation engine.
+    # Códigos de conceptos de sistema — referenciados por el motor de cálculo.
+    CODE_DEPARTURE       = "DEPARTURE"
+    CODE_SERVICE_LOCAL   = "SERVICE_LOCAL"
+    CODE_KM_NORMAL       = "KM_NORMAL"
+    CODE_KM_LONG         = "KM_LONG"
+    CODE_UNLOCK          = "UNLOCK"
+    CODE_RESCUE_HOUR     = "RESCUE_HOUR"
+    CODE_WAIT_HOUR       = "WAIT_HOUR"
+    CODE_WORKER_HOUR     = "WORKER_HOUR"
+    CODE_ASSISTANT_HOUR  = "ASSISTANT_HOUR"
+    CODE_CUSTODY_DAY     = "CUSTODY_DAY"
+    CODE_NYF_PERCENT     = "NYF_PERCENT"
+    CODE_LOADED_PERCENT  = "LOADED_PERCENT"
+
+    code = models.CharField(
+        max_length=50,
+        unique=True,
+        verbose_name="Código",
+        help_text=(
+            "Identificador interno del concepto. Único en todo el sistema. "
+            "Los conceptos de sistema usan mayúsculas (ej: DEPARTURE). "
+            "Los conceptos personalizados se generan automáticamente."
+        ),
+    )
+    label = models.CharField(
+        max_length=200,
+        verbose_name="Nombre visible",
+        help_text=(
+            "Texto mostrado en el desplegable al añadir una línea de tarifa "
+            "y en los documentos exportados."
+        ),
+    )
+    default_unit = models.CharField(
+        max_length=10,
+        verbose_name="Unidad por defecto",
+        help_text=(
+            "Tipo de unidad preseleccionado al crear una línea con este concepto. "
+            "El usuario puede cambiarlo."
+        ),
+    )
+    # True = built-in system concept. Protected from edit/delete via UI.
+    # True = concepto de sistema incorporado. Protegido de edición/borrado en UI.
+    is_system = models.BooleanField(
+        default=False,
+        verbose_name="Concepto de sistema",
+        help_text=(
+            "Si está activo, este concepto forma parte del catálogo base del motor "
+            "de cálculo y no puede editarse ni eliminarse desde el panel."
+        ),
+    )
+    # Null = global concept (system). FK = concept owned by a specific company.
+    # Null = concepto global (sistema). FK = concepto propio de una empresa concreta.
+    company = models.ForeignKey(
+        "ivr_config.Company",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="custom_tariff_concepts",
+        verbose_name="Empresa",
+        help_text=(
+            "Empresa propietaria de este concepto. "
+            "Nulo para conceptos de sistema accesibles a todas las empresas."
+        ),
+    )
+    sort_order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="Orden",
+        help_text="Posición en el desplegable. Menor número = aparece antes.",
+    )
+
+    class Meta:
+        verbose_name = "Concepto de tarifa"
+        verbose_name_plural = "Conceptos de tarifa"
+        ordering = ["sort_order", "label"]
+
+    def __str__(self):
+        scope = "Sistema" if self.company is None else self.company.name
+        return f"[{scope}] {self.label} ({self.code})"
+
+
+# ---------------------------------------------------------------------------
+# 5. TARIFF LINE — A single billable concept within a tariff.
 #    Un concepto facturable individual dentro de una tarifa.
 # ---------------------------------------------------------------------------
 
@@ -326,6 +429,9 @@ class TariffLine(models.Model):
     PERCENT unit lines with no vehicle_type — they apply to all vehicle types
     of the tariff. Optional fields (min_units, km_threshold) handle tariff
     particularities such as minimum rescue hours or long-distance km thresholds.
+
+    The concept field is a FK to TariffConcept. The calculation engine
+    references concepts by their code (concept.code), not by PK.
     ---
     Define un concepto facturable individual dentro de una tarifa de aseguradora.
     Cada concepto tiene un tipo de unidad (fijo, por km, por hora, por día, porcentaje)
@@ -333,37 +439,10 @@ class TariffLine(models.Model):
     líneas de tipo PERCENT sin vehicle_type — aplican a todos los tipos de vehículo
     de la tarifa. Los campos opcionales (min_units, km_threshold) gestionan
     particularidades como mínimos de horas de rescate o umbrales de largo recorrido.
+
+    El campo concept es un FK a TariffConcept. El motor de cálculo referencia
+    los conceptos por su code (concept.code), no por PK.
     """
-
-    # --- Concept codes ---
-    # --- Códigos de concepto ---
-    CONCEPT_DEPARTURE       = "DEPARTURE"        # Salida / Enganche
-    CONCEPT_SERVICE_LOCAL   = "SERVICE_LOCAL"     # Servicio local / Urbano (forfait sin km)
-    CONCEPT_KM_NORMAL       = "KM_NORMAL"         # Kilometro normal
-    CONCEPT_KM_LONG         = "KM_LONG"           # Kilometro largo recorrido (>umbral)
-    CONCEPT_UNLOCK          = "UNLOCK"            # Desbloqueo / enganche eslingas
-    CONCEPT_RESCUE_HOUR     = "RESCUE_HOUR"       # Hora de rescate / extraccion
-    CONCEPT_WAIT_HOUR       = "WAIT_HOUR"         # Hora de espera
-    CONCEPT_WORKER_HOUR     = "WORKER_HOUR"       # Hora de mano de obra mecanico
-    CONCEPT_ASSISTANT_HOUR  = "ASSISTANT_HOUR"    # Hora de ayudante
-    CONCEPT_CUSTODY_DAY     = "CUSTODY_DAY"       # Custodia por dia
-    CONCEPT_NYF_PERCENT     = "NYF_PERCENT"       # Recargo nocturno / festivo (%)
-    CONCEPT_LOADED_PERCENT  = "LOADED_PERCENT"    # Recargo vehiculo cargado (%)
-
-    CONCEPT_CHOICES = [
-        (CONCEPT_DEPARTURE,      "Salida / Enganche"),
-        (CONCEPT_SERVICE_LOCAL,  "Servicio local / Urbano"),
-        (CONCEPT_KM_NORMAL,      "Kilometro normal"),
-        (CONCEPT_KM_LONG,        "Kilometro largo recorrido"),
-        (CONCEPT_UNLOCK,         "Desbloqueo / Enganche eslingas"),
-        (CONCEPT_RESCUE_HOUR,    "Hora de rescate"),
-        (CONCEPT_WAIT_HOUR,      "Hora de espera"),
-        (CONCEPT_WORKER_HOUR,    "Hora de mano de obra"),
-        (CONCEPT_ASSISTANT_HOUR, "Hora de ayudante"),
-        (CONCEPT_CUSTODY_DAY,    "Custodia por dia"),
-        (CONCEPT_NYF_PERCENT,    "Recargo nocturno/festivo (%)"),
-        (CONCEPT_LOADED_PERCENT, "Recargo vehiculo cargado (%)"),
-    ]
 
     # --- Unit types ---
     # --- Tipos de unidad ---
@@ -403,11 +482,15 @@ class TariffLine(models.Model):
             "(recargos NYF, vehículo cargado, desbloqueo cuando es precio unico)."
         ),
     )
-    concept = models.CharField(
-        max_length=30,
-        choices=CONCEPT_CHOICES,
+    concept = models.ForeignKey(
+        TariffConcept,
+        on_delete=models.PROTECT,
+        related_name="tariff_lines",
         verbose_name="Concepto",
-        help_text="Tipo de concepto facturable que representa esta linea.",
+        help_text=(
+            "Tipo de concepto facturable que representa esta línea. "
+            "Selecciona un concepto del catálogo — sistema o personalizado de tu empresa."
+        ),
     )
     unit = models.CharField(
         max_length=10,
@@ -462,11 +545,11 @@ class TariffLine(models.Model):
     class Meta:
         verbose_name = "Linea de tarifa"
         verbose_name_plural = "Lineas de tarifa"
-        ordering = ["tariff", "vehicle_type__sort_order", "concept"]
+        ordering = ["tariff", "vehicle_type__sort_order", "concept__sort_order"]
 
     def __str__(self):
         vt = self.vehicle_type.name if self.vehicle_type else "General"
-        return f"{self.tariff} — {vt} — {self.get_concept_display()}"
+        return f"{self.tariff} — {vt} — {self.concept.label}"
 
 
 # ---------------------------------------------------------------------------
@@ -1122,10 +1205,15 @@ class SpecialRateLine(models.Model):
             "Null indica que aplica a todos los tipos (concepto genérico)."
         ),
     )
-    concept = models.CharField(
-        max_length=30,
+    concept = models.ForeignKey(
+        TariffConcept,
+        on_delete=models.PROTECT,
+        related_name="special_rate_lines",
         verbose_name="Concepto",
-        help_text="Código del concepto (DEPARTURE, KM_NORMAL, KM_LONG, SERVICE_LOCAL, etc.).",
+        help_text=(
+            "Tipo de concepto facturable que representa esta línea especial nocturno/festivo. "
+            "Referencia el mismo catálogo TariffConcept que TariffLine."
+        ),
     )
     unit = models.CharField(
         max_length=10,

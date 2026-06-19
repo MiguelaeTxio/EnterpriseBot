@@ -1,0 +1,145 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/tariff_concept_list.html #}
+{#                                                                                               #}
+{# Dedicated page for managing TariffConcept catalogue. ADMIN only.                             #}
+{# Shows system concepts (read-only) and custom company concepts (editable/deletable).          #}
+{#                                                                                               #}
+{# Página dedicada para gestionar el catálogo de TariffConcept. Solo ADMIN.                    #}
+{# Muestra conceptos de sistema (solo lectura) y personalizados (editables/eliminables).        #}
+{% extends "panel/base.html" %}
+
+{% block title %}Conceptos de tarifa{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-9">
+
+      {# ── Cabecera ─────────────────────────────────────────────────── #}
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <h4 class="mb-0">
+          <i class="bi bi-tag-fill me-2"></i>Conceptos de tarifa
+        </h4>
+      </div>
+
+      <p class="text-muted small mb-4">
+        Los conceptos de tarifa son los tipos de servicio facturables disponibles
+        en el desplegable al añadir líneas de tarifa. Los <strong>conceptos de sistema</strong>
+        son fijos y no pueden modificarse. Los <strong>conceptos personalizados</strong>
+        son propios de tu empresa y pueden editarse o eliminarse si no tienen líneas asociadas.
+      </p>
+
+      {# ── Conceptos de sistema — solo lectura ──────────────────────── #}
+      <div class="card mb-4">
+        <div class="card-header fw-semibold small">
+          <i class="bi bi-lock-fill me-2 text-secondary"></i>Conceptos de sistema
+          <span class="text-muted fw-normal ms-2">No editables</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3">Nombre</th>
+                <th>Código</th>
+                <th>Unidad por defecto</th>
+                <th class="text-end pe-3">Orden</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for concept in concepts %}
+              {% if concept.is_system %}
+              <tr>
+                <td class="ps-3 fw-semibold">{{ concept.label }}</td>
+                <td class="text-muted font-monospace small">{{ concept.code }}</td>
+                <td class="text-muted small">
+                  {% for val, label in unit_choices %}
+                    {% if val == concept.default_unit %}{{ label }}{% endif %}
+                  {% endfor %}
+                </td>
+                <td class="text-end pe-3 text-muted">{{ concept.sort_order }}</td>
+              </tr>
+              {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {# ── Conceptos personalizados ──────────────────────────────────── #}
+      <div class="card mb-4">
+        <div class="card-header fw-semibold small d-flex align-items-center justify-content-between">
+          <span><i class="bi bi-pencil-square me-2"></i>Conceptos personalizados</span>
+        </div>
+        <div id="custom-concept-list">
+          <table class="table table-sm small mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3">Nombre</th>
+                <th>Código</th>
+                <th>Unidad por defecto</th>
+                <th class="text-center">Orden</th>
+                <th class="text-end pe-3">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="custom-concept-tbody">
+              {% for concept in concepts %}
+              {% if not concept.is_system %}
+              {% include "budgets/partials/tariff_concept_row_fragment.html" %}
+              {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {# Formulario de nuevo concepto personalizado #}
+        <div class="border-top p-3">
+          <p class="small fw-semibold mb-3">
+            <i class="bi bi-plus-circle me-1"></i>Añadir concepto personalizado
+          </p>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+              <label for="newConceptLabel" class="form-label form-label-sm">
+                Nombre <span class="text-danger">*</span>
+              </label>
+              <input type="text" class="form-control form-control-sm" id="newConceptLabel"
+                     placeholder="Ej: Furgón taller, Servicio de taxi">
+            </div>
+            <div class="col-md-3">
+              <label for="newConceptUnit" class="form-label form-label-sm">
+                Unidad por defecto <span class="text-danger">*</span>
+              </label>
+              <select class="form-select form-select-sm" id="newConceptUnit">
+                {% for val, label in unit_choices %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label for="newConceptOrder" class="form-label form-label-sm">Orden</label>
+              <input type="number" class="form-control form-control-sm" id="newConceptOrder"
+                     min="0" value="100" placeholder="100">
+            </div>
+            <div class="col-md-2">
+              <button type="button"
+                      class="btn btn-sm btn-primary w-100"
+                      id="addConceptBtn"
+                      hx-post="{% url 'budgets:tariff_concept_create_global' %}"
+                      hx-include="#newConceptLabel, #newConceptUnit, #newConceptOrder"
+                      hx-target="#custom-concept-tbody"
+                      hx-swap="beforeend"
+                      hx-on::after-request="
+                        if(event.detail.successful){
+                          document.getElementById('newConceptLabel').value='';
+                          document.getElementById('newConceptOrder').value='100';
+                        }
+                      ">
+                <i class="bi bi-plus-lg me-1"></i>Añadir
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

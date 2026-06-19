@@ -222,6 +222,83 @@ urlpatterns = [
     ),
 
     # ---------------------------------------------------------------------------
+    # Vehicle type management routes — ADMIN only
+    # Rutas de gestión de tipos de vehículo — solo ADMIN
+    # ---------------------------------------------------------------------------
+
+    # Vehicle type create — HTMX POST, crea nuevo tipo de vehículo para la aseguradora.
+    # Vehicle type create — HTMX POST, creates new vehicle type for the insurer.
+    path(
+        "insurers/<int:pk>/vehicle-types/new/",
+        views.VehicleTypeCreateView.as_view(),
+        name="vehicle_type_create",
+    ),
+
+    # Vehicle type update — GET devuelve form inline; POST guarda y devuelve fila.
+    # Vehicle type update — GET returns inline form; POST saves and returns row.
+    path(
+        "vehicle-types/<int:pk>/edit/",
+        views.VehicleTypeUpdateView.as_view(),
+        name="vehicle_type_update",
+    ),
+
+    # Vehicle type toggle — HTMX POST, alterna is_active, devuelve fila.
+    # Vehicle type toggle — HTMX POST, toggles is_active, returns row fragment.
+    path(
+        "vehicle-types/<int:pk>/toggle/",
+        views.VehicleTypeToggleView.as_view(),
+        name="vehicle_type_toggle",
+    ),
+
+    # Vehicle type delete — HTMX POST con confirmación modal, elimina si es seguro.
+    # Vehicle type delete — HTMX POST with modal confirmation, deletes if safe.
+    path(
+        "vehicle-types/<int:pk>/delete/",
+        views.VehicleTypeDeleteView.as_view(),
+        name="vehicle_type_delete",
+    ),
+
+    # Tariff concept create — HTMX POST, crea nuevo concepto personalizado para la empresa.
+    # Tariff concept create — HTMX POST, creates new custom concept for the company.
+    path(
+        "insurers/<int:pk>/concepts/new/",
+        views.TariffConceptCreateView.as_view(),
+        name="tariff_concept_create",
+    ),
+
+    # Tariff concept create global — POST desde página de conceptos (sin insurer_pk).
+    # Tariff concept create global — POST from concept list page (no insurer_pk).
+    path(
+        "concepts/new/",
+        views.TariffConceptCreateGlobalView.as_view(),
+        name="tariff_concept_create_global",
+    ),
+
+    # Tariff concept list — página dedicada de gestión de conceptos. Solo ADMIN.
+    # Tariff concept list — dedicated concept management page. ADMIN only.
+    path(
+        "concepts/",
+        views.TariffConceptListView.as_view(),
+        name="tariff_concept_list",
+    ),
+
+    # Tariff concept update — GET form inline; POST guarda y devuelve fila.
+    # Tariff concept update — GET inline form; POST saves and returns row.
+    path(
+        "concepts/<int:pk>/edit/",
+        views.TariffConceptUpdateView.as_view(),
+        name="tariff_concept_update",
+    ),
+
+    # Tariff concept delete — HTMX POST, elimina si no tiene líneas asociadas.
+    # Tariff concept delete — HTMX POST, deletes if no associated lines.
+    path(
+        "concepts/<int:pk>/delete/",
+        views.TariffConceptDeleteView.as_view(),
+        name="tariff_concept_delete",
+    ),
+
+    # ---------------------------------------------------------------------------
     # Toll segment management routes — ADMIN only
     # Rutas de gestión de tramos de peaje — solo ADMIN
     # ---------------------------------------------------------------------------

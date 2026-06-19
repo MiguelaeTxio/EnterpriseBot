@@ -1,0 +1,26 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/vehicle_type_list_fragment.html #}
+{# HTMX fragment — updated vehicle type list for InsurerDetailView.                                             #}
+{# Fragmento HTMX — lista actualizada de tipos de vehículo para InsurerDetailView.                              #}
+<div id="vehicle-type-list">
+  {% if vehicle_types %}
+  <table class="table table-sm small mb-0 align-middle">
+    <thead class="table-light">
+      <tr>
+        <th class="ps-3">Nombre</th>
+        <th class="text-center">Orden</th>
+        <th class="text-center">Estado</th>
+        <th class="text-end pe-3">Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="vehicle-type-tbody">
+      {% for vt in vehicle_types %}
+      {% include "budgets/partials/vehicle_type_row_fragment.html" %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-muted small">
+    <i class="bi bi-info-circle me-1"></i>No hay tipos de vehículo registrados para esta aseguradora.
+  </div>
+  {% endif %}
+</div>

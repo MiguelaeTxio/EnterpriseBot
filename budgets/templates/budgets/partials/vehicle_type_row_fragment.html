@@ -1,0 +1,38 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/vehicle_type_row_fragment.html #}
+{# HTMX fragment — single vehicle type row.                                                                     #}
+{# Fragmento HTMX — fila individual de tipo de vehículo.                                                        #}
+<tr id="vt-row-{{ vt.pk }}">
+  <td class="ps-3 align-middle fw-semibold">{{ vt.name }}</td>
+  <td class="text-center align-middle text-muted small">{{ vt.sort_order }}</td>
+  <td class="text-center align-middle">
+    <button type="button"
+            class="btn btn-sm {% if vt.is_active %}btn-success{% else %}btn-secondary{% endif %} py-0 px-2"
+            hx-post="{% url 'budgets:vehicle_type_toggle' vt.pk %}"
+            hx-target="#vt-row-{{ vt.pk }}"
+            hx-swap="outerHTML"
+            title="{% if vt.is_active %}Desactivar{% else %}Activar{% endif %}">
+      {% if vt.is_active %}Activo{% else %}Inactivo{% endif %}
+    </button>
+  </td>
+  <td class="text-end pe-3 align-middle">
+    <div class="d-flex justify-content-end gap-1">
+      <button type="button"
+              class="btn btn-sm btn-outline-primary py-0 px-2"
+              hx-get="{% url 'budgets:vehicle_type_update' vt.pk %}"
+              hx-target="#vt-row-{{ vt.pk }}"
+              hx-swap="outerHTML"
+              title="Editar">
+        <i class="bi bi-pencil"></i>
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-danger py-0 px-2"
+              hx-post="{% url 'budgets:vehicle_type_delete' vt.pk %}"
+              hx-target="#vt-row-{{ vt.pk }}"
+              hx-swap="outerHTML"
+              hx-confirm="¿Eliminar el tipo de vehículo '{{ vt.name }}'? Esta acción no se puede deshacer."
+              title="Eliminar">
+        <i class="bi bi-trash"></i>
+      </button>
+    </div>
+  </td>
+</tr>

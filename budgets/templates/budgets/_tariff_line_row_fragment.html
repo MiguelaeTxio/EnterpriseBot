@@ -18,7 +18,7 @@
             hx-include="#tariff-line-{{ line.pk }} [name]"
             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
       {% for val, label in concept_choices %}
-      <option value="{{ val }}" {% if line.concept == val %}selected{% endif %}>{{ label }}</option>
+      <option value="{{ val }}" {% if line.concept.code == val %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
   </td>
@@ -92,3 +92,5 @@
     </button>
   </td>
 </tr>
+
+

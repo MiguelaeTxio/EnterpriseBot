@@ -1,0 +1,34 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/tariff_concept_row_fragment.html #}
+{# HTMX fragment — single custom TariffConcept row.                                                              #}
+{# Fragmento HTMX — fila individual de TariffConcept personalizado.                                              #}
+<tr id="concept-row-{{ concept.pk }}">
+  <td class="ps-3 align-middle fw-semibold">{{ concept.label }}</td>
+  <td class="align-middle text-muted font-monospace small">{{ concept.code }}</td>
+  <td class="align-middle text-muted small">
+    {% for val, label in unit_choices %}
+      {% if val == concept.default_unit %}{{ label }}{% endif %}
+    {% endfor %}
+  </td>
+  <td class="text-center align-middle text-muted small">{{ concept.sort_order }}</td>
+  <td class="text-end pe-3 align-middle">
+    <div class="d-flex justify-content-end gap-1">
+      <button type="button"
+              class="btn btn-sm btn-outline-primary py-0 px-2"
+              hx-get="{% url 'budgets:tariff_concept_update' concept.pk %}"
+              hx-target="#concept-row-{{ concept.pk }}"
+              hx-swap="outerHTML"
+              title="Editar">
+        <i class="bi bi-pencil"></i>
+      </button>
+      <button type="button"
+              class="btn btn-sm btn-outline-danger py-0 px-2"
+              hx-post="{% url 'budgets:tariff_concept_delete' concept.pk %}"
+              hx-target="#concept-row-{{ concept.pk }}"
+              hx-swap="outerHTML"
+              hx-confirm="¿Eliminar el concepto '{{ concept.label }}'? Esta acción no se puede deshacer."
+              title="Eliminar">
+        <i class="bi bi-trash"></i>
+      </button>
+    </div>
+  </td>
+</tr>

@@ -339,6 +339,46 @@
       </div>
       {% endif %}
 
+      {# ── Tipos de vehículo — solo lectura ─────────────────────────── #}
+      <div class="card mb-4">
+        <div class="card-header fw-semibold small d-flex align-items-center justify-content-between">
+          <span><i class="bi bi-truck me-2"></i>Tipos de vehículo</span>
+          <span class="text-muted fw-normal">{{ insurer.vehicle_types.count }} tipo(s)</span>
+        </div>
+        <div class="card-body p-0">
+          {% if insurer.vehicle_types.all %}
+          <table class="table table-sm small mb-0">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3">Nombre</th>
+                <th class="text-center">Orden</th>
+                <th class="pe-3">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for vt in insurer_vehicle_types %}
+              <tr>
+                <td class="ps-3 align-middle">{{ vt.name }}</td>
+                <td class="text-center align-middle text-muted">{{ vt.sort_order }}</td>
+                <td class="pe-3 align-middle">
+                  {% if vt.is_active %}
+                  <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
+                  {% else %}
+                  <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactivo</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="p-3 text-muted small">
+            <i class="bi bi-info-circle me-1"></i>No hay tipos de vehículo registrados para esta aseguradora.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
       {# ── Bases de servicio — solo lectura ──────────────────── #}
       {# La gestión completa de bases se realiza en la vista dedicada.     #}
       {# Read-only base list — full management available in dedicated view. #}
@@ -354,7 +394,7 @@
           </div>
         </div>
         <div class="card-body p-0">
-          {% if insurer.bases.all %}
+          {% if insurer_bases %}
           <table class="table table-sm small mb-0">
             <thead class="table-light">
               <tr>
@@ -366,21 +406,21 @@
               </tr>
             </thead>
             <tbody>
-              {% for base in insurer.bases.all %}
+              {% for ib in insurer_bases %}
               <tr>
-                <td class="ps-3 align-middle">{{ base.name }}</td>
-                <td class="align-middle">{{ base.municipality }}</td>
+                <td class="ps-3 align-middle">{{ ib.base.name }}</td>
+                <td class="align-middle">{{ ib.base.municipality }}</td>
                 <td class="align-middle text-muted">
-                  {% if base.latitude and base.longitude %}
+                  {% if ib.base.latitude and ib.base.longitude %}
                   <span class="badge bg-light text-dark border">
-                    {{ base.latitude }}, {{ base.longitude }}
+                    {{ ib.base.latitude }}, {{ ib.base.longitude }}
                   </span>
                   {% else %}
                   <span class="text-muted">—</span>
                   {% endif %}
                 </td>
                 <td class="align-middle">
-                  {% if base.calendar_synced_at %}
+                  {% if ib.base.calendar_synced_at %}
                   <span class="badge bg-success-subtle text-success border border-success-subtle">
                     <i class="bi bi-check2 me-1"></i>Sincronizado
                   </span>
@@ -391,7 +431,7 @@
                   {% endif %}
                 </td>
                 <td class="pe-3 align-middle">
-                  {% if base.is_active %}
+                  {% if ib.is_active %}
                   <span class="badge bg-success-subtle text-success border border-success-subtle">Activa</span>
                   {% else %}
                   <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactiva</span>
@@ -552,3 +592,4 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 {% endblock extra_scripts %}
 {% endblock %}
+

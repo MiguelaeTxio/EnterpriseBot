@@ -1,3 +1,4 @@
+
 """
 Budget calculation engine for the ASISTENCIA section.
 Applies insurer tariff lines to operator input data and produces
@@ -19,6 +20,7 @@ from budgets.models import (
     BudgetLine,
     InsurerTariff,
     SpecialRateTariff,
+    TariffConcept,
     TariffLine,
     VehicleType,
 )
@@ -84,13 +86,13 @@ def _get_tariff_lines(tariff: InsurerTariff, vehicle_type: VehicleType) -> dict:
 
     # Load generic lines first (surcharges, unlock if universal price).
     # Cargar primero las lineas genericas (recargos, desbloqueo si precio universal).
-    for line in tariff.lines.filter(vehicle_type__isnull=True):
-        lines[line.concept] = line
+    for line in tariff.lines.filter(vehicle_type__isnull=True).select_related("concept"):
+        lines[line.concept.code] = line
 
     # Override or add vehicle-specific lines.
     # Sobreescribir o anadir lineas especificas del tipo de vehiculo.
-    for line in tariff.lines.filter(vehicle_type=vehicle_type):
-        lines[line.concept] = line
+    for line in tariff.lines.filter(vehicle_type=vehicle_type).select_related("concept"):
+        lines[line.concept.code] = line
 
     return lines
 
@@ -116,10 +118,10 @@ def _get_special_rate_lines(
         return None
 
     lines = {}
-    for line in srt.lines.filter(vehicle_type__isnull=True):
-        lines[line.concept] = line
-    for line in srt.lines.filter(vehicle_type=vehicle_type):
-        lines[line.concept] = line
+    for line in srt.lines.filter(vehicle_type__isnull=True).select_related("concept"):
+        lines[line.concept.code] = line
+    for line in srt.lines.filter(vehicle_type=vehicle_type).select_related("concept"):
+        lines[line.concept.code] = line
     return lines
 
 
@@ -1271,8 +1273,8 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     # una linea SERVICE_LOCAL: aplicar el forfait (sin salida, sin km).
     # En caso contrario: aplicar DEPARTURE normalmente y calcular km.
     # ------------------------------------------------------------------
-    departure_line = active_lines_map.get(TariffLine.CONCEPT_DEPARTURE)
-    service_local_line = active_lines_map.get(TariffLine.CONCEPT_SERVICE_LOCAL)
+    departure_line = active_lines_map.get(TariffConcept.CODE_DEPARTURE)
+    service_local_line = active_lines_map.get(TariffConcept.CODE_SERVICE_LOCAL)
     km_total = Decimal(str(budget.km_total))
 
     # Determine whether this service qualifies as local (forfait).
@@ -1296,7 +1298,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         # Forfait: SERVICE_LOCAL sustituye tanto a DEPARTURE como a los km.
         num_units = Decimal("2") if budget.is_overnight else Decimal("1")
         base_total += _add_line(
-            TariffLine.CONCEPT_SERVICE_LOCAL,
+            TariffConcept.CODE_SERVICE_LOCAL,
             "Servicio local / Urbano",
             num_units,
             Decimal(str(service_local_line.price)),
@@ -1307,7 +1309,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         if departure_line:
             num_departures = Decimal("2") if budget.is_overnight else Decimal("1")
             base_total += _add_line(
-                TariffLine.CONCEPT_DEPARTURE,
+                TariffConcept.CODE_DEPARTURE,
                 "Salida / Enganche",
                 num_departures,
                 Decimal(str(departure_line.price)),
@@ -1318,8 +1320,8 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         # Select KM_NORMAL or KM_LONG based on km_total vs km_threshold.
         # Seleccionar KM_NORMAL o KM_LONG en funcion de km_total vs km_threshold.
         # ------------------------------------------------------------------
-        km_long_line = active_lines_map.get(TariffLine.CONCEPT_KM_LONG)
-        km_normal_line = active_lines_map.get(TariffLine.CONCEPT_KM_NORMAL)
+        km_long_line = active_lines_map.get(TariffConcept.CODE_KM_LONG)
+        km_normal_line = active_lines_map.get(TariffConcept.CODE_KM_NORMAL)
 
         km_line_to_use = None
         if km_long_line and km_long_line.km_threshold is not None:
@@ -1373,10 +1375,10 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     # Solo si has_unlock y la tarifa incluye una linea UNLOCK.
     # ------------------------------------------------------------------
     if budget.has_unlock:
-        unlock_line = active_lines_map.get(TariffLine.CONCEPT_UNLOCK)
+        unlock_line = active_lines_map.get(TariffConcept.CODE_UNLOCK)
         if unlock_line:
             base_total += _add_line(
-                TariffLine.CONCEPT_UNLOCK,
+                TariffConcept.CODE_UNLOCK,
                 "Desbloqueo / Enganche eslingas",
                 Decimal("1"),
                 Decimal(str(unlock_line.price)),
@@ -1390,11 +1392,11 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     # y la tarifa tiene una linea correspondiente.
     # ------------------------------------------------------------------
     optional_map = [
-        (budget.rescue_hours,   TariffLine.CONCEPT_RESCUE_HOUR,    "Hora de rescate"),
-        (budget.wait_hours,     TariffLine.CONCEPT_WAIT_HOUR,      "Hora de espera"),
-        (budget.worker_hours,   TariffLine.CONCEPT_WORKER_HOUR,    "Hora de mano de obra"),
-        (budget.assistant_hours, TariffLine.CONCEPT_ASSISTANT_HOUR, "Hora de ayudante"),
-        (budget.custody_days,   TariffLine.CONCEPT_CUSTODY_DAY,    "Custodia por dia"),
+        (budget.rescue_hours,   TariffConcept.CODE_RESCUE_HOUR,    "Hora de rescate"),
+        (budget.wait_hours,     TariffConcept.CODE_WAIT_HOUR,      "Hora de espera"),
+        (budget.worker_hours,   TariffConcept.CODE_WORKER_HOUR,    "Hora de mano de obra"),
+        (budget.assistant_hours, TariffConcept.CODE_ASSISTANT_HOUR, "Hora de ayudante"),
+        (budget.custody_days,   TariffConcept.CODE_CUSTODY_DAY,    "Custodia por dia"),
     ]
 
     for raw_value, concept_code, label in optional_map:
@@ -1429,8 +1431,8 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     nyf_percent = Decimal("0.00")
     loaded_percent = Decimal("0.00")
 
-    nyf_line = lines_map.get(TariffLine.CONCEPT_NYF_PERCENT)
-    loaded_line = lines_map.get(TariffLine.CONCEPT_LOADED_PERCENT)
+    nyf_line = lines_map.get(TariffConcept.CODE_NYF_PERCENT)
+    loaded_line = lines_map.get(TariffConcept.CODE_LOADED_PERCENT)
 
     # When using special night/holiday rates, skip the percentage surcharge.
     # The special tariff already prices night/holiday conditions directly.
@@ -1451,7 +1453,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
             surcharge_amount = _round2(base_total * nyf_percent / Decimal("100"))
             surcharge_total += surcharge_amount
             _add_line(
-                TariffLine.CONCEPT_NYF_PERCENT,
+                TariffConcept.CODE_NYF_PERCENT,
                 f"Recargo nocturno/festivo ({nyf_percent}%)",
                 base_total,
                 nyf_percent / Decimal("100"),
@@ -1461,7 +1463,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
             surcharge_amount = _round2(base_total * loaded_percent / Decimal("100"))
             surcharge_total += surcharge_amount
             _add_line(
-                TariffLine.CONCEPT_LOADED_PERCENT,
+                TariffConcept.CODE_LOADED_PERCENT,
                 f"Recargo vehiculo cargado ({loaded_percent}%)",
                 base_total,
                 loaded_percent / Decimal("100"),
@@ -1473,10 +1475,10 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         effective_percent = max(nyf_percent, loaded_percent)
         if effective_percent > 0:
             if effective_percent == nyf_percent:
-                code = TariffLine.CONCEPT_NYF_PERCENT
+                code = TariffConcept.CODE_NYF_PERCENT
                 label = f"Recargo nocturno/festivo ({effective_percent}%)"
             else:
-                code = TariffLine.CONCEPT_LOADED_PERCENT
+                code = TariffConcept.CODE_LOADED_PERCENT
                 label = f"Recargo vehiculo cargado ({effective_percent}%)"
             surcharge_amount = _round2(base_total * effective_percent / Decimal("100"))
             surcharge_total += surcharge_amount
