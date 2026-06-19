@@ -330,6 +330,7 @@ def _build_section_schedule_context(company) -> tuple[str, dict]:
         .filter(
             company=company,
             is_active=True,
+            ivr_transfer_enabled=True,
             call_flow__isnull=False,
             call_flow__is_active=True,
         )
@@ -420,6 +421,70 @@ def _build_section_schedule_context(company) -> tuple[str, dict]:
     )
 
     return "\n".join(schedule_lines), section_callflow_map
+
+
+# ---------------------------------------------------------------------------
+# BREAKDOWN SECTIONS CONTEXT / CONTEXTO DE SECCIONES DE AVERÍA INTERNA
+# ---------------------------------------------------------------------------
+
+def _build_breakdown_context(company) -> tuple[str, list[int]]:
+    """
+    Queries all active sections of the given company with
+    ivr_breakdown_enabled=True and assembles a human-readable Spanish
+    paragraph for injection into the system_instruction, together with
+    a list of their PKs for the Gemini function call handler.
+
+    Returns:
+        tuple[str, list[int]]: A 2-tuple of:
+            - breakdown_context (str): Multiline Spanish string describing
+              the breakdown-enabled sections, or empty string if none.
+            - breakdown_section_pks (list[int]): List of Section PKs with
+              ivr_breakdown_enabled=True.
+    ---
+    Consulta todas las secciones activas de la empresa con
+    ivr_breakdown_enabled=True y ensambla un párrafo legible en castellano
+    para inyección en el system_instruction, junto con la lista de sus PKs
+    para el handler de function call de Gemini.
+
+    Returns:
+        tuple[str, list[int]]: Una tupla de 2 elementos:
+            - breakdown_context (str): Cadena multilínea en castellano
+              describiendo las secciones habilitadas para avería, o cadena
+              vacía si no hay ninguna.
+            - breakdown_section_pks (list[int]): Lista de PKs de Section con
+              ivr_breakdown_enabled=True.
+    """
+    breakdown_sections = (
+        Section.objects
+        .filter(
+            company=company,
+            is_active=True,
+            ivr_breakdown_enabled=True,
+        )
+        .order_by('name')
+    )
+
+    if not breakdown_sections.exists():
+        return "", []
+
+    pks = list(breakdown_sections.values_list('pk', flat=True))
+    names = [s.name for s in breakdown_sections]
+
+    context = (
+        "AVERÍA INTERNA DE FLOTA:\n"
+        "Si el llamante reporta una avería en una máquina propia de la empresa "
+        "(grúa, camión, plataforma u otro vehículo de flota), NO realices ninguna "
+        "transferencia de llamada. En su lugar, sigue el flujo de captura de datos "
+        "de avería descrito en este system_instruction.\n"
+        f"Secciones de taller habilitadas para recepcionar averías internas: "
+        f"{', '.join(names)}."
+    )
+
+    logger.debug(
+        f"[CONFIG] Secciones con ivr_breakdown_enabled: {names}."
+    )
+
+    return context, pks
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +724,24 @@ def build_live_config(
         )
 
     # ------------------------------------------------------------------
+    # STEP 4B — Build Breakdown Context / Construir Contexto de Averías
+    # ------------------------------------------------------------------
+    # Queries sections with ivr_breakdown_enabled=True. The resulting
+    # context block is injected into the system_instruction so Gemini
+    # knows when to trigger the breakdown capture flow instead of
+    # attempting a transfer.
+    # Consulta secciones con ivr_breakdown_enabled=True. El bloque de
+    # contexto resultante se inyecta en el system_instruction para que
+    # Gemini sepa cuándo activar el flujo de captura de avería en lugar
+    # de intentar una transferencia.
+    breakdown_context, breakdown_section_pks = _build_breakdown_context(company)
+    if breakdown_context:
+        logger.info(
+            f"[CONFIG] Contexto de avería interna generado para '{company.name}' "
+            f"({len(breakdown_section_pks)} sección/es habilitada/s)."
+        )
+
+    # ------------------------------------------------------------------
     # STEP 5 — Build Presence Context / Construir Contexto de Presencia
     # ------------------------------------------------------------------
     presence_context = _build_presence_context(company)
@@ -701,6 +784,12 @@ def build_live_config(
             + schedule_context.strip()
         )
         logger.debug("[CONFIG] Bloque de contexto de horarios de secciones añadido.")
+
+    if breakdown_context.strip():
+        system_instruction_parts.append(
+            "\n\n" + breakdown_context.strip()
+        )
+        logger.debug("[CONFIG] Bloque de contexto de avería interna añadido.")
 
     if presence_context.strip():
         system_instruction_parts.append(

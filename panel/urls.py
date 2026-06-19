@@ -14,6 +14,9 @@ from panel.views import (
     PanelLoginView,
     PanelLogoutView,
     WorkerSignupView,
+    InboundCallLogListView,
+    InboundCallLogDetailView,
+    InboundCallLogDeleteView,
     PanelDashboardView,
     PresenceStatusUpdateView,
     CompanyUserListView,
@@ -381,4 +384,10 @@ urlpatterns = [
 
     # Export by template — Generación de Excel desde plantilla (Hito 19 / P6).
     path("work-orders/export-by-template/", WorkOrderAdminExportByTemplateView.as_view(), name="work_order_export_by_template"),
+
+    # Inbound call logs — Registro de llamadas IVR entrantes (H03).
+    path("ivr/call-logs/", InboundCallLogListView.as_view(), name="inbound_call_log_list"),
+    path("ivr/call-logs/<int:pk>/", InboundCallLogDetailView.as_view(), name="inbound_call_log_detail"),
+    path("ivr/call-logs/<int:pk>/delete/", InboundCallLogDeleteView.as_view(), name="inbound_call_log_delete"),
 ]
+

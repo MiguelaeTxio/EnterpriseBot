@@ -132,7 +132,7 @@ class SectionForm(forms.ModelForm):
 
     class Meta:
         model = Section
-        fields = ["name", "description", "contacts", "call_flow", "data_capture_set", "is_24h", "is_active", "is_broadcast_enabled", "workday_schedule"]
+        fields = ["name", "description", "contacts", "call_flow", "data_capture_set", "is_24h", "is_active", "is_broadcast_enabled", "ivr_transfer_enabled", "ivr_breakdown_enabled", "workday_schedule"]
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
@@ -142,6 +142,8 @@ class SectionForm(forms.ModelForm):
             "is_24h": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_broadcast_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "ivr_transfer_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "ivr_breakdown_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "workday_schedule": forms.Select(attrs={"class": "form-select"}),
         }
         labels = {
@@ -153,6 +155,8 @@ class SectionForm(forms.ModelForm):
             "is_24h": "Disponible 24 horas",
             "is_active": "Activa",
             "is_broadcast_enabled": "Habilitada para circulares WhatsApp",
+            "ivr_transfer_enabled": "Transferencia IVR habilitada",
+            "ivr_breakdown_enabled": "Avería interna IVR habilitada",
             "workday_schedule": "Horario de trabajo por defecto",
         }
 

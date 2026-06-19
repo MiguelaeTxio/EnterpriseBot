@@ -297,9 +297,11 @@ class BreakdownTicket(models.Model):
     # --- Origin choices ---------------------------------------------------
     ORIGIN_MANUAL  = "MANUAL"
     ORIGIN_CHATBOT = "CHATBOT"
+    ORIGIN_IVR     = "IVR"
     ORIGIN_CHOICES = [
         (ORIGIN_MANUAL,  "Manual"),
         (ORIGIN_CHATBOT, "Chatbot"),
+        (ORIGIN_IVR,     "IVR (llamada de voz)"),
     ]
 
     # --- ticket_date_code: YYYYMMDD-NN daily sequential per company. ------

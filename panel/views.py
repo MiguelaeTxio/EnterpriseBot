@@ -40,6 +40,7 @@ PhoneNumber ,
 CorporateVoiceProfile ,
 BlockedCaller ,
 DataCaptureSet ,
+InboundCallLog ,
 )
 from whatsapp .models import WhatsAppTemplate ,WhatsAppSession 
 from work_order_processor .models import WorkOrder ,WorkOrderEntry ,WorkOrderEntryLine 
@@ -4581,9 +4582,74 @@ class CompanySettingsView (AdminRoleRequiredMixin ,View ):
         django_messages .success (request ,"Configuración de empresa guardada correctamente.")
         return redirect ("panel:company_settings")
 
+# ---------------------------------------------------------------------------
+# InboundCallLog — Registro de llamadas IVR entrantes (H03)
+# ---------------------------------------------------------------------------
+
+class InboundCallLogListView(AdminRoleRequiredMixin, ListView):
+    """
+    Lists InboundCallLog records for the current company, newest first.
+    Allows filtering by call_type and outcome via GET params.
+    ---
+    Lista registros InboundCallLog de la empresa actual, más recientes primero.
+    Permite filtrar por call_type y outcome mediante parámetros GET.
+    """
+    model = InboundCallLog
+    template_name = "panel/ivr/inbound_call_log_list.html"
+    context_object_name = "logs"
+    paginate_by = 30
+
+    def get_queryset(self):
+        qs = (
+            InboundCallLog.objects
+            .filter(company=self.request.company)
+            .select_related("section", "breakdown_ticket")
+            .order_by("-started_at")
+        )
+        call_type = self.request.GET.get("call_type")
+        outcome = self.request.GET.get("outcome")
+        if call_type:
+            qs = qs.filter(call_type=call_type)
+        if outcome:
+            qs = qs.filter(outcome=outcome)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["type_choices"] = InboundCallLog.TYPE_CHOICES
+        ctx["outcome_choices"] = InboundCallLog.OUTCOME_CHOICES
+        ctx["selected_type"] = self.request.GET.get("call_type", "")
+        ctx["selected_outcome"] = self.request.GET.get("outcome", "")
+        return ctx
 
 
+class InboundCallLogDetailView(AdminRoleRequiredMixin, View):
+    """
+    Shows the detail of a single InboundCallLog record.
+    Read-only — no editing from the panel.
+    ---
+    Muestra el detalle de un registro InboundCallLog.
+    Solo lectura — sin edición desde el panel.
+    """
+    template_name = "panel/ivr/inbound_call_log_detail.html"
+
+    def get(self, request, pk):
+        from django.shortcuts import get_object_or_404
+        log = get_object_or_404(InboundCallLog, pk=pk, company=request.company)
+        return render(request, self.template_name, {"log": log})
 
 
+class InboundCallLogDeleteView(AdminRoleRequiredMixin, View):
+    """
+    Deletes a single InboundCallLog record (ADMIN only).
+    ---
+    Elimina un registro InboundCallLog (solo ADMIN).
+    """
 
-
+    def post(self, request, pk):
+        from django.shortcuts import get_object_or_404
+        from django.contrib import messages
+        log = get_object_or_404(InboundCallLog, pk=pk, company=request.company)
+        log.delete()
+        messages.success(request, "Registro de llamada eliminado.")
+        return redirect("panel:inbound_call_log_list")

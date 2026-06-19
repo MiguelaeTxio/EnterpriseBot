@@ -1,0 +1,138 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/ivr/inbound_call_log_list.html #}
+{#                                                                                                   #}
+{# Listado de registros de llamadas IVR entrantes — Hito 03 (H03).                                  #}
+{# Solo lectura con filtros por tipo y resultado. Acción de borrado disponible para ADMIN.           #}
+{% extends "panel/base.html" %}
+
+{% block title %}Registro de Llamadas IVR{% endblock %}
+{% block page_title %}Registro de Llamadas IVR{% endblock %}
+
+{% block content %}
+
+<style>
+#cl-table th { position: sticky; top: 0; background: var(--bs-light, #f8f9fa); z-index: 1; white-space: nowrap; }
+.type-BREAKDOWN { color: #dc3545; font-weight: 600; }
+.type-TRANSFER  { color: #0d6efd; }
+.type-INFO      { color: #198754; }
+.type-OTHER     { color: #6c757d; }
+.outcome-badge  { font-size: 0.7rem; }
+</style>
+
+<div class="px-3 pb-3">
+
+  {# ── Filtros ─────────────────────────────────────────────────── #}
+  <div class="card border mb-3">
+    <div class="card-body py-2 px-3">
+      <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+        <select name="call_type" class="form-select form-select-sm" style="width:auto">
+          <option value="">Todos los tipos</option>
+          {% for value, label in type_choices %}
+          <option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <select name="outcome" class="form-select form-select-sm" style="width:auto">
+          <option value="">Todos los resultados</option>
+          {% for value, label in outcome_choices %}
+          <option value="{{ value }}" {% if selected_outcome == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-funnel me-1"></i>Filtrar
+        </button>
+        {% if selected_type or selected_outcome %}
+        <a href="{% url 'panel:inbound_call_log_list' %}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-x me-1"></i>Limpiar
+        </a>
+        {% endif %}
+        <span class="text-muted small ms-auto">{{ page_obj.paginator.count }} registro{{ page_obj.paginator.count|pluralize }}</span>
+      </form>
+    </div>
+  </div>
+
+  {# ── Tabla ────────────────────────────────────────────────────── #}
+  {% if logs %}
+  <div class="table-responsive" style="max-height: calc(100vh - 240px); overflow-y: auto;">
+    <table class="table table-sm table-hover align-middle mb-0" id="cl-table">
+      <thead class="table-light">
+        <tr>
+          <th>Fecha</th>
+          <th>Número llamante</th>
+          <th>Nombre</th>
+          <th>Tipo</th>
+          <th>Resultado</th>
+          <th>Sección</th>
+          <th>Motivo</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="text-nowrap small">{{ log.started_at|date:"d/m/Y H:i" }}</td>
+          <td class="font-monospace small">{{ log.caller_number|default:"—" }}</td>
+          <td class="small">{{ log.caller_name|default:"—" }}</td>
+          <td class="small type-{{ log.call_type }}">{{ log.get_call_type_display }}</td>
+          <td>
+            {% if log.outcome == "TICKET_CREATED" %}
+              <span class="badge bg-danger outcome-badge">Ticket creado</span>
+            {% elif log.outcome == "TRANSFERRED" %}
+              <span class="badge bg-primary outcome-badge">Transferido</span>
+            {% elif log.outcome == "INFO_GIVEN" %}
+              <span class="badge bg-success outcome-badge">Información</span>
+            {% elif log.outcome == "ABANDONED" %}
+              <span class="badge bg-secondary outcome-badge">Abandonada</span>
+            {% else %}
+              <span class="badge bg-light text-dark outcome-badge">{{ log.get_outcome_display }}</span>
+            {% endif %}
+          </td>
+          <td class="small">{{ log.section.name|default:"—" }}</td>
+          <td class="small text-muted" style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            {{ log.call_reason|default:"—" }}
+          </td>
+          <td class="text-nowrap">
+            <a href="{% url 'panel:inbound_call_log_detail' pk=log.pk %}"
+               class="btn btn-xs btn-outline-primary py-0 px-1" style="font-size:0.75rem">
+              <i class="bi bi-eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Paginación ───────────────────────────────────────────────── #}
+  {% if is_paginated %}
+  <nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center mb-0">
+      {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_type %}&call_type={{ selected_type }}{% endif %}{% if selected_outcome %}&outcome={{ selected_outcome }}{% endif %}">
+          &laquo;
+        </a>
+      </li>
+      {% endif %}
+      <li class="page-item disabled">
+        <span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+      </li>
+      {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_type %}&call_type={{ selected_type }}{% endif %}{% if selected_outcome %}&outcome={{ selected_outcome }}{% endif %}">
+          &raquo;
+        </a>
+      </li>
+      {% endif %}
+    </ul>
+  </nav>
+  {% endif %}
+
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-telephone-x fs-2 d-block mb-2 opacity-50"></i>
+    <p class="mb-0">No hay registros de llamadas{% if selected_type or selected_outcome %} con los filtros aplicados{% endif %}.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}

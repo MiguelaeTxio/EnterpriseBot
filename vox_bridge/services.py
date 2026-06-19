@@ -53,6 +53,7 @@ import logging
 import math
 import os
 import struct
+import time
 
 from google import genai
 from google.genai import types
@@ -730,12 +731,186 @@ class VoiceOrchestrationService:
                                 "required": ["section_id", "captured_fields"],
                             },
                         ),
+                        # TOOL 4: report_breakdown — Avería interna de flota (H03)
+                        # María invoca esta función cuando ha recogido todos los
+                        # datos de la avería del chófer y ha recibido confirmación
+                        # expresa. Crea un BreakdownTicket en BD e invita al chófer
+                        # a enviar su ubicación por WhatsApp si no está en una base.
+                        # TOOL 4: report_breakdown — Internal fleet breakdown (H03)
+                        # María invokes this when all breakdown data has been collected
+                        # and the caller has confirmed. Creates a BreakdownTicket in DB.
+                        types.FunctionDeclaration(
+                            name="report_breakdown",
+                            description=(
+                                "Invoca esta función ÚNICAMENTE cuando el llamante haya "
+                                "confirmado expresamente todos los datos de la avería. "
+                                "No la invoques hasta tener: código de máquina, descripción "
+                                "de la avería y confirmación del llamante. "
+                                "Solo se invoca una vez por llamada."
+                            ),
+                            parameters={
+                                "type": "object",
+                                "properties": {
+                                    "machine_code": {
+                                        "type": "string",
+                                        "description": (
+                                            "Código de la máquina tal como lo ha indicado "
+                                            "el llamante (p. ej. 'G12', 'B43')."
+                                        ),
+                                    },
+                                    "fault_summary": {
+                                        "type": "string",
+                                        "description": (
+                                            "Descripción breve de la avería, en las palabras "
+                                            "del llamante."
+                                        ),
+                                    },
+                                    "fault_location": {
+                                        "type": "string",
+                                        "description": (
+                                            "Ubicación exacta de la avería en la máquina "
+                                            "(p. ej. 'rueda delantera lado conductor'). "
+                                            "Vacío si no se especificó."
+                                        ),
+                                    },
+                                    "urgency_inferred": {
+                                        "type": "string",
+                                        "enum": ["BAJA", "MEDIA", "ALTA", "CRITICA"],
+                                        "description": (
+                                            "Urgencia inferida por el agente según la "
+                                            "conversación. NUNCA preguntar directamente "
+                                            "al llamante — inferir de si la máquina puede "
+                                            "moverse, circular, tiene luces, etc."
+                                        ),
+                                    },
+                                    "caller_name": {
+                                        "type": "string",
+                                        "description": (
+                                            "Nombre del chófer o llamante, si se ha "
+                                            "identificado durante la conversación."
+                                        ),
+                                    },
+                                    "caller_phone_reported": {
+                                        "type": "string",
+                                        "description": (
+                                            "Teléfono de contacto facilitado verbalmente "
+                                            "por el llamante, si difiere del número de llamada "
+                                            "o si llamó desde un teléfono ajeno."
+                                        ),
+                                    },
+                                    "at_base": {
+                                        "type": "boolean",
+                                        "description": (
+                                            "True si el chófer ha confirmado estar en una "
+                                            "base conocida de la empresa."
+                                        ),
+                                    },
+                                    "base_name": {
+                                        "type": "string",
+                                        "description": (
+                                            "Nombre de la base si at_base=True. "
+                                            "Vacío en caso contrario."
+                                        ),
+                                    },
+                                },
+                                "required": [
+                                    "machine_code",
+                                    "fault_summary",
+                                    "urgency_inferred",
+                                    "at_base",
+                                ],
+                            },
+                        ),
+                        # TOOL 5: submit_call_summary — Resumen final de llamada (H03)
+                        # María invoca esta función al despedirse del llamante, siempre,
+                        # independientemente del resultado (ticket, transferencia, info).
+                        # Persiste un InboundCallLog con todos los datos capturados.
+                        # TOOL 5: submit_call_summary — End-of-call summary (H03)
+                        # María invokes this on farewell, always, regardless of outcome.
+                        # Persists an InboundCallLog with all captured data.
+                        types.FunctionDeclaration(
+                            name="submit_call_summary",
+                            description=(
+                                "Invoca esta función SIEMPRE al finalizar la llamada, "
+                                "justo antes de despedirte del llamante. "
+                                "Registra un resumen de la conversación en el sistema. "
+                                "Es obligatoria en todas las llamadas sin excepción."
+                            ),
+                            parameters={
+                                "type": "object",
+                                "properties": {
+                                    "caller_name": {
+                                        "type": "string",
+                                        "description": (
+                                            "Nombre del llamante si se identificó "
+                                            "durante la conversación. Vacío si no."
+                                        ),
+                                    },
+                                    "caller_phone_reported": {
+                                        "type": "string",
+                                        "description": (
+                                            "Teléfono facilitado verbalmente por el "
+                                            "llamante, si difiere del CLI o si llamó "
+                                            "desde teléfono ajeno. Vacío si no aplica."
+                                        ),
+                                    },
+                                    "call_reason": {
+                                        "type": "string",
+                                        "description": (
+                                            "Motivo principal de la llamada en una "
+                                            "frase breve."
+                                        ),
+                                    },
+                                    "call_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "BREAKDOWN",
+                                            "TRANSFER",
+                                            "INFO",
+                                            "OTHER",
+                                        ],
+                                        "description": (
+                                            "Tipo de llamada: BREAKDOWN si avería "
+                                            "interna de flota, TRANSFER si se "
+                                            "transfirió, INFO si solo informativa, "
+                                            "OTHER en cualquier otro caso."
+                                        ),
+                                    },
+                                    "outcome": {
+                                        "type": "string",
+                                        "enum": [
+                                            "TICKET_CREATED",
+                                            "TRANSFERRED",
+                                            "INFO_GIVEN",
+                                            "ABANDONED",
+                                            "OTHER",
+                                        ],
+                                        "description": "Resultado final de la llamada.",
+                                    },
+                                    "raw_summary": {
+                                        "type": "string",
+                                        "description": (
+                                            "Resumen libre de la conversación en 2-4 "
+                                            "frases: quién llamó, por qué, qué se "
+                                            "resolvió y cualquier dato relevante."
+                                        ),
+                                    },
+                                },
+                                "required": [
+                                    "call_reason",
+                                    "call_type",
+                                    "outcome",
+                                    "raw_summary",
+                                ],
+                            },
+                        ),
                     ]
                 )
             ]
             logger.info(
                 "[SESSION] Tools registradas: route_to_section, "
-                "transfer_to_section_contact, submit_captured_data."
+                "transfer_to_section_contact, submit_captured_data, "
+                "report_breakdown, submit_call_summary."
             )
         else:
             live_tools = None
@@ -1168,6 +1343,19 @@ class VoiceOrchestrationService:
                             await session.send_realtime_input(
                                 activity_start=types.ActivityStart()
                             )
+                            # LATENCY-P5: Timestamp when next caller turn starts.
+                            # Measures inter-turn gap: from Gemini turn_complete to next
+                            # caller speech. Confirms whether VAD thresholds add delay
+                            # before Gemini can start processing the next utterance.
+                            # LATENCIA-P5: Marca cuando el siguiente turno del llamante comienza.
+                            # Mide el intervalo entre turnos: desde turn_complete de Gemini
+                            # hasta la siguiente voz del llamante. Confirma si los umbrales VAD
+                            # añaden retardo antes de que Gemini pueda procesar el siguiente turno.
+                            _t_next_start = time.monotonic()
+                            logger.info(
+                                f"[LATENCY-P5] activity_start siguiente turno — "
+                                f"t={_t_next_start:.3f}s"
+                            )
                             logger.info("[GEMINI-TX] activity_start enviado correctamente.")
                         except Exception as as_exc:
                             logger.warning(
@@ -1191,7 +1379,19 @@ class VoiceOrchestrationService:
                             await session.send_realtime_input(
                                 activity_end=types.ActivityEnd()
                             )
-                            logger.info("[GEMINI-TX] activity_end enviado correctamente.")
+                            # LATENCY-P1: Timestamp when activity_end is sent.
+                            # Marks the end of the detected caller speech turn.
+                            # Also stored on self for cross-coroutine TTFT calculation (P2).
+                            # LATENCIA-P1: Marca de tiempo al enviar activity_end.
+                            # Marca el fin del turno de voz detectado del llamante.
+                            # Se almacena en self para el cálculo de TTFT entre corrutinas (P2).
+                            _t_activity_end = time.monotonic()
+                            self._t_last_activity_end = _t_activity_end
+                            self._t_first_audio_logged = False  # reset for next turn
+                            logger.info(
+                                "[LATENCY-P1] activity_end enviado — "
+                                f"t={_t_activity_end:.3f}s"
+                            )
                         except Exception as ae_exc:
                             logger.warning(
                                 f"[GEMINI-TX] Error al enviar activity_end: {ae_exc}"
@@ -1391,7 +1591,7 @@ class VoiceOrchestrationService:
                                         ).first()
                                         contact_obj = None
                                         if section_obj:
-                                            sc = section_obj.sectioncontact_set.order_by(
+                                            sc = section_obj.section_contacts.order_by(
                                                 "priority"
                                             ).select_related("contact").first()
                                             if sc:
@@ -1476,6 +1676,238 @@ class VoiceOrchestrationService:
                                         f"[PASO-7] Error al enviar tool_response "
                                         f"submit_captured_data: "
                                         f"{type(tr_cap_exc).__name__}: {tr_cap_exc}",
+                                        exc_info=True,
+                                    )
+
+                            elif fn_call.name == "report_breakdown":
+                                # --- Tool Call Handler: report_breakdown (H03) ---
+                                # Creates a BreakdownTicket in DB via ORM (same
+                                # process — no HTTP round-trip needed).
+                                # Crea un BreakdownTicket en BD vía ORM (mismo
+                                # proceso — sin round-trip HTTP necesario).
+                                _machine_code     = str(fn_call.args.get("machine_code", "")).strip()
+                                _fault_summary    = str(fn_call.args.get("fault_summary", "")).strip()
+                                _fault_location   = str(fn_call.args.get("fault_location", "")).strip()
+                                _urgency          = str(fn_call.args.get("urgency_inferred", "MEDIA")).strip()
+                                _caller_name      = str(fn_call.args.get("caller_name", "")).strip()
+                                _caller_phone     = str(fn_call.args.get("caller_phone_reported", "")).strip()
+                                _at_base          = bool(fn_call.args.get("at_base", False))
+                                _base_name        = str(fn_call.args.get("base_name", "")).strip()
+                                logger.info(
+                                    f"[H03-BREAKDOWN] tool_call report_breakdown recibido — "
+                                    f"máquina='{_machine_code}' | urgencia='{_urgency}' | "
+                                    f"at_base={_at_base}"
+                                )
+                                _breakdown_ticket_code = None
+                                try:
+                                    from asgiref.sync import sync_to_async as _s2a
+                                    from ivr_config.models import Section as _Sec
+                                    from chat.models import BreakdownTicket as _BT
+
+                                    # Map urgency string → BreakdownTicket urgency choices.
+                                    # Mapear cadena de urgencia → choices de BreakdownTicket.
+                                    _urgency_map = {
+                                        "BAJA":    _BT.URGENCY_LOW,
+                                        "MEDIA":   _BT.URGENCY_MEDIUM,
+                                        "ALTA":    _BT.URGENCY_HIGH,
+                                        "CRITICA": _BT.URGENCY_CRITICAL,
+                                    }
+                                    _urgency_val = _urgency_map.get(
+                                        _urgency.upper(), _BT.URGENCY_MEDIUM
+                                    )
+
+                                    def _create_breakdown():
+                                        # Resolve breakdown-enabled section for this company.
+                                        # Resolver la sección habilitada para averías de esta empresa.
+                                        from ivr_config.models import PhoneNumber as _PN
+                                        try:
+                                            _pn = _PN.objects.select_related("company").get(
+                                                number=self.twilio_number, is_active=True
+                                            )
+                                            _company = _pn.company
+                                        except Exception:
+                                            _company = None
+
+                                        _section = None
+                                        if _company:
+                                            _section = _Sec.objects.filter(
+                                                company=_company,
+                                                is_active=True,
+                                                ivr_breakdown_enabled=True,
+                                            ).first()
+
+                                        # Resolve MachineAsset from machine_code.
+                                        # Resolver MachineAsset desde machine_code.
+                                        _machine = None
+                                        try:
+                                            from fleet.models import MachineAsset as _MA
+                                            _machine = (
+                                                _MA.objects.filter(code__iexact=_machine_code).first()
+                                                or _MA.objects.filter(code__iexact=_machine_code.upper()).first()
+                                            )
+                                        except Exception as ma_exc:
+                                            logger.warning(
+                                                f"[H03-BREAKDOWN] No se pudo resolver "
+                                                f"MachineAsset '{_machine_code}': {ma_exc}"
+                                            )
+
+                                        # reported_by is FK to Contact — pass None for IVR calls
+                                        # (caller is not necessarily a registered Contact).
+                                        # Caller identity is captured in fault_summary prefix.
+                                        # reported_by es FK a Contact — pasar None para llamadas IVR
+                                        # (el llamante no es necesariamente un Contact registrado).
+                                        # La identidad del llamante se captura en el prefijo de fault_summary.
+                                        _caller_prefix = ""
+                                        if _caller_name:
+                                            _caller_prefix = f"[Chófer: {_caller_name}] "
+                                        elif self.caller_number:
+                                            _caller_prefix = f"[Tel: {self.caller_number}] "
+                                        ticket = _BT.objects.create(
+                                            section=_section,
+                                            machine=_machine,
+                                            machine_raw=_machine_code,
+                                            fault_summary=_caller_prefix + _fault_summary,
+                                            fault_location=_fault_location,
+                                            status=_BT.STATUS_OPEN,
+                                            origin=_BT.ORIGIN_IVR,
+                                            urgency=_urgency_val,
+                                            reported_by=None,
+                                        )
+                                        logger.info(
+                                            f"[H03-BREAKDOWN] BreakdownTicket creado — "
+                                            f"pk={ticket.pk} | "
+                                            f"code='{ticket.ticket_date_code}' | "
+                                            f"máquina='{_machine_code}' | "
+                                            f"sección={_section}"
+                                        )
+                                        return ticket
+
+                                    _ticket = await _s2a(_create_breakdown)()
+                                    _breakdown_ticket_code = _ticket.ticket_date_code
+
+                                except Exception as bd_exc:
+                                    logger.error(
+                                        f"[H03-BREAKDOWN] Error al crear BreakdownTicket: "
+                                        f"{type(bd_exc).__name__}: {bd_exc}",
+                                        exc_info=True,
+                                    )
+
+                                # Respond to Gemini with tool_response including ticket code.
+                                # Responder a Gemini con tool_response incluyendo el código del ticket.
+                                try:
+                                    await session.send_client_content(
+                                        turns=types.Content(
+                                            role="tool",
+                                            parts=[
+                                                types.Part(
+                                                    function_response=types.FunctionResponse(
+                                                        name="report_breakdown",
+                                                        response={
+                                                            "success": _breakdown_ticket_code is not None,
+                                                            "ticket_code": _breakdown_ticket_code or "",
+                                                            "location_needed": not _at_base,
+                                                        },
+                                                    )
+                                                )
+                                            ],
+                                        ),
+                                        turn_complete=True,
+                                    )
+                                    logger.info(
+                                        f"[H03-BREAKDOWN] tool_response report_breakdown "
+                                        f"enviado (ticket={_breakdown_ticket_code}, "
+                                        f"location_needed={not _at_base})."
+                                    )
+                                except Exception as tr_bd_exc:
+                                    logger.error(
+                                        f"[H03-BREAKDOWN] Error al enviar tool_response: "
+                                        f"{type(tr_bd_exc).__name__}: {tr_bd_exc}",
+                                        exc_info=True,
+                                    )
+
+                            elif fn_call.name == "submit_call_summary":
+                                # --- Tool Call Handler: submit_call_summary (H03) ---
+                                # Persists InboundCallLog at end of every call.
+                                # Persiste InboundCallLog al final de cada llamada.
+                                _cs_caller_name   = str(fn_call.args.get("caller_name", "")).strip()
+                                _cs_caller_phone  = str(fn_call.args.get("caller_phone_reported", "")).strip()
+                                _cs_call_reason   = str(fn_call.args.get("call_reason", "")).strip()
+                                _cs_call_type     = str(fn_call.args.get("call_type", "OTHER")).strip()
+                                _cs_outcome       = str(fn_call.args.get("outcome", "OTHER")).strip()
+                                _cs_raw_summary   = str(fn_call.args.get("raw_summary", "")).strip()
+                                logger.info(
+                                    f"[H03-SUMMARY] tool_call submit_call_summary — "
+                                    f"tipo='{_cs_call_type}' | outcome='{_cs_outcome}'"
+                                )
+                                try:
+                                    from asgiref.sync import sync_to_async as _s2a_cs
+                                    from ivr_config.models import InboundCallLog as _ICL
+                                    from ivr_config.models import Section as _SecCS
+
+                                    def _persist_summary():
+                                        from ivr_config.models import PhoneNumber as _PN2
+                                        _company2 = None
+                                        _section2 = None
+                                        try:
+                                            _pn2 = _PN2.objects.select_related("company").get(
+                                                number=self.twilio_number, is_active=True
+                                            )
+                                            _company2 = _pn2.company
+                                        except Exception:
+                                            pass
+
+                                        import django.utils.timezone as _tz
+                                        _ICL.objects.create(
+                                            company=_company2,
+                                            call_sid=getattr(self, "call_sid", ""),
+                                            twilio_number=self.twilio_number or "",
+                                            caller_number=self.caller_number or "",
+                                            started_at=getattr(self, "call_started_at", _tz.now()),
+                                            caller_name=_cs_caller_name,
+                                            caller_phone_reported=_cs_caller_phone,
+                                            call_reason=_cs_call_reason,
+                                            call_type=_cs_call_type,
+                                            outcome=_cs_outcome,
+                                            raw_summary=_cs_raw_summary,
+                                            section=_section2,
+                                        )
+                                        logger.info(
+                                            f"[H03-SUMMARY] InboundCallLog creado — "
+                                            f"caller='{_cs_caller_name or self.caller_number}' | "
+                                            f"tipo='{_cs_call_type}' | outcome='{_cs_outcome}'"
+                                        )
+
+                                    await _s2a_cs(_persist_summary)()
+
+                                except Exception as cs_exc:
+                                    logger.error(
+                                        f"[H03-SUMMARY] Error al crear InboundCallLog: "
+                                        f"{type(cs_exc).__name__}: {cs_exc}",
+                                        exc_info=True,
+                                    )
+
+                                # Respond to Gemini so it can proceed with farewell.
+                                # Responder a Gemini para que pueda continuar con la despedida.
+                                try:
+                                    await session.send_client_content(
+                                        turns=types.Content(
+                                            role="tool",
+                                            parts=[
+                                                types.Part(
+                                                    function_response=types.FunctionResponse(
+                                                        name="submit_call_summary",
+                                                        response={"success": True},
+                                                    )
+                                                )
+                                            ],
+                                        ),
+                                        turn_complete=True,
+                                    )
+                                    logger.info("[H03-SUMMARY] tool_response submit_call_summary enviado.")
+                                except Exception as cs_tr_exc:
+                                    logger.error(
+                                        f"[H03-SUMMARY] Error al enviar tool_response: "
+                                        f"{type(cs_tr_exc).__name__}: {cs_tr_exc}",
                                         exc_info=True,
                                     )
 
@@ -1582,6 +2014,28 @@ class VoiceOrchestrationService:
                             # Deben transcodificarse a mu-law 8kHz antes de enviarlos
                             # de vuelta a Twilio.
                             pcm_24khz_bytes = part.inline_data.data
+                            # LATENCY-P2: Timestamp of first audio chunk from Gemini.
+                            # Measures TTFT (Time To First Token) from activity_end to
+                            # first audio byte. Calculated only on the first chunk per turn.
+                            # LATENCIA-P2: Marca del primer chunk de audio de Gemini.
+                            # Mide TTFT desde activity_end hasta el primer byte de audio.
+                            # Se calcula solo en el primer chunk de cada turno.
+                            if not getattr(self, '_t_first_audio_logged', False):
+                                _t_first_audio = time.monotonic()
+                                _t_activity_end_ref = getattr(self, '_t_last_activity_end', None)
+                                if _t_activity_end_ref:
+                                    logger.info(
+                                        f"[LATENCY-P2] Primer chunk PCM de Gemini recibido — "
+                                        f"t={_t_first_audio:.3f}s | "
+                                        f"TTFT desde activity_end: "
+                                        f"{_t_first_audio - _t_activity_end_ref:.3f}s"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"[LATENCY-P2] Primer chunk PCM de Gemini recibido — "
+                                        f"t={_t_first_audio:.3f}s (sin ref activity_end)"
+                                    )
+                                self._t_first_audio_logged = True
                             await self.audio_output_queue.put(pcm_24khz_bytes)
                             logger.debug(
                                 f"[GEMINI-RX] Fragmento de audio recibido de Gemini: "
@@ -1608,6 +2062,25 @@ class VoiceOrchestrationService:
                     # Fuente: referencia Live API Vertex AI + foro Google AI
                     # Developers patrón 'Turn 1 works, Turn 2 dies', 2026-04-05.
                     if response.server_content and response.server_content.turn_complete:
+                        # LATENCY-P4: Timestamp at turn_complete — total Gemini turn duration.
+                        # LATENCIA-P4: Marca en turn_complete — duración total del turno Gemini.
+                        _t_turn_complete = time.monotonic()
+                        _t_activity_end_ref = getattr(self, '_t_last_activity_end', None)
+                        if _t_activity_end_ref:
+                            logger.info(
+                                f"[LATENCY-P4] turn_complete de Gemini recibido — "
+                                f"t={_t_turn_complete:.3f}s | "
+                                f"Duración total del turno desde activity_end: "
+                                f"{_t_turn_complete - _t_activity_end_ref:.3f}s"
+                            )
+                        else:
+                            logger.info(
+                                f"[LATENCY-P4] turn_complete de Gemini recibido — "
+                                f"t={_t_turn_complete:.3f}s (sin ref activity_end)"
+                            )
+                        # Reset per-turn flags for the next turn.
+                        # Reiniciar flags de turno para el siguiente turno.
+                        self._t_first_twilio_logged = False
                         logger.info("[GEMINI-RX] Turno de Gemini completado. "
                                     "Enviando audioStreamEnd para flush del VAD...")
                         try:
@@ -1678,6 +2151,27 @@ class VoiceOrchestrationService:
                 # Transcode PCM 24kHz → mu-law 8kHz for Twilio compatibility.
                 # Transcodificar PCM 24kHz → mu-law 8kHz para compatibilidad con Twilio.
                 mulaw_chunk = self._transcode_pcm24k_to_mulaw(pcm_24khz_chunk)
+
+                # LATENCY-P3: Timestamp of first mu-law chunk sent to Twilio.
+                # Measures output pipeline delay: queue wait + transcode time.
+                # LATENCIA-P3: Marca del primer chunk mu-law enviado a Twilio.
+                # Mide la latencia del pipeline de salida: espera en cola + transcodificación.
+                if not getattr(self, '_t_first_twilio_logged', False):
+                    _t_first_twilio = time.monotonic()
+                    _t_activity_end_ref = getattr(self, '_t_last_activity_end', None)
+                    if _t_activity_end_ref:
+                        logger.info(
+                            f"[LATENCY-P3] Primer chunk mu-law enviado a Twilio — "
+                            f"t={_t_first_twilio:.3f}s | "
+                            f"Latencia total desde activity_end: "
+                            f"{_t_first_twilio - _t_activity_end_ref:.3f}s"
+                        )
+                    else:
+                        logger.info(
+                            f"[LATENCY-P3] Primer chunk mu-law enviado a Twilio — "
+                            f"t={_t_first_twilio:.3f}s (sin ref activity_end)"
+                        )
+                    self._t_first_twilio_logged = True
 
                 # Encode the mu-law bytes as base64 for the Twilio JSON payload.
                 # Codificar los bytes mu-law como base64 para el payload JSON de Twilio.

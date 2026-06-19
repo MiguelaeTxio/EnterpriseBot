@@ -673,6 +673,29 @@ class Section(models.Model):
             "Solo las secciones habilitadas aparecen en el selector del bot."
         ),
     )
+    # IVR channel flags — control how this section participates in voice calls.
+    # Flags de canal IVR — controlan cómo participa esta sección en las llamadas de voz.
+    ivr_transfer_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Transferencia IVR habilitada",
+        help_text=(
+            "Si está activo, esta sección aparece en el section_callflow_map y "
+            "María puede transferir llamadas a sus contactos. "
+            "Desactivar para secciones que gestionan averías internas o que no "
+            "deben recibir transferencias de voz (p. ej. Taller Mecánico)."
+        ),
+    )
+    ivr_breakdown_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Avería interna IVR habilitada",
+        help_text=(
+            "Si está activo, cuando Gemini detecta que el llamante reporta una "
+            "avería interna de flota, la conversación sigue el flujo de captura "
+            "de datos para crear un BreakdownTicket vinculado a esta sección. "
+            "No implica transferencia de llamada — el ticket se crea en BD y se "
+            "notifica al taller por WhatsApp. Activar solo en secciones de taller."
+        ),
+    )
     workday_schedule = models.ForeignKey(
         "WorkdaySchedule",
         null=True,
@@ -2329,7 +2352,191 @@ class AbsenceCategory(models.Model):
 
 
 # ---------------------------------------------------------------------------
-# 20. WORKSHOP FAMILY MAPPING — Catalogue-family → workshop-family routing.
+# 20. INBOUND CALL LOG — Record of every inbound IVR call and its outcome.
+#     Registro de cada llamada entrante al IVR y su resultado.
+# ---------------------------------------------------------------------------
+
+class InboundCallLog(models.Model):
+    """
+    Persists a structured record of every inbound call handled by the IVR
+    agent (María). Captures technical identifiers (Twilio SIDs), caller data
+    inferred by Gemini during the conversation, the call type, the associated
+    section and, when applicable, the BreakdownTicket created.
+
+    Created by the submit_call_summary Gemini function call at the end of
+    every conversation, regardless of outcome (ticket, transfer, info, etc.).
+
+    Read-only from the panel — no creation or editing from the UI.
+    Only deletion is permitted (ADMIN role only).
+    ---
+    Persiste un registro estructurado de cada llamada entrante gestionada por
+    el agente IVR (María). Captura identificadores técnicos (SIDs de Twilio),
+    datos del llamante inferidos por Gemini durante la conversación, el tipo
+    de llamada, la sección asociada y, cuando aplica, el BreakdownTicket creado.
+
+    Creado por la function call submit_call_summary de Gemini al final de cada
+    conversación, independientemente del resultado (ticket, transferencia,
+    información, etc.).
+
+    Solo lectura desde el panel — sin creación ni edición desde la UI.
+    Solo se permite el borrado (exclusivamente rol ADMIN).
+    """
+
+    # ── Call type choices ────────────────────────────────────────────────────
+    TYPE_BREAKDOWN  = "BREAKDOWN"   # Internal fleet breakdown → BreakdownTicket
+    TYPE_TRANSFER   = "TRANSFER"    # Transfer to section contact
+    TYPE_INFO       = "INFO"        # Informational only (schedules, services)
+    TYPE_OTHER      = "OTHER"       # Ambiguous or unclassified
+    TYPE_CHOICES = [
+        (TYPE_BREAKDOWN, "Avería interna"),
+        (TYPE_TRANSFER,  "Transferencia"),
+        (TYPE_INFO,      "Información"),
+        (TYPE_OTHER,     "Otro"),
+    ]
+
+    # ── Outcome choices ──────────────────────────────────────────────────────
+    OUTCOME_TICKET_CREATED = "TICKET_CREATED"
+    OUTCOME_TRANSFERRED    = "TRANSFERRED"
+    OUTCOME_INFO_GIVEN     = "INFO_GIVEN"
+    OUTCOME_ABANDONED      = "ABANDONED"
+    OUTCOME_OTHER          = "OTHER"
+    OUTCOME_CHOICES = [
+        (OUTCOME_TICKET_CREATED, "Ticket creado"),
+        (OUTCOME_TRANSFERRED,    "Transferido"),
+        (OUTCOME_INFO_GIVEN,     "Información facilitada"),
+        (OUTCOME_ABANDONED,      "Llamada abandonada"),
+        (OUTCOME_OTHER,          "Otro"),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="inbound_call_logs",
+        verbose_name="Empresa",
+        help_text="Empresa que recibió la llamada.",
+    )
+    # ── Technical identifiers ────────────────────────────────────────────────
+    call_sid = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Call SID",
+        help_text="Identificador único de llamada Twilio (CA...).",
+    )
+    twilio_number = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Número Twilio",
+        help_text="Número E.164 de Twilio que recibió la llamada.",
+    )
+    caller_number = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Número llamante (CLI)",
+        help_text=(
+            "Número E.164 del llamante capturado por Twilio (CLI). "
+            "Puede no coincidir con el número real del chófer si llamó "
+            "desde un teléfono ajeno."
+        ),
+    )
+    started_at = models.DateTimeField(
+        verbose_name="Inicio de llamada",
+        help_text="Momento en que Twilio conectó la llamada al bridge.",
+    )
+    ended_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fin de llamada",
+        help_text="Momento en que la sesión Gemini Live finalizó.",
+    )
+    # ── Caller data inferred by Gemini ───────────────────────────────────────
+    caller_name = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Nombre del llamante",
+        help_text="Nombre y apellidos inferidos por Gemini durante la conversación.",
+    )
+    caller_phone_reported = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Teléfono facilitado por el llamante",
+        help_text=(
+            "Número de teléfono que el llamante indicó verbalmente, si difiere "
+            "del CLI o si llamó desde un teléfono ajeno."
+        ),
+    )
+    call_reason = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Motivo de la llamada",
+        help_text="Resumen breve del motivo inferido por Gemini.",
+    )
+    # ── Classification ───────────────────────────────────────────────────────
+    call_type = models.CharField(
+        max_length=20,
+        choices=TYPE_CHOICES,
+        default=TYPE_OTHER,
+        verbose_name="Tipo de llamada",
+        help_text="Clasificación del tipo de llamada inferida por Gemini.",
+    )
+    outcome = models.CharField(
+        max_length=20,
+        choices=OUTCOME_CHOICES,
+        default=OUTCOME_OTHER,
+        verbose_name="Resultado",
+        help_text="Resultado final de la llamada.",
+    )
+    # ── Related objects ──────────────────────────────────────────────────────
+    section = models.ForeignKey(
+        "Section",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_call_logs",
+        verbose_name="Sección",
+        help_text="Sección identificada por Gemini como destino de la llamada.",
+    )
+    breakdown_ticket = models.ForeignKey(
+        "chat.BreakdownTicket",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_call_logs",
+        verbose_name="Ticket de avería",
+        help_text="Ticket de avería creado durante esta llamada, si aplica.",
+    )
+    # ── Free-form summary ────────────────────────────────────────────────────
+    raw_summary = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Resumen de la conversación",
+        help_text=(
+            "Resumen libre generado por Gemini al final de la conversación. "
+            "Incluye todos los datos capturados y el resultado de la llamada."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+
+    class Meta:
+        verbose_name = "Registro de llamada entrante"
+        verbose_name_plural = "Registros de llamadas entrantes"
+        ordering = ["-started_at"]
+
+    def __str__(self) -> str:
+        name = self.caller_name or self.caller_number or "Desconocido"
+        return f"{self.company.name} — {name} — {self.started_at:%d/%m/%Y %H:%M}"
+
+
+# ---------------------------------------------------------------------------
+# 21. WORKSHOP FAMILY MAPPING — Catalogue-family → workshop-family routing.
 #     Mapeo de familia de catálogo a familia de taller para routing automático.
 # ---------------------------------------------------------------------------
 

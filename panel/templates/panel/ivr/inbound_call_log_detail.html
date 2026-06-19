@@ -1,0 +1,157 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/ivr/inbound_call_log_detail.html #}
+{#                                                                                                     #}
+{# Detalle de un registro de llamada IVR entrante — Hito 03 (H03).                                    #}
+{# Solo lectura. Permite borrado desde botón ADMIN.                                                    #}
+{% extends "panel/base.html" %}
+
+{% block title %}Llamada IVR — {{ log.started_at|date:"d/m/Y H:i" }}{% endblock %}
+{% block page_title %}Detalle de llamada IVR{% endblock %}
+
+{% block content %}
+
+<div class="px-3 pb-3" style="max-width: 720px;">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <a href="{% url 'panel:inbound_call_log_list' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Volver al listado
+    </a>
+    {% if company_user.role == "ADMIN" %}
+    <form method="post" action="{% url 'panel:inbound_call_log_delete' pk=log.pk %}"
+          onsubmit="return confirm('¿Eliminar este registro de llamada? Esta acción no se puede deshacer.');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-trash me-1"></i>Eliminar
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  {# ── Identificación técnica ───────────────────────────────────── #}
+  <div class="card border mb-3">
+    <div class="card-header py-2 px-3 bg-light">
+      <span class="fw-semibold small"><i class="bi bi-telephone me-2 text-primary"></i>Identificación técnica</span>
+    </div>
+    <div class="card-body p-3">
+      <dl class="row mb-0 small">
+        <dt class="col-sm-4 text-muted">Fecha y hora</dt>
+        <dd class="col-sm-8">{{ log.started_at|date:"d/m/Y H:i:s" }}</dd>
+
+        <dt class="col-sm-4 text-muted">Duración</dt>
+        <dd class="col-sm-8">
+          {% if log.ended_at %}
+            {{ log.ended_at|timeuntil:log.started_at }}
+          {% else %}
+            —
+          {% endif %}
+        </dd>
+
+        <dt class="col-sm-4 text-muted">Número Twilio</dt>
+        <dd class="col-sm-8 font-monospace">{{ log.twilio_number|default:"—" }}</dd>
+
+        <dt class="col-sm-4 text-muted">Número llamante (CLI)</dt>
+        <dd class="col-sm-8 font-monospace">{{ log.caller_number|default:"—" }}</dd>
+
+        <dt class="col-sm-4 text-muted">Call SID</dt>
+        <dd class="col-sm-8 font-monospace text-muted" style="font-size:0.75rem">{{ log.call_sid|default:"—" }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  {# ── Datos del llamante ───────────────────────────────────────── #}
+  <div class="card border mb-3">
+    <div class="card-header py-2 px-3 bg-light">
+      <span class="fw-semibold small"><i class="bi bi-person me-2 text-primary"></i>Datos del llamante</span>
+    </div>
+    <div class="card-body p-3">
+      <dl class="row mb-0 small">
+        <dt class="col-sm-4 text-muted">Nombre</dt>
+        <dd class="col-sm-8">{{ log.caller_name|default:"—" }}</dd>
+
+        <dt class="col-sm-4 text-muted">Teléfono facilitado</dt>
+        <dd class="col-sm-8 font-monospace">{{ log.caller_phone_reported|default:"—" }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  {# ── Clasificación ────────────────────────────────────────────── #}
+  <div class="card border mb-3">
+    <div class="card-header py-2 px-3 bg-light">
+      <span class="fw-semibold small"><i class="bi bi-tag me-2 text-primary"></i>Clasificación</span>
+    </div>
+    <div class="card-body p-3">
+      <dl class="row mb-0 small">
+        <dt class="col-sm-4 text-muted">Tipo de llamada</dt>
+        <dd class="col-sm-8">
+          <span class="fw-semibold
+            {% if log.call_type == 'BREAKDOWN' %}text-danger
+            {% elif log.call_type == 'TRANSFER' %}text-primary
+            {% elif log.call_type == 'INFO' %}text-success
+            {% else %}text-muted{% endif %}">
+            {{ log.get_call_type_display }}
+          </span>
+        </dd>
+
+        <dt class="col-sm-4 text-muted">Resultado</dt>
+        <dd class="col-sm-8">
+          {% if log.outcome == "TICKET_CREATED" %}
+            <span class="badge bg-danger">Ticket creado</span>
+          {% elif log.outcome == "TRANSFERRED" %}
+            <span class="badge bg-primary">Transferido</span>
+          {% elif log.outcome == "INFO_GIVEN" %}
+            <span class="badge bg-success">Información facilitada</span>
+          {% elif log.outcome == "ABANDONED" %}
+            <span class="badge bg-secondary">Llamada abandonada</span>
+          {% else %}
+            <span class="badge bg-light text-dark">{{ log.get_outcome_display }}</span>
+          {% endif %}
+        </dd>
+
+        <dt class="col-sm-4 text-muted">Sección</dt>
+        <dd class="col-sm-8">{{ log.section.name|default:"—" }}</dd>
+
+        <dt class="col-sm-4 text-muted">Motivo</dt>
+        <dd class="col-sm-8">{{ log.call_reason|default:"—" }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  {# ── Ticket de avería ─────────────────────────────────────────── #}
+  {% if log.breakdown_ticket %}
+  <div class="card border mb-3 border-danger-subtle">
+    <div class="card-header py-2 px-3 bg-danger bg-opacity-10">
+      <span class="fw-semibold small text-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>Ticket de avería vinculado
+      </span>
+    </div>
+    <div class="card-body p-3">
+      <dl class="row mb-0 small">
+        <dt class="col-sm-4 text-muted">Código</dt>
+        <dd class="col-sm-8 font-monospace">
+          <a href="{% url 'panel:breakdown_ticket_detail' pk=log.breakdown_ticket.pk %}">
+            {{ log.breakdown_ticket.ticket_date_code|default:"—" }}
+          </a>
+        </dd>
+        <dt class="col-sm-4 text-muted">Máquina</dt>
+        <dd class="col-sm-8">{{ log.breakdown_ticket.machine_raw|default:"—" }}</dd>
+        <dt class="col-sm-4 text-muted">Descripción</dt>
+        <dd class="col-sm-8">{{ log.breakdown_ticket.fault_summary|default:"—" }}</dd>
+      </dl>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Resumen de conversación ──────────────────────────────────── #}
+  {% if log.raw_summary %}
+  <div class="card border mb-3">
+    <div class="card-header py-2 px-3 bg-light">
+      <span class="fw-semibold small"><i class="bi bi-chat-text me-2 text-primary"></i>Resumen de la conversación</span>
+    </div>
+    <div class="card-body p-3">
+      <p class="mb-0 small" style="white-space: pre-wrap;">{{ log.raw_summary }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}
