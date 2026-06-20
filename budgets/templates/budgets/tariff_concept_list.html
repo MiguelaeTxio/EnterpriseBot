@@ -1,3 +1,4 @@
+
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/tariff_concept_list.html #}
 {#                                                                                               #}
 {# Dedicated page for managing TariffConcept catalogue. ADMIN only.                             #}
@@ -101,13 +102,13 @@
                 Nombre <span class="text-danger">*</span>
               </label>
               <input type="text" class="form-control form-control-sm" id="newConceptLabel"
-                     placeholder="Ej: Furgón taller, Servicio de taxi">
+                     name="label" placeholder="Ej: Furgón taller, Servicio de taxi">
             </div>
             <div class="col-md-3">
               <label for="newConceptUnit" class="form-label form-label-sm">
                 Unidad por defecto <span class="text-danger">*</span>
               </label>
-              <select class="form-select form-select-sm" id="newConceptUnit">
+              <select class="form-select form-select-sm" id="newConceptUnit" name="default_unit">
                 {% for val, label in unit_choices %}
                 <option value="{{ val }}">{{ label }}</option>
                 {% endfor %}
@@ -116,7 +117,7 @@
             <div class="col-md-2">
               <label for="newConceptOrder" class="form-label form-label-sm">Orden</label>
               <input type="number" class="form-control form-control-sm" id="newConceptOrder"
-                     min="0" value="100" placeholder="100">
+                     name="sort_order" min="0" value="100" placeholder="100">
             </div>
             <div class="col-md-2">
               <button type="button"
@@ -143,3 +144,5 @@
   </div>
 </div>
 {% endblock %}
+
+

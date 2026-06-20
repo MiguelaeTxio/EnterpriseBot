@@ -13,9 +13,9 @@
   </div>
   <div class="card-body py-2">
     <form hx-post="{% url 'budgets:tariff_line_add' tariff.pk %}"
-          hx-target="#new-line-row"
-          hx-swap="innerHTML"
-          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+          hx-swap="none"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+          hx-on::after-request="if(event.detail.successful){ window.location.reload(); }">
       {% csrf_token %}
       <div class="row g-2 align-items-end">
         <div class="col-md-3">

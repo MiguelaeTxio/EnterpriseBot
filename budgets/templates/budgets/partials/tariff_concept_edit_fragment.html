@@ -36,8 +36,8 @@
               class="btn btn-sm btn-success py-0 px-2"
               hx-post="{% url 'budgets:tariff_concept_update' concept.pk %}"
               hx-include="#concept-label-{{ concept.pk }}, #concept-unit-{{ concept.pk }}, #concept-order-{{ concept.pk }}"
-              hx-target="#concept-row-{{ concept.pk }}"
-              hx-swap="outerHTML"
+              hx-swap="none"
+              hx-on::after-request="if(event.detail.successful){ window.location.reload(); }"
               title="Guardar">
         <i class="bi bi-check-lg"></i>
       </button>

@@ -586,12 +586,17 @@ def _get_concept_choices(company):
         Q(company__isnull=True) | Q(company=company)
     ).order_by("sort_order", "label")
     return [(tc.code, tc.label) for tc in qs]
+
+
+def _parse_decimal(raw, default=None):
     """
     Normalise a raw decimal string from POST, replacing comma with period
-    before conversion. Returns the normalised string for DB assignment.
+    before conversion. Returns the normalised string for DB assignment,
+    or ``default`` if the input is empty or None.
     ---
     Normaliza una cadena decimal cruda del POST, sustituyendo la coma por
-    punto antes de la conversion. Devuelve la cadena normalizada para BD.
+    punto antes de la conversion. Devuelve la cadena normalizada para BD,
+    o ``default`` si la entrada esta vacia o es None.
     """
     if not raw:
         return default
@@ -3341,26 +3346,50 @@ class VehicleTypeCreateView(AdminRoleRequiredMixin, View):
     def post(self, request, pk):
         """
         Validate and create VehicleType. Returns HTMX list fragment.
+        If 'globalize' flag is present in POST, creates the VehicleType
+        for every active Insurer in the company (propagation mode).
         ---
         Valida y crea VehicleType. Devuelve fragmento de lista HTMX.
+        Si el flag 'globalize' está en el POST, crea el VehicleType
+        para cada Insurer activo de la empresa (modo propagación).
         """
+        from django.http import HttpResponseBadRequest
         company_user = _get_company_user(request)
-        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        insurer = get_object_or_404(
+            Insurer, pk=pk, company=company_user.company,
+        )
         name = request.POST.get("name", "").strip()
         sort_order_raw = request.POST.get("sort_order", "0").strip()
+        globalize = request.POST.get("globalize") == "1"
         if not name:
-            from django.http import HttpResponseBadRequest
-            return HttpResponseBadRequest("El nombre del tipo de vehículo es obligatorio.")
+            return HttpResponseBadRequest(
+                "El nombre del tipo de vehículo es obligatorio."
+            )
         try:
             sort_order = int(sort_order_raw)
         except ValueError:
             sort_order = 0
-        VehicleType.objects.create(
-            insurer=insurer,
-            name=name,
-            sort_order=sort_order,
-            is_active=True,
-        )
+        if globalize:
+            # Propagate to every active insurer in the company.
+            # Propagar a cada aseguradora activa de la empresa.
+            insurers = Insurer.objects.filter(
+                company=company_user.company,
+                is_active=True,
+            )
+            for target_insurer in insurers:
+                VehicleType.objects.create(
+                    insurer=target_insurer,
+                    name=name,
+                    sort_order=sort_order,
+                    is_active=True,
+                )
+        else:
+            VehicleType.objects.create(
+                insurer=insurer,
+                name=name,
+                sort_order=sort_order,
+                is_active=True,
+            )
         vehicle_types = insurer.vehicle_types.order_by("sort_order", "name")
         return render(
             request,
@@ -5100,3 +5129,7 @@ class WorkOrderPdfView(AssistanceRequiredMixin, View):
         response = HttpResponse(pdf_file, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+
+

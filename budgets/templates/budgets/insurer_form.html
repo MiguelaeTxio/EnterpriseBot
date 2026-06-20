@@ -1,3 +1,6 @@
+
+
+
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/insurer_form.html #}
 {#                                                                                        #}
 {# Unified create / edit form for Insurer model. ADMIN only.                              #}
@@ -282,17 +285,9 @@
           </div>
           {% else %}
 
-          {# Action buttons — add line / add vehicle type / add concept #}
-          {# Botones de acción — añadir línea / tipo de vehículo / concepto #}
+          {# Action buttons — add line only; vehicle types managed in Panel 3b #}
+          {# Botones de acción — solo añadir línea; tipos de vehículo en Panel 3b #}
           <div class="d-flex justify-content-end gap-2 p-3 pb-2">
-            <button class="btn btn-outline-primary btn-sm"
-                    data-bs-toggle="modal" data-bs-target="#addConceptModal">
-              <i class="bi bi-tag-fill me-1"></i>Añadir concepto
-            </button>
-            <button class="btn btn-outline-secondary btn-sm"
-                    data-bs-toggle="modal" data-bs-target="#addVehicleTypeModal">
-              <i class="bi bi-truck me-1"></i>Añadir tipo de vehículo
-            </button>
             <button class="btn btn-outline-success btn-sm"
                     hx-get="{% url 'budgets:tariff_line_add_form' active_tariff.pk %}"
                     hx-target="#new-line-row"
@@ -444,6 +439,12 @@
       <div id="collapseVehicleTypes" class="accordion-collapse collapse"
            aria-labelledby="headingVehicleTypes">
         <div class="accordion-body p-0">
+          <div class="d-flex justify-content-end p-2 border-bottom">
+            <button class="btn btn-outline-secondary btn-sm"
+                    data-bs-toggle="modal" data-bs-target="#addVehicleTypeModal">
+              <i class="bi bi-plus-lg me-1"></i>Añadir tipo de vehículo
+            </button>
+          </div>
           <div id="vehicle-type-list-wrapper" class="p-0">
             {% include "budgets/partials/vehicle_type_list_fragment.html" with vehicle_types=vehicle_types_all %}
           </div>
@@ -811,16 +812,32 @@ document.addEventListener("DOMContentLoaded", function () {
             Nombre <span class="text-danger">*</span>
           </label>
           <input type="text" class="form-control form-control-sm" id="newVtName"
-                 placeholder="Ej: Camiones de 7.001 a 18.000 kg">
+                 name="name" placeholder="Ej: Camiones de 7.001 a 18.000 kg">
         </div>
         <div class="mb-3">
           <label for="newVtOrder" class="form-label fw-semibold small">
             Orden en el desplegable
           </label>
           <input type="number" class="form-control form-control-sm" id="newVtOrder"
-                 min="0" value="0"
+                 name="sort_order" min="0" value="0"
                  placeholder="0 = aparece primero">
           <div class="form-text">Número que determina la posición en el desplegable del wizard. Menor número = aparece antes.</div>
+        </div>
+        {# ── Casilla de propagación global ─────────────────────── #}
+        <div class="form-check mb-2" id="newVtGlobalizeWrapper">
+          <input class="form-check-input" type="checkbox"
+                 id="newVtGlobalize" name="globalize" value="1"
+                 onchange="document.getElementById('vtGlobalizeWarning').classList.toggle('d-none', !this.checked)">
+          <label class="form-check-label fw-semibold small" for="newVtGlobalize">
+            Propagar a todas las aseguradoras
+          </label>
+        </div>
+        <div id="vtGlobalizeWarning" class="alert alert-warning py-2 small d-none">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          <strong>Atención:</strong> este vehículo se creará en <strong>todas las
+          aseguradoras activas</strong> de la empresa. Las líneas de tarifa
+          deberán configurarse de forma individual en cada una.
+          Esta acción no puede deshacerse de forma masiva.
         </div>
       </div>
       <div class="modal-footer">
@@ -829,13 +846,15 @@ document.addEventListener("DOMContentLoaded", function () {
         <button type="button" class="btn btn-sm btn-primary"
                 id="addVtSubmitBtn"
                 hx-post="{% url 'budgets:vehicle_type_create' insurer.pk %}"
-                hx-include="#newVtName, #newVtOrder"
+                hx-include="#newVtName, #newVtOrder, #newVtGlobalize"
                 hx-target="#vehicle-type-list-wrapper"
                 hx-swap="innerHTML"
                 hx-on::after-request="
                   if(event.detail.successful){
                     document.getElementById('newVtName').value='';
                     document.getElementById('newVtOrder').value='0';
+                    document.getElementById('newVtGlobalize').checked=false;
+                    document.getElementById('vtGlobalizeWarning').classList.add('d-none');
                     bootstrap.Modal.getInstance(document.getElementById('addVehicleTypeModal')).hide();
                   }
                 ">
@@ -846,65 +865,6 @@ document.addEventListener("DOMContentLoaded", function () {
   </div>
 </div>
 
-{# ── Modal — Añadir concepto ──────────────────────────────────────── #}
-<div class="modal fade" id="addConceptModal" tabindex="-1"
-     aria-labelledby="addConceptModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="addConceptModalLabel">
-          <i class="bi bi-tag-fill me-2"></i>Añadir concepto de tarifa
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="text-muted small mb-3">
-          Añade un nuevo concepto facturable al catálogo de tu empresa.
-          Una vez creado, aparecerá en el desplegable de concepto al añadir líneas de tarifa.
-        </p>
-        <div class="mb-3">
-          <label for="newConceptLabel" class="form-label fw-semibold small">
-            Nombre del concepto <span class="text-danger">*</span>
-          </label>
-          <input type="text" class="form-control form-control-sm" id="newConceptLabel"
-                 placeholder="Ej: Furgón taller, Servicio de taxi, Grúa especial">
-        </div>
-        <div class="mb-3">
-          <label for="newConceptUnit" class="form-label fw-semibold small">
-            Unidad por defecto <span class="text-danger">*</span>
-          </label>
-          <select class="form-select form-select-sm" id="newConceptUnit">
-            {% for val, label in unit_choices %}
-            <option value="{{ val }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-          <div class="form-text">Unidad preseleccionada al añadir una línea con este concepto. Se puede cambiar después.</div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-sm btn-outline-secondary"
-                data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-sm btn-primary"
-                id="addConceptSubmitBtn"
-                onclick="
-                  const label = document.getElementById('newConceptLabel').value.trim();
-                  const unit = document.getElementById('newConceptUnit').value;
-                  if (!label) { document.getElementById('newConceptLabel').focus(); return; }
-                  htmx.ajax('POST', '{% url 'budgets:tariff_concept_create' insurer.pk %}', {
-                    values: { label: label, default_unit: unit },
-                    swap: 'none'
-                  }).then(() => {
-                    document.getElementById('newConceptLabel').value = '';
-                    bootstrap.Modal.getInstance(document.getElementById('addConceptModal')).hide();
-                    window.location.reload();
-                  });
-                  return false;
-                ">
-          <i class="bi bi-plus-lg me-1"></i>Añadir concepto
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
 {% endif %}
 {% endblock %}
+

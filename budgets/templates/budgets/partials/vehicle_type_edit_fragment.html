@@ -32,8 +32,8 @@
               class="btn btn-sm btn-success py-0 px-2"
               hx-post="{% url 'budgets:vehicle_type_update' vt.pk %}"
               hx-include="#vt-name-{{ vt.pk }}, #vt-order-{{ vt.pk }}"
-              hx-target="#vt-row-{{ vt.pk }}"
-              hx-swap="outerHTML"
+              hx-swap="none"
+              hx-on::after-request="if(event.detail.successful){ window.location.reload(); }"
               title="Guardar">
         <i class="bi bi-check-lg"></i>
       </button>
