@@ -1717,17 +1717,83 @@ class VoiceOrchestrationService:
                                     )
 
                                     def _create_breakdown():
-                                        # Resolve breakdown-enabled section for this company.
-                                        # Resolver la sección habilitada para averías de esta empresa.
+                                        # Resolve company from the inbound Twilio number.
+                                        # Resolver empresa desde el número Twilio entrante.
                                         from ivr_config.models import PhoneNumber as _PN
+                                        from chat.models import ChatRoom as _CR
                                         try:
-                                            _pn = _PN.objects.select_related("company").get(
-                                                number=self.twilio_number, is_active=True
+                                            _pn = _PN.objects.select_related(
+                                                "company"
+                                            ).get(
+                                                number=self.twilio_number,
+                                                is_active=True,
                                             )
                                             _company = _pn.company
                                         except Exception:
                                             _company = None
 
+                                        # Security gate: caller must be a Contact
+                                        # registered in the BREAKDOWNS room (either
+                                        # via breakdown_contacts or via a section
+                                        # listed in breakdown_sections).
+                                        # Only registered contacts can open tickets —
+                                        # anonymous callers are rejected to prevent
+                                        # spurious breakdown tickets.
+                                        #
+                                        # Puerta de seguridad: el llamante debe ser un
+                                        # Contact registrado en la sala BREAKDOWNS (ya
+                                        # sea vía breakdown_contacts o vía una sección
+                                        # listada en breakdown_sections).
+                                        # Solo contactos registrados pueden abrir tickets
+                                        # — los llamantes anónimos se rechazan para evitar
+                                        # tickets de avería espurios.
+                                        _contact = None
+                                        _room = None
+                                        if _company and self.caller_number:
+                                            try:
+                                                _room = _CR.objects.get(
+                                                    company=_company,
+                                                    room_type=_CR.ROOM_TYPE_BREAKDOWNS,
+                                                )
+                                                # Try direct breakdown_contacts first.
+                                                # Primero buscar en breakdown_contacts directo.
+                                                _contact = _room.breakdown_contacts.filter(
+                                                    phone_number=self.caller_number
+                                                ).first()
+                                                if _contact is None:
+                                                    # Try contacts belonging to breakdown_sections.
+                                                    # Buscar contactos de las secciones de la sala.
+                                                    _contact = (
+                                                        _room.breakdown_sections
+                                                        .prefetch_related("contacts")
+                                                        .values_list(
+                                                            "section_assignments__contact",
+                                                            flat=True,
+                                                        )
+                                                    )
+                                                    from ivr_config.models import (
+                                                        Contact as _Ct,
+                                                    )
+                                                    _contact = _Ct.objects.filter(
+                                                        sections__in=_room.breakdown_sections.all(),
+                                                        phone_number=self.caller_number,
+                                                    ).first()
+                                            except _CR.DoesNotExist:
+                                                _room = None
+
+                                        if _contact is None:
+                                            logger.warning(
+                                                f"[H03-BREAKDOWN] Llamante "
+                                                f"'{self.caller_number}' no está "
+                                                f"registrado en la sala BREAKDOWNS. "
+                                                "Ticket rechazado."
+                                            )
+                                            return None
+
+                                        # Resolve breakdown-enabled section for this
+                                        # company (used to tag the ticket's section).
+                                        # Resolver sección habilitada para averías de
+                                        # esta empresa (para etiquetar el ticket).
                                         _section = None
                                         if _company:
                                             _section = _Sec.objects.filter(
@@ -1742,36 +1808,36 @@ class VoiceOrchestrationService:
                                         try:
                                             from fleet.models import MachineAsset as _MA
                                             _machine = (
-                                                _MA.objects.filter(code__iexact=_machine_code).first()
-                                                or _MA.objects.filter(code__iexact=_machine_code.upper()).first()
+                                                _MA.objects.filter(
+                                                    code__iexact=_machine_code
+                                                ).first()
+                                                or _MA.objects.filter(
+                                                    code__iexact=_machine_code.upper()
+                                                ).first()
                                             )
                                         except Exception as ma_exc:
                                             logger.warning(
                                                 f"[H03-BREAKDOWN] No se pudo resolver "
-                                                f"MachineAsset '{_machine_code}': {ma_exc}"
+                                                f"MachineAsset '{_machine_code}': "
+                                                f"{ma_exc}"
                                             )
 
-                                        # reported_by is FK to Contact — pass None for IVR calls
-                                        # (caller is not necessarily a registered Contact).
-                                        # Caller identity is captured in fault_summary prefix.
-                                        # reported_by es FK a Contact — pasar None para llamadas IVR
-                                        # (el llamante no es necesariamente un Contact registrado).
-                                        # La identidad del llamante se captura en el prefijo de fault_summary.
                                         _caller_prefix = ""
                                         if _caller_name:
                                             _caller_prefix = f"[Chófer: {_caller_name}] "
-                                        elif self.caller_number:
-                                            _caller_prefix = f"[Tel: {self.caller_number}] "
                                         ticket = _BT.objects.create(
+                                            room=_room,
+                                            contact=_contact,
                                             section=_section,
                                             machine=_machine,
                                             machine_raw=_machine_code,
                                             fault_summary=_caller_prefix + _fault_summary,
                                             fault_location=_fault_location,
+                                            location=_base_name,
                                             status=_BT.STATUS_OPEN,
                                             origin=_BT.ORIGIN_IVR,
                                             urgency=_urgency_val,
-                                            reported_by=None,
+                                            reported_by=_contact,
                                         )
                                         logger.info(
                                             f"[H03-BREAKDOWN] BreakdownTicket creado — "

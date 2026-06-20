@@ -441,6 +441,48 @@ class BreakdownTicket(models.Model):
         verbose_name="Notas adicionales",
         help_text="Observaciones adicionales recogidas durante el diálogo o la gestión.",
     )
+    # --- Paso 23 H14: geolocalización y ubicación exacta en máquina -------
+    fault_location = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Ubicación en máquina",
+        help_text=(
+            "Ubicación exacta de la avería en la máquina "
+            "(ej. 'rueda delantera lado conductor'). "
+            "Recogida por el agente IVR o WhatsApp."
+        ),
+    )
+    geo_lat = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Latitud GPS",
+        help_text=(
+            "Latitud GPS real de la avería. Recibida vía WhatsApp location "
+            "o resuelta desde la base más próxima."
+        ),
+    )
+    geo_lng = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="Longitud GPS",
+        help_text=(
+            "Longitud GPS real de la avería. Recibida vía WhatsApp location "
+            "o resuelta desde la base más próxima."
+        ),
+    )
+    location_warning = models.BooleanField(
+        default=False,
+        verbose_name="Sin geolocalización",
+        help_text=(
+            "True si no se pudo obtener geolocalización: el contacto no envió "
+            "ubicación o se superó el timeout de 3 minutos."
+        ),
+    )
     assigned_to = models.ForeignKey(
         CompanyUser,
         on_delete=models.SET_NULL,
