@@ -77,7 +77,7 @@ def _tariff_has_concept(insurer_id, vehicle_type_id, concept_code):
     except InsurerTariff.DoesNotExist:
         return False
     return tariff.lines.filter(
-        concept=concept_code,
+        concept__code=concept_code,
     ).filter(
         models_q_vehicle(vehicle_type_id)
     ).exists()
@@ -127,7 +127,7 @@ def _get_optional_concepts(insurer_id, vehicle_type_id):
     available = []
     for code in optional_codes:
         exists = tariff.lines.filter(
-            concept=code,
+            concept__code=code,
         ).filter(
             models_q_vehicle(vehicle_type_id)
         ).exists()
@@ -153,7 +153,7 @@ def _has_loaded_surcharge(insurer_id):
     except InsurerTariff.DoesNotExist:
         return False
     return tariff.lines.filter(
-        concept=TariffConcept.CODE_LOADED_PERCENT
+        concept__code=TariffConcept.CODE_LOADED_PERCENT
     ).exists()
 
 
@@ -1110,6 +1110,8 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
             "has_tolls":              result["has_tolls"],
             "route_toll_budget_cost": result.get("route_toll_budget_cost"),
             "encoded_polyline":       result.get("encoded_polyline"),
+            "encoded_polyline_alt":   result.get("encoded_polyline_alt", ""),
+            "distance_km_alt":        result.get("distance_km_alt"),
         })
 
 
@@ -1303,7 +1305,7 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
                     valid_to__isnull=True,
                 )
                 line = tariff.lines.filter(
-                    concept=TariffConcept.CODE_LOADED_PERCENT
+                    concept__code=TariffConcept.CODE_LOADED_PERCENT
                 ).first()
                 if line:
                     loaded_percent = line.price

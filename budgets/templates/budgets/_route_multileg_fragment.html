@@ -230,13 +230,32 @@
       z-index: 99999 !important;
     }
     @media (max-width: 991.98px) {
+      /* En movil el panel es scrollable con altura maxima controlada        */
+      /* On mobile the panel is scrollable with a controlled max-height      */
       .route-planner-panel {
         border-right: 0;
         border-bottom: 1px solid var(--rp-line);
-        max-height: none;
+        max-height: 42vh;
+        height: auto;
+        overflow-y: auto;
       }
+      .route-planner-panel-inner {
+        padding: .65rem;
+      }
+      /* El mapa ocupa el espacio restante                                   */
+      /* Map fills remaining viewport space                                  */
       .route-planner-map {
-        height: 360px;
+        height: 42vh;
+        min-height: 220px;
+      }
+      /* Footer siempre visible, pegado al fondo del panel                   */
+      /* Footer always visible, sticky at panel bottom                       */
+      .route-planner-footer {
+        position: sticky;
+        bottom: 0;
+        background: #fff;
+        z-index: 10;
+        border-top: 1px solid var(--rp-line);
       }
     }
   </style>

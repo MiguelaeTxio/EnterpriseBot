@@ -45,8 +45,8 @@
     {# Radio buttons — only when a toll-free alternative exists. #}
     {# Radio buttons — solo cuando existe alternativa sin peajes. #}
     {% if show_dual %}
-    <div class="mb-2">
-      <div class="form-check form-check-inline">
+    <div class="mb-2 d-flex flex-wrap gap-3">
+      <div class="form-check">
         <input class="form-check-input"
                type="radio"
                name="route_option"
@@ -58,7 +58,7 @@
           (<strong>{{ route_with_tolls.distance_km|unlocalize }} km</strong>)
         </label>
       </div>
-      <div class="form-check form-check-inline">
+      <div class="form-check">
         <input class="form-check-input"
                type="radio"
                name="route_option"

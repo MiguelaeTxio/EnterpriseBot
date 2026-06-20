@@ -1,19 +1,20 @@
 // /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/wizard_map.js
 /**
  * Route planner modal logic (Google Maps JS API, Modo B).
- * APIs used (all current, June 2026):
- *   - Maps JS API: Map, Polyline (geometry.encoding for polyline decode)
- *   - Marker: AdvancedMarkerElement + PinElement (glyphText, marker.append(pin))
- *   - Places: Autocomplete legacy (input existente con estilos propios)
- *   - Geocoding: Geocoder (Promise-based)
- *   - Routes REST API v2: computeRoutes (fetch, for live display polyline)
- *   - Routes API v2 server-side: via BudgetWaypointView (confirmRoute)
- * ---
- * Contrato con wizard.html (PASO 3):
+ *
+ * Standard pattern (June 2026):
+ *   - DirectionsService with provideRouteAlternatives:true → result.routes[]
+ *   - One DirectionsRenderer per route, each with its own routeIndex + color
+ *   - Click on a route polyline to select it (highlight/dim)
+ *   - Desktop: DirectionsRenderer draggable:true on selected renderer
+ *   - Mobile:  tap map → bottom sheet (Add stop / Pass through via:true)
+ *   - Server-side calculation via BudgetWaypointView (Routes API v2)
+ *
+ * Contrato con wizard.html:
  *   window.ROUTE_PLANNER_CONFIG = {
  *     base: { lat, lng, name, id },
- *     mapId,           // GOOGLE_MAPS_MAP_ID (Raster)
- *     confirmUrl,      // {% url 'budgets:waypoints' %}
+ *     mapId,
+ *     confirmUrl,
  *     serviceDateFieldId,
  *     serviceTimeFieldId,
  *   }
@@ -22,32 +23,59 @@
   "use strict";
 
   // ------------------------------------------------------------------
+  // Colores de ruta
+  // Route colors
+  // ------------------------------------------------------------------
+  const COLOR_PRIMARY = "#1565C0";   // Azul oscuro — ruta principal / Dark blue — primary
+  const COLOR_ALT     = "#90CAF9";   // Azul claro  — ruta alternativa / Light blue — alternative
+  const WEIGHT_ACTIVE = 6;
+  const WEIGHT_DIM    = 4;
+  const OPACITY_ACTIVE = 0.95;
+  const OPACITY_DIM    = 0.45;
+
+  // ------------------------------------------------------------------
   // Estado del módulo
   // ------------------------------------------------------------------
-  let map           = null;
-  let routePolyline = null;
-  let geocoder      = null;
-  let baseMarker    = null;
-  let mapInitialized = false;
-  let dragSourceIndex = null;
+  let map               = null;
+  let directionsService = null;
+  let geocoder          = null;
+  let baseMarker        = null;
+  let mapInitialized    = false;
+  let dragSourceIndex   = null;
+  let MarkerLib         = null;
 
-  let MarkerLib = null;   // cargado en initMap, reutilizado en addWaypoint
+  /**
+   * Renderers activos — uno por ruta alternativa devuelta.
+   * renderers[0] = ruta principal, renderers[1] = alternativa, ...
+   */
+  let renderers      = [];
+  let selectedRouteIndex = 0;
 
-  /** Resultado de calculateRoute() — se vuelca en confirmRoute() */
+  /** Waypoints del usuario: { lat, lng, label, isBaseReturn, isVia, marker } */
+  const waypoints = [];
+
+  /** Via-waypoints añadidos por drag (desktop) */
+  let _dragWaypoints = [];
+
+  /** Resultado de calculateRoute() — volcado en confirmRoute() */
   let _calculatedRouteData = null;
 
-  /** waypoints[i] = { lat, lng, label, isBaseReturn, marker } */
-  const waypoints = [];
+  // ------------------------------------------------------------------
+  // Detección de entorno
+  // ------------------------------------------------------------------
+  function isMobileDevice() {
+    return (
+      window.matchMedia("(pointer: coarse)").matches &&
+      navigator.maxTouchPoints > 0
+    );
+  }
 
   // ------------------------------------------------------------------
   // Helpers
   // ------------------------------------------------------------------
-
   function getConfig() {
     const cfg = window.ROUTE_PLANNER_CONFIG;
-    if (!cfg || !cfg.base) {
-      throw new Error("ROUTE_PLANNER_CONFIG no está definido.");
-    }
+    if (!cfg || !cfg.base) throw new Error("ROUTE_PLANNER_CONFIG no definido.");
     return cfg;
   }
 
@@ -56,114 +84,356 @@
     return el ? el.value : "";
   }
 
-  function _getApiKey() {
-    for (const s of document.querySelectorAll(
-      'script[src*="maps.googleapis.com/maps/api/js"]'
-    )) {
-      const m = s.src.match(/[?&]key=([^&]+)/);
-      if (m) return m[1];
-    }
-    return "";
-  }
+  function showMapSpinner()      { _toggleId("route-map-spinner",           true,  "active"); }
+  function hideMapSpinner()      { _toggleId("route-map-spinner",           false, "active"); }
+  function showCalculateSpinner(){ _toggleId("route-btn-calculate-spinner", false, "d-none"); }
+  function hideCalculateSpinner(){ _toggleId("route-btn-calculate-spinner", true,  "d-none"); }
 
-  // ── Spinner del mapa (durante recalculateRoute) ──────────────────
-  function showMapSpinner() {
-    const el = document.getElementById("route-map-spinner");
-    if (el) el.classList.add("active");
-  }
-  function hideMapSpinner() {
-    const el = document.getElementById("route-map-spinner");
-    if (el) el.classList.remove("active");
-  }
-
-  // ── Spinner del botón Confirmar ──────────────────────────────────
-  function showConfirmSpinner() {
-    const sp = document.getElementById("route-btn-confirm-spinner");
-    if (sp) sp.classList.remove("d-none");
-  }
-  function hideConfirmSpinner() {
-    const sp = document.getElementById("route-btn-confirm-spinner");
-    if (sp) sp.classList.add("d-none");
-  }
-
-  // ── Spinner del botón Calcular ───────────────────────────────────
-  function showCalculateSpinner() {
-    const sp = document.getElementById("route-btn-calculate-spinner");
-    if (sp) sp.classList.remove("d-none");
-  }
-  function hideCalculateSpinner() {
-    const sp = document.getElementById("route-btn-calculate-spinner");
-    if (sp) sp.classList.add("d-none");
+  function _toggleId(id, add, cls) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle(cls, add);
   }
 
   // ------------------------------------------------------------------
-  // Inicialización
+  // Gestión de renderers
+  // ------------------------------------------------------------------
+
+  /** Elimina todos los renderers/polylines del mapa y limpia el array */
+  function _clearRenderers() {
+    renderers.forEach((r) => {
+      if (r.renderer) r.renderer.setMap(null);
+      if (r.polyline) r.polyline.setMap(null);
+    });
+    renderers = [];
+    selectedRouteIndex = 0;
+    _dragWaypoints = [];
+  }
+
+  /**
+   * Construye los renderers a partir del resultado de DirectionsService.
+   * Uno por ruta: el primero en azul oscuro, el resto en azul claro.
+   * Sets up one DirectionsRenderer per route from DirectionsService result.
+   * First route: dark blue. Rest: light blue. Click to select.
+   */
+  /**
+   * Pinta las rutas directamente con Polyline (no DirectionsRenderer).
+   * Evita interferencias con mapId/vector rendering.
+   * Para desktop, el renderer draggable se aplica solo a la ruta seleccionada.
+   *
+   * Draws routes directly with Polyline (not DirectionsRenderer).
+   * Avoids interference with mapId/vector rendering.
+   */
+  function _buildRenderersFromResults(resultNormal, resultAlt) {
+    _clearRenderers();
+    const { DirectionsRenderer } = window._mapsRoutesLib;
+    const { Polyline } = window._mapsLib;
+
+    // Ruta alternativa (azul claro) — se pinta PRIMERO para quedar debajo
+    // Alternative route (light blue) — drawn FIRST to appear below
+    if (resultAlt) {
+      const pathAlt = resultAlt.routes[0].overview_path;
+      const polyAlt = new Polyline({
+        map,
+        path:          pathAlt,
+        strokeColor:   COLOR_ALT,
+        strokeOpacity: OPACITY_DIM,
+        strokeWeight:  WEIGHT_DIM,
+        zIndex:        1,
+        clickable:     true,
+      });
+      polyAlt.addListener("click", () => _selectRoute(1));
+      renderers.push({ polyline: polyAlt, result: resultAlt, isPrimary: false });
+    }
+
+    // Ruta principal (azul oscuro) con DirectionsRenderer draggable en desktop
+    // Primary route (dark blue) with draggable DirectionsRenderer on desktop
+    const rendererPrimary = new DirectionsRenderer({
+      map,
+      directions:      resultNormal,
+      routeIndex:      0,
+      draggable:       !isMobileDevice(),
+      suppressMarkers: true,
+      polylineOptions: {
+        strokeColor:   COLOR_PRIMARY,
+        strokeOpacity: OPACITY_ACTIVE,
+        strokeWeight:  WEIGHT_ACTIVE,
+        zIndex:        2,
+        clickable:     true,
+      },
+    });
+    rendererPrimary.addListener("directions_changed", () => {
+      const res = rendererPrimary.getDirections();
+      if (!res) return;
+      _dragWaypoints = [];
+      const route = res.routes[0];
+      if (route) {
+        route.legs.forEach((leg) => {
+          (leg.via_waypoints || []).forEach((pt) => {
+            _dragWaypoints.push({ lat: pt.lat(), lng: pt.lng() });
+          });
+        });
+      }
+      _invalidateCalculation(true);
+    });
+    rendererPrimary.addListener("click", () => _selectRoute(0));
+    renderers.push({ renderer: rendererPrimary, result: resultNormal, isPrimary: true });
+
+    if (resultAlt) {
+      _buildRouteSelectorCardsFromResults(resultNormal, resultAlt);
+    }
+
+    _selectRoute(0);
+  }
+
+  /**
+   * Selecciona la ruta con índice idx:
+   * resalta su polyline, atenúa las demás.
+   */
+  function _selectRoute(idx) {
+    selectedRouteIndex = idx;
+    renderers.forEach((r, i) => {
+      const active = i === idx;
+      if (r.renderer) {
+        r.renderer.setOptions({
+          polylineOptions: {
+            strokeColor:   active ? COLOR_PRIMARY : COLOR_ALT,
+            strokeOpacity: active ? OPACITY_ACTIVE : OPACITY_DIM,
+            strokeWeight:  active ? WEIGHT_ACTIVE  : WEIGHT_DIM,
+            zIndex:        active ? 2 : 1,
+          },
+          draggable: active && !isMobileDevice(),
+        });
+      }
+      if (r.polyline) {
+        r.polyline.setOptions({
+          strokeColor:   active ? COLOR_PRIMARY : COLOR_ALT,
+          strokeOpacity: active ? OPACITY_ACTIVE : OPACITY_DIM,
+          strokeWeight:  active ? WEIGHT_ACTIVE  : WEIGHT_DIM,
+          zIndex:        active ? 2 : 1,
+        });
+      }
+    });
+    // Actualizar estado visual de las cards
+    document.querySelectorAll(".rp-route-card").forEach((card, i) => {
+      card.classList.toggle("rp-route-card--active", i === idx);
+    });
+    _invalidateCalculation(true);
+  }
+
+  // ------------------------------------------------------------------
+  // Cards de selección de ruta en el panel lateral
+  // Route selector cards in the side panel
+  // ------------------------------------------------------------------
+
+  function _buildRouteSelectorCardsFromResults(resultNormal, resultAlt) {
+    document.querySelectorAll(".rp-route-cards-wrapper").forEach((el) => el.remove());
+
+    if (!document.getElementById("rp-route-cards-style")) {
+      const style = document.createElement("style");
+      style.id = "rp-route-cards-style";
+      style.textContent = `
+        .rp-route-cards-wrapper { display:flex; flex-direction:column; gap:.4rem; margin-top:.75rem; }
+        .rp-route-card {
+          display:flex; align-items:center; gap:.5rem;
+          padding:.5rem .65rem; border:2px solid #dee2e6;
+          border-radius:.45rem; cursor:pointer; background:#fff;
+          font-size:.82rem; transition:border-color .15s,background .15s;
+        }
+        .rp-route-card:hover { border-color:#adb5bd; background:#f8f9fa; }
+        .rp-route-card--active { border-color:#1565C0 !important; background:#e8f0fe !important; }
+        .rp-route-card__dot { width:.85rem; height:.85rem; border-radius:50%; flex-shrink:0; }
+        .rp-route-card__label { flex:1; font-weight:600; }
+        .rp-route-card__km { color:#495057; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const hintEl = document.getElementById("route-summary-hint");
+    if (!hintEl) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "rp-route-cards-wrapper";
+
+    const routeDefs = [
+      { result: resultNormal, label: "Con peajes",  color: COLOR_PRIMARY, idx: 0 },
+      { result: resultAlt,    label: "Sin peajes",  color: COLOR_ALT,     idx: 1 },
+    ];
+
+    routeDefs.forEach(({ result, label, color, idx }) => {
+      if (!result) return;
+      const meters = result.routes[0].legs.reduce(
+        (s, leg) => s + (leg.distance ? leg.distance.value : 0), 0
+      );
+      const km = (meters / 1000).toFixed(1);
+
+      const card = document.createElement("div");
+      card.className = "rp-route-card" + (idx === 0 ? " rp-route-card--active" : "");
+      card.innerHTML = `
+        <span class="rp-route-card__dot" style="background:${color}"></span>
+        <span class="rp-route-card__label">${label}</span>
+        <span class="rp-route-card__km">${km} km</span>
+      `;
+      card.addEventListener("click", () => _selectRoute(idx));
+      wrapper.appendChild(card);
+    });
+
+    hintEl.after(wrapper);
+  }
+
+  // ------------------------------------------------------------------
+  // Menú contextual móvil (bottom sheet)
+  // ------------------------------------------------------------------
+
+  function _showMobileMapMenu(latLng, label) {
+    _closeMobileMapMenu();
+
+    const sheet = document.createElement("div");
+    sheet.id = "rp-mobile-menu";
+    sheet.innerHTML = `
+      <style>
+        #rp-mobile-menu {
+          position:fixed; bottom:0; left:0; right:0; z-index:9999;
+          background:#fff; border-radius:1rem 1rem 0 0;
+          box-shadow:0 -4px 24px rgba(0,0,0,.18);
+          padding:1rem 1rem 1.5rem;
+          animation:rp-slide-up .2s ease;
+        }
+        @keyframes rp-slide-up {
+          from { transform:translateY(100%); } to { transform:translateY(0); }
+        }
+        #rp-mobile-menu .rp-mm-handle {
+          width:2.5rem; height:.3rem; background:#dee2e6;
+          border-radius:1rem; margin:0 auto .85rem;
+        }
+        #rp-mobile-menu .rp-mm-label {
+          font-size:.8rem; color:#6c757d; margin-bottom:.65rem;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        #rp-mobile-menu .rp-mm-btn {
+          display:flex; align-items:center; gap:.6rem;
+          width:100%; padding:.75rem .5rem;
+          border:0; background:transparent;
+          font-size:.95rem; text-align:left;
+          border-radius:.4rem; cursor:pointer;
+        }
+        #rp-mobile-menu .rp-mm-btn:active { background:#f8f9fa; }
+        #rp-mobile-menu .rp-mm-icon {
+          width:2rem; height:2rem; border-radius:50%;
+          display:inline-flex; align-items:center; justify-content:center;
+          font-weight:700; color:#fff; flex-shrink:0;
+        }
+        #rp-mobile-menu hr { border:0; border-top:1px solid #dee2e6; margin:.25rem 0; }
+        #rp-mobile-menu .rp-mm-cancel {
+          display:block; width:100%; padding:.6rem; border:0;
+          background:transparent; color:#dc3545; font-size:.9rem;
+          cursor:pointer; margin-top:.25rem; border-radius:.4rem;
+        }
+        #rp-overlay { position:fixed; inset:0; z-index:9998; background:transparent; }
+      </style>
+      <div class="rp-mm-handle"></div>
+      <div class="rp-mm-label">${label}</div>
+      <button class="rp-mm-btn" id="rp-mm-stop">
+        <span class="rp-mm-icon" style="background:#0d6efd">●</span>
+        <span><strong>Añadir parada</strong><br>
+          <small style="color:#6c757d">La grúa se detiene aquí</small></span>
+      </button>
+      <hr>
+      <button class="rp-mm-btn" id="rp-mm-via">
+        <span class="rp-mm-icon" style="background:#6c757d">→</span>
+        <span><strong>Pasar por aquí</strong><br>
+          <small style="color:#6c757d">Fuerza la ruta por este punto</small></span>
+      </button>
+      <hr>
+      <button class="rp-mm-cancel" id="rp-mm-cancel">Cancelar</button>
+    `;
+
+    const overlay = document.createElement("div");
+    overlay.id = "rp-overlay";
+    overlay.addEventListener("click", _closeMobileMapMenu);
+    document.body.appendChild(overlay);
+    document.body.appendChild(sheet);
+
+    document.getElementById("rp-mm-stop").addEventListener("click", () => {
+      _closeMobileMapMenu();
+      addWaypoint(latLng.lat(), latLng.lng(), label, false, false);
+    });
+    document.getElementById("rp-mm-via").addEventListener("click", () => {
+      _closeMobileMapMenu();
+      addWaypoint(latLng.lat(), latLng.lng(), label, false, true);
+    });
+    document.getElementById("rp-mm-cancel").addEventListener("click", _closeMobileMapMenu);
+  }
+
+  function _closeMobileMapMenu() {
+    ["rp-mobile-menu", "rp-overlay"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Inicialización del mapa
   // ------------------------------------------------------------------
 
   async function initMap() {
     if (mapInitialized) return;
     const config = getConfig();
+    const mobile = isMobileDevice();
 
-    const [MapsLib, _MarkerLib, GeometryLib, GeocodingLib, PlacesLib] =
+    const [MapsLib, _MarkerLib, GeocodingLib, PlacesLib, RoutesLib] =
       await Promise.all([
         google.maps.importLibrary("maps"),
         google.maps.importLibrary("marker"),
-        google.maps.importLibrary("geometry"),
         google.maps.importLibrary("geocoding"),
         google.maps.importLibrary("places"),
+        google.maps.importLibrary("routes"),
       ]);
 
     MarkerLib = _MarkerLib;
-    const { Map, Polyline } = MapsLib;
-    const { AdvancedMarkerElement, PinElement } = MarkerLib;
-    const { Geocoder } = GeocodingLib;
+    // Guardamos RoutesLib para usarla en _buildRenderers
+    window._mapsRoutesLib = RoutesLib;
+    window._mapsLib = MapsLib;
 
-    // Nombre de la base
+    const { Map }                = MapsLib;
+    const { AdvancedMarkerElement, PinElement } = MarkerLib;
+    const { Geocoder }           = GeocodingLib;
+    const { DirectionsService }  = RoutesLib;
+
     const baseNameEl = document.getElementById("route-base-name");
     if (baseNameEl) baseNameEl.textContent = config.base.name;
 
-    // Mapa
     map = new Map(document.getElementById("route-planner-map"), {
       center: { lat: config.base.lat, lng: config.base.lng },
       zoom: 12,
       mapId: config.mapId,
     });
 
-    // Marker base — patrón moderno: marker.append(pin) + map.append/marker.map
     const basePin = new PinElement({
-      background:  "#212529",
-      borderColor: "#212529",
-      glyphColor:  "#fff",
+      background: "#212529", borderColor: "#212529", glyphColor: "#fff",
     });
     baseMarker = new AdvancedMarkerElement({
-      map,
-      position: { lat: config.base.lat, lng: config.base.lng },
-      title:    config.base.name,
+      map, position: { lat: config.base.lat, lng: config.base.lng },
+      title: config.base.name,
     });
     baseMarker.content = basePin;
 
-    // Polyline reutilizable
-    routePolyline = new Polyline({
-      map,
-      strokeColor:   "#0d6efd",
-      strokeOpacity: 0.85,
-      strokeWeight:  4,
-    });
-
-    // Geocoder para clic en mapa
+    directionsService = new DirectionsService();
     geocoder = new Geocoder();
+
     map.addListener("click", async (event) => {
       let label = "Punto manual";
       try {
         const { results } = await geocoder.geocode({ location: event.latLng });
         if (results && results[0]) label = results[0].formatted_address;
       } catch (_) {}
-      addWaypoint(event.latLng.lat(), event.latLng.lng(), label, false);
+
+      if (mobile) {
+        _showMobileMapMenu(event.latLng, label);
+      } else {
+        addWaypoint(event.latLng.lat(), event.latLng.lng(), label, false, false);
+      }
     });
 
-    // Autocomplete legacy — acepta nuestro input existente con nuestros estilos.
-    // PlaceAutocompleteElement no permite vincular un input propio (Shadow DOM).
-    // Legacy Autocomplete — accepts existing input with our own styles.
     const searchInput = document.getElementById("route-place-search");
     if (searchInput) {
       const { Autocomplete } = PlacesLib;
@@ -174,10 +444,6 @@
           radius: 50000,
         },
       });
-
-      // El z-index del pac-container se gestiona via CSS en el fragmento.
-      // No se mueve al body — Google pierde la referencia al input si se hace.
-
       autocomplete.addListener("place_changed", () => {
         const place = autocomplete.getPlace();
         if (!place || !place.geometry || !place.geometry.location) return;
@@ -185,7 +451,7 @@
           place.geometry.location.lat(),
           place.geometry.location.lng(),
           place.name || "Parada",
-          false
+          false, false
         );
         searchInput.value = "";
       });
@@ -200,20 +466,17 @@
     if (baseReturnBtn) {
       baseReturnBtn.addEventListener("click", () =>
         addWaypoint(config.base.lat, config.base.lng,
-          `${config.base.name} (vuelta a base)`, true)
+          `${config.base.name} (vuelta a base)`, true, false)
       );
     }
-
     const calculateBtn = document.getElementById("route-btn-calculate");
     if (calculateBtn) {
       calculateBtn.addEventListener("click", () => calculateRoute(config));
     }
-
     const confirmBtn = document.getElementById("route-btn-confirm");
     if (confirmBtn) {
       confirmBtn.addEventListener("click", () => confirmRoute());
     }
-
     const stopsList = document.getElementById("route-stops-list");
     if (stopsList) {
       stopsList.addEventListener("click",    handleStopsListClick);
@@ -224,70 +487,102 @@
   }
 
   // ------------------------------------------------------------------
+  // Invalidar cálculo server-side
+  // ------------------------------------------------------------------
+
+  function _invalidateCalculation(keepPolyline = false) {
+    _calculatedRouteData = null;
+
+    const confirmBtn = document.getElementById("route-btn-confirm");
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    const distanceEl = document.getElementById("route-summary-distance");
+    if (distanceEl) distanceEl.classList.remove("calculated");
+
+    const hintEl = document.getElementById("route-summary-hint");
+    if (hintEl) hintEl.classList.remove("d-none");
+
+    // Solo deshabilitar "Calcular ruta" si no hay paradas reales,
+    // o si se limpia la polyline (cambio de paradas).
+    // keepPolyline=true → el usuario arrastró la ruta, el botón debe
+    // mantenerse habilitado para que pueda recalcular.
+    // Only disable "Calcular ruta" if no real stops, or polyline is cleared.
+    // keepPolyline=true → user dragged the route, button stays enabled.
+    const calcBtn = document.getElementById("route-btn-calculate");
+    const hasStops = waypoints.some((w) => !w.isVia);
+    if (calcBtn && !keepPolyline) calcBtn.disabled = !hasStops;
+
+    if (!keepPolyline) {
+      _clearRenderers();
+      document.querySelectorAll(".rp-route-cards-wrapper").forEach((el) => el.remove());
+      _dragWaypoints = [];
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Gestión de paradas
   // ------------------------------------------------------------------
 
-  function _invalidateCalculation() {
-    _calculatedRouteData = null;
-    const confirmBtn = document.getElementById("route-btn-confirm");
-    if (confirmBtn) confirmBtn.disabled = true;
-    const distanceEl = document.getElementById("route-summary-distance");
-    if (distanceEl) distanceEl.classList.remove("calculated");
-    const hintEl = document.getElementById("route-summary-hint");
-    if (hintEl) hintEl.classList.remove("d-none");
-  }
-
-  function addWaypoint(lat, lng, label, isBaseReturn) {
+  function addWaypoint(lat, lng, label, isBaseReturn, isVia) {
     const { AdvancedMarkerElement, PinElement } = MarkerLib;
+    const stopCount = waypoints.filter((w) => !w.isVia && !w.isBaseReturn).length;
 
-    const pin = new PinElement({
-      glyphText:   isBaseReturn ? "" : String(waypoints.length + 1),
-      background:  isBaseReturn ? "#212529" : "#0d6efd",
-      borderColor: isBaseReturn ? "#212529" : "#0d6efd",
-      glyphColor:  "#fff",
-    });
+    let pin;
+    if (isVia) {
+      pin = new PinElement({
+        glyphText: "→", background: "#6c757d",
+        borderColor: "#6c757d", glyphColor: "#fff", scale: 0.7,
+      });
+    } else if (isBaseReturn) {
+      pin = new PinElement({
+        background: "#212529", borderColor: "#212529", glyphColor: "#fff",
+      });
+    } else {
+      pin = new PinElement({
+        glyphText: String(stopCount + 1),
+        background: "#0d6efd", borderColor: "#0d6efd", glyphColor: "#fff",
+      });
+    }
+
     const marker = new AdvancedMarkerElement({
-      map,
-      position: { lat, lng },
-      title:    label,
+      map, position: { lat, lng }, title: label,
     });
     marker.content = pin;
 
-    waypoints.push({ lat, lng, label, isBaseReturn, marker });
-    _invalidateCalculation();
+    waypoints.push({ lat, lng, label, isBaseReturn, isVia: !!isVia, marker });
+    _invalidateCalculation(false);
     renderStopsList();
-    recalculateRoute();
+    recalculateRouteDisplay();
   }
 
   function removeWaypointAt(index) {
     const removed = waypoints.splice(index, 1)[0];
     if (removed && removed.marker) removed.marker.map = null;
-    _invalidateCalculation();
+    _invalidateCalculation(false);
     renderStopsList();
-    recalculateRoute();
+    recalculateRouteDisplay();
   }
 
   function reorderWaypoints(fromIndex, toIndex) {
     if (
-      fromIndex === toIndex ||
-      fromIndex < 0 || toIndex < 0 ||
+      fromIndex === toIndex || fromIndex < 0 || toIndex < 0 ||
       fromIndex >= waypoints.length || toIndex >= waypoints.length
     ) return;
     const [moved] = waypoints.splice(fromIndex, 1);
     waypoints.splice(toIndex, 0, moved);
-    _invalidateCalculation();
+    _invalidateCalculation(false);
     renderStopsList();
-    recalculateRoute();
+    recalculateRouteDisplay();
   }
 
   function renderStopsList() {
-    const list       = document.getElementById("route-stops-list");
-    const emptyMsg   = document.getElementById("route-stops-empty");
-    const template   = document.getElementById("route-stop-item-template");
-    const confirmBtn = document.getElementById("route-btn-confirm");
+    const list     = document.getElementById("route-stops-list");
+    const emptyMsg = document.getElementById("route-stops-empty");
+    const template = document.getElementById("route-stop-item-template");
     if (!list || !template) return;
 
     list.innerHTML = "";
+    let stopNum = 0;
     waypoints.forEach((wp, index) => {
       const frag    = template.content.cloneNode(true);
       const li      = frag.querySelector(".route-planner-stop");
@@ -296,7 +591,14 @@
 
       li.dataset.waypointIndex = String(index);
       li.dataset.isBaseReturn  = wp.isBaseReturn ? "true" : "false";
-      labelEl.textContent      = wp.label;
+
+      if (wp.isVia) {
+        labelEl.innerHTML = `<span style="color:#6c757d">${wp.label}</span>
+          <span style="font-size:.7rem;background:#e9ecef;color:#6c757d;
+            padding:.1rem .35rem;border-radius:.3rem;margin-left:.35rem">vía</span>`;
+      } else {
+        labelEl.textContent = wp.label;
+      }
 
       if (wp.isBaseReturn) {
         numEl.innerHTML =
@@ -304,26 +606,27 @@
           'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ' +
           'width="10" height="10"><path d="M2 7.5L8 2l6 5.5"/>' +
           '<path d="M3.5 6.5V13a.5.5 0 00.5.5h3v-3.5h2V13.5h3a.5.5 0 00.5-.5V6.5"/></svg>';
+      } else if (wp.isVia) {
+        numEl.textContent = "→";
+        numEl.style.fontSize = ".7rem";
       } else {
-        numEl.textContent = String(index + 1);
+        stopNum++;
+        numEl.textContent = String(stopNum);
       }
       list.appendChild(frag);
     });
 
-    if (emptyMsg)   emptyMsg.classList.toggle("d-none", waypoints.length > 0);
-    // Calcular se habilita cuando hay paradas; Confirmar solo tras calculateRoute().
+    if (emptyMsg) emptyMsg.classList.toggle("d-none", waypoints.length > 0);
     const calcBtn = document.getElementById("route-btn-calculate");
-    if (calcBtn) calcBtn.disabled = waypoints.length === 0;
-    const confirmBtnEl = document.getElementById("route-btn-confirm");
-    if (confirmBtnEl) confirmBtnEl.disabled = true;  // se habilita tras calculateRoute
+    const hasStops = waypoints.some((w) => !w.isVia);
+    if (calcBtn) calcBtn.disabled = !hasStops;
   }
 
   function handleStopsListClick(event) {
     const btn = event.target.closest(".route-planner-stop-remove");
     if (!btn) return;
     const li    = btn.closest(".route-planner-stop");
-    const index = Number(li.dataset.waypointIndex);
-    removeWaypointAt(index);
+    removeWaypointAt(Number(li.dataset.waypointIndex));
   }
 
   function handleDragStart(event) {
@@ -341,81 +644,89 @@
     event.preventDefault();
     const targetLi = event.target.closest(".route-planner-stop");
     if (!targetLi || dragSourceIndex === null) return;
-    const targetIndex = Number(targetLi.dataset.waypointIndex);
-    reorderWaypoints(dragSourceIndex, targetIndex);
+    reorderWaypoints(dragSourceIndex, Number(targetLi.dataset.waypointIndex));
     dragSourceIndex = null;
   }
 
   // ------------------------------------------------------------------
-  // Cálculo de ruta en vivo (Routes API v2 REST, solo visualización)
+  // Visualización de ruta en vivo
+  // Dos llamadas paralelas a DirectionsService:
+  //   1. Ruta normal → azul oscuro (#1565C0)
+  //   2. Ruta avoidTolls:true → azul claro (#90CAF9)
+  // provideRouteAlternatives con waypoints no devuelve alternativas (limitación
+  // documentada de la Directions API). Dos llamadas independientes garantizan
+  // siempre dos trazados distintos.
   // ------------------------------------------------------------------
 
-  async function recalculateRoute() {
-    const config     = getConfig();
-    const distanceEl = document.getElementById("route-summary-distance");
-    const overnightEl = document.getElementById("route-summary-overnight");
+  function recalculateRouteDisplay() {
+    const config = getConfig();
+    const hasStops = waypoints.some((w) => !w.isVia);
 
-    if (waypoints.length === 0) {
+    if (!hasStops) {
+      _clearRenderers();
+      const distanceEl  = document.getElementById("route-summary-distance");
+      const overnightEl = document.getElementById("route-summary-overnight");
       if (distanceEl)  distanceEl.textContent = "—";
       if (overnightEl) { overnightEl.textContent = "No"; overnightEl.classList.remove("is-overnight"); }
       togglePhaseFields(false);
-      if (routePolyline) routePolyline.setPath([]);
       return;
     }
 
     showMapSpinner();
+    _clearRenderers();
 
-    const intermediates = waypoints.map((s) => ({
-      location: { latLng: { latitude: s.lat, longitude: s.lng } },
+    const origin      = { lat: config.base.lat, lng: config.base.lng };
+    const destination = { lat: config.base.lat, lng: config.base.lng };
+
+    const intermediates = waypoints.map((wp) => ({
+      location: { lat: wp.lat, lng: wp.lng },
+      stopover: !wp.isVia,
     }));
 
-    const body = {
-      origin:      { location: { latLng: { latitude: config.base.lat, longitude: config.base.lng } } },
-      destination: { location: { latLng: { latitude: config.base.lat, longitude: config.base.lng } } },
-      intermediates,
-      travelMode:        "DRIVE",
-      routingPreference: "TRAFFIC_UNAWARE",
-      polylineQuality:   "OVERVIEW",
+    const baseRequest = {
+      origin,
+      destination,
+      waypoints:  intermediates,
+      travelMode: google.maps.TravelMode.DRIVING,
     };
 
-    try {
-      const resp = await fetch(
-        "https://routes.googleapis.com/directions/v2:computeRoutes",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":    "application/json",
-            "X-Goog-Api-Key":  _getApiKey(),
-            "X-Goog-FieldMask":
-              "routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.distanceMeters",
-          },
-          body: JSON.stringify(body),
-        }
-      );
-      if (!resp.ok) return;
-      const data = await resp.json();
-      if (!data.routes || !data.routes[0]) return;
+    let resultNormal = null;
+    let resultAlt    = null;
+    let pending      = 2;
 
-      const route = data.routes[0];
-      if (route.polyline && route.polyline.encodedPolyline) {
-        const path = google.maps.geometry.encoding.decodePath(
-          route.polyline.encodedPolyline
-        );
-        routePolyline.setPath(path);
-      }
-      applyRouteSummary(route);
-    } catch (_) {
-      // Fallo silencioso en visualización
-    } finally {
+    function onBothDone() {
       hideMapSpinner();
+      if (!resultNormal) return;   // La ruta principal es obligatoria
+      _buildRenderersFromResults(resultNormal, resultAlt);
+      applyRouteSummary(resultNormal, 0);
     }
+
+    // Llamada 1 — ruta normal (con peajes permitidos)
+    // Call 1 — normal route (tolls allowed)
+    directionsService.route(baseRequest, (result, status) => {
+      if (status === "OK") resultNormal = result;
+      if (--pending === 0) onBothDone();
+    });
+
+    // Llamada 2 — ruta evitando peajes
+    // Call 2 — toll-free route
+    directionsService.route(
+      { ...baseRequest, avoidTolls: true },
+      (result, status) => {
+        if (status === "OK") resultAlt = result;
+        if (--pending === 0) onBothDone();
+      }
+    );
   }
 
-  function applyRouteSummary(route) {
+  function applyRouteSummary(directionsResult, routeIdx) {
+    const route       = directionsResult.routes[routeIdx];
     const distanceEl  = document.getElementById("route-summary-distance");
     const overnightEl = document.getElementById("route-summary-overnight");
-    const totalMeters = route.distanceMeters || 0;
 
+    const totalMeters = route.legs.reduce(
+      (s, leg) => s + (leg.distance ? leg.distance.value : 0), 0
+    );
     if (distanceEl) distanceEl.textContent = formatKm(totalMeters);
 
     const baseReturnIndex = waypoints.findIndex((w) => w.isBaseReturn);
@@ -427,15 +738,14 @@
     }
     togglePhaseFields(isOvernight);
 
-    if (isOvernight && route.legs) {
+    if (isOvernight) {
       const phase1Meters = route.legs
         .slice(0, baseReturnIndex + 1)
-        .reduce((s, l) => s + (l.distanceMeters || 0), 0);
-      const phase2Meters = totalMeters - phase1Meters;
+        .reduce((s, l) => s + (l.distance ? l.distance.value : 0), 0);
       const p1 = document.getElementById("route-summary-phase1");
       const p2 = document.getElementById("route-summary-phase2");
       if (p1) p1.textContent = formatKm(phase1Meters);
-      if (p2) p2.textContent = formatKm(phase2Meters);
+      if (p2) p2.textContent = formatKm(totalMeters - phase1Meters);
     }
   }
 
@@ -453,7 +763,6 @@
 
   // ------------------------------------------------------------------
   // FASE 1 — Calcular ruta server-side (Routes API v2)
-  // Muestra km reales + peajes en el modal antes de confirmar.
   // ------------------------------------------------------------------
 
   async function calculateRoute(config) {
@@ -466,14 +775,20 @@
     const timeField    = config.serviceTimeFieldId
       ? document.getElementById(config.serviceTimeFieldId) : null;
 
+    const allWaypoints = [
+      ...waypoints.map((s) => ({
+        lat: s.lat, lng: s.lng,
+        label: s.label, is_base_return: s.isBaseReturn, is_via: s.isVia || false,
+      })),
+      ..._dragWaypoints.map((pt) => ({
+        lat: pt.lat, lng: pt.lng,
+        label: "Vía (arrastre)", is_base_return: false, is_via: true,
+      })),
+    ];
+
     const payload = {
       base_id: config.base.id,
-      waypoints_json: JSON.stringify(
-        waypoints.map((s) => ({
-          lat: s.lat, lng: s.lng,
-          label: s.label, is_base_return: s.isBaseReturn,
-        }))
-      ),
+      waypoints_json: JSON.stringify(allWaypoints),
       service_date: dateField ? dateField.value : "",
       service_time: timeField ? timeField.value : "",
     };
@@ -486,10 +801,7 @@
     try {
       const resp = await fetch(config.confirmUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken":  getCsrfToken(),
-        },
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
         body: JSON.stringify(payload),
       });
       if (!resp.ok) {
@@ -497,52 +809,38 @@
         throw new Error(errData.error || `HTTP ${resp.status}`);
       }
       const data = await resp.json();
-
-      // Guardar datos para confirmRoute()
       _calculatedRouteData = { payload, data };
 
-      // Actualizar resumen con datos reales del servidor
       const distanceEl  = document.getElementById("route-summary-distance");
       const overnightEl = document.getElementById("route-summary-overnight");
       const phase1El    = document.getElementById("route-summary-phase1");
       const phase2El    = document.getElementById("route-summary-phase2");
 
-      // Distancia total = phase1 + phase2 (si hay pernocta), o route_distance_km.
-      // Total distance = phase1 + phase2 (if overnight), or route_distance_km.
       const km1 = parseFloat(data.km_phase1 || 0);
       const km2 = parseFloat(data.km_phase2 || 0);
       const totalKm = data.is_overnight
         ? (km1 + km2).toFixed(1)
         : parseFloat(data.route_distance_km || km1).toFixed(1);
 
-      if (distanceEl) {
-        distanceEl.textContent = `${totalKm} km`;
-        distanceEl.classList.add("calculated");
-      }
+      if (distanceEl) { distanceEl.textContent = `${totalKm} km`; distanceEl.classList.add("calculated"); }
       if (overnightEl) {
         overnightEl.textContent = data.is_overnight ? "Sí" : "No";
         overnightEl.classList.toggle("is-overnight", Boolean(data.is_overnight));
       }
       togglePhaseFields(Boolean(data.is_overnight));
       if (data.is_overnight) {
-        if (phase1El && data.km_phase1)
-          phase1El.textContent = `${km1.toFixed(1)} km`;
-        if (phase2El && data.km_phase2)
-          phase2El.textContent = `${km2.toFixed(1)} km`;
+        if (phase1El && data.km_phase1) phase1El.textContent = `${km1.toFixed(1)} km`;
+        if (phase2El && data.km_phase2) phase2El.textContent = `${km2.toFixed(1)} km`;
       }
       if (tollsEl) {
         tollsEl.textContent = data.has_tolls ? "Sí" : "No";
         tollsEl.classList.toggle("has-tolls", Boolean(data.has_tolls));
       }
-
-      // Ocultar hint y habilitar Confirmar
       if (hintEl) hintEl.classList.add("d-none");
       if (confirmBtn) confirmBtn.disabled = false;
 
     } catch (err) {
-      showRoutePlannerError(
-        err.message || "No se ha podido calcular la ruta. Inténtalo de nuevo."
-      );
+      showRoutePlannerError(err.message || "No se ha podido calcular la ruta. Inténtalo de nuevo.");
       if (calculateBtn) calculateBtn.disabled = false;
     } finally {
       hideCalculateSpinner();
@@ -550,7 +848,7 @@
   }
 
   // ------------------------------------------------------------------
-  // FASE 2 — Confirmar ruta (vuelca datos calculados en hidden inputs)
+  // FASE 2 — Confirmar ruta
   // ------------------------------------------------------------------
 
   async function confirmRoute() {
@@ -565,8 +863,6 @@
     setHiddenValue("id_route_toll_budget_cost",  data.route_toll_budget_cost);
     setHiddenValue("id_route_calculation_mode",  "API");
 
-    // Resumen en el wizard — mostrar total real (phase1+phase2 si pernocta).
-    // Wizard summary — show real total (phase1+phase2 if overnight).
     const summaryEl   = document.getElementById("route-confirmed-summary");
     const summaryText = document.getElementById("route-confirmed-text");
     if (summaryEl && summaryText) {
@@ -575,9 +871,9 @@
       const totalKm = data.is_overnight
         ? (km1 + km2).toFixed(1)
         : parseFloat(data.route_distance_km || km1).toFixed(1);
-      const tolls    = data.has_tolls ? " · Con peajes" : "";
-      const overnight = data.is_overnight ? " · Pernocta" : "";
-      summaryText.textContent = `Ruta confirmada — ${totalKm} km${overnight}${tolls}`;
+      const tolls   = data.has_tolls ? " · Con peajes" : "";
+      const ovnight = data.is_overnight ? " · Pernocta" : "";
+      summaryText.textContent = `Ruta confirmada — ${totalKm} km${ovnight}${tolls}`;
       summaryEl.classList.remove("d-none");
     }
 
@@ -598,7 +894,7 @@
     let alertEl = document.getElementById("route-planner-error");
     if (!alertEl) {
       alertEl = document.createElement("div");
-      alertEl.id        = "route-planner-error";
+      alertEl.id = "route-planner-error";
       alertEl.className = "alert alert-danger alert-sm mt-2";
       alertEl.setAttribute("role", "alert");
       panel.appendChild(alertEl);

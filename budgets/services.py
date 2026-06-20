@@ -629,6 +629,7 @@ def _call_routes_multileg(
     dest_lng: float,
     departure_time_str: str,
     api_key: str,
+    avoid_tolls: bool = False,
 ) -> dict:
     """
     Execute a single Google Routes API call with intermediate waypoints
@@ -637,6 +638,9 @@ def _call_routes_multileg(
     The route is always a closed circuit: origin and destination share
     the same coordinates (the service base). Intermediate waypoints
     define the stops along the route (pickup, drop-off points).
+
+    If avoid_tolls=True, the routeModifiers.avoidTolls flag is set and
+    TOLLS extra computation is omitted (toll-free route).
 
     Returns:
     {
@@ -653,6 +657,9 @@ def _call_routes_multileg(
     La ruta es siempre un circuito cerrado: origen y destino comparten
     las mismas coordenadas (la base de servicio). Los waypoints intermedios
     definen las paradas del recorrido (recogida, puntos de entrega).
+
+    Si avoid_tolls=True, se activa routeModifiers.avoidTolls y se omite
+    TOLLS de extraComputations (ruta sin peajes).
 
     Devuelve el dict descrito arriba.
     Lanza RouteCalculationError ante cualquier fallo HTTP o de red.
@@ -699,13 +706,19 @@ def _call_routes_multileg(
         "travelMode": "DRIVE",
         "routingPreference": "TRAFFIC_AWARE",
         "departureTime": departure_time_str,
-        "extraComputations": ["TOLLS"],
         "routeModifiers": {
-            "avoidTolls": False,
+            "avoidTolls": avoid_tolls,
             "avoidHighways": False,
             "avoidFerries": False,
         },
     }
+
+    # Only request toll computation when not avoiding tolls — the
+    # toll-free call does not need extraComputations=TOLLS.
+    # Solo solicitar cómputo de peajes cuando no se evitan — la llamada
+    # sin peajes no necesita extraComputations=TOLLS.
+    if not avoid_tolls:
+        payload["extraComputations"] = ["TOLLS"]
 
     if intermediates_payload:
         payload["intermediates"] = intermediates_payload
@@ -1070,6 +1083,29 @@ def calculate_route_multileg(
                 departure_time_str=departure_time_str,
                 api_key=api_key,
             )
+
+            # Alternative route: same circuit avoiding tolls.
+            # Errors are silenced — alt is optional, primary is mandatory.
+            # Ruta alternativa: mismo circuito evitando peajes.
+            # Los errores se silencian — la alt es opcional, la principal
+            # es obligatoria.
+            try:
+                result_alt = _call_routes_multileg(
+                    origin_lat=origin_lat,
+                    origin_lng=origin_lng,
+                    intermediates=waypoints,
+                    dest_lat=origin_lat,
+                    dest_lng=origin_lng,
+                    departure_time_str=departure_time_str,
+                    api_key=api_key,
+                    avoid_tolls=True,
+                )
+                encoded_polyline_alt = result_alt["encoded_polyline"]
+                distance_km_alt = result_alt["distance_km"]
+            except Exception:
+                encoded_polyline_alt = ""
+                distance_km_alt = None
+
             return {
                 "distance_km": result["distance_km"],
                 "km_phase1": result["distance_km"],
@@ -1080,7 +1116,9 @@ def calculate_route_multileg(
                     _compute_toll_cost(result["encoded_polyline"])
                     if result["has_tolls"] else Decimal("0.00")
                 ),
-                "encoded_polyline": result["encoded_polyline"],
+                "encoded_polyline":     result["encoded_polyline"],
+                "encoded_polyline_alt": encoded_polyline_alt,
+                "distance_km_alt":      distance_km_alt,
                 "error": None,
             }
 
@@ -1118,11 +1156,44 @@ def calculate_route_multileg(
                 api_key=api_key,
             )
 
+            # Alternative routes (avoid tolls) — silenced on error.
+            # Rutas alternativas (sin peajes) — silenciadas en error.
+            try:
+                result1_alt = _call_routes_multileg(
+                    origin_lat=origin_lat,
+                    origin_lng=origin_lng,
+                    intermediates=leg1_waypoints,
+                    dest_lat=origin_lat,
+                    dest_lng=origin_lng,
+                    departure_time_str=departure_time_str,
+                    api_key=api_key,
+                    avoid_tolls=True,
+                )
+                result2_alt = _call_routes_multileg(
+                    origin_lat=origin_lat,
+                    origin_lng=origin_lng,
+                    intermediates=leg2_waypoints,
+                    dest_lat=origin_lat,
+                    dest_lng=origin_lng,
+                    departure_time_str=departure_time_str,
+                    api_key=api_key,
+                    avoid_tolls=True,
+                )
+                encoded_polyline_alt = (
+                    result1_alt["encoded_polyline"]
+                    + ""
+                    + result2_alt["encoded_polyline"]
+                )
+                distance_km_alt = result1_alt["distance_km"] + result2_alt["distance_km"]
+            except Exception:
+                encoded_polyline_alt = ""
+                distance_km_alt = None
+
             # Combine polylines: phase 1 then phase 2.
             # Combinar polylines: fase 1 seguida de fase 2.
             combined_polyline = (
                 result1["encoded_polyline"]
-                + "|"
+                + ""
                 + result2["encoded_polyline"]
             )
 
@@ -1141,7 +1212,9 @@ def calculate_route_multileg(
                 "is_overnight": True,
                 "has_tolls": has_tolls,
                 "route_toll_budget_cost": _round2(toll_cost),
-                "encoded_polyline": combined_polyline,
+                "encoded_polyline":     combined_polyline,
+                "encoded_polyline_alt": encoded_polyline_alt,
+                "distance_km_alt":      distance_km_alt,
                 "error": None,
             }
 

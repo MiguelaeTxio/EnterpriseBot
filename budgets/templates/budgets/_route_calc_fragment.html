@@ -1,3 +1,4 @@
+
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_route_calc_fragment.html #}
 {#                                                                                                 #}
 {# HTMX fragment — resultado del calculo de ruta via Routes API.                                  #}
@@ -22,22 +23,22 @@
       <span class="fw-semibold text-success">Ruta calculada correctamente</span>
     </div>
     <div class="row g-2 small">
-      <div class="col-6">
+      <div class="col-12 col-sm-6">
         <span class="text-muted">Origen (base):</span><br>
         <strong>{{ base_name }}</strong>
       </div>
-      <div class="col-6">
+      <div class="col-12 col-sm-6">
         <span class="text-muted">Destino:</span><br>
         <strong>{{ road_name }} — PK {{ pk_km }}</strong>
       </div>
-      <div class="col-6">
+      <div class="col-12 col-sm-6">
         <span class="text-muted">Distancia calculada:</span><br>
         <strong>{{ distance_km }} km</strong>
         <div class="form-text text-muted">
           Se usará como km ida y vuelta (4a).
         </div>
       </div>
-      <div class="col-6">
+      <div class="col-12 col-sm-6">
         <span class="text-muted">Peajes:</span><br>
         {% if toll_cost %}
         {# Toll cost known — show editable field. #}
