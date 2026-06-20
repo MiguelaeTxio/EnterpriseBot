@@ -1,0 +1,90 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/base_calendar_detail.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Calendario — {{ base.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  {# ------------------------------------------------------------------ #}
+  {# Cabecera de página                                                  #}
+  {# Page header                                                         #}
+  {# ------------------------------------------------------------------ #}
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-1 small">
+          <li class="breadcrumb-item">
+            <a href="{% url 'budgets:base_calendar_list' %}">Calendarios laborales</a>
+          </li>
+          <li class="breadcrumb-item active" aria-current="page">{{ base.name }}</li>
+        </ol>
+      </nav>
+      <h1 class="h4 mb-0 fw-semibold">
+        <i class="bi bi-calendar3 me-2 text-primary"></i>{{ base.name }}
+      </h1>
+      <p class="text-muted small mb-0 mt-1">
+        {{ base.municipality|default:"Sin municipio" }}
+      </p>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  {# Mensajes Django                                                      #}
+  {# Django messages                                                      #}
+  {# ------------------------------------------------------------------ #}
+  {% for message in messages %}
+  <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+  </div>
+  {% endfor %}
+
+  <div class="row g-4">
+
+    {# ---------------------------------------------------------------- #}
+    {# Panel izquierdo — añadir fecha                                   #}
+    {# Left panel — add date                                            #}
+    {# ---------------------------------------------------------------- #}
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-plus-circle me-1"></i>Añadir fecha festiva
+        </div>
+        <div class="card-body">
+          <form method="post"
+                action="{% url 'budgets:base_calendar_detail' base.pk %}"
+                hx-post="{% url 'budgets:base_calendar_detail' base.pk %}"
+                hx-target="#calendar-dates"
+                hx-swap="outerHTML">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add">
+            <div class="mb-3">
+              <label for="id_date_add" class="form-label small fw-medium">
+                Fecha (YYYY-MM-DD)
+              </label>
+              <input type="date"
+                     id="id_date_add"
+                     name="date"
+                     class="form-control form-control-sm"
+                     required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+              <i class="bi bi-plus-lg me-1"></i>Añadir
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {# ---------------------------------------------------------------- #}
+    {# Panel derecho — listado de fechas actuales                       #}
+    {# Right panel — current date list                                  #}
+    {# ---------------------------------------------------------------- #}
+    <div class="col-12 col-md-8">
+      {% include "budgets/partials/calendar_dates_fragment.html" %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}

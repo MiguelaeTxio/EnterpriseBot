@@ -80,3 +80,32 @@ def unit_label(value):
     de TariffLine. Devuelve el valor crudo si no existe mapeo.
     """
     return UNIT_LABELS.get(value, value)
+
+
+# ---------------------------------------------------------------------------
+# Weekday names for calendar display
+# Nombres de días de la semana para visualización de calendario
+# ---------------------------------------------------------------------------
+
+_WEEKDAY_NAMES = [
+    "Lunes", "Martes", "Miércoles", "Jueves",
+    "Viernes", "Sábado", "Domingo",
+]
+
+
+@register.filter(name="weekday_name")
+def weekday_name(iso_date_str):
+    """
+    Return the Spanish weekday name for an ISO date string (YYYY-MM-DD).
+    Returns the original string if parsing fails.
+    ---
+    Devuelve el nombre del día de la semana en castellano para un string
+    de fecha ISO (YYYY-MM-DD). Devuelve el string original si el parsing
+    falla.
+    """
+    import datetime
+    try:
+        d = datetime.date.fromisoformat(str(iso_date_str))
+        return _WEEKDAY_NAMES[d.weekday()]
+    except (ValueError, TypeError):
+        return str(iso_date_str)

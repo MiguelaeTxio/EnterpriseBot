@@ -1,3 +1,4 @@
+
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_nav_items.html #}
 {#                                                                                   #}
 {# Partial template: navigation items shared by the fixed sidebar and the           #}
@@ -452,6 +453,12 @@
                         <i class="bi bi-tag-fill"></i>Conceptos de tarifa
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if active_nav == 'budgets_calendars' %}active{% endif %}"
+                       href="{% url 'budgets:base_calendar_list' %}">
+                        <i class="bi bi-calendar3"></i>Calendarios laborales
+                    </a>
+                </li>
                 {% endif %}
                 {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
                 {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
@@ -536,7 +543,8 @@
         'budgets_bases':            'acc-asistencia',
         'albaran_demo':             'acc-asistencia',
         'budgets_toll_segments':    'acc-asistencia',
-        'budgets_concepts':         'acc-asistencia'
+        'budgets_concepts':         'acc-asistencia',
+        'budgets_calendars':        'acc-asistencia'
     };
 
     var STORAGE_PREFIX = 'sidebar_acc_';

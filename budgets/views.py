@@ -5131,5 +5131,208 @@ class WorkOrderPdfView(AssistanceRequiredMixin, View):
         return response
 
 
+# ---------------------------------------------------------------------------
+# Base calendar management — ADMIN only
+# Gestión de calendarios laborales de bases — solo ADMIN
+# ---------------------------------------------------------------------------
+
+class BaseCalendarView(AdminRoleRequiredMixin, View):
+    """
+    List all active bases for the company with their labour calendar summary.
+    Provides an entry point to manage each base's holiday dates manually.
+    Also exposes the sync-all action to refresh calendars from the external
+    source (calendariosnacionales.com).
+    ---
+    Lista todas las bases activas de la empresa con un resumen de su
+    calendario laboral. Punto de entrada para gestionar manualmente las
+    fechas festivas de cada base. También expone la acción de sincronización
+    global para refrescar los calendarios desde la fuente externa
+    (calendariosnacionales.com).
+    """
+
+    template_name = "budgets/base_calendar_list.html"
+
+    def get(self, request):
+        """
+        Render the base calendar list for the operator's company.
+        Annotates each base with the number of holiday dates in its
+        labor_calendar JSON field.
+        ---
+        Renderiza el listado de calendarios de bases de la empresa del
+        operario. Anota cada base con el número de fechas festivas en
+        su campo JSON labor_calendar.
+        """
+        company_user = _get_company_user(request)
+        bases = (
+            Base.objects
+            .filter(
+                company=company_user.company,
+                is_active=True,
+            )
+            .order_by("municipality", "name")
+        )
+        # Build summary: count of dates per base (labor_calendar is a JSON
+        # string stored as TextField — must be deserialised before use).
+        # Construye resumen: número de fechas por base (labor_calendar es
+        # un string JSON almacenado como TextField — debe deserializarse).
+        import json as _json
+        base_data = []
+        for base in bases:
+            raw = (base.labor_calendar or "").strip()
+            try:
+                cal = _json.loads(raw) if raw else []
+            except (ValueError, TypeError):
+                cal = []
+            base_data.append({
+                "base": base,
+                "date_count": len(cal),
+                "last_synced": base.calendar_synced_at,
+            })
+        ctx = _build_base_context(request, {
+            "base_data": base_data,
+            "active_nav": "budgets_calendars",
+        })
+        return render(request, self.template_name, ctx)
+
+
+class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
+    """
+    Manage the labour calendar of a single Base: view, add and remove
+    individual holiday dates. Also provides an HTMX endpoint for adding
+    and deleting dates without full page reload.
+    ---
+    Gestiona el calendario laboral de una Base individual: ver, añadir
+    y eliminar fechas festivas individuales. También provee un endpoint
+    HTMX para añadir y eliminar fechas sin recarga completa de página.
+    """
+
+    template_name = "budgets/base_calendar_detail.html"
+    FRAGMENT_TEMPLATE = (
+        "budgets/partials/calendar_dates_fragment.html"
+    )
+
+    def _get_base(self, request, pk):
+        """
+        Return the Base scoped to the company of the authenticated user.
+        ---
+        Devuelve la Base acotada a la empresa del usuario autenticado.
+        """
+        company_user = _get_company_user(request)
+        return get_object_or_404(
+            Base,
+            pk=pk,
+            company=company_user.company,
+        )
+
+    def get(self, request, pk):
+        """
+        Render the detail page with the sorted list of holiday dates for
+        the base, and an add-date form.
+        ---
+        Renderiza la página de detalle con la lista ordenada de fechas
+        festivas de la base y un formulario de añadir fecha.
+        """
+        base = self._get_base(request, pk)
+        import json as _json
+        raw = (base.labor_calendar or "").strip()
+        try:
+            dates = sorted(_json.loads(raw) if raw else [])
+        except (ValueError, TypeError):
+            dates = []
+        ctx = _build_base_context(request, {
+            "base": base,
+            "dates": dates,
+            "active_nav": "budgets_calendars",
+        })
+        return render(request, self.template_name, ctx)
+
+    def post(self, request, pk):
+        """
+        Handle add-date (action=add) and remove-date (action=remove) POST
+        requests. Returns an HTMX fragment with the updated date list when
+        the request is HTMX, otherwise redirects to the detail page.
+        ---
+        Gestiona las peticiones POST de añadir fecha (action=add) y
+        eliminar fecha (action=remove). Devuelve un fragmento HTMX con
+        la lista de fechas actualizada cuando la petición es HTMX,
+        si no redirige a la página de detalle.
+        """
+        import datetime as _dt
+        import json as _json
+        base = self._get_base(request, pk)
+        action = request.POST.get("action", "add")
+        date_str = request.POST.get("date", "").strip()
+        is_htmx = request.headers.get("HX-Request") == "true"
+
+        # Deserialise TextField JSON string to list.
+        # Deserializar el string JSON del TextField a lista.
+        raw = (base.labor_calendar or "").strip()
+        try:
+            cal = _json.loads(raw) if raw else []
+        except (ValueError, TypeError):
+            cal = []
+        error = None
+
+        if action == "add":
+            # Validate ISO date format.
+            # Validar formato de fecha ISO.
+            try:
+                _dt.date.fromisoformat(date_str)
+            except ValueError:
+                error = "Fecha inválida. Usa el formato YYYY-MM-DD."
+            else:
+                if date_str not in cal:
+                    cal.append(date_str)
+                    base.labor_calendar = _json.dumps(
+                        sorted(cal), ensure_ascii=False
+                    )
+                    base.save(update_fields=["labor_calendar"])
+                    messages.success(
+                        request,
+                        f"Fecha {date_str} añadida al calendario.",
+                    )
+                else:
+                    error = (
+                        f"La fecha {date_str} ya existe en el calendario."
+                    )
+
+        elif action == "remove":
+            if date_str in cal:
+                cal.remove(date_str)
+                base.labor_calendar = _json.dumps(
+                    sorted(cal), ensure_ascii=False
+                )
+                base.save(update_fields=["labor_calendar"])
+                messages.success(
+                    request,
+                    f"Fecha {date_str} eliminada del calendario.",
+                )
+            else:
+                error = (
+                    f"La fecha {date_str} no existe en el calendario."
+                )
+
+        raw2 = (base.labor_calendar or "").strip()
+        try:
+            dates = sorted(_json.loads(raw2) if raw2 else [])
+        except (ValueError, TypeError):
+            dates = []
+
+        if is_htmx:
+            ctx = _build_base_context(request, {
+                "base": base,
+                "dates": dates,
+                "error": error,
+                "active_nav": "budgets_calendars",
+            })
+            return render(request, self.FRAGMENT_TEMPLATE, ctx)
+
+        if error:
+            messages.error(request, error)
+        return redirect("budgets:base_calendar_detail", pk=pk)
+
+
+
+
 
 

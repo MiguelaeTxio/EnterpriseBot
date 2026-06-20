@@ -1,3 +1,4 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/urls.py
 """
 URL configuration for the budgets application.
 All routes are prefixed with /panel/budgets/ via enterprise_core/urls.py.
@@ -482,6 +483,27 @@ urlpatterns = [
         name="base_sync_calendars",
     ),
 
+    # ---------------------------------------------------------------------------
+    # Base calendar management routes — ADMIN only
+    # Rutas de gestión de calendarios laborales de bases — solo ADMIN
+    # ---------------------------------------------------------------------------
+
+    # Base calendar list — listado global de bases con resumen de calendarios.
+    # Base calendar list — global base list with calendar summary.
+    path(
+        "calendars/",
+        views.BaseCalendarView.as_view(),
+        name="base_calendar_list",
+    ),
+
+    # Base calendar detail — gestión de fechas festivas de una base individual.
+    # Base calendar detail — manage holiday dates for a single base.
+    path(
+        "calendars/<int:pk>/",
+        views.BaseCalendarDetailView.as_view(),
+        name="base_calendar_detail",
+    ),
+
     # Base clear coords — HTMX POST, limpia coordenadas de las bases seleccionadas.
     # Recibe lista de PKs via POST. Pone latitude/longitude a null. Solo ADMIN.
     # Base clear coords — HTMX POST, clears coordinates of selected bases.
@@ -587,3 +609,5 @@ urlpatterns = [
         name="work_order_pdf",
     ),
 ]
+
+

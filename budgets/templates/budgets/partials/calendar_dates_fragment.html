@@ -1,0 +1,73 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/calendar_dates_fragment.html #}
+{# Fragmento HTMX: lista de fechas festivas de una base.               #}
+{# HTMX fragment: list of holiday dates for a base.                    #}
+{# Target ID: #calendar-dates — reemplazado completo en cada acción.   #}
+{# Target ID: #calendar-dates — fully replaced on each action.         #}
+<div id="calendar-dates" class="card shadow-sm">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span class="fw-semibold">
+      <i class="bi bi-calendar-check me-1"></i>Festivos registrados
+    </span>
+    <span class="badge bg-secondary">{{ dates|length }}</span>
+  </div>
+
+  {# Error inline HTMX                                                   #}
+  {# Inline HTMX error                                                   #}
+  {% if error %}
+  <div class="alert alert-danger alert-dismissible fade show mx-3 mt-3 mb-0 py-2 small" role="alert">
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+  </div>
+  {% endif %}
+
+  {% if dates %}
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Día de la semana</th>
+            <th scope="col" class="text-end">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for date_str in dates %}
+          <tr>
+            <td class="fw-medium font-monospace">{{ date_str }}</td>
+            <td class="text-muted small">
+              {# Resolución de día de la semana desde el string ISO      #}
+              {# Weekday resolution from ISO string                       #}
+              {% load budgets_extras %}
+              {{ date_str|weekday_name }}
+            </td>
+            <td class="text-end">
+              <form method="post"
+                    action="{% url 'budgets:base_calendar_detail' base.pk %}"
+                    hx-post="{% url 'budgets:base_calendar_detail' base.pk %}"
+                    hx-target="#calendar-dates"
+                    hx-swap="outerHTML"
+                    hx-confirm="¿Eliminar la fecha {{ date_str }}?">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove">
+                <input type="hidden" name="date" value="{{ date_str }}">
+                <button type="submit"
+                        class="btn btn-outline-danger btn-sm py-0 px-2"
+                        title="Eliminar">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card-body text-center text-muted py-4">
+    <i class="bi bi-calendar-x fs-3 d-block mb-2"></i>
+    <p class="mb-0 small">Sin fechas festivas registradas.</p>
+  </div>
+  {% endif %}
+</div>
