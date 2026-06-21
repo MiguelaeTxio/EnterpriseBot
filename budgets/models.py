@@ -1035,9 +1035,9 @@ class BudgetLine(models.Model):
         help_text="Presupuesto al que pertenece esta linea de desglose.",
     )
     concept_code = models.CharField(
-        max_length=30,
+        max_length=50,
         verbose_name="Codigo de concepto",
-        help_text="Codigo interno del concepto aplicado (ej: DEPARTURE, KM_NORMAL, NYF_PERCENT).",
+        help_text="Codigo interno del concepto aplicado (ej: DEPARTURE, KM_NORMAL, NYF_PERCENT). max_length=50 alineado con TariffConcept.code.",
     )
     concept_label = models.CharField(
         max_length=200,
@@ -3283,4 +3283,5 @@ class TollSegment(models.Model):
             f"[{self.tariff_level}] "
             f"€{self.price_light}/{self.price_heavy_1}/{self.price_heavy_2}"
         )
+
 

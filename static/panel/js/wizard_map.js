@@ -1,13 +1,15 @@
 // /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/wizard_map.js
 /**
- * Route planner modal logic (Google Maps JS API, Modo B).
+ * Route planner modal logic (Google Maps JS API, Routes Library).
  *
  * Standard pattern (June 2026):
- *   - DirectionsService with provideRouteAlternatives:true → result.routes[]
- *   - One DirectionsRenderer per route, each with its own routeIndex + color
- *   - Click on a route polyline to select it (highlight/dim)
- *   - Desktop: DirectionsRenderer draggable:true on selected renderer
- *   - Mobile:  tap map → bottom sheet (Add stop / Pass through via:true)
+ *   - Routes Library: importLibrary('routes') → Route.computeRoutes()
+ *   - DirectionsService / DirectionsRenderer DEPRECATED (Feb 2026) — NOT used
+ *   - Two parallel Route.computeRoutes() calls via Promise.all:
+ *       1. avoidTolls:false → dark blue polylines (primary, on top)
+ *       2. avoidTolls:true  → light blue polylines (toll-free, below)
+ *   - createPolylines() + setOptions() + setMap() for custom colors
+ *   - Mobile: tap map → bottom sheet (Add stop / Pass through)
  *   - Server-side calculation via BudgetWaypointView (Routes API v2)
  *
  * Contrato con wizard.html:
@@ -26,36 +28,35 @@
   // Colores de ruta
   // Route colors
   // ------------------------------------------------------------------
-  const COLOR_PRIMARY = "#1565C0";   // Azul oscuro — ruta principal / Dark blue — primary
-  const COLOR_ALT     = "#90CAF9";   // Azul claro  — ruta alternativa / Light blue — alternative
-  const WEIGHT_ACTIVE = 6;
-  const WEIGHT_DIM    = 4;
-  const OPACITY_ACTIVE = 0.95;
-  const OPACITY_DIM    = 0.45;
+  const COLOR_PRIMARY = "#1565C0";   // Azul oscuro — ruta con peajes / Dark blue — toll route
+  const COLOR_ALT     = "#4FC3F7";   // Azul claro visible — ruta sin peajes / Visible light blue — toll-free route
+  const WEIGHT_ACTIVE = 7;
+  const WEIGHT_DIM    = 5;
+  const OPACITY_ACTIVE = 1.0;
+  const OPACITY_DIM    = 0.75;  // Visible aunque no seleccionada / Visible even when not selected
 
   // ------------------------------------------------------------------
   // Estado del módulo
   // ------------------------------------------------------------------
-  let map               = null;
-  let directionsService = null;
-  let geocoder          = null;
-  let baseMarker        = null;
-  let mapInitialized    = false;
-  let dragSourceIndex   = null;
-  let MarkerLib         = null;
+  let map            = null;
+  let Route          = null;   // Routes Library — Route class
+  let geocoder       = null;
+  let baseMarker     = null;
+  let mapInitialized = false;
+  let dragSourceIndex = null;
+  let MarkerLib      = null;
 
   /**
-   * Renderers activos — uno por ruta alternativa devuelta.
-   * renderers[0] = ruta principal, renderers[1] = alternativa, ...
+   * Polylines activas — array de { polylines: Polyline[], isPrimary: bool,
+   * distanceMeters: number, durationMillis: number }
+   * index 0 = ruta sin peajes (azul claro, debajo)
+   * index 1 = ruta con peajes (azul oscuro, encima)
    */
-  let renderers      = [];
-  let selectedRouteIndex = 0;
+  let activeRoutes       = [];
+  let selectedRouteIndex = 1;   // Por defecto seleccionada la ruta con peajes
 
   /** Waypoints del usuario: { lat, lng, label, isBaseReturn, isVia, marker } */
   const waypoints = [];
-
-  /** Via-waypoints añadidos por drag (desktop) */
-  let _dragWaypoints = [];
 
   /** Resultado de calculateRoute() — volcado en confirmRoute() */
   let _calculatedRouteData = null;
@@ -95,123 +96,107 @@
   }
 
   // ------------------------------------------------------------------
-  // Gestión de renderers
+  // Gestión de polylines activas
   // ------------------------------------------------------------------
 
-  /** Elimina todos los renderers/polylines del mapa y limpia el array */
-  function _clearRenderers() {
-    renderers.forEach((r) => {
-      if (r.renderer) r.renderer.setMap(null);
-      if (r.polyline) r.polyline.setMap(null);
+  /** Elimina todas las polylines del mapa y vacía el array */
+  function _clearRoutes() {
+    activeRoutes.forEach((route) => {
+      (route.polylines || []).forEach((p) => p.setMap(null));
     });
-    renderers = [];
-    selectedRouteIndex = 0;
-    _dragWaypoints = [];
+    activeRoutes = [];
+    selectedRouteIndex = 1;
+    document.querySelectorAll(".rp-route-cards-wrapper").forEach((el) => el.remove());
   }
 
   /**
-   * Construye los renderers a partir del resultado de DirectionsService.
-   * Uno por ruta: el primero en azul oscuro, el resto en azul claro.
-   * Sets up one DirectionsRenderer per route from DirectionsService result.
-   * First route: dark blue. Rest: light blue. Click to select.
-   */
-  /**
-   * Pinta las rutas directamente con Polyline (no DirectionsRenderer).
-   * Evita interferencias con mapId/vector rendering.
-   * Para desktop, el renderer draggable se aplica solo a la ruta seleccionada.
+   * Pinta las dos rutas con la Routes Library nativa.
+   * Recibe los objetos Route de computeRoutes para ruta con peajes (routeNormal)
+   * y ruta sin peajes (routeAlt). routeAlt puede ser null.
    *
-   * Draws routes directly with Polyline (not DirectionsRenderer).
-   * Avoids interference with mapId/vector rendering.
+   * Draws both routes using the native Routes Library.
+   * Receives Route objects from computeRoutes for toll route (routeNormal)
+   * and toll-free route (routeAlt). routeAlt may be null.
    */
-  function _buildRenderersFromResults(resultNormal, resultAlt) {
-    _clearRenderers();
-    const { DirectionsRenderer } = window._mapsRoutesLib;
-    const { Polyline } = window._mapsLib;
+  function _buildPolylinesFromRoutes(routeNormal, routeAlt) {
+    _clearRoutes();
 
-    // Ruta alternativa (azul claro) — se pinta PRIMERO para quedar debajo
-    // Alternative route (light blue) — drawn FIRST to appear below
-    if (resultAlt) {
-      const pathAlt = resultAlt.routes[0].overview_path;
-      const polyAlt = new Polyline({
-        map,
-        path:          pathAlt,
-        strokeColor:   COLOR_ALT,
-        strokeOpacity: OPACITY_DIM,
-        strokeWeight:  WEIGHT_DIM,
-        zIndex:        1,
-        clickable:     true,
+    // --- Ruta sin peajes (azul claro) — se pinta PRIMERO para quedar DEBAJO
+    // --- Toll-free route (light blue) — drawn FIRST to appear BELOW
+    if (routeAlt) {
+      const polysAlt = routeAlt.createPolylines();
+      polysAlt.forEach((p) => {
+        p.setOptions({
+          strokeColor:   COLOR_ALT,
+          strokeOpacity: OPACITY_DIM,
+          strokeWeight:  WEIGHT_DIM,
+          zIndex:        1,
+          clickable:     true,
+        });
+        p.setMap(map);
+        p.addListener("click", () => _selectRoute(0));
       });
-      polyAlt.addListener("click", () => _selectRoute(1));
-      renderers.push({ polyline: polyAlt, result: resultAlt, isPrimary: false });
+      activeRoutes.push({
+        polylines:      polysAlt,
+        isPrimary:      false,
+        distanceMeters: routeAlt.distanceMeters || 0,
+        durationMillis: routeAlt.durationMillis || 0,
+      });
     }
 
-    // Ruta principal (azul oscuro) con DirectionsRenderer draggable en desktop
-    // Primary route (dark blue) with draggable DirectionsRenderer on desktop
-    const rendererPrimary = new DirectionsRenderer({
-      map,
-      directions:      resultNormal,
-      routeIndex:      0,
-      draggable:       !isMobileDevice(),
-      suppressMarkers: true,
-      polylineOptions: {
+    // --- Ruta con peajes (azul oscuro) — se pinta DESPUÉS para quedar ENCIMA
+    // --- Toll route (dark blue) — drawn AFTER to appear ON TOP
+    const polysNormal = routeNormal.createPolylines();
+    polysNormal.forEach((p) => {
+      p.setOptions({
         strokeColor:   COLOR_PRIMARY,
         strokeOpacity: OPACITY_ACTIVE,
         strokeWeight:  WEIGHT_ACTIVE,
         zIndex:        2,
         clickable:     true,
-      },
+      });
+      p.setMap(map);
+      p.addListener("click", () => _selectRoute(routeAlt ? 1 : 0));
     });
-    rendererPrimary.addListener("directions_changed", () => {
-      const res = rendererPrimary.getDirections();
-      if (!res) return;
-      _dragWaypoints = [];
-      const route = res.routes[0];
-      if (route) {
-        route.legs.forEach((leg) => {
-          (leg.via_waypoints || []).forEach((pt) => {
-            _dragWaypoints.push({ lat: pt.lat(), lng: pt.lng() });
-          });
-        });
-      }
-      _invalidateCalculation(true);
+    activeRoutes.push({
+      polylines:      polysNormal,
+      isPrimary:      true,
+      distanceMeters: routeNormal.distanceMeters || 0,
+      durationMillis: routeNormal.durationMillis || 0,
     });
-    rendererPrimary.addListener("click", () => _selectRoute(0));
-    renderers.push({ renderer: rendererPrimary, result: resultNormal, isPrimary: true });
 
-    if (resultAlt) {
-      _buildRouteSelectorCardsFromResults(resultNormal, resultAlt);
+    // Ajustar el mapa al viewport de la ruta principal
+    // Fit map to primary route viewport
+    if (routeNormal.viewport) {
+      map.fitBounds(routeNormal.viewport, 50);
     }
 
-    _selectRoute(0);
+    // Construir cards de selección si hay dos rutas
+    if (routeAlt) {
+      _buildRouteSelectorCards();
+    }
+
+    // Seleccionar la ruta con peajes por defecto (último índice)
+    _selectRoute(activeRoutes.length - 1);
   }
 
   /**
    * Selecciona la ruta con índice idx:
    * resalta su polyline, atenúa las demás.
+   * Selects route at index idx: highlights its polyline, dims others.
    */
   function _selectRoute(idx) {
     selectedRouteIndex = idx;
-    renderers.forEach((r, i) => {
+    activeRoutes.forEach((route, i) => {
       const active = i === idx;
-      if (r.renderer) {
-        r.renderer.setOptions({
-          polylineOptions: {
-            strokeColor:   active ? COLOR_PRIMARY : COLOR_ALT,
-            strokeOpacity: active ? OPACITY_ACTIVE : OPACITY_DIM,
-            strokeWeight:  active ? WEIGHT_ACTIVE  : WEIGHT_DIM,
-            zIndex:        active ? 2 : 1,
-          },
-          draggable: active && !isMobileDevice(),
-        });
-      }
-      if (r.polyline) {
-        r.polyline.setOptions({
-          strokeColor:   active ? COLOR_PRIMARY : COLOR_ALT,
+      (route.polylines || []).forEach((p) => {
+        p.setOptions({
+          strokeColor:   active ? (route.isPrimary ? COLOR_PRIMARY : COLOR_ALT) : COLOR_ALT,
           strokeOpacity: active ? OPACITY_ACTIVE : OPACITY_DIM,
           strokeWeight:  active ? WEIGHT_ACTIVE  : WEIGHT_DIM,
           zIndex:        active ? 2 : 1,
         });
-      }
+      });
     });
     // Actualizar estado visual de las cards
     document.querySelectorAll(".rp-route-card").forEach((card, i) => {
@@ -225,7 +210,7 @@
   // Route selector cards in the side panel
   // ------------------------------------------------------------------
 
-  function _buildRouteSelectorCardsFromResults(resultNormal, resultAlt) {
+  function _buildRouteSelectorCards() {
     document.querySelectorAll(".rp-route-cards-wrapper").forEach((el) => el.remove());
 
     if (!document.getElementById("rp-route-cards-style")) {
@@ -254,20 +239,18 @@
     const wrapper = document.createElement("div");
     wrapper.className = "rp-route-cards-wrapper";
 
-    const routeDefs = [
-      { result: resultNormal, label: "Con peajes",  color: COLOR_PRIMARY, idx: 0 },
-      { result: resultAlt,    label: "Sin peajes",  color: COLOR_ALT,     idx: 1 },
+    // activeRoutes[0] = sin peajes (azul claro), activeRoutes[1] = con peajes (azul oscuro)
+    const cardDefs = [
+      { label: "Sin peajes", color: COLOR_ALT,     idx: 0 },
+      { label: "Con peajes", color: COLOR_PRIMARY,  idx: 1 },
     ];
 
-    routeDefs.forEach(({ result, label, color, idx }) => {
-      if (!result) return;
-      const meters = result.routes[0].legs.reduce(
-        (s, leg) => s + (leg.distance ? leg.distance.value : 0), 0
-      );
-      const km = (meters / 1000).toFixed(1);
+    cardDefs.forEach(({ label, color, idx }) => {
+      if (!activeRoutes[idx]) return;
+      const km = (activeRoutes[idx].distanceMeters / 1000).toFixed(1);
 
       const card = document.createElement("div");
-      card.className = "rp-route-card" + (idx === 0 ? " rp-route-card--active" : "");
+      card.className = "rp-route-card" + (idx === selectedRouteIndex ? " rp-route-card--active" : "");
       card.innerHTML = `
         <span class="rp-route-card__dot" style="background:${color}"></span>
         <span class="rp-route-card__label">${label}</span>
@@ -390,14 +373,11 @@
       ]);
 
     MarkerLib = _MarkerLib;
-    // Guardamos RoutesLib para usarla en _buildRenderers
-    window._mapsRoutesLib = RoutesLib;
-    window._mapsLib = MapsLib;
+    Route = RoutesLib.Route;   // Routes Library — clase Route para computeRoutes()
 
-    const { Map }                = MapsLib;
+    const { Map }                           = MapsLib;
     const { AdvancedMarkerElement, PinElement } = MarkerLib;
-    const { Geocoder }           = GeocodingLib;
-    const { DirectionsService }  = RoutesLib;
+    const { Geocoder }                      = GeocodingLib;
 
     const baseNameEl = document.getElementById("route-base-name");
     if (baseNameEl) baseNameEl.textContent = config.base.name;
@@ -417,7 +397,6 @@
     });
     baseMarker.content = basePin;
 
-    directionsService = new DirectionsService();
     geocoder = new Geocoder();
 
     map.addListener("click", async (event) => {
@@ -504,18 +483,16 @@
 
     // Solo deshabilitar "Calcular ruta" si no hay paradas reales,
     // o si se limpia la polyline (cambio de paradas).
-    // keepPolyline=true → el usuario arrastró la ruta, el botón debe
+    // keepPolyline=true → el usuario seleccionó otra ruta, el botón debe
     // mantenerse habilitado para que pueda recalcular.
     // Only disable "Calcular ruta" if no real stops, or polyline is cleared.
-    // keepPolyline=true → user dragged the route, button stays enabled.
+    // keepPolyline=true → user selected another route, button stays enabled.
     const calcBtn = document.getElementById("route-btn-calculate");
     const hasStops = waypoints.some((w) => !w.isVia);
     if (calcBtn && !keepPolyline) calcBtn.disabled = !hasStops;
 
     if (!keepPolyline) {
-      _clearRenderers();
-      document.querySelectorAll(".rp-route-cards-wrapper").forEach((el) => el.remove());
-      _dragWaypoints = [];
+      _clearRoutes();
     }
   }
 
@@ -649,21 +626,24 @@
   }
 
   // ------------------------------------------------------------------
-  // Visualización de ruta en vivo
-  // Dos llamadas paralelas a DirectionsService:
-  //   1. Ruta normal → azul oscuro (#1565C0)
-  //   2. Ruta avoidTolls:true → azul claro (#90CAF9)
-  // provideRouteAlternatives con waypoints no devuelve alternativas (limitación
-  // documentada de la Directions API). Dos llamadas independientes garantizan
-  // siempre dos trazados distintos.
+  // Visualización de ruta en vivo con Routes Library nativa
+  //
+  // Dos llamadas paralelas a Route.computeRoutes() via Promise.all:
+  //   1. avoidTolls:false → ruta con peajes (azul oscuro, encima)
+  //   2. avoidTolls:true  → ruta sin peajes (azul claro, debajo)
+  //
+  // Live route display using native Routes Library.
+  // Two parallel Route.computeRoutes() calls via Promise.all:
+  //   1. avoidTolls:false → toll route (dark blue, on top)
+  //   2. avoidTolls:true  → toll-free route (light blue, below)
   // ------------------------------------------------------------------
 
-  function recalculateRouteDisplay() {
+  async function recalculateRouteDisplay() {
     const config = getConfig();
     const hasStops = waypoints.some((w) => !w.isVia);
 
     if (!hasStops) {
-      _clearRenderers();
+      _clearRoutes();
       const distanceEl  = document.getElementById("route-summary-distance");
       const overnightEl = document.getElementById("route-summary-overnight");
       if (distanceEl)  distanceEl.textContent = "—";
@@ -673,60 +653,118 @@
     }
 
     showMapSpinner();
-    _clearRenderers();
+    _clearRoutes();
 
-    const origin      = { lat: config.base.lat, lng: config.base.lng };
-    const destination = { lat: config.base.lat, lng: config.base.lng };
+    // Origen: siempre la base.
+    // Destino: la base SI existe un waypoint isBaseReturn; si no, el último waypoint real.
+    // Esto evita cerrar el bucle (Málaga→Loja→Málaga) cuando el usuario solo ha
+    // añadido paradas intermedias sin haber pulsado "Volver a base".
+    //
+    // Origin: always the base.
+    // Destination: the base IF there is an isBaseReturn waypoint; otherwise the last real waypoint.
+    // This prevents closing the loop (Málaga→Loja→Málaga) when the user has only
+    // added intermediate stops without pressing "Return to base".
+    const origin = { lat: config.base.lat, lng: config.base.lng };
+    const hasBaseReturn = waypoints.some((w) => w.isBaseReturn);
 
-    const intermediates = waypoints.map((wp) => ({
-      location: { lat: wp.lat, lng: wp.lng },
-      stopover: !wp.isVia,
-    }));
+    // Separar waypoints intermedios (todo excepto el último si no hay vuelta a base)
+    // Separate intermediate waypoints (all except the last one if no base return)
+    let intermediates;
+    let destination;
 
-    const baseRequest = {
-      origin,
-      destination,
-      waypoints:  intermediates,
-      travelMode: google.maps.TravelMode.DRIVING,
-    };
-
-    let resultNormal = null;
-    let resultAlt    = null;
-    let pending      = 2;
-
-    function onBothDone() {
-      hideMapSpinner();
-      if (!resultNormal) return;   // La ruta principal es obligatoria
-      _buildRenderersFromResults(resultNormal, resultAlt);
-      applyRouteSummary(resultNormal, 0);
+    if (hasBaseReturn) {
+      // Bucle cerrado: base → [...todos los waypoints...] → base
+      // Closed loop: base → [...all waypoints...] → base
+      destination = { lat: config.base.lat, lng: config.base.lng };
+      intermediates = waypoints.map((wp) => ({
+        location: { lat: wp.lat, lng: wp.lng },
+        via: !!wp.isVia,
+      }));
+    } else {
+      // Trayecto parcial: base → [...intermedios...] → último waypoint
+      // Partial route: base → [...intermediates...] → last waypoint
+      const lastWp = waypoints[waypoints.length - 1];
+      destination = { lat: lastWp.lat, lng: lastWp.lng };
+      intermediates = waypoints.slice(0, -1).map((wp) => ({
+        location: { lat: wp.lat, lng: wp.lng },
+        via: !!wp.isVia,
+      }));
     }
 
-    // Llamada 1 — ruta normal (con peajes permitidos)
-    // Call 1 — normal route (tolls allowed)
-    directionsService.route(baseRequest, (result, status) => {
-      if (status === "OK") resultNormal = result;
-      if (--pending === 0) onBothDone();
-    });
+    const baseRequest = {
+      origin:      { lat: origin.lat,      lng: origin.lng      },
+      destination: { lat: destination.lat, lng: destination.lng },
+      intermediates,
+      travelMode: "DRIVING",
+      fields:     ["path", "legs", "distanceMeters", "durationMillis", "viewport"],
+    };
 
-    // Llamada 2 — ruta evitando peajes
-    // Call 2 — toll-free route
-    directionsService.route(
-      { ...baseRequest, avoidTolls: true },
-      (result, status) => {
-        if (status === "OK") resultAlt = result;
-        if (--pending === 0) onBothDone();
+    // Debug: loga cada llamada a computeRoutes con request, respuesta y error.
+    // Visible en Eruda (movil) y DevTools (desktop).
+    async function debugComputeRoutes(request, label) {
+      console.group("[ROUTE] " + label);
+      console.log("request origin:", JSON.stringify(request.origin));
+      console.log("request destination:", JSON.stringify(request.destination));
+      console.log("request intermediates:", JSON.stringify(request.intermediates));
+      console.log("request travelMode:", request.travelMode);
+      console.log("request routeModifiers:", JSON.stringify(request.routeModifiers));
+      try {
+        const result = await Route.computeRoutes(request);
+        const route = result && result.routes && result.routes[0];
+        if (!route) {
+          const msg = "Sin rutas en respuesta para " + label;
+          console.error(msg, result);
+          console.groupEnd();
+          throw new Error(msg);
+        }
+        console.log("OK — distanceMeters:", route.distanceMeters);
+        console.groupEnd();
+        return route;
+      } catch (err) {
+        console.error("ERROR en " + label + ":", err && err.message ? err.message : err);
+        console.groupEnd();
+        throw err;
       }
-    );
+    }
+
+    try {
+      // Ambas rutas son obligatorias. Si cualquiera falla, el catch muestra error.
+      // Both routes are mandatory. If either fails, catch shows error.
+      const [routeNormal, routeAlt] = await Promise.all([
+        debugComputeRoutes(
+          { ...baseRequest, routeModifiers: { avoidTolls: false } },
+          "con-peajes"
+        ),
+        debugComputeRoutes(
+          { ...baseRequest, routeModifiers: { avoidTolls: true } },
+          "sin-peajes"
+        ),
+      ]);
+
+      console.log("[ROUTE] Ambas rutas OK — pintando polylines");
+      _buildPolylinesFromRoutes(routeNormal, routeAlt);
+      applyRouteSummary(routeNormal);
+
+    } catch (err) {
+      console.error("[ROUTE] Fallo definitivo:", err && err.message ? err.message : err);
+      showRoutePlannerError("No se ha podido calcular la ruta. Revisa la consola Eruda para mas detalles.");
+    } finally {
+      hideMapSpinner();
+    }
   }
 
-  function applyRouteSummary(directionsResult, routeIdx) {
-    const route       = directionsResult.routes[routeIdx];
+  /**
+   * Actualiza el resumen de distancia, pernocta y fases
+   * a partir de un objeto Route de la Routes Library.
+   *
+   * Updates distance, overnight, and phase summary
+   * from a Routes Library Route object.
+   */
+  function applyRouteSummary(route) {
     const distanceEl  = document.getElementById("route-summary-distance");
     const overnightEl = document.getElementById("route-summary-overnight");
 
-    const totalMeters = route.legs.reduce(
-      (s, leg) => s + (leg.distance ? leg.distance.value : 0), 0
-    );
+    const totalMeters = route.distanceMeters || 0;
     if (distanceEl) distanceEl.textContent = formatKm(totalMeters);
 
     const baseReturnIndex = waypoints.findIndex((w) => w.isBaseReturn);
@@ -738,10 +776,10 @@
     }
     togglePhaseFields(isOvernight);
 
-    if (isOvernight) {
+    if (isOvernight && route.legs && route.legs.length) {
       const phase1Meters = route.legs
         .slice(0, baseReturnIndex + 1)
-        .reduce((s, l) => s + (l.distance ? l.distance.value : 0), 0);
+        .reduce((s, leg) => s + (leg.distanceMeters || 0), 0);
       const p1 = document.getElementById("route-summary-phase1");
       const p2 = document.getElementById("route-summary-phase2");
       if (p1) p1.textContent = formatKm(phase1Meters);
@@ -775,16 +813,10 @@
     const timeField    = config.serviceTimeFieldId
       ? document.getElementById(config.serviceTimeFieldId) : null;
 
-    const allWaypoints = [
-      ...waypoints.map((s) => ({
-        lat: s.lat, lng: s.lng,
-        label: s.label, is_base_return: s.isBaseReturn, is_via: s.isVia || false,
-      })),
-      ..._dragWaypoints.map((pt) => ({
-        lat: pt.lat, lng: pt.lng,
-        label: "Vía (arrastre)", is_base_return: false, is_via: true,
-      })),
-    ];
+    const allWaypoints = waypoints.map((s) => ({
+      lat: s.lat, lng: s.lng,
+      label: s.label, is_base_return: s.isBaseReturn, is_via: s.isVia || false,
+    }));
 
     const payload = {
       base_id: config.base.id,

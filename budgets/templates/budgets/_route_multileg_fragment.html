@@ -230,32 +230,41 @@
       z-index: 99999 !important;
     }
     @media (max-width: 991.98px) {
-      /* En movil el panel es scrollable con altura maxima controlada        */
-      /* On mobile the panel is scrollable with a controlled max-height      */
+      /* En móvil el panel es scrollable con altura máxima controlada        */
+      /* overflow-y: auto !important sobrescribe el overflow:visible del PAC */
       .route-planner-panel {
         border-right: 0;
         border-bottom: 1px solid var(--rp-line);
-        max-height: 42vh;
+        max-height: 38vh;
         height: auto;
-        overflow-y: auto;
+        overflow-y: auto !important;
+        overflow-x: hidden;
+        position: relative;
+        z-index: 1;
+      }
+      /* El collapse interior también debe permitir scroll                   */
+      #routePlannerModal .route-planner-panel,
+      #routePlannerModal .route-planner-panel-inner,
+      #routePlannerModal .collapse {
+        overflow: auto !important;
       }
       .route-planner-panel-inner {
         padding: .65rem;
+        overflow-y: visible;
       }
-      /* El mapa ocupa el espacio restante                                   */
-      /* Map fills remaining viewport space                                  */
+      /* El mapa debajo del panel, altura fija                               */
       .route-planner-map {
-        height: 42vh;
-        min-height: 220px;
+        height: 32vh;
+        min-height: 160px;
       }
-      /* Footer siempre visible, pegado al fondo del panel                   */
-      /* Footer always visible, sticky at panel bottom                       */
+      /* Footer pegado al fondo del modal-body                               */
       .route-planner-footer {
         position: sticky;
         bottom: 0;
         background: #fff;
-        z-index: 10;
+        z-index: 20;
         border-top: 1px solid var(--rp-line);
+        padding: .6rem .75rem;
       }
     }
   </style>
@@ -351,29 +360,6 @@
         </div>
       </div>
 
-      <div class="route-planner-footer">
-        <div class="d-flex gap-2 mb-2">
-          <button type="button" class="btn btn-outline-secondary flex-fill"
-                  id="route-btn-cancel"
-                  data-bs-dismiss="modal">
-            Cancelar
-          </button>
-          <button type="button" class="btn btn-info text-white flex-fill"
-                  id="route-btn-calculate" disabled>
-            <span id="route-btn-calculate-spinner"
-                  class="spinner-border spinner-border-sm me-1 d-none"
-                  role="status" aria-hidden="true"></span>
-            Calcular ruta
-          </button>
-        </div>
-        <button type="button" class="btn btn-primary w-100"
-                id="route-btn-confirm" disabled>
-          <span id="route-btn-confirm-spinner"
-                class="spinner-border spinner-border-sm me-1 d-none"
-                role="status" aria-hidden="true"></span>
-          Confirmar y usar esta ruta
-        </button>
-      </div>
     </div>
 
     <div class="col-12 col-lg-8 route-planner-map-col">
@@ -387,6 +373,35 @@
            role="application" aria-label="Mapa interactivo de planificación de ruta"></div>
     </div>
   </div>
+
+  {# Footer con botones — fuera del row para que en móvil quede                  #}
+  {# pegado al fondo del modal-body sin tapar el panel ni el mapa.               #}
+  {# Footer with buttons — outside the row so on mobile it stays below the map   #}
+  {# without overlapping it.                                                      #}
+  <div class="route-planner-footer">
+    <div class="d-flex gap-2 mb-2">
+      <button type="button" class="btn btn-outline-secondary flex-fill"
+              id="route-btn-cancel"
+              data-bs-dismiss="modal">
+        Cancelar
+      </button>
+      <button type="button" class="btn btn-info text-white flex-fill"
+              id="route-btn-calculate" disabled>
+        <span id="route-btn-calculate-spinner"
+              class="spinner-border spinner-border-sm me-1 d-none"
+              role="status" aria-hidden="true"></span>
+        Calcular ruta
+      </button>
+    </div>
+    <button type="button" class="btn btn-primary w-100"
+            id="route-btn-confirm" disabled>
+      <span id="route-btn-confirm-spinner"
+            class="spinner-border spinner-border-sm me-1 d-none"
+            role="status" aria-hidden="true"></span>
+      Confirmar y usar esta ruta
+    </button>
+  </div>
+
 
   {# Plantilla clonada por wizard_map.js (PASO 2) para cada parada añadida #}
   {# --- Cloned by wizard_map.js (next step) for each added stop --- #}
