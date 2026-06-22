@@ -979,6 +979,33 @@ class WorkOrderEntryLine(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Breakdown ticket link — H17
+    # Vinculación con ticket de avería — H17
+    # ------------------------------------------------------------------
+    breakdown_ticket = models.ForeignKey(
+        "chat.BreakdownTicket",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_entry_lines",
+        verbose_name=_("Ticket de avería"),
+        help_text=_(
+            "Ticket de avería al que corresponde este bloque de trabajo. "
+            "Proporciona trazabilidad completa de horas invertidas por avería. "
+            "Opcional — solo se informa cuando el bloque es una orden de reparación."
+        ),
+    )
+    ticket_closed = models.BooleanField(
+        _("Ticket cerrado"),
+        default=False,
+        help_text=_(
+            "Marcar para cerrar el ticket de avería vinculado al guardar este bloque. "
+            "El sistema establece BreakdownTicket.status=CLOSED automáticamente. "
+            "Solo aplica cuando breakdown_ticket está informado."
+        ),
+    )
+
     class Meta:
         verbose_name        = _("Línea de Bloque de Trabajo")
         verbose_name_plural = _("Líneas de Bloque de Trabajo")

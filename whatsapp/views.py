@@ -408,29 +408,6 @@ class IncomingWhatsAppView(View):
                                     to_number=from_number,
                                     reply_text=_bc_body,
                                 )
-                                # Persist in the section ChatRoom for panel history.
-                                # Persistir en la ChatRoom de la sección para historial.
-                                _bc_section = _active_session.target_section
-                                if _bc_section is not None:
-                                    from chat.models import ChatRoom as _CR_BC
-                                    from chat.models import ChatMessage as _CM_BC
-                                    _bc_room = _CR_BC.objects.filter(
-                                        company=company,
-                                        room_type=_CR_BC.ROOM_TYPE_SECTION,
-                                        section=_bc_section,
-                                        is_active=True,
-                                    ).first()
-                                    if _bc_room is not None:
-                                        _CM_BC.objects.create(
-                                            room=_bc_room,
-                                            direction=_CM_BC.DIRECTION_OUTBOUND,
-                                            body=_bc_body,
-                                            whatsapp_sid="",
-                                        )
-                                        logger.info(
-                                            "# [WHATSAPP] Circular registrada en sala '%s'.",
-                                            _bc_room.name,
-                                        )
                                 logger.info(
                                     "# [WHATSAPP] Mensaje de circular entregado a %s "
                                     "tras opt_in.",
@@ -477,31 +454,6 @@ class IncomingWhatsAppView(View):
                     "# [WHATSAPP] opt_out procesado para %s — excluido de broadcasts.",
                     from_number,
                 )
-            return HttpResponse(status=200)
-
-        # --- Step 4c: Chat IRC dispatcher — Hito 13. ---
-        # Evaluates the inbound message against the chat dispatch rules before
-        # the Hito 4 chatbot pipeline. If the message is consumed by the chat
-        # dispatcher (contact belongs to a section with an active ChatRoom),
-        # the Hito 4 pipeline is bypassed entirely for this message.
-        # --- Paso 4c: Despachador de chat IRC — Hito 13. ---
-        # Evalúa el mensaje entrante contra las reglas de despacho de chat antes
-        # del pipeline del chatbot del Hito 4. Si el mensaje es consumido por el
-        # despachador de chat (el contacto pertenece a una sección con ChatRoom
-        # activa), el pipeline del Hito 4 se omite completamente para este mensaje.
-        from chat.services import dispatch_inbound_message
-        dispatch_result = dispatch_inbound_message(
-            company=company,
-            from_number=from_number,
-            body=body,
-            to_number=to_number,
-        )
-        if dispatch_result.consumed:
-            logger.info(
-                "# [WHATSAPP] Mensaje de %s consumido por despachador IRC. "
-                "Pipeline Hito 4 omitido.",
-                from_number,
-            )
             return HttpResponse(status=200)
 
         # --- Step 5: Build dynamic system prompt enriched with session context. ---

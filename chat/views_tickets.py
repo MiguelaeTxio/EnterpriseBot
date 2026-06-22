@@ -3,8 +3,11 @@
 Ticket management views for the chat module (Hito 14).
 Extracted from chat/views.py to keep the module focused and maintainable.
 
+H17 — Paso 1: room__company lookups replaced by company. BreakdownConversationTurn
+import removed. ChatRoom dependency eliminated.
+
 BreakdownTicketListView   — list of all BreakdownTickets for the company.
-BreakdownTicketDetailView — detail + actions (convert, assign, set_urgency, close).
+BreakdownTicketDetailView — detail + actions (assign, self_assign, set_urgency, pause, close).
 BreakdownTicketCreateView — manual creation of BreakdownTicket from the panel.
 
 Access control: CompanyUserRequiredMixin on all views.
@@ -13,8 +16,11 @@ ADMIN / SUPERVISOR / WORKSHOPBOSS: access to ticket management.
 Vistas de gestión de tickets del módulo de chat (Hito 14).
 Extraídas de chat/views.py para mantener el módulo enfocado y mantenible.
 
+H17 — Paso 1: lookups room__company sustituidos por company. Import de
+BreakdownConversationTurn eliminado. Dependencia de ChatRoom eliminada.
+
 BreakdownTicketListView   — lista de todos los BreakdownTickets de la empresa.
-BreakdownTicketDetailView — detalle + acciones (convertir, asignar, urgencia, cerrar).
+BreakdownTicketDetailView — detalle + acciones (asignar, autoasignar, urgencia, pausar, cerrar).
 BreakdownTicketCreateView — creación manual de BreakdownTicket desde el panel.
 
 Control de acceso: CompanyUserRequiredMixin en todas las vistas.
@@ -73,7 +79,7 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
 
         qs = (
             BreakdownTicket.objects
-            .filter(room__company=company)
+            .filter(company=company)
             .select_related("contact", "machine", "section", "resolved_by__user",
                             "assigned_to__user")
             .order_by("-created_at")
@@ -90,8 +96,8 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
-        # Operators panel: all WORKSHOPBOSS of the company with their active ticket.
-        # Panel de operarios: todos los WORKSHOPBOSS de la empresa con su ticket activo.
+        # Operators panel: all WORKSHOPBOSS/WORKSHOP of the company with their active ticket.
+        # Panel de operarios: todos los WORKSHOPBOSS/WORKSHOP de la empresa con su ticket activo.
         operators_qs = (
             CU.objects
             .filter(
@@ -105,7 +111,7 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
         active_tickets = {
             bt.assigned_to_id: bt
             for bt in BreakdownTicket.objects.filter(
-                room__company=company,
+                company=company,
                 status=BreakdownTicket.STATUS_IN_PROGRESS,
                 assigned_to__isnull=False,
             ).select_related("machine")
@@ -118,7 +124,7 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
         assignable_tickets = (
             BreakdownTicket.objects
             .filter(
-                room__company=company,
+                company=company,
                 status__in=[
                     BreakdownTicket.STATUS_OPEN,
                     BreakdownTicket.STATUS_PAUSED,
@@ -134,7 +140,7 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
             "company":            company,
             "company_user":       company_user,
             "own_presence":       own_presence,
-            "active_nav":         "chat",
+            "active_nav":         "breakdown_ticket_list",
             "status_filter":      status_filter,
             "STATUS_CHOICES":     BreakdownTicket.STATUS_CHOICES,
             "operators":          operators_qs,
@@ -144,7 +150,7 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
 
 class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
     """
-    Displays a single BreakdownTicket with its conversation turns and photos.
+    Displays a single BreakdownTicket with its photos.
     Provides POST actions:
       action=assign         — assigns/unassigns a WORKSHOPBOSS; sets IN_PROGRESS.
       action=self_assign    — operator self-assigns; sets IN_PROGRESS.
@@ -155,7 +161,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
 
     URL: GET/POST /panel/chat/breakdowns/tickets/<pk>/
     ---
-    Muestra un BreakdownTicket individual con sus turnos de conversación y fotos.
+    Muestra un BreakdownTicket individual con sus fotos.
     Proporciona acciones POST:
       action=assign         — asigna/desasigna un WORKSHOPBOSS; pone IN_PROGRESS.
       action=self_assign    — el operario se autoasigna; pone IN_PROGRESS.
@@ -179,7 +185,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
         return get_object_or_404(
             BreakdownTicket,
             pk=pk,
-            room__company=request.user.company_user.company,
+            company=request.user.company_user.company,
         )
 
     def get(self, request, pk, *args, **kwargs):
@@ -190,7 +196,6 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
         """
         from django.db.models import Q
         from ivr_config.models import PresenceStatus, CompanyUser as CU
-        from chat.models import BreakdownConversationTurn
 
         company_user = request.user.company_user
 
@@ -203,9 +208,6 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             return HttpResponseForbidden()
 
         ticket = self._get_ticket(request, pk)
-        turns  = BreakdownConversationTurn.objects.filter(
-            ticket=ticket,
-        ).order_by("created_at")
 
         own_presence = PresenceStatus.objects.filter(
             company_user=company_user,
@@ -227,10 +229,9 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
 
         return render(request, self.template_name, {
             "ticket":             ticket,
-            "turns":              turns,
             "company_user":       company_user,
             "own_presence":       own_presence,
-            "active_nav":         "chat",
+            "active_nav":         "breakdown_ticket_list",
             "workshopboss_users": workshopboss_users,
             "URGENCY_CHOICES":    ticket.URGENCY_CHOICES,
         })
@@ -277,7 +278,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
                     # If assignee already has an IN_PROGRESS ticket, pause it.
                     # Si el asignado ya tiene un ticket IN_PROGRESS, pausarlo.
                     CU_active = BreakdownTicket.objects.filter(
-                        room__company=company,
+                        company=company,
                         assigned_to=assignee,
                         status=BreakdownTicket.STATUS_IN_PROGRESS,
                     ).exclude(pk=ticket.pk)
@@ -316,7 +317,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             # Operator self-assigns. Sets IN_PROGRESS. Pauses previous active ticket.
             # El operario se autoasigna. Pone IN_PROGRESS. Pausa su ticket activo previo.
             prev_active = BreakdownTicket.objects.filter(
-                room__company=company,
+                company=company,
                 assigned_to=company_user,
                 status=BreakdownTicket.STATUS_IN_PROGRESS,
             ).exclude(pk=ticket.pk)
@@ -381,7 +382,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
     """
     Allows ADMIN, SUPERVISOR and WORKSHOPBOSS to manually create a
     BreakdownTicket from the panel without requiring a WhatsApp interaction.
-    The ticket is created with status=OPEN and linked to the BREAKDOWNS room.
+    The ticket is created with status=OPEN and linked directly to the company.
 
     GET  — renders the creation form.
     POST — validates and persists the ticket, redirects to its detail.
@@ -390,7 +391,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
     ---
     Permite a ADMIN, SUPERVISOR y WORKSHOPBOSS crear manualmente un
     BreakdownTicket desde el panel sin requerir interacción WhatsApp.
-    El ticket se crea con status=OPEN vinculado a la sala BREAKDOWNS.
+    El ticket se crea con status=OPEN vinculado directamente a la empresa.
 
     GET  — renderiza el formulario de creación.
     POST — valida y persiste el ticket, redirige a su detalle.
@@ -443,7 +444,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
             "sections":     sections,
             "company_user": company_user,
             "own_presence": own_presence,
-            "active_nav":   "chat",
+            "active_nav":   "breakdown_ticket_list",
         }
 
     def get(self, request, *args, **kwargs):
@@ -477,7 +478,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
         from django.shortcuts import redirect
         from ivr_config.models import Contact, Section
         from fleet.models import MachineAsset
-        from chat.models import BreakdownTicket, ChatRoom
+        from chat.models import BreakdownTicket
 
         company_user = request.user.company_user
         company      = company_user.company
@@ -488,16 +489,6 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
             company_user.ROLE_WORKSHOPBOSS,
         ):
             return HttpResponseForbidden()
-
-        breakdown_room = ChatRoom.objects.filter(
-            company=company,
-            room_type=ChatRoom.ROOM_TYPE_BREAKDOWNS,
-            is_active=True,
-        ).first()
-        if breakdown_room is None:
-            ctx = self._get_context(request)
-            ctx["error"] = "No existe una sala BREAKDOWNS activa para esta empresa."
-            return render(request, self.template_name, ctx)
 
         contact_pk    = request.POST.get("contact_pk", "").strip()
         fault_summary = request.POST.get("fault_summary", "").strip()
@@ -541,7 +532,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
             urgency_value = ""
 
         ticket = BreakdownTicket.objects.create(
-            room          = breakdown_room,
+            company       = company,
             contact       = contact,
             machine       = machine,
             machine_raw   = machine.code if machine else "",
@@ -555,4 +546,3 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
             ticket.pk, company_user.pk,
         )
         return redirect("panel:breakdown_ticket_detail", pk=ticket.pk)
-

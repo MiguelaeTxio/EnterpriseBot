@@ -285,39 +285,6 @@
     {% endif %}
 
     {# ------------------------------------------------------------------ #}
-    {# Sección: Chat de Secciones — ADMIN, SUPERVISOR, WORKSHOPBOSS,        #}
-    {#              WORKSHOP, DRIVER                                        #}
-    {# Section: Section Chat — ADMIN, SUPERVISOR, WORKSHOPBOSS,             #}
-    {#          WORKSHOP, DRIVER                                            #}
-    {# Hito 13 Paso 4 (2026-05-15)                                         #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' or company_user.role == 'DRIVER' %}
-    <li class="nav-item sidebar-accordion-section">
-        <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#acc-chat"
-                aria-expanded="false"
-                aria-controls="acc-chat"
-                data-acc-id="acc-chat">
-            <i class="bi bi-chat-dots"></i>
-            <span>Chat de Secciones</span>
-            <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-        </button>
-        <div class="collapse sidebar-accordion-body" id="acc-chat">
-            <ul class="nav flex-column ps-3">
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'chat' %}active{% endif %}"
-                       href="{% url 'panel:chat_room_list' %}">
-                        <i class="bi bi-chat-dots"></i>Salas de chat
-                    </a>
-                </li>
-            </ul>
-        </div>
-    </li>
-    {% endif %}
-
-    {# ------------------------------------------------------------------ #}
     {# Sección: Operarios — todos los roles excepto ASSISTANCE             #}
     {# Incluye: Nuevo parte, Historial, Partes digitales                   #}
     {# Section: Operators — all roles except ASSISTANCE                    #}
@@ -532,7 +499,6 @@
         'absence_categories':       'acc-administracion',
         'company_settings':         'acc-administracion',
         'analytics_lab':            'acc-analitica',
-        'chat':                     'acc-chat',
         'operator_dashboard':       'acc-operarios',
         'operator_history':         'acc-operarios',
         'work_order_admin_history': 'acc-operarios',

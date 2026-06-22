@@ -1717,10 +1717,20 @@ class VoiceOrchestrationService:
                                     )
 
                                     def _create_breakdown():
-                                        # Resolve company from the inbound Twilio number.
-                                        # Resolver empresa desde el número Twilio entrante.
+                                        # H17 Paso 3 — Simplified security gate.
+                                        # Rule: if caller_number is a Contact registered
+                                        # in the company → it is a breakdown. No ChatRoom
+                                        # lookup. No section membership check.
+                                        #
+                                        # H17 Paso 3 — Puerta de seguridad simplificada.
+                                        # Regla: si caller_number es un Contact registrado
+                                        # en la empresa → es avería. Sin lookup de ChatRoom.
+                                        # Sin comprobación de pertenencia a sección.
                                         from ivr_config.models import PhoneNumber as _PN
-                                        from chat.models import ChatRoom as _CR
+                                        from ivr_config.models import Contact as _Ct
+
+                                        # Step 1: Resolve company from Twilio number.
+                                        # Paso 1: Resolver empresa desde número Twilio.
                                         try:
                                             _pn = _PN.objects.select_related(
                                                 "company"
@@ -1732,78 +1742,44 @@ class VoiceOrchestrationService:
                                         except Exception:
                                             _company = None
 
-                                        # Security gate: caller must be a Contact
-                                        # registered in the BREAKDOWNS room (either
-                                        # via breakdown_contacts or via a section
-                                        # listed in breakdown_sections).
-                                        # Only registered contacts can open tickets —
-                                        # anonymous callers are rejected to prevent
-                                        # spurious breakdown tickets.
-                                        #
-                                        # Puerta de seguridad: el llamante debe ser un
-                                        # Contact registrado en la sala BREAKDOWNS (ya
-                                        # sea vía breakdown_contacts o vía una sección
-                                        # listada en breakdown_sections).
-                                        # Solo contactos registrados pueden abrir tickets
-                                        # — los llamantes anónimos se rechazan para evitar
-                                        # tickets de avería espurios.
+                                        if not _company:
+                                            logger.warning(
+                                                f"[H03-BREAKDOWN] Número Twilio "
+                                                f"'{self.twilio_number}' no resuelve "
+                                                "empresa. Ticket rechazado."
+                                            )
+                                            return None
+
+                                        # Step 2: Security gate — caller must be a
+                                        # registered Contact of the company.
+                                        # Paso 2: Puerta de seguridad — el llamante
+                                        # debe ser un Contact registrado en la empresa.
                                         _contact = None
-                                        _room = None
-                                        if _company and self.caller_number:
-                                            try:
-                                                _room = _CR.objects.get(
-                                                    company=_company,
-                                                    room_type=_CR.ROOM_TYPE_BREAKDOWNS,
-                                                )
-                                                # Try direct breakdown_contacts first.
-                                                # Primero buscar en breakdown_contacts directo.
-                                                _contact = _room.breakdown_contacts.filter(
-                                                    phone_number=self.caller_number
-                                                ).first()
-                                                if _contact is None:
-                                                    # Try contacts belonging to breakdown_sections.
-                                                    # Buscar contactos de las secciones de la sala.
-                                                    _contact = (
-                                                        _room.breakdown_sections
-                                                        .prefetch_related("contacts")
-                                                        .values_list(
-                                                            "section_assignments__contact",
-                                                            flat=True,
-                                                        )
-                                                    )
-                                                    from ivr_config.models import (
-                                                        Contact as _Ct,
-                                                    )
-                                                    _contact = _Ct.objects.filter(
-                                                        sections__in=_room.breakdown_sections.all(),
-                                                        phone_number=self.caller_number,
-                                                    ).first()
-                                            except _CR.DoesNotExist:
-                                                _room = None
+                                        if self.caller_number:
+                                            _contact = _Ct.objects.filter(
+                                                company=_company,
+                                                phone_number=self.caller_number,
+                                            ).first()
 
                                         if _contact is None:
                                             logger.warning(
                                                 f"[H03-BREAKDOWN] Llamante "
-                                                f"'{self.caller_number}' no está "
-                                                f"registrado en la sala BREAKDOWNS. "
+                                                f"'{self.caller_number}' no es un "
+                                                "Contact registrado en la empresa. "
                                                 "Ticket rechazado."
                                             )
                                             return None
 
-                                        # Resolve breakdown-enabled section for this
-                                        # company (used to tag the ticket's section).
-                                        # Resolver sección habilitada para averías de
-                                        # esta empresa (para etiquetar el ticket).
-                                        _section = None
-                                        if _company:
-                                            _section = _Sec.objects.filter(
-                                                company=_company,
-                                                is_active=True,
-                                                ivr_breakdown_enabled=True,
-                                            ).first()
+                                        # Step 3: Resolve section for ticket tagging.
+                                        # Paso 3: Resolver sección para etiquetar el ticket.
+                                        _section = _Sec.objects.filter(
+                                            company=_company,
+                                            is_active=True,
+                                            ivr_breakdown_enabled=True,
+                                        ).first()
 
-                                        # Resolve MachineAsset from machine_code.
-                                        # Resolver MachineAsset desde machine_code.
+                                        # Step 4: Resolve MachineAsset from machine_code.
+                                        # Paso 4: Resolver MachineAsset desde machine_code.
                                         _machine = None
                                         try:
                                             from fleet.models import MachineAsset as _MA
@@ -1826,7 +1802,7 @@ class VoiceOrchestrationService:
                                         if _caller_name:
                                             _caller_prefix = f"[Chófer: {_caller_name}] "
                                         ticket = _BT.objects.create(
-                                            room=_room,
+                                            company=_company,
                                             contact=_contact,
                                             section=_section,
                                             machine=_machine,

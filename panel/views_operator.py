@@ -2014,7 +2014,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         repair_orders =list (
         BreakdownTicket .objects 
         .filter (
-        room__company =company ,
+        company =company ,
         status__in =[
             BreakdownTicket .STATUS_IN_PROGRESS ,
             BreakdownTicket .STATUS_PAUSED ,

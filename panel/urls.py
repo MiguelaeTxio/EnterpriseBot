@@ -108,14 +108,6 @@ from panel.views import (
     MachineAssetAutocompleteView,
 )
 
-from chat.views import (
-    ChatRoomListView,
-    ChatRoomView,
-    ChatMessagesPollingView,
-    ChatSendView,
-    ChatAliasSetView,
-    BreakdownRoomManageView,
-)
 from chat.views_tickets import (
     BreakdownTicketListView,
     BreakdownTicketDetailView,
@@ -344,19 +336,12 @@ urlpatterns = [
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear usuario (H13).
     path("sections/<int:pk>/default-role/", SectionDefaultRoleView.as_view(), name="section_default_role"),
 
-    # Chat IRC — Salas de chat por sección (Hito 13 Paso 4).
-    path("chat/", ChatRoomListView.as_view(), name="chat_room_list"),
-    path("chat/<int:room_pk>/", ChatRoomView.as_view(), name="chat_room_detail"),
-    path("chat/<int:room_pk>/messages/", ChatMessagesPollingView.as_view(), name="chat_room_messages"),
-    path("chat/<int:room_pk>/send/", ChatSendView.as_view(), name="chat_room_send"),
-    path("chat/alias/set/", ChatAliasSetView.as_view(), name="chat_alias_set"),
-
-    # Breakdown tickets — Gestión de tickets de avería (Hito 13 Paso 12).
+    # Breakdown tickets — Gestión de tickets de avería (H17 Paso 1).
+    # ChatRoom routes removed in H17 Paso 1. Only ticket management routes remain.
     path("chat/breakdowns/tickets/", BreakdownTicketListView.as_view(), name="breakdown_ticket_list"),
     path("chat/breakdowns/tickets/<int:pk>/", BreakdownTicketDetailView.as_view(), name="breakdown_ticket_detail"),
     # Breakdown ticket create — Creación manual de ticket desde el panel (Hito 14 Paso 3).
     path("chat/breakdowns/tickets/create/", BreakdownTicketCreateView.as_view(), name="breakdown_ticket_create"),
-    path("chat/breakdowns/manage/", BreakdownRoomManageView.as_view(), name="breakdown_room_manage"),
 
     # Own profile — Perfil propio del operario: edición de alias de chat (Hito 14 Paso 6).
     path("profile/", OwnProfileView.as_view(), name="own_profile"),

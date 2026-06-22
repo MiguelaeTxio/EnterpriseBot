@@ -31,7 +31,7 @@ from django.utils.timezone import localdate, now
 from django.views.generic import View
 
 from budgets.models import Budget
-from chat.models import BreakdownTicket, ChatMessage, ChatRoom
+from chat.models import BreakdownTicket
 from fleet.models import MachineAsset
 from ivr_config.models import (
     CompanyUser,
@@ -2420,20 +2420,6 @@ class BotManagementView(CompanyUserRequiredMixin, View):
             total_pending = 0
 
             for section in valid_sections:
-                room = ChatRoom.objects.filter(
-                    company=company,
-                    room_type=ChatRoom.ROOM_TYPE_SECTION,
-                    section=section,
-                    is_active=True,
-                ).first()
-                if room is None:
-                    logger.warning(
-                        "# [BOT MGMT] No hay ChatRoom SECTION "
-                        "activa para seccion pk=%r (%s).",
-                        section.pk, section.name,
-                    )
-                    continue
-
                 room_contacts = (
                     Contact.objects
                     .filter(
@@ -2534,14 +2520,6 @@ class BotManagementView(CompanyUserRequiredMixin, View):
                                     "a %s: %s",
                                     contact.phone_number, exc,
                                 )
-
-                if room_sent > 0:
-                    ChatMessage.objects.create(
-                        room=room,
-                        direction=ChatMessage.DIRECTION_OUTBOUND,
-                        body=message_body,
-                        whatsapp_sid="",
-                    )
 
             django_messages.success(
                 request,

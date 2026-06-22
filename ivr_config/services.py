@@ -742,6 +742,57 @@ def build_live_config(
         )
 
     # ------------------------------------------------------------------
+    # STEP 4C — Build Alia Mechanic Expert Context
+    #           Construir Contexto de Alia Mecanica Experta
+    # H17 Paso 4: If the caller is a registered Contact of the company,
+    # inject Alia mechanic expert profile into the system_instruction.
+    # H17 Paso 4: Si el llamante es un Contact registrado en la empresa,
+    # inyectar el perfil de mecanica experta de Alia en el system_instruction.
+    # ------------------------------------------------------------------
+    alia_mechanic_context = ""
+    if caller_number and breakdown_context:
+        try:
+            _is_internal_caller = Contact.objects.filter(
+                company=company,
+                phone_number=caller_number,
+            ).exists()
+            if _is_internal_caller:
+                alia_mechanic_context = (
+                    "PERFIL DE ALIA - MECANICA EXPERTA:\n"
+                    "Cuando el llamante es un trabajador interno de la empresa "
+                    "(conductor, mecanico o jefe de taller), adopta el rol de "
+                    "mecanica experta con amplio conocimiento en vehiculos ligeros "
+                    "y de gran tonelaje: gruas, camiones, plataformas elevadoras y "
+                    "maquinaria pesada industrial. "
+                    "Dominios de especialidad: mecanica general, sistema electrico "
+                    "y electronico, sistema hidraulico, transmision, frenos, "
+                    "direccion y suspension, estructura de elevacion y sistemas de "
+                    "carga. "
+                    "Tu objetivo es diagnosticar la averia con precision mediante "
+                    "preguntas tecnicas especificas: sintomas observados, condiciones "
+                    "en que se produce, lecturas de instrumentos si las hay, y "
+                    "ubicacion exacta del fallo en la maquina. "
+                    "Recoge siempre: codigo de maquina, descripcion completa de la "
+                    "averia, ubicacion en la maquina, ubicacion fisica del vehiculo "
+                    "(base o ruta), y nivel de urgencia. "
+                    "Si el conductor que opera la maquina y quien llama son personas "
+                    "distintas, pregunta el nombre del conductor. "
+                    "Una vez recogidos todos los datos, confirma verbalmente el "
+                    "resumen al llamante y crea el ticket de averia."
+                )
+                logger.info(
+                    "[CONFIG] Llamante '%s' es Contact interno - "
+                    "perfil de mecanica experta activado.",
+                    caller_number,
+                )
+        except Exception as _alia_exc:
+            logger.warning(
+                "[CONFIG] Error al verificar Contact interno para Alia: "
+                "%s: %s. Perfil de mecanica experta omitido.",
+                type(_alia_exc).__name__, _alia_exc,
+            )
+
+    # ------------------------------------------------------------------
     # STEP 5 — Build Presence Context / Construir Contexto de Presencia
     # ------------------------------------------------------------------
     presence_context = _build_presence_context(company)
@@ -790,6 +841,12 @@ def build_live_config(
             "\n\n" + breakdown_context.strip()
         )
         logger.debug("[CONFIG] Bloque de contexto de avería interna añadido.")
+
+    if alia_mechanic_context.strip():
+        system_instruction_parts.append(
+            "\n\n" + alia_mechanic_context.strip()
+        )
+        logger.debug("[CONFIG] Bloque perfil mecánica experta Alia añadido.")
 
     if presence_context.strip():
         system_instruction_parts.append(

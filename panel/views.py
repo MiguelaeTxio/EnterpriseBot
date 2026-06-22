@@ -47,8 +47,6 @@ from work_order_processor .models import WorkOrder ,WorkOrderEntry ,WorkOrderEnt
 from work_order_processor .services import find_cached_classification 
 from work_order_processor .tasks import classify_fault_line ,generate_period_excel ,process_work_order_pdf 
 from fleet .models import MachineAsset 
-from chat .models import ChatRoom 
-from chat .views import ChatRoomView ,ChatMessagesPollingView ,ChatRoomListView 
 import logging 
 import plotly .graph_objects as go 
 import plotly .io as pio 

@@ -1,30 +1,28 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/chat/models.py
 """
 Data models for the chat module of EnterpriseBot.
-Defines the entity graph for IRC-style section chat rooms:
-ChatRoom, ChatMessage, BreakdownTicket, BreakdownConversationTurn.
-All entities are scoped to a Company. ChatRoom instances are created
-idempotently via the init_chat_rooms management command, and also
-automatically via the post_save signal on Section (chat/signals.py).
+
+H17 — Paso 1: ChatRoom, ChatMessage and BreakdownConversationTurn removed.
+BreakdownTicket.room (FK → ChatRoom) replaced by BreakdownTicket.company
+(FK → Company) for direct company scoping without the chat room indirection.
 
 BreakdownTicket lifecycle (Hito 14 redesign):
   OPEN → IN_PROGRESS (operario asignado) → CLOSED
   OPEN/IN_PROGRESS → PAUSED (operario reasignado a otro ticket)
   ticket_date_code: YYYYMMDD-NN (diario por empresa, ej. 20260618-01)
-  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp)
+  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp) | IVR (llamada de voz)
 ---
 Modelos de datos para el módulo de chat de EnterpriseBot.
-Define el grafo de entidades para las salas de chat IRC por sección:
-ChatRoom, ChatMessage, BreakdownTicket, BreakdownConversationTurn.
-Todas las entidades pertenecen a una Company. Las instancias de ChatRoom
-se crean de forma idempotente mediante el comando init_chat_rooms, y también
-de forma automática mediante la signal post_save sobre Section (chat/signals.py).
+
+H17 — Paso 1: ChatRoom, ChatMessage y BreakdownConversationTurn eliminados.
+BreakdownTicket.room (FK → ChatRoom) sustituido por BreakdownTicket.company
+(FK → Company) para acceso directo a la empresa sin la indirección de la sala.
 
 Ciclo de vida BreakdownTicket (rediseño Hito 14):
   OPEN → IN_PROGRESS (operario asignado) → CLOSED
   OPEN/IN_PROGRESS → PAUSED (operario reasignado a otro ticket)
   ticket_date_code: YYYYMMDD-NN (diario por empresa, ej. 20260618-01)
-  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp)
+  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp) | IVR (llamada de voz)
 """
 
 from django.db import models
@@ -33,211 +31,10 @@ from django.utils import timezone
 from ivr_config.models import Company, CompanyUser, Contact, Section
 
 
-class ChatRoom(models.Model):
-    """
-    Represents a chat room scoped to a company.
-    Room types:
-      SECTION    — one room per active Section; relays WhatsApp messages from
-                   contacts assigned to that section.
-      BREAKDOWNS — one special room per company; routes messages to the
-                   Gemini conversational agent that collects breakdown data.
-    Invariant: a company has exactly one ChatRoom per active Section plus
-    exactly one ChatRoom of type BREAKDOWNS.
-    ---
-    Representa una sala de chat perteneciente a una empresa.
-    Tipos de sala:
-      SECTION    — una sala por cada Section activa; replica mensajes WhatsApp
-                   de los contactos asignados a esa sección.
-      BREAKDOWNS — una sala especial por empresa; enruta los mensajes al agente
-                   conversacional Gemini que recoge los datos de la avería.
-    Invariante: una empresa tiene exactamente una ChatRoom por Section activa
-    más exactamente una ChatRoom de tipo BREAKDOWNS.
-    """
-
-    ROOM_TYPE_SECTION    = "SECTION"
-    ROOM_TYPE_BREAKDOWNS = "BREAKDOWNS"
-    ROOM_TYPE_CHOICES    = [
-        (ROOM_TYPE_SECTION,    "Sección"),
-        (ROOM_TYPE_BREAKDOWNS, "Averías"),
-    ]
-
-    company = models.ForeignKey(
-        Company,
-        on_delete=models.CASCADE,
-        related_name="chat_rooms",
-        verbose_name="Empresa",
-        help_text="Empresa a la que pertenece esta sala de chat.",
-    )
-    section = models.ForeignKey(
-        Section,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="chat_rooms",
-        verbose_name="Sección",
-        help_text="Sección asociada a esta sala. Nulo únicamente para salas de tipo BREAKDOWNS.",
-    )
-    room_type = models.CharField(
-        max_length=20,
-        choices=ROOM_TYPE_CHOICES,
-        verbose_name="Tipo de sala",
-        help_text=(
-            "SECTION: sala de difusión de mensajes WhatsApp de una sección. "
-            "BREAKDOWNS: sala especial de recogida de averías con agente Gemini."
-        ),
-    )
-    name = models.CharField(
-        max_length=100,
-        verbose_name="Nombre",
-        help_text="Nombre legible de la sala mostrado en el panel.",
-    )
-    is_active = models.BooleanField(
-        default=True,
-        verbose_name="Activa",
-        help_text="Indica si la sala está operativa y visible en el panel.",
-    )
-    # --- Breakdown membership — Paso 12. ---
-    # --- Membresía de la sala BREAKDOWNS — Paso 12. ---
-    breakdown_sections = models.ManyToManyField(
-        "ivr_config.Section",
-        blank=True,
-        related_name="breakdown_rooms",
-        verbose_name="Secciones con acceso a Averías",
-        help_text=(
-            "Secciones cuyos miembros tienen acceso a esta sala BREAKDOWNS. "
-            "Al añadir una sección, todos sus contactos quedan elegibles para "
-            "enviar mensajes a la sala de averías. "
-            "Solo aplica a salas de tipo BREAKDOWNS."
-        ),
-    )
-    breakdown_contacts = models.ManyToManyField(
-        "ivr_config.Contact",
-        blank=True,
-        related_name="breakdown_rooms",
-        verbose_name="Contactos individuales con acceso a Averías",
-        help_text=(
-            "Contactos individuales adicionales con acceso directo a esta sala "
-            "BREAKDOWNS, independientemente de su sección. "
-            "Solo aplica a salas de tipo BREAKDOWNS."
-        ),
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Fecha de creación",
-    )
-
-    class Meta:
-        verbose_name = "Sala de chat"
-        verbose_name_plural = "Salas de chat"
-        ordering = ["company__name", "room_type", "name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["company"],
-                condition=models.Q(room_type="BREAKDOWNS"),
-                name="unique_breakdowns_room_per_company",
-            ),
-            models.UniqueConstraint(
-                fields=["company", "section"],
-                condition=models.Q(room_type="SECTION"),
-                name="unique_section_room_per_company_section",
-            ),
-        ]
-
-    def __str__(self):
-        return f"{self.company.name} — {self.name}"
-
-
-class ChatMessage(models.Model):
-    """
-    Represents a single message posted in a ChatRoom.
-    Direction:
-      INBOUND  — message received from a WhatsApp contact (external).
-      OUTBOUND — message sent from the panel by a CompanyUser (internal).
-    TTL policy: messages older than 7 days are purged by the Celery periodic
-    task purge_old_chat_messages. BreakdownTickets are NOT purged.
-    ---
-    Representa un mensaje individual publicado en una ChatRoom.
-    Dirección:
-      INBOUND  — mensaje recibido de un contacto de WhatsApp (externo).
-      OUTBOUND — mensaje enviado desde el panel por un CompanyUser (interno).
-    Política TTL: los mensajes con más de 7 días son eliminados por la tarea
-    Celery periódica purge_old_chat_messages. Los BreakdownTicket NO se eliminan.
-    """
-
-    DIRECTION_INBOUND  = "INBOUND"
-    DIRECTION_OUTBOUND = "OUTBOUND"
-    DIRECTION_CHOICES  = [
-        (DIRECTION_INBOUND,  "Entrante"),
-        (DIRECTION_OUTBOUND, "Saliente"),
-    ]
-
-    room = models.ForeignKey(
-        ChatRoom,
-        on_delete=models.CASCADE,
-        related_name="messages",
-        verbose_name="Sala",
-        help_text="Sala de chat a la que pertenece este mensaje.",
-    )
-    direction = models.CharField(
-        max_length=10,
-        choices=DIRECTION_CHOICES,
-        verbose_name="Dirección",
-        help_text="INBOUND: mensaje entrante de WhatsApp. OUTBOUND: mensaje saliente desde el panel.",
-    )
-    sender_contact = models.ForeignKey(
-        Contact,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="chat_messages_sent",
-        verbose_name="Contacto remitente",
-        help_text="Contacto de WhatsApp origen del mensaje. Informado únicamente para mensajes INBOUND.",
-    )
-    sender_user = models.ForeignKey(
-        CompanyUser,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="chat_messages_sent",
-        verbose_name="Usuario remitente",
-        help_text="Usuario del panel que envió el mensaje. Informado únicamente para mensajes OUTBOUND.",
-    )
-    body = models.TextField(
-        verbose_name="Contenido",
-        help_text="Texto completo del mensaje.",
-    )
-    whatsapp_sid = models.CharField(
-        max_length=64,
-        blank=True,
-        default="",
-        verbose_name="SID de WhatsApp",
-        help_text="SID del mensaje asignado por Twilio. Vacío para mensajes del agente Gemini.",
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        db_index=True,
-        verbose_name="Fecha de creación",
-        help_text="Indexado para consultas de polling por rango de fechas.",
-    )
-
-    class Meta:
-        verbose_name = "Mensaje de chat"
-        verbose_name_plural = "Mensajes de chat"
-        ordering = ["created_at"]
-
-    def __str__(self):
-        sender = (
-            self.sender_contact.name
-            if self.sender_contact
-            else (self.sender_user.user.username if self.sender_user else "Sistema")
-        )
-        return f"[{self.room.name}] {self.get_direction_display()} — {sender}"
-
-
 class BreakdownTicket(models.Model):
     """
-    Represents a breakdown ticket created either manually from the panel or
-    automatically by the Gemini WhatsApp agent via the BREAKDOWNS room.
+    Represents a breakdown ticket created either manually from the panel,
+    automatically by the Gemini WhatsApp agent, or via the IVR voice channel.
 
     Status lifecycle (Hito 14 redesign):
       OPEN        — ticket created, no operator assigned.
@@ -248,13 +45,13 @@ class BreakdownTicket(models.Model):
     ticket_date_code: human-readable identifier YYYYMMDD-NN, daily sequential
     per company (e.g. 20260618-01). Assigned automatically on first save().
 
-    origin: MANUAL (panel creation) | CHATBOT (Gemini WhatsApp agent).
+    origin: MANUAL (panel creation) | CHATBOT (Gemini WhatsApp agent) | IVR (voice call).
 
     BreakdownTickets are never automatically purged.
     ---
-    Representa un ticket de avería creado manualmente desde el panel o
-    automáticamente por el agente Gemini de WhatsApp a través de la sala
-    BREAKDOWNS.
+    Representa un ticket de avería creado manualmente desde el panel,
+    automáticamente por el agente Gemini de WhatsApp, o a través del
+    canal de voz IVR.
 
     Ciclo de vida del estado (rediseño Hito 14):
       OPEN        — ticket creado, sin operario asignado.
@@ -265,7 +62,7 @@ class BreakdownTicket(models.Model):
     ticket_date_code: identificador legible YYYYMMDD-NN, secuencial diario
     por empresa (ej. 20260618-01). Se asigna automáticamente en el primer save().
 
-    origin: MANUAL (creación desde panel) | CHATBOT (agente Gemini WhatsApp).
+    origin: MANUAL (creación desde panel) | CHATBOT (agente Gemini WhatsApp) | IVR (llamada de voz).
 
     Los BreakdownTicket nunca se eliminan automáticamente.
     """
@@ -305,8 +102,6 @@ class BreakdownTicket(models.Model):
     ]
 
     # --- ticket_date_code: YYYYMMDD-NN daily sequential per company. ------
-    # Assigned automatically in save() when blank, using the count of tickets
-    # already created today for this company to build the ordinal (01-99).
     ticket_date_code = models.CharField(
         max_length=11,
         blank=True,
@@ -318,12 +113,12 @@ class BreakdownTicket(models.Model):
             "en el primer save()."
         ),
     )
-    room = models.ForeignKey(
-        ChatRoom,
+    company = models.ForeignKey(
+        Company,
         on_delete=models.CASCADE,
         related_name="breakdown_tickets",
-        verbose_name="Sala",
-        help_text="Sala BREAKDOWNS de la empresa a la que pertenece este ticket.",
+        verbose_name="Empresa",
+        help_text="Empresa a la que pertenece este ticket de avería.",
     )
     contact = models.ForeignKey(
         Contact,
@@ -373,7 +168,7 @@ class BreakdownTicket(models.Model):
         choices=ORIGIN_CHOICES,
         default=ORIGIN_MANUAL,
         verbose_name="Origen",
-        help_text="Indica si el ticket fue creado manualmente o por el chatbot.",
+        help_text="Indica si el ticket fue creado manualmente, por el chatbot o por IVR.",
     )
     fault_category = models.CharField(
         max_length=30,
@@ -519,6 +314,17 @@ class BreakdownTicket(models.Model):
         verbose_name="Fecha de cierre",
         help_text="Timestamp en que se marcó el ticket como CLOSED.",
     )
+    # --- H17 Paso 2: log de conversación unificado IVR + WhatsApp ----------
+    conversation_log = models.JSONField(
+        default=list,
+        verbose_name="Log de conversación",
+        help_text=(
+            "Historial unificado de la conversación asociada a este ticket. "
+            "Lista de entradas con formato: "
+            "{timestamp, source ('IVR'|'WHATSAPP'|'SYSTEM'), role ('USER'|'MODEL'), content}. "
+            "Poblado por el agente IVR (Alia) y el agente WhatsApp."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",
@@ -542,12 +348,12 @@ class BreakdownTicket(models.Model):
         Formato: YYYYMMDD-NN — secuencial diario por empresa (01-99).
         """
         if not self.ticket_date_code:
-            today = timezone.localdate()
+            today    = timezone.localdate()
             date_str = today.strftime("%Y%m%d")
-            company = self.room.company if self.room_id else None
+            company  = self.company if self.company_id else None
             if company:
                 existing = BreakdownTicket.objects.filter(
-                    room__company=company,
+                    company=company,
                     ticket_date_code__startswith=date_str,
                 ).count()
                 ordinal = existing + 1
@@ -562,66 +368,3 @@ class BreakdownTicket(models.Model):
             f"[{code}] [{self.get_status_display()}] "
             f"{self.machine_raw or 'Máquina no identificada'}"
         )
-
-
-class BreakdownConversationTurn(models.Model):
-    """
-    Records each turn of the Gemini breakdown agent dialogue.
-    The full conversation history is reconstructed from these turns on every
-    call to the Gemini API (stateless — complete context per request).
-    Role values mirror the Gemini API conventions:
-      USER  — message sent by the WhatsApp contact.
-      MODEL — response generated by the Gemini agent.
-    TTL policy: turns belonging to tickets whose updated_at is older than
-    7 days AND whose status is RESOLVED are purged by purge_old_chat_messages.
-    The BreakdownTicket itself is never purged.
-    ---
-    Registra cada turno del diálogo del agente Gemini de averías.
-    El historial completo de la conversación se reconstruye a partir de estos
-    turnos en cada llamada a la API de Gemini (sin estado — contexto completo
-    por petición).
-    Los valores de rol siguen las convenciones de la API de Gemini:
-      USER  — mensaje enviado por el contacto de WhatsApp.
-      MODEL — respuesta generada por el agente Gemini.
-    Política TTL: los turnos de tickets cuyo updated_at supere los 7 días Y
-    cuyo estado sea RESOLVED son eliminados por purge_old_chat_messages.
-    El BreakdownTicket en sí nunca se elimina.
-    """
-
-    ROLE_USER  = "USER"
-    ROLE_MODEL = "MODEL"
-    ROLE_CHOICES = [
-        (ROLE_USER,  "Usuario"),
-        (ROLE_MODEL, "Modelo"),
-    ]
-
-    ticket = models.ForeignKey(
-        BreakdownTicket,
-        on_delete=models.CASCADE,
-        related_name="turns",
-        verbose_name="Ticket de avería",
-        help_text="Ticket de avería al que pertenece este turno de diálogo.",
-    )
-    role = models.CharField(
-        max_length=5,
-        choices=ROLE_CHOICES,
-        verbose_name="Rol",
-        help_text="USER: turno del contacto. MODEL: turno del agente Gemini.",
-    )
-    content = models.TextField(
-        verbose_name="Contenido",
-        help_text="Texto completo del turno de diálogo.",
-    )
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Fecha de creación",
-    )
-
-    class Meta:
-        verbose_name = "Turno de conversación de avería"
-        verbose_name_plural = "Turnos de conversación de avería"
-        ordering = ["ticket", "created_at"]
-
-    def __str__(self):
-        return f"[{self.ticket}] {self.get_role_display()} — {self.created_at:%Y-%m-%d %H:%M}"
-
