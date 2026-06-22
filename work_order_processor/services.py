@@ -2597,13 +2597,48 @@ def build_export_from_template(template, work_orders_qs):
     ]
 
     # ------------------------------------------------------------------
+    # Numeric column keys — eligible for a TOTAL row at the end of each
+    # data block. Only keys present in active_cols are summed.
+    # Claves de columna numéricas — elegibles para la fila TOTAL al final
+    # de cada bloque de datos. Solo se suman las que estén en active_cols.
+    # ------------------------------------------------------------------
+    NUMERIC_KEYS = {"delta_horas", "horas_extra"}
+
+    # ------------------------------------------------------------------
     # Styles / Estilos
     # ------------------------------------------------------------------
     header_fill = PatternFill("solid", fgColor="1F3864")
     header_font = Font(bold=True, color="FFFFFF", size=10)
     sep_fill    = PatternFill("solid", fgColor="2F5496")
     sep_font    = Font(bold=True, color="FFFFFF", size=10)
+    total_fill  = PatternFill("solid", fgColor="D6E4F0")
+    total_font  = Font(bold=True, color="1F3864", size=10)
     center_align = Alignment(horizontal="center", vertical="center")
+
+    # ------------------------------------------------------------------
+    # Helper: write a totals row on a given worksheet.
+    # Writes "TOTAL" in column 1 and the accumulated sum for each
+    # numeric column. Non-numeric columns are left blank.
+    # Auxiliar: escribir la fila de totales en una hoja dada.
+    # Escribe "TOTAL" en la columna 1 y la suma acumulada por columna
+    # numérica. Las columnas no numéricas quedan en blanco.
+    # ------------------------------------------------------------------
+    def _write_totals_row(ws, row, col_defs, accumulators):
+        """
+        Writes a styled TOTAL row using the accumulated column sums.
+        ---
+        Escribe una fila TOTAL estilizada usando las sumas acumuladas.
+        """
+        for col_idx, (key, _) in enumerate(col_defs, start=1):
+            cell = ws.cell(row=row, column=col_idx)
+            cell.fill = total_fill
+            cell.font = total_font
+            cell.alignment = center_align
+            if col_idx == 1:
+                cell.value = "TOTAL"
+            elif key in NUMERIC_KEYS and key in accumulators:
+                val = accumulators[key]
+                cell.value = round(val, 2) if val else 0.0
 
     # ------------------------------------------------------------------
     # Build flat line list enriched with wo and entry references.
@@ -2677,6 +2712,9 @@ def build_export_from_template(template, work_orders_qs):
 
         current_row      = 2
         current_operator = None
+        # Accumulators for numeric columns (global, single sheet).
+        # Acumuladores para columnas numéricas (global, hoja única).
+        accumulators = {key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS}
 
         for line in rows:
             wo    = line.entry.work_order
@@ -2703,8 +2741,18 @@ def build_export_from_template(template, work_orders_qs):
                 current_row += 1
 
             for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
-                ws.cell(row=current_row, column=col_idx, value=extractor(wo, entry, line))
+                val = extractor(wo, entry, line)
+                ws.cell(row=current_row, column=col_idx, value=val)
+                # Accumulate numeric columns.
+                # Acumular columnas numéricas.
+                if key in accumulators and isinstance(val, (int, float)):
+                    accumulators[key] += val
             current_row += 1
+
+        # Write global TOTAL row at the bottom of the sheet.
+        # Escribir la fila TOTAL global al final de la hoja.
+        if accumulators:
+            _write_totals_row(ws, current_row, active_cols, accumulators)
 
         _autofit_columns(ws)
         return wb
@@ -2721,6 +2769,9 @@ def build_export_from_template(template, work_orders_qs):
     current_operator = None
     ws               = None
     current_row      = 2
+    # Per-sheet accumulators reset when a new sheet opens.
+    # Acumuladores por hoja, reiniciados al abrir cada hoja nueva.
+    sheet_accumulators = {}
 
     for line in rows:
         wo    = line.entry.work_order
@@ -2733,15 +2784,35 @@ def build_export_from_template(template, work_orders_qs):
         # Create a new sheet when operator changes.
         # Crear una nueva hoja cuando cambia el operario.
         if op_name != current_operator:
-            current_operator = op_name
-            ws          = wb.create_sheet(title=op_name[:31])
-            current_row = 2
+            # Write TOTAL row on the previous sheet before switching.
+            # Escribir fila TOTAL en la hoja anterior antes de cambiar.
+            if ws is not None and sheet_accumulators:
+                _write_totals_row(ws, current_row, active_cols, sheet_accumulators)
+            current_operator   = op_name
+            ws                 = wb.create_sheet(title=op_name[:31])
+            current_row        = 2
+            sheet_accumulators = {
+                key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS
+            }
             _write_header(ws, active_cols)
 
         for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
-            ws.cell(row=current_row, column=col_idx, value=extractor(wo, entry, line))
+            val = extractor(wo, entry, line)
+            ws.cell(row=current_row, column=col_idx, value=val)
+            # Accumulate numeric columns for this sheet.
+            # Acumular columnas numéricas para esta hoja.
+            if key in sheet_accumulators and isinstance(val, (int, float)):
+                sheet_accumulators[key] += val
         current_row += 1
+
+    # Write TOTAL row on the last sheet.
+    # Escribir fila TOTAL en la última hoja.
+    if ws is not None and sheet_accumulators:
+        _write_totals_row(ws, current_row, active_cols, sheet_accumulators)
 
     for sheet in wb.worksheets:
         _autofit_columns(sheet)
     return wb
+
+
+

@@ -1,9 +1,11 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/vehicle_type_row_fragment.html #}
-{# HTMX fragment — single vehicle type row.                                                                     #}
-{# Fragmento HTMX — fila individual de tipo de vehículo.                                                        #}
-<tr id="vt-row-{{ vt.pk }}">
-  <td class="ps-3 align-middle fw-semibold">{{ vt.name }}</td>
-  <td class="text-center align-middle text-muted small">{{ vt.sort_order }}</td>
+{# HTMX fragment — single vehicle type row with drag-and-drop handle.                                          #}
+{# Fragmento HTMX — fila individual de tipo de vehículo con handle drag-and-drop.                              #}
+<tr id="vt-row-{{ vt.pk }}" data-pk="{{ vt.pk }}" draggable="true">
+  <td class="ps-2 align-middle text-muted" style="cursor:grab; width:32px;">
+    <i class="bi bi-grip-vertical"></i>
+  </td>
+  <td class="align-middle fw-semibold">{{ vt.name }}</td>
   <td class="text-center align-middle">
     <button type="button"
             class="btn btn-sm {% if vt.is_active %}btn-success{% else %}btn-secondary{% endif %} py-0 px-2"
@@ -36,3 +38,4 @@
     </div>
   </td>
 </tr>
+

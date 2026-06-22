@@ -259,6 +259,14 @@ urlpatterns = [
         name="vehicle_type_delete",
     ),
 
+    # Vehicle type reorder — JSON POST, persiste nuevo sort_order tras drag & drop.
+    # Vehicle type reorder — JSON POST, persists new sort_order after drag & drop.
+    path(
+        "vehicle-types/reorder/",
+        views.VehicleTypeReorderView.as_view(),
+        name="vehicle_type_reorder",
+    ),
+
     # Tariff concept create — HTMX POST, crea nuevo concepto personalizado para la empresa.
     # Tariff concept create — HTMX POST, creates new custom concept for the company.
     path(
@@ -609,5 +617,6 @@ urlpatterns = [
         name="work_order_pdf",
     ),
 ]
+
 
 

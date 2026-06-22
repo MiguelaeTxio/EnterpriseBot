@@ -54,6 +54,11 @@
             {# form_action: close_order (default) or save_blocks. #}
             {# form_action: close_order (por defecto) o save_blocks. #}
             <input type="hidden" id="form-action-input" name="form_action" value="close_order">
+            {# back_url: URL de retorno para SUPERVISOR/ADMIN tras guardar. #}
+            {# back_url: return URL for SUPERVISOR/ADMIN after saving.      #}
+            {% if back_url %}
+            <input type="hidden" name="back_url" value="{{ back_url }}">
+            {% endif %}
             {% if in_progress_mode %}
             <input type="hidden" name="in_progress_wo_pk" value="{{ in_progress_wo_pk }}">
             {% endif %}
@@ -5390,6 +5395,7 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             'panel/operator/_schedule_fields_fragment.html',
             _ctx ,
         )
+
 
 
 

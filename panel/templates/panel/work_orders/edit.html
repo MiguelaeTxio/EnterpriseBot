@@ -529,6 +529,7 @@ er hx-trigger="change".
     <form method="post">
         {% csrf_token %}
         <input type="hidden" name="action" value="regenerate">
+        <input type="hidden" name="back_url" value="{{ back_url }}">
         <button type="submit" class="btn btn-success btn-sm"
                 onclick="return confirm('¿Regenerar el Excel con los datos actuales?')">
             <i class="bi bi-file-earmark-excel me-1"></i>Regenerar Excel
@@ -654,3 +655,4 @@ er hx-trigger="change".
 {% block extra_scripts %}
 {% include "panel/_time_picker_widget.html" %}
 {% endblock %}
+

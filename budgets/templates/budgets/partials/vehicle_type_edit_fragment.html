@@ -1,39 +1,29 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/vehicle_type_edit_fragment.html #}
-{# HTMX fragment — inline edit form for a vehicle type row.                                                      #}
-{# Fragmento HTMX — formulario de edición inline para una fila de tipo de vehículo.                             #}
-<tr id="vt-row-{{ vt.pk }}">
-  <td class="ps-3 align-middle" colspan="2">
-    <div class="d-flex gap-2 align-items-center">
-      <input type="text"
-             name="name"
-             value="{{ vt.name }}"
-             class="form-control form-control-sm"
-             placeholder="Nombre del tipo de vehículo"
-             id="vt-name-{{ vt.pk }}"
-             required>
-      <input type="number"
-             name="sort_order"
-             value="{{ vt.sort_order }}"
-             class="form-control form-control-sm"
-             style="width: 80px;"
-             placeholder="Orden"
-             min="0"
-             id="vt-order-{{ vt.pk }}">
-    </div>
+{# HTMX fragment — inline edit form for a vehicle type row (name only).                                         #}
+{# sort_order is managed via drag-and-drop; it is not editable here.                                            #}
+{# Fragmento HTMX — formulario de edición inline para una fila de tipo de vehículo (solo nombre).               #}
+{# sort_order se gestiona via drag-and-drop; no es editable aquí.                                               #}
+<tr id="vt-row-{{ vt.pk }}" data-pk="{{ vt.pk }}">
+  <td class="ps-2 align-middle text-muted" style="width:32px;">
+    <i class="bi bi-grip-vertical"></i>
   </td>
-  <td class="text-center align-middle">
-    <span class="badge {% if vt.is_active %}bg-success{% else %}bg-secondary{% endif %}">
-      {% if vt.is_active %}Activo{% else %}Inactivo{% endif %}
-    </span>
+  <td class="align-middle" colspan="2">
+    <input type="text"
+           name="name"
+           value="{{ vt.name }}"
+           class="form-control form-control-sm"
+           placeholder="Nombre del tipo de vehículo"
+           id="vt-name-{{ vt.pk }}"
+           required>
   </td>
   <td class="text-end pe-3 align-middle">
     <div class="d-flex justify-content-end gap-1">
       <button type="button"
               class="btn btn-sm btn-success py-0 px-2"
               hx-post="{% url 'budgets:vehicle_type_update' vt.pk %}"
-              hx-include="#vt-name-{{ vt.pk }}, #vt-order-{{ vt.pk }}"
-              hx-swap="none"
-              hx-on::after-request="if(event.detail.successful){ window.location.reload(); }"
+              hx-include="#vt-name-{{ vt.pk }}"
+              hx-target="#vt-row-{{ vt.pk }}"
+              hx-swap="outerHTML"
               title="Guardar">
         <i class="bi bi-check-lg"></i>
       </button>
@@ -49,3 +39,4 @@
     </div>
   </td>
 </tr>
+

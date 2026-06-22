@@ -1,3 +1,4 @@
+
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/mixins.py
 """
 Authentication and authorisation mixins for the panel application.
@@ -277,3 +278,83 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
             return redirect("/panel/")
 
         return response
+
+
+class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
+    """
+    Mixin that grants access to the work-order entry form
+    (WorkOrderEntryFormView) for the WORKSHOP, SUPERVISOR and ADMIN roles.
+
+    This mixin exists because the form view serves two distinct use cases:
+      - WORKSHOP operators create and edit their own daily parts.
+      - SUPERVISOR and ADMIN review and edit any operator's digital parts
+        from the admin history view (WorkOrderAdminHistoryView).
+
+    WorkshopRequiredMixin cannot be used because it excludes SUPERVISOR.
+    SupervisorAccessMixin cannot be used because it excludes WORKSHOP.
+    This mixin is the intersection that covers both cases cleanly.
+
+    Access matrix:
+      ADMIN        — full access (create, edit any part).
+      SUPERVISOR   — full access (edit any operator's part from history).
+      WORKSHOPBOSS — full access (same as WORKSHOP with elevated visibility).
+      WORKSHOP     — access to create and edit their own parts only
+                     (enforced inside WorkOrderEntryFormView via _is_elevated).
+      Any other role — redirect to dashboard with error message.
+    ---
+    Mixin que concede acceso al formulario de entrada de partes
+    (WorkOrderEntryFormView) para los roles WORKSHOP, SUPERVISOR y ADMIN.
+
+    Existe porque la vista sirve dos casos de uso distintos:
+      - Operarios WORKSHOP crean y editan sus propios partes diarios.
+      - SUPERVISOR y ADMIN revisan y editan partes de cualquier operario
+        desde la vista de historial (WorkOrderAdminHistoryView).
+
+    WorkshopRequiredMixin no puede usarse porque excluye a SUPERVISOR.
+    SupervisorAccessMixin no puede usarse porque excluye a WORKSHOP.
+    Este mixin es la interseccion que cubre ambos casos de forma limpia.
+
+    Matriz de acceso:
+      ADMIN        — acceso completo (crear, editar cualquier parte).
+      SUPERVISOR   — acceso completo (editar partes de cualquier operario).
+      WORKSHOPBOSS — acceso completo (igual que WORKSHOP con visibilidad ampliada).
+      WORKSHOP     — acceso para crear y editar sus propios partes
+                     (restriccion a propios aplicada en WorkOrderEntryFormView
+                     mediante la variable _is_elevated).
+      Cualquier otro rol — redireccion al dashboard con mensaje de error.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Verify that the authenticated CompanyUser holds one of the allowed
+        roles for work-order form access. Delegates authentication and
+        CompanyUser checks to parent first.
+        ---
+        Verifica que el CompanyUser autenticado posee uno de los roles
+        permitidos para el formulario de partes. Delega al padre las
+        comprobaciones de autenticacion y CompanyUser primero.
+        """
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+
+        company_user = getattr(request.user, "company_user", None)
+        if company_user is None:
+            return response
+
+        allowed_roles = {
+            CompanyUser.ROLE_WORKSHOP,
+            CompanyUser.ROLE_WORKSHOPBOSS,
+            CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_ADMIN,
+        }
+        if company_user.role not in allowed_roles:
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Operario, Jefe de taller, Supervisor o Administrador.",
+            )
+            return redirect("/panel/")
+
+        return response
+

@@ -11,7 +11,7 @@ from django.forms import modelformset_factory
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-from panel.mixins import SupervisorAccessMixin
+from panel.mixins import SupervisorAccessMixin, AdminRoleRequiredMixin
 from ivr_config.models import (
     CompanyUser,
     PresenceStatus,
@@ -451,6 +451,11 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
 
 
         default_tab ="pending"if wo_pending .exists ()else "reviewed"
+        # Preserve active tab from GET param; fall back to computed default.
+        # Preservar la pestaña activa del GET; usar el default calculado como fallback.
+        active_tab =request .GET .get ("tab","").strip ()
+        if active_tab not in ("pending","reviewed","error"):
+            active_tab =default_tab
 
 
 
@@ -479,6 +484,7 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         "wo_reviewed":wo_reviewed ,
         "wo_error":wo_error ,
         "default_tab":default_tab ,
+        "active_tab":active_tab ,
         "operators":operators ,
         "periods":periods ,
         "operator_pk":operator_pk ,
@@ -1014,11 +1020,30 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
                 return redirect (_reverse_get ("panel:operator_history"))
             return redirect (_reverse_get ("panel:work_order_list"))
 
-
-
-
-
-
+        # Guard: block editing if work order belongs to a locked period.
+        # Guardia: bloquear edición si el parte pertenece a un periodo liquidado.
+        _first_entry_g =work_order .entries .order_by ("work_date").first ()
+        if _first_entry_g and _first_entry_g .work_date :
+            from ivr_config .models import WorkPeriod as _WP_G
+            _locked_g =_WP_G .objects .filter (
+                company_user =work_order .uploaded_by ,
+                is_closed =True ,
+                start_date__lte =_first_entry_g .work_date ,
+                end_date__gte =_first_entry_g .work_date ,
+            ).exists ()
+            if _locked_g :
+                django_messages .error (
+                    request ,
+                    "Este parte pertenece a un periodo ya liquidado y "
+                    "no puede editarse.",
+                )
+                _back_g =request .GET .get ("back","")
+                if _back_g :
+                    from urllib.parse import unquote as _uq_g
+                    return redirect (_uq_g (_back_g ))
+                if _is_workshop :
+                    return redirect (_reverse_get ("panel:operator_history"))
+                return redirect (_reverse_get ("panel:digital_work_order_list"))
 
         _is_digital =work_order .source in (
         WorkOrder .Source .DIGITAL ,
@@ -1044,15 +1069,22 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
         if _is_workshop :
             back_url =_reverse_get ("panel:operator_history")
         else :
-            from_param =request .GET .get ("from","")
-            if from_param =="digital":
-                back_url =_reverse_get ("panel:digital_work_order_list")
-            elif from_param =="taller":
-                back_url =_reverse_get ("panel:work_order_admin_history")+"?tab=pending"
-            elif _is_digital :
-                back_url =_reverse_get ("panel:digital_work_order_list")
+            # Prefer explicit back= param (carries active filters).
+            # Si viene back= explícito (con filtros activos) usarlo directamente.
+            _back_param =request .GET .get ("back","").strip ()
+            if _back_param :
+                from urllib.parse import unquote as _unquote
+                back_url =_unquote (_back_param )
             else :
-                back_url =_reverse_get ("panel:work_order_list")
+                from_param =request .GET .get ("from","")
+                if from_param =="digital":
+                    back_url =_reverse_get ("panel:digital_work_order_list")
+                elif from_param =="taller":
+                    back_url =_reverse_get ("panel:work_order_admin_history")+"?tab=pending"
+                elif _is_digital :
+                    back_url =_reverse_get ("panel:digital_work_order_list")
+                else :
+                    back_url =_reverse_get ("panel:work_order_list")
 
 
 
@@ -1142,10 +1174,17 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
 
         if _is_workshop_post :
             _list_url =_reverse_post ("panel:operator_history")
-        elif _is_digital_post :
-            _list_url =_reverse_post ("panel:digital_work_order_list")
         else :
-            _list_url =_reverse_post ("panel:work_order_list")
+            # Use back_url hidden field if present (carries active filters).
+            # Usar el campo hidden back_url si viene (preserva filtros activos).
+            _back_hidden =request .POST .get ("back_url","").strip ()
+            if _back_hidden :
+                from urllib.parse import unquote as _unquote_post
+                _list_url =_unquote_post (_back_hidden )
+            elif _is_digital_post :
+                _list_url =_reverse_post ("panel:digital_work_order_list")
+            else :
+                _list_url =_reverse_post ("panel:work_order_list")
 
         action =request .POST .get ("action","")
 
@@ -4112,9 +4151,48 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
             suggested_period_start =""
             suggested_period_end =""
 
+        # Build period_operator_groups for the Períodos tab.
+        # Construir period_operator_groups para la pestaña Períodos.
+        from ivr_config .models import WorkPeriod as _WP_H
+        _period_operators =(
+            CompanyUser .objects
+            .filter (company =company ,is_active =True ,role =CompanyUser .ROLE_WORKSHOP )
+            .select_related ("user")
+            .order_by ("user__last_name","user__first_name")
+        )
+        period_operator_groups =[]
+        for _pop in _period_operators :
+            _plist =list (
+                _WP_H .objects
+                .filter (company_user =_pop )
+                .select_related ("created_by__user")
+                .order_by ("-start_date")
+            )
+            period_operator_groups .append ({
+                "operator":_pop ,
+                "periods":_plist ,
+                "has_open":any (not p .is_closed for p in _plist ),
+            })
+
         from work_order_processor.models import ExportTemplate as _ET
         _templates_propias = _ET.objects.filter(company_user=cu, is_global=False).order_by("-is_default", "name")
         _templates_globales = _ET.objects.filter(company=cu.company, is_global=True).order_by("name")
+
+        # Compute aggregate totals for the Revisados tab.
+        # Calcular totales agregados para la pestaña Revisados.
+        from decimal import Decimal as _Dec
+        reviewed_totals = {
+            "horas_totales": sum(
+                (wo["horas_totales"] for wo in reviewed_list
+                 if wo["horas_totales"] is not None),
+                _Dec("0"),
+            ),
+            "horas_extra": sum(
+                (wo["horas_extra"] for wo in reviewed_list
+                 if wo["horas_extra"] is not None),
+                _Dec("0"),
+            ),
+        }
 
         context ={
         "company":cu .company ,
@@ -4144,6 +4222,7 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         "sort_primary_dir":sort_primary_dir ,
         "pending_list":pending_list ,
         "reviewed_list":reviewed_list ,
+        "reviewed_totals":reviewed_totals ,
         "history_list":history_list ,
         "absences_list":absences_list ,
         "suggested_period_start":suggested_period_start ,
@@ -4151,6 +4230,7 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         "templates_propias":_templates_propias ,
         "templates_globales":_templates_globales ,
         "is_admin":cu .role =="ADMIN",
+        "period_operator_groups":period_operator_groups ,
         "column_choices":[
         ("fecha","Fecha"),
         ("operario","Operario"),
@@ -4475,7 +4555,7 @@ class WorkPeriodListView (SupervisorAccessMixin ,View ):
             operator_groups .append ({
             "operator":operator ,
             "periods":list (periods ),
-            "has_open":any (p .end_date is None for p in periods ),
+            "has_open":any (not p .is_closed for p in periods ),
             })
 
 
@@ -4520,7 +4600,7 @@ class WorkPeriodListView (SupervisorAccessMixin ,View ):
 
         open_periods_exist =WorkPeriod .objects .filter (
         company_user__company =company ,
-        end_date__isnull =True ,
+        is_closed =False ,
         ).exists ()
 
         context ={
@@ -4533,6 +4613,7 @@ class WorkPeriodListView (SupervisorAccessMixin ,View ):
         "suggested_start":_suggested_start .strftime ("%Y-%m-%d"),
         "suggested_end":_suggested_end .strftime ("%Y-%m-%d"),
         "has_open_periods":open_periods_exist ,
+        "is_admin":cu .role =="ADMIN",
         }
         return render (request ,self .template_name ,context )
 
@@ -4633,7 +4714,7 @@ class WorkPeriodCreateView (SupervisorAccessMixin ,View ):
 
         for operator in workshop_operators :
             if WorkPeriod .objects .filter (
-            company_user =operator ,end_date__isnull =True 
+            company_user =operator ,is_closed =False 
             ).exists ():
                 skipped_names .append (
                 operator .user .get_full_name ()or operator .user .username 
@@ -4758,12 +4839,12 @@ class WorkPeriodCloseView (SupervisorAccessMixin ,View ):
 
         open_periods =WorkPeriod .objects .filter (
         company_user__company =company ,
-        end_date__isnull =True ,
+        is_closed =False ,
         )
         if not open_periods .exists ():
             django_messages .error (
             request ,
-            "No hay ningún periodo activo abierto en esta empresa.",
+            "No hay ningún periodo activo sin liquidar en esta empresa.",
             )
             return redirect (LIST_URL )
 
@@ -4835,7 +4916,7 @@ class WorkPeriodCloseView (SupervisorAccessMixin ,View ):
 
 
         closed_count =open_periods .count ()
-        open_periods .update (end_date =end_date )
+        open_periods .update (end_date =end_date ,is_closed =True )
 
 
 
@@ -4858,6 +4939,71 @@ class WorkPeriodCloseView (SupervisorAccessMixin ,View ):
         f"{len(pks)} Excel(es) encolado(s).",
         )
         return redirect (LIST_URL )
+
+
+class WorkPeriodLockView (AdminRoleRequiredMixin ,View ):
+    """
+    Toggles the is_closed flag of a single WorkPeriod identified by pk.
+    ADMIN only.
+
+    POST /panel/work-periods/<pk>/lock/
+
+    Behaviour:
+      - If is_closed=False → set is_closed=True  (lock / liquidate).
+      - If is_closed=True  → set is_closed=False (unlock / reopen).
+
+    Returns a redirect to the referring URL (HTTP_REFERER) or to
+    panel:work_period_list as fallback.
+    ---
+    Alterna el flag is_closed de un WorkPeriod individual identificado por pk.
+    Solo ADMIN.
+
+    POST /panel/work-periods/<pk>/lock/
+
+    Comportamiento:
+      - Si is_closed=False → pone is_closed=True  (liquidar).
+      - Si is_closed=True  → pone is_closed=False (reabrir).
+
+    Devuelve una redirección a la URL referente (HTTP_REFERER) o a
+    panel:work_period_list como fallback.
+    """
+
+    def post (self ,request ,pk ,*args ,**kwargs ):
+        """
+        Toggle is_closed on the WorkPeriod and redirect back.
+        ---
+        Alterna is_closed en el WorkPeriod y redirige al origen.
+        """
+        from django .shortcuts import get_object_or_404
+        from django .urls import reverse
+        from ivr_config .models import WorkPeriod
+
+        cu =request .user .company_user 
+        wp =get_object_or_404 (
+            WorkPeriod ,
+            pk =pk ,
+            company_user__company =cu .company ,
+        )
+        wp .is_closed =not wp .is_closed 
+        wp .save (update_fields =["is_closed"])
+
+        if wp .is_closed :
+            django_messages .success (
+                request ,
+                f"Periodo {wp.start_date:%d/%m/%Y}"
+                f"{'–' + wp.end_date.strftime('%d/%m/%Y') if wp.end_date else ''}"
+                f" liquidado. Los partes dentro del periodo ya no pueden editarse.",
+            )
+        else :
+            django_messages .success (
+                request ,
+                f"Periodo {wp.start_date:%d/%m/%Y}"
+                f"{'–' + wp.end_date.strftime('%d/%m/%Y') if wp.end_date else ''}"
+                f" reabierto. Los partes dentro del periodo pueden editarse de nuevo.",
+            )
+
+        referer =request .META .get ("HTTP_REFERER","")
+        return redirect (referer or reverse ("panel:work_period_list"))
 
 
 class WorkOrderAdminExportView (SupervisorAccessMixin ,View ):
@@ -6124,5 +6270,7 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
         template .name ,qs .count (),cu .user .username ,
         )
         return response 
+
+
 
 

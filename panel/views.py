@@ -98,6 +98,7 @@ from panel.views_workorders import (
     WorkPeriodListView,
     WorkPeriodCreateView,
     WorkPeriodCloseView,
+    WorkPeriodLockView,
     WorkOrderAdminExportView,
     WorkOrderMachineFilterView,
     ExportTemplateListView,

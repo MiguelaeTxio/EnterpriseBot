@@ -7,7 +7,11 @@ from django.db import models as django_models
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 
-from panel.mixins import WorkshopRequiredMixin, SupervisorAccessMixin
+from panel.mixins import (
+    WorkshopRequiredMixin,
+    SupervisorAccessMixin,
+    WorkOrderFormAccessMixin,
+)
 from ivr_config.models import (
     PresenceStatus,
     CompanyUser,
@@ -1935,11 +1939,12 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
         return redirect (_reverse ("panel:operator_history"))
 
 
-class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
+class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
     """
     Structured web form entry path for work orders (Via A).
-    Allows WORKSHOP and ADMIN users to submit a daily work-order part
-    directly via a multi-block web form, with no AI dependency and zero cost.
+    Allows WORKSHOP, SUPERVISOR and ADMIN users to submit or edit a daily
+    work-order part directly via a multi-block web form, with no AI
+    dependency and zero cost.
 
     GET  /panel/operator/form/
          Renders an empty form with one default work block and an empty
@@ -2105,7 +2110,30 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                     return redirect("/panel/work-orders/history/")
                 return redirect ("/panel/operator/history/")
 
-
+            # Guard: block editing if part belongs to a locked period.
+            # Guardia: bloquear edición si el parte pertenece a un periodo liquidado.
+            _first_e_lock =wo_edit .entries .order_by ("work_date").first ()
+            if _first_e_lock and _first_e_lock .work_date :
+                from ivr_config .models import WorkPeriod as _WP_EF
+                _locked_ef =_WP_EF .objects .filter (
+                    company_user =wo_edit .uploaded_by ,
+                    is_closed =True ,
+                    start_date__lte =_first_e_lock .work_date ,
+                    end_date__gte =_first_e_lock .work_date ,
+                ).exists ()
+                if _locked_ef :
+                    django_messages .error (
+                        request ,
+                        "Este parte pertenece a un periodo ya liquidado y "
+                        "no puede editarse.",
+                    )
+                    _back_ef =request .GET .get ("back","")
+                    if _back_ef :
+                        from urllib.parse import unquote as _uq_ef
+                        return redirect (_uq_ef (_back_ef ))
+                    if _is_elevated :
+                        return redirect ("/panel/work-orders/history/")
+                    return redirect ("/panel/operator/history/")
 
             entries =list (wo_edit .entries .prefetch_related ("lines").all ())
             first_entry =entries [0 ]if entries else None 
@@ -2213,6 +2241,11 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
             _first_hf_edit =_end_time_morning_edit if _end_time_morning_edit else _end_time_afternoon_edit 
 
+            # Read back_url from ?back= GET param (passed by digital_list.html links).
+            # Leer back_url del param ?back= del GET (pasado por los enlaces de digital_list.html).
+            from urllib.parse import unquote as _unquote_e
+            _back_get_e = _unquote_e(request .GET .get ("back","").strip ())
+
             context =self ._get_context_base (request )
             context .update ({
             "edit_mode":True ,
@@ -2237,6 +2270,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             # Flag de pausa persistido — usado por form_entry_assets.js para
             # restaurar el estado del checkbox en modo edicion.
             "no_lunch_break":_no_lunch_edit ,
+            "back_url":_back_get_e ,
             })
             return render (request ,self .template_name ,context )
 
@@ -2424,6 +2458,9 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         "absence_categories":_json_fix .dumps (_absence_cats) ,
         "personal_asset_code":PERSONAL_ASSET_CODE ,
         "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
+        # Read back_url from ?back= GET param for SUPERVISOR/ADMIN return navigation.
+        # Leer back_url del param ?back= del GET para navegación de retorno de SUPERVISOR/ADMIN.
+        "back_url":(lambda u: __import__('urllib.parse', fromlist=['unquote']).unquote(u))(request .GET .get ("back","").strip ()),
         })
         return render (request ,self .template_name ,context )
 
@@ -2460,6 +2497,15 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
 
+
+        # Resolve elevated return URL once — used in all SUPERVISOR/ADMIN redirects.
+        # back_url from hidden field takes priority; fallback: digital_work_order_list.
+        # Resolver URL de retorno elevada una vez — usada en todos los redirects SUPERVISOR/ADMIN.
+        # back_url del campo hidden tiene prioridad; fallback: digital_work_order_list.
+        from urllib.parse import unquote as _unquote_post_f
+        from django.urls import reverse as _rev_elevated
+        _back_post = _unquote_post_f(POST .get ("back_url","").strip ())
+        _elevated_url = _back_post if _back_post else _rev_elevated ("panel:digital_work_order_list")
 
         from datetime import time as _dt_time_lb 
         def _parse_time_field (raw ):
@@ -3598,7 +3644,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             from django .urls import reverse as _reverse_sb
             if cu .role =="WORKSHOP":
                 return redirect ("/panel/operator/form/")
-            return redirect (_reverse_sb ("panel:work_order_admin_history"))
+            return redirect (_elevated_url )
 
 
 
@@ -4060,7 +4106,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             # del operario (que se ve mal para roles elevados).
             from django .urls import reverse as _reverse_ov
             if cu .role !="WORKSHOP":
-                return redirect (_reverse_ov ("panel:work_order_admin_history"))
+                return redirect (_elevated_url )
             context =self ._get_context_base (request )
             context .update ({
             "overlap_incidents":True ,
@@ -4096,7 +4142,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         from django .urls import reverse as _reverse_co 
         if cu .role =="WORKSHOP":
             return redirect (_reverse_co ("panel:operator_history"))
-        return redirect (_reverse_co ("panel:digital_work_order_list"))
+        return redirect (_elevated_url )
 
 
 class WorkOrderEntryHistoryView (WorkshopRequiredMixin ,View ):
@@ -4832,6 +4878,9 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             'panel/operator/_schedule_fields_fragment.html',
             _ctx ,
         )
+
+
+
 
 
 

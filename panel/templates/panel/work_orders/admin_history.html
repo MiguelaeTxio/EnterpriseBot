@@ -908,6 +908,23 @@
                             </td>
                         </tr>
                         {% endfor %}
+                        {# Fila de totales — suma de horas_totales y horas_extra del conjunto filtrado #}
+                        {# Totals row — sum of horas_totales and horas_extra for the filtered set      #}
+                        {% if reviewed_list %}
+                        <tr class="table-primary fw-semibold small">
+                            <td class="px-3"></td>
+                            <td colspan="3" class="text-end pe-3">TOTAL</td>
+                            <td class="text-sm">{{ reviewed_totals.horas_totales }}</td>
+                            <td class="text-sm">
+                                {% if reviewed_totals.horas_extra > 0 %}
+                                <span class="badge bg-success">+{{ reviewed_totals.horas_extra }}h</span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td colspan="4"></td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>
@@ -1196,7 +1213,7 @@
                             {{ group.operator.user.get_full_name|default:group.operator.user.username }}
                         </span>
                         {% if group.has_open %}
-                        <span class="badge bg-success ms-1">Periodo abierto</span>
+                        <span class="badge bg-success ms-1">Periodo activo</span>
                         {% endif %}
                     </div>
                     <div class="table-responsive">
@@ -1205,6 +1222,7 @@
                                 <tr>
                                     <th class="text-sm fw-semibold px-3">Inicio</th>
                                     <th class="text-sm fw-semibold">Fin</th>
+                                    <th class="text-sm fw-semibold">Estado</th>
                                     <th class="text-sm fw-semibold">Etiqueta</th>
                                     <th class="text-sm fw-semibold">Creado por</th>
                                     <th class="text-sm fw-semibold">Acciones</th>
@@ -1218,7 +1236,14 @@
                                         {% if period.end_date %}
                                             {{ period.end_date|date:"d/m/Y" }}
                                         {% else %}
-                                            <span class="badge bg-success">Activo</span>
+                                            <span class="text-muted">Sin fecha fin</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-sm">
+                                        {% if period.is_closed %}
+                                        <span class="badge bg-danger">Liquidado</span>
+                                        {% else %}
+                                        <span class="badge bg-success">Activo</span>
                                         {% endif %}
                                     </td>
                                     <td class="text-sm text-muted">
@@ -1230,17 +1255,23 @@
                                         {% else %}—{% endif %}
                                     </td>
                                     <td class="text-sm">
-                                        {% if not period.end_date %}
-                                        <button type="button"
-                                                class="btn btn-outline-success btn-sm py-0 px-2 btn-close-period"
-                                                data-period-pk="{{ period.pk }}"
-                                                data-operator-name="{{ group.operator.user.get_full_name|default:group.operator.user.username }}"
-                                                data-close-url="{% url 'panel:work_period_close' period.pk %}"
-                                                title="Cerrar periodo">
-                                            <i class="bi bi-calendar-check me-1"></i>Cerrar
-                                        </button>
+                                        {% if is_admin %}
+                                        <form method="post"
+                                              action="{% url 'panel:work_period_lock' period.pk %}"
+                                              class="d-inline"
+                                              onsubmit="return confirm('{% if period.is_closed %}¿Reabrir este periodo?{% else %}¿Liquidar este periodo? Los partes dentro de él no podrán editarse.{% endif %}')">
+                                            {% csrf_token %}
+                                            <button type="submit"
+                                                    class="btn btn-sm {% if period.is_closed %}btn-outline-warning{% else %}btn-outline-danger{% endif %} py-0 px-2">
+                                                {% if period.is_closed %}
+                                                <i class="bi bi-unlock me-1"></i>Reabrir
+                                                {% else %}
+                                                <i class="bi bi-lock me-1"></i>Liquidar
+                                                {% endif %}
+                                            </button>
+                                        </form>
                                         {% else %}
-                                        <span class="text-muted text-sm">Cerrado</span>
+                                        <span class="text-muted text-sm">—</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -1982,5 +2013,6 @@ window.EB_EXPORT_TEMPLATES = {
 </script>
 <script src="{% static 'panel/js/export_templates.js' %}"></script>
 {% endblock %}
+
 
 

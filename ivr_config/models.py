@@ -1890,19 +1890,21 @@ class WorkerAbsence(models.Model):
 class WorkPeriod(models.Model):
     """
     Represents a contiguous employment or contract period for a CompanyUser.
-    An open period (end_date=None) is the operator's currently active period.
-    Closed periods (end_date set) represent historical intervals used for
-    grouping the operator's work-order history in the four-tab history view.
-    The 'label' field allows supervisors to assign a human-readable name to
-    each period (e.g. 'Mayo 2026', 'Verano 2026').
+    A period with is_closed=False is active — the operator's work orders within
+    it can still be created and edited.
+    A period with is_closed=True has been administratively locked (liquidated):
+    no further edits are allowed on work orders falling within its date range.
+    The end_date field defines the date range of the period; it is independent
+    of the locked/unlocked state. A period can have an end_date set while still
+    being active (is_closed=False).
     ---
     Representa un periodo de empleo o contrato contiguo para un CompanyUser.
-    Un periodo abierto (end_date=None) es el periodo activo actual del operario.
-    Los periodos cerrados (end_date establecido) representan intervalos históricos
-    usados para agrupar el historial de partes del operario en la vista de historial
-    de cuatro pestañas.
-    El campo 'label' permite a los supervisores asignar un nombre legible a cada
-    periodo (ej. 'Mayo 2026', 'Verano 2026').
+    Un periodo con is_closed=False está activo — los partes dentro de él
+    pueden crearse y editarse con normalidad.
+    Un periodo con is_closed=True ha sido liquidado administrativamente:
+    no se permiten más ediciones en los partes que caen en su rango de fechas.
+    El campo end_date define el rango del periodo; es independiente del estado
+    abierto/cerrado. Un periodo puede tener end_date definido y seguir activo.
     """
 
     company_user = models.ForeignKey(
@@ -1922,7 +1924,17 @@ class WorkPeriod(models.Model):
         verbose_name="Fecha de fin",
         help_text=(
             "Último día del periodo de trabajo (inclusive). "
-            "Null indica periodo abierto — el operario está activo en este periodo."
+            "Puede establecerse al crear el periodo sin que implique cierre."
+        ),
+    )
+    is_closed = models.BooleanField(
+        default=False,
+        verbose_name="Liquidado",
+        db_index=True,
+        help_text=(
+            "Indica que el periodo ha sido liquidado administrativamente. "
+            "Cuando está activo, ningún parte dentro del rango puede editarse. "
+            "Se activa manualmente por el ADMIN o SUPERVISOR al cerrar el periodo."
         ),
     )
     label = models.CharField(
@@ -1958,11 +1970,13 @@ class WorkPeriod(models.Model):
         ordering = ["-start_date"]
 
     def __str__(self):
-        end_label = self.end_date.strftime("%d/%m/%Y") if self.end_date else "activo"
+        end_label = self.end_date.strftime("%d/%m/%Y") if self.end_date else "sin fecha fin"
+        closed_label = " [LIQUIDADO]" if self.is_closed else ""
         return (
             f"{self.company_user.user.get_full_name() or self.company_user.user.username} — "
             f"{self.start_date:%d/%m/%Y} / {end_label}"
             + (f" [{self.label}]" if self.label else "")
+            + closed_label
         )
 
 
@@ -2623,3 +2637,5 @@ class WorkshopFamilyMapping(models.Model):
             f"{self.company.name} — {self.catalogue_family} "
             f"→ {self.get_workshop_family_display()}"
         )
+
+

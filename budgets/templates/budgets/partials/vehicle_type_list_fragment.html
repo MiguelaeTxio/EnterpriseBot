@@ -1,18 +1,20 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/partials/vehicle_type_list_fragment.html #}
 {# HTMX fragment — updated vehicle type list for InsurerDetailView.                                             #}
+{# Drag-and-drop reorder via HTML5 native DnD. Persists via VehicleTypeReorderView.                            #}
 {# Fragmento HTMX — lista actualizada de tipos de vehículo para InsurerDetailView.                              #}
+{# Reordenación drag-and-drop via DnD nativo HTML5. Persiste via VehicleTypeReorderView.                        #}
 <div id="vehicle-type-list">
   {% if vehicle_types %}
   <table class="table table-sm small mb-0 align-middle">
     <thead class="table-light">
       <tr>
-        <th class="ps-3">Nombre</th>
-        <th class="text-center">Orden</th>
+        <th class="ps-2" style="width:32px;"></th>
+        <th>Nombre</th>
         <th class="text-center">Estado</th>
         <th class="text-end pe-3">Acciones</th>
       </tr>
     </thead>
-    <tbody id="vehicle-type-tbody">
+    <tbody id="vehicle-type-tbody" data-insurer-pk="{{ insurer.pk }}">
       {% for vt in vehicle_types %}
       {% include "budgets/partials/vehicle_type_row_fragment.html" %}
       {% endfor %}
@@ -24,3 +26,95 @@
   </div>
   {% endif %}
 </div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ------------------------------------------------------------------ *
+   * Drag-and-drop reorder for vehicle type rows.                         *
+   * Uses HTML5 native DnD — no external library required.               *
+   * On drop, POSTs the new ordered list of PKs to vehicle_type_reorder. *
+   * ------------------------------------------------------------------ */
+
+  var REORDER_URL = "{% url 'budgets:vehicle_type_reorder' %}";
+  var CSRF_TOKEN  = document.querySelector('meta[name="csrf-token"]')
+                      .getAttribute("content");
+
+  function initDnD(tbody) {
+    var draggingRow = null;
+
+    tbody.addEventListener("dragstart", function (e) {
+      var row = e.target.closest("tr[data-pk]");
+      if (!row) return;
+      draggingRow = row;
+      row.classList.add("opacity-50");
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    tbody.addEventListener("dragend", function () {
+      if (draggingRow) {
+        draggingRow.classList.remove("opacity-50");
+        draggingRow = null;
+      }
+    });
+
+    tbody.addEventListener("dragover", function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      var target = e.target.closest("tr[data-pk]");
+      if (!target || target === draggingRow) return;
+      var rect  = target.getBoundingClientRect();
+      var after = e.clientY > rect.top + rect.height / 2;
+      if (after) {
+        target.after(draggingRow);
+      } else {
+        target.before(draggingRow);
+      }
+    });
+
+    tbody.addEventListener("drop", function (e) {
+      e.preventDefault();
+      persistOrder(tbody);
+    });
+  }
+
+  function persistOrder(tbody) {
+    var insurerPk = tbody.getAttribute("data-insurer-pk");
+    var pks = Array.from(tbody.querySelectorAll("tr[data-pk]"))
+                   .map(function (r) { return parseInt(r.getAttribute("data-pk"), 10); });
+
+    fetch(REORDER_URL, {
+      method:  "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken":  CSRF_TOKEN,
+      },
+      body: JSON.stringify({ insurer_pk: parseInt(insurerPk, 10), pks: pks }),
+    })
+    .then(function (r) {
+      if (!r.ok) {
+        console.error("Error al guardar el orden de tipos de vehículo:", r.status);
+      }
+    })
+    .catch(function (err) {
+      console.error("Error de red al reordenar:", err);
+    });
+  }
+
+  /* Init on DOM ready and after any HTMX swap that re-renders this fragment. */
+  /* Inicializar en DOM listo y tras cualquier swap HTMX que re-renderice este fragmento. */
+  function setup() {
+    var tbody = document.getElementById("vehicle-type-tbody");
+    if (tbody) initDnD(tbody);
+  }
+
+  document.addEventListener("DOMContentLoaded", setup);
+  document.addEventListener("htmx:afterSwap", function (e) {
+    if (e.detail.target && e.detail.target.id === "vehicle-type-list") {
+      setup();
+    }
+  });
+}());
+</script>
+

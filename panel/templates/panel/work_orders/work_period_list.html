@@ -1,3 +1,4 @@
+
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/work_period_list.html #}
 {#                                                                                                     #}
 {# Supervisor/Admin view — full page list of WorkPeriod records grouped by operator.                  #}
@@ -52,9 +53,9 @@
                     {{ group.operator.user.get_full_name|default:group.operator.user.username }}
                 </span>
                 {% if group.has_open %}
-                <span class="badge bg-success ms-1">Periodo abierto</span>
+                <span class="badge bg-success ms-1">Periodo activo</span>
                 {% else %}
-                <span class="badge bg-secondary ms-1">Sin periodo activo</span>
+                <span class="badge bg-secondary ms-1">Todo liquidado</span>
                 {% endif %}
             </div>
             <div class="card-body p-0">
@@ -65,6 +66,7 @@
                             <tr>
                                 <th class="text-sm fw-semibold px-4">Inicio</th>
                                 <th class="text-sm fw-semibold">Fin</th>
+                                <th class="text-sm fw-semibold">Estado</th>
                                 <th class="text-sm fw-semibold">Etiqueta</th>
                                 <th class="text-sm fw-semibold">Creado por</th>
                                 <th class="text-sm fw-semibold">Creado el</th>
@@ -79,7 +81,14 @@
                                     {% if period.end_date %}
                                         {{ period.end_date|date:"d/m/Y" }}
                                     {% else %}
-                                        <span class="badge bg-success">Activo</span>
+                                        <span class="text-muted">Sin fecha fin</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-sm">
+                                    {% if period.is_closed %}
+                                    <span class="badge bg-danger">Liquidado</span>
+                                    {% else %}
+                                    <span class="badge bg-success">Activo</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-sm text-muted">
@@ -94,19 +103,23 @@
                                     {{ period.created_at|date:"d/m/Y" }}
                                 </td>
                                 <td class="text-sm">
-                                    {% if not period.end_date %}
-                                    <button type="button"
-                                            class="btn btn-outline-success btn-sm py-0 px-2 btn-close-period"
-                                            data-period-pk="{{ period.pk }}"
-                                            data-operator-name="{{ group.operator.user.get_full_name|default:group.operator.user.username }}"
-                                            data-close-url="{% url 'panel:work_period_close' period.pk %}"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#modalWorkPeriodClose"
-                                            title="Cerrar periodo">
-                                        <i class="bi bi-calendar-check me-1"></i>Cerrar
-                                    </button>
+                                    {% if is_admin %}
+                                    <form method="post"
+                                          action="{% url 'panel:work_period_lock' period.pk %}"
+                                          class="d-inline"
+                                          onsubmit="return confirm('{% if period.is_closed %}¿Reabrir este periodo? Los partes volverán a ser editables.{% else %}¿Liquidar este periodo? Los partes dentro de él no podrán editarse.{% endif %}')">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                                class="btn btn-sm {% if period.is_closed %}btn-outline-warning{% else %}btn-outline-danger{% endif %} py-0 px-2">
+                                            {% if period.is_closed %}
+                                            <i class="bi bi-unlock me-1"></i>Reabrir
+                                            {% else %}
+                                            <i class="bi bi-lock me-1"></i>Liquidar
+                                            {% endif %}
+                                        </button>
+                                    </form>
                                     {% else %}
-                                    <span class="text-muted text-sm">Cerrado</span>
+                                    <span class="text-muted text-sm">—</span>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -224,4 +237,5 @@
         </div>
     </div>
 </div>
+
 

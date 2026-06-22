@@ -1,4 +1,5 @@
 
+
 """
 View definitions for the budgets application.
 Implements the sequential budget wizard, HTMX partial endpoints,
@@ -3339,38 +3340,39 @@ class BaseDeleteView(AdminRoleRequiredMixin, View):
 class VehicleTypeCreateView(AdminRoleRequiredMixin, View):
     """
     Creates a new VehicleType for the given insurer via HTMX POST.
+    sort_order is assigned automatically as max(existing) + 1 so the new
+    entry always appears last. The user never inputs an order value.
     Returns the updated vehicle type list fragment on success.
     ---
     Crea un nuevo VehicleType para la aseguradora dada via HTMX POST.
-    Devuelve el fragmento de lista actualizado en caso de éxito.
+    sort_order se asigna automaticamente como max(existente) + 1, de modo
+    que el nuevo entrada siempre aparece al final. El usuario nunca introduce
+    un valor de orden.
+    Devuelve el fragmento de lista actualizado en caso de exito.
     """
 
     def post(self, request, pk):
         """
-        Validate and create VehicleType. Returns HTMX list fragment.
+        Validate and create VehicleType. sort_order assigned automatically.
         If 'globalize' flag is present in POST, creates the VehicleType
         for every active Insurer in the company (propagation mode).
         ---
-        Valida y crea VehicleType. Devuelve fragmento de lista HTMX.
-        Si el flag 'globalize' está en el POST, crea el VehicleType
-        para cada Insurer activo de la empresa (modo propagación).
+        Valida y crea VehicleType. sort_order asignado automaticamente.
+        Si el flag 'globalize' esta en el POST, crea el VehicleType
+        para cada Insurer activo de la empresa (modo propagacion).
         """
         from django.http import HttpResponseBadRequest
+        from django.db.models import Max
         company_user = _get_company_user(request)
         insurer = get_object_or_404(
             Insurer, pk=pk, company=company_user.company,
         )
         name = request.POST.get("name", "").strip()
-        sort_order_raw = request.POST.get("sort_order", "0").strip()
         globalize = request.POST.get("globalize") == "1"
         if not name:
             return HttpResponseBadRequest(
                 "El nombre del tipo de vehículo es obligatorio."
             )
-        try:
-            sort_order = int(sort_order_raw)
-        except ValueError:
-            sort_order = 0
         if globalize:
             # Propagate to every active insurer in the company.
             # Propagar a cada aseguradora activa de la empresa.
@@ -3379,17 +3381,27 @@ class VehicleTypeCreateView(AdminRoleRequiredMixin, View):
                 is_active=True,
             )
             for target_insurer in insurers:
+                # Assign sort_order as max + 1 per insurer.
+                # Asignar sort_order como max + 1 por aseguradora.
+                max_order = (
+                    target_insurer.vehicle_types
+                    .aggregate(m=Max("sort_order"))["m"]
+                ) or 0
                 VehicleType.objects.create(
                     insurer=target_insurer,
                     name=name,
-                    sort_order=sort_order,
+                    sort_order=max_order + 1,
                     is_active=True,
                 )
         else:
+            max_order = (
+                insurer.vehicle_types
+                .aggregate(m=Max("sort_order"))["m"]
+            ) or 0
             VehicleType.objects.create(
                 insurer=insurer,
                 name=name,
-                sort_order=sort_order,
+                sort_order=max_order + 1,
                 is_active=True,
             )
         vehicle_types = insurer.vehicle_types.order_by("sort_order", "name")
@@ -3402,18 +3414,20 @@ class VehicleTypeCreateView(AdminRoleRequiredMixin, View):
 
 class VehicleTypeUpdateView(AdminRoleRequiredMixin, View):
     """
-    Updates an existing VehicleType via HTMX POST.
+    Updates an existing VehicleType name via HTMX POST.
+    sort_order is managed exclusively via VehicleTypeReorderView (drag & drop).
     Returns the updated row fragment on success.
     ---
-    Actualiza un VehicleType existente via HTMX POST.
-    Devuelve el fragmento de fila actualizado en caso de éxito.
+    Actualiza el nombre de un VehicleType existente via HTMX POST.
+    sort_order se gestiona exclusivamente via VehicleTypeReorderView
+    (drag & drop). Devuelve el fragmento de fila actualizado en exito.
     """
 
     def get(self, request, pk):
         """
         Return the inline edit form fragment for the given VehicleType pk.
         ---
-        Devuelve el fragmento de formulario de edición inline para el pk dado.
+        Devuelve el fragmento de formulario de edicion inline para el pk dado.
         """
         company_user = _get_company_user(request)
         vt = get_object_or_404(
@@ -3429,9 +3443,11 @@ class VehicleTypeUpdateView(AdminRoleRequiredMixin, View):
 
     def post(self, request, pk):
         """
-        Save updated VehicleType and return the updated row fragment.
+        Save updated VehicleType name and return the updated row fragment.
+        sort_order is intentionally not updated here.
         ---
-        Guarda el VehicleType actualizado y devuelve el fragmento de fila.
+        Guarda el nombre actualizado del VehicleType y devuelve la fila.
+        sort_order no se actualiza aqui intencionalmente.
         """
         company_user = _get_company_user(request)
         vt = get_object_or_404(
@@ -3440,17 +3456,13 @@ class VehicleTypeUpdateView(AdminRoleRequiredMixin, View):
             insurer__company=company_user.company,
         )
         name = request.POST.get("name", "").strip()
-        sort_order_raw = request.POST.get("sort_order", "0").strip()
         if not name:
             from django.http import HttpResponseBadRequest
-            return HttpResponseBadRequest("El nombre del tipo de vehículo es obligatorio.")
-        try:
-            sort_order = int(sort_order_raw)
-        except ValueError:
-            sort_order = 0
+            return HttpResponseBadRequest(
+                "El nombre del tipo de vehículo es obligatorio."
+            )
         vt.name = name
-        vt.sort_order = sort_order
-        vt.save(update_fields=["name", "sort_order"])
+        vt.save(update_fields=["name"])
         return render(
             request,
             "budgets/partials/vehicle_type_row_fragment.html",
@@ -3523,6 +3535,79 @@ class VehicleTypeDeleteView(AdminRoleRequiredMixin, View):
             )
         vt.delete()
         return HttpResponse(status=200)
+
+
+class VehicleTypeReorderView(AdminRoleRequiredMixin, View):
+    """
+    Persists a new sort_order for all VehicleType records of an insurer
+    after a drag-and-drop reorder operation in the UI.
+
+    Accepts a JSON POST body: {"insurer_pk": N, "pks": [pk1, pk2, ...]}
+    where pks is the ordered list of VehicleType primary keys reflecting
+    the new visual order. Each VehicleType receives sort_order = its index
+    in the list (0-based). All updates are executed in a single atomic
+    transaction. Returns JSON {"status": "ok"} on success or HTTP 400/404
+    on validation failure.
+    ---
+    Persiste un nuevo sort_order para todos los registros VehicleType de
+    una aseguradora tras una operacion de reordenacion drag-and-drop en
+    la UI.
+
+    Acepta un cuerpo JSON POST: {"insurer_pk": N, "pks": [pk1, pk2, ...]}
+    donde pks es la lista ordenada de claves primarias de VehicleType que
+    refleja el nuevo orden visual. Cada VehicleType recibe sort_order igual
+    a su indice en la lista (base 0). Todas las actualizaciones se ejecutan
+    en una unica transaccion atomica. Devuelve JSON {"status": "ok"} en
+    exito o HTTP 400/404 en caso de fallo de validacion.
+    """
+
+    def post(self, request):
+        """
+        Parse JSON body, validate ownership, persist sort_order atomically.
+        ---
+        Parsea el cuerpo JSON, valida la propiedad, persiste sort_order
+        de forma atomica.
+        """
+        import json as _json
+        from django.db import transaction
+        from django.http import JsonResponse, HttpResponseBadRequest
+
+        company_user = _get_company_user(request)
+
+        try:
+            body = _json.loads(request.body)
+        except (ValueError, KeyError):
+            return HttpResponseBadRequest("JSON inválido.")
+
+        insurer_pk = body.get("insurer_pk")
+        pks = body.get("pks", [])
+
+        if not insurer_pk or not isinstance(pks, list) or not pks:
+            return HttpResponseBadRequest(
+                "Se requieren insurer_pk y pks (lista no vacía)."
+            )
+
+        insurer = get_object_or_404(
+            Insurer, pk=insurer_pk, company=company_user.company,
+        )
+
+        # Validate that all pks belong to this insurer.
+        # Validar que todos los pks pertenecen a esta aseguradora.
+        qs = VehicleType.objects.filter(
+            pk__in=pks, insurer=insurer,
+        )
+        if qs.count() != len(pks):
+            return HttpResponseBadRequest(
+                "Algún tipo de vehículo no pertenece a esta aseguradora."
+            )
+
+        # Persist new order atomically.
+        # Persistir el nuevo orden de forma atomica.
+        with transaction.atomic():
+            for idx, vt_pk in enumerate(pks):
+                VehicleType.objects.filter(pk=vt_pk).update(sort_order=idx)
+
+        return JsonResponse({"status": "ok"})
 
 
 class TariffConceptCreateView(AdminRoleRequiredMixin, View):
@@ -5332,6 +5417,9 @@ class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
         if error:
             messages.error(request, error)
         return redirect("budgets:base_calendar_detail", pk=pk)
+
+
+
 
 
 

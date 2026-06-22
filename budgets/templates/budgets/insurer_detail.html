@@ -351,7 +351,6 @@
             <thead class="table-light">
               <tr>
                 <th class="ps-3">Nombre</th>
-                <th class="text-center">Orden</th>
                 <th class="pe-3">Estado</th>
               </tr>
             </thead>
@@ -359,7 +358,6 @@
               {% for vt in insurer_vehicle_types %}
               <tr>
                 <td class="ps-3 align-middle">{{ vt.name }}</td>
-                <td class="text-center align-middle text-muted">{{ vt.sort_order }}</td>
                 <td class="pe-3 align-middle">
                   {% if vt.is_active %}
                   <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>

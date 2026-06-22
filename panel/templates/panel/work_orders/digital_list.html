@@ -33,6 +33,7 @@
     {# ------------------------------------------------------------------ #}
     <div class="px-4 pb-3 d-flex align-items-center gap-3 flex-wrap">
         <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="formFilters">
+            <input type="hidden" name="tab" id="hiddenTab" value="{{ request.GET.tab|default:'pending' }}">
             <select name="operator_pk" class="form-select form-select-sm"
                     onchange="document.getElementById('formFilters').submit();">
                 <option value="">Todos los operarios</option>
@@ -63,9 +64,12 @@
     <div class="px-4">
         <ul class="nav nav-tabs border-bottom" id="digitalTabs" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link text-sm" id="tab-pending" data-bs-toggle="tab"
+                <button class="nav-link text-sm {% if active_tab == 'pending' or not active_tab %}active{% endif %}"
+                        id="tab-pending" data-bs-toggle="tab"
                         data-bs-target="#pane-pending" type="button" role="tab"
-                        aria-controls="pane-pending" aria-selected="false">
+                        aria-controls="pane-pending"
+                        aria-selected="{% if active_tab == 'pending' or not active_tab %}true{% else %}false{% endif %}"
+                        onclick="document.getElementById('hiddenTab').value='pending';">
                     Pendiente revisión
                     {% if wo_pending %}
                     <span class="badge bg-warning text-dark ms-1">{{ wo_pending|length }}</span>
@@ -73,9 +77,12 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link text-sm" id="tab-reviewed" data-bs-toggle="tab"
+                <button class="nav-link text-sm {% if active_tab == 'reviewed' %}active{% endif %}"
+                        id="tab-reviewed" data-bs-toggle="tab"
                         data-bs-target="#pane-reviewed" type="button" role="tab"
-                        aria-controls="pane-reviewed" aria-selected="false">
+                        aria-controls="pane-reviewed"
+                        aria-selected="{% if active_tab == 'reviewed' %}true{% else %}false{% endif %}"
+                        onclick="document.getElementById('hiddenTab').value='reviewed';">
                     Revisados
                     {% if wo_reviewed %}
                     <span class="badge bg-success ms-1">{{ wo_reviewed|length }}</span>
@@ -83,9 +90,12 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link text-sm" id="tab-error" data-bs-toggle="tab"
+                <button class="nav-link text-sm {% if active_tab == 'error' %}active{% endif %}"
+                        id="tab-error" data-bs-toggle="tab"
                         data-bs-target="#pane-error" type="button" role="tab"
-                        aria-controls="pane-error" aria-selected="false">
+                        aria-controls="pane-error"
+                        aria-selected="{% if active_tab == 'error' %}true{% else %}false{% endif %}"
+                        onclick="document.getElementById('hiddenTab').value='error';">
                     Error
                     {% if wo_error %}
                     <span class="badge bg-danger ms-1">{{ wo_error|length }}</span>
@@ -101,7 +111,7 @@
     <div class="tab-content px-4 pt-3" id="digitalTabsContent">
 
         {# ---- Tab: Pendiente revisión ---- #}
-        <div class="tab-pane fade" id="pane-pending" role="tabpanel" aria-labelledby="tab-pending">
+        <div class="tab-pane fade {% if active_tab == 'pending' or not active_tab %}show active{% endif %}" id="pane-pending" role="tabpanel" aria-labelledby="tab-pending">
             {% if wo_pending %}
             <div class="table-responsive">
                 <table class="table table-sm table-hover align-middle mb-0">
@@ -140,28 +150,8 @@
                                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                         <li>
                                             <a class="dropdown-item text-sm"
-                                               href="{% url 'panel:work_order_edit' wo.pk %}?from=digital">
-                                                <i class="bi bi-pencil me-2"></i>Editar
-                                            </a>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="py-4 text-center text-muted text-sm">
-                <i class="bi bi-check2-circle fs-4 d-block mb-2"></i>
-                No hay partes digitales pendientes de revisión.
-            </div>
-            {% endif %}
-        </div>
-
-        {# ---- Tab: Revisados ---- #}
-        <div class="tab-pane fade" id="pane-reviewed" role="tabpanel" aria-labelledby="tab-reviewed">
+                                               href="{% url 'panel:work_order_edit' wo.pk %}?from=digital&back={{ request.get_full_path|urlencode }}">
+        <div class="tab-pane fade {% if active_tab == 'reviewed' %}show active{% endif %}" id="pane-reviewed" role="tabpanel" aria-labelledby="tab-reviewed">
 
             {# Cabecera de tab con botón descargar selección — Directriz Alejandro #}
             {# El botón abre el modal de configuración de exportación. El formulario #}
@@ -229,7 +219,7 @@
                                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                         <li>
                                             <a class="dropdown-item text-sm"
-                                               href="{% url 'panel:work_order_edit' wo.pk %}?from=digital">
+                                               href="{% url 'panel:work_order_edit' wo.pk %}?from=digital&back={{ request.get_full_path|urlencode }}">
                                                 <i class="bi bi-pencil me-2"></i>Editar
                                             </a>
                                         </li>
@@ -250,7 +240,7 @@
         </div>
 
         {# ---- Tab: Error ---- #}
-        <div class="tab-pane fade" id="pane-error" role="tabpanel" aria-labelledby="tab-error">
+        <div class="tab-pane fade {% if active_tab == 'error' %}show active{% endif %}" id="pane-error" role="tabpanel" aria-labelledby="tab-error">
             {% if wo_error %}
             <div class="table-responsive">
                 <table class="table table-sm table-hover align-middle mb-0">
@@ -493,15 +483,9 @@
 
     document.addEventListener("DOMContentLoaded", function () {
 
-        /* ---- Tab activation by default_tab context variable
-               Activación de pestaña por variable de contexto default_tab ---- */
-        var defaultTab = "{{ default_tab|default:'pending' }}";
-        var tabId = "tab-" + defaultTab;
-        var tabEl = document.getElementById(tabId);
-        if (tabEl) {
-            var bsTab = new bootstrap.Tab(tabEl);
-            bsTab.show();
-        }
+        /* ---- Tab state is set server-side via 'show active' CSS classes.
+               El estado de pestaña lo establece el servidor via clases CSS 'show active'. ---- */
+        var defaultTab = "{{ active_tab|default:'pending' }}";
 
         /* ---- Select-all checkbox in Reviewed tab
                Checkbox seleccionar todos en pestaña Revisados ---- */
@@ -617,3 +601,4 @@
 }());
 </script>
 {% endblock %}
+

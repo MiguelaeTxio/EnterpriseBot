@@ -84,6 +84,7 @@ from panel.views import (
     WorkPeriodListView,
     WorkPeriodCreateView,
     WorkPeriodCloseView,
+    WorkPeriodLockView,
     WorkOrderMachineFilterView,
     DigitalWorkOrderListView,
     WorkdayScheduleView,
@@ -304,6 +305,7 @@ urlpatterns = [
     path("work-periods/", WorkPeriodListView.as_view(), name="work_period_list"),
     path("work-periods/create/", WorkPeriodCreateView.as_view(), name="work_period_create"),
     path("work-periods/close/", WorkPeriodCloseView.as_view(), name="work_period_close"),
+    path("work-periods/<int:pk>/lock/", WorkPeriodLockView.as_view(), name="work_period_lock"),
 
     # Workday schedule management — Gestión de horarios de jornada (rol SUPERVISOR y ADMIN).
     # Paso G — CUARTA ACCION Hito 7 Sesion 029 (2026-05-14)
@@ -375,4 +377,5 @@ urlpatterns = [
     path("ivr/call-logs/<int:pk>/", InboundCallLogDetailView.as_view(), name="inbound_call_log_detail"),
     path("ivr/call-logs/<int:pk>/delete/", InboundCallLogDeleteView.as_view(), name="inbound_call_log_delete"),
 ]
+
 
