@@ -1,3 +1,4 @@
+
 // /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/wizard_map.js
 /**
  * Route planner modal logic (Google Maps JS API, Routes Library).
@@ -768,7 +769,14 @@
     if (distanceEl) distanceEl.textContent = formatKm(totalMeters);
 
     const baseReturnIndex = waypoints.findIndex((w) => w.isBaseReturn);
-    const isOvernight     = baseReturnIndex !== -1;
+    // Overnight only when the base-return waypoint has real stops after it.
+    // A single "Return to base" closing a normal circuit is NOT overnight.
+    // Solo hay pernocta si tras el waypoint base-return hay paradas reales.
+    // Un unico "Volver a base" que cierra el circuito normal NO es pernocta.
+    const isOvernight = baseReturnIndex !== -1
+      && waypoints.slice(baseReturnIndex + 1).some(
+           (w) => !w.isVia && !w.isBaseReturn
+         );
 
     if (overnightEl) {
       overnightEl.textContent = isOvernight ? "Sí" : "No";
@@ -954,3 +962,6 @@
     }
   });
 })();
+
+
+

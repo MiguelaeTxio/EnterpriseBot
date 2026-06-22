@@ -1,4 +1,4 @@
-
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/services.py
 """
 Budget calculation engine for the ASISTENCIA section.
 Applies insurer tariff lines to operator input data and produces
@@ -1059,12 +1059,22 @@ def calculate_route_multileg(
     origin_lng = float(base.longitude)
     departure_time_str = service_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Detect overnight split: find first waypoint with is_base_return=True.
-    # Detectar corte de pernocta: primer waypoint con is_base_return=True.
+    # Detect overnight split: find first waypoint with is_base_return=True
+    # that has at least one real stop after it (not via, not base-return).
+    # A single "Return to base" closing a normal circuit is NOT overnight.
+    # ---
+    # Detectar corte de pernocta: primer waypoint con is_base_return=True
+    # que tenga al menos una parada real despues (no via, no base-return).
+    # Un unico "Volver a base" que cierra el circuito normal NO es pernocta.
     split_index: int | None = None
     for idx, wp in enumerate(waypoints):
         if wp.get("is_base_return"):
-            split_index = idx
+            has_stops_after = any(
+                not w.get("is_base_return") and not w.get("is_via")
+                for w in waypoints[idx + 1:]
+            )
+            if has_stops_after:
+                split_index = idx
             break
 
     try:
@@ -1610,3 +1620,6 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         budget.total_amount_with_iva = None
 
     return result_lines
+
+
+
