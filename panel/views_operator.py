@@ -1,3 +1,4 @@
+
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_operator.py
 from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View
@@ -1894,6 +1895,15 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
             request ,
             f"Parte #{work_order.pk} guardado con incidencia de solapamiento."
             )
+            # ADMIN/SUPERVISOR: the overlap warning is already in messages —
+            # redirect to admin history rather than rendering the operator
+            # form (which looks broken for elevated roles).
+            # ADMIN/SUPERVISOR: el aviso de solapamiento ya está en messages —
+            # redirigir al historial admin en lugar de renderizar el formulario
+            # del operario (que se ve mal para roles elevados).
+            from django .urls import reverse as _reverse_ov
+            if cu .role !="WORKSHOP":
+                return redirect (_reverse_ov ("panel:work_order_admin_history"))
             context =self ._get_context_base (request )
             context .update ({
             "overlap_incidents":True ,
@@ -2059,22 +2069,40 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         if wo_pk is not None :
 
 
-            try :
-                wo_edit =_WO_E .objects .get (
-                pk =wo_pk ,
-                company =company ,
-                uploaded_by =cu ,
-                reviewed =False ,
-                source__in =[
-                _WO_E .Source .DIGITAL ,
-                _WO_E .Source .GENERATED ,
+            # Determine if the authenticated user has elevated access.
+            # ADMIN and SUPERVISOR can edit any operator's digital part; WORKSHOP
+            # can only edit their own.
+            # Determinar si el usuario tiene acceso elevado.
+            # ADMIN y SUPERVISOR pueden editar partes de cualquier operario;
+            # WORKSHOP solo puede editar los propios.
+            _is_elevated = cu.role in (
+                CompanyUser.ROLE_ADMIN,
+                CompanyUser.ROLE_SUPERVISOR,
+            )
+
+            # Build the queryset filter: elevated roles omit uploaded_by.
+            # Construir el filtro: roles elevados omiten uploaded_by.
+            _wo_filter = dict(
+                pk=wo_pk,
+                company=company,
+                reviewed=False,
+                source__in=[
+                    _WO_E.Source.DIGITAL,
+                    _WO_E.Source.GENERATED,
                 ],
-                )
+            )
+            if not _is_elevated:
+                _wo_filter["uploaded_by"] = cu
+
+            try :
+                wo_edit =_WO_E .objects .get (**_wo_filter)
             except _WO_E .DoesNotExist :
                 django_messages .error (
                 request ,
                 "El parte no existe, ya ha sido revisado o no te pertenece.",
                 )
+                if _is_elevated:
+                    return redirect("/panel/work-orders/history/")
                 return redirect ("/panel/operator/history/")
 
 
@@ -2125,22 +2153,62 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             _lunch_start_edit =""
             _lunch_end_edit =""
             _first_hc_edit =""
-            _show_lunch_edit =False 
+            _show_lunch_edit =False
             _end_time_morning_edit =""
             _end_time_afternoon_edit =""
-            if _schedule_edit and not _schedule_edit .is_intensive :
-                _show_lunch_edit =True 
-                if _schedule_edit .end_time_morning :
-                    _lunch_start_edit =_schedule_edit .end_time_morning .strftime ("%H:%M")
-                    _end_time_morning_edit =_lunch_start_edit 
-                if _schedule_edit .start_time_afternoon :
-                    _lunch_end_edit =_schedule_edit .start_time_afternoon .strftime ("%H:%M")
-            if _schedule_edit and _schedule_edit .end_time_afternoon :
-                _end_time_afternoon_edit =_schedule_edit .end_time_afternoon .strftime ("%H:%M")
-            elif _schedule_edit and _schedule_edit .is_intensive and _schedule_edit .end_time_morning :
-                _end_time_afternoon_edit =_schedule_edit .end_time_morning .strftime ("%H:%M")
-            if _schedule_edit and _schedule_edit .start_time_morning :
-                _first_hc_edit =_schedule_edit .start_time_morning .strftime ("%H:%M")
+            _no_lunch_edit =False
+
+            # --- Edit-mode lunch resolution ---
+            # Priority 1: real pause stored in the saved entry (covers the case
+            # where the operator paused on an intensive day — lb_start/lb_end
+            # are persisted in BD even when the schedule is intensive).
+            # Priority 2: schedule default (split-shift only).
+            # --- Resolucion de pausa en modo edicion ---
+            # Prioridad 1: pausa real guardada en la entry del parte (cubre el
+            # caso de jornada intensiva con pausa real — lb_start/lb_end se
+            # persisten en BD aunque el horario sea intensivo).
+            # Prioridad 2: valores por defecto del horario (solo jornada partida).
+            _entry_lb_start = (
+                first_entry.lunch_break_start.strftime("%H:%M")
+                if first_entry and first_entry.lunch_break_start else ""
+            )
+            _entry_lb_end = (
+                first_entry.lunch_break_end.strftime("%H:%M")
+                if first_entry and first_entry.lunch_break_end else ""
+            )
+            _no_lunch_edit = (
+                first_entry.no_lunch_break
+                if first_entry and first_entry.no_lunch_break is not None
+                else False
+            )
+
+            if _entry_lb_start and _entry_lb_end:
+                # The part has a real recorded pause — always show it regardless
+                # of whether the shift is intensive.
+                # El parte tiene pausa real registrada — mostrarla siempre,
+                # independientemente de si la jornada es intensiva.
+                _lunch_start_edit = _entry_lb_start
+                _lunch_end_edit = _entry_lb_end
+                _show_lunch_edit = True
+                _end_time_morning_edit = _lunch_start_edit
+            elif _schedule_edit and not _schedule_edit.is_intensive:
+                # No real pause stored: fall back to schedule defaults for
+                # split-shift operators (intensive operators start with no pause).
+                # Sin pausa real: usar defaults del horario para jornada partida
+                # (los de jornada intensiva arrancan sin pausa visible).
+                _show_lunch_edit = True
+                if _schedule_edit.end_time_morning:
+                    _lunch_start_edit = _schedule_edit.end_time_morning.strftime("%H:%M")
+                    _end_time_morning_edit = _lunch_start_edit
+                if _schedule_edit.start_time_afternoon:
+                    _lunch_end_edit = _schedule_edit.start_time_afternoon.strftime("%H:%M")
+
+            if _schedule_edit and _schedule_edit.end_time_afternoon:
+                _end_time_afternoon_edit =_schedule_edit.end_time_afternoon.strftime("%H:%M")
+            elif _schedule_edit and _schedule_edit.is_intensive and _schedule_edit.end_time_morning:
+                _end_time_afternoon_edit =_schedule_edit.end_time_morning.strftime("%H:%M")
+            if _schedule_edit and _schedule_edit.start_time_morning:
+                _first_hc_edit =_schedule_edit.start_time_morning.strftime("%H:%M")
 
 
             _first_hf_edit =_end_time_morning_edit if _end_time_morning_edit else _end_time_afternoon_edit 
@@ -2164,6 +2232,11 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             "end_time_afternoon":_end_time_afternoon_edit ,
             "start_time_afternoon":_lunch_end_edit ,
             "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
+            # Persisted lunch-break flag — used by form_entry_assets.js to
+            # restore the "He parado a comer" checkbox state in edit mode.
+            # Flag de pausa persistido — usado por form_entry_assets.js para
+            # restaurar el estado del checkbox en modo edicion.
+            "no_lunch_break":_no_lunch_edit ,
             })
             return render (request ,self .template_name ,context )
 
@@ -2285,6 +2358,11 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             "absence_categories":_json_fix .dumps (_absence_cats) ,
             "personal_asset_code":PERSONAL_ASSET_CODE ,
             "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
+            # Persisted lunch-break flag — used by form_entry_assets.js to
+            # restore the "He parado a comer" checkbox state in edit mode.
+            # Flag de pausa persistido — usado por form_entry_assets.js para
+            # restaurar el estado del checkbox en modo edicion.
+            "no_lunch_break":_no_lunch_edit ,
             })
             return render (request ,self .template_name ,context )
 
@@ -3513,7 +3591,14 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             f"{len(entry_lines_data)} bloque(s) guardado(s). "
             "Puedes añadir más bloques o cerrar el parte cuando termines."
             )
-            return redirect ("/panel/operator/form/")
+            # Redirect after save_blocks: WORKSHOP returns to the operator
+            # form; ADMIN/SUPERVISOR return to the digital work-order list.
+            # Redirección tras save_blocks: WORKSHOP vuelve al formulario del
+            # operario; ADMIN/SUPERVISOR van a la lista de partes digitales.
+            from django .urls import reverse as _reverse_sb
+            if cu .role =="WORKSHOP":
+                return redirect ("/panel/operator/form/")
+            return redirect (_reverse_sb ("panel:work_order_admin_history"))
 
 
 
@@ -3549,16 +3634,26 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         _reuse_wo =None 
         if edit_wo_pk :
             try :
-                _reuse_wo =WorkOrder .objects .get (
-                pk =int (edit_wo_pk ),
-                company =company ,
-                uploaded_by =cu ,
-                reviewed =False ,
-                source__in =[
-                WorkOrder .Source .DIGITAL ,
-                WorkOrder .Source .GENERATED ,
-                ],
+                # ADMIN/SUPERVISOR can reuse any operator's part; WORKSHOP only
+                # their own. Mirror the GET-mode access rule.
+                # ADMIN/SUPERVISOR pueden reutilizar partes de cualquier operario;
+                # WORKSHOP solo los propios. Refleja la regla de acceso del GET.
+                _is_elevated_close = cu.role in (
+                    CompanyUser.ROLE_ADMIN,
+                    CompanyUser.ROLE_SUPERVISOR,
                 )
+                _close_filter = dict(
+                    pk=int(edit_wo_pk),
+                    company=company,
+                    reviewed=False,
+                    source__in=[
+                        WorkOrder.Source.DIGITAL,
+                        WorkOrder.Source.GENERATED,
+                    ],
+                )
+                if not _is_elevated_close:
+                    _close_filter["uploaded_by"] = cu
+                _reuse_wo =WorkOrder .objects .get (**_close_filter)
                 logger .info (
                 "# [FormView/close] Reutilizando WorkOrder pk=%d. "
                 "No se borra — cierre no destructivo.",
@@ -3957,6 +4052,15 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             request ,
             f"Parte #{work_order.pk} guardado con incidencia de solapamiento."
             )
+            # ADMIN/SUPERVISOR: the overlap warning is already in messages —
+            # redirect to admin history rather than rendering the operator
+            # form (which looks broken for elevated roles).
+            # ADMIN/SUPERVISOR: el aviso de solapamiento ya está en messages —
+            # redirigir al historial admin en lugar de renderizar el formulario
+            # del operario (que se ve mal para roles elevados).
+            from django .urls import reverse as _reverse_ov
+            if cu .role !="WORKSHOP":
+                return redirect (_reverse_ov ("panel:work_order_admin_history"))
             context =self ._get_context_base (request )
             context .update ({
             "overlap_incidents":True ,

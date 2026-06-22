@@ -1,4 +1,5 @@
 
+
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/admin_history.html #}
 {#                                                                                                   #}
 {# Admin/Supervisor work-order history — four-tab management interface.                             #}
@@ -712,10 +713,17 @@
                                 </td>
                                 <td class="text-sm">
                                     <div class="d-flex gap-2">
+                                        {% if wo.source == "DIGITAL" or wo.source == "GENERATED" %}
+                                        <a href="{% url 'panel:operator_form_edit' wo.pk %}?from=taller"
+                                           class="btn btn-outline-primary btn-sm py-0 px-2">
+                                            <i class="bi bi-pencil me-1"></i>Editar / Revisar
+                                        </a>
+                                        {% else %}
                                         <a href="{% url 'panel:work_order_edit' wo.pk %}?from=taller"
                                            class="btn btn-outline-primary btn-sm py-0 px-2">
                                             <i class="bi bi-pencil me-1"></i>Editar / Revisar
                                         </a>
+                                        {% endif %}
                                         <button type="button"
                                                 class="btn btn-outline-success btn-sm py-0 px-2"
                                                 hx-post="{% url 'panel:work_order_review' wo.pk %}"

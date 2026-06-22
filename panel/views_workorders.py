@@ -1,3 +1,4 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_workorders.py
 
 
 from django.contrib import messages as django_messages
@@ -3816,6 +3817,13 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
             "fault_category":self ._dominant_fault_category (
             wo ,active_fault_category =active_fault_category 
             ),
+            # Source value used by admin_history.html to dispatch the correct
+            # edit URL: operator_form_edit for DIGITAL/GENERATED, work_order_edit
+            # for PDF parts.
+            # Valor source usado por admin_history.html para despachar la URL
+            # de edición correcta: operator_form_edit para DIGITAL/GENERATED,
+            # work_order_edit para partes PDF.
+            "source":wo .source ,
             })
         return result 
 
@@ -6116,3 +6124,5 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
         template .name ,qs .count (),cu .user .username ,
         )
         return response 
+
+
