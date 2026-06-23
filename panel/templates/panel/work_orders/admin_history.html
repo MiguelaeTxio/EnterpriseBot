@@ -620,7 +620,7 @@
         {% if active_tab == 'pending' %}
         <div class="p-0">
             {% if pending_list %}
-            <form method="post" id="form-bulk-pending">
+            <form method="post" id="form-bulk-pending" novalidate>
                 {% csrf_token %}
                 <input type="hidden" name="action" value="bulk_action">
                 <input type="hidden" name="active_tab" value="pending">
@@ -762,7 +762,7 @@
 
             {# Bulk action bar — Barra de acciones en bloque (Revisados) #}
             {% if reviewed_list %}
-            <form method="post" id="form-bulk-reviewed">
+            <form method="post" id="form-bulk-reviewed" novalidate>
                 {% csrf_token %}
                 <input type="hidden" name="action" value="bulk_action">
                 <input type="hidden" name="active_tab" value="reviewed">
@@ -942,7 +942,7 @@
         {% elif active_tab == 'history' %}
         <div class="p-0">
             {% if history_list %}
-            <form method="post" id="form-bulk-history">
+            <form method="post" id="form-bulk-history" novalidate>
                 {% csrf_token %}
                 <input type="hidden" name="action" value="bulk_action">
                 <input type="hidden" name="active_tab" value="history">

@@ -2161,7 +2161,7 @@ class BotManagementView(CompanyUserRequiredMixin, View):
         """
         qs = (
             BreakdownTicket.objects
-            .filter(room__company=company_user.company)
+            .filter(company=company_user.company)
             .exclude(status=BreakdownTicket.STATUS_CLOSED)
             .select_related("machine", "contact", "assigned_to")
             .order_by("-created_at")

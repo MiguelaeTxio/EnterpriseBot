@@ -2659,6 +2659,11 @@ def build_export_from_template(template, work_orders_qs):
             "entry__work_order__pk",
             "line_number",
         )
+        # Guard against duplicate rows caused by prefetch_related annotations
+        # on the incoming work_orders_qs when used as a subquery.
+        # Protección contra filas duplicadas causadas por anotaciones
+        # prefetch_related en work_orders_qs al usarse como subquery.
+        .distinct()
     )
 
     # ------------------------------------------------------------------
@@ -2715,6 +2720,13 @@ def build_export_from_template(template, work_orders_qs):
         # Accumulators for numeric columns (global, single sheet).
         # Acumuladores para columnas numéricas (global, hoja única).
         accumulators = {key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS}
+        # Guard: NUMERIC_KEYS values (delta_horas, horas_extra) are entry-level
+        # metrics stored redundantly on every line of the same entry. We must
+        # only accumulate them once per entry, not once per line.
+        # Guarda: los valores NUMERIC_KEYS (delta_horas, horas_extra) son
+        # métricas de entry almacenadas de forma redundante en cada línea de
+        # la misma entry. Solo deben acumularse una vez por entry, no por línea.
+        seen_entry_pks: set = set()
 
         for line in rows:
             wo    = line.entry.work_order
@@ -2740,12 +2752,27 @@ def build_export_from_template(template, work_orders_qs):
                     )
                 current_row += 1
 
+            is_first_line_of_entry = entry.pk not in seen_entry_pks
+            seen_entry_pks.add(entry.pk)
+
             for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
                 val = extractor(wo, entry, line)
+                # NUMERIC_KEYS are entry-level metrics (delta_horas, horas_extra).
+                # On subsequent lines of the same entry write blank so the
+                # value appears only once per day (Opción B).
+                # NUMERIC_KEYS son métricas de entry (delta_horas, horas_extra).
+                # En líneas posteriores de la misma entry se escribe en blanco
+                # para que el valor aparezca solo una vez por día (Opción B).
+                if key in NUMERIC_KEYS and not is_first_line_of_entry:
+                    val = ""
                 ws.cell(row=current_row, column=col_idx, value=val)
-                # Accumulate numeric columns.
-                # Acumular columnas numéricas.
-                if key in accumulators and isinstance(val, (int, float)):
+                # Accumulate only on the first line of each entry.
+                # Acumular solo en la primera línea de cada entry.
+                if (
+                    key in accumulators
+                    and isinstance(val, (int, float))
+                    and is_first_line_of_entry
+                ):
                     accumulators[key] += val
             current_row += 1
 
@@ -2772,6 +2799,11 @@ def build_export_from_template(template, work_orders_qs):
     # Per-sheet accumulators reset when a new sheet opens.
     # Acumuladores por hoja, reiniciados al abrir cada hoja nueva.
     sheet_accumulators = {}
+    # Guard: NUMERIC_KEYS values are entry-level metrics — only accumulate
+    # once per entry per sheet, not once per line.
+    # Guarda: los valores NUMERIC_KEYS son métricas de entry — solo acumular
+    # una vez por entry por hoja, no por línea.
+    seen_entry_pks_sheet: set = set()
 
     for line in rows:
         wo    = line.entry.work_order
@@ -2794,14 +2826,28 @@ def build_export_from_template(template, work_orders_qs):
             sheet_accumulators = {
                 key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS
             }
+            seen_entry_pks_sheet = set()
             _write_header(ws, active_cols)
+
+        is_first_line_of_entry = entry.pk not in seen_entry_pks_sheet
+        seen_entry_pks_sheet.add(entry.pk)
 
         for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
             val = extractor(wo, entry, line)
+            # NUMERIC_KEYS are entry-level metrics (delta_horas, horas_extra).
+            # On subsequent lines of the same entry write blank (Opción B).
+            # NUMERIC_KEYS son métricas de entry. En líneas posteriores
+            # de la misma entry se escribe en blanco (Opción B).
+            if key in NUMERIC_KEYS and not is_first_line_of_entry:
+                val = ""
             ws.cell(row=current_row, column=col_idx, value=val)
-            # Accumulate numeric columns for this sheet.
-            # Acumular columnas numéricas para esta hoja.
-            if key in sheet_accumulators and isinstance(val, (int, float)):
+            # Accumulate only on the first line of each entry.
+            # Acumular solo en la primera línea de cada entry.
+            if (
+                key in sheet_accumulators
+                and isinstance(val, (int, float))
+                and is_first_line_of_entry
+            ):
                 sheet_accumulators[key] += val
         current_row += 1
 

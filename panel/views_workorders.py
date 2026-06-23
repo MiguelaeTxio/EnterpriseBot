@@ -6213,17 +6213,19 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
 
 
 
+        # Note: prefetch_related is intentionally omitted here.
+        # build_export_from_template builds its own WorkOrderEntryLine
+        # queryset internally. Passing a queryset with prefetch annotations
+        # as a subquery causes Django to emit duplicate rows.
+        #
+        # Nota: prefetch_related se omite intencionadamente aquí.
+        # build_export_from_template construye su propio queryset de
+        # WorkOrderEntryLine internamente. Pasar un queryset con anotaciones
+        # prefetch como subquery hace que Django emita filas duplicadas.
         qs =WorkOrder .objects .filter (
         pk__in =pk_list ,
         company =company ,
         source__in =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ],
-        ).select_related (
-        "uploaded_by__user",
-        ).prefetch_related (
-        Prefetch (
-        "entries",
-        queryset =WorkOrderEntry .objects .prefetch_related ("lines"),
-        )
         ).order_by (
         "uploaded_by__user__last_name",
         "uploaded_by__user__first_name",
@@ -6270,6 +6272,7 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
         template .name ,qs .count (),cu .user .username ,
         )
         return response 
+
 
 
 
