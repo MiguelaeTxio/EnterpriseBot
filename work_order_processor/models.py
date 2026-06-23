@@ -697,6 +697,27 @@ class WorkOrderEntry(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Diet flag / Indicador de dieta
+    #
+    # Set by the operator when they are entitled to a meal allowance
+    # for the workday (e.g. working away from their usual base).
+    # Part-level flag: one value per WorkOrderEntry, not per line.
+    #
+    # Activado por el operario cuando tiene derecho a dieta por la
+    # jornada (p.ej. trabajo fuera de su base habitual).
+    # Flag a nivel de parte: un valor por WorkOrderEntry, no por línea.
+    # ------------------------------------------------------------------
+    has_diet = models.BooleanField(
+        _("Dieta"),
+        default=False,
+        help_text=_(
+            "Indica que el operario ha percibido dieta en esta jornada "
+            "(trabajo fuera de la base habitual). Se informa a nivel de "
+            "parte, no de tarea individual."
+        ),
+    )
+
     class Meta:
         verbose_name        = _("Entrada de Parte")
         verbose_name_plural = _("Entradas de Parte")
@@ -1003,6 +1024,28 @@ class WorkOrderEntryLine(models.Model):
             "Marcar para cerrar el ticket de avería vinculado al guardar este bloque. "
             "El sistema establece BreakdownTicket.status=CLOSED automáticamente. "
             "Solo aplica cuando breakdown_ticket está informado."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # On-site work flag / Indicador de trabajo in situ
+    #
+    # Set by the operator when the mechanic travelled to the machine's
+    # location to carry out the repair, rather than the machine coming
+    # to the workshop. Block-level flag: one value per entry line.
+    #
+    # Activado por el operario cuando el mecánico se desplazó hasta
+    # donde se encontraba la máquina para realizar la reparación, en
+    # lugar de que la máquina viniera al taller.
+    # Flag a nivel de bloque: un valor por WorkOrderEntryLine.
+    # ------------------------------------------------------------------
+    is_on_site = models.BooleanField(
+        _("Trabajo in situ"),
+        default=False,
+        help_text=_(
+            "Indica que el mecánico se desplazó al lugar donde se "
+            "encontraba la máquina para realizar la reparación "
+            "(fuera del taller)."
         ),
     )
 
@@ -1697,6 +1740,7 @@ class OperatorMonthlyCost(models.Model):
             f'({self.year}-{self.month:02d}): '
             f'{self.monthly_cost} EUR'
         )
+
 
 
 

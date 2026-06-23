@@ -1,3 +1,4 @@
+
 // /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/form_entry_assets.js
 (function () {
     "use strict";
@@ -185,7 +186,10 @@
                                     // Activar modo ausencia si se selecciona PERSONAL.
                                     var EB_CFG    = window.EB_CONFIG || {};
                                     var isPersonal = asset.code === (EB_CFG.personalAssetCode || "PERSONAL");
+                                    var isEmpresa  = !isPersonal && typeof asset.code === "string" &&
+                                                     asset.code.toUpperCase().indexOf("EMPRESA_") === 0;
                                     _toggleAbsenceMode(bIdx, isPersonal);
+                                    _toggleEmpresaMode(bIdx, isEmpresa, asset.code);
                                     if (isPersonal) {
                                         // Focus the absence selector or fault description.
                                         // Centrar el foco en el selector de ausencia o descripción.
@@ -194,6 +198,13 @@
                                         setTimeout(function () {
                                             if (catSel) { catSel.focus(); }
                                             else if (faultTa) { faultTa.focus(); }
+                                        }, 50);
+                                    } else if (isEmpresa) {
+                                        // Focus the empresa subtype selector.
+                                        // Centrar el foco en el selector de subtipo empresa.
+                                        setTimeout(function () {
+                                            var esSel = document.getElementById("entrada_" + bIdx + "_empresa_subtype");
+                                            if (esSel) { esSel.focus(); }
                                         }, 50);
                                     } else {
                                         // Reveal/hide meter fields for this block.
@@ -349,6 +360,99 @@
             if (rdrReset) { rdrReset.placeholder = "Descripción de la reparación"; }
             if (repairLbl) { repairLbl.innerHTML = "Reparación realizada <span class=\"text-danger\">*</span>"; }
             if (repairWrap) { repairWrap.classList.remove("d-none"); }
+        }
+    }
+
+    // ==================================================================
+    // _toggleEmpresaMode
+    // Switches a work block between repair mode and empresa cost-centre mode.
+    // When isEmpresa=true: hides fault_description and repair_notes label,
+    // shows a subtype <select> built from EB_CONFIG.empresaSubtypes[assetCode].
+    // repair_notes stays visible as the mandatory note field.
+    //
+    // Alterna un bloque entre modo reparación y modo centro de gasto empresa.
+    // Con isEmpresa=true: oculta avería, muestra select de subtipo construido
+    // desde EB_CONFIG.empresaSubtypes[assetCode]. repair_notes sigue visible
+    // como campo de nota obligatoria.
+    // ==================================================================
+    function _toggleEmpresaMode(idx, isEmpresa, assetCode) {
+        var esWrap    = document.getElementById("empresa-selector-wrap-" + idx);
+        var faultWrap = document.getElementById("fault-description-wrap-" + idx);
+        var repairWrap = document.getElementById("repair-notes-wrap-" + idx);
+        var repairLbl  = document.getElementById("repair-notes-label-" + idx);
+        var EB_CFG     = window.EB_CONFIG || {};
+
+        if (isEmpresa) {
+            var subtypes = (
+                EB_CFG.empresaSubtypes &&
+                assetCode &&
+                EB_CFG.empresaSubtypes[assetCode]
+            ) || [];
+
+            // Build or rebuild the subtype selector.
+            // Construir o reconstruir el selector de subtipo.
+            if (!esWrap) {
+                // Static block: create wrapper before fault-description-wrap.
+                // Bloque estático: crear wrapper antes de fault-description-wrap.
+                var faultDiv = document.getElementById("fault-description-wrap-" + idx);
+                if (!faultDiv) {
+                    var fdr = document.querySelector("[name=\"entrada_" + idx + "_fault_description\"]");
+                    if (fdr && fdr.parentElement) {
+                        fdr.parentElement.id = "fault-description-wrap-" + idx;
+                        faultDiv = fdr.parentElement;
+                    }
+                }
+                if (faultDiv) {
+                    var naw = document.createElement("div");
+                    naw.className = "col-12 col-md-6 empresa-selector-wrap d-none";
+                    naw.id = "empresa-selector-wrap-" + idx;
+                    faultDiv.parentElement.insertBefore(naw, faultDiv);
+                    esWrap = naw;
+                }
+            }
+
+            if (esWrap && subtypes.length > 0) {
+                var opts = "<option value=\"\">— Selecciona el tipo de tarea —</option>";
+                subtypes.forEach(function (st) {
+                    opts += "<option value=\"" + st.label + "\">" + st.label + "</option>";
+                });
+                esWrap.innerHTML =
+                    "<label class=\"form-label fw-medium\">" +
+                    "Tipo de tarea <span class=\"text-danger\">*</span></label>" +
+                    "<select name=\"entrada_" + idx + "_empresa_subtype\" " +
+                    "id=\"entrada_" + idx + "_empresa_subtype\" " +
+                    "class=\"form-select eb-field empresa-subtype-select\"></select>" +
+                    "<div class=\"form-text text-muted mt-1\">" +
+                    "Selecciona el tipo de tarea y describe en el campo de nota." +
+                    "</div>";
+                // Fill select options.
+                var sel = document.getElementById("entrada_" + idx + "_empresa_subtype");
+                if (sel) { sel.innerHTML = opts; }
+                esWrap.classList.remove("d-none");
+            }
+
+            // Hide fault description, keep repair_notes as mandatory note.
+            // Ocultar descripción de avería, mantener repair_notes como nota obligatoria.
+            if (faultWrap) { faultWrap.classList.add("d-none"); }
+            if (repairWrap) { repairWrap.classList.remove("d-none"); }
+            if (repairLbl) {
+                repairLbl.innerHTML = "Nota <span class=\"text-danger\">*</span>";
+            }
+            var rdrEmpresa = document.querySelector("[name=\"entrada_" + idx + "_repair_notes\"]");
+            if (rdrEmpresa) {
+                rdrEmpresa.placeholder = "Describe brevemente la tarea realizada.";
+            }
+        } else {
+            // Restore normal repair mode.
+            // Restaurar modo reparación normal.
+            if (esWrap) { esWrap.classList.add("d-none"); }
+            if (faultWrap) { faultWrap.classList.remove("d-none"); }
+            if (repairWrap) { repairWrap.classList.remove("d-none"); }
+            if (repairLbl) {
+                repairLbl.innerHTML = "Reparación realizada <span class=\"text-danger\">*</span>";
+            }
+            var rdrReset = document.querySelector("[name=\"entrada_" + idx + "_repair_notes\"]");
+            if (rdrReset) { rdrReset.placeholder = "Descripción de la reparación"; }
         }
     }
 
@@ -594,6 +698,7 @@
                     '<input type="number" step="0.1" min="0" name="entrada_' + idx + '_crane_hours_reading" class="form-control horometro-input" placeholder="Horas grúa">' +
                 '</div>' +
                 '<div class="col-12 col-md-6 absence-selector-wrap d-none" id="absence-selector-wrap-' + idx + '"></div>' +
+                '<div class="col-12 col-md-6 empresa-selector-wrap d-none" id="empresa-selector-wrap-' + idx + '"></div>' +
                 '<div class="col-12 col-md-6" id="fault-description-wrap-' + idx + '">' +
                     '<label class="form-label fw-medium">Descripción avería <span class="text-danger">*</span></label>' +
                     '<textarea name="entrada_' + idx + '_fault_description" ' +
@@ -607,6 +712,18 @@
                               'class="form-control eb-field desc-search" rows="3" ' +
                               'data-desc-field="repair_notes" ' +
                               'placeholder="Descripción de la reparación"></textarea>' +
+                '</div>' +
+                '<div class="col-12">' +
+                    '<div class="form-check mt-1">' +
+                        '<input class="form-check-input" type="checkbox" ' +
+                               'name="entrada_' + idx + '_is_on_site" ' +
+                               'id="id_entrada_' + idx + '_is_on_site" value="1">' +
+                        '<label class="form-check-label" ' +
+                               'for="id_entrada_' + idx + '_is_on_site">' +
+                            '<i class=\"bi bi-geo-alt me-1 text-secondary\"></i>' +
+                            ' Trabajo in situ (fuera del taller)' +
+                        '</label>' +
+                    '</div>' +
                 '</div>' +
             '</div>';
         return div;
@@ -1145,4 +1262,6 @@
     // contienen el código limpio. El span .asset-label es solo visual, no se envía.
 
 }());
+
+
 

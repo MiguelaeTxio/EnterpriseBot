@@ -183,6 +183,9 @@
                     {% endfor %}
                 </select>
             </div>
+            {# empresa-selector-wrap — populated by JS when EMPRESA_* asset selected #}
+            <div class="col-12 col-md-6 empresa-selector-wrap d-none"
+                 id="empresa-selector-wrap-1"></div>
             <div class="col-12 col-md-6" id="fault-description-wrap-1">
                 <label class="form-label fw-medium">
                     Descripción avería <span class="text-danger">*</span>
@@ -200,6 +203,20 @@
                           rows="3"
                           placeholder="Descripción de la reparación"
                           data-desc-field="repair_notes"></textarea>
+            </div>
+            {# is_on_site — trabajo fuera del taller (in situ) #}
+            <div class="col-12">
+                <div class="form-check mt-1">
+                    <input class="form-check-input" type="checkbox"
+                           name="entrada_1_is_on_site"
+                           id="id_entrada_1_is_on_site"
+                           value="1">
+                    <label class="form-check-label"
+                           for="id_entrada_1_is_on_site">
+                        <i class="bi bi-geo-alt me-1 text-secondary"></i>
+                        Trabajo in situ (fuera del taller)
+                    </label>
+                </div>
             </div>
         </div>
     </div>

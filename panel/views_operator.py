@@ -7,11 +7,7 @@ from django.db import models as django_models
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 
-from panel.mixins import (
-    WorkshopRequiredMixin,
-    SupervisorAccessMixin,
-    WorkOrderFormAccessMixin,
-)
+from panel.mixins import WorkshopRequiredMixin, SupervisorAccessMixin
 from ivr_config.models import (
     PresenceStatus,
     CompanyUser,
@@ -518,6 +514,12 @@ def _parse_entry_lines_from_post (POST ,company ):
     from work_order_processor .management .commands .seed_personal_asset import (
     PERSONAL_ASSET_CODE as _PERSONAL_CODE ,
     )
+    from work_order_processor .management .commands .seed_empresa_assets import (
+    EMPRESA_ASSETS as _EMPRESA_ASSETS ,
+    )
+    _EMPRESA_CODES = {
+        a ["code"].upper () for a in _EMPRESA_ASSETS
+    }
 
     num_entradas =int (POST .get ("num_entradas","1")or "1")
     entry_lines_data =[]
@@ -693,6 +695,25 @@ def _parse_entry_lines_from_post (POST ,company ):
                     _abs_cat_pk_raw ,i ,_abs_exc ,
                     )
 
+        # is_on_site — checkbox submitted as "1" when checked.
+        # is_on_site — checkbox enviado como "1" cuando está marcado.
+        _is_on_site = POST.get(f"{pfx}is_on_site", "") == "1"
+
+        # EMPRESA_* block — detect and resolve subtype label.
+        # Bloque EMPRESA_* — detectar y resolver el label del subtipo.
+        _is_empresa_block = (
+            machine_asset is not None
+            and machine_asset.code.upper() in _EMPRESA_CODES
+        )
+        if _is_empresa_block:
+            _empresa_subtype = POST.get(
+                f"{pfx}empresa_subtype", ""
+            ).strip()
+            if _empresa_subtype:
+                # Override fault_description with subtype + asset label.
+                # Sobreescribir fault_description con subtipo + label activo.
+                desc_averia = _empresa_subtype
+
         entry_lines_data .append ({
         "line_number":i ,
         "machine_raw":machine_raw ,
@@ -710,6 +731,8 @@ def _parse_entry_lines_from_post (POST ,company ):
         "crane_hours_reading":crane_hours_reading ,
         "absence_category":absence_category_obj ,
         "is_personal":_is_personal_block ,
+        "is_on_site":_is_on_site ,
+        "is_empresa":_is_empresa_block ,
         })
 
     return entry_lines_data 
@@ -1583,6 +1606,7 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
                     odometer_reading =ld .get ("odometer_reading"),
                     engine_hours_reading =ld .get ("engine_hours_reading"),
                     crane_hours_reading =ld .get ("crane_hours_reading"),
+                    is_on_site =ld .get ("is_on_site", False),
                     )
                     created_lines [ld ["line_number"]]=line 
                     created_line_pks .append (line .pk )
@@ -1899,15 +1923,6 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
             request ,
             f"Parte #{work_order.pk} guardado con incidencia de solapamiento."
             )
-            # ADMIN/SUPERVISOR: the overlap warning is already in messages —
-            # redirect to admin history rather than rendering the operator
-            # form (which looks broken for elevated roles).
-            # ADMIN/SUPERVISOR: el aviso de solapamiento ya está en messages —
-            # redirigir al historial admin en lugar de renderizar el formulario
-            # del operario (que se ve mal para roles elevados).
-            from django .urls import reverse as _reverse_ov
-            if cu .role !="WORKSHOP":
-                return redirect (_reverse_ov ("panel:work_order_admin_history"))
             context =self ._get_context_base (request )
             context .update ({
             "overlap_incidents":True ,
@@ -1939,12 +1954,11 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
         return redirect (_reverse ("panel:operator_history"))
 
 
-class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
+class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
     """
     Structured web form entry path for work orders (Via A).
-    Allows WORKSHOP, SUPERVISOR and ADMIN users to submit or edit a daily
-    work-order part directly via a multi-block web form, with no AI
-    dependency and zero cost.
+    Allows WORKSHOP and ADMIN users to submit a daily work-order part
+    directly via a multi-block web form, with no AI dependency and zero cost.
 
     GET  /panel/operator/form/
          Renders an empty form with one default work block and an empty
@@ -2074,66 +2088,25 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         if wo_pk is not None :
 
 
-            # Determine if the authenticated user has elevated access.
-            # ADMIN and SUPERVISOR can edit any operator's digital part; WORKSHOP
-            # can only edit their own.
-            # Determinar si el usuario tiene acceso elevado.
-            # ADMIN y SUPERVISOR pueden editar partes de cualquier operario;
-            # WORKSHOP solo puede editar los propios.
-            _is_elevated = cu.role in (
-                CompanyUser.ROLE_ADMIN,
-                CompanyUser.ROLE_SUPERVISOR,
-            )
-
-            # Build the queryset filter: elevated roles omit uploaded_by.
-            # Construir el filtro: roles elevados omiten uploaded_by.
-            _wo_filter = dict(
-                pk=wo_pk,
-                company=company,
-                reviewed=False,
-                source__in=[
-                    _WO_E.Source.DIGITAL,
-                    _WO_E.Source.GENERATED,
-                ],
-            )
-            if not _is_elevated:
-                _wo_filter["uploaded_by"] = cu
-
             try :
-                wo_edit =_WO_E .objects .get (**_wo_filter)
+                wo_edit =_WO_E .objects .get (
+                pk =wo_pk ,
+                company =company ,
+                uploaded_by =cu ,
+                reviewed =False ,
+                source__in =[
+                _WO_E .Source .DIGITAL ,
+                _WO_E .Source .GENERATED ,
+                ],
+                )
             except _WO_E .DoesNotExist :
                 django_messages .error (
                 request ,
                 "El parte no existe, ya ha sido revisado o no te pertenece.",
                 )
-                if _is_elevated:
-                    return redirect("/panel/work-orders/history/")
                 return redirect ("/panel/operator/history/")
 
-            # Guard: block editing if part belongs to a locked period.
-            # Guardia: bloquear edición si el parte pertenece a un periodo liquidado.
-            _first_e_lock =wo_edit .entries .order_by ("work_date").first ()
-            if _first_e_lock and _first_e_lock .work_date :
-                from ivr_config .models import WorkPeriod as _WP_EF
-                _locked_ef =_WP_EF .objects .filter (
-                    company_user =wo_edit .uploaded_by ,
-                    is_closed =True ,
-                    start_date__lte =_first_e_lock .work_date ,
-                    end_date__gte =_first_e_lock .work_date ,
-                ).exists ()
-                if _locked_ef :
-                    django_messages .error (
-                        request ,
-                        "Este parte pertenece a un periodo ya liquidado y "
-                        "no puede editarse.",
-                    )
-                    _back_ef =request .GET .get ("back","")
-                    if _back_ef :
-                        from urllib.parse import unquote as _uq_ef
-                        return redirect (_uq_ef (_back_ef ))
-                    if _is_elevated :
-                        return redirect ("/panel/work-orders/history/")
-                    return redirect ("/panel/operator/history/")
+
 
             entries =list (wo_edit .entries .prefetch_related ("lines").all ())
             first_entry =entries [0 ]if entries else None 
@@ -2181,70 +2154,25 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             _lunch_start_edit =""
             _lunch_end_edit =""
             _first_hc_edit =""
-            _show_lunch_edit =False
+            _show_lunch_edit =False 
             _end_time_morning_edit =""
             _end_time_afternoon_edit =""
-            _no_lunch_edit =False
-
-            # --- Edit-mode lunch resolution ---
-            # Priority 1: real pause stored in the saved entry (covers the case
-            # where the operator paused on an intensive day — lb_start/lb_end
-            # are persisted in BD even when the schedule is intensive).
-            # Priority 2: schedule default (split-shift only).
-            # --- Resolucion de pausa en modo edicion ---
-            # Prioridad 1: pausa real guardada en la entry del parte (cubre el
-            # caso de jornada intensiva con pausa real — lb_start/lb_end se
-            # persisten en BD aunque el horario sea intensivo).
-            # Prioridad 2: valores por defecto del horario (solo jornada partida).
-            _entry_lb_start = (
-                first_entry.lunch_break_start.strftime("%H:%M")
-                if first_entry and first_entry.lunch_break_start else ""
-            )
-            _entry_lb_end = (
-                first_entry.lunch_break_end.strftime("%H:%M")
-                if first_entry and first_entry.lunch_break_end else ""
-            )
-            _no_lunch_edit = (
-                first_entry.no_lunch_break
-                if first_entry and first_entry.no_lunch_break is not None
-                else False
-            )
-
-            if _entry_lb_start and _entry_lb_end:
-                # The part has a real recorded pause — always show it regardless
-                # of whether the shift is intensive.
-                # El parte tiene pausa real registrada — mostrarla siempre,
-                # independientemente de si la jornada es intensiva.
-                _lunch_start_edit = _entry_lb_start
-                _lunch_end_edit = _entry_lb_end
-                _show_lunch_edit = True
-                _end_time_morning_edit = _lunch_start_edit
-            elif _schedule_edit and not _schedule_edit.is_intensive:
-                # No real pause stored: fall back to schedule defaults for
-                # split-shift operators (intensive operators start with no pause).
-                # Sin pausa real: usar defaults del horario para jornada partida
-                # (los de jornada intensiva arrancan sin pausa visible).
-                _show_lunch_edit = True
-                if _schedule_edit.end_time_morning:
-                    _lunch_start_edit = _schedule_edit.end_time_morning.strftime("%H:%M")
-                    _end_time_morning_edit = _lunch_start_edit
-                if _schedule_edit.start_time_afternoon:
-                    _lunch_end_edit = _schedule_edit.start_time_afternoon.strftime("%H:%M")
-
-            if _schedule_edit and _schedule_edit.end_time_afternoon:
-                _end_time_afternoon_edit =_schedule_edit.end_time_afternoon.strftime("%H:%M")
-            elif _schedule_edit and _schedule_edit.is_intensive and _schedule_edit.end_time_morning:
-                _end_time_afternoon_edit =_schedule_edit.end_time_morning.strftime("%H:%M")
-            if _schedule_edit and _schedule_edit.start_time_morning:
-                _first_hc_edit =_schedule_edit.start_time_morning.strftime("%H:%M")
+            if _schedule_edit and not _schedule_edit .is_intensive :
+                _show_lunch_edit =True 
+                if _schedule_edit .end_time_morning :
+                    _lunch_start_edit =_schedule_edit .end_time_morning .strftime ("%H:%M")
+                    _end_time_morning_edit =_lunch_start_edit 
+                if _schedule_edit .start_time_afternoon :
+                    _lunch_end_edit =_schedule_edit .start_time_afternoon .strftime ("%H:%M")
+            if _schedule_edit and _schedule_edit .end_time_afternoon :
+                _end_time_afternoon_edit =_schedule_edit .end_time_afternoon .strftime ("%H:%M")
+            elif _schedule_edit and _schedule_edit .is_intensive and _schedule_edit .end_time_morning :
+                _end_time_afternoon_edit =_schedule_edit .end_time_morning .strftime ("%H:%M")
+            if _schedule_edit and _schedule_edit .start_time_morning :
+                _first_hc_edit =_schedule_edit .start_time_morning .strftime ("%H:%M")
 
 
             _first_hf_edit =_end_time_morning_edit if _end_time_morning_edit else _end_time_afternoon_edit 
-
-            # Read back_url from ?back= GET param (passed by digital_list.html links).
-            # Leer back_url del param ?back= del GET (pasado por los enlaces de digital_list.html).
-            from urllib.parse import unquote as _unquote_e
-            _back_get_e = _unquote_e(request .GET .get ("back","").strip ())
 
             context =self ._get_context_base (request )
             context .update ({
@@ -2265,12 +2193,6 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             "end_time_afternoon":_end_time_afternoon_edit ,
             "start_time_afternoon":_lunch_end_edit ,
             "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
-            # Persisted lunch-break flag — used by form_entry_assets.js to
-            # restore the "He parado a comer" checkbox state in edit mode.
-            # Flag de pausa persistido — usado por form_entry_assets.js para
-            # restaurar el estado del checkbox en modo edicion.
-            "no_lunch_break":_no_lunch_edit ,
-            "back_url":_back_get_e ,
             })
             return render (request ,self .template_name ,context )
 
@@ -2366,6 +2288,21 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             from ivr_config .models import AbsenceCategory as _AbsCat 
             from fleet .models import MachineAsset as _MA 
             from work_order_processor .management .commands .seed_personal_asset import PERSONAL_ASSET_CODE 
+            from work_order_processor .management .commands .seed_empresa_assets import (
+                EMPRESA_SUBTYPES as _ES_MAP_IP ,
+                get_empresa_subtype_group as _get_es_group_ip ,
+            )
+            _empresa_assets_ip = list (
+                _MA .objects .filter (
+                    company =company ,
+                    code__startswith ="EMPRESA_",
+                    is_active =True ,
+                ).order_by ("code").values ("code","brand_model")
+            )
+            _empresa_subtypes_ip = {
+                a ["code"]: _ES_MAP_IP [_get_es_group_ip (a ["code"])]
+                for a in _empresa_assets_ip
+            }
             _absence_cats =list (
             _AbsCat .objects .filter (company =company ,is_active =True )
             .order_by ("order","label")
@@ -2392,11 +2329,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             "absence_categories":_json_fix .dumps (_absence_cats) ,
             "personal_asset_code":PERSONAL_ASSET_CODE ,
             "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
-            # Persisted lunch-break flag — used by form_entry_assets.js to
-            # restore the "He parado a comer" checkbox state in edit mode.
-            # Flag de pausa persistido — usado por form_entry_assets.js para
-            # restaurar el estado del checkbox en modo edicion.
-            "no_lunch_break":_no_lunch_edit ,
+            "empresa_subtypes":_json_fix .dumps (_empresa_subtypes_ip ),
             })
             return render (request ,self .template_name ,context )
 
@@ -2435,6 +2368,22 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         import json as _json_fix 
         from ivr_config .models import AbsenceCategory as _AbsCat 
         from work_order_processor .management .commands .seed_personal_asset import PERSONAL_ASSET_CODE 
+        from work_order_processor .management .commands .seed_empresa_assets import (
+            EMPRESA_SUBTYPES as _ES_MAP ,
+            get_empresa_subtype_group as _get_es_group ,
+        )
+        from fleet .models import MachineAsset as _MA_ctx 
+        _empresa_assets_ctx = list (
+            _MA_ctx .objects .filter (
+                company =company ,
+                code__startswith ="EMPRESA_",
+                is_active =True ,
+            ).order_by ("code").values ("code","brand_model")
+        )
+        _empresa_subtypes_ctx = {
+            a ["code"]: _ES_MAP [_get_es_group (a ["code"])]
+            for a in _empresa_assets_ctx
+        }
         _absence_cats =list (
         _AbsCat .objects .filter (company =company ,is_active =True )
         .order_by ("order","label")
@@ -2458,9 +2407,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         "absence_categories":_json_fix .dumps (_absence_cats) ,
         "personal_asset_code":PERSONAL_ASSET_CODE ,
         "is_intensive_override":getattr (cu ,"is_intensive_override",False ),
-        # Read back_url from ?back= GET param for SUPERVISOR/ADMIN return navigation.
-        # Leer back_url del param ?back= del GET para navegación de retorno de SUPERVISOR/ADMIN.
-        "back_url":(lambda u: __import__('urllib.parse', fromlist=['unquote']).unquote(u))(request .GET .get ("back","").strip ()),
+        "empresa_subtypes":_json_fix .dumps (_empresa_subtypes_ctx ),
         })
         return render (request ,self .template_name ,context )
 
@@ -2497,15 +2444,6 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
 
 
 
-
-        # Resolve elevated return URL once — used in all SUPERVISOR/ADMIN redirects.
-        # back_url from hidden field takes priority; fallback: digital_work_order_list.
-        # Resolver URL de retorno elevada una vez — usada en todos los redirects SUPERVISOR/ADMIN.
-        # back_url del campo hidden tiene prioridad; fallback: digital_work_order_list.
-        from urllib.parse import unquote as _unquote_post_f
-        from django.urls import reverse as _rev_elevated
-        _back_post = _unquote_post_f(POST .get ("back_url","").strip ())
-        _elevated_url = _back_post if _back_post else _rev_elevated ("panel:operator_history")
 
         from datetime import time as _dt_time_lb 
         def _parse_time_field (raw ):
@@ -3637,14 +3575,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             f"{len(entry_lines_data)} bloque(s) guardado(s). "
             "Puedes añadir más bloques o cerrar el parte cuando termines."
             )
-            # Redirect after save_blocks: WORKSHOP returns to the operator
-            # form; ADMIN/SUPERVISOR return to the digital work-order list.
-            # Redirección tras save_blocks: WORKSHOP vuelve al formulario del
-            # operario; ADMIN/SUPERVISOR van a la lista de partes digitales.
-            from django .urls import reverse as _reverse_sb
-            if cu .role =="WORKSHOP":
-                return redirect ("/panel/operator/form/")
-            return redirect (_elevated_url )
+            return redirect ("/panel/operator/form/")
 
 
 
@@ -3680,26 +3611,16 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         _reuse_wo =None 
         if edit_wo_pk :
             try :
-                # ADMIN/SUPERVISOR can reuse any operator's part; WORKSHOP only
-                # their own. Mirror the GET-mode access rule.
-                # ADMIN/SUPERVISOR pueden reutilizar partes de cualquier operario;
-                # WORKSHOP solo los propios. Refleja la regla de acceso del GET.
-                _is_elevated_close = cu.role in (
-                    CompanyUser.ROLE_ADMIN,
-                    CompanyUser.ROLE_SUPERVISOR,
+                _reuse_wo =WorkOrder .objects .get (
+                pk =int (edit_wo_pk ),
+                company =company ,
+                uploaded_by =cu ,
+                reviewed =False ,
+                source__in =[
+                WorkOrder .Source .DIGITAL ,
+                WorkOrder .Source .GENERATED ,
+                ],
                 )
-                _close_filter = dict(
-                    pk=int(edit_wo_pk),
-                    company=company,
-                    reviewed=False,
-                    source__in=[
-                        WorkOrder.Source.DIGITAL,
-                        WorkOrder.Source.GENERATED,
-                    ],
-                )
-                if not _is_elevated_close:
-                    _close_filter["uploaded_by"] = cu
-                _reuse_wo =WorkOrder .objects .get (**_close_filter)
                 logger .info (
                 "# [FormView/close] Reutilizando WorkOrder pk=%d. "
                 "No se borra — cierre no destructivo.",
@@ -3793,6 +3714,10 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     _bk_exc ,
                     )
 
+                # has_diet — checkbox submitted as "1" when checked.
+                # has_diet — checkbox enviado como "1" cuando está marcado.
+                _has_diet = POST.get("has_diet", "") == "1"
+
                 entry =WorkOrderEntry .objects .create (
                 work_order =work_order ,
                 page_number =_next_page ,
@@ -3804,6 +3729,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 lunch_break_start =None if _no_lunch_break else _lb_start ,
                 lunch_break_end =None if _no_lunch_break else _lb_end ,
                 no_lunch_break =_no_lunch_break ,
+                has_diet =_has_diet ,
                 )
 
                 created_lines ={}
@@ -3897,6 +3823,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     odometer_reading =ld .get ("odometer_reading"),
                     engine_hours_reading =ld .get ("engine_hours_reading"),
                     crane_hours_reading =ld .get ("crane_hours_reading"),
+                    is_on_site =ld .get ("is_on_site", False),
                     )
                     created_lines [ld ["line_number"]]=line 
                     created_line_pks .append (line .pk )
@@ -4098,15 +4025,6 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             request ,
             f"Parte #{work_order.pk} guardado con incidencia de solapamiento."
             )
-            # ADMIN/SUPERVISOR: the overlap warning is already in messages —
-            # redirect to admin history rather than rendering the operator
-            # form (which looks broken for elevated roles).
-            # ADMIN/SUPERVISOR: el aviso de solapamiento ya está en messages —
-            # redirigir al historial admin en lugar de renderizar el formulario
-            # del operario (que se ve mal para roles elevados).
-            from django .urls import reverse as _reverse_ov
-            if cu .role !="WORKSHOP":
-                return redirect (_elevated_url )
             context =self ._get_context_base (request )
             context .update ({
             "overlap_incidents":True ,
@@ -4142,7 +4060,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         from django .urls import reverse as _reverse_co 
         if cu .role =="WORKSHOP":
             return redirect (_reverse_co ("panel:operator_history"))
-        return redirect (_elevated_url )
+        return redirect (_reverse_co ("panel:digital_work_order_list"))
 
 
 class WorkOrderEntryHistoryView (WorkshopRequiredMixin ,View ):
@@ -4878,8 +4796,6 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             'panel/operator/_schedule_fields_fragment.html',
             _ctx ,
         )
-
-
 
 
 
