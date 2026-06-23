@@ -535,6 +535,8 @@ class Command(BaseCommand):
                 code    = rec["code"]
                 imported_codes.add(code)
 
+                # Fields updated on every import run (catalog metadata).
+                # Campos actualizados en cada importacion (metadatos del catalogo).
                 defaults = {
                     "company":        company,
                     "company_code":   emp_code,
@@ -546,15 +548,26 @@ class Command(BaseCommand):
                     "chassis_number": rec["chassis_number"],
                     "brand_model":    rec["brand_model"],
                     "purchase_date":  rec["purchase_date"],
-                    "mileage":        rec["mileage"],
-                    "hours":          rec["hours"],
                     "is_active":      True,
+                }
+
+                # mileage y hours se preservan en registros existentes para que
+                # las lecturas reales de los operarios nunca sean sobreescritas
+                # por los valores base del catalogo. Solo se aplican en creacion.
+                create_only_defaults = {
+                    "mileage": rec["mileage"],
+                    "hours":   rec["hours"],
                 }
 
                 obj, created = MachineAsset.objects.update_or_create(
                     code=code,
                     defaults=defaults,
                 )
+
+                if created:
+                    for field, value in create_only_defaults.items():
+                        setattr(obj, field, value)
+                    obj.save(update_fields=list(create_only_defaults.keys()))
 
                 if created:
                     created_count += 1

@@ -1856,6 +1856,7 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
             'vehicle_types_all': insurer.vehicle_types.order_by('sort_order', 'name'),
             'concept_choices': _get_concept_choices(insurer.company),
             'unit_choices': TariffLine.UNIT_CHOICES,
+            'night_schedules': night_schedules,
         })
 
     def get(self, request, pk):
@@ -5417,6 +5418,7 @@ class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
         if error:
             messages.error(request, error)
         return redirect("budgets:base_calendar_detail", pk=pk)
+
 
 
 

@@ -384,10 +384,10 @@ def validate_odometer(blocks: List[TimeBlock]) -> tuple:
 
     Blocking errors:
       - odometer_reading is None when has_odometer is True.
-      - odometer_reading < machine_asset.mileage (reading lower than last known value).
 
-    Non-blocking warnings:
-      - Jump > _ODOMETER_JUMP_THRESHOLD_KM km vs last known mileage.
+    Non-blocking warnings (operator must confirm via meterWarningModal):
+      - Any discrepancy vs last known mileage (reading lower OR higher than
+        _ODOMETER_JUMP_THRESHOLD_KM above the reference value).
 
     Returns (errors, warnings) as two separate lists of ValidationError.
 
@@ -398,10 +398,10 @@ def validate_odometer(blocks: List[TimeBlock]) -> tuple:
 
     Errores bloqueantes:
       - odometer_reading es None cuando has_odometer es True.
-      - odometer_reading < machine_asset.mileage (lectura inferior al último valor conocido).
 
-    Avisos no bloqueantes:
-      - Salto > _ODOMETER_JUMP_THRESHOLD_KM km respecto al último kilometraje conocido.
+    Avisos no bloqueantes (el operario debe confirmar via meterWarningModal):
+      - Cualquier discrepancia respecto al último kilometraje conocido (lectura
+        inferior O salto superior a _ODOMETER_JUMP_THRESHOLD_KM).
 
     Devuelve (errors, warnings) como dos listas separadas de ValidationError.
     """
@@ -432,26 +432,31 @@ def validate_odometer(blocks: List[TimeBlock]) -> tuple:
         last_km = getattr(asset, "mileage", None)
         if last_km is not None:
             reading = b.odometer_reading
-            if reading < last_km:
-                errors.append(ValidationError(
-                    rule="R6",
-                    message=(
-                        f"Bloque {b.idx}: la lectura de odómetro ({reading} km) es "
-                        f"inferior al último kilometraje registrado ({last_km} km) "
-                        f"para la máquina '{asset.code}'. Verifica la lectura."
-                    ),
-                    blocks=[b.idx],
-                ))
-            elif (reading - last_km) > _ODOMETER_JUMP_THRESHOLD_KM:
-                warnings.append(ValidationError(
-                    rule="R6",
-                    message=(
-                        f"Bloque {b.idx}: salto de odómetro inusualmente alto "
-                        f"({reading - last_km} km) para la máquina '{asset.code}'. "
-                        f"Verifica que la lectura sea correcta."
-                    ),
-                    blocks=[b.idx],
-                ))
+            if reading != last_km:
+                # Any discrepancy — lower or higher jump — is a confirmable
+                # warning. The operator acknowledges it via meterWarningModal.
+                # Cualquier discrepancia — inferior o salto alto — es un aviso
+                # confirmable. El operario lo confirma via meterWarningModal.
+                if reading < last_km:
+                    warnings.append(ValidationError(
+                        rule="R6",
+                        message=(
+                            f"Bloque {b.idx}: la lectura de odómetro ({reading} km) "
+                            f"es inferior al último valor registrado ({last_km} km) "
+                            f"para '{asset.code}'. Confirma si la lectura es correcta."
+                        ),
+                        blocks=[b.idx],
+                    ))
+                elif (reading - last_km) > _ODOMETER_JUMP_THRESHOLD_KM:
+                    warnings.append(ValidationError(
+                        rule="R6",
+                        message=(
+                            f"Bloque {b.idx}: salto de odómetro inusualmente alto "
+                            f"({reading - last_km} km) para la máquina '{asset.code}'. "
+                            f"Verifica que la lectura sea correcta."
+                        ),
+                        blocks=[b.idx],
+                    ))
 
     return errors, warnings
 
@@ -467,10 +472,10 @@ def validate_engine_hours(blocks: List[TimeBlock]) -> tuple:
 
     Blocking errors:
       - engine_hours_reading is None when has_engine_hours is True.
-      - engine_hours_reading < machine_asset.hours (reading lower than last known value).
 
-    Non-blocking warnings:
-      - Jump > _ENGINE_HOURS_JUMP_THRESHOLD_H hours vs last known hours.
+    Non-blocking warnings (operator must confirm via meterWarningModal):
+      - Any discrepancy vs last known hours (reading lower OR higher than
+        _ENGINE_HOURS_JUMP_THRESHOLD_H above the reference value).
 
     Returns (errors, warnings) as two separate lists of ValidationError.
 
@@ -481,10 +486,10 @@ def validate_engine_hours(blocks: List[TimeBlock]) -> tuple:
 
     Errores bloqueantes:
       - engine_hours_reading es None cuando has_engine_hours es True.
-      - engine_hours_reading < machine_asset.hours (lectura inferior al último valor conocido).
 
-    Avisos no bloqueantes:
-      - Salto > _ENGINE_HOURS_JUMP_THRESHOLD_H horas respecto a las horas conocidas.
+    Avisos no bloqueantes (el operario debe confirmar via meterWarningModal):
+      - Cualquier discrepancia respecto a las últimas horas conocidas (lectura
+        inferior O salto superior a _ENGINE_HOURS_JUMP_THRESHOLD_H).
 
     Devuelve (errors, warnings) como dos listas separadas de ValidationError.
     """
@@ -515,26 +520,31 @@ def validate_engine_hours(blocks: List[TimeBlock]) -> tuple:
         last_h = getattr(asset, "hours", None)
         if last_h is not None:
             reading = b.engine_hours_reading
-            if reading < last_h:
-                errors.append(ValidationError(
-                    rule="R7",
-                    message=(
-                        f"Bloque {b.idx}: la lectura de horómetro motor ({reading} h) es "
-                        f"inferior a las últimas horas registradas ({last_h} h) "
-                        f"para la máquina '{asset.code}'. Verifica la lectura."
-                    ),
-                    blocks=[b.idx],
-                ))
-            elif (reading - last_h) > _ENGINE_HOURS_JUMP_THRESHOLD_H:
-                warnings.append(ValidationError(
-                    rule="R7",
-                    message=(
-                        f"Bloque {b.idx}: salto de horómetro motor inusualmente alto "
-                        f"({reading - last_h} h) para la máquina '{asset.code}'. "
-                        f"Verifica que la lectura sea correcta."
-                    ),
-                    blocks=[b.idx],
-                ))
+            if reading != last_h:
+                # Any discrepancy — lower or higher jump — is a confirmable
+                # warning. The operator acknowledges it via meterWarningModal.
+                # Cualquier discrepancia — inferior o salto alto — es un aviso
+                # confirmable. El operario lo confirma via meterWarningModal.
+                if reading < last_h:
+                    warnings.append(ValidationError(
+                        rule="R7",
+                        message=(
+                            f"Bloque {b.idx}: la lectura de horómetro motor ({reading} h) "
+                            f"es inferior a las últimas horas registradas ({last_h} h) "
+                            f"para '{asset.code}'. Confirma si la lectura es correcta."
+                        ),
+                        blocks=[b.idx],
+                    ))
+                elif (reading - last_h) > _ENGINE_HOURS_JUMP_THRESHOLD_H:
+                    warnings.append(ValidationError(
+                        rule="R7",
+                        message=(
+                            f"Bloque {b.idx}: salto de horómetro motor inusualmente alto "
+                            f"({reading - last_h} h) para la máquina '{asset.code}'. "
+                            f"Verifica que la lectura sea correcta."
+                        ),
+                        blocks=[b.idx],
+                    ))
 
     return errors, warnings
 
@@ -784,3 +794,5 @@ def parse_blocks_from_post(post_data, num_entradas: int, entry_lines_data: list 
             crane_hours_reading=crane_hours_reading,
         ))
     return blocks
+
+

@@ -2505,7 +2505,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         from urllib.parse import unquote as _unquote_post_f
         from django.urls import reverse as _rev_elevated
         _back_post = _unquote_post_f(POST .get ("back_url","").strip ())
-        _elevated_url = _back_post if _back_post else _rev_elevated ("panel:digital_work_order_list")
+        _elevated_url = _back_post if _back_post else _rev_elevated ("panel:operator_history")
 
         from datetime import time as _dt_time_lb 
         def _parse_time_field (raw ):

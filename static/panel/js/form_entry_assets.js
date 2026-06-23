@@ -29,6 +29,33 @@
         hidden.value = (value != null) ? value : "";
     }
 
+    /*
+     * Returns true when it is safe to pre-fill a meter input with the
+     * reference value from the DB. Pre-fill is allowed only when:
+     *   (a) the field is empty (operator has not typed anything yet), OR
+     *   (b) the field currently holds the *previous* reference value
+     *       (operator changed the machine — reset to new machine's baseline).
+     *
+     * This prevents overwriting a value the operator deliberately modified.
+     *
+     * ---
+     *
+     * Devuelve true cuando es seguro prerrellenar un campo de contador con
+     * el valor de referencia de la BD. Se permite solo cuando:
+     *   (a) el campo está vacío (el operario aún no ha escrito nada), O
+     *   (b) el campo contiene el valor de referencia *anterior*
+     *       (el operario cambió de máquina — resetear al baseline de la nueva).
+     *
+     * Esto evita sobreescribir un valor que el operario modificó a propósito.
+     */
+    function _canPrefill(input, newRef) {
+        var current = input.value.trim();
+        if (current === "") { return true; }
+        var prevRef = input.dataset.refValue;
+        if (prevRef != null && current === String(prevRef)) { return true; }
+        return false;
+    }
+
     function _applyMeterFields(blockIdx, data) {
         var sel     = '[data-block-idx="' + blockIdx + '"]';
         var odoEl   = document.querySelector('.meter-odometer' + sel);
@@ -39,8 +66,10 @@
             odoEl.classList.toggle("d-none", !data.has_odometer);
             var odoInput = odoEl.querySelector("input");
             if (odoInput && data.mileage != null) {
+                if (_canPrefill(odoInput, data.mileage)) {
+                    odoInput.value = data.mileage;
+                }
                 odoInput.dataset.refValue = data.mileage;
-                odoInput.value = data.mileage;
                 _setRefHidden(_form, "entrada_" + blockIdx + "_odometer_ref", data.mileage);
             }
         }
@@ -48,8 +77,10 @@
             engEl.classList.toggle("d-none", !data.has_engine_hours);
             var engInput = engEl.querySelector("input");
             if (engInput && data.hours != null) {
+                if (_canPrefill(engInput, data.hours)) {
+                    engInput.value = data.hours;
+                }
                 engInput.dataset.refValue = data.hours;
-                engInput.value = data.hours;
                 _setRefHidden(_form, "entrada_" + blockIdx + "_engine_hours_ref", data.hours);
             }
         }
@@ -57,8 +88,10 @@
             craneEl.classList.toggle("d-none", !data.has_crane_hours);
             var craneInput = craneEl.querySelector("input");
             if (craneInput && data.hours != null) {
+                if (_canPrefill(craneInput, data.hours)) {
+                    craneInput.value = data.hours;
+                }
                 craneInput.dataset.refValue = data.hours;
-                craneInput.value = data.hours;
                 _setRefHidden(_form, "entrada_" + blockIdx + "_crane_hours_ref", data.hours);
             }
         }
@@ -420,23 +453,66 @@
     document.querySelectorAll(".asset-search").forEach(attachAutocomplete);
 
     // On page load, reveal meter fields for any block that already has a
-    // machine_raw value (server re-render after validation error).
+    // machine_raw value (server re-render after validation error or edit mode).
     // Al cargar la página, revelar campos de contador para cualquier bloque
-    // que ya tenga machine_raw (re-renderizado tras error de validación).
+    // que ya tenga machine_raw (re-renderizado tras error de validación o
+    // modo edición).
     document.querySelectorAll(".asset-search").forEach(function (input) {
-        var code = input.value.trim();
-        if (!code) { return; }
+        var raw = input.value.trim();
+        if (!raw) { return; }
+
+        // Extract the bare asset code when the field contains the full label
+        // (e.g. "B43 — PALFINGER PK 72002").  The server accepts only codes.
+        // Extraer el código limpio cuando el campo contiene el label completo.
+        var code = raw;
+        var _labelMatch = raw.match(/^([^—–\-]+?)\s*[—–]\s+/);
+        if (_labelMatch) { code = _labelMatch[1].trim(); }
+
         var blockDiv = input.closest('[id^="block-"]');
+        if (!blockDiv) { return; }
         var bIdx = (blockDiv.id || "").replace("block-", "");
+
+        // Snapshot of meter inputs BEFORE the fetch so we can decide whether
+        // to preserve their values (edit mode — already populated by server).
+        // Captura de los inputs de contador ANTES del fetch para saber si
+        // hay que preservar sus valores (modo edición — ya rellenos por servidor).
+        var sel = '[data-block-idx="' + bIdx + '"]';
+        var _preFilled = {
+            odo:   (document.querySelector('.meter-odometer' + sel + ' input') || {}).value || "",
+            eng:   (document.querySelector('.meter-engine'   + sel + ' input') || {}).value || "",
+            crane: (document.querySelector('.meter-crane'    + sel + ' input') || {}).value || ""
+        };
+
         fetch(ASSET_DETAIL_URL + "?code=" + encodeURIComponent(code))
-            .then(function (r) { return r.json(); })
-            .then(function (d) { _applyMeterFields(bIdx, d); })
+            .then(function (r) {
+                if (!r.ok) { throw new Error("HTTP " + r.status); }
+                return r.json();
+            })
+            .then(function (d) {
+                _applyMeterFields(bIdx, d);
+                // After _applyMeterFields, restore server-pre-filled values
+                // that _canPrefill may have skipped (edit mode with saved readings).
+                // Tras _applyMeterFields, restaurar valores pre-rellenos por el
+                // servidor que _canPrefill pudo haber saltado (modo edición con
+                // lecturas guardadas).
+                var odoInput   = document.querySelector('.meter-odometer' + sel + ' input');
+                var engInput   = document.querySelector('.meter-engine'   + sel + ' input');
+                var craneInput = document.querySelector('.meter-crane'    + sel + ' input');
+                if (odoInput   && _preFilled.odo   !== "") { odoInput.value   = _preFilled.odo; }
+                if (engInput   && _preFilled.eng   !== "") { engInput.value   = _preFilled.eng; }
+                if (craneInput && _preFilled.crane !== "") { craneInput.value = _preFilled.crane; }
+            })
             .catch(function () {
-                _applyMeterFields(bIdx, {
-                    has_odometer: false, has_engine_hours: false,
-                    has_crane_hours: false, first_repair: false,
-                    mileage: null, hours: null
-                });
+                // On fetch error, only hide meter divs that are NOT already
+                // visible with server-pre-filled values (do not regress edit mode).
+                // En caso de error de fetch, solo ocultar divs que NO estén ya
+                // visibles con valores del servidor (no regresar el modo edición).
+                var odoEl   = document.querySelector('.meter-odometer' + sel);
+                var engEl   = document.querySelector('.meter-engine'   + sel);
+                var craneEl = document.querySelector('.meter-crane'    + sel);
+                if (odoEl   && _preFilled.odo   === "") { odoEl.classList.add("d-none"); }
+                if (engEl   && _preFilled.eng   === "") { engEl.classList.add("d-none"); }
+                if (craneEl && _preFilled.crane === "") { craneEl.classList.add("d-none"); }
             });
     });
 

@@ -24,7 +24,7 @@
         {# Back link / Enlace de retorno                                       #}
         {# ------------------------------------------------------------------ #}
         <div class="mb-3">
-            <a href="{% url 'panel:operator_history' %}"
+            <a href="{% if back_url %}{{ back_url }}{% elif company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}{% url 'panel:operator_history' %}{% else %}{% url 'panel:digital_work_order_list' %}{% endif %}"
                class="text-muted text-decoration-none">
                 <i class="bi bi-arrow-left me-1"></i>Volver al historial
             </a>
@@ -267,7 +267,7 @@
                                            placeholder="Referencia O.R. (opcional)">
                                 </div>
                                 {# Meter fields #}
-                                <div class="col-12 col-md-3 meter-field meter-odometer d-none" data-block-idx="{{ entrada.idx }}">
+                                <div class="col-12 col-md-3 meter-field meter-odometer{% if not entrada.machine_asset or not entrada.machine_asset.has_odometer %} d-none{% endif %}" data-block-idx="{{ entrada.idx }}">
                                     <label class="form-label fw-medium">Km actuales <span class="text-danger meter-required">*</span></label>
                                     <input type="number" step="0.1" min="0"
                                            name="entrada_{{ entrada.idx }}_odometer_reading"
@@ -275,7 +275,7 @@
                                            value="{{ entrada.odometer_reading|stringformat:'g' }}"
                                            placeholder="Lectura km">
                                 </div>
-                                <div class="col-12 col-md-3 meter-field meter-engine d-none" data-block-idx="{{ entrada.idx }}">
+                                <div class="col-12 col-md-3 meter-field meter-engine{% if not entrada.machine_asset or not entrada.machine_asset.has_engine_hours %} d-none{% endif %}" data-block-idx="{{ entrada.idx }}">
                                     <label class="form-label fw-medium">Horómetro motor (h) <span class="text-danger meter-required">*</span></label>
                                     <input type="number" step="0.1" min="0"
                                            name="entrada_{{ entrada.idx }}_engine_hours_reading"
@@ -283,7 +283,7 @@
                                            value="{{ entrada.engine_hours_reading|stringformat:'g' }}"
                                            placeholder="Horas motor">
                                 </div>
-                                <div class="col-12 col-md-3 meter-field meter-crane d-none" data-block-idx="{{ entrada.idx }}">
+                                <div class="col-12 col-md-3 meter-field meter-crane{% if not entrada.machine_asset or not entrada.machine_asset.has_crane_hours %} d-none{% endif %}" data-block-idx="{{ entrada.idx }}">
                                     <label class="form-label fw-medium">Horómetro grúa (h) <span class="text-danger meter-required">*</span></label>
                                     <input type="number" step="0.1" min="0"
                                            name="entrada_{{ entrada.idx }}_crane_hours_reading"
@@ -443,7 +443,7 @@
             <input type="hidden" id="meter-warnings-confirmed-input" name="meter_warnings_confirmed" value="">
 
             <div class="d-flex gap-2 justify-content-end mb-5">
-                <a href="{% url 'panel:operator_history' %}"
+                <a href="{% if back_url %}{{ back_url }}{% elif company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}{% url 'panel:operator_history' %}{% else %}{% url 'panel:digital_work_order_list' %}{% endif %}"
                    class="btn btn-outline-secondary">
                     <i class="bi bi-x-lg me-1"></i>Cancelar
                 </a>
