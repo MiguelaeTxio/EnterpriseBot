@@ -856,3 +856,6 @@ class OwnProfileForm(forms.Form):
                     "Este alias ya está en uso en tu empresa. Elige otro diferente."
                 )
         return alias
+
+# Re-export desde fleet.forms (H12/H21 split)
+from fleet.forms import MachineAssetForm  # noqa: F401

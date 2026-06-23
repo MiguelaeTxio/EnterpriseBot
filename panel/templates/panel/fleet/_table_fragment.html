@@ -1,25 +1,214 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/_table_fragment.html #}
+{# Fragmento de tabla HTMX para la lista de centros de gasto.                                  #}
+{# Incluido por list.html y devuelto directamente en respuestas HTMX de mutación.              #}
+{# Contexto requerido: assets, families, company_user, filter_family,                          #}
+{#   filter_is_active, filter_search.                                                           #}
+{% comment %}
+  sort_col / sort_dir vienen del contexto (pasados por la vista).
+  _sort_icon devuelve el icono Bootstrap apropiado según la columna activa.
+{% endcomment %}
 {% if assets %}
 <div class="table-responsive">
     <table class="table table-sm table-hover align-middle mb-0">
         <thead class="table-light">
             <tr>
-                <th>Código</th>
-                <th>Familia</th>
-                <th>Marca / Modelo</th>
-                <th>Matrícula</th>
-                <th class="text-center">Estado</th>
-                <th class="text-center">Usos</th>
-                <th class="text-end">Acciones</th>
+                {# ---- macro de encabezado ordenable ---- #}
+                {# col_key: clave GET; col_label: texto visible          #}
+                {# Activo: flecha sólida; Inactivo: flecha tenue         #}
+
+                {% with cur=sort_col ndir=sort_dir %}
+
+                {# Código #}
+                <th style="min-width:80px">
+                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-trigger="click"
+                       hx-vals='{"sort":"code","dir":"{% if cur == "code" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       style="cursor:pointer">
+                        Código
+                        {% if cur == "code" %}
+                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
+
+                {# Familia #}
+                <th style="min-width:90px">
+                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-trigger="click"
+                       hx-vals='{"sort":"family","dir":"{% if cur == "family" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       style="cursor:pointer">
+                        Familia
+                        {% if cur == "family" %}
+                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
+
+                {# Descripción #}
+                <th>
+                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-trigger="click"
+                       hx-vals='{"sort":"brand_model","dir":"{% if cur == "brand_model" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       style="cursor:pointer">
+                        Descripción / Marca-Modelo
+                        {% if cur == "brand_model" %}
+                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
+
+                {# Tipo #}
+                <th style="min-width:100px">
+                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-trigger="click"
+                       hx-vals='{"sort":"type_name","dir":"{% if cur == "type_name" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       style="cursor:pointer">
+                        Tipo
+                        {% if cur == "type_name" %}
+                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
+
+                {# Matrícula #}
+                <th style="min-width:90px">
+                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-trigger="click"
+                       hx-vals='{"sort":"plate","dir":"{% if cur == "plate" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       style="cursor:pointer">
+                        Matrícula
+                        {% if cur == "plate" %}
+                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
+
+                {# Contadores — no ordenable #}
+                <th class="text-center" style="min-width:70px">Contad.</th>
+
+                {# Estado #}
+                <th class="text-center" style="min-width:70px">
+                    <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-trigger="click"
+                       hx-vals='{"sort":"is_active","dir":"{% if cur == "is_active" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       style="cursor:pointer">
+                        Estado
+                        {% if cur == "is_active" %}
+                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
+
+                {# Usos #}
+                <th class="text-center" style="min-width:55px">
+                    <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
+                       hx-get="{% url 'panel:fleet_list' %}"
+                       hx-target="#fleet-table-container"
+                       hx-include="#filter-search, #filter-family, #filter-is-active, #sort-inputs"
+                       hx-trigger="click"
+                       hx-vals='{"sort":"use_count","dir":"{% if cur == "use_count" and ndir == "asc" %}desc{% else %}asc{% endif %}"}'
+                       style="cursor:pointer">
+                        Usos
+                        {% if cur == "use_count" %}
+                            <i class="bi bi-arrow-{% if ndir == "asc" %}up{% else %}down{% endif %}-short"></i>
+                        {% else %}
+                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                        {% endif %}
+                    </a>
+                </th>
+
+                {# Acciones — no ordenable #}
+                <th class="text-end" style="min-width:60px">Acciones</th>
+
+                {% endwith %}
             </tr>
         </thead>
         <tbody>
             {% for asset in assets %}
             <tr class="{% if not asset.is_active %}table-secondary text-muted{% endif %}">
-                <td class="fw-semibold">{{ asset.code }}</td>
-                <td>{{ asset.family }}</td>
-                <td>{{ asset.brand_model }}</td>
-                <td>{{ asset.plate }}</td>
+
+                {# Código — badge diferencial para CdG EMPRESA_* y PERSONAL #}
+                <td class="fw-semibold">
+                    {% if asset.code|slice:":8" == "EMPRESA_" %}
+                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1"
+                          title="Centro de gasto de empresa">EMP</span>
+                    {% elif asset.code == "PERSONAL" %}
+                    <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle me-1"
+                          title="Centro de gasto de personal">PER</span>
+                    {% endif %}
+                    {{ asset.code }}
+                </td>
+
+                {# Familia #}
+                <td><span class="text-muted small">{{ asset.family|default:"—" }}</span></td>
+
+                {# Descripción / Marca-Modelo #}
+                <td>
+                    <span title="{{ asset.brand_model }}">
+                        {{ asset.brand_model|default:"—"|truncatechars:50 }}
+                    </span>
+                    {% if asset.company_code %}
+                    <span class="text-muted small ms-1">[{{ asset.company_code }}]</span>
+                    {% endif %}
+                </td>
+
+                {# Tipo #}
+                <td>
+                    <span class="text-muted small" title="{{ asset.type_name }}">
+                        {{ asset.type_name|default:"—"|truncatechars:35 }}
+                    </span>
+                </td>
+
+                {# Matrícula #}
+                <td class="small">{{ asset.plate|default:"—" }}</td>
+
+                {# Contadores — iconos #}
+                <td class="text-center">
+                    {% if asset.has_odometer %}
+                    <i class="bi bi-speedometer2 text-secondary" title="Odómetro (km)"></i>
+                    {% endif %}
+                    {% if asset.has_engine_hours %}
+                    <i class="bi bi-clock text-secondary ms-1" title="Horómetro motor"></i>
+                    {% endif %}
+                    {% if asset.has_crane_hours %}
+                    <i class="bi bi-chevron-bar-up text-secondary ms-1" title="Horómetro grúa"></i>
+                    {% endif %}
+                    {% if not asset.has_odometer and not asset.has_engine_hours and not asset.has_crane_hours %}
+                    <span class="text-muted small">—</span>
+                    {% endif %}
+                </td>
+
+                {# Estado #}
                 <td class="text-center">
                     {% if asset.is_active %}
                     <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
@@ -27,14 +216,20 @@
                     <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactivo</span>
                     {% endif %}
                 </td>
+
+                {# Usos #}
                 <td class="text-center">
                     {% if asset.use_count %}
                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle"
-                          title="{{ asset.use_count }} línea{{ asset.use_count|pluralize }} de parte asociada{{ asset.use_count|pluralize }}">{{ asset.use_count }}</span>
+                          title="{{ asset.use_count }} línea{{ asset.use_count|pluralize }} de parte asociada{{ asset.use_count|pluralize }}">
+                        {{ asset.use_count }}
+                    </span>
                     {% else %}
                     <span class="text-muted small">—</span>
                     {% endif %}
                 </td>
+
+                {# Acciones #}
                 <td class="text-end">
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary border-0 px-2"
@@ -94,3 +289,9 @@
     <p class="mb-0">No hay centros de gasto que coincidan con los filtros aplicados.</p>
 </div>
 {% endif %}
+{# Inputs ocultos que preservan sort_col/sort_dir en peticiones HTMX #}
+<span id="sort-inputs" style="display:none">
+    <input type="hidden" name="sort" value="{{ sort_col }}">
+    <input type="hidden" name="dir"  value="{{ sort_dir }}">
+</span>
+

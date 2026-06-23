@@ -1,9 +1,24 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/fleet/_form_fragment.html #}
+{#                                                                                             #}
+{# Envuelve _form_fields.html en un <form> HTMX para create y update.                        #}
+{# Los hidden inputs filter_* preservan los filtros activos de la tabla                       #}
+{# para que la respuesta POST los incluya en _build_fragment_context.                         #}
+{#                                                                                             #}
+{# Contexto requerido: form, form_action, company_user, company.                              #}
+{# Contexto opcional: asset (solo en form_action==update).                                    #}
+{# Contexto de filtros (opcional): filter_search, filter_family,                              #}
+{#   filter_is_active, sort_col, sort_dir.                                                    #}
 {% if form_action == 'create' %}
 {% url 'panel:fleet_create' as action_url %}
 <form hx-post="{{ action_url }}"
       hx-target="#fleet-table-container"
       hx-swap="innerHTML">
+    {# Filtros activos — se preservan para que el POST los devuelva #}
+    <input type="hidden" name="_f_search"    value="{{ filter_search }}">
+    <input type="hidden" name="_f_family"    value="{{ filter_family }}">
+    <input type="hidden" name="_f_is_active" value="{{ filter_is_active }}">
+    <input type="hidden" name="_f_sort"      value="{{ sort_col }}">
+    <input type="hidden" name="_f_dir"       value="{{ sort_dir }}">
     {% include "panel/fleet/_form_fields.html" %}
 </form>
 {% else %}
@@ -11,6 +26,13 @@
 <form hx-post="{{ action_url }}"
       hx-target="#fleet-table-container"
       hx-swap="innerHTML">
+    {# Filtros activos — se preservan para que el POST los devuelva #}
+    <input type="hidden" name="_f_search"    value="{{ filter_search }}">
+    <input type="hidden" name="_f_family"    value="{{ filter_family }}">
+    <input type="hidden" name="_f_is_active" value="{{ filter_is_active }}">
+    <input type="hidden" name="_f_sort"      value="{{ sort_col }}">
+    <input type="hidden" name="_f_dir"       value="{{ sort_dir }}">
     {% include "panel/fleet/_form_fields.html" %}
 </form>
 {% endif %}
+

@@ -120,8 +120,20 @@
 
     function openEditModal(pk) {
         const container = document.getElementById("fleet-edit-form-container");
-        const modal     = new bootstrap.Modal(document.getElementById("fleetEditModal"));
-        htmx.ajax("GET", `/panel/fleet/${pk}/update/`, {target: container});
+        const modal     = new bootstrap.Modal(
+            document.getElementById("fleetEditModal")
+        );
+        // Preservar filtros activos en la URL del GET para que el form
+        // reciba filter_* en contexto y los embeba como hidden inputs.
+        const search   = document.getElementById("filter-search")   ?.value ?? "";
+        const family   = document.getElementById("filter-family")   ?.value ?? "";
+        const isActive = document.getElementById("filter-is-active")?.value ?? "";
+        const sortHid  = document.querySelector("#sort-inputs input[name=sort]")?.value ?? "";
+        const dirHid   = document.querySelector("#sort-inputs input[name=dir]") ?.value ?? "asc";
+        const qs = new URLSearchParams({
+            search, family, is_active: isActive, sort: sortHid, dir: dirHid,
+        }).toString();
+        htmx.ajax("GET", `/panel/fleet/${pk}/update/?${qs}`, {target: container});
         modal.show();
     }
 
