@@ -874,6 +874,27 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
    con un borde sutil. En movil pasa a ancho completo y altura limitada.
    Left stops panel — own scroll, subtle border separating it from the map.
    On mobile, full width and capped height. */
+/* Zona scrollable dentro del panel (paradas + buscador).
+   Scrollable zone inside the panel (stops + search input).
+   Complementa el CSS inline de _route_multileg_fragment.html — aquí
+   se definen propiedades que no necesitan el contexto del modal. */
+.route-planner-panel-scroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1rem 1rem 0;
+    min-height: 0;
+}
+
+/* Zona fija: resumen de ruta, siempre visible aunque haya muchas paradas.
+   Fixed zone: route summary, always visible regardless of stop count.    */
+.route-planner-panel-summary {
+    flex-shrink: 0;
+    padding: 0 1rem .75rem;
+}
+
+/* Legacy — se mantiene por si otros contextos usan .route-planner-stops.
+   La estructura del modal usa .route-planner-panel-scroll en su lugar.   */
 .route-planner-stops {
     padding: 1rem;
     border-right: 1px solid #dee2e6;
@@ -1036,4 +1057,3 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
         height: 50vh;
     }
 }
-

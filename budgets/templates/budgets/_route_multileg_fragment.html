@@ -29,12 +29,30 @@
       max-height: 70vh;
       height: 70vh;
     }
+    /* Panel inner: dos zonas apiladas verticalmente.
+       Panel inner: two vertically stacked zones.
+       - .route-planner-panel-scroll : lista de paradas + buscador (scrollable)
+       - .route-planner-panel-summary: resumen de ruta (fijo, no scrollea)       */
     .route-planner-panel-inner {
       flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .route-planner-panel-scroll {
+      flex: 1 1 auto;
       overflow-y: auto;
-      padding: 1rem;
+      overflow-x: hidden;
+      padding: 1rem 1rem 0;
+      min-height: 0;
+    }
+    .route-planner-panel-summary {
+      flex-shrink: 0;
+      padding: 0 1rem .75rem;
     }
     .route-planner-footer {
+      flex-shrink: 0;
       padding: .75rem 1rem;
       border-top: 1px solid var(--rp-line);
     }
@@ -218,12 +236,14 @@
     }
     /* ── Dropdown de Google Autocomplete dentro del modal Bootstrap ── */
     /* Bootstrap pone overflow:hidden en .modal que corta el PAC.      */
-    /* Se fuerza overflow visible en la cadena de ancestros del input. */
+    /* Solo se fuerza overflow visible en los contenedores directos     */
+    /* del input de búsqueda — NO en el panel completo ni en el         */
+    /* panel-inner, para no romper el scroll interno de la lista.       */
     #routePlannerModal .modal-body,
     #routePlannerModal .modal-content,
     #routePlannerModal .route-planner-panel,
-    #routePlannerModal .route-planner-panel-inner,
-    #routePlannerModal .collapse {
+    #routePlannerModal .route-planner-panel-scroll,
+    #routePlannerModal .route-planner-add {
       overflow: visible !important;
     }
     .pac-container {
@@ -231,26 +251,33 @@
     }
     @media (max-width: 991.98px) {
       /* En móvil el panel es scrollable con altura máxima controlada        */
-      /* overflow-y: auto !important sobrescribe el overflow:visible del PAC */
       .route-planner-panel {
         border-right: 0;
         border-bottom: 1px solid var(--rp-line);
-        max-height: 38vh;
+        max-height: none;
         height: auto;
+        overflow: visible;
+      }
+      /* La zona scroll del panel en móvil limita la altura de la lista      */
+      .route-planner-panel-scroll {
+        max-height: 30vh;
         overflow-y: auto !important;
         overflow-x: hidden;
-        position: relative;
-        z-index: 1;
       }
-      /* El collapse interior también debe permitir scroll                   */
+      /* El PAC (autocomplete) necesita overflow visible en móvil también    */
       #routePlannerModal .route-planner-panel,
-      #routePlannerModal .route-planner-panel-inner,
+      #routePlannerModal .route-planner-panel-scroll,
+      #routePlannerModal .route-planner-add,
       #routePlannerModal .collapse {
-        overflow: auto !important;
+        overflow: visible !important;
+      }
+      /* La zona scroll no puede ser visible cuando está scrollando          */
+      #routePlannerModal .route-planner-panel-scroll {
+        overflow-y: auto !important;
       }
       .route-planner-panel-inner {
-        padding: .65rem;
-        overflow-y: visible;
+        padding: 0;
+        overflow: visible;
       }
       /* El mapa debajo del panel, altura fija                               */
       .route-planner-map {
@@ -288,76 +315,88 @@
       <div class="collapse d-lg-block show" id="routePlannerPanelBody">
         <div class="route-planner-panel-inner">
 
-          <div class="route-planner-base" id="route-base-display">
-            <span class="route-planner-marker route-planner-marker--base" aria-hidden="true">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
-                   stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 7.5L8 2l6 5.5" />
-                <path d="M3.5 6.5V13a.5.5 0 00.5.5h3v-3.5h2V13.5h3a.5.5 0 00.5-.5V6.5" />
-              </svg>
-            </span>
-            <div>
-              <span class="route-planner-eyebrow">Base</span>
-              <span class="route-planner-base-name" id="route-base-name">—</span>
+          {# ── Zona scrollable: base, lista de paradas, buscador ──────── #}
+          {# Scrollable zone: base display, stop list, search input        #}
+          <div class="route-planner-panel-scroll">
+
+            <div class="route-planner-base" id="route-base-display">
+              <span class="route-planner-marker route-planner-marker--base" aria-hidden="true">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 7.5L8 2l6 5.5" />
+                  <path d="M3.5 6.5V13a.5.5 0 00.5.5h3v-3.5h2V13.5h3a.5.5 0 00.5-.5V6.5" />
+                </svg>
+              </span>
+              <div>
+                <span class="route-planner-eyebrow">Base</span>
+                <span class="route-planner-base-name" id="route-base-name">—</span>
+              </div>
             </div>
-          </div>
 
-          <ul class="route-planner-timeline" id="route-stops-list"></ul>
+            <ul class="route-planner-timeline" id="route-stops-list"></ul>
 
-          <p class="route-planner-empty" id="route-stops-empty">
-            Aún no hay paradas. Busca una dirección o toca el mapa para
-            añadir la recogida.
-          </p>
-
-          <div class="route-planner-add">
-            <label class="visually-hidden">
-              Buscar dirección o lugar
-            </label>
-            {# PlaceAutocompleteElement se inyecta aquí por wizard_map.js #}
-            {# (reemplaza el input original en el DOM) #}
-            <input type="text" class="form-control form-control-sm mb-2 route-place-input"
-                   id="route-place-search"
-                   placeholder="Buscar dirección o lugar…"
-                   autocomplete="off">
-            <button type="button" class="btn btn-outline-secondary btn-sm w-100"
-                    id="route-btn-base-return">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
-                   stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-                   width="13" height="13" class="me-1" aria-hidden="true">
-                <path d="M2 7.5L8 2l6 5.5" />
-                <path d="M3.5 6.5V13a.5.5 0 00.5.5h3v-3.5h2V13.5h3a.5.5 0 00.5-.5V6.5" />
-              </svg>
-              Volver a base
-            </button>
-          </div>
-
-          <hr>
-
-          <div class="route-planner-summary">
-            <h3 class="route-planner-summary-title">Resumen de ruta</h3>
-            <dl class="route-planner-summary-list" aria-live="polite">
-              <dt>Distancia total</dt>
-              <dd id="route-summary-distance">—</dd>
-
-              <dt id="route-summary-phase1-label" class="d-none">Fase 1</dt>
-              <dd id="route-summary-phase1" class="d-none">—</dd>
-
-              <dt id="route-summary-phase2-label" class="d-none">Fase 2</dt>
-              <dd id="route-summary-phase2" class="d-none">—</dd>
-
-              <dt>Pernocta</dt>
-              <dd id="route-summary-overnight">No</dd>
-
-              <dt>Peajes</dt>
-              <dd id="route-summary-tolls">—</dd>
-            </dl>
-            <p class="form-text text-muted mt-2 mb-0" id="route-summary-hint">
-              <small>Pulsa <strong>Calcular ruta</strong> para obtener kilómetros
-              exactos y peajes antes de confirmar.</small>
+            <p class="route-planner-empty" id="route-stops-empty">
+              Aún no hay paradas. Busca una dirección o toca el mapa para
+              añadir la recogida.
             </p>
-          </div>
 
-        </div>
+            <div class="route-planner-add">
+              <label class="visually-hidden">
+                Buscar dirección o lugar
+              </label>
+              {# PlaceAutocompleteElement se inyecta aquí por wizard_map.js #}
+              {# (reemplaza el input original en el DOM) #}
+              <input type="text" class="form-control form-control-sm mb-2 route-place-input"
+                     id="route-place-search"
+                     placeholder="Buscar dirección o lugar…"
+                     autocomplete="off">
+              <button type="button" class="btn btn-outline-secondary btn-sm w-100"
+                      id="route-btn-base-return">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                     width="13" height="13" class="me-1" aria-hidden="true">
+                  <path d="M2 7.5L8 2l6 5.5" />
+                  <path d="M3.5 6.5V13a.5.5 0 00.5.5h3v-3.5h2V13.5h3a.5.5 0 00.5-.5V6.5" />
+                </svg>
+                Volver a base
+              </button>
+            </div>
+
+          </div>{# /route-planner-panel-scroll #}
+
+          {# ── Zona fija: resumen de ruta (siempre visible) ─────────── #}
+          {# Fixed zone: route summary (always visible, never scrolled)  #}
+          <div class="route-planner-panel-summary">
+
+            <hr class="my-2">
+
+            <div class="route-planner-summary">
+              <h3 class="route-planner-summary-title">Resumen de ruta</h3>
+              <dl class="route-planner-summary-list" aria-live="polite">
+                <dt>Distancia total</dt>
+                <dd id="route-summary-distance">—</dd>
+
+                <dt id="route-summary-phase1-label" class="d-none">Fase 1</dt>
+                <dd id="route-summary-phase1" class="d-none">—</dd>
+
+                <dt id="route-summary-phase2-label" class="d-none">Fase 2</dt>
+                <dd id="route-summary-phase2" class="d-none">—</dd>
+
+                <dt>Pernocta</dt>
+                <dd id="route-summary-overnight">No</dd>
+
+                <dt>Peajes</dt>
+                <dd id="route-summary-tolls">—</dd>
+              </dl>
+              <p class="form-text text-muted mt-2 mb-0" id="route-summary-hint">
+                <small>Pulsa <strong>Calcular ruta</strong> para obtener kilómetros
+                exactos y peajes antes de confirmar.</small>
+              </p>
+            </div>
+
+          </div>{# /route-planner-panel-summary #}
+
+        </div>{# /route-planner-panel-inner #}
       </div>
 
     </div>
@@ -429,3 +468,4 @@
   {# Hidden inputs — en _wizard_steps_fragment.html (dentro del form). #}
   {# wizard_map.js los localiza por ID desde cualquier punto del DOM.  #}
 </div>
+
