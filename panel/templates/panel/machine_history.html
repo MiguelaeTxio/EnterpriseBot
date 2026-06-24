@@ -1,0 +1,365 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_history.html #}
+{#                                                                                        #}
+{# Hito 22 — Visor de Historial de Maquinas (Operario)                                  #}
+{# Solo lectura. Accesible para el rol WORKSHOP.                                         #}
+{# Machine History Viewer (H22). Read-only. WORKSHOP role only.                         #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Historial de Máquina{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    {# ================================================================ #}
+    {# FORMULARIO DE CONSULTA                                           #}
+    {# QUERY FORM                                                        #}
+    {# ================================================================ #}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header d-flex align-items-center gap-2">
+            <i class="bi bi-search"></i>
+            <span class="fw-semibold">Consultar historial</span>
+        </div>
+        <div class="card-body">
+            <form method="get" action="">
+                <div class="row g-3 align-items-end">
+
+                    {# Selector de máquina — autocomplete igual que partes digitales #}
+                    <div class="col-12 col-md-5">
+                        <label for="mh-machine-input" class="form-label fw-semibold">
+                            Máquina
+                        </label>
+                        <div class="position-relative">
+                            {# Hidden field enviado al servidor con el code resuelto #}
+                            <input type="hidden" id="machine_code" name="machine_code"
+                                   value="{{ machine_code }}">
+                            {# Campo de texto visible — autocompletable por codigo #}
+                            <input type="text"
+                                   id="mh-machine-input"
+                                   class="form-control mh-asset-search"
+                                   placeholder="Código de máquina"
+                                   autocomplete="off"
+                                   value="{{ selected_machine.code|default:'' }}">
+                            {# Label descriptivo tras seleccion #}
+                            <small class="mh-asset-label text-muted mt-1 d-block{% if not selected_machine %} d-none{% endif %}">
+                                {% if selected_machine %}{{ selected_machine.brand_model }}{% endif %}
+                            </small>
+                            {# Dropdown de sugerencias #}
+                            <div class="mh-asset-dropdown d-none list-group mt-1"
+                                 style="position:absolute;z-index:1000;width:100%;"></div>
+                        </div>
+                    </div>
+
+                    {# Fecha desde #}
+                    <div class="col-6 col-md-2">
+                        <label for="date_from" class="form-label fw-semibold">
+                            Desde
+                        </label>
+                        <input type="date"
+                               id="date_from"
+                               name="date_from"
+                               class="form-control"
+                               value="{{ date_from }}">
+                    </div>
+
+                    {# Fecha hasta #}
+                    <div class="col-6 col-md-2">
+                        <label for="date_to" class="form-label fw-semibold">
+                            Hasta
+                        </label>
+                        <input type="date"
+                               id="date_to"
+                               name="date_to"
+                               class="form-control"
+                               value="{{ date_to }}">
+                    </div>
+
+                    {# Botón consultar #}
+                    <div class="col-12 col-md-3">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-search me-1"></i>Consultar
+                        </button>
+                    </div>
+
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if has_results %}
+
+        {# ============================================================ #}
+        {# CABECERA DE RESUMEN                                           #}
+        {# SUMMARY HEADER                                                #}
+        {# ============================================================ #}
+        <div class="row g-3 mb-4">
+
+            <div class="col-6 col-md-3">
+                <div class="card text-center shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="fs-2 fw-bold text-primary">
+                            {{ total_intervenciones }}
+                        </div>
+                        <div class="text-muted small">Intervenciones</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+                <div class="card text-center shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="fs-2 fw-bold text-success">
+                            {% if total_horas %}
+                                {{ total_horas|floatformat:1 }} h
+                            {% else %}
+                                —
+                            {% endif %}
+                        </div>
+                        <div class="text-muted small">Horas acumuladas</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+                <div class="card text-center shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="fs-5 fw-bold text-secondary">
+                            {% if ultima_intervencion %}
+                                {{ ultima_intervencion|date:"d/m/Y" }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </div>
+                        <div class="text-muted small">Última intervención</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+                <div class="card text-center shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="fs-5 fw-bold text-dark">
+                            {{ selected_machine.brand_model }}
+                            {% if selected_machine.code %}
+                            <div class="text-muted small fw-normal">{{ selected_machine.code }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="text-muted small">Máquina consultada</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        {# ============================================================ #}
+        {# TABLA DE INTERVENCIONES                                       #}
+        {# INTERVENTIONS TABLE                                           #}
+        {# ============================================================ #}
+        {% if lines %}
+        <div class="card shadow-sm">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-clock-history"></i>
+                <span class="fw-semibold">
+                    Intervenciones — {{ date_from }} / {{ date_to }}
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Fecha</th>
+                                <th>Operario</th>
+                                <th>Familia avería</th>
+                                <th>Subcategoría</th>
+                                <th>Descripción avería</th>
+                                <th>Reparación realizada</th>
+                                <th class="text-end pe-3">Horas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for line in lines %}
+                            <tr>
+                                <td class="ps-3 text-nowrap">
+                                    {{ line.work_date|date:"d/m/Y" }}
+                                </td>
+                                <td class="text-nowrap">
+                                    {{ line.worker_name|default:"—" }}
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary bg-opacity-10
+                                                 text-secondary border border-secondary
+                                                 border-opacity-25 fw-normal">
+                                        {{ line.fault_category_display }}
+                                    </span>
+                                </td>
+                                <td class="text-muted small">
+                                    {{ line.fault_subcategory_display }}
+                                </td>
+                                <td class="small" style="max-width:220px;">
+                                    <span title="{{ line.fault_description }}">
+                                        {{ line.fault_description|truncatechars:80 }}
+                                    </span>
+                                </td>
+                                <td class="small" style="max-width:220px;">
+                                    <span title="{{ line.repair_notes }}">
+                                        {{ line.repair_notes|truncatechars:80 }}
+                                    </span>
+                                </td>
+                                <td class="text-end pe-3 text-nowrap fw-semibold">
+                                    {% if line.delta_hours %}
+                                        {{ line.delta_hours|floatformat:2 }} h
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        {# Estado vacío — máquina seleccionada pero sin resultados en el rango #}
+        {# Empty state — machine selected but no results in the date range      #}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-1 d-block mb-3 opacity-50"></i>
+            <p class="mb-1 fw-semibold">
+                Sin intervenciones en el período seleccionado
+            </p>
+            <p class="small">
+                Prueba a ampliar el rango de fechas.
+            </p>
+        </div>
+        {% endif %}
+
+    {% else %}
+    {# Estado inicial — ninguna máquina seleccionada todavía #}
+    {# Initial state — no machine selected yet               #}
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-truck fs-1 d-block mb-3 opacity-50"></i>
+        <p class="mb-1 fw-semibold">
+            Selecciona una máquina y un rango de fechas para consultar
+            su historial de intervenciones.
+        </p>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{# ================================================================ #}
+{# Autocomplete de maquina — mismo patron que partes digitales      #}
+{# Machine autocomplete — same pattern as work-order entry form     #}
+{# Llama a WorkshopAssetAutocompleteView (/panel/operator/assets/)  #}
+{# Calls WorkshopAssetAutocompleteView (/panel/operator/assets/)    #}
+{# ================================================================ #}
+<script>
+(function () {
+    "use strict";
+
+    var ASSETS_URL = "{% url 'panel:operator_assets' %}";
+
+    var input      = document.getElementById("mh-machine-input");
+    var hiddenCode = document.getElementById("machine_code");
+    var dropdown   = document.querySelector(".mh-asset-dropdown");
+    var labelSpan  = document.querySelector(".mh-asset-label");
+
+    if (!input || !dropdown) { return; }
+
+    var _selecting = false;
+    var lastQuery  = "";
+
+    function _hideDropdown() {
+        dropdown.classList.add("d-none");
+        dropdown.innerHTML = "";
+    }
+
+    function debounce(fn, wait) {
+        var t;
+        return function () {
+            var ctx = this, args = arguments;
+            clearTimeout(t);
+            t = setTimeout(function () { fn.apply(ctx, args); }, wait);
+        };
+    }
+
+    function fetchAndRender(q) {
+        if (q === lastQuery) { return; }
+        lastQuery = q;
+        fetch(ASSETS_URL + "?q=" + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                dropdown.innerHTML = "";
+                if (!data.assets || data.assets.length === 0) {
+                    dropdown.classList.add("d-none");
+                    return;
+                }
+                data.assets.forEach(function (asset) {
+                    var btn = document.createElement("button");
+                    btn.type      = "button";
+                    btn.className = "list-group-item list-group-item-action py-1 px-2";
+                    btn.style.fontSize = "0.875rem";
+                    btn.textContent = asset.code + " — " + asset.brand_model;
+
+                    btn.addEventListener("pointerdown", function () {
+                        _selecting = true;
+                    });
+                    btn.addEventListener("touchstart", function () {
+                        _selecting = true;
+                    }, { passive: true });
+
+                    btn.addEventListener("click", function () {
+                        /* Stores the code in the hidden field and shows it
+                           in the visible input for confirmation.
+                           Guarda el code en el campo oculto y lo muestra
+                           en el input visible como confirmacion. */
+                        input.value       = asset.code;
+                        hiddenCode.value  = asset.code;
+                        lastQuery         = asset.code;
+                        if (labelSpan) {
+                            labelSpan.textContent = asset.brand_model;
+                            labelSpan.classList.remove("d-none");
+                        }
+                        _selecting = false;
+                        _hideDropdown();
+                        input.focus();
+                    });
+
+                    dropdown.appendChild(btn);
+                });
+                dropdown.classList.remove("d-none");
+            })
+            .catch(function () { dropdown.classList.add("d-none"); });
+    }
+
+    var debouncedFetch = debounce(function () {
+        var q = input.value.trim();
+        if (q.length < 2) { dropdown.classList.add("d-none"); return; }
+        fetchAndRender(q);
+    }, 250);
+
+    input.addEventListener("input", debouncedFetch);
+    input.addEventListener("keyup",  debouncedFetch);
+
+    input.addEventListener("blur", function () {
+        if (!_selecting) {
+            /* If the user cleared the input, also clear the hidden code.
+               Si el usuario borro el input, limpiar tambien el code oculto. */
+            if (input.value.trim() === "") {
+                hiddenCode.value = "";
+                if (labelSpan) { labelSpan.classList.add("d-none"); }
+            }
+            setTimeout(_hideDropdown, 200);
+        }
+    });
+
+    input.addEventListener("focus", function () {
+        if (input.value.trim().length >= 2) { fetchAndRender(input.value.trim()); }
+    });
+
+}());
+</script>
+{% endblock %}

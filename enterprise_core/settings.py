@@ -77,6 +77,8 @@ INSTALLED_APPS = [
     'budgets',
     # Unified Analytics Laboratory — Laboratorio de Análisis Unificado.
     'analytics',
+    # Machine History Viewer — Visor de Historial de Maquinas (Hito 22).
+    'history',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.

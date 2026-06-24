@@ -157,11 +157,8 @@
           <i class="bi bi-plus-lg me-1"></i>Nuevo ticket
         </a>
         {% endif %}
-        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" %}
-        <a href="{% url 'panel:breakdown_room_manage' %}" class="btn btn-sm btn-outline-secondary">
-          <i class="bi bi-people me-1"></i>Membresía
-        </a>
-        {% endif %}
+        {# Botón Membresía eliminado — ChatRoom/breakdown_room_manage suprimido en H17. #}
+        {# Membership button removed — ChatRoom/breakdown_room_manage removed in H17.  #}
         <button class="btn btn-sm btn-outline-secondary" onclick="tkToggleTop()" title="Colapsar / expandir">
           <i id="tk-collapse-icon" class="bi bi-chevron-up"></i>
         </button>

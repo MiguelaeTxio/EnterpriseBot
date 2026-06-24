@@ -34,6 +34,7 @@
 {#   "analytics_lab"      → Laboratorio de Análisis          (ADMIN)               #}
 {#   "workday_schedule"   → Horarios de jornada              (ADMIN, SUPERVISOR)    #}
 {#   "absence_categories" → Categorías de ausencia           (ADMIN, SUPERVISOR)    #}
+{#   "machine_history"    → Historial de Máquina             (WORKSHOP, ADMIN)      #}
 {# ================================================================================ #}
 
 <ul class="nav flex-column mt-2" id="sidebar-accordion">
@@ -320,6 +321,16 @@
                     </a>
                 </li>
                 {% endif %}
+                {# Historial de maquina — WORKSHOP y ADMIN (Hito 22)                  #}
+                {# Machine history viewer — WORKSHOP and ADMIN (Hito 22)               #}
+                {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
+                <li class="nav-item">
+                    <a class="nav-link {% if active_nav == 'machine_history' %}active{% endif %}"
+                       href="{% url 'history:machine_history' %}">
+                        <i class="bi bi-truck"></i>Historial de Máquina
+                    </a>
+                </li>
+                {% endif %}
                 {# Historial de administración — ADMIN y SUPERVISOR únicamente          #}
                 {# Admin work-order history — ADMIN and SUPERVISOR only                 #}
                 {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
@@ -501,6 +512,7 @@
         'analytics_lab':            'acc-analitica',
         'operator_dashboard':       'acc-operarios',
         'operator_history':         'acc-operarios',
+        'machine_history':          'acc-operarios',
         'work_order_admin_history': 'acc-operarios',
         'breakdown_ticket_list':    'acc-tickets',
         'budgets_wizard':           'acc-asistencia',
@@ -596,3 +608,5 @@
     );
 }());
 </script>
+
+
