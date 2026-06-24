@@ -303,8 +303,97 @@ class AnalyticsLabView(AdminRoleRequiredMixin, View):
             work_date__isnull=False,
         ).exists()
 
-        has_d5 = Budget.objects.filter(company=company).count() > 0
+        # D6 — fault_subcategory
+        has_d6 = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                fault_subcategory__gt="",
+            )
+            .values("fault_subcategory")
+            .distinct()
+            .count()
+        ) > 0
 
+        # D7 — machine fleet family (MachineAsset.family)
+        has_d7 = (
+            MachineAsset.objects
+            .filter(company=company, family__gt="")
+            .values("family")
+            .distinct()
+            .count()
+        ) > 0
+
+        # D8 — machine type name (MachineAsset.type_name)
+        has_d8 = (
+            MachineAsset.objects
+            .filter(company=company, type_name__gt="")
+            .values("type_name")
+            .distinct()
+            .count()
+        ) > 0
+
+        # D9 — work order source (PDF_UPLOAD / DIGITAL / GENERATED)
+        has_d9 = WorkOrder.objects.filter(company=company).exists()
+
+        # D10 — O.R. (orden de reparacion)
+        has_d10 = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                or_val__gt="",
+            )
+            .exists()
+        )
+
+        # D11 — has_diet (jornada con dieta)
+        has_d11 = (
+            WorkOrderEntry.objects
+            .filter(
+                work_order__company=company,
+                has_diet=True,
+            )
+            .exists()
+        )
+
+        # D12 — is_on_site (trabajo in situ / desplazamiento)
+        has_d12 = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                is_on_site=True,
+            )
+            .exists()
+        )
+
+        # D13 — con ticket de averia vinculado
+        has_d13 = (
+            WorkOrderEntryLine.objects
+            .filter(
+                entry__work_order__company=company,
+                breakdown_ticket__isnull=False,
+            )
+            .exists()
+        )
+
+        # D14 — parte revisado por supervisor
+        has_d14 = WorkOrder.objects.filter(company=company).exists()
+
+        # D15 — sin pausa de comida
+        has_d15 = WorkOrderEntry.objects.filter(
+            work_order__company=company,
+        ).exists()
+
+        # D16 — empresa origen de la maquina (MachineAsset.company_code)
+        has_d16 = (
+            MachineAsset.objects
+            .filter(company=company, company_code__gt="")
+            .values("company_code")
+            .distinct()
+            .count()
+        ) > 0
+
+        # --- Build selector data ---
         operators = []
         if has_d1:
             operators = list(
@@ -344,6 +433,75 @@ class AnalyticsLabView(AdminRoleRequiredMixin, View):
                 for k in raw_keys
             ]
 
+        fault_subcategories = []
+        if has_d6:
+            from work_order_processor.models import FaultSubcategory as _FSC
+            raw_keys6 = list(
+                WorkOrderEntryLine.objects
+                .filter(
+                    entry__work_order__company=company,
+                    fault_subcategory__gt="",
+                )
+                .values_list("fault_subcategory", flat=True)
+                .distinct()
+                .order_by("fault_subcategory")
+            )
+            fsc_map = dict(_FSC.choices)
+            fault_subcategories = [
+                {"key": k, "label": fsc_map.get(k, k)}
+                for k in raw_keys6
+            ]
+
+        machine_families = []
+        if has_d7:
+            machine_families = list(
+                MachineAsset.objects
+                .filter(company=company, family__gt="")
+                .values_list("family", flat=True)
+                .distinct()
+                .order_by("family")
+            )
+
+        machine_types = []
+        if has_d8:
+            machine_types = list(
+                MachineAsset.objects
+                .filter(company=company, type_name__gt="")
+                .values_list("type_name", flat=True)
+                .distinct()
+                .order_by("type_name")
+            )
+
+        wo_sources = []
+        if has_d9:
+            wo_sources = [
+                {"key": k, "label": v}
+                for k, v in WorkOrder.Source.choices
+            ]
+
+        or_values = []
+        if has_d10:
+            or_values = list(
+                WorkOrderEntryLine.objects
+                .filter(
+                    entry__work_order__company=company,
+                    or_val__gt="",
+                )
+                .values_list("or_val", flat=True)
+                .distinct()
+                .order_by("or_val")
+            )
+
+        machine_companies = []
+        if has_d16:
+            machine_companies = list(
+                MachineAsset.objects
+                .filter(company=company, company_code__gt="")
+                .values("company_code", "company_name")
+                .distinct()
+                .order_by("company_code")
+            )
+
         return render(request, self.template_name, {
             "company": company,
             "company_user": company_user,
@@ -355,10 +513,26 @@ class AnalyticsLabView(AdminRoleRequiredMixin, View):
             "has_d2": has_d2,
             "has_d3": has_d3,
             "has_d4": has_d4,
-            "has_d5": has_d5,
+            "has_d6": has_d6,
+            "has_d7": has_d7,
+            "has_d8": has_d8,
+            "has_d9": has_d9,
+            "has_d10": has_d10,
+            "has_d11": has_d11,
+            "has_d12": has_d12,
+            "has_d13": has_d13,
+            "has_d14": has_d14,
+            "has_d15": has_d15,
+            "has_d16": has_d16,
             "operators": operators,
             "machines": machines,
             "fault_categories": fault_categories,
+            "fault_subcategories": fault_subcategories,
+            "machine_families": machine_families,
+            "machine_types": machine_types,
+            "wo_sources": wo_sources,
+            "or_values": or_values,
+            "machine_companies": machine_companies,
         })
 
 
@@ -392,11 +566,23 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
     """
 
     _DEFAULT_CHART = {
-        "d1": "bar",
-        "d2": "bar",
-        "d3": "bar",
-        "d4": "bar",
-        "d5": "bar",
+        "d1":  "bar",
+        "d2":  "bar",
+        "d3":  "pie",
+        "d4":  "bar",
+        "d6":  "pie",
+        "d7":  "pie",
+        "d8":  "bar",
+        "d9":  "pie",
+        "d10": "bar",
+        "d11": "pie",
+        "d12": "pie",
+        "d13": "pie",
+        "d14": "pie",
+        "d15": "pie",
+        "d16": "pie",
+        "d18": "bar",  # ordinary_hours
+        "d19": "bar",
     }
 
     _FAULT_CAT_LABELS = {
@@ -408,6 +594,42 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
         "LIFTING_STRUCTURE": "Estructura de elevacion",
         "ELECTRICAL_ELECTRONIC": "Electrico y electronico",
         "OTHER": "Otros",
+    }
+
+    _FAULT_SUBCAT_LABELS = {
+        "ET_ENGINE":          "Motor",
+        "ET_TRANSMISSION":    "Transmision",
+        "ET_PTO":             "Toma de fuerza (PTO)",
+        "ET_COOLING":         "Sistema de refrigeracion",
+        "ET_FUEL":            "Sistema de combustible",
+        "HY_PUMP":            "Bomba hidraulica",
+        "HY_CYLINDERS":       "Cilindros hidraulicos",
+        "HY_VALVES":          "Valvulas hidraulicas",
+        "HY_OIL":             "Aceite y circuito hidraulico",
+        "HY_CENTRAL":         "Central hidraulica",
+        "EE_WIRING":          "Cableado y conectores",
+        "EE_SENSORS":         "Sensores y sondas",
+        "EE_CONTROLS":        "Mandos y controles",
+        "EE_LIGHTS":          "Iluminacion",
+        "EE_BATTERY":         "Bateria y sistema de carga",
+        "BSS_BRAKES":         "Frenos",
+        "BSS_STEERING":       "Direccion",
+        "BSS_SUSPENSION":     "Suspension",
+        "TRG_TYRES":          "Neumaticos",
+        "TRG_AXLES":          "Ejes y transmision de rueda",
+        "TRG_TRACKS":         "Cadenas y rodadura oruga",
+        "LS_BOOM":            "Pluma y brazo",
+        "LS_HOOK_PULLEYS":    "Gancho y poleas",
+        "LS_CABLE":           "Cable de elevacion",
+        "LS_ROTATION":        "Sistema de rotacion",
+        "LS_STABILIZERS":     "Estabilizadores y apoyos",
+        "LS_MAST":            "Mastil y horquillas",
+        "LS_PLATFORM":        "Plataforma elevadora",
+        "LS_FIFTH_WHEEL":     "Quinta rueda",
+        "LS_CHASSIS_TRAILER": "Chasis de semirremolque",
+        "BC_BODYWORK":        "Carroceria",
+        "BC_CHASSIS":         "Chasis estructural",
+        "OT_OTHER":           "Otra averia no clasificada",
     }
 
     def _translate_fault_cat(self, key):
@@ -672,7 +894,7 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
             "chart": {
                 "type": (
                     chart_type
-                    if chart_type in ("bar", "line")
+                    if chart_type in ("bar", "line", "pie")
                     else "bar"
                 ),
                 "title": title,
@@ -940,7 +1162,7 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
             "chart": {
                 "type": (
                     chart_type
-                    if chart_type in ("bar", "line")
+                    if chart_type in ("bar", "line", "pie")
                     else "bar"
                 ),
                 "title": title,
@@ -1239,7 +1461,7 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
             "chart": {
                 "type": (
                     chart_type
-                    if chart_type in ("bar", "line")
+                    if chart_type in ("bar", "line", "pie")
                     else "bar"
                 ),
                 "title": (
@@ -1427,11 +1649,23 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
     # Mapeo tipo de campo -> codigo de dimension legacy
     # ----------------------------------------------------------
     _FIELD_TYPE_TO_DIM = {
-        "worker":         "d1",
-        "machine":        "d2",
-        "fault_category": "d3",
-        "period":         "d4",
-        "budget":         "d5",
+        "worker":            "d1",
+        "machine":           "d2",
+        "fault_category":    "d3",
+        "period":            "d4",
+        "fault_subcategory": "d6",
+        "machine_family":    "d7",
+        "machine_type":      "d8",
+        "work_order_source": "d9",
+        "or_val":            "d10",
+        "has_diet":          "d11",
+        "is_on_site":        "d12",
+        "has_ticket":        "d13",
+        "reviewed":          "d14",
+        "no_lunch_break":    "d15",
+        "machine_company":   "d16",
+        "ordinary_hours":    "d18",
+        "extra_hours":       "d19",
     }
 
     def get(self, request):
@@ -1588,8 +1822,9 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
         type_set = frozenset(types)
 
         if len(fields) == 1:
-            # Single field -- Campo unico: usar handlers legacy
-            dim = self._FIELD_TYPE_TO_DIM.get(types[0], "d4")
+            # Single field -- Campo unico
+            ftype = types[0]
+            dim = self._FIELD_TYPE_TO_DIM.get(ftype, "d4")
             entity_pk = fields[0].get("value") or None
             if entity_pk == "*":
                 entity_pk = None
@@ -1598,10 +1833,16 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
                 "d2": self._handle_d2,
                 "d3": self._handle_d3,
                 "d4": self._handle_d4,
-                "d5": self._handle_d5,
             }
-            return legacy_handlers[dim](
-                company, entity_pk, date_from, date_to,
+            if dim in legacy_handlers:
+                return legacy_handlers[dim](
+                    company, entity_pk, date_from, date_to,
+                    granularity, chart_type,
+                )
+            # New single-field types go through _handle_cross
+            # Los nuevos tipos de campo unico pasan por _handle_cross
+            return self._handle_cross(
+                company, fields, type_set, date_from, date_to,
                 granularity, chart_type,
             )
 
@@ -1659,74 +1900,205 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
                     qs_filter["machine_asset__code__iexact"] = fval
             elif ftype == "fault_category":
                 qs_filter["fault_category__iexact"] = fval
+            elif ftype == "fault_subcategory":
+                qs_filter["fault_subcategory__iexact"] = fval
+            elif ftype == "machine_family":
+                qs_filter["machine_asset__family__iexact"] = fval
+            elif ftype == "machine_type":
+                qs_filter["machine_asset__type_name__iexact"] = fval
+            elif ftype == "work_order_source":
+                qs_filter["entry__work_order__source__iexact"] = fval
+            elif ftype == "or_val":
+                qs_filter["or_val__iexact"] = fval
+            elif ftype == "has_diet":
+                qs_filter["entry__has_diet"] = (fval.lower() == "true")
+            elif ftype == "is_on_site":
+                qs_filter["is_on_site"] = (fval.lower() == "true")
+            elif ftype == "has_ticket":
+                if fval.lower() == "true":
+                    qs_filter["breakdown_ticket__isnull"] = False
+                elif fval.lower() == "false":
+                    qs_filter["breakdown_ticket__isnull"] = True
+            elif ftype == "reviewed":
+                qs_filter["entry__work_order__reviewed"] = (
+                    fval.lower() == "true"
+                )
+            elif ftype == "no_lunch_break":
+                qs_filter["entry__no_lunch_break"] = (
+                    fval.lower() == "true"
+                )
+            elif ftype == "machine_company":
+                qs_filter["machine_asset__company_code__iexact"] = fval
+            # ordinary_hours y extra_hours son metricas, no dimensiones de agrupacion
+            # ordinary_hours and extra_hours are metrics, not grouping dimensions
 
         # Determine group-by dimensions -- Determinar dimensiones de agrupacion
-        # Priority: worker > machine > fault_category > period
-        # Prioridad: worker > machine > fault_category > period
-        group_by_worker = "worker" in type_set
-        group_by_machine = "machine" in type_set
-        group_by_fault = "fault_category" in type_set
-        group_by_period = "period" in type_set
+        group_by_worker         = "worker"            in type_set
+        group_by_machine        = "machine"           in type_set
+        group_by_fault          = "fault_category"    in type_set
+        group_by_fault_sub      = "fault_subcategory" in type_set
+        group_by_machine_family = "machine_family"    in type_set
+        group_by_machine_type   = "machine_type"      in type_set
+        group_by_source         = "work_order_source" in type_set
+        group_by_or_val         = "or_val"            in type_set
+        group_by_has_diet       = "has_diet"          in type_set
+        group_by_is_on_site     = "is_on_site"        in type_set
+        group_by_has_ticket     = "has_ticket"        in type_set
+        group_by_reviewed       = "reviewed"          in type_set
+        group_by_no_lunch       = "no_lunch_break"    in type_set
+        group_by_mach_company   = "machine_company"   in type_set
+        show_ordinary_hours     = "ordinary_hours"    in type_set  # metric col only
+        show_extra_hours        = "extra_hours"       in type_set  # metric col only
+        group_by_period         = "period"            in type_set
 
         lines_qs = (
             WorkOrderEntryLine.objects
             .filter(**qs_filter)
-            .select_related("entry", "machine_asset")
+            .select_related("entry", "entry__work_order", "machine_asset")
         )
 
+        # Pre-calculate daily hours per (worker, date) — always needed for
+        # extra hours metric. Siempre necesario para la metrica de horas extra.
+        daily_hours: dict = defaultdict(float)
+        for line in lines_qs:
+            daily_hours[(
+                line.entry.worker_name or "",
+                line.entry.work_date,
+            )] += float(line.delta_hours or 0)
+
         # Aggregate -- Agregar
-        # key: tuple of active dimension values
-        # clave: tupla de valores de dimensiones activas
-        agg = defaultdict(lambda: {"hours": 0.0, "count": 0})
+        agg = defaultdict(lambda: {"hours": 0.0, "count": 0, "extra": 0.0, "ordinary": 0.0})
+
+        # Helper: extract grouping value for a field type from a line
+        # Helper: extraer valor de agrupacion para un tipo de campo desde una linea
+        _SRC_LABELS = {
+            "PDF_UPLOAD": "PDF",
+            "DIGITAL":    "Digital",
+            "GENERATED":  "Generado",
+        }
+
+        def _field_value(ftype, line):
+            if ftype == "worker":
+                return line.entry.worker_name or "Desconocido"
+            if ftype == "machine":
+                return line.machine_asset.code if line.machine_asset else "Sin maquina"
+            if ftype == "fault_category":
+                return (
+                    self._translate_fault_cat(line.fault_category)
+                    if line.fault_category else "Sin familia"
+                )
+            if ftype == "fault_subcategory":
+                return (
+                    self._FAULT_SUBCAT_LABELS.get(
+                        line.fault_subcategory, line.fault_subcategory
+                    ) if line.fault_subcategory else "Sin subcategoria"
+                )
+            if ftype == "machine_family":
+                return (
+                    line.machine_asset.family
+                    if line.machine_asset and line.machine_asset.family
+                    else "Sin familia flota"
+                )
+            if ftype == "machine_type":
+                return (
+                    line.machine_asset.type_name
+                    if line.machine_asset and line.machine_asset.type_name
+                    else "Sin tipo"
+                )
+            if ftype == "work_order_source":
+                src = line.entry.work_order.source if line.entry.work_order else ""
+                return _SRC_LABELS.get(src, src or "Desconocido")
+            if ftype == "or_val":
+                return line.or_val or "Sin O.R."
+            if ftype == "has_diet":
+                return "Con dieta" if line.entry.has_diet else "Sin dieta"
+            if ftype == "is_on_site":
+                return "In situ" if line.is_on_site else "En taller"
+            if ftype == "has_ticket":
+                return "Con ticket" if line.breakdown_ticket_id else "Sin ticket"
+            if ftype == "reviewed":
+                return "Revisado" if line.entry.work_order.reviewed else "Sin revisar"
+            if ftype == "no_lunch_break":
+                return (
+                    "Sin pausa comida"
+                    if line.entry.no_lunch_break else "Con pausa comida"
+                )
+            if ftype == "machine_company":
+                return (
+                    line.machine_asset.company_code
+                    if line.machine_asset and line.machine_asset.company_code
+                    else "Desconocida"
+                )
+            if ftype == "period":
+                return self._bucket(line.entry.work_date, granularity)
+            return None  # metric fields (ordinary_hours, extra_hours) — no key part
+
+        # Ordered field types that produce grouping keys (metrics excluded)
+        # Tipos de campo ordenados que producen claves de agrupacion (metricas excluidas)
+        _METRIC_TYPES = frozenset(("ordinary_hours", "extra_hours"))
+        ordered_dim_types = [
+            f["type"] for f in fields
+            if f["type"] not in _METRIC_TYPES
+        ]
 
         for line in lines_qs:
-            key_parts = []
-            if group_by_worker:
-                key_parts.append(
-                    line.entry.worker_name or "Desconocido"
-                )
-            if group_by_machine:
-                key_parts.append(
-                    line.machine_asset.code
-                    if line.machine_asset else "Sin maquina"
-                )
-            if group_by_fault:
-                key_parts.append(
-                    self._translate_fault_cat(
-                        line.fault_category
-                    ) if line.fault_category else "Sin familia"
-                )
-            if group_by_period:
-                key_parts.append(
-                    self._bucket(line.entry.work_date, granularity)
-                )
+            key_parts = [_field_value(ft, line) for ft in ordered_dim_types]
             key = tuple(key_parts) if key_parts else ("Total",)
-            agg[key]["hours"] += float(line.delta_hours or 0)
+            line_hours = float(line.delta_hours or 0)
+            agg[key]["hours"] += line_hours
             agg[key]["count"] += 1
+            # Calculate ordinary and extra hours proportionally
+            # Calcular horas ordinarias y extra proporcionalmente
+            dk = (line.entry.worker_name or "", line.entry.work_date)
+            total_day = daily_hours.get(dk, 0.0)
+            if total_day > 0:
+                if total_day > 8.0:
+                    prop = line_hours / total_day
+                    agg[key]["extra"]    += prop * (total_day - 8.0)
+                    agg[key]["ordinary"] += prop * 8.0
+                else:
+                    agg[key]["ordinary"] += line_hours
 
-        # Build column headers -- Construir cabeceras de columna
-        col_labels = []
-        if group_by_worker:
-            col_labels.append("Operario")
-        if group_by_machine:
-            col_labels.append("Maquina / CdG")
-        if group_by_fault:
-            col_labels.append("Familia averia")
-        if group_by_period:
-            col_labels.append("Periodo")
+        # Build column headers in field order -- Cabeceras en orden de campos
+        _DIM_LABELS = {
+            "worker":            "Operario",
+            "machine":           "Maquina / CdG",
+            "fault_category":    "Familia averia",
+            "fault_subcategory": "Subcategoria averia",
+            "machine_family":    "Familia flota",
+            "machine_type":      "Tipo maquina",
+            "work_order_source": "Origen parte",
+            "or_val":            "O.R.",
+            "has_diet":          "Dieta",
+            "is_on_site":        "In situ",
+            "has_ticket":        "Ticket averia",
+            "reviewed":          "Revisado",
+            "no_lunch_break":    "Pausa comida",
+            "machine_company":   "Empresa maquina",
+            "period":            "Periodo",
+        }
+        col_labels = [
+            _DIM_LABELS[ft] for ft in ordered_dim_types if ft in _DIM_LABELS
+        ]
         col_labels += ["Horas trabajadas", "Intervenciones"]
+        if show_ordinary_hours: col_labels.append("Horas ordinarias")
+        if show_extra_hours:    col_labels.append("Horas extra")
 
         # Sort keys -- Ordenar claves
         sorted_keys = sorted(agg.keys())
 
         # Build table rows -- Construir filas de tabla
-        table_rows = [
-            list(key) + [
+        table_rows = []
+        for key in sorted_keys:
+            row = list(key) + [
                 round(agg[key]["hours"], 2),
                 agg[key]["count"],
             ]
-            for key in sorted_keys
-        ]
+            if show_ordinary_hours:
+                row.append(round(agg[key]["ordinary"], 2))
+            if show_extra_hours:
+                row.append(round(agg[key]["extra"], 2))
+            table_rows.append(row)
 
         total_hours = sum(v["hours"] for v in agg.values())
         total_parts = sum(v["count"] for v in agg.values())
@@ -1788,20 +2160,32 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
                 },
             ]
 
-        # Build cross title -- Construir titulo de cruce
-        dim_names = []
-        if group_by_worker:
-            dim_names.append("Operario")
-        if group_by_machine:
-            dim_names.append("Maquina")
-        if group_by_fault:
-            dim_names.append("Familia")
-        if group_by_period:
-            dim_names.append("Periodo")
-        title = (
-            " x ".join(dim_names)
-            + f" ({date_from} / {date_to})"
-        )
+        # Build cross title in field order -- Titulo en orden de campos
+        _TITLE_LABELS = {
+            "worker":            "Operario",
+            "machine":           "Maquina",
+            "fault_category":    "Familia averia",
+            "fault_subcategory": "Subcategoria averia",
+            "machine_family":    "Familia flota",
+            "machine_type":      "Tipo maquina",
+            "work_order_source": "Origen parte",
+            "or_val":            "O.R.",
+            "has_diet":          "Dieta",
+            "is_on_site":        "In situ",
+            "has_ticket":        "Ticket averia",
+            "reviewed":          "Revisado",
+            "no_lunch_break":    "Pausa comida",
+            "machine_company":   "Empresa maquina",
+            "period":            "Periodo",
+        }
+        dim_names = [
+            _TITLE_LABELS[ft]
+            for ft in ordered_dim_types
+            if ft in _TITLE_LABELS
+        ]
+        if show_ordinary_hours: dim_names.append("Horas ordinarias")
+        if show_extra_hours:    dim_names.append("Horas extra")
+        title = " x ".join(dim_names) + f" ({date_from} / {date_to})"
 
         return {
             "ok": True,
@@ -1810,7 +2194,7 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
                     chart_type
                     if chart_type in (
                         "bar", "line", "scatter",
-                        "heatmap", "treemap",
+                        "pie", "heatmap", "treemap",
                     )
                     else "bar"
                 ),
@@ -2082,6 +2466,155 @@ class AnalyticsProfileDeleteView(SupervisorAccessMixin, View):
 
         profile.delete()
         return JsonResponse({"deleted": pk})
+
+
+# ---------------------------------------------------------------------------
+# AnalyticsProfileUpdateView
+# ---------------------------------------------------------------------------
+
+class AnalyticsProfileUpdateView(SupervisorAccessMixin, View):
+    """
+    Updates nombre and/or config of a single AnalyticsProfile.
+    PATCH /panel/analytics/profiles/<pk>/update/
+    ---
+    Actualiza nombre y/o config de un AnalyticsProfile.
+    PATCH /panel/analytics/profiles/<pk>/update/
+    """
+
+    def patch(self, request, pk):
+        """
+        Partial update: accepts nombre and/or config fields.
+        Nombre change enforces uniqueness at (company_user, nombre) level.
+        ---
+        Actualizacion parcial: acepta campos nombre y/o config.
+        El cambio de nombre respeta la unicidad (company_user, nombre).
+        """
+        try:
+            company_user = request.user.company_user
+        except AttributeError:
+            return JsonResponse(
+                {"error": "Sin perfil de empresa asociado."},
+                status=403,
+            )
+
+        try:
+            profile = AnalyticsProfile.objects.get(
+                pk=pk, company_user=company_user,
+            )
+        except AnalyticsProfile.DoesNotExist:
+            return JsonResponse(
+                {"error": "Perfil no encontrado."},
+                status=404,
+            )
+
+        try:
+            payload = _json.loads(request.body)
+        except (ValueError, TypeError):
+            return JsonResponse(
+                {"error": "Cuerpo JSON invalido."},
+                status=400,
+            )
+
+        nuevo_nombre = payload.get("nombre", "").strip()
+        nuevo_config = payload.get("config")
+
+        if nuevo_nombre and nuevo_nombre != profile.nombre:
+            if AnalyticsProfile.objects.filter(
+                company_user=company_user,
+                nombre=nuevo_nombre,
+            ).exclude(pk=pk).exists():
+                return JsonResponse(
+                    {"error": f"Ya existe una plantilla con el nombre '{nuevo_nombre}'."},
+                    status=409,
+                )
+            profile.nombre = nuevo_nombre
+
+        if isinstance(nuevo_config, dict):
+            profile.config = nuevo_config
+
+        profile.save()
+        return JsonResponse({
+            "id": profile.pk,
+            "nombre": profile.nombre,
+            "config": profile.config,
+        })
+
+
+# ---------------------------------------------------------------------------
+# AnalyticsProfileCloneView
+# ---------------------------------------------------------------------------
+
+class AnalyticsProfileCloneView(SupervisorAccessMixin, View):
+    """
+    Clones an existing AnalyticsProfile under a new name.
+    POST /panel/analytics/profiles/<pk>/clone/
+    Body: {"nombre": "Nuevo nombre"}
+    ---
+    Clona un AnalyticsProfile existente con un nuevo nombre.
+    POST /panel/analytics/profiles/<pk>/clone/
+    Cuerpo: {"nombre": "Nuevo nombre"}
+    """
+
+    def post(self, request, pk):
+        """
+        Creates a new AnalyticsProfile with the same config as the
+        source profile but under the given nombre.
+        ---
+        Crea un nuevo AnalyticsProfile con la misma config que el perfil
+        origen pero con el nombre indicado.
+        """
+        try:
+            company_user = request.user.company_user
+        except AttributeError:
+            return JsonResponse(
+                {"error": "Sin perfil de empresa asociado."},
+                status=403,
+            )
+
+        try:
+            source = AnalyticsProfile.objects.get(
+                pk=pk, company_user=company_user,
+            )
+        except AnalyticsProfile.DoesNotExist:
+            return JsonResponse(
+                {"error": "Perfil origen no encontrado."},
+                status=404,
+            )
+
+        try:
+            payload = _json.loads(request.body)
+        except (ValueError, TypeError):
+            return JsonResponse(
+                {"error": "Cuerpo JSON invalido."},
+                status=400,
+            )
+
+        nuevo_nombre = payload.get("nombre", "").strip()
+        if not nuevo_nombre:
+            return JsonResponse(
+                {"error": "El campo 'nombre' es obligatorio."},
+                status=400,
+            )
+
+        if AnalyticsProfile.objects.filter(
+            company_user=company_user,
+            nombre=nuevo_nombre,
+        ).exists():
+            return JsonResponse(
+                {"error": f"Ya existe una plantilla con el nombre '{nuevo_nombre}'."},
+                status=409,
+            )
+
+        clone = AnalyticsProfile.objects.create(
+            company_user=company_user,
+            nombre=nuevo_nombre,
+            config=source.config,
+        )
+        return JsonResponse({
+            "id": clone.pk,
+            "nombre": clone.nombre,
+            "config": clone.config,
+        })
 
 
 # ---------------------------------------------------------------------------
@@ -2576,3 +3109,6 @@ class BotManagementView(CompanyUserRequiredMixin, View):
 
         django_messages.warning(request, "Accion no reconocida.")
         return redirect("analytics:bot_management")
+
+
+

@@ -16,6 +16,8 @@ from analytics.views import (
     AnalyticsLabExportView,
     AnalyticsProfileListCreateView,
     AnalyticsProfileDeleteView,
+    AnalyticsProfileUpdateView,
+    AnalyticsProfileCloneView,
     BotManagementView,
 )
 
@@ -43,6 +45,16 @@ urlpatterns = [
         name="analytics_profile_delete",
     ),
     path(
+        "profiles/<int:pk>/update/",
+        AnalyticsProfileUpdateView.as_view(),
+        name="analytics_profile_update",
+    ),
+    path(
+        "profiles/<int:pk>/clone/",
+        AnalyticsProfileCloneView.as_view(),
+        name="analytics_profile_clone",
+    ),
+    path(
         "lab/",
         AnalyticsLabView.as_view(),
         name="analytics_lab",
@@ -63,3 +75,4 @@ urlpatterns = [
         name="bot_management",
     ),
 ]
+

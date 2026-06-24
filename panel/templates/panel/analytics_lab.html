@@ -1,3 +1,4 @@
+
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/analytics_lab.html #}
 {#                                                                                      #}
 {# Unified Analytics Laboratory - Hito 20.                                            #}
@@ -223,6 +224,136 @@
 }
 #lab-table th.sorted-asc .sort-icon::before  { content: '▲'; opacity: 1; }
 #lab-table th.sorted-desc .sort-icon::before { content: '▼'; opacity: 1; }
+
+/* Profile CRUD modal - Modal CRUD de plantillas */
+.lab-profile-preview {
+    font-size: 0.72rem;
+    color: var(--bs-secondary-color, #6c757d);
+    margin-top: 0.15rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 340px;
+}
+.lab-profile-actions { gap: 0.25rem; flex-shrink: 0; }
+.lab-profile-name-edit {
+    font-size: 0.85rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.25rem;
+    padding: 0.15rem 0.4rem;
+    width: 160px;
+}
+#lab-col-chooser {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    padding: 0.4rem 0.75rem;
+    background: var(--bs-light, #f8f9fa);
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    font-size: 0.78rem;
+}
+.lab-col-check-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+    white-space: nowrap;
+    color: var(--bs-body-color);
+}
+.lab-col-check-label input[type="checkbox"] {
+    accent-color: var(--bs-primary, #0d6efd);
+    width: 0.85rem;
+    height: 0.85rem;
+    cursor: pointer;
+}
+
+/* ============================================================
+   Responsive — Tablet (768px–991px)
+   ============================================================ */
+@media (max-width: 991.98px) {
+    #lab-wrapper {
+        height: auto;
+        min-height: unset;
+    }
+    #lab-bottom {
+        height: 70vh;
+        min-height: 400px;
+    }
+    #lab-report {
+        flex: 0 0 45%;
+        min-width: 160px;
+    }
+}
+
+/* ============================================================
+   Responsive — Mobile (<768px)
+   Layout vertical: selectores → informe → gráfica
+   ============================================================ */
+@media (max-width: 767.98px) {
+    #lab-wrapper {
+        height: auto;
+        min-height: unset;
+        padding: 0 0.5rem 1rem;
+    }
+
+    /* Bottom: apila verticalmente - Stack vertically */
+    #lab-bottom {
+        flex-direction: column;
+        height: auto;
+        min-height: unset;
+        overflow: visible;
+        border-radius: 0.5rem;
+    }
+
+    /* Informe: altura fija con scroll - Report: fixed height with scroll */
+    #lab-report {
+        flex: 0 0 auto;
+        min-width: unset;
+        width: 100%;
+        height: 45vh;
+        min-height: 260px;
+        border-right: none;
+        border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    }
+
+    /* Gráfica: altura fija - Chart: fixed height */
+    #lab-chart {
+        flex: 0 0 auto;
+        min-width: unset;
+        width: 100%;
+        height: 55vmax;
+        min-height: 280px;
+    }
+
+    /* ECharts canvas — respetar el contenedor - Respect container */
+    #lab-chart-body,
+    #lab-echarts {
+        height: 100%;
+    }
+
+    /* Divisor arrastrable oculto en móvil - Hide drag divider on mobile */
+    #lab-divider {
+        display: none;
+    }
+
+    /* Pantalla completa en móvil - Fullscreen on mobile */
+    #lab-report:fullscreen {
+        height: 100vh;
+    }
+    #lab-chart:fullscreen #lab-chart-body,
+    #lab-chart:fullscreen #lab-echarts {
+        height: calc(100vh - 3rem);
+    }
+
+    /* Selectores más compactos - Compact selectors */
+    #lab-top {
+        padding: 0.6rem 0.75rem;
+    }
+    .lab-field-type-select,
+    .lab-field-value-select {
+        font-size: 0.8rem;
+    }
+}
 </style>
 
 <div id="lab-wrapper">
@@ -271,7 +402,7 @@
 <div id="lab-manage-modal"
      class="modal fade" tabindex="-1"
      aria-labelledby="lab-manage-modal-label" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="lab-manage-modal-label">
@@ -281,16 +412,41 @@
                         data-bs-dismiss="modal"
                         aria-label="Cerrar"></button>
             </div>
-            <div class="modal-body">
-                <ul id="lab-manage-list"
-                    class="list-group list-group-flush">
-                </ul>
+            <div class="modal-body p-0">
+                {# Lista de plantillas #}
+                <ul id="lab-manage-list" class="list-group list-group-flush"></ul>
                 <p id="lab-manage-empty"
-                   class="text-muted small mt-2 d-none">
+                   class="text-muted small mt-3 px-3 d-none">
                     No hay plantillas guardadas.
                 </p>
+                {# Formulario de nueva plantilla #}
+                <div id="lab-manage-new-form"
+                     class="border-top px-3 py-3 d-none">
+                    <p class="fw-semibold small mb-2">
+                        <i class="bi bi-plus-circle me-1"></i>Nueva plantilla
+                    </p>
+                    <div class="d-flex gap-2 align-items-center">
+                        <input id="lab-manage-new-name"
+                               type="text"
+                               class="form-control form-control-sm"
+                               placeholder="Nombre de la plantilla"
+                               maxlength="100">
+                        <button class="btn btn-sm btn-primary text-nowrap"
+                                onclick="labManageCreateNew()">
+                            Guardar
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                                onclick="labManageToggleNewForm(false)">
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer justify-content-between">
+                <button class="btn btn-sm btn-outline-primary"
+                        onclick="labManageToggleNewForm(true)">
+                    <i class="bi bi-plus-circle me-1"></i>Nueva plantilla
+                </button>
                 <button type="button"
                         class="btn btn-sm btn-secondary"
                         data-bs-dismiss="modal">Cerrar</button>
@@ -329,7 +485,19 @@
                             {% if has_d1 %}<option value="worker">Operario</option>{% endif %}
                             {% if has_d2 %}<option value="machine">Máquina / CdG</option>{% endif %}
                             {% if has_d3 %}<option value="fault_category">Familia avería</option>{% endif %}
-                            <option value="spare_part">Repuesto</option>
+                            {% if has_d6 %}<option value="fault_subcategory">Subcategoría avería</option>{% endif %}
+                            {% if has_d7 %}<option value="machine_family">Familia flota</option>{% endif %}
+                            {% if has_d8 %}<option value="machine_type">Tipo de máquina</option>{% endif %}
+                            {% if has_d9 %}<option value="work_order_source">Origen del parte</option>{% endif %}
+                            {% if has_d10 %}<option value="or_val">O.R.</option>{% endif %}
+                            {% if has_d11 %}<option value="has_diet">Dieta</option>{% endif %}
+                            {% if has_d12 %}<option value="is_on_site">Trabajo in situ</option>{% endif %}
+                            {% if has_d13 %}<option value="has_ticket">Con ticket avería</option>{% endif %}
+                            {% if has_d14 %}<option value="reviewed">Parte revisado</option>{% endif %}
+                            {% if has_d15 %}<option value="no_lunch_break">Pausa de comida</option>{% endif %}
+                            {% if has_d16 %}<option value="machine_company">Empresa máquina</option>{% endif %}
+                            <option value="ordinary_hours">Horas ordinarias</option>
+                            <option value="extra_hours">Horas extra</option>
                             <option value="period">Periodo temporal</option>
                         </select>
                         <select class="form-select form-select-sm lab-field-value lab-field-value-select">
@@ -442,6 +610,7 @@
                     <i class="bi bi-table"></i>
                     <span class="small">Selecciona una dimensión y pulsa Analizar</span>
                 </div>
+                <div id="lab-col-chooser"></div>
                 <div id="lab-table-wrap" class="lab-table-wrap-hidden">
                     <table class="table table-sm table-hover align-middle mb-0" id="lab-table">
                         <thead id="lab-thead"></thead>
@@ -500,9 +669,15 @@
 // ----------------------------------------------------------------
 // Selector data from Django context - Datos de selectores desde Django
 // ----------------------------------------------------------------
-const LAB_OPERATORS  = {{ operators|safe }};
-const LAB_MACHINES   = {{ machines|safe }};
-const LAB_FAULT_CATS = {{ fault_categories|safe }};  // [{key, label}, ...]
+const LAB_OPERATORS     = {{ operators|safe }};
+const LAB_MACHINES      = {{ machines|safe }};
+const LAB_FAULT_CATS    = {{ fault_categories|safe }};     // [{key, label}, ...]
+const LAB_FAULT_SUBS    = {{ fault_subcategories|safe }};  // [{key, label}, ...]
+const LAB_MACH_FAMILIES = {{ machine_families|safe }};     // ["MOVILES", ...]
+const LAB_MACH_TYPES    = {{ machine_types|safe }};        // ["GRUA MOVIL...", ...]
+const LAB_WO_SOURCES    = {{ wo_sources|safe }};           // [{key, label}, ...]
+const LAB_OR_VALUES     = {{ or_values|safe }};            // ["OR-001", ...]
+const LAB_MACH_COMPANIES   = {{ machine_companies|safe }};    // [{company_code, company_name}, ...]
 
 const LAB_CSRF = document.getElementById('lab-csrf').value;
 
@@ -558,7 +733,7 @@ function labLoadProfiles() {
         if (data.profiles && data.profiles.length) {
             data.profiles.forEach(function (p) {
                 const opt   = document.createElement('option');
-                opt.value   = p.pk;
+                opt.value   = p.id;
                 opt.text    = p.nombre;
                 opt.dataset.config = JSON.stringify(p.config);
                 sel.appendChild(opt);
@@ -639,54 +814,264 @@ function labLoadProfile(pk) {
     }
 }
 
-// Open profile management modal.
-// Abre el modal de gestion de plantillas.
+// ----------------------------------------------------------------
+// Profile CRUD modal - Modal CRUD de plantillas
+// ----------------------------------------------------------------
+
+// Helper: build a readable preview of a profile's fields
+// Helper: construir preview legible de los campos de una plantilla
+function labProfilePreview(config) {
+    const fields = config.fields || [];
+    if (!fields.length) return '(sin campos)';
+    const _LABELS = {
+        worker: 'Operario', machine: 'Maquina/CdG',
+        fault_category: 'Familia averia', fault_subcategory: 'Subcategoria averia',
+        machine_family: 'Familia flota', machine_type: 'Tipo maquina',
+        work_order_source: 'Origen parte', or_val: 'O.R.',
+        has_diet: 'Dieta', is_on_site: 'In situ', has_ticket: 'Ticket averia',
+        reviewed: 'Revisado', no_lunch_break: 'Pausa comida',
+        machine_company: 'Empresa maquina', ordinary_hours: 'H. ordinarias',
+        extra_hours: 'H. extra', period: 'Periodo',
+    };
+    return fields.map(function (f) {
+        return _LABELS[f.type] || f.type;
+    }).join(' \u2192 ');
+}
+
+// Open CRUD modal and render all profiles
+// Abrir modal CRUD y renderizar todos los perfiles
 function labOpenManageModal() {
-    const list  = document.getElementById('lab-manage-list');
-    const empty = document.getElementById('lab-manage-empty');
-    const sel   = document.getElementById('lab-profile-select');
-    list.innerHTML = '';
-    const opts  = Array.from(sel.options).filter(
-        function (o) { return o.value !== ''; }
-    );
-    if (!opts.length) {
-        empty.classList.remove('d-none');
-    } else {
-        empty.classList.add('d-none');
-        opts.forEach(function (opt) {
-            const li  = document.createElement('li');
-            li.className = (
-                'list-group-item d-flex'
-                + ' justify-content-between align-items-center'
-            );
-            const span = document.createElement('span');
-            span.textContent = opt.text;
-            const btn  = document.createElement('button');
-            btn.className   = 'btn btn-sm btn-outline-danger';
-            btn.innerHTML   = '<i class="bi bi-trash"></i>';
-            btn.title       = 'Eliminar plantilla';
-            btn.onclick     = function () {
-                labDeleteProfileByPk(
-                    opt.value, opt.text, li
-                );
-            };
-            li.appendChild(span);
-            li.appendChild(btn);
-            list.appendChild(li);
-        });
-    }
+    labManageRender();
+    labManageToggleNewForm(false);
     const modal = new bootstrap.Modal(
         document.getElementById('lab-manage-modal')
     );
     modal.show();
 }
 
-// Delete a profile by pk from within the manage modal.
-// Elimina una plantilla por pk desde el modal de gestion.
-function labDeleteProfileByPk(pk, label, liElement) {
-    if (!window.confirm(
-        'Eliminar la plantilla "' + label + '"?'
-    )) return;
+// Render profiles list inside the modal
+// Renderizar lista de perfiles dentro del modal
+function labManageRender() {
+    fetch('/panel/analytics/profiles/', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        const list  = document.getElementById('lab-manage-list');
+        const empty = document.getElementById('lab-manage-empty');
+        list.innerHTML = '';
+        const profiles = data.profiles || [];
+        if (!profiles.length) {
+            empty.classList.remove('d-none');
+            return;
+        }
+        empty.classList.add('d-none');
+        profiles.forEach(function (p) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item px-3 py-2';
+            li.dataset.pk = p.id;
+
+            // Info block
+            const info = document.createElement('div');
+            info.className = 'd-flex justify-content-between align-items-start';
+
+            const textBlock = document.createElement('div');
+            textBlock.style.minWidth = '0';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'fw-semibold small';
+            nameSpan.textContent = p.nombre;
+
+            const preview = document.createElement('div');
+            preview.className = 'lab-profile-preview';
+            preview.textContent = labProfilePreview(p.config);
+
+            textBlock.appendChild(nameSpan);
+            textBlock.appendChild(preview);
+
+            // Action buttons
+            const btns = document.createElement('div');
+            btns.className = 'd-flex lab-profile-actions ms-2';
+
+            // Load
+            const btnLoad = document.createElement('button');
+            btnLoad.className = 'btn btn-sm btn-outline-primary';
+            btnLoad.title = 'Cargar plantilla en el laboratorio';
+            btnLoad.innerHTML = '<i class="bi bi-box-arrow-in-right"></i>';
+            btnLoad.onclick = function () {
+                labLoadProfileById(p.id, p.config);
+                bootstrap.Modal.getInstance(
+                    document.getElementById('lab-manage-modal')
+                ).hide();
+            };
+
+            // Rename
+            const btnRename = document.createElement('button');
+            btnRename.className = 'btn btn-sm btn-outline-secondary';
+            btnRename.title = 'Renombrar';
+            btnRename.innerHTML = '<i class="bi bi-pencil"></i>';
+            btnRename.onclick = function () {
+                labManageInlineRename(li, p.id, p.nombre);
+            };
+
+            // Clone
+            const btnClone = document.createElement('button');
+            btnClone.className = 'btn btn-sm btn-outline-secondary';
+            btnClone.title = 'Clonar';
+            btnClone.innerHTML = '<i class="bi bi-copy"></i>';
+            btnClone.onclick = function () {
+                labManageClone(p.id, p.nombre);
+            };
+
+            // Delete
+            const btnDel = document.createElement('button');
+            btnDel.className = 'btn btn-sm btn-outline-danger';
+            btnDel.title = 'Eliminar';
+            btnDel.innerHTML = '<i class="bi bi-trash"></i>';
+            btnDel.onclick = function () {
+                labManageDelete(p.id, p.nombre, li);
+            };
+
+            btns.appendChild(btnLoad);
+            btns.appendChild(btnRename);
+            btns.appendChild(btnClone);
+            btns.appendChild(btnDel);
+
+            info.appendChild(textBlock);
+            info.appendChild(btns);
+            li.appendChild(info);
+            list.appendChild(li);
+        });
+    })
+    .catch(function () {
+        alert('Error al cargar las plantillas.');
+    });
+}
+
+// Load a profile by id and config directly (from CRUD modal)
+// Cargar una plantilla por id y config directamente (desde modal CRUD)
+function labLoadProfileById(pk, config) {
+    // Select it in the dropdown so labLoadProfile works
+    const sel = document.getElementById('lab-profile-select');
+    const opt = sel.querySelector('option[value="' + pk + '"]');
+    if (opt) {
+        sel.value = pk;
+        labLoadProfile();
+    } else {
+        // Profile not in select yet — apply config directly
+        labApplyConfig(config);
+    }
+}
+
+// Apply a config object to the lab controls
+// Aplicar un objeto config a los controles del laboratorio
+function labApplyConfig(config) {
+    if (!config) return;
+    if (config.date_from)
+        document.getElementById('lab-date-from').value = config.date_from;
+    if (config.date_to)
+        document.getElementById('lab-date-to').value = config.date_to;
+    if (config.granularity)
+        document.getElementById('lab-granularity').value = config.granularity;
+    if (config.chart_type)
+        document.getElementById('lab-chart-type').value = config.chart_type;
+    if (config.fields && config.fields.length) {
+        const container = document.getElementById('lab-fields-container');
+        container.innerHTML = '';
+        labFieldIdx = 0;
+        config.fields.forEach(function (f) {
+            labAddField();
+            const rows = container.querySelectorAll('.lab-field-row');
+            const row  = rows[rows.length - 1];
+            const ts   = row.querySelector('.lab-field-type');
+            if (ts) {
+                ts.value = f.type || '';
+                labFieldTypeChanged(ts);
+                const vs = row.querySelector('.lab-field-value');
+                if (vs && f.value && f.value !== '*') {
+                    vs.value = f.value;
+                }
+            }
+        });
+    }
+    labLoadProfiles();
+}
+
+// Inline rename inside the list item
+// Renombrar inline dentro del elemento de lista
+function labManageInlineRename(li, pk, currentName) {
+    const nameSpan = li.querySelector('.fw-semibold');
+    if (li.querySelector('.lab-profile-name-edit')) return; // ya abierto
+    const input = document.createElement('input');
+    input.type      = 'text';
+    input.value     = currentName;
+    input.className = 'lab-profile-name-edit';
+    input.maxLength = 100;
+    nameSpan.replaceWith(input);
+    input.focus();
+    input.select();
+
+    function doSave() {
+        const nuevo = input.value.trim();
+        if (!nuevo || nuevo === currentName) {
+            input.replaceWith(nameSpan);
+            return;
+        }
+        fetch('/panel/analytics/profiles/' + pk + '/update/', {
+            method:  'PATCH',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type':     'application/json',
+                'X-CSRFToken':      LAB_CSRF,
+            },
+            body: JSON.stringify({ nombre: nuevo }),
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.error) { alert(data.error); input.replaceWith(nameSpan); return; }
+            labManageRender();
+            labLoadProfiles();
+        })
+        .catch(function () {
+            alert('Error al renombrar la plantilla.');
+            input.replaceWith(nameSpan);
+        });
+    }
+
+    input.addEventListener('blur', doSave);
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter')  { input.blur(); }
+        if (e.key === 'Escape') { input.replaceWith(nameSpan); }
+    });
+}
+
+// Clone a profile
+// Clonar una plantilla
+function labManageClone(pk, nombre) {
+    const nuevo = window.prompt('Nombre para la copia:', nombre + ' (copia)');
+    if (!nuevo || !nuevo.trim()) return;
+    fetch('/panel/analytics/profiles/' + pk + '/clone/', {
+        method:  'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type':     'application/json',
+            'X-CSRFToken':      LAB_CSRF,
+        },
+        body: JSON.stringify({ nombre: nuevo.trim() }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        if (data.error) { alert(data.error); return; }
+        labManageRender();
+        labLoadProfiles();
+    })
+    .catch(function () { alert('Error al clonar la plantilla.'); });
+}
+
+// Delete a profile from CRUD modal
+// Eliminar una plantilla desde el modal CRUD
+function labManageDelete(pk, nombre, li) {
+    if (!window.confirm('Eliminar la plantilla "' + nombre + '"?')) return;
     fetch('/panel/analytics/profiles/' + pk + '/', {
         method:  'DELETE',
         headers: {
@@ -696,17 +1081,53 @@ function labDeleteProfileByPk(pk, label, liElement) {
     })
     .then(function (r) { return r.json(); })
     .then(function () {
-        liElement.remove();
-        const list  = document.getElementById('lab-manage-list');
-        const empty = document.getElementById('lab-manage-empty');
+        li.remove();
+        const list = document.getElementById('lab-manage-list');
         if (!list.children.length) {
-            empty.classList.remove('d-none');
+            document.getElementById('lab-manage-empty')
+                    .classList.remove('d-none');
         }
         labLoadProfiles();
     })
-    .catch(function () {
-        alert('Error al eliminar la plantilla.');
-    });
+    .catch(function () { alert('Error al eliminar la plantilla.'); });
+}
+
+// Toggle new-profile inline form
+// Mostrar/ocultar formulario de nueva plantilla
+function labManageToggleNewForm(show) {
+    const form = document.getElementById('lab-manage-new-form');
+    if (show) {
+        form.classList.remove('d-none');
+        document.getElementById('lab-manage-new-name').value = '';
+        document.getElementById('lab-manage-new-name').focus();
+    } else {
+        form.classList.add('d-none');
+    }
+}
+
+// Create a new profile from the CRUD modal using current lab config
+// Crear nueva plantilla desde el modal CRUD usando la config actual del lab
+function labManageCreateNew() {
+    const nombre = document.getElementById('lab-manage-new-name').value.trim();
+    if (!nombre) { alert('Introduce un nombre para la plantilla.'); return; }
+    const config = labGetCurrentConfig();
+    fetch('/panel/analytics/profiles/', {
+        method:  'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type':     'application/json',
+            'X-CSRFToken':      LAB_CSRF,
+        },
+        body: JSON.stringify({ nombre: nombre, config: config }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        if (data.error) { alert(data.error); return; }
+        labManageToggleNewForm(false);
+        labManageRender();
+        labLoadProfiles();
+    })
+    .catch(function () { alert('Error al crear la plantilla.'); });
 }
 
 // Save current lab config as a named profile.
@@ -773,6 +1194,14 @@ function labInitChart() {
     window.addEventListener('resize', function () {
         if (labChart) labChart.resize();
     });
+    // ResizeObserver — reacts to container size changes on mobile layout
+    // ResizeObserver — reacciona a cambios de tamanyo del contenedor en movil
+    if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(function () {
+            if (labChart) labChart.resize();
+        });
+        ro.observe(document.getElementById('lab-chart-body'));
+    }
 }
 
 // ----------------------------------------------------------------
@@ -801,10 +1230,22 @@ function labAddField() {
     typeSelect.className = 'form-select form-select-sm lab-field-type lab-field-type-select';
     typeSelect.innerHTML = [
         '<option value="">-- campo --</option>',
-        LAB_OPERATORS.length  ? '<option value="worker">Operario</option>'          : '',
-        LAB_MACHINES.length   ? '<option value="machine">M\u00e1quina / CdG</option>'   : '',
-        LAB_FAULT_CATS.length ? '<option value="fault_category">Familia aver\u00eda</option>' : '',
-        '<option value="spare_part">Repuesto</option>',
+        LAB_OPERATORS.length       ? '<option value="worker">Operario</option>'                              : '',
+        LAB_MACHINES.length        ? '<option value="machine">M\u00e1quina / CdG</option>'                  : '',
+        LAB_FAULT_CATS.length      ? '<option value="fault_category">Familia aver\u00eda</option>'           : '',
+        LAB_FAULT_SUBS.length      ? '<option value="fault_subcategory">Subcategor\u00eda aver\u00eda</option>' : '',
+        LAB_MACH_FAMILIES.length   ? '<option value="machine_family">Familia flota</option>'                 : '',
+        LAB_MACH_TYPES.length      ? '<option value="machine_type">Tipo de m\u00e1quina</option>'            : '',
+        LAB_WO_SOURCES.length      ? '<option value="work_order_source">Origen del parte</option>'           : '',
+        LAB_OR_VALUES.length       ? '<option value="or_val">O.R.</option>'                                  : '',
+        '<option value="has_diet">Dieta</option>',
+        '<option value="is_on_site">Trabajo in situ</option>',
+        '<option value="has_ticket">Con ticket aver\u00eda</option>',
+        '<option value="reviewed">Parte revisado</option>',
+        '<option value="no_lunch_break">Pausa de comida</option>',
+        LAB_MACH_COMPANIES.length  ? '<option value="machine_company">Empresa m\u00e1quina</option>'         : '',
+        '<option value="ordinary_hours">Horas ordinarias</option>',
+        '<option value="extra_hours">Horas extra</option>',
         '<option value="period">Periodo temporal</option>',
     ].join('');
     typeSelect.addEventListener('change', function () { labFieldTypeChanged(typeSelect); });
@@ -883,39 +1324,123 @@ function labFieldTypeChanged(typeSelect) {
             valSelect.appendChild(opt);
         });
         valSelect.classList.remove('lab-field-value-select');
-    } else if (fieldType === 'spare_part') {
-        // Free text input for spare part material search
-        // Campo de texto libre para busqueda de repuesto por material
-        valSelect.innerHTML = '<option value="*">Con cualquier repuesto</option>';
+    } else if (fieldType === 'fault_subcategory') {
+        LAB_FAULT_SUBS.forEach(function (fs) {
+            const opt       = document.createElement('option');
+            opt.value       = fs.key;
+            opt.textContent = fs.label;
+            valSelect.appendChild(opt);
+        });
         valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'machine_family') {
+        LAB_MACH_FAMILIES.forEach(function (fam) {
+            const opt       = document.createElement('option');
+            opt.value       = fam;
+            opt.textContent = fam;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'machine_type') {
+        LAB_MACH_TYPES.forEach(function (mt) {
+            const opt       = document.createElement('option');
+            opt.value       = mt;
+            opt.textContent = mt;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'work_order_source') {
+        LAB_WO_SOURCES.forEach(function (src) {
+            const opt       = document.createElement('option');
+            opt.value       = src.key;
+            opt.textContent = src.label;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'or_val') {
+        LAB_OR_VALUES.forEach(function (orv) {
+            const opt       = document.createElement('option');
+            opt.value       = orv;
+            opt.textContent = orv;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'has_diet') {
+        [
+            {value: '*',     label: 'Todos'},
+            {value: 'true',  label: 'Con dieta'},
+            {value: 'false', label: 'Sin dieta'},
+        ].forEach(function (item) {
+            const opt       = document.createElement('option');
+            opt.value       = item.value;
+            opt.textContent = item.label;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'is_on_site') {
+        [
+            {value: '*',     label: 'Todos'},
+            {value: 'true',  label: 'In situ (desplazamiento)'},
+            {value: 'false', label: 'En taller'},
+        ].forEach(function (item) {
+            const opt       = document.createElement('option');
+            opt.value       = item.value;
+            opt.textContent = item.label;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'has_ticket') {
+        [
+            {value: '*',     label: 'Todos'},
+            {value: 'true',  label: 'Con ticket de aver\u00eda'},
+            {value: 'false', label: 'Sin ticket'},
+        ].forEach(function (item) {
+            const opt       = document.createElement('option');
+            opt.value       = item.value;
+            opt.textContent = item.label;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'reviewed') {
+        [
+            {value: '*',     label: 'Todos'},
+            {value: 'true',  label: 'Revisado'},
+            {value: 'false', label: 'Sin revisar'},
+        ].forEach(function (item) {
+            const opt       = document.createElement('option');
+            opt.value       = item.value;
+            opt.textContent = item.label;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'no_lunch_break') {
+        [
+            {value: '*',     label: 'Todos'},
+            {value: 'true',  label: 'Sin pausa de comida'},
+            {value: 'false', label: 'Con pausa de comida'},
+        ].forEach(function (item) {
+            const opt       = document.createElement('option');
+            opt.value       = item.value;
+            opt.textContent = item.label;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'machine_company') {
+        LAB_MACH_COMPANIES.forEach(function (mc) {
+            const opt       = document.createElement('option');
+            opt.value       = mc.company_code;
+            opt.textContent = mc.company_code + ' \u2014 ' + mc.company_name;
+            valSelect.appendChild(opt);
+        });
+        valSelect.classList.remove('lab-field-value-select');
+    } else if (fieldType === 'ordinary_hours' || fieldType === 'extra_hours') {
+        // Metric activators — no entity selector needed
+        // Activadores de metrica — sin selector de entidad
+        valSelect.classList.add('lab-field-value-select');
     } else if (fieldType === 'period') {
         // Period has no entity selector - date range is enough
         // Periodo no tiene selector de entidad - el rango de fechas es suficiente
         valSelect.classList.add('lab-field-value-select');
     }
-}
-
-// ----------------------------------------------------------------
-// Build fields parameter - Construir parametro fields
-// Collects all active field rows and builds the 'fields' query param.
-// Recoge todas las filas de campo activas y construye el parametro 'fields'.
-// ----------------------------------------------------------------
-function labBuildFieldsParam() {
-    const rows   = document.querySelectorAll('#lab-fields-container .lab-field-row');
-    const tokens = [];
-    rows.forEach(function (row) {
-        const typeSelect = row.querySelector('.lab-field-type');
-        const valSelect  = row.querySelector('.lab-field-value');
-        const fieldType  = typeSelect ? typeSelect.value : '';
-        if (!fieldType) return;
-        const fieldValue = (
-            valSelect && !valSelect.classList.contains('lab-field-value-select')
-        ) ? (valSelect.value || '*') : '*';
-        // Encode spaces as + for URL compatibility
-        // Codificar espacios como + para compatibilidad con URL
-        tokens.push(fieldType + ':' + fieldValue.replace(/ /g, '+'));
-    });
-    return tokens.join(',');
 }
 
 // ----------------------------------------------------------------
@@ -982,7 +1507,7 @@ function labAnalyze() {
     const warning     = document.getElementById('lab-field-warning');
     const activeCount = labCountActiveFields();
 
-    if (activeCount < 2) {
+    if (activeCount < 1) {
         warning.classList.remove('lab-field-warning');
         return;
     }
@@ -1050,18 +1575,37 @@ function labRenderChart(chart) {
 
     if (type === 'pie') {
         // Pie chart - Grafico de tarta
+        // Build named data from xAxis labels + first series values
+        // Construir datos nombrados desde etiquetas xAxis + valores primera serie
         const pieSeries = series[0] || {};
+        const rawData   = pieSeries.data || [];
+        const pieData   = xAxis.length
+            ? xAxis.map(function (label, i) {
+                return { name: label, value: rawData[i] != null ? rawData[i] : 0 };
+              })
+            : (Array.isArray(rawData) && rawData.length && typeof rawData[0] === 'object'
+                ? rawData
+                : rawData.map(function (v, i) { return { name: 'Serie ' + (i+1), value: v }; })
+              );
         option = {
             title:   { text: title, left: 'center', top: 8, textStyle: { fontSize: 13 } },
-            tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-            legend:  { orient: 'vertical', left: 'left', top: 'middle', type: 'scroll' },
+            tooltip: { trigger: 'item', formatter: '{b}: {c} h ({d}%)' },
+            legend:  {
+                orient: 'vertical',
+                left:   'left',
+                top:    'middle',
+                type:   'scroll',
+                formatter: function (name) {
+                    return name.length > 22 ? name.substring(0, 22) + '…' : name;
+                },
+            },
             series:  [{
                 type:      'pie',
                 radius:    ['35%', '65%'],
-                center:    ['60%', '55%'],
-                data:      pieSeries.data || [],
+                center:    ['62%', '55%'],
+                data:      pieData,
                 emphasis:  { itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.4)' } },
-                label:     { show: true, formatter: '{b}: {d}%' },
+                label:     { show: true, formatter: '{b}: {d}%', fontSize: 10 },
             }],
         };
 
@@ -1175,11 +1719,67 @@ function labRenderChart(chart) {
 // ----------------------------------------------------------------
 // Render table - Renderizar tabla de informe
 // ----------------------------------------------------------------
+// labAllColumns / labAllRows: full server payload (never mutated)
+// labCurrentColumns / labCurrentRows: filtered subset shown to user
+// labVisibleCols: Set of column indices currently visible
+// ----------------------------------------------------------------
+let labAllColumns = [];
+let labAllRows    = [];
+let labVisibleCols = null; // null = show all
+
 function labRenderTable(table) {
-    labCurrentColumns = table.columns || [];
-    labCurrentRows    = (table.rows   || []).slice();
+    labAllColumns     = table.columns || [];
+    labAllRows        = (table.rows   || []).slice();
+    labCurrentColumns = labAllColumns.slice();
+    labCurrentRows    = labAllRows.slice();
     labSortCol        = -1;
     labSortAsc        = true;
+    // Reset visible cols to show all by default
+    // Reiniciar columnas visibles para mostrar todas por defecto
+    labVisibleCols    = null;
+    labBuildColChooser();
+    labDrawTable();
+}
+
+// Build the column chooser checkboxes above the table
+// Construir los checkboxes de seleccion de columnas sobre la tabla
+function labBuildColChooser() {
+    let chooser = document.getElementById('lab-col-chooser');
+    if (!chooser) return;
+    chooser.innerHTML = '';
+    labAllColumns.forEach(function (col, idx) {
+        const label = document.createElement('label');
+        label.className = 'lab-col-check-label';
+        const cb = document.createElement('input');
+        cb.type    = 'checkbox';
+        cb.checked = true;
+        cb.dataset.idx = idx;
+        cb.addEventListener('change', function () { labApplyColFilter(); });
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(' ' + col));
+        chooser.appendChild(label);
+    });
+}
+
+// Apply column visibility filter and redraw table
+// Aplicar filtro de visibilidad de columnas y redibujar tabla
+function labApplyColFilter() {
+    const checkboxes = document.querySelectorAll('#lab-col-chooser input[type="checkbox"]');
+    const visible = [];
+    checkboxes.forEach(function (cb) {
+        if (cb.checked) visible.push(parseInt(cb.dataset.idx, 10));
+    });
+    labVisibleCols    = visible.length < labAllColumns.length ? visible : null;
+    labCurrentColumns = labVisibleCols
+        ? labVisibleCols.map(function (i) { return labAllColumns[i]; })
+        : labAllColumns.slice();
+    labCurrentRows    = (labVisibleCols
+        ? labAllRows.map(function (row) {
+            return labVisibleCols.map(function (i) { return row[i]; });
+          })
+        : labAllRows.slice()
+    );
+    labSortCol = -1;
     labDrawTable();
 }
 
@@ -1227,10 +1827,10 @@ function labDrawTable() {
     tbody.innerHTML = '';
     sorted.forEach(function (row) {
         const tr = document.createElement('tr');
-        row.forEach(function (cell, ci) {
+        row.forEach(function (cell) {
             const td         = document.createElement('td');
             const isNum      = typeof cell === 'number';
-            td.textContent   = cell !== null && cell !== undefined ? cell : '—';
+            td.textContent   = cell !== null && cell !== undefined ? cell : '\u2014';
             td.className     = isNum ? 'text-end' : '';
             tr.appendChild(td);
         });
@@ -1379,3 +1979,6 @@ function labInitDivider() {
 </script>
 
 {% endblock %}
+
+
+
