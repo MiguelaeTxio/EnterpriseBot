@@ -40,6 +40,10 @@
                   data-bs-toggle="modal" data-bs-target="#cloneInsurerModal">
             <i class="bi bi-copy me-1"></i>Clonar
           </button>
+          <button type="button" class="btn btn-sm btn-outline-info"
+                  data-bs-toggle="modal" data-bs-target="#copyTariffModal">
+            <i class="bi bi-clipboard-arrow-down me-1"></i>Copiar tarifa a…
+          </button>
           <div class="dropdown">
             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
               <i class="bi bi-download me-1"></i>Exportar tarifa
@@ -509,10 +513,68 @@
   </div>
 </div>
 
+{# ── Modal copia de tarifa a aseguradora existente ───────────────── #}
+<div class="modal fade" id="copyTariffModal" tabindex="-1"
+     aria-labelledby="copyTariffModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="copyTariffModalLabel">
+          <i class="bi bi-clipboard-arrow-down me-2"></i>Copiar tarifa a aseguradora existente
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">
+          Se copiará la tarifa activa de <strong>{{ insurer.name }}</strong>
+          (tipos de vehículo, líneas de tarifa y tarifa especial nocturno/festivo)
+          a la aseguradora que selecciones. La tarifa anterior de la destino
+          quedará cerrada. Los presupuestos existentes no se modifican.
+        </p>
+        {% if other_insurers %}
+        <div class="mb-3">
+          <label for="copyTariffTarget" class="form-label fw-semibold small">
+            Aseguradora destino <span class="text-danger">*</span>
+          </label>
+          <select class="form-select form-select-sm" id="copyTariffTarget">
+            <option value="">— Selecciona una aseguradora —</option>
+            {% for ins in other_insurers %}
+            <option value="{{ ins.pk }}">{{ ins.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div id="copyTariffWarning" class="alert alert-warning py-2 small d-none">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          Se sobrescribirá la tarifa activa de
+          <strong id="copyTariffTargetName"></strong>.
+          Esta acción no se puede deshacer.
+        </div>
+        {% else %}
+        <div class="alert alert-info py-2 small">
+          No hay otras aseguradoras activas en la empresa a las que copiar la tarifa.
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                data-bs-dismiss="modal">Cancelar</button>
+        {% if other_insurers %}
+        <form id="copyTariffForm" method="post"
+              action="{% url 'budgets:insurer_copy_tariff' insurer.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="target_insurer_pk" id="copyTariffTargetHidden">
+          <button type="submit" class="btn btn-sm btn-info text-white"
+                  id="copyTariffSubmitBtn" disabled>
+            <i class="bi bi-clipboard-arrow-down me-1"></i>Copiar tarifa
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
 {% block extra_scripts %}
-<script>
-(function () {
-  const insurerInput  = document.getElementById("cloneInsurerCompanyName");
   const serviceInput  = document.getElementById("cloneServiceCompanyName");
   const preview       = document.getElementById("cloneNamePreview");
   const previewText   = document.getElementById("cloneNamePreviewText");
@@ -588,6 +650,47 @@ document.addEventListener("DOMContentLoaded", function () {
     window.EbTour.startIfNew("insurer_detail");
 });
 </script>
+<script>
+(function () {
+  const targetSelect  = document.getElementById("copyTariffTarget");
+  const warning       = document.getElementById("copyTariffWarning");
+  const targetName    = document.getElementById("copyTariffTargetName");
+  const submitBtn     = document.getElementById("copyTariffSubmitBtn");
+  const hiddenTarget  = document.getElementById("copyTariffTargetHidden");
+
+  if (!targetSelect) { return; }
+
+  targetSelect.addEventListener("change", function () {
+    const selectedPk   = targetSelect.value;
+    const selectedText = targetSelect.options[targetSelect.selectedIndex].text;
+    if (selectedPk) {
+      hiddenTarget.value      = selectedPk;
+      targetName.textContent  = selectedText;
+      warning.classList.remove("d-none");
+      submitBtn.disabled      = false;
+    } else {
+      hiddenTarget.value = "";
+      warning.classList.add("d-none");
+      submitBtn.disabled = true;
+    }
+  });
+
+  // Reset state when modal closes.
+  // Restablecer estado al cerrar el modal.
+  document.getElementById("copyTariffModal").addEventListener(
+    "hidden.bs.modal",
+    function () {
+      targetSelect.value = "";
+      hiddenTarget.value = "";
+      warning.classList.add("d-none");
+      submitBtn.disabled = true;
+    }
+  );
+})();
+</script>
 {% endblock extra_scripts %}
 {% endblock %}
+
+
+
 

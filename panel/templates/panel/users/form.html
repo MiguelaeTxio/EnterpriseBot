@@ -1,3 +1,4 @@
+
 <!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/users/form.html -->
 {% extends "panel/base.html" %}
 
@@ -130,6 +131,25 @@
                         </div>
                     </div>
 
+                    <!-- dni field — Campo DNI / NIF -->
+                    <div class="mb-4">
+                        <label for="{{ form.dni.id_for_label }}"
+                               class="form-label fw-medium">
+                            DNI / NIF
+                        </label>
+                        {{ form.dni }}
+                        {% if form.dni.errors %}
+                        <div class="text-danger mt-1">
+                            {% for error in form.dni.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Documento Nacional de Identidad del operario.
+                            Para roles WORKSHOP y WORKSHOPBOSS, los 4 últimos dígitos
+                            del DNI son la contraseña de acceso al panel.
+                        </div>
+                    </div>
+
                     <!-- phone_number field — Campo de teléfono -->
                     <div class="mb-4">
                         <label for="id_phone_number" class="form-label fw-medium">
@@ -193,3 +213,6 @@
 </div>
 
 {% endblock %}
+
+
+

@@ -346,16 +346,24 @@ class CompanyUserCreateForm(forms.Form):
     Form for creating a new CompanyUser from the panel (Supervisor or Admin).
     The Supervisor provides username, full name, role, optional section,
     optional phone number and IVR active flag.
-    Password is always set to '1234'; must_change_password is set to True
-    automatically by the view.
+    Password derivation:
+    - WORKSHOP / WORKSHOPBOSS: last 4 digits of DNI (fallback '1234'),
+      must_change_password=False (operators log in with their DNI digits).
+    - ADMIN / SUPERVISOR: explicit initial_password or '1234',
+      must_change_password=True (forced change on first login).
     Updated H13: section, phone_number and is_ivr_active fields added.
+    Updated H17: dni field added; password derivation by role.
     ---
     Formulario para crear un nuevo CompanyUser desde el panel (Supervisor o Admin).
     El Supervisor introduce nombre de usuario, nombre completo, rol, sección
-    opcional, teléfono opcional y flag de activo en IVR.
-    La contraseña se fija siempre a '1234'; must_change_password se activa
-    automáticamente en la vista.
+    opcional, DNI, teléfono opcional y flag de activo en IVR.
+    Derivación de contraseña:
+    - WORKSHOP / WORKSHOPBOSS: 4 últimas cifras del DNI (fallback '1234'),
+      must_change_password=False (los operarios acceden con sus dígitos de DNI).
+    - ADMIN / SUPERVISOR: initial_password explícito o '1234',
+      must_change_password=True (cambio forzado en el primer acceso).
     Actualización H13: añadidos campos section, phone_number e is_ivr_active.
+    Actualización H17: añadido campo dni; derivación de contraseña por rol.
     """
 
     username = forms.CharField(
@@ -422,23 +430,53 @@ class CompanyUserCreateForm(forms.Form):
             "IVR y en los broadcasts de WhatsApp de su sección."
         ),
     )
+    dni = forms.CharField(
+        max_length=20,
+        label="DNI / NIF",
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "12345678A",
+        }),
+        help_text=(
+            "Obligatorio para operarios de taller (WORKSHOP / WORKSHOPBOSS). "
+            "Los 4 últimos dígitos se usarán como contraseña inicial. "
+            "Opcional para el resto de roles."
+        ),
+    )
     initial_password = forms.CharField(
         max_length=128,
         label="Contraseña inicial",
         required=False,
         widget=forms.TextInput(attrs={
             "class": "form-control",
-            "placeholder": "Dejar vacío para usar '1234'",
+            "placeholder": "Solo para ADMIN / SUPERVISOR. Vacío: '1234'",
         }),
-        help_text="Si se deja vacío, la contraseña inicial será '1234'.",
+        help_text=(
+            "Solo aplica para roles ADMIN y SUPERVISOR. "
+            "Para operarios de taller la contraseña se deriva del DNI."
+        ),
     )
 
     def get_initial_password(self):
         """
-        Returns the initial password, defaulting to '1234' if blank.
+        Returns the initial password depending on the role.
+        - WORKSHOP / WORKSHOPBOSS: last 4 digits of DNI, fallback '1234'.
+        - Other roles: explicit initial_password field, fallback '1234'.
         ---
-        Retorna la contraseña inicial, usando '1234' por defecto si está vacía.
+        Retorna la contraseña inicial según el rol.
+        - WORKSHOP / WORKSHOPBOSS: 4 últimas cifras del DNI, fallback '1234'.
+        - Otros roles: campo initial_password explícito, fallback '1234'.
         """
+        role = self.cleaned_data.get("role", "")
+        if role in (
+            CompanyUser.ROLE_WORKSHOP,
+            CompanyUser.ROLE_WORKSHOPBOSS,
+        ):
+            dni = self.cleaned_data.get("dni", "").strip()
+            if len(dni) >= 4:
+                return dni[-4:]
+            return "1234"
         return self.cleaned_data.get("initial_password") or "1234"
 
     def clean_username(self):
@@ -859,3 +897,6 @@ class OwnProfileForm(forms.Form):
 
 # Re-export desde fleet.forms (H12/H21 split)
 from fleet.forms import MachineAssetForm  # noqa: F401
+
+
+

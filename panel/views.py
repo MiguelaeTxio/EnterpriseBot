@@ -1,6 +1,7 @@
 
 
 
+
 from django .contrib .auth import update_session_auth_hash 
 from django .contrib .auth .views import LoginView ,LogoutView 
 from django .contrib import messages as django_messages 
@@ -212,6 +213,15 @@ class CompanyUserCreateView (SupervisorAccessMixin ,View ):
 
 
 
+        # Password and must_change_password depend on role.
+        # Contraseña y must_change_password dependen del rol.
+        _workshop_roles = (
+            CompanyUser.ROLE_WORKSHOP,
+            CompanyUser.ROLE_WORKSHOPBOSS,
+        )
+        _role = form.cleaned_data["role"]
+        _must_change = _role not in _workshop_roles
+
         auth_user =AuthUser .objects .create_user (
         username =form .cleaned_data ["username"],
         first_name =form .cleaned_data .get ("first_name",""),
@@ -226,9 +236,10 @@ class CompanyUserCreateView (SupervisorAccessMixin ,View ):
         new_cu =CompanyUser .objects .create (
         user =auth_user ,
         company =company ,
-        role =form .cleaned_data ["role"],
+        role =_role ,
         is_active =True ,
-        must_change_password =True ,
+        must_change_password =_must_change ,
+        dni =form .cleaned_data .get ("dni", "").strip(),
         )
         logger .info (
         "# [USER CREATE] CompanyUser pk=%s (username='%s') creado por %s.",
@@ -456,7 +467,7 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
 
     model =CompanyUser 
     template_name ="panel/users/form.html"
-    fields =["role","is_active","workday_schedule"]
+    fields =["role","is_active","workday_schedule","dni"]
 
     def get_queryset (self ):
         """
@@ -473,10 +484,12 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
         Restricts the workday_schedule queryset to the authenticated user's
         company so that no foreign schedule can be selected from the dropdown.
         Marks workday_schedule as optional (blank allowed).
+        Adds Bootstrap CSS class to the dni field.
         ---
         Restringe el queryset de workday_schedule a la empresa del usuario
         autenticado para que ningún horario externo pueda seleccionarse.
         Marca workday_schedule como opcional (blank permitido).
+        Añade clase CSS Bootstrap al campo dni.
         """
         from ivr_config .models import WorkdaySchedule 
         form =super ().get_form (form_class )
@@ -486,6 +499,11 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
         ).order_by ("label")
         form .fields ["workday_schedule"].required =False 
         form .fields ["workday_schedule"].widget .attrs .update ({"class":"form-select"})
+        form .fields ["dni"].required =False 
+        form .fields ["dni"].widget .attrs .update ({
+            "class": "form-control",
+            "placeholder": "12345678A",
+        })
         return form 
 
     def post (self ,request ,*args ,**kwargs ):
@@ -3972,3 +3990,4 @@ class InboundCallLogDeleteView(AdminRoleRequiredMixin, View):
         log.delete()
         messages.success(request, "Registro de llamada eliminado.")
         return redirect("panel:inbound_call_log_list")
+

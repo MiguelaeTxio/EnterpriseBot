@@ -4,6 +4,38 @@
     .route-planner-fragment {
       --rp-line: var(--bs-border-color, #dee2e6);
     }
+
+    /* ── Estructura flex del modal-content ──────────────────────────────
+       Bootstrap pone overflow:hidden en modal-content. En laptop y móvil
+       el footer con los botones quedaba fuera del área visible y sin
+       posibilidad de scroll (z-index tapado). Solución: modal-content
+       = flex column con altura máxima fija; .route-planner-fragment
+       ocupa todo el espacio flex disponible como flex column; el row
+       interior cede espacio al footer con flex; .route-planner-footer
+       es siempre flex-shrink:0 al fondo, nunca tapado.
+       Bootstrap sets overflow:hidden on modal-content. On laptop/mobile
+       the footer with buttons fell outside the visible area (blocked by
+       z-index). Fix: modal-content = fixed-height flex column;
+       .route-planner-fragment fills all available flex space as a flex
+       column; the inner row yields space to the footer via flex;
+       .route-planner-footer is always flex-shrink:0 pinned to bottom.
+    ─────────────────────────────────────────────────────────────────── */
+    #routePlannerModal .modal-content {
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 3.5rem);
+      overflow: hidden;
+    }
+    #routePlannerModal.modal-fullscreen-lg-down .modal-content {
+      max-height: 100vh;
+    }
+    .route-planner-fragment {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      overflow: hidden;
+      min-height: 0;
+    }
     .route-planner-mobile-toggle {
       display: flex;
       align-items: center;
@@ -26,8 +58,12 @@
       display: flex;
       flex-direction: column;
       border-right: 1px solid var(--rp-line);
-      max-height: 70vh;
-      height: 70vh;
+      /* Altura derivada del padre flex — no usar max-height/height fijos
+         aquí para no romper el flujo flex del fragmento.
+         Height derived from flex parent — do not use fixed max-height/height
+         here to avoid breaking the fragment's flex flow. */
+      min-height: 0;
+      flex: 1 1 auto;
     }
     /* Panel inner: dos zonas apiladas verticalmente.
        Panel inner: two vertically stacked zones.
@@ -51,17 +87,26 @@
       flex-shrink: 0;
       padding: 0 1rem .75rem;
     }
+    /* Footer siempre visible — flex-shrink:0 sobre el fragment flex column.
+       Always visible footer — flex-shrink:0 on the fragment flex column. */
     .route-planner-footer {
       flex-shrink: 0;
       padding: .75rem 1rem;
       border-top: 1px solid var(--rp-line);
+      background: var(--bs-body-bg, #fff);
+      /* z-index explícito para no quedar tapado por el mapa u overlays.
+         Explicit z-index to avoid being covered by the map or overlays. */
+      position: relative;
+      z-index: 5;
     }
     .route-planner-map-col {
       padding: 0;
+      display: flex;
+      flex-direction: column;
     }
     .route-planner-map {
       width: 100%;
-      height: 70vh;
+      flex: 1 1 auto;
       min-height: 320px;
     }
     .route-planner-base {
@@ -235,14 +280,12 @@
       height: 2.5rem;
     }
     /* ── Dropdown de Google Autocomplete dentro del modal Bootstrap ── */
-    /* Bootstrap pone overflow:hidden en .modal que corta el PAC.      */
-    /* Solo se fuerza overflow visible en los contenedores directos     */
-    /* del input de búsqueda — NO en el panel completo ni en el         */
-    /* panel-inner, para no romper el scroll interno de la lista.       */
-    #routePlannerModal .modal-body,
-    #routePlannerModal .modal-content,
-    #routePlannerModal .route-planner-panel,
-    #routePlannerModal .route-planner-panel-scroll,
+    /* Solo forzar overflow visible en el contenedor directo del input  */
+    /* de búsqueda (.route-planner-add). NO en modal-content, panel    */
+    /* ni panel-inner — romperían el flex de contención.                */
+    /* Only force overflow visible on the direct search input container  */
+    /* (.route-planner-add). NOT on modal-content, panel or panel-inner */
+    /* — they would break the containment flex.                         */
     #routePlannerModal .route-planner-add {
       overflow: visible !important;
     }
@@ -250,53 +293,54 @@
       z-index: 99999 !important;
     }
     @media (max-width: 991.98px) {
-      /* En móvil el panel es scrollable con altura máxima controlada        */
+      /* En móvil el row interno se apila verticalmente con scroll.
+         El panel toma altura automática (contenido); el mapa toma
+         altura fija; el footer queda siempre al fondo del fragment
+         flex column.
+         On mobile the inner row stacks vertically with scroll.
+         The panel takes auto height (content); the map takes fixed
+         height; the footer stays pinned at the bottom of the
+         fragment flex column. */
       .route-planner-panel {
         border-right: 0;
         border-bottom: 1px solid var(--rp-line);
-        max-height: none;
-        height: auto;
-        overflow: visible;
+        flex: 0 0 auto;
+        min-height: 0;
+        overflow: hidden;
       }
-      /* La zona scroll del panel en móvil limita la altura de la lista      */
+      /* La zona scroll del panel en móvil limita la altura de la lista */
       .route-planner-panel-scroll {
-        max-height: 30vh;
+        max-height: 28vh;
         overflow-y: auto !important;
         overflow-x: hidden;
       }
-      /* El PAC (autocomplete) necesita overflow visible en móvil también    */
-      #routePlannerModal .route-planner-panel,
-      #routePlannerModal .route-planner-panel-scroll,
-      #routePlannerModal .route-planner-add,
-      #routePlannerModal .collapse {
+      /* El PAC (autocomplete) necesita overflow visible en su contenedor */
+      #routePlannerModal .route-planner-add {
         overflow: visible !important;
       }
-      /* La zona scroll no puede ser visible cuando está scrollando          */
-      #routePlannerModal .route-planner-panel-scroll {
-        overflow-y: auto !important;
-      }
       .route-planner-panel-inner {
-        padding: 0;
-        overflow: visible;
+        overflow: hidden;
       }
-      /* El mapa debajo del panel, altura fija                               */
+      /* El mapa debajo del panel, altura fija                          */
+      .route-planner-map-col {
+        flex: 1 1 auto;
+        min-height: 0;
+      }
       .route-planner-map {
-        height: 32vh;
+        height: 30vh;
         min-height: 160px;
       }
-      /* Footer pegado al fondo del modal-body                               */
+      /* Footer: el sticky ya no es necesario — el fragment flex column
+         lo mantiene al fondo sin solapar nada.
+         Footer: sticky no longer needed — the fragment flex column
+         keeps it pinned at the bottom without overlapping anything. */
       .route-planner-footer {
-        position: sticky;
-        bottom: 0;
-        background: #fff;
-        z-index: 20;
-        border-top: 1px solid var(--rp-line);
         padding: .6rem .75rem;
       }
     }
   </style>
 
-  <div class="row g-0">
+  <div class="row g-0" style="flex: 1 1 auto; overflow: hidden; min-height: 0;">
     <div class="col-12 col-lg-4 route-planner-panel">
       <button type="button"
               class="route-planner-mobile-toggle d-lg-none"
@@ -468,4 +512,6 @@
   {# Hidden inputs — en _wizard_steps_fragment.html (dentro del form). #}
   {# wizard_map.js los localiza por ID desde cualquier punto del DOM.  #}
 </div>
+
+
 

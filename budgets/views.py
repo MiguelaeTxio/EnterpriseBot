@@ -2841,6 +2841,193 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
 
 
 # ---------------------------------------------------------------------------
+# Insurer copy tariff — POST, copia la tarifa activa de una aseguradora
+# origen a una aseguradora destino existente. Solo ADMIN.
+# Insurer copy tariff — POST, copies the active tariff from a source insurer
+# to an existing target insurer. ADMIN only.
+# ---------------------------------------------------------------------------
+
+class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
+    """
+    Copies the active InsurerTariff (with all TariffLine, VehicleType,
+    SpecialRateTariff and SpecialRateLine records) from a source insurer
+    to an existing target insurer. The target insurer's current active tariff
+    is closed (valid_to = today - 1 day) before the new one is created.
+    The target insurer's own VehicleType catalogue is rebuilt from the source's
+    catalogue; existing VehicleType records for the target are deleted first.
+    Existing Budget records for the target insurer are not touched.
+    Redirects to the target insurer detail view on success.
+    ---
+    Copia la InsurerTariff activa (con todos los registros TariffLine,
+    VehicleType, SpecialRateTariff y SpecialRateLine) de una aseguradora origen
+    a una aseguradora destino existente. La tarifa activa actual de la destino
+    se cierra (valid_to = hoy - 1 dia) antes de crear la nueva.
+    El catalogo VehicleType de la destino se reconstruye desde el de la origen;
+    los registros VehicleType existentes de la destino se eliminan primero.
+    Los registros Budget de la aseguradora destino no se modifican.
+    Redirige a la vista de detalle de la aseguradora destino en exito.
+    """
+
+    def post(self, request, pk):
+        """
+        Copy the active tariff of insurer pk to the target insurer.
+        Requires 'target_insurer_pk' in POST data.
+        ---
+        Copia la tarifa activa de la aseguradora pk a la aseguradora destino.
+        Requiere 'target_insurer_pk' en los datos POST.
+        """
+        import datetime as _dt
+        from budgets.models import (
+            InsurerTariff, TariffLine, VehicleType,
+            SpecialRateTariff, SpecialRateLine, TariffConcept,
+        )
+
+        company_user = _get_company_user(request)
+        source = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+
+        target_pk = request.POST.get("target_insurer_pk", "").strip()
+        if not target_pk:
+            messages.error(request, "Debes seleccionar una aseguradora destino.")
+            return redirect("budgets:insurer_detail", pk=pk)
+
+        try:
+            target_pk = int(target_pk)
+        except (ValueError, TypeError):
+            messages.error(request, "Aseguradora destino no válida.")
+            return redirect("budgets:insurer_detail", pk=pk)
+
+        if target_pk == pk:
+            messages.error(
+                request,
+                "La aseguradora destino no puede ser la misma que la origen.",
+            )
+            return redirect("budgets:insurer_detail", pk=pk)
+
+        target = get_object_or_404(
+            Insurer,
+            pk=target_pk,
+            company=company_user.company,
+        )
+
+        # Locate the active source tariff.
+        # Localizar la tarifa activa de la aseguradora origen.
+        source_tariff = (
+            InsurerTariff.objects
+            .filter(insurer=source, valid_to__isnull=True)
+            .order_by("-valid_from")
+            .first()
+        )
+        if source_tariff is None:
+            messages.error(
+                request,
+                f"La aseguradora '{source.name}' no tiene tarifa activa para copiar.",
+            )
+            return redirect("budgets:insurer_detail", pk=pk)
+
+        today = _dt.date.today()
+
+        with transaction.atomic():
+            # Close the target's current active tariff, if any.
+            # Cerrar la tarifa activa actual de la destino, si existe.
+            InsurerTariff.objects.filter(
+                insurer=target,
+                valid_to__isnull=True,
+            ).update(valid_to=today - _dt.timedelta(days=1))
+
+            # Rebuild VehicleType catalogue for target from source.
+            # Only delete VehicleType records not referenced by any Budget
+            # (PROTECT would block otherwise). Budgets keep their VehicleType FK
+            # intact; only orphaned (non-budgeted) VehicleType records are removed.
+            # Reconstruir el catalogo VehicleType de la destino desde la origen.
+            # Solo elimina los VehicleType no referenciados por ningun Budget
+            # (el PROTECT lo bloquearia). Los Budget conservan su FK VehicleType
+            # intacta; solo se eliminan los VehicleType sin presupuestos.
+            for old_vt in VehicleType.objects.filter(insurer=target):
+                if not old_vt.budgets.exists():
+                    old_vt.delete()
+
+            # Build VehicleType map: source_vt_pk -> new target VehicleType.
+            # Construir mapa VehicleType: source_vt_pk -> nuevo VehicleType destino.
+            vt_map = {}
+            for vt in (
+                source.vehicle_types
+                .order_by("sort_order", "name")
+            ):
+                new_vt = VehicleType.objects.create(
+                    insurer=target,
+                    name=vt.name,
+                    sort_order=vt.sort_order,
+                    is_active=vt.is_active,
+                )
+                vt_map[vt.pk] = new_vt
+
+            # Clone the active tariff to target.
+            # Clonar la tarifa activa a la destino.
+            new_tariff = InsurerTariff.objects.create(
+                insurer=target,
+                year=source_tariff.year,
+                valid_from=today,
+                valid_to=None,
+                notes=source_tariff.notes,
+            )
+
+            # Clone TariffLine records mapping VehicleType FKs.
+            # Clonar los registros TariffLine mapeando las FK de VehicleType.
+            for line in source_tariff.lines.select_related(
+                "vehicle_type", "concept"
+            ).all():
+                new_vt = vt_map.get(line.vehicle_type_id) if line.vehicle_type_id else None
+                TariffLine.objects.create(
+                    tariff=new_tariff,
+                    vehicle_type=new_vt,
+                    concept=line.concept,
+                    price=line.price,
+                )
+
+            # Clone SpecialRateTariff + SpecialRateLine if present.
+            # SpecialRateTariff is OneToOne to InsurerTariff via related_name
+            # "special_rate". Access via source_tariff.special_rate — raises
+            # SpecialRateTariff.DoesNotExist if none exists for this tariff.
+            # SpecialRateLine FK to SpecialRateTariff via related_name "lines".
+            # Clonar SpecialRateTariff + SpecialRateLine si existe.
+            # SpecialRateTariff es OneToOne a InsurerTariff via related_name
+            # "special_rate". Acceso via source_tariff.special_rate — lanza
+            # SpecialRateTariff.DoesNotExist si no existe para esta tarifa.
+            # SpecialRateLine FK a SpecialRateTariff via related_name "lines".
+            try:
+                source_special = source_tariff.special_rate
+            except SpecialRateTariff.DoesNotExist:
+                source_special = None
+
+            if source_special is not None:
+                new_special = SpecialRateTariff.objects.create(
+                    insurer_tariff=new_tariff,
+                    notes=source_special.notes,
+                )
+                for sline in source_special.lines.select_related(
+                    "vehicle_type", "concept"
+                ).all():
+                    new_vt = vt_map.get(sline.vehicle_type_id) if sline.vehicle_type_id else None
+                    SpecialRateLine.objects.create(
+                        special_rate_tariff=new_special,
+                        vehicle_type=new_vt,
+                        concept=sline.concept,
+                        unit=sline.unit,
+                        price=sline.price,
+                    )
+
+        messages.success(
+            request,
+            f"Tarifa de '{source.name}' copiada correctamente a '{target.name}'.",
+        )
+        return redirect("budgets:insurer_detail", pk=target.pk)
+
+
+# ---------------------------------------------------------------------------
 # Insurer detail — read-only tariff view. ADMIN only.
 # Vista de detalle de aseguradora — solo lectura. Solo ADMIN.
 # ---------------------------------------------------------------------------
@@ -2984,6 +3171,17 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
                 # Ni la aseguradora ni la empresa tienen horario configurado.
                 night_schedule_display = {"source": "none"}
 
+        # Other insurers of the same company for the copy-tariff modal selector.
+        # Excluye la aseguradora actual para no permitir copiar sobre sí misma.
+        # Otras aseguradoras de la misma empresa para el selector del modal de
+        # copia de tarifa. Excluye la aseguradora actual.
+        other_insurers = (
+            Insurer.objects
+            .filter(company=company_user.company, is_active=True)
+            .exclude(pk=insurer.pk)
+            .order_by("name")
+        )
+
         ctx = _build_base_context(request, {
             "insurer": insurer,
             "insurer_bases": insurer_bases,
@@ -2997,6 +3195,7 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
             "bases": bases,
             "base_form": base_form,
             "night_schedule_display": night_schedule_display,
+            "other_insurers": other_insurers,
             "active_nav": "insurer_list",
         })
         return render(request, self.template_name, ctx)
@@ -5418,6 +5617,8 @@ class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
         if error:
             messages.error(request, error)
         return redirect("budgets:base_calendar_detail", pk=pk)
+
+
 
 
 

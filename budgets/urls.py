@@ -1,3 +1,4 @@
+
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/urls.py
 """
 URL configuration for the budgets application.
@@ -204,6 +205,16 @@ urlpatterns = [
         "insurers/<int:pk>/clone/",
         views.InsurerCloneView.as_view(),
         name="insurer_clone",
+    ),
+
+    # Insurer copy tariff — POST, copia la tarifa activa a una aseguradora
+    # existente sin crear una nueva. Solo ADMIN.
+    # Insurer copy tariff — POST, copies the active tariff to an existing
+    # insurer without creating a new one. ADMIN only.
+    path(
+        "insurers/<int:pk>/copy-tariff/",
+        views.InsurerCopyTariffView.as_view(),
+        name="insurer_copy_tariff",
     ),
 
     # Insurer toggle — HTMX POST, alterna is_active, devuelve badge.
@@ -617,6 +628,7 @@ urlpatterns = [
         name="work_order_pdf",
     ),
 ]
+
 
 
 
