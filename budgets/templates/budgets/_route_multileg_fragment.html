@@ -76,16 +76,27 @@
       overflow: hidden;
       min-height: 0;
     }
-    .route-planner-panel-scroll {
+    /* Bootstrap collapse wrapper must also be flex + constrained
+       so it doesn't escape the panel flex container.
+       El wrapper de Bootstrap collapse también debe ser flex + contenido
+       para no escapar del contenedor flex del panel. */
+    #routePlannerPanelBody {
+      display: flex !important;
+      flex-direction: column;
       flex: 1 1 auto;
-      overflow-y: auto;
-      overflow-x: hidden;
-      padding: 1rem 1rem 0;
+      overflow: hidden;
       min-height: 0;
     }
+    .route-planner-panel-scroll {
+      overflow-y: scroll;
+      overflow-x: hidden;
+      padding: 1rem 1rem 0;
+      max-height: 480px;
+    }
     .route-planner-panel-summary {
-      flex-shrink: 0;
-      padding: 0 1rem .75rem;
+      /* Now inside the scroll zone — no flex-shrink needed.
+         Ahora dentro de la zona scroll — flex-shrink ya no aplica. */
+      padding: 0 0 .75rem;
     }
     /* Footer siempre visible — flex-shrink:0 sobre el fragment flex column.
        Always visible footer — flex-shrink:0 on the fragment flex column. */
@@ -406,39 +417,39 @@
               </button>
             </div>
 
+            {# ── Zona fija: resumen de ruta (dentro del scroll) ──────── #}
+            {# Fixed zone: route summary (inside scroll area)             #}
+            <div class="route-planner-panel-summary">
+
+              <hr class="my-2">
+
+              <div class="route-planner-summary">
+                <h3 class="route-planner-summary-title">Resumen de ruta</h3>
+                <dl class="route-planner-summary-list" aria-live="polite">
+                  <dt>Distancia total</dt>
+                  <dd id="route-summary-distance">—</dd>
+
+                  <dt id="route-summary-phase1-label" class="d-none">Fase 1</dt>
+                  <dd id="route-summary-phase1" class="d-none">—</dd>
+
+                  <dt id="route-summary-phase2-label" class="d-none">Fase 2</dt>
+                  <dd id="route-summary-phase2" class="d-none">—</dd>
+
+                  <dt>Pernocta</dt>
+                  <dd id="route-summary-overnight">No</dd>
+
+                  <dt>Peajes</dt>
+                  <dd id="route-summary-tolls">—</dd>
+                </dl>
+                <p class="form-text text-muted mt-2 mb-0" id="route-summary-hint">
+                  <small>Pulsa <strong>Calcular ruta</strong> para obtener kilómetros
+                  exactos y peajes antes de confirmar.</small>
+                </p>
+              </div>
+
+            </div>{# /route-planner-panel-summary #}
+
           </div>{# /route-planner-panel-scroll #}
-
-          {# ── Zona fija: resumen de ruta (siempre visible) ─────────── #}
-          {# Fixed zone: route summary (always visible, never scrolled)  #}
-          <div class="route-planner-panel-summary">
-
-            <hr class="my-2">
-
-            <div class="route-planner-summary">
-              <h3 class="route-planner-summary-title">Resumen de ruta</h3>
-              <dl class="route-planner-summary-list" aria-live="polite">
-                <dt>Distancia total</dt>
-                <dd id="route-summary-distance">—</dd>
-
-                <dt id="route-summary-phase1-label" class="d-none">Fase 1</dt>
-                <dd id="route-summary-phase1" class="d-none">—</dd>
-
-                <dt id="route-summary-phase2-label" class="d-none">Fase 2</dt>
-                <dd id="route-summary-phase2" class="d-none">—</dd>
-
-                <dt>Pernocta</dt>
-                <dd id="route-summary-overnight">No</dd>
-
-                <dt>Peajes</dt>
-                <dd id="route-summary-tolls">—</dd>
-              </dl>
-              <p class="form-text text-muted mt-2 mb-0" id="route-summary-hint">
-                <small>Pulsa <strong>Calcular ruta</strong> para obtener kilómetros
-                exactos y peajes antes de confirmar.</small>
-              </p>
-            </div>
-
-          </div>{# /route-planner-panel-summary #}
 
         </div>{# /route-planner-panel-inner #}
       </div>

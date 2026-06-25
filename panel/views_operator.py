@@ -1,4 +1,5 @@
 
+
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_operator.py
 from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View
@@ -699,6 +700,12 @@ def _parse_entry_lines_from_post (POST ,company ):
         # is_on_site — checkbox enviado como "1" cuando está marcado.
         _is_on_site = POST.get(f"{pfx}is_on_site", "") == "1"
 
+        # breakdown ticket link — optional FK + close flag (H17).
+        # Vínculo con ticket de avería — FK opcional + flag de cierre (H17).
+        _ticket_pk_raw = POST.get(f"{pfx}ticket_pk", "").strip()
+        _ticket_pk = int(_ticket_pk_raw) if _ticket_pk_raw.isdigit() else None
+        _ticket_closed = POST.get(f"{pfx}ticket_closed", "") == "1"
+
         # EMPRESA_* block — detect and resolve subtype label.
         # Bloque EMPRESA_* — detectar y resolver el label del subtipo.
         _is_empresa_block = (
@@ -733,6 +740,8 @@ def _parse_entry_lines_from_post (POST ,company ):
         "is_personal":_is_personal_block ,
         "is_on_site":_is_on_site ,
         "is_empresa":_is_empresa_block ,
+        "ticket_pk":_ticket_pk ,
+        "ticket_closed":_ticket_closed ,
         })
 
     return entry_lines_data 
@@ -2052,12 +2061,24 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             .order_by ("order","label")
             .values ("id","label","requires_note")
         )
+        # Serialise repair_orders for JS EB_CONFIG injection.
+        # Serializar repair_orders para inyección en EB_CONFIG de JS.
+        _repair_orders_json = _json_ctx.dumps([
+            {
+                "pk":         ot.pk,
+                "code":       ot.ticket_date_code or "",
+                "machine_raw": ot.machine_raw or "",
+                "fault_summary": ot.fault_summary or "",
+            }
+            for ot in repair_orders
+        ])
         return {
         "company":company ,
         "company_user":cu ,
         "active_nav":"operator_dashboard",
         "assets":assets ,
         "repair_orders":repair_orders ,
+        "repair_orders_json": _repair_orders_json,
         "absence_categories":_json_ctx .dumps (_absence_cats_ctx ),
         "absence_categories_list":_absence_cats_ctx ,
         }
@@ -3828,6 +3849,47 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                     created_lines [ld ["line_number"]]=line 
                     created_line_pks .append (line .pk )
 
+                    # Link breakdown ticket if operator selected one (H17).
+                    # Vincular ticket de avería si el operario seleccionó uno (H17).
+                    _t_pk = ld.get("ticket_pk")
+                    _t_close = ld.get("ticket_closed", False)
+                    if _t_pk:
+                        from chat.models import BreakdownTicket as _BT
+                        try:
+                            _bt = _BT.objects.get(
+                                pk=_t_pk,
+                                company=company,
+                            )
+                            line.breakdown_ticket = _bt
+                            line.ticket_closed    = _t_close
+                            line.save(update_fields=[
+                                "breakdown_ticket", "ticket_closed",
+                            ])
+                            if _t_close:
+                                _bt.status      = _BT.STATUS_CLOSED
+                                _bt.resolved_by = cu
+                                _bt.resolved_at = now()
+                                _bt.save(update_fields=[
+                                    "status", "resolved_by", "resolved_at",
+                                ])
+                                logger.info(
+                                    "# [FormView] Ticket pk=%s cerrado al"
+                                    " cerrar parte por CU pk=%s.",
+                                    _bt.pk, cu.pk,
+                                )
+                            else:
+                                logger.info(
+                                    "# [FormView] Línea pk=%s vinculada"
+                                    " a ticket pk=%s.",
+                                    line.pk, _bt.pk,
+                                )
+                        except _BT.DoesNotExist:
+                            logger.warning(
+                                "# [FormView] ticket_pk=%s no encontrado"
+                                " para empresa pk=%s — vínculo omitido.",
+                                _t_pk, company.pk,
+                            )
+
                 for spd in spare_parts_data :
 
 
@@ -4796,6 +4858,7 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             'panel/operator/_schedule_fields_fragment.html',
             _ctx ,
         )
+
 
 
 

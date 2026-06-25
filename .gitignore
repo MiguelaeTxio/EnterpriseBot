@@ -11,3 +11,4 @@ gcp_credentials.json
 work_orders/
 !**/templates/**/work_orders/
 media/
+logs/

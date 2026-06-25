@@ -1,3 +1,4 @@
+
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_workorders.py
 
 
@@ -1777,6 +1778,111 @@ class WorkOrderLineInsertView (SupervisorAccessMixin ,View ):
         )
 
 
+class WorkOrderEntryAddView (SupervisorAccessMixin ,View ):
+    """
+    Creates a new empty WorkOrderEntry (day) for a given WorkOrder and
+    returns the rendered _entry_group_fragment.html for the new group.
+
+    POST /panel/work-orders/<wo_pk>/entries/add/
+         Expected POST fields:
+           work_date : str — date in YYYY-MM-DD format.
+         Creates a new WorkOrderEntry with the given work_date and one
+         empty WorkOrderEntryLine (line_number=1). Returns the rendered
+         _entry_group_fragment.html partial for the new group.
+         Returns HTTP 400 if work_date is missing or invalid.
+         Returns HTTP 404 if the WorkOrder does not belong to the company.
+    ---
+    Crea un WorkOrderEntry nuevo (dia) para un WorkOrder dado y devuelve
+    el fragmento _entry_group_fragment.html renderizado para el nuevo grupo.
+
+    POST /panel/work-orders/<wo_pk>/entries/add/
+         Campos POST esperados:
+           work_date : str — fecha en formato YYYY-MM-DD.
+         Crea un WorkOrderEntry con la fecha dada y un WorkOrderEntryLine
+         vacio (line_number=1). Devuelve el parcial _entry_group_fragment.html
+         renderizado para el nuevo grupo.
+         Devuelve HTTP 400 si work_date falta o es invalida.
+         Devuelve HTTP 404 si el WorkOrder no pertenece a la empresa.
+    """
+
+    def post (self ,request ,wo_pk ):
+        """
+        Creates a new WorkOrderEntry + one empty WorkOrderEntryLine
+        and returns the _entry_group_fragment.html partial.
+        ---
+        Crea un WorkOrderEntry nuevo + una WorkOrderEntryLine vacia
+        y devuelve el parcial _entry_group_fragment.html.
+        """
+        from datetime import datetime as _dt
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponseBadRequest
+        from django.db import transaction
+
+        company = request.user.company_user.company
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+
+        raw_date = request.POST.get("work_date", "").strip()
+        if not raw_date:
+            return HttpResponseBadRequest(
+                "# [ENTRY ADD] work_date es obligatorio."
+            )
+        try:
+            work_date = _dt.strptime(raw_date, "%Y-%m-%d").date()
+        except ValueError:
+            return HttpResponseBadRequest(
+                "# [ENTRY ADD] Formato de fecha invalido. Se esperaba YYYY-MM-DD."
+            )
+
+        worker_name = (
+            wo.entries.first().worker_name
+            if wo.entries.exists()
+            else ""
+        )
+
+        with transaction.atomic():
+            entry = WorkOrderEntry.objects.create(
+                work_order=wo,
+                page_number=wo.entries.count() + 1,
+                worker_name=worker_name,
+                work_date=work_date,
+                uncertain_date=False,
+                extraction_confidence=WorkOrderEntry.Confidence.HIGH,
+                raw_gemini_response=None,
+            )
+            new_line = WorkOrderEntryLine.objects.create(
+                entry=entry,
+                line_number=1,
+                machine_norm="",
+                machine_raw="",
+                fault_description="",
+                repair_notes="",
+                hc=None,
+                hf=None,
+                or_val="",
+                delta_hours=None,
+                flags=[],
+                machine_asset=None,
+            )
+
+        logger.info(
+            "# [ENTRY ADD] WorkOrderEntry pk=%s (fecha=%s) creado en WO pk=%s.",
+            entry.pk, work_date, wo.pk,
+        )
+
+        lines = list(entry.lines.order_by("line_number"))
+        group = {
+            "entry":          entry,
+            "lines":          lines,
+            "day_total_hours": None,
+            "day_total_class": "day-total-short",
+        }
+        return render(
+            request,
+            "panel/work_orders/_entry_group_fragment.html",
+            {"group": group, "wo_pk": wo.pk},
+        )
+
+
 class WorkOrderLineReorderView (SupervisorAccessMixin ,View ):
     """
     Accepts a new ordering for WorkOrderEntryLine records within a single
@@ -2058,8 +2164,13 @@ class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
         pk =line_pk ,
         entry__work_order =wo ,
         )
+        entry =line .entry 
         line .delete ()
 
+        # If the entry has no remaining lines, delete it too.
+        # Si el entry ha quedado sin líneas, eliminarlo también.
+        if not entry .lines .exists ():
+            entry .delete ()
 
         return HttpResponse ("")
 
@@ -4988,12 +5099,36 @@ class WorkPeriodLockView (AdminRoleRequiredMixin ,View ):
         wp .save (update_fields =["is_closed"])
 
         if wp .is_closed :
-            django_messages .success (
-                request ,
-                f"Periodo {wp.start_date:%d/%m/%Y}"
-                f"{'–' + wp.end_date.strftime('%d/%m/%Y') if wp.end_date else ''}"
-                f" liquidado. Los partes dentro del periodo ya no pueden editarse.",
-            )
+            # Check for unreviewed work orders within this period.
+            # Comprobar si hay partes sin revisar dentro de este periodo.
+            unreviewed_count = 0
+            if wp .end_date :
+                unreviewed_count = WorkOrder .objects .filter (
+                    company =wp .company_user .company ,
+                    uploaded_by =wp .company_user ,
+                    source__in =[
+                        WorkOrder .Source .DIGITAL ,
+                        WorkOrder .Source .GENERATED ,
+                    ],
+                    reviewed =False ,
+                    entries__work_date__gte =wp .start_date ,
+                    entries__work_date__lte =wp .end_date ,
+                ).distinct ().count ()
+            if unreviewed_count :
+                django_messages .warning (
+                    request ,
+                    f"Periodo {wp.start_date:%d/%m/%Y}"
+                    f"{'–' + wp.end_date.strftime('%d/%m/%Y') if wp.end_date else ''}"
+                    f" liquidado, pero hay {unreviewed_count} parte(s) sin revisar "
+                    f"de {wp.company_user.user.get_full_name() or wp.company_user.user.username}.",
+                )
+            else :
+                django_messages .success (
+                    request ,
+                    f"Periodo {wp.start_date:%d/%m/%Y}"
+                    f"{'–' + wp.end_date.strftime('%d/%m/%Y') if wp.end_date else ''}"
+                    f" liquidado. Los partes dentro del periodo ya no pueden editarse.",
+                )
         else :
             django_messages .success (
                 request ,

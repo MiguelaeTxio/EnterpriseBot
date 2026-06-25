@@ -725,8 +725,63 @@
                         '</label>' +
                     '</div>' +
                 '</div>' +
+                // Ticket de avería vinculado (H17)
+                // Linked breakdown ticket selector (H17)
+                _buildTicketBlock(idx) +
             '</div>';
         return div;
+    }
+
+    /*
+     * Builds the breakdown ticket selector + close-checkbox HTML
+     * for a work block. Returns an empty string when no repair orders
+     * are available (EB_CONFIG.repairOrders is empty).
+     *
+     * Construye el selector de ticket de avería + checkbox de cierre
+     * para un bloque de trabajo. Devuelve cadena vacía cuando no hay
+     * órdenes disponibles (EB_CONFIG.repairOrders está vacío).
+     */
+    function _buildTicketBlock(idx) {
+        var orders = (window.EB_CONFIG && window.EB_CONFIG.repairOrders) || [];
+        if (!orders.length) { return ''; }
+        var opts = '<option value="">\u2014 Sin ticket \u2014</option>';
+        orders.forEach(function (ot) {
+            var label = ot.code || ('Ticket #' + ot.pk);
+            if (ot.machine_raw) { label += ' \u2014 ' + ot.machine_raw; }
+            if (ot.fault_summary) {
+                var fs = ot.fault_summary.length > 40
+                    ? ot.fault_summary.slice(0, 40) + '\u2026'
+                    : ot.fault_summary;
+                label += ' | ' + fs;
+            }
+            opts += '<option value="' + ot.pk + '">' + label + '</option>';
+        });
+        return (
+            '<div class="col-12 col-md-8">' +
+                '<label class="form-label fw-medium">' +
+                    '<i class="bi bi-exclamation-triangle me-1 text-warning"></i>' +
+                    ' Ticket de aver\u00eda vinculado' +
+                '</label>' +
+                '<select name="entrada_' + idx + '_ticket_pk" ' +
+                        'class="form-select form-select-sm ticket-select" ' +
+                        'data-block-idx="' + idx + '">' +
+                    opts +
+                '</select>' +
+            '</div>' +
+            '<div class="col-12 col-md-4 d-flex align-items-end">' +
+                '<div class="form-check mb-2">' +
+                    '<input class="form-check-input ticket-close-check" ' +
+                           'type="checkbox" ' +
+                           'name="entrada_' + idx + '_ticket_closed" ' +
+                           'id="id_entrada_' + idx + '_ticket_closed" value="1">' +
+                    '<label class="form-check-label small fw-medium text-danger" ' +
+                           'for="id_entrada_' + idx + '_ticket_closed">' +
+                        '<i class="bi bi-check-circle me-1"></i>' +
+                        ' Aver\u00eda resuelta \u2014 cerrar ticket' +
+                    '</label>' +
+                '</div>' +
+            '</div>'
+        );
     }
 
     /*
@@ -1262,6 +1317,7 @@
     // contienen el código limpio. El span .asset-label es solo visual, no se envía.
 
 }());
+
 
 
 

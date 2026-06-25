@@ -213,16 +213,27 @@
             </div>
             <div class="modal-body p-4">
                 <p class="text-sm text-muted mb-3">
-                    Esta acción cerrará el periodo activo de TODOS los operarios y marcará
-                    todos sus partes como revisados. No se puede deshacer.
+                    Esta acción cerrará el periodo activo de TODOS los operarios.
+                    Si hay partes sin revisar, el sistema lo avisará y bloqueará
+                    el cierre salvo que marques la opción de forzar.
                 </p>
                 <form method="post" id="formWorkPeriodClose"
                       action="{% url 'panel:work_period_close' %}">
                     {% csrf_token %}
-                    <div class="mb-0">
+                    <div class="mb-3">
                         <label class="form-label text-sm fw-semibold">Fecha de fin</label>
                         <input type="date" name="end_date"
                                class="form-control form-control-sm" required>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox"
+                               name="force_close" value="1"
+                               id="id_force_close">
+                        <label class="form-check-label small text-danger fw-semibold"
+                               for="id_force_close">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Liquidar igualmente aunque haya partes sin revisar
+                        </label>
                     </div>
                 </form>
             </div>
@@ -237,5 +248,6 @@
         </div>
     </div>
 </div>
+
 
 

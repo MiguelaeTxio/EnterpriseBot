@@ -574,6 +574,121 @@ er hx-trigger="change".
 </div>
 {% endif %}
 
+{# ------------------------------------------------------------------ #}
+{# Add day button — Botón para añadir un día nuevo al parte PDF        #}
+{# Solo visible para partes PDF_UPLOAD (is_digital=False)              #}
+{# ------------------------------------------------------------------ #}
+{% if not is_digital %}
+<div class="mt-3 mb-2">
+    <button type="button"
+            class="btn btn-outline-primary btn-sm"
+            data-bs-toggle="modal"
+            data-bs-target="#modalAddDay">
+        <i class="bi bi-plus-circle me-1"></i>Añadir día
+    </button>
+</div>
+
+{# Modal añadir día #}
+<div class="modal fade" id="modalAddDay" tabindex="-1"
+     aria-labelledby="modalAddDayLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="modalAddDayLabel">
+                    <i class="bi bi-calendar-plus me-2 text-muted"></i>Añadir día al parte
+                </h6>
+                <button type="button" class="btn-close btn-sm"
+                        data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-sm text-muted mb-3">
+                    Introduce la fecha del día que falta en el PDF.
+                    Se creará una entrada vacía que podrás rellenar a continuación.
+                </p>
+                <div id="add-day-error" class="alert alert-danger py-2 d-none"></div>
+                <div class="mb-0">
+                    <label class="form-label text-sm fw-semibold" for="id_add_day_date">
+                        Fecha del día
+                    </label>
+                    <input type="date" id="id_add_day_date"
+                           class="form-control form-control-sm" required>
+                </div>
+            </div>
+            <div class="modal-footer border-top py-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm px-4"
+                        id="btn-add-day-confirm">
+                    <span id="add-day-spinner"
+                          class="spinner-border spinner-border-sm me-1 d-none"
+                          role="status" aria-hidden="true"></span>
+                    <i class="bi bi-plus-circle me-1" id="add-day-icon"></i>Añadir día
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    "use strict";
+    var confirmBtn = document.getElementById("btn-add-day-confirm");
+    var spinner    = document.getElementById("add-day-spinner");
+    var icon       = document.getElementById("add-day-icon");
+    var errorDiv   = document.getElementById("add-day-error");
+    var dateInput  = document.getElementById("id_add_day_date");
+    var addUrl     = "{% url 'panel:work_order_entry_add' work_order.pk %}";
+    var csrfToken  = document.cookie.match(/csrftoken=([^;]+)/);
+    csrfToken      = csrfToken ? csrfToken[1] : "";
+
+    confirmBtn.addEventListener("click", function () {
+        var dateVal = dateInput.value.trim();
+        if (!dateVal) {
+            errorDiv.textContent = "La fecha es obligatoria.";
+            errorDiv.classList.remove("d-none");
+            return;
+        }
+        errorDiv.classList.add("d-none");
+        confirmBtn.disabled = true;
+        spinner.classList.remove("d-none");
+        icon.classList.add("d-none");
+
+        var formData = new FormData();
+        formData.append("work_date", dateVal);
+        formData.append("csrfmiddlewaretoken", csrfToken);
+
+        fetch(addUrl, { method: "POST", body: formData })
+            .then(function (resp) {
+                if (!resp.ok) {
+                    return resp.text().then(function (t) { throw new Error(t); });
+                }
+                return resp.text();
+            })
+            .then(function (html) {
+                // Insertar el nuevo grupo antes del botón Añadir día
+                var addBtn = document.querySelector(".btn[data-bs-target='#modalAddDay']").closest("div");
+                var tmp = document.createElement("div");
+                tmp.innerHTML = html;
+                addBtn.parentNode.insertBefore(tmp.firstElementChild, addBtn);
+                // Cerrar modal y resetear
+                var modal = bootstrap.Modal.getInstance(document.getElementById("modalAddDay"));
+                if (modal) modal.hide();
+                dateInput.value = "";
+            })
+            .catch(function (err) {
+                errorDiv.textContent = "Error al añadir el día: " + err.message;
+                errorDiv.classList.remove("d-none");
+            })
+            .finally(function () {
+                confirmBtn.disabled = false;
+                spinner.classList.add("d-none");
+                icon.classList.remove("d-none");
+            });
+    });
+}());
+</script>
+{% endif %}
+
 
 {# ------------------------------------------------------------------ #}
 {# Workday gap incidents — Incidencias de jornada (DIGITAL/GENERATED)  #}
@@ -655,4 +770,5 @@ er hx-trigger="change".
 {% block extra_scripts %}
 {% include "panel/_time_picker_widget.html" %}
 {% endblock %}
+
 

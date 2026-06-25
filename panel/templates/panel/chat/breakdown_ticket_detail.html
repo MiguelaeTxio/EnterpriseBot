@@ -234,29 +234,79 @@
 
     </div>
 
-    {# ---- Columna derecha: conversación ---- #}
+    {# ---- Columna derecha: log de conversación (H17) ---- #}
+    {# Itera sobre ticket.conversation_log (JSONField).    #}
+    {# Estructura de cada entrada:                         #}
+    {#   {timestamp, source, role, content}                #}
+    {# source: IVR | WHATSAPP | SYSTEM                     #}
+    {# role:   USER | MODEL                                #}
     <div class="col-md-6">
       <div class="card border-0 shadow-sm h-100">
-        <div class="card-header fw-semibold border-bottom py-3">
-          <i class="bi bi-chat-dots me-2"></i>Conversación con el agente
+        <div class="card-header fw-semibold border-bottom py-3 d-flex align-items-center gap-2">
+          <i class="bi bi-chat-dots"></i>
+          <span>Log de conversación</span>
+          {% if ticket.conversation_log %}
+          <span class="badge bg-secondary ms-auto fw-normal">
+            {{ ticket.conversation_log|length }} mensaje{{ ticket.conversation_log|length|pluralize }}
+          </span>
+          {% endif %}
         </div>
-        <div class="card-body p-0">
-          {% if turns %}
+        <div class="card-body p-0"
+             style="max-height:520px;overflow-y:auto;"
+             id="conversation-log-body">
+          {% if ticket.conversation_log %}
           <ul class="list-group list-group-flush">
-            {% for turn in turns %}
-            <li class="list-group-item px-3 py-2">
-              <div class="d-flex justify-content-between align-items-start">
-                <span class="badge {% if turn.role == 'USER' %}bg-secondary{% else %}bg-primary{% endif %} me-2 mt-1">
-                  {% if turn.role == "USER" %}Contacto{% else %}Agente{% endif %}
-                </span>
-                <span class="text-muted small ms-auto">{{ turn.created_at|date:"H:i" }}</span>
+            {% for entry in ticket.conversation_log %}
+            <li class="list-group-item px-3 py-2
+                        {% if entry.role == 'USER' %}list-group-item-light{% endif %}">
+
+              {# Cabecera: canal + rol + timestamp #}
+              <div class="d-flex align-items-center gap-1 mb-1 flex-wrap">
+
+                {# Canal (source) #}
+                {% if entry.source == 'IVR' %}
+                  <span class="badge bg-info text-dark">
+                    <i class="bi bi-telephone-fill me-1"></i>IVR
+                  </span>
+                {% elif entry.source == 'WHATSAPP' %}
+                  <span class="badge bg-success">
+                    <i class="bi bi-whatsapp me-1"></i>WA
+                  </span>
+                {% else %}
+                  <span class="badge bg-secondary">
+                    <i class="bi bi-gear-fill me-1"></i>Sistema
+                  </span>
+                {% endif %}
+
+                {# Rol (quién habla) #}
+                {% if entry.role == 'USER' %}
+                  <span class="badge bg-secondary">Contacto</span>
+                {% else %}
+                  <span class="badge bg-primary">Agente</span>
+                {% endif %}
+
+                {# Timestamp — almacenado como string ISO en el JSONField #}
+                {% if entry.timestamp %}
+                  <span class="text-muted small ms-auto">
+                    {{ entry.timestamp|slice:":16"|default:"" }}
+                  </span>
+                {% endif %}
+
               </div>
-              <p class="mb-0 mt-1 small">{{ turn.content }}</p>
+
+              {# Contenido #}
+              <p class="mb-0 small" style="white-space:pre-wrap;">
+                {{ entry.content|default:"" }}
+              </p>
+
             </li>
             {% endfor %}
           </ul>
           {% else %}
-          <p class="text-muted p-3 mb-0 small">Sin turnos de conversación registrados.</p>
+          <div class="p-3 text-center text-muted small">
+            <i class="bi bi-chat-square-dots fs-4 d-block mb-2 opacity-50"></i>
+            Sin conversación registrada para este ticket.
+          </div>
           {% endif %}
         </div>
       </div>
@@ -265,3 +315,4 @@
   </div>
 </div>
 {% endblock %}
+

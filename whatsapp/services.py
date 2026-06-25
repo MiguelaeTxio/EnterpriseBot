@@ -1142,18 +1142,42 @@ class BreakdownAgentService:
         ).order_by("-created_at").first()
 
         if ticket is None:
+            from ivr_config.models import CompanyUser as _CU
+
+            # Auto-assign if the contact is a workshop operator or boss.
+            # Autoasignar si el contacto es operario o jefe de taller.
+            company_user = getattr(contact, "company_user", None)
+            auto_assign  = (
+                company_user is not None
+                and company_user.role in (
+                    _CU.ROLE_WORKSHOP,
+                    _CU.ROLE_WORKSHOPBOSS,
+                )
+            )
+
             ticket = BreakdownTicket.objects.create(
                 company=company,
                 contact=contact,
                 origin=BreakdownTicket.ORIGIN_CHATBOT,
-                status=BreakdownTicket.STATUS_OPEN,
+                status=(
+                    BreakdownTicket.STATUS_IN_PROGRESS
+                    if auto_assign
+                    else BreakdownTicket.STATUS_OPEN
+                ),
+                assigned_to=company_user if auto_assign else None,
             )
-            logger.info(
-                "# [BREAKDOWN AGENT] Nuevo ticket creado para %s — pk=%s code=%s",
-                contact.name,
-                ticket.pk,
-                ticket.ticket_date_code,
-            )
+            if auto_assign:
+                logger.info(
+                    "# [BREAKDOWN AGENT] Ticket pk=%s autoasignado a CU pk=%s"
+                    " (IN_PROGRESS) — contacto %s",
+                    ticket.pk, company_user.pk, contact.name,
+                )
+            else:
+                logger.info(
+                    "# [BREAKDOWN AGENT] Nuevo ticket creado para %s"
+                    " — pk=%s code=%s",
+                    contact.name, ticket.pk, ticket.ticket_date_code,
+                )
 
         return ticket
 
@@ -1212,13 +1236,40 @@ class BreakdownAgentService:
             "respuesta — y SOLO al final — el siguiente marcador JSON:",
             '[TICKET_DATA:{"machine": "...", "fault": "...", '
             '"fault_location": "...", "location": "...", '
-            '"urgency": "LOW|MEDIUM|HIGH|CRITICAL", "category": "..."}]',
+            '"urgency": "LOW|MEDIUM|HIGH|CRITICAL", "category": "...",'
+            ' "reported_by": "nombre completo del conductor/maquinista o null"}]',
             "Categorias validas: MECHANICAL, ELECTRICAL_ELECTRONIC, HYDRAULIC, "
             "PNEUMATIC, BODYWORK, TYRES, OTHER.",
             "Solo incluye el marcador cuando los datos esten suficientemente "
             "completos. Omite campos que aun no esten claros.",
             "NUNCA muestres el marcador al trabajador — sera procesado internamente.",
         ]
+
+        # If the contact is a manager/admin, ask who is operating the machine.
+        # Si el contacto es jefe/admin, preguntar quién opera la máquina.
+        from ivr_config.models import CompanyUser as _CU
+        company_user = getattr(contact, "company_user", None)
+        if (
+            company_user is not None
+            and company_user.role in (
+                _CU.ROLE_WORKSHOPBOSS,
+                _CU.ROLE_ADMIN,
+            )
+        ):
+            lines.append("")
+            lines.append(
+                "CONDUCTOR O MAQUINISTA AFECTADO:"
+            )
+            lines.append(
+                "Dado que el trabajador que reporta es responsable o "
+                "administrador, preguntale quien es el conductor o maquinista "
+                "que opera la maquina afectada. Incluye su nombre completo en "
+                'el campo "reported_by" del marcador TICKET_DATA. '
+                "Si el propio trabajador es quien opera la maquina, "
+                "pon su nombre en reported_by igualmente. "
+                "Si no es posible identificarlo, usa null."
+            )
+
         return "\n".join(lines)
 
     @classmethod
@@ -1343,6 +1394,41 @@ class BreakdownAgentService:
         if category in cls.FAULT_CATEGORIES and category != ticket.fault_category:
             ticket.fault_category = category
             updated_fields.append("fault_category")
+
+        # Resolve reported_by from name string to Contact.
+        # Resolver reported_by del nombre al Contact correspondiente.
+        reported_by_name = (data.get("reported_by") or "").strip()
+        if reported_by_name and reported_by_name.lower() != "null":
+            from ivr_config.models import Contact as _Contact
+            # Try exact match first, then icontains.
+            # Primero coincidencia exacta, luego parcial.
+            rb_contact = (
+                _Contact.objects.filter(
+                    company=ticket.company,
+                    name__iexact=reported_by_name,
+                ).first()
+                or _Contact.objects.filter(
+                    company=ticket.company,
+                    name__icontains=reported_by_name,
+                ).first()
+            )
+            if (
+                rb_contact is not None
+                and rb_contact != ticket.reported_by
+            ):
+                ticket.reported_by = rb_contact
+                updated_fields.append("reported_by")
+                logger.info(
+                    "# [BREAKDOWN AGENT] reported_by resuelto a Contact pk=%s"
+                    " '%s' para ticket pk=%s",
+                    rb_contact.pk, rb_contact.name, ticket.pk,
+                )
+            elif rb_contact is None:
+                logger.warning(
+                    "# [BREAKDOWN AGENT] reported_by '%s' no encontrado"
+                    " en empresa pk=%s — campo omitido.",
+                    reported_by_name, ticket.company_id,
+                )
 
         if updated_fields:
             updated_fields.append("updated_at")

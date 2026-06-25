@@ -78,6 +78,7 @@ from panel.views_workorders import (
     WorkOrderLineSaveView,
     WorkOrderEntrySaveDateView,
     MachineAssetAutocompleteView,
+    WorkOrderEntryAddView,
     WorkOrderLineInsertView,
     WorkOrderLineReorderView,
     WorkOrderLineRestoreView,

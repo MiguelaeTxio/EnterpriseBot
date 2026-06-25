@@ -589,7 +589,7 @@ class VoiceOrchestrator:
         # Solución: abrir un archivo de log dedicado para el bridge y redirigir tanto
         # stdout como stderr a él. Esto desacopla la salida del bridge del stdout del
         # orquestador y elimina el deadlock completamente.
-        bridge_log_path = "/home/MiguelAeTxio/SWAP/bridge.log"
+        bridge_log_path = "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/logs/bridge.log"
         bridge_log_fh = open(bridge_log_path, "a", buffering=1, encoding="utf-8")
         self.flush_print(
             f"# [ORCHESTRATOR] Salida del bridge redirigida a: {bridge_log_path}"
