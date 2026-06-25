@@ -35,6 +35,7 @@
 {#   "workday_schedule"   → Horarios de jornada              (ADMIN, SUPERVISOR)    #}
 {#   "absence_categories" → Categorías de ausencia           (ADMIN, SUPERVISOR)    #}
 {#   "machine_history"    → Historial de Máquina             (WORKSHOP, ADMIN)      #}
+{#   "workorder_history" → Mis partes                        (WORKSHOP, WORKSHOPBOSS, ADMIN) #}
 {# ================================================================================ #}
 
 <ul class="nav flex-column mt-2" id="sidebar-accordion">
@@ -331,6 +332,16 @@
                     </a>
                 </li>
                 {% endif %}
+                {# Mis partes — WORKSHOP, WORKSHOPBOSS y ADMIN (Hito 22 / S056)        #}
+                {# My work orders — WORKSHOP, WORKSHOPBOSS and ADMIN (Hito 22 / S056)  #}
+                {% if company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'ADMIN' %}
+                <li class="nav-item">
+                    <a class="nav-link {% if active_nav == 'workorder_history' %}active{% endif %}"
+                       href="{% url 'history:workorder_history_list' %}">
+                        <i class="bi bi-file-earmark-text"></i>Mis partes
+                    </a>
+                </li>
+                {% endif %}
                 {# Historial de administración — ADMIN y SUPERVISOR únicamente          #}
                 {# Admin work-order history — ADMIN and SUPERVISOR only                 #}
                 {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
@@ -513,6 +524,7 @@
         'operator_dashboard':       'acc-operarios',
         'operator_history':         'acc-operarios',
         'machine_history':          'acc-operarios',
+        'workorder_history':        'acc-operarios',
         'work_order_admin_history': 'acc-operarios',
         'breakdown_ticket_list':    'acc-tickets',
         'budgets_wizard':           'acc-asistencia',
