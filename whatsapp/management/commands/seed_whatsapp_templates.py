@@ -1,16 +1,34 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/whatsapp/management/commands/seed_whatsapp_templates.py
 """
-Django management command to seed WhatsApp templates for Grupo Álvarez.
+Django management command to seed WhatsApp templates for Grupo Alvarez.
 Creates WhatsAppTemplate records using the ContentSid values obtained from
 the Twilio Content Template Builder after Meta approval. Idempotent — safe
 to run multiple times via get_or_create. ContentSid values must be updated
 in the TEMPLATE_DEFINITIONS constant below once obtained from Twilio Console.
+
+Template inventory (10 total):
+  APPROVED (5):
+    - presence_reminder          UTILITY   HXe0ea154a5fa8756be305f6f0c24023c4
+    - welcome_message            MARKETING HX6619d4bded96b01c62fada40e6259dd8
+    - chat_onboarding            UTILITY   HX9c92dd8981366dda0764900958b7abbc
+    - chat_session_renewal       UTILITY   HX7e0f3f4d9b8553acc58240e7767f2133
+    - ivr_capture_notification   UTILITY   HX1a301d32db3acaedf6b13d83fd7579ac
+
+  PENDING APPROVAL (5 — created in H17 S055, awaiting Meta review):
+    - breakdown_ticket_created   UTILITY   HX32d590d2a40360c789060a7f88fa50ef
+    - breakdown_location_request UTILITY   HXb9139eb63adb500855a679957d3de232
+    - breakdown_info_request     UTILITY   HXe3baa955000b20e312d6d000f775533b
+    - breakdown_assigned         UTILITY   HX41a742714147cc5ec92fa83dbf5c3db6
+    - breakdown_broadcast        UTILITY   HXa1b32520e94663a32d3c7c1453429fe3
+
+  NOT SUBMITTED (1 — created previously, pending Meta submission decision):
+    - employee_help_menu         UTILITY   HXe8c20c02d4cf4ab340924ed5e2b0ac6f
 ---
-Comando de gestión de Django para sembrar las plantillas WhatsApp del Grupo Álvarez.
+Comando de gestion de Django para sembrar las plantillas WhatsApp del Grupo Alvarez.
 Crea registros WhatsAppTemplate usando los valores ContentSid obtenidos del
-Content Template Builder de Twilio tras la aprobación de Meta. Idempotente —
-seguro de ejecutar múltiples veces mediante get_or_create. Los valores ContentSid
-deben actualizarse en la constante TEMPLATE_DEFINITIONS a continuación una vez
+Content Template Builder de Twilio tras la aprobacion de Meta. Idempotente —
+seguro de ejecutar multiples veces mediante get_or_create. Los valores ContentSid
+deben actualizarse en la constante TEMPLATE_DEFINITIONS a continuacion una vez
 obtenidos del Console de Twilio.
 """
 
@@ -21,43 +39,144 @@ from whatsapp.models import WhatsAppTemplate
 
 
 # ---------------------------------------------------------------------------
-# TEMPLATE DEFINITIONS — Update ContentSid values after Twilio Console approval.
-# DEFINICIONES DE PLANTILLAS — Actualizar valores ContentSid tras aprobación en Twilio Console.
+# TEMPLATE DEFINITIONS — Full inventory for Grupo Alvarez.
+# Update ContentSid values here if templates are recreated in Twilio Console.
 #
 # HOW TO OBTAIN ContentSid:
-#   1. Log in to Twilio Console → Messaging → Content Template Builder.
-#   2. Locate the approved template.
+#   1. Log in to Twilio Console -> Messaging -> Content Template Builder.
+#   2. Locate the template.
 #   3. Copy the Content SID (format: HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx).
-#   4. Replace the PENDING placeholder below with the real SID.
+#   4. Replace the value below with the real SID.
 #   5. Re-run: python -m dotenv run python manage.py seed_whatsapp_templates
-#
-# CÓMO OBTENER ContentSid:
-#   1. Acceder al Console de Twilio → Messaging → Content Template Builder.
-#   2. Localizar la plantilla aprobada.
-#   3. Copiar el Content SID (formato: HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx).
-#   4. Reemplazar el marcador PENDING a continuación con el SID real.
-#   5. Volver a ejecutar: python -m dotenv run python manage.py seed_whatsapp_templates
 # ---------------------------------------------------------------------------
 
 TEMPLATE_DEFINITIONS = [
+    # ------------------------------------------------------------------
+    # APPROVED TEMPLATES — Active and available for sending.
+    # ------------------------------------------------------------------
     {
         # Presence reminder sent by check_in_meeting_reminders Celery task.
-        # Recordatorio de presencia enviado por la tarea Celery check_in_meeting_reminders.
-        # Body: "¿Sigues reunido? Responde con una de estas opciones:
-        #        1h — Seguiré ocupado 1 hora más
-        #        2h — Seguiré ocupado 2 horas más
-        #        disponible — Ya estoy disponible"
+        # Recordatorio de presencia enviado por la tarea Celery.
+        # Body: "Esta reunido? Responde con una de estas opciones: ..."
         "name":        "presence_reminder",
         "content_sid": "HXe0ea154a5fa8756be305f6f0c24023c4",
         "category":    WhatsAppTemplate.CATEGORY_UTILITY,
         "language":    "es",
     },
     {
-        # Optional welcome message for business-initiated conversations.
-        # Mensaje de bienvenida opcional para conversaciones iniciadas por la empresa.
-        # Body: "Hola {{1}}, soy el asistente virtual de {{2}}. ¿En qué puedo ayudarte hoy?"
+        # Welcome message for business-initiated conversations (generic).
+        # Approved as MARKETING by Meta (not transactional — generic greeting).
+        # Mensaje de bienvenida para conversaciones iniciadas por la empresa.
+        # Aprobada como MARKETING por Meta (no transaccional).
+        # Body: "Hola {{1}}, soy el asistente virtual de {{2}}. En que puedo ayudarte hoy?"
         "name":        "welcome_message",
         "content_sid": "HX6619d4bded96b01c62fada40e6259dd8",
+        "category":    WhatsAppTemplate.CATEGORY_MARKETING,
+        "language":    "es",
+    },
+    {
+        # Onboarding message sent when a new employee registers via WhatsApp.
+        # Mensaje de onboarding enviado al registrar un nuevo empleado por WhatsApp.
+        "name":        "chat_onboarding",
+        "content_sid": "HX9c92dd8981366dda0764900958b7abbc",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    {
+        # Session renewal template sent when a WhatsApp session expires (24h window).
+        # Plantilla de renovacion de sesion enviada al expirar la sesion de 24h.
+        # Content type: twilio/quick-reply
+        "name":        "chat_session_renewal",
+        "content_sid": "HX7e0f3f4d9b8553acc58240e7767f2133",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    {
+        # Notification sent after an IVR call captures breakdown data.
+        # Notificacion enviada tras una llamada IVR que captura datos de averia.
+        "name":        "ivr_capture_notification",
+        "content_sid": "HX1a301d32db3acaedf6b13d83fd7579ac",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    # ------------------------------------------------------------------
+    # H17 BREAKDOWN FLOW TEMPLATES — Created S055, pending Meta approval.
+    # All use the "trabajador de Grupo Alvarez" anchor pattern for UTILITY.
+    # ------------------------------------------------------------------
+    {
+        # Sent business-initiated when a breakdown ticket is registered.
+        # Body: "Usted recibe este mensaje porque consta como trabajador de
+        #        Grupo Alvarez. Su averia ha sido registrada con el codigo {{2}}.
+        #        El equipo de taller ha sido notificado. Puede ampliar
+        #        informacion respondiendo a este mensaje, {{1}}."
+        # Enviado de forma business-initiated al registrar un ticket de averia.
+        "name":        "breakdown_ticket_created",
+        "content_sid": "HX32d590d2a40360c789060a7f88fa50ef",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    {
+        # Sent business-initiated to request GPS location from the mechanic
+        # after a breakdown is registered (H17 Step 5 — geolocation).
+        # Body: "Usted recibe este mensaje porque consta como trabajador de
+        #        Grupo Alvarez. Para completar la averia {{2}}, necesitamos
+        #        su ubicacion actual. Por favor, comparta su ubicacion
+        #        pulsando el icono de adjunto en WhatsApp, {{1}}."
+        # Enviado de forma business-initiated para solicitar ubicacion GPS.
+        "name":        "breakdown_location_request",
+        "content_sid": "HXb9139eb63adb500855a679957d3de232",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    {
+        # Sent business-initiated when the workshop needs additional info
+        # about an open ticket. Variable {{3}} carries the specific question.
+        # Body: "Usted recibe este mensaje porque consta como trabajador de
+        #        Grupo Alvarez. El taller necesita informacion adicional sobre
+        #        la averia {{2}}: {{3}} Responda a este mensaje para continuar, {{1}}."
+        # Enviado cuando el taller necesita informacion adicional sobre un ticket.
+        "name":        "breakdown_info_request",
+        "content_sid": "HXe3baa955000b20e312d6d000f775533b",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    {
+        # Quick-reply sent when a mechanic is assigned to a breakdown ticket.
+        # Buttons: "Si, la atiendo" / "No disponible"
+        # Body: "Usted recibe este mensaje porque consta como trabajador de
+        #        Grupo Alvarez. Se le ha asignado la averia {{2}} en {{3}}.
+        #        Acceda al panel para ver los detalles o confirme su
+        #        disponibilidad, {{1}}."
+        # Quick-reply enviado al asignar un mecanico a un ticket de averia.
+        "name":        "breakdown_assigned",
+        "content_sid": "HX41a742714147cc5ec92fa83dbf5c3db6",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    {
+        # Quick-reply broadcast to workshop mechanics when a new ticket is created.
+        # Buttons: "Si, la atiendo" / "No disponible"
+        # Body: "Usted recibe este mensaje porque consta como trabajador de
+        #        Grupo Alvarez. Nueva averia registrada: {{2}} en {{3}},
+        #        ubicacion: {{4}}. Puede atenderla, {{1}}?"
+        # Quick-reply de difusion al taller al crear un nuevo ticket de averia.
+        "name":        "breakdown_broadcast",
+        "content_sid": "HXa1b32520e94663a32d3c7c1453429fe3",
+        "category":    WhatsAppTemplate.CATEGORY_UTILITY,
+        "language":    "es",
+    },
+    # ------------------------------------------------------------------
+    # ONBOARDING HELPER TEMPLATE — Existing, not yet submitted to Meta.
+    # Pending decision on whether to submit or redesign for H17 flow.
+    # ------------------------------------------------------------------
+    {
+        # Quick-reply help menu sent to employees needing panel access or
+        # password assistance. Created prior to H17; not yet submitted to Meta.
+        # Buttons: "Acceder al panel" / "Recordar contrasena"
+        # Body: "Hola! Que necesitas?"
+        # Quick-reply de ayuda para empleados con acceso al panel o contrasena.
+        "name":        "employee_help_menu",
+        "content_sid": "HXe8c20c02d4cf4ab340924ed5e2b0ac6f",
         "category":    WhatsAppTemplate.CATEGORY_UTILITY,
         "language":    "es",
     },
@@ -78,8 +197,8 @@ class Command(BaseCommand):
     Usage:
         python -m dotenv run python manage.py seed_whatsapp_templates
     ---
-    Comando de gestión: seed_whatsapp_templates.
-    Idempotente — seguro de ejecutar múltiples veces. Usa get_or_create para
+    Comando de gestion: seed_whatsapp_templates.
+    Idempotente — seguro de ejecutar multiples veces. Usa get_or_create para
     evitar registros duplicados. Actualiza content_sid y category si el registro
     ya existe con un valor diferente, soportando re-sembrado tras cambios de ContentSid.
 
@@ -87,20 +206,18 @@ class Command(BaseCommand):
         python -m dotenv run python manage.py seed_whatsapp_templates
     """
 
-    help = "Siembra las plantillas WhatsApp del Grupo Álvarez en la base de datos."
+    help = "Siembra las plantillas WhatsApp del Grupo Alvarez en la base de datos."
 
     def handle(self, *args, **options):
         """
-        Main entry point. Resolves the Grupo Álvarez Company instance and
+        Main entry point. Resolves the Grupo Alvarez Company instance and
         iterates over TEMPLATE_DEFINITIONS to create or update each template.
         Warns if any ContentSid value is still set to a PENDING placeholder.
         ---
-        Punto de entrada principal. Resuelve la instancia Company del Grupo Álvarez
+        Punto de entrada principal. Resuelve la instancia Company del Grupo Alvarez
         e itera sobre TEMPLATE_DEFINITIONS para crear o actualizar cada plantilla.
-        Advierte si algún valor ContentSid sigue establecido como marcador PENDING.
+        Advierte si algun valor ContentSid sigue establecido como marcador PENDING.
         """
-        # Resolve Grupo Álvarez company instance.
-        # Resolver la instancia Company del Grupo Álvarez.
         try:
             company = Company.objects.get(slug=GRUPO_ALVAREZ_SLUG)
         except Company.DoesNotExist:
@@ -115,6 +232,7 @@ class Command(BaseCommand):
 
         pending_count = 0
         seeded_count  = 0
+        updated_count = 0
 
         for definition in TEMPLATE_DEFINITIONS:
             name        = definition["name"]
@@ -122,12 +240,10 @@ class Command(BaseCommand):
             category    = definition["category"]
             language    = definition["language"]
 
-            # Warn about pending ContentSid placeholders.
-            # Advertir sobre marcadores ContentSid pendientes.
             if content_sid.startswith("PENDING_"):
                 self.stdout.write(
                     self.style.WARNING(
-                        f"# [SEED] ⚠️  Plantilla '{name}': ContentSid aún no configurado "
+                        f"# [SEED] Plantilla '{name}': ContentSid aun no configurado "
                         f"({content_sid}). Actualiza TEMPLATE_DEFINITIONS y re-ejecuta."
                     )
                 )
@@ -145,8 +261,6 @@ class Command(BaseCommand):
             )
 
             if not created:
-                # Update mutable fields if the record already existed.
-                # Actualizar campos mutables si el registro ya existía.
                 updated_fields = []
 
                 if template.content_sid != content_sid:
@@ -167,6 +281,7 @@ class Command(BaseCommand):
                         f"# [SEED] Plantilla '{name}' actualizada "
                         f"(campos: {', '.join(updated_fields)})."
                     )
+                    updated_count += 1
                 else:
                     self.stdout.write(
                         f"# [SEED] Plantilla '{name}' ya existente — sin cambios."
@@ -180,12 +295,11 @@ class Command(BaseCommand):
                 )
                 seeded_count += 1
 
-        # Final summary.
-        # Resumen final.
         self.stdout.write(
             self.style.SUCCESS(
-                f"# [SEED] Seed de plantillas completado. "
-                f"{seeded_count} creada(s). "
+                f"# [SEED] Seed completado. "
+                f"{seeded_count} creada(s), "
+                f"{updated_count} actualizada(s). "
                 f"{pending_count} pendiente(s) de ContentSid real."
             )
         )
@@ -198,3 +312,21 @@ class Command(BaseCommand):
                     "una vez obtenidos del Content Template Builder de Twilio."
                 )
             )
+
+        # Desactivar plantillas legacy eliminadas de Twilio.
+        # alias_confirmation fue eliminada de Twilio en H17 S055 (legacy H13).
+        # Se marca is_active=False para conservar el registro historico en BD.
+        LEGACY_INACTIVE = ["alias_confirmation"]
+        for legacy_name in LEGACY_INACTIVE:
+            updated = WhatsAppTemplate.objects.filter(
+                company=company,
+                name=legacy_name,
+                is_active=True,
+            ).update(is_active=False)
+            if updated:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"# [SEED] Plantilla legacy '{legacy_name}' marcada "
+                        f"como inactiva (eliminada de Twilio en H17)."
+                    )
+                )

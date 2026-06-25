@@ -1080,3 +1080,728 @@ def send_operator_albaran_notification(
         pending,
     )
     return True
+
+# ---------------------------------------------------------------------------
+# BREAKDOWN AGENT SERVICE — H17 Paso 6
+# Manages the WhatsApp breakdown conversation for internal Contacts.
+# Resolves or creates a BreakdownTicket, builds the mechanic expert prompt,
+# persists conversation turns in conversation_log, and parses TICKET_DATA
+# markers from Gemini replies to populate ticket fields progressively.
+# ---------------------------------------------------------------------------
+# SERVICIO AGENTE DE AVERÍAS — H17 Paso 6
+# Gestiona la conversación WhatsApp de avería para Contacts internos.
+# Resuelve o crea un BreakdownTicket, construye el prompt de mecánico experto,
+# persiste turnos en conversation_log y parsea marcadores TICKET_DATA de las
+# respuestas de Gemini para poblar los campos del ticket progresivamente.
+# ---------------------------------------------------------------------------
+
+class BreakdownAgentService:
+    """
+    Stateless service that handles the full breakdown conversation pipeline
+    for an internal Contact writing via WhatsApp. On each invocation it:
+      1. Resolves the open BreakdownTicket for this contact or creates one.
+      2. Builds the mechanic expert system prompt (Alia).
+      3. Reconstructs conversation history from ticket.conversation_log.
+      4. Sends the user message to Gemini and obtains a reply.
+      5. Persists both turns in ticket.conversation_log.
+      6. Parses [TICKET_DATA:{...}] markers to update ticket fields.
+    ---
+    Servicio sin estado que gestiona el pipeline completo de conversacion
+    de averia para un Contact interno que escribe por WhatsApp.
+    """
+
+    GEMINI_MODEL = "gemini-2.5-flash"
+
+    # Fault categories aligned with WorkOrderEntryLine.fault_category codes.
+    # Categorias de averia alineadas con los codigos de WorkOrderEntryLine.
+    FAULT_CATEGORIES = [
+        "MECHANICAL", "ELECTRICAL_ELECTRONIC", "HYDRAULIC",
+        "PNEUMATIC", "BODYWORK", "TYRES", "OTHER",
+    ]
+
+    @classmethod
+    def get_or_create_ticket(cls, contact, company):
+        """
+        Returns the most recent open BreakdownTicket (OPEN or IN_PROGRESS)
+        for the given contact and company. Creates a new OPEN ticket if none
+        exists. Never returns PAUSED or CLOSED tickets — those are historical.
+        ---
+        Devuelve el BreakdownTicket abierto mas reciente (OPEN o IN_PROGRESS)
+        para el contacto y empresa dados. Crea un nuevo ticket OPEN si no existe.
+        Nunca devuelve tickets PAUSED o CLOSED — son historicos.
+        """
+        from chat.models import BreakdownTicket
+
+        ticket = BreakdownTicket.objects.filter(
+            contact=contact,
+            company=company,
+            status__in=[
+                BreakdownTicket.STATUS_OPEN,
+                BreakdownTicket.STATUS_IN_PROGRESS,
+            ],
+        ).order_by("-created_at").first()
+
+        if ticket is None:
+            ticket = BreakdownTicket.objects.create(
+                company=company,
+                contact=contact,
+                origin=BreakdownTicket.ORIGIN_CHATBOT,
+                status=BreakdownTicket.STATUS_OPEN,
+            )
+            logger.info(
+                "# [BREAKDOWN AGENT] Nuevo ticket creado para %s — pk=%s code=%s",
+                contact.name,
+                ticket.pk,
+                ticket.ticket_date_code,
+            )
+
+        return ticket
+
+    @classmethod
+    def build_system_prompt(cls, contact, ticket, company) -> str:
+        """
+        Builds the mechanic expert system prompt for the breakdown agent.
+        Alia acts as an expert mechanic specialised in heavy equipment
+        (cranes, trucks, lifting platforms) and guides the internal contact
+        through a structured fault declaration dialogue.
+
+        The prompt instructs Gemini to:
+          - Collect machine identification, fault description, fault location
+            on the machine, physical location, and urgency level.
+          - Append a [TICKET_DATA:{...}] marker when it has gathered enough
+            information to populate the ticket fields.
+          - Keep the conversation natural and concise.
+        ---
+        Construye el system prompt de mecanico experto para el agente de averias.
+        """
+        lines = [
+            f"Eres Alia, mecanica experta de {company.name} especializada en "
+            "maquinaria pesada: gruas, camiones, plataformas elevadoras y "
+            "carretillas. Tu rol es recoger los datos de una averia de forma "
+            "natural y eficiente.",
+            "",
+            f"Estas hablando con {contact.name}, trabajador interno de la empresa.",
+            "",
+            "OBJETIVO: Recoger los siguientes datos de la averia:",
+            "1. Maquina o vehiculo afectado (modelo, matricula o codigo interno)",
+            "2. Descripcion de la averia (que falla, como falla, desde cuando)",
+            "3. Ubicacion de la averia en la maquina (zona especifica afectada)",
+            "4. Ubicacion fisica actual de la maquina (base, ruta, lugar exacto)",
+            "5. Nivel de urgencia (baja, media, alta o critica)",
+            "",
+            "INSTRUCCIONES:",
+            "- Haz las preguntas de forma natural, no como un formulario.",
+            "- Puedes agrupar varias preguntas en un mismo mensaje si tiene sentido.",
+            "- Cuando tengas suficiente informacion para identificar la averia, "
+            "resume los datos al trabajador y pide confirmacion.",
+            "- Una vez confirmado, cierra el dialogo con un mensaje de confirmacion "
+            "indicando el codigo del ticket.",
+            "- Si el trabajador menciona que ya no hay averia o que fue un error, "
+            "indicalo claramente.",
+            "",
+            "ESTADO ACTUAL DEL TICKET:",
+            f"  Codigo: {ticket.ticket_date_code or 'pendiente de asignar'}",
+            f"  Maquina: {ticket.machine_raw or 'no identificada aun'}",
+            f"  Averia: {ticket.fault_summary or 'no descrita aun'}",
+            f"  Ubicacion maquina: {ticket.fault_location or 'no indicada aun'}",
+            f"  Ubicacion fisica: {ticket.location or 'no indicada aun'}",
+            f"  Urgencia: {ticket.urgency or 'no indicada aun'}",
+            "",
+            "MARCADOR DE DATOS (uso interno — el trabajador no lo ve):",
+            "Cuando hayas recopilado suficiente informacion, añade AL FINAL de tu "
+            "respuesta — y SOLO al final — el siguiente marcador JSON:",
+            '[TICKET_DATA:{"machine": "...", "fault": "...", '
+            '"fault_location": "...", "location": "...", '
+            '"urgency": "LOW|MEDIUM|HIGH|CRITICAL", "category": "..."}]',
+            "Categorias validas: MECHANICAL, ELECTRICAL_ELECTRONIC, HYDRAULIC, "
+            "PNEUMATIC, BODYWORK, TYRES, OTHER.",
+            "Solo incluye el marcador cuando los datos esten suficientemente "
+            "completos. Omite campos que aun no esten claros.",
+            "NUNCA muestres el marcador al trabajador — sera procesado internamente.",
+        ]
+        return "\n".join(lines)
+
+    @classmethod
+    def build_history_from_log(cls, ticket) -> list:
+        """
+        Reconstructs Gemini chat history from ticket.conversation_log entries
+        filtered to source='WHATSAPP'. Returns a list of genai_types.Content
+        objects compatible with client.chats.create(history=...).
+        ---
+        Reconstruye el historial de chat de Gemini desde las entradas
+        conversation_log del ticket filtradas a source='WHATSAPP'.
+        """
+        history = []
+        for entry in (ticket.conversation_log or []):
+            if entry.get("source") != "WHATSAPP":
+                continue
+            role = "user" if entry.get("role") == "USER" else "model"
+            content = entry.get("content", "")
+            if content:
+                history.append(
+                    genai_types.Content(
+                        role=role,
+                        parts=[genai_types.Part(text=content)],
+                    )
+                )
+        return history
+
+    @classmethod
+    def append_log(cls, ticket, role: str, content: str, source: str = "WHATSAPP"):
+        """
+        Appends a single turn to ticket.conversation_log and saves the field.
+        role: 'USER' | 'MODEL'
+        source: 'WHATSAPP' | 'IVR' | 'SYSTEM'
+        ---
+        Anade un turno al conversation_log del ticket y guarda el campo.
+        """
+        import json as _json
+        from django.utils.timezone import now as _now
+
+        log = list(ticket.conversation_log or [])
+        log.append({
+            "timestamp": _now().isoformat(),
+            "source":    source,
+            "role":      role,
+            "content":   content,
+        })
+        ticket.conversation_log = log
+        ticket.save(update_fields=["conversation_log", "updated_at"])
+
+    # Regex for TICKET_DATA marker emitted by Gemini.
+    # Regex para el marcador TICKET_DATA emitido por Gemini.
+    _TICKET_DATA_PATTERN = __import__("re").compile(
+        r'\[TICKET_DATA:\s*(\{[^}]+\})\s*\]',
+        __import__("re").IGNORECASE,
+    )
+
+    @classmethod
+    def parse_and_apply_ticket_data(cls, reply_text: str, ticket) -> str:
+        """
+        Searches for a [TICKET_DATA:{...}] marker in the Gemini reply.
+        If found:
+          - Strips the marker from the visible reply text.
+          - Updates ticket fields (machine_raw, fault_summary, fault_location,
+            location, urgency, fault_category) with non-empty values.
+          - Saves only the fields that changed.
+        Returns the cleaned reply text (marker removed).
+        ---
+        Busca un marcador [TICKET_DATA:{...}] en la respuesta de Gemini.
+        Si se encuentra, elimina el marcador del texto visible y actualiza
+        los campos del ticket con los valores no vacios. Devuelve el texto limpio.
+        """
+        import json as _json
+
+        match = cls._TICKET_DATA_PATTERN.search(reply_text)
+        if not match:
+            return reply_text
+
+        # Strip marker from visible reply regardless of parse success.
+        # Eliminar marcador del texto visible independientemente del exito del parseo.
+        clean_text = cls._TICKET_DATA_PATTERN.sub("", reply_text).strip()
+
+        try:
+            data = _json.loads(match.group(1))
+        except (_json.JSONDecodeError, AttributeError):
+            logger.warning(
+                "# [BREAKDOWN AGENT] Error parseando TICKET_DATA — raw: %s",
+                match.group(1),
+            )
+            return clean_text
+
+        updated_fields = []
+
+        machine = (data.get("machine") or "").strip()
+        if machine and machine != ticket.machine_raw:
+            ticket.machine_raw = machine
+            updated_fields.append("machine_raw")
+
+        fault = (data.get("fault") or "").strip()
+        if fault and fault != ticket.fault_summary:
+            ticket.fault_summary = fault
+            updated_fields.append("fault_summary")
+
+        fault_location = (data.get("fault_location") or "").strip()
+        if fault_location and fault_location != ticket.fault_location:
+            ticket.fault_location = fault_location
+            updated_fields.append("fault_location")
+
+        location = (data.get("location") or "").strip()
+        if location and location != ticket.location:
+            ticket.location = location
+            updated_fields.append("location")
+
+        urgency = (data.get("urgency") or "").strip().upper()
+        valid_urgencies = {
+            "LOW", "MEDIUM", "HIGH", "CRITICAL",
+        }
+        if urgency in valid_urgencies and urgency != ticket.urgency:
+            ticket.urgency = urgency
+            updated_fields.append("urgency")
+
+        category = (data.get("category") or "").strip().upper()
+        if category in cls.FAULT_CATEGORIES and category != ticket.fault_category:
+            ticket.fault_category = category
+            updated_fields.append("fault_category")
+
+        if updated_fields:
+            updated_fields.append("updated_at")
+            ticket.save(update_fields=updated_fields)
+            logger.info(
+                "# [BREAKDOWN AGENT] Ticket pk=%s actualizado: %s",
+                ticket.pk,
+                updated_fields,
+            )
+
+        return clean_text
+
+    @classmethod
+    def get_gemini_reply(
+        cls,
+        system_prompt: str,
+        history: list,
+        user_message: str,
+    ) -> str:
+        """
+        Sends the user message to Gemini 2.5 Flash via Vertex AI using the
+        breakdown agent system prompt and conversation history from the ticket
+        log. Returns the plain-text reply (TICKET_DATA marker not yet stripped
+        — caller handles that via parse_and_apply_ticket_data).
+        ---
+        Envia el mensaje del usuario a Gemini 2.5 Flash via Vertex AI usando
+        el system prompt del agente de averias y el historial del ticket log.
+        Devuelve el texto plano de la respuesta (el marcador TICKET_DATA aun
+        no se elimina — el llamador lo gestiona via parse_and_apply_ticket_data).
+        """
+        client = _build_genai_client()
+        chat = client.chats.create(
+            model=cls.GEMINI_MODEL,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=system_prompt,
+            ),
+            history=history,
+        )
+        response = chat.send_message(user_message)
+        return response.text
+
+
+# ---------------------------------------------------------------------------
+# ONBOARDING SERVICE — H17 Paso 6
+# Handles WhatsApp-driven employee onboarding for unknown phone numbers.
+# Collects name, DNI and section via natural conversation, then creates
+# CompanyUser + Contact + SectionContact automatically.
+# ---------------------------------------------------------------------------
+# SERVICIO DE ONBOARDING — H17 Paso 6
+# Gestiona el onboarding de empleados via WhatsApp para numeros desconocidos.
+# Recoge nombre, DNI y seccion mediante conversacion natural, luego crea
+# CompanyUser + Contact + SectionContact automaticamente.
+# ---------------------------------------------------------------------------
+
+# Onboarding state persisted in WhatsAppSession.pending_broadcast_messages
+# is NOT suitable for this purpose. We use a dedicated JSONField on the session
+# via a light convention: the onboarding state is stored in the session's
+# pending_albaran_units field as a sentinel value. Instead, we use the
+# Contact.alias_onboarding_step / alias_onboarding_proposed fields on a
+# *temporary* Contact record, OR we store the state in a simple in-DB
+# approach: a dedicated OnboardingSession model would be ideal but requires
+# a migration. For H17 Paso 6 we use a pragmatic approach: state is kept
+# in WhatsAppSession.pending_broadcast_messages as a JSON sentinel with a
+# "__onboarding__" key so it does not conflict with real broadcast messages.
+#
+# Convention: WhatsAppSession.pending_broadcast_messages may contain at most
+# one entry with key "__onboarding__" whose value is the onboarding state dict:
+# {
+#   "__onboarding__": true,
+#   "step": "NAME" | "LASTNAME" | "DNI" | "SECTION",
+#   "first_name": "...",
+#   "last_name1": "...",
+#   "last_name2": "...",
+#   "dni": "...",
+#   "section_pk": null | int,
+# }
+
+
+
+_ONBOARDING_SENTINEL = "__onboarding__"
+
+ELEVATION_KEYWORDS = (
+    "elevaci", "elevacion", "elevación",
+    "plataforma", "carretilla", "tijera",
+)
+
+
+def _is_elevation_section(section_name: str) -> bool:
+    """Returns True if the section name matches the elevation family."""
+    name_lower = section_name.lower()
+    return any(kw in name_lower for kw in ELEVATION_KEYWORDS)
+
+
+class OnboardingService:
+    """
+    Gemini-driven onboarding service for unknown WhatsApp numbers.
+    Gemini manages the entire conversation naturally — no rigid state machine.
+    When Gemini has collected and confirmed all required data it emits:
+      [ONBOARDING_DATA:{"first_name":"...","last_name1":"...","last_name2":"...",
+                        "dni":"...","section":"..."}]
+    The webhook detects this marker, creates the user and sends confirmation.
+
+    State stored in WhatsAppSession.pending_broadcast_messages:
+      [{"__onboarding__": true}]  — minimal sentinel, no step tracking needed.
+
+    Conversation history is reconstructed from WhatsAppSession.messages,
+    identical to the generic chatbot pipeline.
+    ---
+    Servicio de onboarding dirigido por Gemini para numeros WhatsApp desconocidos.
+    Gemini gestiona la conversacion completa de forma natural. Cuando tiene todos
+    los datos confirmados emite el marcador ONBOARDING_DATA. El webhook lo detecta,
+    crea el usuario y envia la confirmacion.
+    """
+
+    GEMINI_MODEL = "gemini-2.5-flash"
+
+    # Regex to detect the ONBOARDING_DATA marker in Gemini replies.
+    # Regex para detectar el marcador ONBOARDING_DATA en respuestas de Gemini.
+    import re as _re_cls
+    _ONBOARDING_DATA_PATTERN = _re_cls.compile(
+        r'\[ONBOARDING_DATA:\s*(\{[^}]+\})\s*\]',
+        _re_cls.IGNORECASE,
+    )
+
+    @classmethod
+    def get_state(cls, session) -> dict | None:
+        """Returns the onboarding sentinel dict or None."""
+        for entry in (session.pending_broadcast_messages or []):
+            if isinstance(entry, dict) and entry.get(_ONBOARDING_SENTINEL):
+                return entry
+        return None
+
+    @classmethod
+    def _set_state(cls, session):
+        """Activates the onboarding sentinel on the session."""
+        messages = [
+            e for e in (session.pending_broadcast_messages or [])
+            if not (isinstance(e, dict) and e.get(_ONBOARDING_SENTINEL))
+        ]
+        messages.append({_ONBOARDING_SENTINEL: True})
+        session.pending_broadcast_messages = messages
+        session.save(update_fields=["pending_broadcast_messages"])
+
+    @classmethod
+    def clear_state(cls, session):
+        """Removes the onboarding sentinel from the session."""
+        messages = [
+            e for e in (session.pending_broadcast_messages or [])
+            if not (isinstance(e, dict) and e.get(_ONBOARDING_SENTINEL))
+        ]
+        session.pending_broadcast_messages = messages
+        session.save(update_fields=["pending_broadcast_messages"])
+
+    @classmethod
+    def build_system_prompt(cls, company) -> str:
+        """
+        Builds the Gemini system prompt for the onboarding conversation.
+        Instructs Gemini to collect name, surnames, DNI and section naturally,
+        confirm each piece of data with the user, and emit ONBOARDING_DATA
+        when everything is confirmed.
+        ---
+        Construye el system prompt de Gemini para la conversacion de onboarding.
+        """
+        sections = list(company.sections.all().order_by("name"))
+        section_list = "\n".join(f"  - {s.name}" for s in sections)
+
+        return (
+            f"Eres el asistente de registro de nuevos empleados de {company.name}. "
+            "Tu objetivo es registrar al trabajador en la plataforma de forma "
+            "natural y amigable.\n\n"
+            "DATOS QUE DEBES RECOGER (en cualquier orden, de forma conversacional):\n"
+            "1. Nombre de pila\n"
+            "2. Apellidos (primer apellido y segundo apellido)\n"
+            "3. DNI completo con letra (p.ej. 12345678Z — acepta minúsculas, "
+            "indícale que no importa)\n"
+            f"4. Sección a la que pertenece. Secciones disponibles:\n{section_list}\n\n"
+            "INSTRUCCIONES:\n"
+            "- Recoge los datos de forma natural, no como un formulario.\n"
+            "- Después de recoger cada dato, confírmalo con el usuario "
+            "(p.ej. 'Tu nombre es Miguel Ángel, ¿correcto?').\n"
+            "- Si el usuario corrige algún dato, acéptalo y confirma el nuevo valor.\n"
+            "- Cuando tengas TODOS los datos confirmados, haz un resumen final "
+            "y pregunta si todo es correcto antes de registrar.\n"
+            "- Solo cuando el usuario confirme el resumen final, emite AL FINAL "
+            "de tu respuesta — y SOLO al final, sin texto posterior — el marcador:\n"
+            '[ONBOARDING_DATA:{"first_name":"...","last_name1":"...","last_name2":"...",'
+            '"dni":"...","section":"..."}]\n'
+            "- El campo 'dni' debe estar en mayúsculas (tú lo conviertes).\n"
+            "- El campo 'section' debe ser el nombre EXACTO de una de las secciones "
+            "listadas arriba.\n"
+            "- NUNCA muestres el marcador al usuario — será procesado internamente.\n"
+            "- Si el usuario dice algo que no tiene que ver con el registro, "
+            "redirige amablemente la conversación al proceso de alta.\n"
+            "- Mantén un tono cálido, profesional y conciso."
+        )
+
+    @classmethod
+    def start(cls, session, company) -> str:
+        """
+        Activates onboarding sentinel and returns the opening message
+        via Gemini (first turn with empty history).
+        ---
+        Activa el sentinel de onboarding y devuelve el mensaje de apertura
+        via Gemini (primer turno con historial vacio).
+        """
+        cls._set_state(session)
+        logger.info(
+            "# [ONBOARDING] Iniciado para sesion pk=%s empresa=%s",
+            session.pk, company.name,
+        )
+        system_prompt = cls.build_system_prompt(company)
+        # Seed Gemini with the trigger message already in history.
+        # Sembrar Gemini con el mensaje trigger ya en el historial.
+        history = WhatsAppChatService.build_history(session)
+        try:
+            reply = cls._get_gemini_reply(
+                system_prompt=system_prompt,
+                history=history,
+                user_message="",  # Gemini opens the conversation.
+            )
+        except Exception as exc:
+            logger.error("# [ONBOARDING] Error Gemini inicio: %s", exc)
+            reply = (
+                f"Bienvenido/a a {company.name}. Voy a registrarte en la "
+                "plataforma. ¿Cuál es tu nombre completo?"
+            )
+        return reply
+
+    @classmethod
+    def handle(cls, session, company, body: str) -> str:
+        """
+        Processes an inbound message during an active onboarding conversation.
+        Sends the full session history + body to Gemini and returns the reply.
+        If Gemini emits [ONBOARDING_DATA:{...}], creates the user and returns
+        the confirmation message (marker stripped from visible reply).
+        ---
+        Procesa un mensaje entrante durante un onboarding activo.
+        """
+        import json as _json
+
+        system_prompt = cls.build_system_prompt(company)
+        history = WhatsAppChatService.build_history(session)
+
+        try:
+            raw_reply = cls._get_gemini_reply(
+                system_prompt=system_prompt,
+                history=history,
+                user_message=body,
+            )
+        except Exception as exc:
+            logger.error("# [ONBOARDING] Error Gemini handle: %s", exc)
+            return (
+                "Lo sentimos, ha habido un problema. "
+                "Por favor, inténtalo de nuevo."
+            )
+
+        # Check for ONBOARDING_DATA marker.
+        # Comprobar marcador ONBOARDING_DATA.
+        match = cls._ONBOARDING_DATA_PATTERN.search(raw_reply)
+        if match:
+            # Strip marker from visible reply.
+            # Eliminar marcador del texto visible.
+            visible_reply = cls._ONBOARDING_DATA_PATTERN.sub(
+                "", raw_reply
+            ).strip()
+
+            try:
+                data = _json.loads(match.group(1))
+            except (_json.JSONDecodeError, AttributeError):
+                logger.warning(
+                    "# [ONBOARDING] Error parseando ONBOARDING_DATA: %s",
+                    match.group(1),
+                )
+                return visible_reply or raw_reply
+
+            # Create user and return confirmation.
+            # Crear usuario y devolver confirmacion.
+            confirmation = cls._create_user(session, company, data)
+            # Return Gemini's summary text + our confirmation message.
+            # Devolver texto de resumen de Gemini + mensaje de confirmacion.
+            if visible_reply:
+                return f"{visible_reply}\n\n{confirmation}"
+            return confirmation
+
+        return raw_reply
+
+    @classmethod
+    def _get_gemini_reply(
+        cls,
+        system_prompt: str,
+        history: list,
+        user_message: str,
+    ) -> str:
+        """Invokes Gemini 2.5 Flash with the onboarding prompt and history."""
+        client = _build_genai_client()
+        chat = client.chats.create(
+            model=cls.GEMINI_MODEL,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=system_prompt,
+            ),
+            history=history,
+        )
+        # If user_message is empty, send a trigger so Gemini opens naturally.
+        # Si user_message esta vacio, enviar trigger para que Gemini abra.
+        msg = user_message if user_message else "Hola, quiero registrarme."
+        response = chat.send_message(msg)
+        return response.text
+
+    @classmethod
+    def _create_user(cls, session, company, data: dict) -> str:
+        """
+        Creates DjangoUser + CompanyUser + Contact + SectionContact from the
+        data dict emitted by Gemini. Returns the confirmation message.
+        ---
+        Crea DjangoUser + CompanyUser + Contact + SectionContact desde el dict
+        emitido por Gemini. Devuelve el mensaje de confirmacion.
+        """
+        from django.contrib.auth.models import User as DjangoUser
+        from ivr_config.models import (
+            CompanyUser as _CU,
+            Contact as _Contact,
+            SectionContact as _SC,
+            Section as _S,
+        )
+        import unicodedata
+        import re as _re
+
+        first_name  = (data.get("first_name") or "").strip()
+        last_name1  = (data.get("last_name1") or "").strip()
+        last_name2  = (data.get("last_name2") or "").strip()
+        dni         = (data.get("dni") or "").strip().upper()
+        section_name = (data.get("section") or "").strip()
+
+        # Resolve section — exact match first, then partial.
+        # Resolver seccion — coincidencia exacta primero, luego parcial.
+        section = _S.objects.filter(
+            company=company, name=section_name,
+        ).first()
+        if section is None:
+            section = _S.objects.filter(
+                company=company,
+                name__icontains=section_name,
+            ).first()
+        if section is None:
+            cls.clear_state(session)
+            logger.error(
+                "# [ONBOARDING] Seccion '%s' no encontrada para empresa %s",
+                section_name, company.name,
+            )
+            return (
+                "Ha ocurrido un error al identificar la sección. "
+                "Por favor, contacta con el administrador."
+            )
+
+        # Determine role.
+        role = (
+            _CU.ROLE_WORKSHOP
+            if _is_elevation_section(section.name)
+            else _CU.ROLE_DRIVER
+        )
+
+        # Build username.
+        def _normalize(s: str) -> str:
+            return "".join(
+                c for c in unicodedata.normalize("NFD", s)
+                if unicodedata.category(c) != "Mn"
+            ).lower()
+
+        def _clean(s: str) -> str:
+            return _re.sub(r"[^a-z0-9.]", "", s)
+
+        fn  = _normalize(first_name)
+        ln1 = _normalize(last_name1)
+        ln2 = _normalize(last_name2)
+
+        base_username = _clean(f"{fn}.{ln1}") if ln1 else _clean(fn)
+        username = base_username
+
+        if DjangoUser.objects.filter(username=username).exists() and ln2:
+            alt = _clean(f"{fn}.{ln2}")
+            if not DjangoUser.objects.filter(username=alt).exists():
+                username = alt
+            else:
+                suffix = 2
+                while DjangoUser.objects.filter(
+                    username=f"{base_username}{suffix}"
+                ).exists():
+                    suffix += 1
+                username = f"{base_username}{suffix}"
+
+        # Derive password from last 4 numeric digits of DNI.
+        dni_digits = _re.sub(r"[^0-9]", "", dni)
+        password   = dni_digits[-4:] if len(dni_digits) >= 4 else dni_digits.zfill(4)
+
+        try:
+            django_user = DjangoUser.objects.create_user(
+                username=username,
+                password=password,
+                first_name=first_name,
+                last_name=f"{last_name1} {last_name2}".strip(),
+                is_active=True,
+                is_staff=False,
+            )
+            company_user = _CU.objects.create(
+                company=company,
+                user=django_user,
+                role=role,
+                is_active=True,
+                must_change_password=False,
+                dni=dni,
+            )
+            contact = _Contact.objects.create(
+                company=company,
+                name=f"{first_name} {last_name1} {last_name2}".strip(),
+                phone_number=session.phone_number,
+                is_internal=True,
+                company_user=company_user,
+            )
+            _SC.objects.create(
+                section=section,
+                contact=contact,
+                priority=99,
+            )
+            cls.clear_state(session)
+
+            role_label = (
+                "Operario de taller" if role == _CU.ROLE_WORKSHOP else "Chofer"
+            )
+            panel_url = (
+                "https://enterprisebot-miguelaetxio.pythonanywhere.com"
+                "/panel/users/"
+            )
+
+            logger.info(
+                "# [ONBOARDING] Usuario creado: username=%s role=%s "
+                "seccion=%s phone=%s",
+                username, role, section.name, session.phone_number,
+            )
+
+            return (
+                f"✅ ¡Listo! Tu cuenta ha sido creada en {company.name}.\n\n"
+                f"👤 Usuario: *{username}*\n"
+                f"🔑 Contraseña: *{password}*\n"
+                f"📋 Rol: {role_label}\n"
+                f"🏢 Sección: {section.name}\n\n"
+                f"🔗 Accede al panel aquí: {panel_url}\n\n"
+                "Guarda estos datos. Si necesitas ayuda para acceder o "
+                "tienes cualquier problema con tu cuenta, escríbeme aquí mismo. "
+                "Y si tienes alguna avería que reportar, también puedes "
+                "hacerlo por este chat."
+            )
+
+        except Exception as exc:
+            logger.error(
+                "# [ONBOARDING] Error creando usuario sesion pk=%s: %s",
+                session.pk, exc,
+            )
+            cls.clear_state(session)
+            return (
+                "Ha ocurrido un error al crear tu cuenta. "
+                "Por favor, contacta con el administrador de la plataforma."
+            )

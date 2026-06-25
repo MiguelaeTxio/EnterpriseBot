@@ -46,7 +46,12 @@ from django.views.decorators.csrf import csrf_exempt
 
 from ivr_config.models import PhoneNumber, Section
 from .models import WhatsAppMessage, WhatsAppSession
-from .services import PresenceResponseService, WhatsAppChatService
+from .services import (
+    BreakdownAgentService,
+    OnboardingService,
+    PresenceResponseService,
+    WhatsAppChatService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +461,241 @@ class IncomingWhatsAppView(View):
                 )
             return HttpResponse(status=200)
 
+        # =======================================================================
+        # --- Step 5 (H17): Route by sender identity. ---
+        # Bifurcación H17: enrutar según identidad del remitente.
+        #
+        # Three branches:
+        #   A) Internal Contact with open ticket → breakdown agent (continue)
+        #   B) Internal Contact without open ticket → breakdown agent (new)
+        #      or help branch (Gemini decides from message intent)
+        #   C) Unknown number with onboarding in progress → onboarding step
+        #   D) Unknown number → generic chatbot OR onboarding trigger
+        # =======================================================================
+
+        from ivr_config.models import Contact as _Contact
+        from chat.models import BreakdownTicket as _BT
+
+        _internal_contact = _Contact.objects.filter(
+            company=company,
+            phone_number=from_number,
+        ).select_related("company_user").first()
+
+        # -----------------------------------------------------------------------
+        # BRANCH A/B — Internal Contact: breakdown agent or help chatbot.
+        # RAMA A/B — Contact interno: agente de averías o chatbot de ayuda.
+        # -----------------------------------------------------------------------
+        if _internal_contact is not None:
+
+            # Resolve open ticket for this contact (OPEN or IN_PROGRESS).
+            # Resolver ticket abierto para este contacto (OPEN o IN_PROGRESS).
+            _open_ticket = _BT.objects.filter(
+                contact=_internal_contact,
+                company=company,
+                status__in=[_BT.STATUS_OPEN, _BT.STATUS_IN_PROGRESS],
+            ).order_by("-created_at").first()
+
+            # Effective user message — synthesise for pure location messages.
+            # Mensaje de usuario efectivo — sintetizar para mensajes de ubicación puros.
+            _effective_msg = body if body else (
+                "El trabajador acaba de compartir su ubicación geográfica."
+                if is_location_msg else ""
+            )
+
+            if _open_ticket is not None:
+                # --- Branch A: continue breakdown conversation. ---
+                # --- Rama A: continuar conversación de avería. ---
+                logger.info(
+                    "# [WHATSAPP H17] Contact interno %s — ticket abierto pk=%s. "
+                    "Rama: BREAKDOWN AGENT (continuar).",
+                    from_number,
+                    _open_ticket.pk,
+                )
+                _system_prompt = BreakdownAgentService.build_system_prompt(
+                    contact=_internal_contact,
+                    ticket=_open_ticket,
+                    company=company,
+                )
+                _history = BreakdownAgentService.build_history_from_log(_open_ticket)
+                try:
+                    _reply_raw = BreakdownAgentService.get_gemini_reply(
+                        system_prompt=_system_prompt,
+                        history=_history,
+                        user_message=_effective_msg,
+                    )
+                except Exception as _exc:
+                    logger.error(
+                        "# [WHATSAPP H17] Error Gemini avería (ticket pk=%s): %s",
+                        _open_ticket.pk, _exc,
+                    )
+                    _reply_raw = (
+                        "Lo sentimos, ha habido un problema al procesar tu mensaje. "
+                        "Por favor, inténtalo de nuevo."
+                    )
+                # Persist USER turn in conversation_log.
+                # Persistir turno USER en conversation_log.
+                BreakdownAgentService.append_log(
+                    _open_ticket, "USER", _effective_msg,
+                )
+                # Parse and apply TICKET_DATA marker; get clean reply.
+                # Parsear y aplicar marcador TICKET_DATA; obtener respuesta limpia.
+                reply_text = BreakdownAgentService.parse_and_apply_ticket_data(
+                    _reply_raw, _open_ticket,
+                )
+                # Persist MODEL turn in conversation_log.
+                # Persistir turno MODEL en conversation_log.
+                BreakdownAgentService.append_log(
+                    _open_ticket, "MODEL", reply_text,
+                )
+
+            else:
+                # --- Branch B: no open ticket. ---
+                # Gemini decides from message intent: breakdown or help.
+                # Gemini decide por intención del mensaje: avería o ayuda.
+                # Build a unified prompt that handles both intents naturally.
+                # Construir un prompt unificado que gestione ambas intenciones.
+                logger.info(
+                    "# [WHATSAPP H17] Contact interno %s — sin ticket abierto. "
+                    "Rama: BREAKDOWN/HELP decision.",
+                    from_number,
+                )
+                _sections_list = ", ".join(
+                    s.name for s in company.sections.filter(is_active=True)
+                )
+                _b_system_prompt = (
+                    f"Eres Alia, asistente de {company.name} especializada en "
+                    "maquinaria pesada. Hablas con un trabajador interno de la empresa.\n\n"
+                    f"Trabajador: {_internal_contact.name}\n\n"
+                    "INSTRUCCIONES:\n"
+                    "- Si el trabajador menciona una avería, problema mecánico, "
+                    "fallo en una máquina o vehículo → responde como agente de averías: "
+                    "recoge los datos del problema de forma natural (máquina, descripción, "
+                    "ubicación en la máquina, ubicación física, urgencia). "
+                    "Cuando tengas suficientes datos, confirma que vas a abrir un ticket.\n"
+                    "- Si el trabajador pide ayuda con el panel, su contraseña, acceso "
+                    "u otro tema de soporte → responde de forma concisa y útil.\n"
+                    "- Si el mensaje es un saludo o no está claro → pregunta de forma "
+                    "natural qué necesita.\n"
+                    "- Mantén un tono profesional, directo y conciso.\n"
+                    f"Secciones de la empresa: {_sections_list}."
+                )
+                _b_history = WhatsAppChatService.build_history(session)
+                try:
+                    reply_text = WhatsAppChatService.get_gemini_reply(
+                        system_prompt=_b_system_prompt,
+                        history=_b_history,
+                        user_message=_effective_msg,
+                        session=session,
+                    )
+                except Exception as _exc:
+                    logger.error(
+                        "# [WHATSAPP H17] Error Gemini Branch B contact %s: %s",
+                        from_number, _exc,
+                    )
+                    reply_text = (
+                        "Lo sentimos, ha habido un problema. "
+                        "Por favor, inténtalo de nuevo."
+                    )
+
+                # If Gemini's reply signals enough breakdown data, create ticket.
+                # Si la respuesta de Gemini tiene datos de avería, crear ticket.
+                # We check for TICKET_DATA marker even in Branch B.
+                # Comprobamos marcador TICKET_DATA también en Rama B.
+                _ticket_b = BreakdownAgentService.get_or_create_ticket(
+                    _internal_contact, company,
+                ) if "[TICKET_DATA:" in reply_text else None
+
+                if _ticket_b is not None:
+                    BreakdownAgentService.append_log(
+                        _ticket_b, "USER", _effective_msg,
+                    )
+                    reply_text = BreakdownAgentService.parse_and_apply_ticket_data(
+                        reply_text, _ticket_b,
+                    )
+                    BreakdownAgentService.append_log(
+                        _ticket_b, "MODEL", reply_text,
+                    )
+                    logger.info(
+                        "# [WHATSAPP H17] Ticket creado desde Rama B: pk=%s",
+                        _ticket_b.pk,
+                    )
+
+            # Dispatch reply (common to A and B).
+            # Despachar respuesta (común a A y B).
+            try:
+                _msg_sid = WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=reply_text,
+                )
+                WhatsAppMessage.objects.create(
+                    session=session,
+                    direction=WhatsAppMessage.DIRECTION_OUT,
+                    body=reply_text,
+                    message_sid=_msg_sid,
+                )
+            except Exception as _exc:
+                logger.error(
+                    "# [WHATSAPP H17] Error enviando respuesta a Contact interno %s: %s",
+                    from_number, _exc,
+                )
+                WhatsAppMessage.objects.create(
+                    session=session,
+                    direction=WhatsAppMessage.DIRECTION_OUT,
+                    body=reply_text,
+                    message_sid="",
+                )
+            return HttpResponse(status=200)
+
+        # -----------------------------------------------------------------------
+        # BRANCH C — Unknown number: onboarding in progress.
+        # RAMA C — Número desconocido: onboarding en curso.
+        # -----------------------------------------------------------------------
+        _onboarding_state = OnboardingService.get_state(session)
+        if _onboarding_state is not None:
+            logger.info(
+                "# [WHATSAPP H17] Número desconocido %s — onboarding en curso "
+                "(step=%s).",
+                from_number,
+                _onboarding_state.get("step"),
+            )
+            _ob_reply = OnboardingService.handle(
+                session=session,
+                company=company,
+                body=body,
+            )
+            try:
+                _ob_sid = WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=_ob_reply,
+                )
+                WhatsAppMessage.objects.create(
+                    session=session,
+                    direction=WhatsAppMessage.DIRECTION_OUT,
+                    body=_ob_reply,
+                    message_sid=_ob_sid,
+                )
+            except Exception as _exc:
+                logger.error(
+                    "# [WHATSAPP H17] Error enviando respuesta onboarding a %s: %s",
+                    from_number, _exc,
+                )
+                WhatsAppMessage.objects.create(
+                    session=session,
+                    direction=WhatsAppMessage.DIRECTION_OUT,
+                    body=_ob_reply,
+                    message_sid="",
+                )
+            return HttpResponse(status=200)
+
+        # -----------------------------------------------------------------------
+        # BRANCH D — Unknown number: generic chatbot or onboarding trigger.
+        # Gemini detects employee self-identification and starts onboarding.
+        # RAMA D — Número desconocido: chatbot genérico o trigger de onboarding.
+        # Gemini detecta auto-identificación de empleado e inicia el onboarding.
+        # -----------------------------------------------------------------------
+
         # --- Step 5: Build dynamic system prompt enriched with session context. ---
         # The session object is now passed to build_system_prompt so the agent
         # can include the client's location in the context when available.
@@ -468,23 +708,24 @@ class IncomingWhatsAppView(View):
             session=session,
         )
 
+        # Inject onboarding trigger detection into the generic system prompt.
+        # Inyectar detección de trigger de onboarding en el system prompt genérico.
+        system_prompt += (
+            "\n\nDETECCIÓN DE EMPLEADO:"
+            "\nSi el mensaje indica que quien escribe es un empleado o trabajador "
+            "de la empresa (frases como 'soy empleado', 'trabajo aquí', 'soy de "
+            "la empresa', 'me acaban de contratar', o similares), responde "
+            "EXACTAMENTE con el siguiente texto y nada más:"
+            "\n[EMPLOYEE_ONBOARDING]"
+            "\nNo añadas ningún texto antes ni después de este marcador."
+        )
+
         # --- Step 6: Reconstruct Gemini chat history from session messages. ---
         # --- Paso 6: Reconstruir historial de chat de Gemini desde mensajes de sesión. ---
         history = WhatsAppChatService.build_history(session)
 
         # --- Step 7: Obtain Gemini reply. ---
-        # For pure location messages (no body text), synthesise a user_message
-        # so Gemini has a meaningful turn to process. The agent's system prompt
-        # already contains the location context injected in Step 5.
-        # The session object is passed so get_gemini_reply() can activate Maps
-        # Grounding when coordinates are available (Paso 20).
         # --- Paso 7: Obtener respuesta de Gemini. ---
-        # Para mensajes de ubicación puros (sin texto de cuerpo), sintetizar un
-        # user_message para que Gemini tenga un turno significativo que procesar.
-        # El system prompt del agente ya contiene el contexto de ubicación
-        # inyectado en el Paso 5.
-        # El objeto session se pasa para que get_gemini_reply() pueda activar
-        # Maps Grounding cuando haya coordenadas disponibles (Paso 20).
         effective_user_message = body if body else (
             "El cliente acaba de compartir su ubicación geográfica."
             if is_location_msg
@@ -507,26 +748,36 @@ class IncomingWhatsAppView(View):
                 "Por favor, inténtalo de nuevo en unos instantes."
             )
 
-        # --- Step 7b: Parse and strip TARGET_SECTION marker from reply. ---
-        # The Gemini agent may append a [TARGET_SECTION:{"name": "..."}] marker
-        # at the end of its response when it detects that the client intends to
-        # be directed to a specific company section (Paso 21). This step:
-        #   1. Searches for the marker using a strict regex pattern.
-        #   2. If found, resolves the Section by name within the company.
-        #   3. Updates WhatsAppSession.target_section with the resolved Section.
-        #   4. Strips the marker from reply_text so the user never sees it.
-        # The marker is silently ignored when the section name is not found in
-        # the database — the reply is still dispatched without the marker.
-        # --- Paso 7b: Parsear y eliminar marcador TARGET_SECTION de la respuesta. ---
-        # El agente Gemini puede añadir un marcador [TARGET_SECTION:{"name": "..."}]
-        # al final de su respuesta cuando detecta que el cliente desea ser dirigido
-        # a una sección concreta de la empresa (Paso 21). Este paso:
-        #   1. Busca el marcador usando un patrón regex estricto.
-        #   2. Si se encuentra, resuelve la Section por nombre dentro de la empresa.
-        #   3. Actualiza WhatsAppSession.target_section con la Section resuelta.
-        #   4. Elimina el marcador de reply_text para que el usuario nunca lo vea.
-        # El marcador se ignora silenciosamente cuando el nombre de sección no se
-        # encuentra en la base de datos — la respuesta se despacha igualmente sin el marcador.
+        # --- Step 7b: Detect [EMPLOYEE_ONBOARDING] marker → start onboarding. ---
+        # --- Paso 7b: Detectar marcador [EMPLOYEE_ONBOARDING] → iniciar onboarding. ---
+        if "[EMPLOYEE_ONBOARDING]" in reply_text:
+            logger.info(
+                "# [WHATSAPP H17] Marcador EMPLOYEE_ONBOARDING detectado "
+                "para número %s. Iniciando onboarding.",
+                from_number,
+            )
+            reply_text = OnboardingService.start(session=session, company=company)
+            try:
+                _ob_sid = WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=reply_text,
+                )
+                WhatsAppMessage.objects.create(
+                    session=session,
+                    direction=WhatsAppMessage.DIRECTION_OUT,
+                    body=reply_text,
+                    message_sid=_ob_sid,
+                )
+            except Exception as _exc:
+                logger.error(
+                    "# [WHATSAPP H17] Error enviando inicio de onboarding a %s: %s",
+                    from_number, _exc,
+                )
+            return HttpResponse(status=200)
+
+        # --- Step 7c: Parse and strip TARGET_SECTION marker from reply. ---
+        # --- Paso 7c: Parsear y eliminar marcador TARGET_SECTION de la respuesta. ---
         _TARGET_SECTION_PATTERN = re.compile(
             r'\[TARGET_SECTION:\s*(\{[^}]+\})\s*\]',
             re.IGNORECASE,
@@ -534,13 +785,10 @@ class IncomingWhatsAppView(View):
         target_match = _TARGET_SECTION_PATTERN.search(reply_text)
         if target_match:
             raw_json = target_match.group(1)
-            # Strip the marker from the reply regardless of JSON parse success.
-            # Eliminar el marcador de la respuesta independientemente del éxito
-            # del parseo JSON.
             reply_text = _TARGET_SECTION_PATTERN.sub("", reply_text).strip()
             try:
-                marker_data    = json.loads(raw_json)
-                section_name   = marker_data.get("name", "").strip()
+                marker_data  = json.loads(raw_json)
+                section_name = marker_data.get("name", "").strip()
                 if section_name:
                     target_section = Section.objects.filter(
                         company=company,
@@ -688,3 +936,6 @@ class PresenceWhatsAppView(View):
             )
 
         return HttpResponse(status=200)
+
+
+
