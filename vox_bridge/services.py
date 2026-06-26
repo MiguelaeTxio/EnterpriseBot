@@ -1801,6 +1801,30 @@ class VoiceOrchestrationService:
                                         _caller_prefix = ""
                                         if _caller_name:
                                             _caller_prefix = f"[Chófer: {_caller_name}] "
+                                        # Build initial conversation_log entry
+                                        # from the structured data captured by
+                                        # Alia during the IVR session.
+                                        # Construir entrada inicial de
+                                        # conversation_log con los datos
+                                        # estructurados capturados por Alia
+                                        # durante la sesión IVR.
+                                        import json as _json
+                                        _log_entry = {
+                                            "source": "IVR",
+                                            "role": "SYSTEM",
+                                            "content": (
+                                                f"Ticket abierto vía IVR. "
+                                                f"Datos capturados por Alia: "
+                                                f"máquina='{_machine_code}', "
+                                                f"avería='{_fault_summary}', "
+                                                f"ubicación en máquina="
+                                                f"'{_fault_location or 'no indicada'}', "
+                                                f"ubicación física="
+                                                f"'{_base_name or 'en ruta'}', "
+                                                f"urgencia='{_urgency}', "
+                                                f"en base={_at_base}."
+                                            ),
+                                        }
                                         ticket = _BT.objects.create(
                                             company=_company,
                                             contact=_contact,
@@ -1814,6 +1838,7 @@ class VoiceOrchestrationService:
                                             origin=_BT.ORIGIN_IVR,
                                             urgency=_urgency_val,
                                             reported_by=_contact,
+                                            conversation_log=[_log_entry],
                                         )
                                         logger.info(
                                             f"[H03-BREAKDOWN] BreakdownTicket creado — "
@@ -2958,3 +2983,4 @@ class VoiceOrchestrationService:
             "Señalizando fin de sesión a todas las corrutinas..."
         )
         self.session_active = False
+

@@ -281,6 +281,8 @@
                 {# Rol (quién habla) #}
                 {% if entry.role == 'USER' %}
                   <span class="badge bg-secondary">Contacto</span>
+                {% elif entry.role == 'SYSTEM' %}
+                  <span class="badge bg-dark">Sistema</span>
                 {% else %}
                   <span class="badge bg-primary">Agente</span>
                 {% endif %}
@@ -315,4 +317,5 @@
   </div>
 </div>
 {% endblock %}
+
 
