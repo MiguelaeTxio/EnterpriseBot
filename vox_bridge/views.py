@@ -46,9 +46,14 @@ class InboundCallView(View):
         wss_url = self.get_active_wss_url()
         
         # Twilio standard XML payload / Payload XML estándar de Twilio
+        # A 1-second pause before the stream gives Gemini Live time to
+        # initialise and avoids the caller hearing initial silence.
+        # Una pausa de 1 segundo antes del stream da tiempo a Gemini Live
+        # a inicializarse y evita que el llamante perciba silencio inicial.
         twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<Response>'
+            '<Pause length="1"/>'
             '    <Connect>'
             f'        <Stream url="{wss_url}" />'
             '    </Connect>'
@@ -653,3 +658,5 @@ class ForwardToMobileView(View):
         que usan el método HTTP POST.
         """
         return self.get(request, *args, **kwargs)
+
+

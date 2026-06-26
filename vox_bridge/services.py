@@ -1847,6 +1847,110 @@ class VoiceOrchestrationService:
                                             f"máquina='{_machine_code}' | "
                                             f"sección={_section}"
                                         )
+
+                                        # H17 Paso 7 — Broadcast a taller.
+                                        # H17 Step 7 — Workshop broadcast.
+                                        _wa_sender_ivr = os.getenv(
+                                            "TWILIO_WHATSAPP_SENDER", ""
+                                        )
+                                        if _wa_sender_ivr:
+                                            try:
+                                                from whatsapp.services import (
+                                                    WhatsAppChatService as _WACS,
+                                                )
+                                                _WACS.send_breakdown_broadcast(
+                                                    ticket=ticket,
+                                                    wa_sender=_wa_sender_ivr,
+                                                )
+                                            except Exception as _bc_exc:
+                                                logger.error(
+                                                    "[H03-BREAKDOWN] Error broadcast "
+                                                    "WA ticket pk=%s: %s",
+                                                    ticket.pk,
+                                                    _bc_exc,
+                                                )
+                                        else:
+                                            logger.warning(
+                                                "[H03-BREAKDOWN] TWILIO_WHATSAPP_SENDER "
+                                                "no configurado — broadcast omitido "
+                                                "ticket pk=%s.",
+                                                ticket.pk,
+                                            )
+
+                                        # H17 Paso 5 — Geolocalización post-IVR.
+                                        # Si el conductor está en ruta (at_base=False),
+                                        # enviar plantilla de solicitud de ubicación
+                                        # al número desde el que llamó.
+                                        # H17 Step 5 — Post-IVR geolocation.
+                                        # If the driver is on the road (at_base=False),
+                                        # send the location request template to the
+                                        # caller's number.
+                                        if (
+                                            not _at_base
+                                            and self.caller_number
+                                            and _wa_sender_ivr
+                                        ):
+                                            try:
+                                                from whatsapp.models import (
+                                                    WhatsAppTemplate as _WATpl,
+                                                )
+                                                from whatsapp.services import (
+                                                    WhatsAppChatService as _WACS2,
+                                                )
+                                                _loc_tpl = _WATpl.objects.filter(
+                                                    company=_company,
+                                                    name="breakdown_location_request",
+                                                    is_active=True,
+                                                ).first()
+                                                if _loc_tpl:
+                                                    _caller_name_geo = (
+                                                        _contact.name
+                                                        if _contact
+                                                        else "conductor"
+                                                    )
+                                                    _WACS2.send_template(
+                                                        from_number=_wa_sender_ivr,
+                                                        to_number=(
+                                                            self.caller_number
+                                                        ),
+                                                        content_sid=(
+                                                            _loc_tpl.content_sid
+                                                        ),
+                                                        content_variables={
+                                                            "1": _caller_name_geo,
+                                                            "2": (
+                                                                ticket
+                                                                .ticket_date_code
+                                                                or ""
+                                                            ),
+                                                        },
+                                                    )
+                                                    logger.info(
+                                                        "[H03-BREAKDOWN] Plantilla "
+                                                        "breakdown_location_request "
+                                                        "enviada a %s para ticket "
+                                                        "pk=%s.",
+                                                        self.caller_number,
+                                                        ticket.pk,
+                                                    )
+                                                else:
+                                                    logger.warning(
+                                                        "[H03-BREAKDOWN] Plantilla "
+                                                        "breakdown_location_request "
+                                                        "no encontrada — "
+                                                        "geoloc omitida ticket "
+                                                        "pk=%s.",
+                                                        ticket.pk,
+                                                    )
+                                            except Exception as _geo_exc:
+                                                logger.error(
+                                                    "[H03-BREAKDOWN] Error enviando "
+                                                    "breakdown_location_request a "
+                                                    "%s: %s",
+                                                    self.caller_number,
+                                                    _geo_exc,
+                                                )
+
                                         return ticket
 
                                     _ticket = await _s2a(_create_breakdown)()
@@ -2983,4 +3087,6 @@ class VoiceOrchestrationService:
             "Señalizando fin de sesión a todas las corrutinas..."
         )
         self.session_active = False
+
+
 

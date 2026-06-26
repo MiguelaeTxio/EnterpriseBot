@@ -1,3 +1,4 @@
+
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/whatsapp/services.py
 """
 Service layer for the whatsapp channel app.
@@ -696,6 +697,151 @@ class WhatsAppChatService:
             message.sid,
         )
         return message.sid
+
+    @classmethod
+    def send_breakdown_broadcast(
+        cls,
+        ticket,
+        wa_sender: str,
+    ) -> None:
+        """
+        Sends the breakdown_broadcast WhatsApp template to all active
+        Contacts in the company that belong to a Section with
+        ivr_breakdown_enabled=True, excluding the contact who reported
+        the breakdown (ticket.contact).
+
+        Variables for breakdown_broadcast:
+            {{1}} recipient name
+            {{2}} machine (machine_raw or machine code)
+            {{3}} fault summary
+            {{4}} location (base name or 'en ruta')
+
+        Errors are logged and never re-raised — broadcast failure must
+        never block the main breakdown flow.
+        ---
+        Envía la plantilla breakdown_broadcast por WhatsApp a todos los
+        Contacts activos de la empresa que pertenezcan a una Section con
+        ivr_breakdown_enabled=True, excluyendo al contacto que reportó
+        la avería (ticket.contact).
+
+        Los errores se registran y nunca se propagan — el fallo del
+        broadcast nunca debe bloquear el flujo principal de avería.
+        """
+        import os as _os
+
+        from ivr_config.models import (
+            Contact as _Contact,
+            SectionContact as _SC,
+            Section as _Sec,
+        )
+        from whatsapp.models import WhatsAppTemplate as _WATpl
+
+        try:
+            tpl = _WATpl.objects.filter(
+                company=ticket.company,
+                name="breakdown_broadcast",
+                is_active=True,
+            ).first()
+            if tpl is None:
+                logger.warning(
+                    "# [BROADCAST] Plantilla breakdown_broadcast no encontrada "
+                    "para empresa pk=%s — broadcast omitido.",
+                    ticket.company_id,
+                )
+                return
+
+            # Resolve breakdown sections with broadcast enabled.
+            # Resolver secciones con broadcast de averías habilitado.
+            breakdown_sections = _Sec.objects.filter(
+                company=ticket.company,
+                is_active=True,
+                ivr_breakdown_enabled=True,
+            )
+            if not breakdown_sections.exists():
+                logger.info(
+                    "# [BROADCAST] Sin secciones ivr_breakdown_enabled en "
+                    "empresa pk=%s — broadcast omitido.",
+                    ticket.company_id,
+                )
+                return
+
+            # Collect recipients: Contacts in breakdown sections,
+            # excluding the reporting contact and those without a phone.
+            # Recopilar destinatarios: Contacts en secciones de avería,
+            # excluyendo al contact que reporta y los sin teléfono.
+            recipient_contacts = _Contact.objects.filter(
+                company=ticket.company,
+                is_internal=True,
+                section_contacts__section__in=breakdown_sections,
+            ).exclude(
+                pk=ticket.contact_id,
+            ).filter(
+                phone_number__isnull=False,
+            ).exclude(
+                phone_number="",
+            ).distinct()
+
+            if not recipient_contacts.exists():
+                logger.info(
+                    "# [BROADCAST] Sin destinatarios para broadcast "
+                    "ticket pk=%s — omitido.",
+                    ticket.pk,
+                )
+                return
+
+            # Build template variable values from ticket fields.
+            # Construir valores de variables de plantilla desde el ticket.
+            machine_label = (
+                ticket.machine_raw
+                or (ticket.machine.code if ticket.machine else "")
+                or "desconocida"
+            )
+            fault_label = ticket.fault_summary or "sin descripción"
+            location_label = ticket.location or "en ruta"
+
+            sent_count = 0
+            error_count = 0
+            for recipient in recipient_contacts:
+                try:
+                    cls.send_template(
+                        from_number=wa_sender,
+                        to_number=recipient.phone_number,
+                        content_sid=tpl.content_sid,
+                        content_variables={
+                            "1": recipient.name or "trabajador",
+                            "2": machine_label,
+                            "3": fault_label,
+                            "4": location_label,
+                        },
+                    )
+                    sent_count += 1
+                except Exception as _exc:
+                    error_count += 1
+                    logger.error(
+                        "# [BROADCAST] Error enviando broadcast a %s "
+                        "(ticket pk=%s): %s",
+                        recipient.phone_number,
+                        ticket.pk,
+                        _exc,
+                    )
+
+            logger.info(
+                "# [BROADCAST] Broadcast ticket pk=%s completado — "
+                "enviados=%d errores=%d.",
+                ticket.pk,
+                sent_count,
+                error_count,
+            )
+
+        except Exception as exc:
+            logger.error(
+                "# [BROADCAST] Error inesperado en send_breakdown_broadcast "
+                "ticket pk=%s: %s",
+                ticket.pk,
+                exc,
+            )
+
+
 # Processes inbound presence webhook responses (1h / 2h / disponible).
 # Procesa las respuestas entrantes del webhook de presencia (1h / 2h / disponible).
 # ---------------------------------------------------------------------------
@@ -1177,6 +1323,30 @@ class BreakdownAgentService:
                     "# [BREAKDOWN AGENT] Nuevo ticket creado para %s"
                     " — pk=%s code=%s",
                     contact.name, ticket.pk, ticket.ticket_date_code,
+                )
+
+            # H17 Paso 7 — Broadcast a secciones ivr_breakdown_enabled.
+            # H17 Step 7 — Broadcast to ivr_breakdown_enabled sections.
+            import os as _os_bd
+            _wa_sender_bd = _os_bd.getenv("TWILIO_WHATSAPP_SENDER", "")
+            if _wa_sender_bd:
+                try:
+                    WhatsAppChatService.send_breakdown_broadcast(
+                        ticket=ticket,
+                        wa_sender=_wa_sender_bd,
+                    )
+                except Exception as _bc_exc:
+                    logger.error(
+                        "# [BREAKDOWN AGENT] Error en broadcast WA "
+                        "ticket pk=%s: %s",
+                        ticket.pk,
+                        _bc_exc,
+                    )
+            else:
+                logger.warning(
+                    "# [BREAKDOWN AGENT] TWILIO_WHATSAPP_SENDER no "
+                    "configurado — broadcast omitido para ticket pk=%s.",
+                    ticket.pk,
                 )
 
         return ticket
@@ -1891,3 +2061,5 @@ class OnboardingService:
                 "Ha ocurrido un error al crear tu cuenta. "
                 "Por favor, contacta con el administrador de la plataforma."
             )
+
+

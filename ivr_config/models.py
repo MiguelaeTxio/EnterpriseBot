@@ -767,7 +767,24 @@ class Contact(models.Model):
     name = models.CharField(
         max_length=200,
         verbose_name="Nombre",
-        help_text="Nombre completo del contacto.",
+        help_text="Nombre completo del contacto (legacy — usar first_name/last_name).",
+    )
+    first_name = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Nombre de pila",
+        help_text=(
+            "Nombre de pila del contacto. Si está relleno, se usa en saludos "
+            "de voz (Alia IVR) en lugar del nombre completo."
+        ),
+    )
+    last_name = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Apellidos",
+        help_text="Apellidos del contacto.",
     )
     phone_number = models.CharField(
         max_length=20,

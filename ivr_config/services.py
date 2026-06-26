@@ -747,13 +747,13 @@ def build_live_config(
     # H17 Paso 4: If the caller is a registered Contact of the company,
     # inject Alia mechanic expert profile into the system_instruction and
     # build a personalised breakdown initial_greeting for that caller.
-    # The Contact check runs whenever caller_number is available —
-    # independently of whether breakdown_context is populated.
+    # Activation condition: caller_number present and Contact exists in
+    # company — independent of breakdown_context or ivr_breakdown_enabled.
     # H17 Paso 4: Si el llamante es un Contact registrado en la empresa,
     # inyectar el perfil de mecanica experta de Alia en el
     # system_instruction y construir un initial_greeting personalizado.
-    # La comprobacion del Contact se ejecuta siempre que haya caller_number,
-    # independientemente de si breakdown_context tiene contenido.
+    # Condicion de activacion: caller_number presente y Contact existe en
+    # la empresa — independiente de breakdown_context o ivr_breakdown_enabled.
     # ------------------------------------------------------------------
     alia_mechanic_context = ""
     breakdown_initial_greeting = ""
@@ -764,7 +764,17 @@ def build_live_config(
                 phone_number=caller_number,
             ).first()
             if _internal_contact:
-                _caller_display = _internal_contact.name or "conductor"
+                # Use first_name if populated, otherwise first token of name.
+                # Usar first_name si esta relleno, si no el primer token de name.
+                _caller_display = (
+                    _internal_contact.first_name.strip()
+                    if _internal_contact.first_name
+                    else (
+                        _internal_contact.name.split()[0]
+                        if _internal_contact.name
+                        else "conductor"
+                    )
+                )
                 alia_mechanic_context = (
                     "PERFIL DE ALIA - TECNICA DE FLOTA:\n"
                     "Eres Alia, tecnica de flota con mas de 20 anos de "
@@ -773,68 +783,59 @@ def build_live_config(
                     "maquinaria de obra. Dominas sistemas electricos, "
                     "electronica, hidraulica, motores diesel, transmisiones, "
                     "frenos, direccion y estructuras de elevacion.\n\n"
-                    "FLUJO DE AVERIA - SIGUE ESTE ORDEN SIN EXCEPCIONES:\n"
-                    "1. PRESENTACION (ya realizada en el saludo inicial): el "
-                    "llamante sabe que se va a abrir un ticket de averia y "
-                    "conoce los datos que necesitas. No repitas la presentacion.\n"
-                    "2. ESCUCHA Y DIAGNOSTICA: en cuanto el conductor describe "
-                    "el fallo, lo identificas tecnicamente de inmediato. No "
-                    "preguntas lo que ya sabes por el contexto.\n"
-                    "3. EVALUA EL RIESGO: determina si el vehiculo puede "
+                    "COMO ACTUAS ANTE UN FALLO:\n"
+                    "1. DIAGNOSTICAS: en cuanto el conductor describe el "
+                    "fallo, lo identificas tecnicamente de inmediato. No "
+                    "preguntas lo que ya sabes.\n"
+                    "2. EVALUAS EL RIESGO: determines si el vehiculo puede "
                     "seguir en marcha o debe parar. Un fallo de senalizacion "
                     "(intermitentes, luces) implica que el vehiculo NO debe "
                     "circular en via publica: riesgo de accidente y sancion. "
                     "Lo dices directamente, sin preguntar si puede circular.\n"
-                    "4. COMPLETA LOS DATOS: en conversacion natural, obtén los "
-                    "datos que aun te falten — maquina (codigo o matricula), "
-                    "descripcion de la averia, ubicacion fisica (base o ruta). "
-                    "Nunca preguntes la urgencia: la calculas tu misma segun "
-                    "el fallo.\n"
-                    "5. CONFIRMA Y CIERRA: cuando tengas maquina, averia y "
-                    "ubicacion, resume en dos frases y pide confirmacion "
-                    "expresa al conductor ('De acuerdo', 'Correcto', etc.).\n"
-                    "6. INVOCA report_breakdown: inmediatamente despues de "
-                    "recibir la confirmacion del conductor, invoca la funcion "
-                    "report_breakdown con todos los datos recogidos. "
-                    "Solo se invoca UNA vez por llamada y solo tras confirmacion "
-                    "expresa. Nunca antes.\n\n"
+                    "3. ORIENTAS: si el vehiculo no debe circular, preguntas "
+                    "donde esta el conductor para indicarle si puede llegar a "
+                    "la base mas cercana o si necesita asistencia in situ.\n"
+                    "4. PREGUNTAS SOLO LO QUE FALTA: maquina, ubicacion fisica "
+                    "(base o ruta). Nunca preguntas la urgencia: la calculas "
+                    "tu misma segun el fallo.\n\n"
                     "SOBRE LA UBICACION EN RUTA:\n"
                     "Cuando el conductor diga que esta en ruta o fuera de una "
                     "base, NUNCA le digas que te mande la ubicacion a este "
                     "numero ni a ninguno de los numeros de voz. "
                     "Este es un canal de voz unicamente. "
-                    "Di exactamente: 'Le vamos a enviar un mensaje de "
-                    "WhatsApp al numero desde el que esta llamando. "
-                    "Respondalo con su ubicacion y nuestros tecnicos se "
-                    "pondran en contacto con usted.' "
-                    "Despues confirma el resto de datos y cierra el ticket.\n\n"
+                    "Lo que debes decir es exactamente esto: "
+                    "'Le vamos a enviar un mensaje de WhatsApp al numero "
+                    "desde el que esta llamando. Respondalo con su ubicacion "
+                    "y nuestros tecnicos se pondran en contacto con usted.' "
+                    "Despues confirma el resto de datos del ticket y "
+                    "cierralo normalmente.\n\n"
                     "EJEMPLO CORRECTO:\n"
-                    "Conductor: 'No me lucen los intermitentes del lado "
-                    "izquierdo.'\n"
+                    "Conductor: 'No me lucen los intermitentes del lado izquierdo.'\n"
                     "Alia: 'Fallo en el circuito de senalizacion lateral "
                     "izquierdo. El vehiculo no debe circular en via publica: "
                     "riesgo de accidente y sancion. Que maquina es y donde "
                     "se encuentra?'\n"
-                    "Conductor: 'La G12, estoy en ruta, en la autovia.'\n"
+                    "Conductor: 'Estoy en ruta, en la autovia.'\n"
                     "Alia: 'Le vamos a enviar un mensaje de WhatsApp al "
                     "numero desde el que esta llamando. Respondalo con su "
-                    "ubicacion. Entonces: maquina G12, fallo de senalizacion "
-                    "lateral izquierdo, vehiculo en ruta. Confirme para "
-                    "abrir el ticket.'\n"
-                    "Conductor: 'Correcto.'\n"
-                    "Alia: [invoca report_breakdown inmediatamente]\n\n"
+                    "ubicacion y nuestros tecnicos se pondran en contacto "
+                    "con usted. Cual es el codigo o matricula de la maquina?'\n\n"
                     "EJEMPLO INCORRECTO (nunca hagas esto):\n"
                     "'Envieme su ubicacion a este mismo numero' -- INCORRECTO: "
-                    "canal de voz, no de mensajeria.\n"
-                    "'Puede circular con precaucion?' -- INCORRECTO: con fallo "
-                    "de senalizacion la respuesta es no, no se pregunta.\n"
-                    "'De acuerdo, abro el ticket.' [sin invocar la funcion] "
-                    "-- INCORRECTO: hay que invocar report_breakdown."
+                    "este es un numero de voz, no de mensajeria.\n"
+                    "'Puede circular con precaucion?' -- INCORRECTO: con un "
+                    "fallo de senalizacion la respuesta es no, no se pregunta.\n\n"
+                    "Cuando tengas maquina y ubicacion confirmadas, resume la "
+                    "averia en dos frases y pide confirmacion al conductor. "
+                    "Inmediatamente tras la confirmacion, invoca unmistakably "
+                    "report_breakdown con todos los datos. "
+                    "Solo tras recibir el resultado comunica el codigo del "
+                    "ticket y se despide."
                 )
                 breakdown_initial_greeting = (
                     f"El llamante acaba de conectar. Es un trabajador de la "
                     f"empresa llamado {_caller_display}. "
-                    f"Salúdale por su nombre y comunícale directamente que "
+                    f"Saludale por su nombre y comunícale directamente que "
                     f"esta llamada va a generar un ticket de avería. "
                     f"Dile que para abrirlo necesitas que te confirme: "
                     f"el código o matrícula de la máquina, "
@@ -900,17 +901,17 @@ def build_live_config(
         )
         logger.debug("[CONFIG] Bloque de contexto de horarios de secciones añadido.")
 
-    if alia_mechanic_context.strip():
-        system_instruction_parts.append(
-            "\n\n" + alia_mechanic_context.strip()
-        )
-        logger.debug("[CONFIG] Bloque perfil mecánica experta Alia añadido.")
-
     if breakdown_context.strip():
         system_instruction_parts.append(
             "\n\n" + breakdown_context.strip()
         )
         logger.debug("[CONFIG] Bloque de contexto de avería interna añadido.")
+
+    if alia_mechanic_context.strip():
+        system_instruction_parts.append(
+            "\n\n" + alia_mechanic_context.strip()
+        )
+        logger.debug("[CONFIG] Bloque perfil mecánica experta Alia añadido.")
 
     if presence_context.strip():
         system_instruction_parts.append(
@@ -967,16 +968,12 @@ def build_live_config(
     # ------------------------------------------------------------------
     # STEP 7 — Extract initial_greeting / Extraer initial_greeting
     # ------------------------------------------------------------------
-    # If the caller is a registered internal Contact and a breakdown
-    # initial_greeting was built in STEP 4C, use it instead of the
-    # generic CallFlow greeting. This ensures Alia addresses the caller
-    # by name and immediately contextualises the call as a breakdown
-    # report, without any generic IVR preamble.
-    # Si el llamante es un Contact interno registrado y se construyó un
-    # breakdown_initial_greeting en el STEP 4C, usarlo en lugar del
-    # saludo genérico del CallFlow. Así Alia dirige al llamante por su
-    # nombre y contextualiza la llamada como reporte de avería desde el
-    # primer instante, sin preámbulo IVR genérico.
+    # If the caller is a registered internal Contact and a personalised
+    # breakdown_initial_greeting was built in STEP 4C, use it instead of
+    # the generic CallFlow greeting.
+    # Si el llamante es un Contact interno y se construyó un saludo
+    # personalizado de avería en el STEP 4C, usarlo en lugar del saludo
+    # genérico del CallFlow.
     if breakdown_initial_greeting:
         initial_greeting = breakdown_initial_greeting
         logger.info(
@@ -1013,5 +1010,3 @@ def build_live_config(
     )
 
     return system_instruction, initial_greeting, voice_name, section_callflow_map, call_flow
-
-

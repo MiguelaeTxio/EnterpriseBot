@@ -383,34 +383,58 @@ class CompanyUserListView (SupervisorAccessMixin ,ListView ):
     template_name ="panel/users/list.html"
     context_object_name ="company_users"
 
-    def get_queryset (self ):
+    # Valid sort fields mapped to ORM expressions.
+    # Campos de ordenamiento válidos mapeados a expresiones ORM.
+    _SORT_FIELDS = {
+        "username":  "user__username",
+        "fullname":  "user__last_name",
+        "role":      "role",
+        "status":    "is_active",
+    }
+    _DEFAULT_SORT = "username"
+
+    def get_queryset(self):
         """
         Returns CompanyUser records scoped to the authenticated user's company.
-        If the GET parameter 'section' is present and valid, filters by the
-        contacts assigned to that section (company-scoped, injection-safe).
+        Supports optional filtering by section (?section=<pk>) and server-side
+        column sorting via ?sort=<field>&dir=<asc|desc>.
+        Valid sort fields: username, fullname, role, status.
         ---
-        Retorna los registros CompanyUser acotados a la empresa del usuario autenticado.
-        Si el parámetro GET 'section' está presente y es válido, filtra por los
-        contactos asignados a esa sección (acotado a empresa, seguro contra inyección).
+        Retorna los registros CompanyUser acotados a la empresa del usuario
+        autenticado. Soporta filtrado por sección (?section=<pk>) y ordenamiento
+        server-side por columna mediante ?sort=<campo>&dir=<asc|desc>.
+        Campos válidos: username, fullname, role, status.
         """
-        company =self .request .user .company_user .company 
-        qs =CompanyUser .objects .filter (
-        company =company 
-        ).select_related ("user").order_by ("user__username")
+        company = self.request.user.company_user.company
+        qs = CompanyUser.objects.filter(
+            company=company,
+        ).select_related("user")
 
-
-        section_pk =self .request .GET .get ("section","").strip ()
-        if section_pk :
-            try :
-                from ivr_config .models import Section as _Section 
-                section_obj =_Section .objects .get (pk =int (section_pk ),company =company )
-                qs =qs .filter (
-                contact_profile__sections =section_obj ,
+        # --- Section filter / Filtro por sección ---
+        section_pk = self.request.GET.get("section", "").strip()
+        if section_pk:
+            try:
+                from ivr_config.models import Section as _Section
+                section_obj = _Section.objects.get(
+                    pk=int(section_pk), company=company
                 )
-            except (ValueError ,TypeError ,_Section .DoesNotExist ):
-                pass 
+                qs = qs.filter(contact_profile__sections=section_obj)
+            except (ValueError, TypeError, _Section.DoesNotExist):
+                pass
 
-        return qs 
+        # --- Column sort / Ordenamiento por columna ---
+        sort_key = self.request.GET.get("sort", self._DEFAULT_SORT)
+        if sort_key not in self._SORT_FIELDS:
+            sort_key = self._DEFAULT_SORT
+        sort_dir = self.request.GET.get("dir", "asc")
+        orm_field = self._SORT_FIELDS[sort_key]
+        if sort_dir == "desc":
+            orm_field = f"-{orm_field}"
+        # Secondary sort by username for stable ordering.
+        # Ordenamiento secundario por username para estabilidad.
+        qs = qs.order_by(orm_field, "user__username")
+
+        return qs
 
     def get_context_data (self ,**kwargs ):
         """
@@ -429,8 +453,20 @@ class CompanyUserListView (SupervisorAccessMixin ,ListView ):
         context ["sections"]=Section .objects .filter (
         company =company 
         ).order_by ("name")
-        context ["selected_section"]=self .request .GET .get ("section","")
-        return context 
+        context["selected_section"] = self.request.GET.get("section", "")
+        context["sort_key"] = self.request.GET.get(
+            "sort", self._DEFAULT_SORT
+        )
+        context["sort_dir"] = self.request.GET.get("dir", "asc")
+        # Column definitions for sort header rendering in template.
+        # Definiciones de columnas para renderizar cabeceras de sort en plantilla.
+        context["sort_columns"] = [
+            ("username", "Usuario"),
+            ("fullname", "Nombre completo"),
+            ("role",     "Rol"),
+            ("status",   "Estado"),
+        ]
+        return context
 
     def _get_own_presence (self ):
         """

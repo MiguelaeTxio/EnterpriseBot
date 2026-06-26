@@ -1,3 +1,4 @@
+
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/whatsapp/views.py
 """
 Views for the whatsapp channel app.
@@ -511,6 +512,42 @@ class IncomingWhatsAppView(View):
                     from_number,
                     _open_ticket.pk,
                 )
+
+                # H17 Paso 5 — Persist GPS location on ticket when received.
+                # If the inbound message is a location share and the ticket
+                # does not yet have coordinates, store geo_lat/geo_lng and
+                # append a SYSTEM entry to conversation_log.
+                # H17 Paso 5 — Persistir ubicación GPS en ticket al recibirla.
+                # Si el mensaje entrante es una ubicación y el ticket aún no
+                # tiene coordenadas, guardar geo_lat/geo_lng y añadir entrada
+                # SYSTEM al conversation_log.
+                if is_location_msg and msg_latitude is not None:
+                    _geo_fields = []
+                    if _open_ticket.geo_lat is None:
+                        _open_ticket.geo_lat = msg_latitude
+                        _geo_fields.append("geo_lat")
+                    if _open_ticket.geo_lng is None:
+                        _open_ticket.geo_lng = msg_longitude
+                        _geo_fields.append("geo_lng")
+                    if _geo_fields:
+                        _geo_fields.append("updated_at")
+                        _open_ticket.save(update_fields=_geo_fields)
+                        BreakdownAgentService.append_log(
+                            _open_ticket,
+                            "SYSTEM",
+                            (
+                                f"Ubicación GPS recibida vía WhatsApp: "
+                                f"lat={msg_latitude}, lng={msg_longitude}."
+                            ),
+                        )
+                        logger.info(
+                            "# [WHATSAPP H17] GPS persistido en ticket pk=%s: "
+                            "lat=%s lng=%s.",
+                            _open_ticket.pk,
+                            msg_latitude,
+                            msg_longitude,
+                        )
+
                 _system_prompt = BreakdownAgentService.build_system_prompt(
                     contact=_internal_contact,
                     ticket=_open_ticket,
