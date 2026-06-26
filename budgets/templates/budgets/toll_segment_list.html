@@ -1,3 +1,4 @@
+
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/toll_segment_list.html #}
 {#                                                                                                        #}
 {# Toll segment CRUD — list, create, edit and deactivate/delete TollSegment records.                     #}
@@ -65,6 +66,35 @@
     </div>
   </div>
 
+  {# ── Acciones en bloque ──────────────────────────────────────────────────── #}
+  <div class="card mb-3" id="bulk-action-bar" style="display:none!important">
+    <div class="card-body py-2 d-flex align-items-center gap-3">
+      <span class="small text-muted">
+        <span id="bulk-count">0</span> tramo(s) seleccionado(s)
+      </span>
+      <form method="post"
+            action="{% url 'budgets:toll_segment_bulk_toggle' %}"
+            id="bulk-form">
+        {% csrf_token %}
+        <div id="bulk-pks-container"></div>
+        <div class="d-flex gap-2">
+          <button type="submit" name="action" value="activate"
+                  class="btn btn-sm btn-success">
+            <i class="bi bi-toggle-on me-1"></i>Activar seleccionados
+          </button>
+          <button type="submit" name="action" value="deactivate"
+                  class="btn btn-sm btn-warning">
+            <i class="bi bi-toggle-off me-1"></i>Desactivar seleccionados
+          </button>
+        </div>
+      </form>
+      <button type="button" class="btn btn-sm btn-link text-muted ms-auto"
+              id="bulk-deselect-all">
+        Deseleccionar todo
+      </button>
+    </div>
+  </div>
+
   {# ── Formulario creación / edición ────────────────────────────────────────── #}
   <div class="card mb-3">
     <div class="card-header fw-semibold">
@@ -127,6 +157,14 @@
               value="{{ form.price_heavy_2.value|default:'' }}"
               class="form-control form-control-sm {% if form.price_heavy_2.errors %}is-invalid{% endif %}">
             {% if form.price_heavy_2.errors %}<div class="invalid-feedback">{{ form.price_heavy_2.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-4 col-md-2">
+            <label class="form-label small text-muted">Recargo cliente (%)</label>
+            <input type="number" step="0.01" min="0" name="markup_percent"
+              value="{{ form.markup_percent.value|default:'0' }}"
+              class="form-control form-control-sm {% if form.markup_percent.errors %}is-invalid{% endif %}"
+              placeholder="0">
+            {% if form.markup_percent.errors %}<div class="invalid-feedback">{{ form.markup_percent.errors.0 }}</div>{% endif %}
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label small text-muted">Nivel tarifario *</label>
@@ -199,23 +237,32 @@
           <table class="table table-sm table-hover mb-0">
             <thead class="table-light" id="toll-thead">
               <tr>
-                <th class="ts-sortable ts-col-via" data-col="0" title="Ordenar por Vía">Vía <span class="ts-icon">⇕</span></th>
-                <th class="ts-sortable ts-col-tramo" data-col="1" title="Ordenar por Tramo">Tramo <span class="ts-icon">⇕</span></th>
-                <th class="ts-sortable ts-col-lugar" data-col="2" title="Ordenar por Origen">Origen <span class="ts-icon">⇕</span></th>
-                <th class="ts-sortable ts-col-lugar" data-col="3" title="Ordenar por Destino">Destino <span class="ts-icon">⇕</span></th>
-                <th class="ts-sortable text-end ts-col-precio" data-col="4" data-type="num" title="Ordenar por precio ligero">€ Lig. <span class="ts-icon">⇕</span></th>
-                <th class="ts-sortable text-end ts-col-precio" data-col="5" data-type="num" title="Ordenar por precio pesado 1">€ P1 <span class="ts-icon">⇕</span></th>
-                <th class="ts-sortable text-end ts-col-precio" data-col="6" data-type="num" title="Ordenar por precio pesado 2">€ P2 <span class="ts-icon">⇕</span></th>
-                <th class="ts-sortable ts-col-nivel" data-col="7" title="Ordenar por nivel tarifario">Nivel <span class="ts-icon">⇕</span></th>
+                <th class="text-center ts-col-check" style="width:2rem">
+                  <input type="checkbox" class="form-check-input"
+                         id="bulk-select-all" title="Seleccionar todo">
+                </th>
+                <th class="ts-sortable ts-col-via" data-col="1" title="Ordenar por Vía">Vía <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-tramo" data-col="2" title="Ordenar por Tramo">Tramo <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-lugar" data-col="3" title="Ordenar por Origen">Origen <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-lugar" data-col="4" title="Ordenar por Destino">Destino <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable text-end ts-col-precio" data-col="5" data-type="num" title="Ordenar por precio ligero">€ Lig. <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable text-end ts-col-precio" data-col="6" data-type="num" title="Ordenar por precio pesado 1">€ P1 <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable text-end ts-col-precio" data-col="7" data-type="num" title="Ordenar por precio pesado 2">€ P2 <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable text-end ts-col-precio" data-col="8" data-type="num" title="Ordenar por recargo">Rec.% <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-nivel" data-col="9" title="Ordenar por nivel tarifario">Nivel <span class="ts-icon">⇕</span></th>
                 <th class="text-center ts-col-noct">Noct.</th>
-                <th class="ts-sortable ts-col-vigente" data-col="9" title="Ordenar por fecha de vigencia">Vigente <span class="ts-icon">⇕</span></th>
-                <th class="text-center ts-sortable ts-col-estado" data-col="10" title="Ordenar por estado">Estado <span class="ts-icon">⇕</span></th>
+                <th class="ts-sortable ts-col-vigente" data-col="11" title="Ordenar por fecha de vigencia">Vigente <span class="ts-icon">⇕</span></th>
+                <th class="text-center ts-sortable ts-col-estado" data-col="12" title="Ordenar por estado">Estado <span class="ts-icon">⇕</span></th>
                 <th class="text-center ts-col-actions">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {% for seg in segments %}
                 <tr {% if not seg.is_active %}class="table-secondary text-muted"{% endif %}>
+                  <td class="text-center">
+                    <input type="checkbox" class="form-check-input bulk-row-check"
+                           value="{{ seg.pk }}" aria-label="Seleccionar tramo {{ seg.pk }}">
+                  </td>
                   <td class="fw-semibold">{{ seg.road_code }}</td>
                   <td class="small">{{ seg.section_name }}</td>
                   <td class="small">{{ seg.origin_name }}</td>
@@ -223,6 +270,13 @@
                   <td class="text-end small">{{ seg.price_light }}</td>
                   <td class="text-end small">{{ seg.price_heavy_1 }}</td>
                   <td class="text-end small">{{ seg.price_heavy_2 }}</td>
+                  <td class="text-end small">
+                    {% if seg.markup_percent %}
+                      {{ seg.markup_percent }}%
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
                   <td>
                     {% if seg.tariff_level == "NORMAL" %}
                       <span class="badge bg-success">Normal</span>
@@ -421,4 +475,100 @@
 }());
 </script>
 
+{# ── Selección masiva y barra de acciones bulk ──────────────────────────── #}
+<script>
+(function () {
+  'use strict';
+
+  /* Elements
+     Elementos */
+  var selectAll    = document.getElementById('bulk-select-all');
+  var actionBar    = document.getElementById('bulk-action-bar');
+  var countLabel   = document.getElementById('bulk-count');
+  var pksContainer = document.getElementById('bulk-pks-container');
+  var deselectBtn  = document.getElementById('bulk-deselect-all');
+
+  function getRowChecks() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('.bulk-row-check')
+    );
+  }
+
+  function getChecked() {
+    return getRowChecks().filter(function (cb) { return cb.checked; });
+  }
+
+  /* Update action bar visibility and counter.
+     Actualiza visibilidad de la barra de acciones y el contador. */
+  function updateBar() {
+    var checked = getChecked();
+    var n = checked.length;
+    if (n > 0) {
+      actionBar.style.removeProperty('display');
+      countLabel.textContent = n;
+      /* Sync hidden PKs into the bulk form.
+         Sincroniza los PKs ocultos en el formulario bulk. */
+      pksContainer.innerHTML = '';
+      checked.forEach(function (cb) {
+        var inp = document.createElement('input');
+        inp.type  = 'hidden';
+        inp.name  = 'pks';
+        inp.value = cb.value;
+        pksContainer.appendChild(inp);
+      });
+    } else {
+      actionBar.style.setProperty('display', 'none', 'important');
+    }
+    /* Indeterminate state on select-all checkbox.
+       Estado indeterminado en el checkbox de seleccionar todo. */
+    var total = getRowChecks().length;
+    if (n === 0) {
+      selectAll.checked       = false;
+      selectAll.indeterminate = false;
+    } else if (n === total) {
+      selectAll.checked       = true;
+      selectAll.indeterminate = false;
+    } else {
+      selectAll.checked       = false;
+      selectAll.indeterminate = true;
+    }
+  }
+
+  /* Select / deselect all rows.
+     Seleccionar / deseleccionar todas las filas. */
+  if (selectAll) {
+    selectAll.addEventListener('change', function () {
+      getRowChecks().forEach(function (cb) {
+        cb.checked = selectAll.checked;
+      });
+      updateBar();
+    });
+  }
+
+  /* Individual row checkbox change.
+     Cambio en checkbox de fila individual. */
+  document.addEventListener('change', function (evt) {
+    if (evt.target && evt.target.classList.contains('bulk-row-check')) {
+      updateBar();
+    }
+  });
+
+  /* Deselect all button.
+     Botón de deseleccionar todo. */
+  if (deselectBtn) {
+    deselectBtn.addEventListener('click', function () {
+      getRowChecks().forEach(function (cb) { cb.checked = false; });
+      if (selectAll) {
+        selectAll.checked       = false;
+        selectAll.indeterminate = false;
+      }
+      updateBar();
+    });
+  }
+
+}());
+</script>
+
 {% endblock %}
+
+

@@ -1,5 +1,6 @@
 
 
+
 """
 View definitions for the budgets application.
 Implements the sequential budget wizard, HTMX partial endpoints,
@@ -1963,6 +1964,7 @@ class TollSegmentForm(django_forms.ModelForm):
             "price_light",
             "price_heavy_1",
             "price_heavy_2",
+            "markup_percent",
             "tariff_level",
             "has_free_night",
             "free_night_start",
@@ -5367,6 +5369,62 @@ class TollSegmentDeleteView(AdminRoleRequiredMixin, View):
             )
         return redirect("budgets:toll_segment_list")
 
+
+class TollSegmentBulkToggleView(AdminRoleRequiredMixin, View):
+    """
+    Bulk activate or deactivate a set of TollSegment records.
+    POST receives a list of PKs (pks[]) and an action ('activate' or
+    'deactivate'). Sets is_active accordingly on all matched records.
+    Redirects back to the toll segment list with a summary message.
+    Accessible to ADMIN role only.
+    ---
+    Activa o desactiva en bloque un conjunto de registros TollSegment.
+    POST recibe una lista de PKs (pks[]) y una accion ('activate' o
+    'deactivate'). Establece is_active en todos los registros coincidentes.
+    Redirige al listado con un mensaje resumen.
+    Accesible solo para el rol ADMIN.
+    """
+
+    def post(self, request):
+        """
+        Process bulk activation or deactivation.
+        ---
+        Procesa la activacion o desactivacion en bloque.
+        """
+        from budgets.models import TollSegment
+        raw_pks = request.POST.getlist("pks")
+        action = request.POST.get("action", "")
+
+        # Sanitise: only numeric PKs accepted.
+        # Sanitizar: solo PKs numericos aceptados.
+        valid_pks = [
+            int(pk) for pk in raw_pks
+            if pk.isdigit()
+        ]
+
+        if not valid_pks:
+            messages.warning(
+                request,
+                "No se ha seleccionado ningún tramo de peaje.",
+            )
+            return redirect("budgets:toll_segment_list")
+
+        if action not in ("activate", "deactivate"):
+            messages.error(request, "Acción no válida.")
+            return redirect("budgets:toll_segment_list")
+
+        target_state = action == "activate"
+        updated = TollSegment.objects.filter(
+            pk__in=valid_pks,
+        ).update(is_active=target_state)
+
+        verb = "activados" if target_state else "desactivados"
+        messages.success(
+            request,
+            f"{updated} tramo{'s' if updated != 1 else ''} {verb} "
+            f"correctamente.",
+        )
+        return redirect("budgets:toll_segment_list")
 
 
 class WorkOrderPdfView(AssistanceRequiredMixin, View):

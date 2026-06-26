@@ -1,4 +1,3 @@
-
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/urls.py
 """
 URL configuration for the budgets application.
@@ -347,6 +346,16 @@ urlpatterns = [
         "toll-segments/<int:pk>/delete/",
         views.TollSegmentDeleteView.as_view(),
         name="toll_segment_delete",
+    ),
+
+    # Toll segment bulk toggle — POST activa o desactiva en bloque los tramos
+    # seleccionados. Recibe pks[] y action ('activate'|'deactivate').
+    # Toll segment bulk toggle — POST activates or deactivates selected
+    # segments in bulk. Receives pks[] and action ('activate'|'deactivate').
+    path(
+        "toll-segments/bulk-toggle/",
+        views.TollSegmentBulkToggleView.as_view(),
+        name="toll_segment_bulk_toggle",
     ),
 
     # ---------------------------------------------------------------------------

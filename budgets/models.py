@@ -3242,6 +3242,24 @@ class TollSegment(models.Model):
         ),
     )
 
+    # Percentage markup applied on top of the base toll cost when billing
+    # the client. 0 means no markup (cost = base price). The engine uses
+    # price_heavy_1 * (1 + markup_percent / 100) as the billable amount.
+    # Porcentaje de recargo aplicado sobre el coste base del peaje al
+    # facturar al cliente. 0 sin recargo (coste = precio base). El motor
+    # usa price_heavy_1 * (1 + markup_percent / 100) como importe facturable.
+    markup_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name="Recargo (%)",
+        help_text=(
+            "Porcentaje de recargo sobre el precio base (price_heavy_1) "
+            "aplicado al cliente. Ej: 10 → se factura el 110% del coste "
+            "real del peaje. 0 sin recargo."
+        ),
+    )
+
     # Auto-updated timestamp for auditing tariff changes.
     # Marca de tiempo actualizada automáticamente para auditoría de cambios.
     updated_at = models.DateTimeField(
@@ -3283,5 +3301,7 @@ class TollSegment(models.Model):
             f"[{self.tariff_level}] "
             f"€{self.price_light}/{self.price_heavy_1}/{self.price_heavy_2}"
         )
+
+
 
 
