@@ -118,6 +118,42 @@ class Company(models.Model):
         ),
     )
 
+    # ---------------------------------------------------------------------------
+    # Toll configuration — ASISTENCIA budget engine
+    # Configuración de peajes — motor de presupuestos ASISTENCIA
+    # ---------------------------------------------------------------------------
+    TOLL_VEHICLE_LIGHT   = "LIGHT"
+    TOLL_VEHICLE_HEAVY_1 = "HEAVY_1"
+    TOLL_VEHICLE_HEAVY_2 = "HEAVY_2"
+    TOLL_VEHICLE_CHOICES = [
+        (TOLL_VEHICLE_LIGHT,   "Ligero"),
+        (TOLL_VEHICLE_HEAVY_1, "Pesado 1"),
+        (TOLL_VEHICLE_HEAVY_2, "Pesado 2"),
+    ]
+
+    toll_vehicle_type = models.CharField(
+        max_length=10,
+        choices=TOLL_VEHICLE_CHOICES,
+        default=TOLL_VEHICLE_HEAVY_1,
+        verbose_name="Tipo de vehículo de peaje",
+        help_text=(
+            "Categoría de vehículo usada para calcular el coste de peaje en el "
+            "motor de presupuestos ASISTENCIA. Se aplica a todos los presupuestos "
+            "hasta que se cambie manualmente desde el panel de peajes."
+        ),
+    )
+    toll_markup_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name="Recargo de peaje al cliente (%)",
+        help_text=(
+            "Porcentaje de recargo aplicado sobre el coste de peaje calculado. "
+            "Se aplica a todos los presupuestos hasta que se cambie manualmente "
+            "desde el panel de peajes. Ej: 10 = 10% de recargo."
+        ),
+    )
+
     class Meta:
         verbose_name = "Empresa"
         verbose_name_plural = "Empresas"
@@ -2654,5 +2690,6 @@ class WorkshopFamilyMapping(models.Model):
             f"{self.company.name} — {self.catalogue_family} "
             f"→ {self.get_workshop_family_display()}"
         )
+
 
 

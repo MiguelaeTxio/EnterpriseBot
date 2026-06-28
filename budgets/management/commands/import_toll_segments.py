@@ -188,15 +188,40 @@ class Command(BaseCommand):
             free_night_start = seg.get("free_night_start") or None
             free_night_end = seg.get("free_night_end") or None
 
+            # Parse optional high-season date fields.
+            # Parsear campos opcionales de temporada alta.
+            season_high_start = None
+            season_high_end   = None
+            if seg.get("season_high_start"):
+                try:
+                    season_high_start = date.fromisoformat(
+                        seg["season_high_start"]
+                    )
+                except (ValueError, TypeError):
+                    pass
+            if seg.get("season_high_end"):
+                try:
+                    season_high_end = date.fromisoformat(
+                        seg["season_high_end"]
+                    )
+                except (ValueError, TypeError):
+                    pass
+
             defaults = {
-                "section_name": seg["section_name"],
-                "price_light": seg["price_light"],
-                "price_heavy_1": seg["price_heavy_1"],
-                "price_heavy_2": seg["price_heavy_2"],
-                "has_free_night": seg.get("has_free_night", False),
-                "free_night_start": free_night_start,
-                "free_night_end": free_night_end,
-                "is_active": seg.get("is_active", True),
+                "section_name":      seg["section_name"],
+                "price_light":       seg["price_light"],
+                "price_heavy_1":     seg["price_heavy_1"],
+                "price_heavy_2":     seg["price_heavy_2"],
+                "price_light_high":  seg.get("price_light_high"),
+                "price_heavy_1_high": seg.get("price_heavy_1_high"),
+                "price_heavy_2_high": seg.get("price_heavy_2_high"),
+                "markup_percent":    seg.get("markup_percent", 0),
+                "season_high_start": season_high_start,
+                "season_high_end":   season_high_end,
+                "has_free_night":    seg.get("has_free_night", False),
+                "free_night_start":  free_night_start,
+                "free_night_end":    free_night_end,
+                "is_active":         seg.get("is_active", True),
             }
 
             lookup = {
@@ -212,9 +237,9 @@ class Command(BaseCommand):
                     f"# [DRY-RUN] {seg['road_code']} | "
                     f"{seg['origin_name']} -> {seg['dest_name']} "
                     f"[{seg['tariff_level']}] "
-                    f"L={seg['price_light']} "
-                    f"P1={seg['price_heavy_1']} "
-                    f"P2={seg['price_heavy_2']}"
+                    f"L={seg['price_light']}/{seg.get('price_light_high','—')} "
+                    f"P1={seg['price_heavy_1']}/{seg.get('price_heavy_1_high','—')} "
+                    f"P2={seg['price_heavy_2']}/{seg.get('price_heavy_2_high','—')}"
                 )
                 created_count += 1
                 continue
@@ -247,3 +272,4 @@ class Command(BaseCommand):
             f"# [TOTAL] TollSegment en BD: "
             f"{TollSegment.objects.count()}"
         )
+

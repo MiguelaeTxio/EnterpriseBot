@@ -865,10 +865,16 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def _compute_toll_cost(encoded_polyline: str) -> Decimal:
+def _compute_toll_cost(encoded_polyline: str, company=None, service_date=None) -> Decimal:
     """
     Cross-reference the route polyline with the TollSegment table to
-    compute the total toll cost for a heavy vehicle (price_heavy_1).
+    compute the total toll cost for the configured vehicle type.
+
+    The vehicle type (LIGHT/HEAVY_1/HEAVY_2) is read from company.toll_vehicle_type.
+    If company is None or the field is missing, defaults to HEAVY_1.
+
+    A markup percentage (company.toll_markup_percent) is applied over the
+    computed toll cost before returning.
 
     Algorithm:
     1. Decode the polyline into lat/lng points.
@@ -877,17 +883,25 @@ def _compute_toll_cost(encoded_polyline: str) -> Decimal:
        - Find the polyline point closest to the segment destination.
        - If both are within SNAP_KM and origin point comes before destination
          point in the polyline order → the route traverses this segment → add
-         price_heavy_1 to the total.
-    3. Return the sum as Decimal, rounded to 2 dp.
+         the appropriate price field to the total.
+    3. Apply toll_markup_percent over the subtotal.
+    4. Return the sum as Decimal, rounded to 2 dp.
 
     SNAP_KM: maximum distance (km) from a polyline point to a toll point to
     consider it a match. 1.5 km gives a good balance between precision and
     tolerance for motorway access ramps.
     ---
     Cruza la polyline de la ruta con la tabla TollSegment para calcular
-    el coste total de peajes para un vehículo pesado (price_heavy_1).
+    el coste total de peajes según el tipo de vehículo configurado.
+
+    El tipo de vehículo (LIGHT/HEAVY_1/HEAVY_2) se lee de company.toll_vehicle_type.
+    Si company es None o el campo no existe, usa HEAVY_1 por defecto.
+
+    Se aplica un recargo porcentual (company.toll_markup_percent) sobre el
+    coste calculado antes de devolver el resultado.
     """
     from budgets.models import TollSegment
+    from ivr_config.models import Company as _Company
 
     if not encoded_polyline:
         return Decimal("0.00")
@@ -900,11 +914,29 @@ def _compute_toll_cost(encoded_polyline: str) -> Decimal:
     if not points:
         return Decimal("0.00")
 
+    # Determine which price field to use based on company configuration.
+    # Determinar qué campo de precio usar según la configuración de empresa.
+    vehicle_type = _Company.TOLL_VEHICLE_HEAVY_1
+    markup_percent = Decimal("0.00")
+    if company is not None:
+        vehicle_type = getattr(
+            company, "toll_vehicle_type", _Company.TOLL_VEHICLE_HEAVY_1
+        )
+        markup_percent = Decimal(
+            str(getattr(company, "toll_markup_percent", 0) or 0)
+        )
+
+    PRICE_FIELD_MAP = {
+        _Company.TOLL_VEHICLE_LIGHT:   "price_light",
+        _Company.TOLL_VEHICLE_HEAVY_1: "price_heavy_1",
+        _Company.TOLL_VEHICLE_HEAVY_2: "price_heavy_2",
+    }
+    price_field = PRICE_FIELD_MAP.get(vehicle_type, "price_heavy_1")
+
     SNAP_KM = 1.5
 
-    # Load all geocoded active segments regardless of tariff level.
-    # Cargar todos los segmentos geocodificados activos independientemente
-    # del nivel tarifario.
+    # Load all geocoded active segments — also fetch season fields.
+    # Cargar todos los segmentos geocodificados activos — incluir campos de temporada.
     segments = TollSegment.objects.filter(
         origin_lat__isnull=False,
         origin_lng__isnull=False,
@@ -914,7 +946,9 @@ def _compute_toll_cost(encoded_polyline: str) -> Decimal:
     ).only(
         "origin_lat", "origin_lng",
         "dest_lat", "dest_lng",
-        "price_heavy_1",
+        "price_light", "price_heavy_1", "price_heavy_2",
+        "price_light_high", "price_heavy_1_high", "price_heavy_2_high",
+        "season_high_start", "season_high_end",
     )
 
     total = Decimal("0.00")
@@ -925,8 +959,6 @@ def _compute_toll_cost(encoded_polyline: str) -> Decimal:
         d_lat = float(seg.dest_lat)
         d_lng = float(seg.dest_lng)
 
-        # Find best matching polyline index for origin and destination.
-        # Encontrar el índice de polyline más cercano para origen y destino.
         best_o_idx = None
         best_o_dist = float("inf")
         best_d_idx = None
@@ -942,24 +974,56 @@ def _compute_toll_cost(encoded_polyline: str) -> Decimal:
                 best_d_dist = dist_d
                 best_d_idx = i
 
-        # Segment is traversed if both endpoints snap within SNAP_KM
-        # and origin comes before destination in the route order.
-        # For single-point tolls (origin == destination same coords),
-        # it suffices that any polyline point is within SNAP_KM.
-        # ---
-        # El tramo se recorre si ambos extremos encajan en SNAP_KM y
-        # el origen aparece antes que el destino en el orden de la ruta.
-        # Para peajes de punto único (origen == destino mismas coords),
-        # basta con que algún punto de la polyline esté en SNAP_KM.
         same_point = (
             abs(o_lat - d_lat) < 0.0001
             and abs(o_lng - d_lng) < 0.0001
         )
 
+        # Determine effective price field for this segment.
+        # Base field comes from company vehicle type config.
+        # If the segment has a high-season range AND high-season price fields,
+        # and the service date falls within the range, use the _high field.
+        # The season range is year-independent: only month+day are compared.
+        # ---
+        # Determinar el campo de precio efectivo para este tramo.
+        # El campo base viene del tipo de vehículo configurado en la empresa.
+        # Si el tramo tiene rango de temporada alta Y precios de temporada alta,
+        # y la fecha del servicio cae en ese rango, se usa el campo _high.
+        # El rango de temporada es independiente del año: solo mes y día.
+        HIGH_FIELD_MAP = {
+            "price_light":   "price_light_high",
+            "price_heavy_1": "price_heavy_1_high",
+            "price_heavy_2": "price_heavy_2_high",
+        }
+        effective_price_field = price_field
+        high_field = HIGH_FIELD_MAP.get(price_field)
+
+        if (
+            service_date is not None
+            and high_field is not None
+            and seg.season_high_start is not None
+            and seg.season_high_end is not None
+            and getattr(seg, high_field) is not None
+        ):
+            svc_md  = (service_date.month, service_date.day)
+            hi_s_md = (seg.season_high_start.month, seg.season_high_start.day)
+            hi_e_md = (seg.season_high_end.month, seg.season_high_end.day)
+
+            if hi_s_md <= hi_e_md:
+                in_high_season = hi_s_md <= svc_md <= hi_e_md
+            else:
+                # Cross-year range e.g. Dec 15 → Jan 15
+                # Rango que cruza el año ej. 15 dic → 15 ene
+                in_high_season = svc_md >= hi_s_md or svc_md <= hi_e_md
+
+            if in_high_season:
+                effective_price_field = high_field
+
+        price = Decimal(str(getattr(seg, effective_price_field) or 0))
+
         if same_point:
-            # Single-point toll: traversed if the polyline passes nearby.
             if best_o_dist <= SNAP_KM:
-                total += _round2(Decimal(str(seg.price_heavy_1)))
+                total += _round2(price)
         elif (
             best_o_dist <= SNAP_KM
             and best_d_dist <= SNAP_KM
@@ -967,7 +1031,12 @@ def _compute_toll_cost(encoded_polyline: str) -> Decimal:
             and best_d_idx is not None
             and best_o_idx < best_d_idx
         ):
-            total += _round2(Decimal(str(seg.price_heavy_1)))
+            total += _round2(price)
+
+    # Apply markup percentage over the toll subtotal.
+    # Aplicar recargo porcentual sobre el subtotal de peajes.
+    if markup_percent > 0:
+        total = _round2(total * (Decimal("1") + markup_percent / Decimal("100")))
 
     return _round2(total)
 
@@ -977,6 +1046,7 @@ def calculate_route_multileg(
     waypoints: list[dict],
     service_datetime: datetime.datetime,
     api_key: str,
+    company=None,
 ) -> dict:
     """
     Orchestrate one or two Routes API calls to compute the full closed-circuit
@@ -1123,7 +1193,11 @@ def calculate_route_multileg(
                 "is_overnight": False,
                 "has_tolls": result["has_tolls"],
                 "route_toll_budget_cost": (
-                    _compute_toll_cost(result["encoded_polyline"])
+                    _compute_toll_cost(
+                        result["encoded_polyline"],
+                        company,
+                        service_datetime.date() if service_datetime else None,
+                    )
                     if result["has_tolls"] else Decimal("0.00")
                 ),
                 "encoded_polyline":     result["encoded_polyline"],
@@ -1210,9 +1284,10 @@ def calculate_route_multileg(
             has_tolls = result1["has_tolls"] or result2["has_tolls"]
             toll_cost = Decimal("0.00")
             if has_tolls:
+                svc_date = service_datetime.date() if service_datetime else None
                 toll_cost = (
-                    _compute_toll_cost(result1["encoded_polyline"])
-                    + _compute_toll_cost(result2["encoded_polyline"])
+                    _compute_toll_cost(result1["encoded_polyline"], company, svc_date)
+                    + _compute_toll_cost(result2["encoded_polyline"], company, svc_date)
                 )
 
             return {
@@ -1620,6 +1695,7 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         budget.total_amount_with_iva = None
 
     return result_lines
+
 
 
 

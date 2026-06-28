@@ -63,6 +63,16 @@
   let _calculatedRouteData = null;
 
   // ------------------------------------------------------------------
+  // Estado del drag de polyline
+  // Polyline drag state
+  // ------------------------------------------------------------------
+  let _isDraggingPolyline = false;
+  let _dragThrottleTimer  = null;
+  let _dragSegmentIndex   = null;   // Índice del tramo (entre waypoints) arrastrado
+  let _dragPreviewPolys   = [];     // Polylines provisionales del preview
+  let _mapClickListener   = null;   // Referencia al listener map.click (para suspender)
+
+  // ------------------------------------------------------------------
   // Detección de entorno
   // ------------------------------------------------------------------
   function isMobileDevice() {
@@ -179,6 +189,14 @@
 
     // Seleccionar la ruta con peajes por defecto (último índice)
     _selectRoute(activeRoutes.length - 1);
+
+    // Activar drag de polyline (solo desktop — pointer:fine)
+    // Enable polyline drag (desktop only — pointer:fine)
+    if (!isMobileDevice()) {
+      _bindPolylineDrag(
+        activeRoutes.flatMap((r) => r.polylines || [])
+      );
+    }
   }
 
   /**
@@ -400,7 +418,7 @@
 
     geocoder = new Geocoder();
 
-    map.addListener("click", async (event) => {
+    _mapClickListener = map.addListener("click", async (event) => {
       let label = "Punto manual";
       try {
         const { results } = await geocoder.geocode({ location: event.latLng });
@@ -748,7 +766,7 @@
 
     } catch (err) {
       console.error("[ROUTE] Fallo definitivo:", err && err.message ? err.message : err);
-      showRoutePlannerError("No se ha podido calcular la ruta. Revisa la consola Eruda para mas detalles.");
+      showRoutePlannerError("No se ha podido calcular la ruta. Inténtalo de nuevo.");
     } finally {
       hideMapSpinner();
     }
@@ -948,6 +966,355 @@
   }
 
   // ------------------------------------------------------------------
+  // Drag de polyline — forzar ruta por un punto del mapa (solo desktop)
+  // Polyline drag — force route through a map point (desktop only)
+  // ------------------------------------------------------------------
+
+  /**
+   * Adjunta los listeners mousedown a cada polyline para activar el drag.
+   * El mousemove se escucha en la misma polyline (no en el mapa) para evitar
+   * el problema conocido de Maps JS API en el que el mapa no recibe mousemove
+   * cuando el cursor permanece sobre la polyline.
+   * mouseup se escucha en document para capturar el soltado aunque el cursor
+   * salga del área de la polyline.
+   *
+   * Attaches mousedown listeners to each polyline to activate drag mode.
+   * mousemove is listened on the polyline itself (not on the map) to avoid
+   * the known Maps JS API issue where the map doesn't receive mousemove when
+   * the cursor stays over the polyline.
+   * mouseup is listened on document to catch the release even when the cursor
+   * leaves the polyline area.
+   *
+   * @param {google.maps.Polyline[]} polylines
+   */
+  function _bindPolylineDrag(polylines) {
+    polylines.forEach((poly) => {
+      poly.addListener("mousedown", (event) => {
+        if (isMobileDevice()) return;
+
+        _isDraggingPolyline = true;
+        _dragSegmentIndex   = null;
+
+        // Bloquear pan del mapa — imprescindible para que el mapa no se
+        // arrastre durante el drag y para que reciba mousemove/mouseup.
+        // Block map pan — essential so the map doesn't pan during drag
+        // and so it receives mousemove/mouseup events.
+        map.setOptions({ draggable: false, gestureHandling: "none" });
+
+        // Suspender click del mapa para no añadir paradas al soltar
+        // Suspend map click to avoid adding stops on release
+        if (_mapClickListener) {
+          google.maps.event.removeListener(_mapClickListener);
+          _mapClickListener = null;
+        }
+
+        const mapDiv = map.getDiv();
+        if (mapDiv) mapDiv.style.cursor = "grabbing";
+
+        // mousemove en el mapa (funciona porque draggable:false libera
+        // los eventos de movimiento al handler de Maps JS API).
+        // mousemove on the map (works because draggable:false releases
+        // move events to the Maps JS API handler).
+        const _moveListener = map.addListener(
+          "mousemove",
+          (moveEvent) => {
+            if (!_isDraggingPolyline) return;
+            if (_dragThrottleTimer) return;
+            _dragThrottleTimer = setTimeout(() => {
+              _dragThrottleTimer = null;
+            }, 200);
+            _onPolylineDrag(moveEvent.latLng);
+          }
+        );
+
+        // mouseup en el mapa — recibe LatLng directamente, sin proyección
+        // mouseup on the map — receives LatLng directly, no projection needed
+        const _upListener = google.maps.event.addListenerOnce(
+          map,
+          "mouseup",
+          (upEvent) => {
+            google.maps.event.removeListener(_moveListener);
+            _commitPolylineDrag(
+              upEvent.latLng || _lastDragLatLng
+            );
+          }
+        );
+      });
+    });
+  }
+
+  /** Última posición LatLng registrada durante el drag (para fallback en mouseup) */
+  let _lastDragLatLng = null;
+
+  /**
+   * Llamado en cada evento mousemove throttled durante el drag.
+   * Llama a snapToRoads y pinta una polyline preview punteada.
+   *
+   * Called on each throttled mousemove during drag.
+   * Calls snapToRoads and draws a dotted preview polyline.
+   *
+   * @param {google.maps.LatLng} latLng
+   */
+  async function _onPolylineDrag(latLng) {
+    if (!_isDraggingPolyline) return;
+
+    _lastDragLatLng = latLng;
+
+    // Limpiar preview anterior
+    // Clear previous preview
+    _dragPreviewPolys.forEach((p) => p.setMap(null));
+    _dragPreviewPolys = [];
+
+    const cfg    = getConfig();
+    const origin = { lat: cfg.base.lat, lng: cfg.base.lng };
+
+    // Construir el mismo request que recalculateRouteDisplay pero con
+    // el punto del cursor insertado como via:true. Solo avoidTolls:false
+    // para minimizar latencia del preview.
+    // Build the same request as recalculateRouteDisplay but with the
+    // cursor point inserted as via:true. Only avoidTolls:false to
+    // minimise preview latency.
+    const hasStops    = waypoints.some((w) => !w.isVia);
+    if (!hasStops) return;
+
+    const hasBaseReturn = waypoints.some((w) => w.isBaseReturn);
+    let destination;
+    let baseIntermediates;
+
+    if (hasBaseReturn) {
+      destination        = { lat: cfg.base.lat, lng: cfg.base.lng };
+      baseIntermediates  = waypoints.map((wp) => ({
+        location: { lat: wp.lat, lng: wp.lng },
+        via:      !!wp.isVia,
+      }));
+    } else {
+      const lastWp      = waypoints[waypoints.length - 1];
+      destination       = { lat: lastWp.lat, lng: lastWp.lng };
+      baseIntermediates = waypoints.slice(0, -1).map((wp) => ({
+        location: { lat: wp.lat, lng: wp.lng },
+        via:      !!wp.isVia,
+      }));
+    }
+
+    // Insertar el punto del cursor antes del último intermedio
+    // Insert cursor point before the last intermediate
+    const insertAt = Math.max(baseIntermediates.length - 1, 0);
+    const previewIntermediates = [...baseIntermediates];
+    previewIntermediates.splice(insertAt, 0, {
+      location: { lat: latLng.lat(), lng: latLng.lng() },
+      via:      true,
+    });
+
+    try {
+      const result = await Route.computeRoutes({
+        origin,
+        destination,
+        intermediates:  previewIntermediates,
+        travelMode:     "DRIVING",
+        routeModifiers: { avoidTolls: false },
+        fields:         ["path"],
+      });
+
+      const route = result && result.routes && result.routes[0];
+      if (!route || !_isDraggingPolyline) return;
+
+      // Pintar polylines del preview en naranja punteado
+      // Draw preview polylines in dotted orange
+      const polys = route.createPolylines();
+      polys.forEach((p) => {
+        p.setOptions({
+          strokeColor:   "#FF6D00",
+          strokeOpacity: 0,
+          strokeWeight:  6,
+          zIndex:        10,
+          clickable:     false,
+          icons: [
+            {
+              icon:   {
+                path:           "M 0,-1 0,1",
+                strokeOpacity:  0.85,
+                strokeColor:    "#FF6D00",
+                scale:          4,
+              },
+              offset: "0",
+              repeat: "14px",
+            },
+          ],
+        });
+        p.setMap(map);
+        _dragPreviewPolys.push(p);
+      });
+
+      // Dot de anclaje en la posición del cursor
+      // Anchor dot at cursor position
+      const dot = new google.maps.Polyline({
+        path: [
+          { lat: latLng.lat(), lng: latLng.lng() },
+          { lat: latLng.lat(), lng: latLng.lng() },
+        ],
+        strokeColor:   "#FF6D00",
+        strokeOpacity: 1,
+        strokeWeight:  14,
+        zIndex:        12,
+        clickable:     false,
+        map,
+      });
+      _dragPreviewPolys.push(dot);
+
+    } catch (_) {
+      // Si falla el preview, solo pintar el dot
+      // If preview fails, just show the dot
+      const dot = new google.maps.Polyline({
+        path: [
+          { lat: latLng.lat(), lng: latLng.lng() },
+          { lat: latLng.lat(), lng: latLng.lng() },
+        ],
+        strokeColor:   "#FF6D00",
+        strokeOpacity: 1,
+        strokeWeight:  14,
+        zIndex:        12,
+        clickable:     false,
+        map,
+      });
+      _dragPreviewPolys.push(dot);
+    }
+  }
+
+  /**
+   * Cancela el drag sin confirmar ningún waypoint.
+   * Cancels the drag without confirming any waypoint.
+   */
+  function _abortPolylineDrag() {
+    _isDraggingPolyline = false;
+    _lastDragLatLng     = null;
+
+    if (_dragThrottleTimer) {
+      clearTimeout(_dragThrottleTimer);
+      _dragThrottleTimer = null;
+    }
+
+    _dragPreviewPolys.forEach((p) => p.setMap(null));
+    _dragPreviewPolys = [];
+
+    const mapDiv = map.getDiv();
+    if (mapDiv) mapDiv.style.cursor = "";
+
+    map.setOptions({ draggable: true, gestureHandling: "auto" });
+    _restoreMapClickListener();
+  }
+
+  /**
+   * Llamado en mouseup: confirma el waypoint vía en la posición snapeada.
+   * Inserta el punto en waypoints[], invalida el cálculo y recalcula.
+   *
+   * Called on mouseup: confirms the via waypoint at the snapped position.
+   * Inserts the point in waypoints[], invalidates and recalculates.
+   *
+   * @param {google.maps.LatLng} latLng
+   */
+  async function _commitPolylineDrag(latLng) {
+    _isDraggingPolyline = false;
+    _lastDragLatLng     = null;
+
+    if (_dragThrottleTimer) {
+      clearTimeout(_dragThrottleTimer);
+      _dragThrottleTimer = null;
+    }
+
+    // Limpiar preview
+    // Clear preview
+    _dragPreviewPolys.forEach((p) => p.setMap(null));
+    _dragPreviewPolys = [];
+
+    const mapDiv = map.getDiv();
+    if (mapDiv) mapDiv.style.cursor = "";
+
+    map.setOptions({ draggable: true, gestureHandling: "auto" });
+    _restoreMapClickListener();
+
+    const snapped = { lat: latLng.lat(), lng: latLng.lng() };
+
+    // Insertar waypoint vía antes del último waypoint real
+    // Insert via waypoint before the last real waypoint
+    const insertAt = Math.max(waypoints.length - 1, 0);
+    waypoints.splice(insertAt, 0, {
+      lat:          snapped.lat,
+      lng:          snapped.lng,
+      label:        "Paso por carretera",
+      isBaseReturn: false,
+      isVia:        true,
+      marker:       null,
+    });
+
+    _dragSegmentIndex = null;
+    _invalidateCalculation(false);
+    renderStopsList();
+    recalculateRouteDisplay();
+  }
+
+  /**
+   * Restaura el listener click del mapa tras un drag (o su cancelación).
+   * Restores the map click listener after a drag (or its cancellation).
+   */
+  function _restoreMapClickListener() {
+    if (_mapClickListener) return;   // Ya restaurado
+    const mobile = isMobileDevice();
+    _mapClickListener = map.addListener("click", async (event) => {
+      let label = "Punto manual";
+      try {
+        const { results } = await geocoder.geocode({
+          location: event.latLng,
+        });
+        if (results && results[0]) label = results[0].formatted_address;
+      } catch (_) {}
+
+      if (mobile) {
+        _showMobileMapMenu(event.latLng, label);
+      } else {
+        addWaypoint(
+          event.latLng.lat(),
+          event.latLng.lng(),
+          label,
+          false,
+          false
+        );
+      }
+    });
+  }
+
+  /**
+   * Llama a la Roads API snapToRoads para ajustar {lat,lng} a la carretera
+   * más cercana. Lanza Error si la respuesta es inesperada o sin puntos.
+   * La API key se lee de window.ROUTE_PLANNER_CONFIG.googleMapsApiKey.
+   *
+   * Calls Roads API snapToRoads to snap {lat,lng} to the nearest road.
+   * Throws Error if the response is unexpected or has no snapped points.
+   * API key is read from window.ROUTE_PLANNER_CONFIG.googleMapsApiKey.
+   *
+   * @param {number} lat
+   * @param {number} lng
+   * @returns {Promise<{lat:number, lng:number}>}
+   */
+  async function _snapToRoad(lat, lng) {
+    const cfg    = getConfig();
+    const apiKey = cfg.googleMapsApiKey || "";
+    const url    = (
+      "https://roads.googleapis.com/v1/snapToRoads"
+      + `?path=${lat},${lng}&key=${apiKey}`
+    );
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`snapToRoads HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    if (!data.snappedPoints || !data.snappedPoints.length) {
+      throw new Error("snapToRoads: ZERO_RESULTS");
+    }
+    const loc = data.snappedPoints[0].location;
+    return { lat: loc.latitude, lng: loc.longitude };
+  }
+
+  // ------------------------------------------------------------------
   // Arranque
   // ------------------------------------------------------------------
 
@@ -962,6 +1329,3 @@
     }
   });
 })();
-
-
-

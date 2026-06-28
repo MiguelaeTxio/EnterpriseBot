@@ -3267,6 +3267,81 @@ class TollSegment(models.Model):
         verbose_name="Última actualización",
     )
 
+    # High-season fares — null when no seasonal split exists for this segment.
+    # The engine uses these when the service date falls within the high-season
+    # range defined by season_high_start / season_high_end.
+    # Tarifas de temporada alta — null cuando no hay distinción estacional.
+    # El motor las usa cuando la fecha del servicio cae en el rango de temporada
+    # alta definido por season_high_start / season_high_end.
+    price_light_high = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Precio ligeros temporada alta (€)",
+        help_text=(
+            "Tarifa para turismos, motos y furgonetas ligeras en temporada alta. "
+            "Dejar vacío si no hay distinción estacional."
+        ),
+    )
+    price_heavy_1_high = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Precio pesados 1 temporada alta (€)",
+        help_text=(
+            "Tarifa para camiones/autocares de 2-3 ejes en temporada alta. "
+            "Dejar vacío si no hay distinción estacional."
+        ),
+    )
+    price_heavy_2_high = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Precio pesados 2 temporada alta (€)",
+        help_text=(
+            "Tarifa para camiones/autocares de 4+ ejes en temporada alta. "
+            "Dejar vacío si no hay distinción estacional."
+        ),
+    )
+
+    # High-season date range — used by the budget engine to select the
+    # appropriate price (normal vs high-season) based on the service date.
+    # Both fields must be set together; if either is null, a single price
+    # applies year-round (no seasonal split).
+    #
+    # The year component of these dates is IGNORED — only month and day
+    # matter, so a single pair covers every year without updates.
+    # Rango de temporada alta — el motor de presupuestos lo usa para
+    # seleccionar el precio correcto (normal vs temporada alta) según la
+    # fecha del servicio. Ambos campos deben configurarse juntos; si
+    # alguno es nulo, se aplica un único precio todo el año.
+    # El componente de año se ignora — solo importan mes y día.
+    season_high_start = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Inicio temporada alta",
+        help_text=(
+            "Fecha de inicio de la temporada alta (día/mes). "
+            "Solo se usan el mes y el día — el año se ignora. "
+            "Si no se configura, se aplica price_heavy_1 todo el año. "
+            "Ej: 2026-06-15 → temporada alta desde el 15 de junio."
+        ),
+    )
+    season_high_end = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fin temporada alta",
+        help_text=(
+            "Fecha de fin de la temporada alta (día/mes, inclusive). "
+            "Solo se usan el mes y el día — el año se ignora. "
+            "Si no se configura, se aplica price_heavy_1 todo el año. "
+            "Ej: 2026-09-30 → temporada alta hasta el 30 de septiembre."
+        ),
+    )
+
     class Meta:
         verbose_name = "Tramo de peaje"
         verbose_name_plural = "Tramos de peaje"
@@ -3301,6 +3376,7 @@ class TollSegment(models.Model):
             f"[{self.tariff_level}] "
             f"€{self.price_light}/{self.price_heavy_1}/{self.price_heavy_2}"
         )
+
 
 
 

@@ -322,12 +322,28 @@ urlpatterns = [
     # Rutas de gestión de tramos de peaje — solo ADMIN
     # ---------------------------------------------------------------------------
 
-    # Toll segment list + create — GET lista con filtros, POST crea nuevo tramo.
-    # Toll segment list + create — GET filtered list, POST creates new segment.
+    # Toll segment config — POST guarda tipo de vehículo y recargo de peaje.
+    # Toll segment config — POST saves vehicle type and toll markup.
+    path(
+        "toll-segments/config/",
+        views.TollSegmentConfigView.as_view(),
+        name="toll_segment_config",
+    ),
+
+    # Toll segment list — GET lista con filtros. ADMIN only.
+    # Toll segment list — GET filtered list. ADMIN only.
     path(
         "toll-segments/",
         views.TollSegmentListView.as_view(),
         name="toll_segment_list",
+    ),
+
+    # Toll segment create — GET formulario de alta, POST crea nuevo tramo.
+    # Toll segment create — GET creation form, POST creates new segment.
+    path(
+        "toll-segments/new/",
+        views.TollSegmentCreateView.as_view(),
+        name="toll_segment_create",
     ),
 
     # Toll segment update — GET formulario, POST guarda cambios.
@@ -637,6 +653,7 @@ urlpatterns = [
         name="work_order_pdf",
     ),
 ]
+
 
 
 

@@ -12,6 +12,18 @@
 {# Fecha y hora del servicio se piden en el paso 2b (antes de pernocta/km) para que                  #}
 {# el calculo de ruta (Modo B) pueda construir un departureTime valido y futuro.                     #}
 
+{# ── WARNING: Sin líneas de tarifa para este tipo de vehículo ─────────────────── #}
+{% if no_tariff_lines %}
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="alert">
+  <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+  <div>
+    <strong>Sin tarifa configurada para este tipo de vehículo.</strong><br>
+    El presupuesto no podrá calcularse correctamente. Ponte en contacto con el
+    administrador de asistencia para configurar la tarifa.
+  </div>
+</div>
+{% endif %}
+
 {# ── PASO 2b: Fecha y hora del servicio ────────────────────────────────────── #}
 <div class="card mb-3" id="step-date">
   <div class="card-body">
@@ -246,7 +258,8 @@
     mapId:              "{{ google_maps_map_id }}",
     confirmUrl:         "{% url 'budgets:waypoints' %}",
     serviceDateFieldId: "id_service_date",
-    serviceTimeFieldId: "id_service_time"
+    serviceTimeFieldId: "id_service_time",
+    googleMapsApiKey:   "{{ google_maps_api_key|escapejs }}"
   };
 </script>
 {% endif %}
@@ -352,3 +365,4 @@
     <i class="bi bi-calculator me-2"></i>Calcular presupuesto
   </button>
 </div>
+

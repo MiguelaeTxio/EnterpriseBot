@@ -1,6 +1,7 @@
 
 
 
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/views.py
 """
 View definitions for the budgets application.
 Implements the sequential budget wizard, HTMX partial endpoints,
@@ -1099,6 +1100,7 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
             waypoints=waypoints,
             service_datetime=service_datetime,
             api_key=api_key,
+            company=company_user.company,
         )
 
         if result.get("error"):
@@ -1338,6 +1340,32 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
 
         google_maps_map_id = os.environ.get("GOOGLE_MAPS_MAP_ID", "")
 
+        # Comprobar si el tipo de vehículo tiene líneas de tarifa para los
+        # conceptos obligatorios del motor (DEPARTURE, KM_NORMAL, KM_LONG).
+        # Sin ellas el motor produce un presupuesto sin tarifa base.
+        # Check whether the vehicle type has tariff lines for the mandatory
+        # motor concepts (DEPARTURE, KM_NORMAL, KM_LONG).
+        # Without them the engine produces a budget without base tariff.
+        no_tariff_lines = False
+        _MANDATORY_CODES = [
+            TariffConcept.CODE_DEPARTURE,
+            TariffConcept.CODE_KM_NORMAL,
+            TariffConcept.CODE_KM_LONG,
+            TariffConcept.CODE_SERVICE_LOCAL,
+        ]
+        try:
+            tariff = InsurerTariff.objects.get(
+                insurer_id=int(insurer_id),
+                valid_to__isnull=True,
+            )
+            has_mandatory = tariff.lines.filter(
+                models_q_vehicle(int(vehicle_type_id)),
+                concept__code__in=_MANDATORY_CODES,
+            ).exists()
+            no_tariff_lines = not has_mandatory
+        except InsurerTariff.DoesNotExist:
+            no_tariff_lines = True
+
         # Determine whether the operator has provided a service time (step 2b).
         # Used by the template for step 6 badge and pre-check logic.
         # Determinar si el operario ha introducido la hora del servicio (paso 2b).
@@ -1357,6 +1385,10 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
             "base_lng":             base_lng,
             "base_name":            base_name,
             "google_maps_map_id":   google_maps_map_id,
+            "google_maps_api_key":  os.environ.get(
+                "GOOGLE_MAPS_API_KEY", ""
+            ),
+            "no_tariff_lines":      no_tariff_lines,
         })
 
 
@@ -1964,6 +1996,9 @@ class TollSegmentForm(django_forms.ModelForm):
             "price_light",
             "price_heavy_1",
             "price_heavy_2",
+            "price_light_high",
+            "price_heavy_1_high",
+            "price_heavy_2_high",
             "markup_percent",
             "tariff_level",
             "has_free_night",
@@ -1971,6 +2006,8 @@ class TollSegmentForm(django_forms.ModelForm):
             "free_night_end",
             "valid_from",
             "is_active",
+            "season_high_start",
+            "season_high_end",
         ]
         widgets = {
             "free_night_start": django_forms.TimeInput(
@@ -5142,12 +5179,12 @@ class WorkOrderAlbaranView(AssistanceRequiredMixin, View):
 
 class TollSegmentListView(AdminRoleRequiredMixin, View):
     """
-    Lists all TollSegment records with filtering by road_code and
-    tariff_level. Supports inline creation via POST.
+    Lists all TollSegment records with filtering by road_code, tariff_level
+    and active status. Creation is handled by TollSegmentCreateView.
     Accessible to ADMIN role only.
     ---
-    Lista todos los registros TollSegment con filtrado por road_code y
-    tariff_level. Soporta creacion inline via POST.
+    Lista todos los registros TollSegment con filtrado por road_code,
+    tariff_level y estado. La creación se gestiona en TollSegmentCreateView.
     Accesible solo para el rol ADMIN.
     """
 
@@ -5155,10 +5192,9 @@ class TollSegmentListView(AdminRoleRequiredMixin, View):
 
     def get(self, request):
         """
-        Render the toll segment list with optional filters and creation form.
+        Render the toll segment list with optional filters.
         ---
-        Renderiza el listado de tramos de peaje con filtros opcionales
-        y el formulario de creacion.
+        Renderiza el listado de tramos de peaje con filtros opcionales.
         """
         from budgets.models import TollSegment
         road_filter = request.GET.get("road_code", "").strip().upper()
@@ -5184,57 +5220,110 @@ class TollSegmentListView(AdminRoleRequiredMixin, View):
             .order_by("road_code")
         )
 
-        form = TollSegmentForm()
         ctx = _build_base_context(request, {
-            "segments": qs,
-            "form": form,
-            "road_codes": road_codes,
-            "road_filter": road_filter,
-            "level_filter": level_filter,
-            "active_filter": active_filter,
+            "segments":             qs,
+            "road_codes":           road_codes,
+            "road_filter":          road_filter,
+            "level_filter":         level_filter,
+            "active_filter":        active_filter,
             "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav": "budgets_toll_segments",
-            "total": qs.count(),
+            "active_nav":           "budgets_toll_segments",
+            "total":                qs.count(),
+            "toll_vehicle_type":    _get_company_user(request).company.toll_vehicle_type,
+            "toll_markup_percent":  _get_company_user(request).company.toll_markup_percent,
+            "toll_vehicle_choices": [
+                ("LIGHT",   "Ligero"),
+                ("HEAVY_1", "Pesado 1"),
+                ("HEAVY_2", "Pesado 2"),
+            ],
+        })
+        return render(request, self.template_name, ctx)
+
+
+class TollSegmentConfigView(AdminRoleRequiredMixin, View):
+    """
+    POST — saves toll configuration (vehicle type and markup percent) to
+    the company record. Redirects back to the toll segment list.
+    Accessible to ADMIN role only.
+    ---
+    POST — guarda la configuración de peajes (tipo de vehículo y recargo)
+    en el registro de empresa. Redirige al listado de tramos de peaje.
+    Accesible solo para el rol ADMIN.
+    """
+
+    def post(self, request):
+        from ivr_config.models import Company
+        company_user = _get_company_user(request)
+        company = company_user.company
+
+        toll_vehicle_type = request.POST.get(
+            "toll_vehicle_type", Company.TOLL_VEHICLE_HEAVY_1
+        ).strip()
+        if toll_vehicle_type not in dict(Company.TOLL_VEHICLE_CHOICES):
+            toll_vehicle_type = Company.TOLL_VEHICLE_HEAVY_1
+
+        try:
+            toll_markup_percent = Decimal(
+                request.POST.get("toll_markup_percent", "0").strip() or "0"
+            )
+            if toll_markup_percent < 0:
+                toll_markup_percent = Decimal("0")
+        except Exception:
+            toll_markup_percent = Decimal("0")
+
+        Company.objects.filter(pk=company.pk).update(
+            toll_vehicle_type=toll_vehicle_type,
+            toll_markup_percent=toll_markup_percent,
+        )
+        messages.success(
+            request,
+            "Configuración de peajes actualizada.",
+        )
+        return redirect("budgets:toll_segment_list")
+
+
+class TollSegmentCreateView(AdminRoleRequiredMixin, View):
+    """
+    Renders and processes the creation form for a new TollSegment.
+    GET: empty form. POST: validates and saves, redirects to list.
+    Accessible to ADMIN role only.
+    ---
+    Renderiza y procesa el formulario de alta de un nuevo TollSegment.
+    GET: formulario vacío. POST: valida y guarda, redirige al listado.
+    Accesible solo para el rol ADMIN.
+    """
+
+    template_name = "budgets/toll_segment_form.html"
+
+    def get(self, request):
+        form = TollSegmentForm(
+            initial={"is_active": True, "valid_from": datetime.date.today()}
+        )
+        ctx = _build_base_context(request, {
+            "form":                 form,
+            "editing":              None,
+            "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
+            "active_nav":           "budgets_toll_segments",
         })
         return render(request, self.template_name, ctx)
 
     def post(self, request):
-        """
-        Create a new TollSegment from the inline form.
-        On success redirects to the list. On error re-renders with errors.
-        ---
-        Crea un nuevo TollSegment desde el formulario inline.
-        En exito redirige al listado. En error re-renderiza con errores.
-        """
         from budgets.models import TollSegment
         form = TollSegmentForm(request.POST)
         if form.is_valid():
-            form.save()
+            segment = form.save()
             messages.success(
                 request,
-                "Tramo de peaje creado correctamente.",
+                f"Tramo {segment.road_code} "
+                f"{segment.origin_name} → {segment.dest_name} "
+                f"creado correctamente.",
             )
             return redirect("budgets:toll_segment_list")
-
-        road_codes = (
-            TollSegment.objects
-            .values_list("road_code", flat=True)
-            .distinct()
-            .order_by("road_code")
-        )
-        qs = TollSegment.objects.filter(is_active=True).order_by(
-            "road_code", "section_name", "origin_name", "dest_name",
-        )
         ctx = _build_base_context(request, {
-            "segments": qs,
-            "form": form,
-            "road_codes": road_codes,
-            "road_filter": "",
-            "level_filter": "",
-            "active_filter": "1",
+            "form":                 form,
+            "editing":              None,
             "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav": "budgets_toll_segments",
-            "total": qs.count(),
+            "active_nav":           "budgets_toll_segments",
         })
         return render(request, self.template_name, ctx)
 
@@ -5248,7 +5337,7 @@ class TollSegmentUpdateView(AdminRoleRequiredMixin, View):
     Accesible solo para el rol ADMIN.
     """
 
-    template_name = "budgets/toll_segment_list.html"
+    template_name = "budgets/toll_segment_form.html"
 
     def get(self, request, pk):
         """
@@ -5675,6 +5764,7 @@ class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
         if error:
             messages.error(request, error)
         return redirect("budgets:base_calendar_detail", pk=pk)
+
 
 
 

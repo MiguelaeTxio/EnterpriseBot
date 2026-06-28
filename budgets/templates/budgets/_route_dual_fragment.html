@@ -1,4 +1,13 @@
 {% load l10n %}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_route_dual_fragment.html #}
+{#                                                                                                 #}
+{# HTMX fragment — dual route result (with/without tolls) rendered by BudgetRouteDualView.        #}
+{# Map uses Google Maps JavaScript API (Maps JS API already loaded by wizard.html).               #}
+{# Leaflet/OSM removed — directriz técnica vinculante: Google Maps Platform exclusivamente.       #}
+{#                                                                                                 #}
+{# Fragmento HTMX — resultado de ruta dual (con/sin peajes) renderizado por BudgetRouteDualView.  #}
+{# El mapa usa la Maps JavaScript API (ya cargada por wizard.html en <head>).                     #}
+{# Leaflet/OSM eliminado — directriz técnica vinculante: Google Maps Platform exclusivamente.     #}
 {% if error %}
   {# Error state — show alert only, no map. #}
   {# Estado de error — mostrar solo alerta, sin mapa. #}
@@ -72,8 +81,8 @@
     </div>
     {% endif %}
 
-    {# Map container — no data attributes; JSON injected directly into JS. #}
-    {# Contenedor del mapa — sin data attributes; JSON inyectado directo en JS. #}
+    {# Map container — Google Maps JS API renders here. Map ID from ROUTE_PLANNER_CONFIG. #}
+    {# Contenedor del mapa — Google Maps JS API renderiza aqui. Map ID de ROUTE_PLANNER_CONFIG. #}
     {# djlint:off H021 #}
     <div id="map-route-dual"
          class="map-route-dual"
@@ -131,24 +140,20 @@
           } while (b >= 0x20);
           var dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
           lng += dlng;
-          points.push([lat / 1e5, lng / 1e5]);
+          points.push({ lat: lat / 1e5, lng: lng / 1e5 });
         }
         return points;
       }
 
-
       /* ------------------------------------------------------------------ */
-      /* Initialise Leaflet map.                                             */
-      /* Inicializar mapa Leaflet.                                           */
+      /* Initialise Google Maps map.                                         */
+      /* Map ID read from ROUTE_PLANNER_CONFIG (same as wizard planner).    */
+      /* Inicializar mapa Google Maps.                                       */
+      /* Map ID leído de ROUTE_PLANNER_CONFIG (igual que el planificador).  */
       /* ------------------------------------------------------------------ */
-      var map = L.map("map-route-dual");
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "&copy; OpenStreetMap contributors",
-        maxZoom: 18,
-      }).addTo(map);
-      /* Force Leaflet to recalculate container size after HTMX swap. */
-      /* Forzar a Leaflet a recalcular el tamano del contenedor tras el swap HTMX. */
-      setTimeout(function () { map.invalidateSize(); }, 50);
+      var mapId = (
+        window.ROUTE_PLANNER_CONFIG && window.ROUTE_PLANNER_CONFIG.mapId
+      ) ? window.ROUTE_PLANNER_CONFIG.mapId : "";
 
       var COLOR_TOLLS      = "#003580";
       var COLOR_NOTOLLS    = "#4A90D9";
@@ -156,26 +161,49 @@
       var WEIGHT_INACTIVE  = 3;
       var OPACITY_INACTIVE = 0.4;
 
-      /* Primary polyline — always rendered. */
-      /* Polyline primaria — se renderiza siempre. */
-      var pointsWith   = decodePolyline(routeWithTolls.encoded_polyline);
-      var polylineWith = L.polyline(pointsWith, {
-        color:   COLOR_TOLLS,
-        weight:  WEIGHT_ACTIVE,
-        opacity: 1,
-      }).addTo(map);
-      map.fitBounds(polylineWith.getBounds(), { padding: [20, 20] });
+      var pointsWith = decodePolyline(routeWithTolls.encoded_polyline);
+
+      /* Compute initial bounds from primary route. */
+      /* Calcular bounds iniciales a partir de la ruta primaria.             */
+      var bounds = new google.maps.LatLngBounds();
+      pointsWith.forEach(function (p) { bounds.extend(p); });
+
+      var map = new google.maps.Map(
+        document.getElementById("map-route-dual"),
+        {
+          mapId:             mapId || undefined,
+          center:            bounds.getCenter(),
+          zoom:              10,
+          disableDefaultUI:  true,
+          gestureHandling:   "cooperative",
+        }
+      );
+      map.fitBounds(bounds, 20);
+
+      /* Primary polyline — with tolls, always rendered. */
+      /* Polyline primaria — con peajes, siempre visible. */
+      var polylineWith = new google.maps.Polyline({
+        path:          pointsWith,
+        strokeColor:   COLOR_TOLLS,
+        strokeWeight:  WEIGHT_ACTIVE,
+        strokeOpacity: 1,
+        geodesic:      true,
+        map:           map,
+      });
 
       /* Secondary polyline — only when toll-free alternative exists. */
       /* Polyline secundaria — solo cuando existe alternativa sin peajes. */
       var polylineWithout = null;
       if (showDual && routeWithoutTolls) {
         var pointsWithout = decodePolyline(routeWithoutTolls.encoded_polyline);
-        polylineWithout   = L.polyline(pointsWithout, {
-          color:   COLOR_NOTOLLS,
-          weight:  WEIGHT_INACTIVE,
-          opacity: OPACITY_INACTIVE,
-        }).addTo(map);
+        polylineWithout   = new google.maps.Polyline({
+          path:          pointsWithout,
+          strokeColor:   COLOR_NOTOLLS,
+          strokeWeight:  WEIGHT_INACTIVE,
+          strokeOpacity: OPACITY_INACTIVE,
+          geodesic:      true,
+          map:           map,
+        });
       }
 
       /* ------------------------------------------------------------------ */
@@ -206,25 +234,46 @@
       if (showDual && polylineWithout) {
         function onRouteOptionChange(evt) {
           if (evt.target.value === "tolls") {
-            polylineWith.setStyle({ weight: WEIGHT_ACTIVE, opacity: 1 });
-            polylineWithout.setStyle({
-              weight:  WEIGHT_INACTIVE,
-              opacity: OPACITY_INACTIVE,
+            polylineWith.setOptions({
+              strokeWeight:  WEIGHT_ACTIVE,
+              strokeOpacity: 1,
             });
-            map.fitBounds(polylineWith.getBounds(), { padding: [20, 20] });
+            polylineWithout.setOptions({
+              strokeWeight:  WEIGHT_INACTIVE,
+              strokeOpacity: OPACITY_INACTIVE,
+            });
+            map.fitBounds(
+              _boundsFromPolyline(polylineWith), 20
+            );
           } else {
-            polylineWithout.setStyle({ weight: WEIGHT_ACTIVE, opacity: 1 });
-            polylineWith.setStyle({
-              weight:  WEIGHT_INACTIVE,
-              opacity: OPACITY_INACTIVE,
+            polylineWithout.setOptions({
+              strokeWeight:  WEIGHT_ACTIVE,
+              strokeOpacity: 1,
             });
-            map.fitBounds(polylineWithout.getBounds(), { padding: [20, 20] });
+            polylineWith.setOptions({
+              strokeWeight:  WEIGHT_INACTIVE,
+              strokeOpacity: OPACITY_INACTIVE,
+            });
+            map.fitBounds(
+              _boundsFromPolyline(polylineWithout), 20
+            );
           }
         }
+
+        function _boundsFromPolyline(poly) {
+          var b = new google.maps.LatLngBounds();
+          poly.getPath().forEach(function (p) { b.extend(p); });
+          return b;
+        }
+
         var radioTolls   = document.getElementById("route-opt-tolls");
         var radioNoTolls = document.getElementById("route-opt-notolls");
-        if (radioTolls)   { radioTolls.addEventListener("change", onRouteOptionChange); }
-        if (radioNoTolls) { radioNoTolls.addEventListener("change", onRouteOptionChange); }
+        if (radioTolls)   {
+          radioTolls.addEventListener("change", onRouteOptionChange);
+        }
+        if (radioNoTolls) {
+          radioNoTolls.addEventListener("change", onRouteOptionChange);
+        }
       }
 
     }());

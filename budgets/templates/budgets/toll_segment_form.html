@@ -1,0 +1,308 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/toll_segment_form.html #}
+{#                                                                                              #}
+{# Toll segment form — dedicated create / edit view for a TollSegment record.                  #}
+{# Used by TollSegmentCreateView (new) and TollSegmentUpdateView (edit).                       #}
+{# Formulario dedicado de alta / edición de TollSegment.                                       #}
+{# Usado por TollSegmentCreateView (nuevo) y TollSegmentUpdateView (edición).                  #}
+{% extends "panel/base.html" %}
+{% load l10n %}
+
+{% block title %}{% if editing %}Editar tramo{% else %}Nuevo tramo{% endif %} — Peajes{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 py-3">
+
+  {# ── Breadcrumb ─────────────────────────────────────────────────────────── #}
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item">
+        <a href="{% url 'budgets:toll_segment_list' %}">Tramos de peaje</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">
+        {% if editing %}Editar tramo{% else %}Nuevo tramo{% endif %}
+      </li>
+    </ol>
+  </nav>
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">
+      <i class="bi bi-{% if editing %}pencil{% else %}plus-circle{% endif %} me-2"></i>
+      {% if editing %}
+        Editar tramo — {{ editing.road_code }} {{ editing.origin_name }} → {{ editing.dest_name }}
+      {% else %}
+        Nuevo tramo de peaje
+      {% endif %}
+    </h4>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {# ── Formulario ─────────────────────────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-body">
+      <form method="post"
+            action="{% if editing %}{% url 'budgets:toll_segment_update' editing.pk %}{% else %}{% url 'budgets:toll_segment_create' %}{% endif %}">
+        {% csrf_token %}
+
+        {# ── Identificación del tramo ──────────────────────────────────────── #}
+        <h6 class="text-muted fw-semibold mb-2 mt-1">Identificación</h6>
+        <div class="row g-2 mb-3">
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted">Vía *</label>
+            <input type="text" name="road_code"
+              value="{% if editing %}{{ editing.road_code }}{% else %}{{ form.road_code.value|default:'' }}{% endif %}"
+              class="form-control {% if form.road_code.errors %}is-invalid{% endif %}"
+              placeholder="AP-7">
+            {% if form.road_code.errors %}
+              <div class="invalid-feedback">{{ form.road_code.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label small text-muted">Tramo</label>
+            <input type="text" name="section_name"
+              value="{% if editing %}{{ editing.section_name }}{% else %}{{ form.section_name.value|default:'' }}{% endif %}"
+              class="form-control"
+              placeholder="Málaga - Estepona">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Origen *</label>
+            <input type="text" name="origin_name"
+              value="{% if editing %}{{ editing.origin_name }}{% else %}{{ form.origin_name.value|default:'' }}{% endif %}"
+              class="form-control {% if form.origin_name.errors %}is-invalid{% endif %}"
+              placeholder="MALAGA">
+            {% if form.origin_name.errors %}
+              <div class="invalid-feedback">{{ form.origin_name.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Destino *</label>
+            <input type="text" name="dest_name"
+              value="{% if editing %}{{ editing.dest_name }}{% else %}{{ form.dest_name.value|default:'' }}{% endif %}"
+              class="form-control {% if form.dest_name.errors %}is-invalid{% endif %}"
+              placeholder="ESTEPONA">
+            {% if form.dest_name.errors %}
+              <div class="invalid-feedback">{{ form.dest_name.errors.0 }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        {# ── Precios ───────────────────────────────────────────────────────── #}
+        <h6 class="text-muted fw-semibold mb-2 mt-3">Precios</h6>
+        <div class="row g-0 mb-3">
+          {# Cabecera de columnas #}
+          <div class="col-3"></div>
+          <div class="col-4 col-md-3 text-center small text-muted fw-semibold pb-1">
+            Temporada baja
+          </div>
+          <div class="col-4 col-md-3 text-center small text-muted fw-semibold pb-1">
+            Temporada alta
+          </div>
+        </div>
+
+        {# Ligeros #}
+        <div class="row g-2 align-items-center mb-2">
+          <div class="col-3 small text-muted">
+            Ligeros *
+            <div class="text-muted" style="font-size:0.7rem">hasta 3.500 kg</div>
+          </div>
+          <div class="col-4 col-md-3">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">€</span>
+              <input type="number" step="0.01" min="0" name="price_light"
+                value="{% if editing %}{{ editing.price_light|unlocalize }}{% else %}{{ form.price_light.value|default:'' }}{% endif %}"
+                class="form-control {% if form.price_light.errors %}is-invalid{% endif %}">
+            </div>
+            {% if form.price_light.errors %}<div class="text-danger small">{{ form.price_light.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-4 col-md-3">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">€</span>
+              <input type="number" step="0.01" min="0" name="price_light_high"
+                value="{% if editing %}{{ editing.price_light_high|unlocalize|default:'' }}{% else %}{{ form.price_light_high.value|default:'' }}{% endif %}"
+                class="form-control"
+                placeholder="—">
+            </div>
+          </div>
+        </div>
+
+        {# Pesados 1 #}
+        <div class="row g-2 align-items-center mb-2">
+          <div class="col-3 small text-muted">
+            Pesados 1 *
+            <div class="text-muted" style="font-size:0.7rem">3.500 – 7.500 kg</div>
+          </div>
+          <div class="col-4 col-md-3">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">€</span>
+              <input type="number" step="0.01" min="0" name="price_heavy_1"
+                value="{% if editing %}{{ editing.price_heavy_1|unlocalize }}{% else %}{{ form.price_heavy_1.value|default:'' }}{% endif %}"
+                class="form-control {% if form.price_heavy_1.errors %}is-invalid{% endif %}">
+            </div>
+            {% if form.price_heavy_1.errors %}<div class="text-danger small">{{ form.price_heavy_1.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-4 col-md-3">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">€</span>
+              <input type="number" step="0.01" min="0" name="price_heavy_1_high"
+                value="{% if editing %}{{ editing.price_heavy_1_high|unlocalize|default:'' }}{% else %}{{ form.price_heavy_1_high.value|default:'' }}{% endif %}"
+                class="form-control"
+                placeholder="—">
+            </div>
+          </div>
+        </div>
+
+        {# Pesados 2 #}
+        <div class="row g-2 align-items-center mb-2">
+          <div class="col-3 small text-muted">
+            Pesados 2 *
+            <div class="text-muted" style="font-size:0.7rem">más de 7.500 kg</div>
+          </div>
+          <div class="col-4 col-md-3">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">€</span>
+              <input type="number" step="0.01" min="0" name="price_heavy_2"
+                value="{% if editing %}{{ editing.price_heavy_2|unlocalize }}{% else %}{{ form.price_heavy_2.value|default:'' }}{% endif %}"
+                class="form-control {% if form.price_heavy_2.errors %}is-invalid{% endif %}">
+            </div>
+            {% if form.price_heavy_2.errors %}<div class="text-danger small">{{ form.price_heavy_2.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-4 col-md-3">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">€</span>
+              <input type="number" step="0.01" min="0" name="price_heavy_2_high"
+                value="{% if editing %}{{ editing.price_heavy_2_high|unlocalize|default:'' }}{% else %}{{ form.price_heavy_2_high.value|default:'' }}{% endif %}"
+                class="form-control"
+                placeholder="—">
+            </div>
+          </div>
+        </div>
+
+        {# Recargo #}
+        <div class="row g-2 align-items-center mb-3">
+          <div class="col-3 small text-muted">Recargo cliente</div>
+          <div class="col-4 col-md-3">
+            <div class="input-group input-group-sm">
+              <input type="number" step="0.01" min="0" name="markup_percent"
+                value="{% if editing %}{{ editing.markup_percent|unlocalize }}{% else %}{{ form.markup_percent.value|default:'0' }}{% endif %}"
+                class="form-control {% if form.markup_percent.errors %}is-invalid{% endif %}"
+                placeholder="0">
+              <span class="input-group-text">%</span>
+            </div>
+          </div>
+        </div>
+
+        {# ── Configuración ─────────────────────────────────────────────────── #}
+        <h6 class="text-muted fw-semibold mb-2 mt-3">Configuración</h6>
+        <div class="row g-2 mb-3">
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Nivel tarifario *</label>
+            <select name="tariff_level"
+              class="form-select {% if form.tariff_level.errors %}is-invalid{% endif %}">
+              {% for val, label in tariff_level_choices %}
+                <option value="{{ val }}"
+                  {% if editing %}{% if editing.tariff_level == val %}selected{% endif %}{% else %}{% if form.tariff_level.value == val %}selected{% endif %}{% endif %}>
+                  {{ label }}
+                </option>
+              {% endfor %}
+            </select>
+            {% if form.tariff_level.errors %}
+              <div class="invalid-feedback">{{ form.tariff_level.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Vigente desde *</label>
+            <input type="date" name="valid_from"
+              value="{% if editing %}{{ editing.valid_from|date:'Y-m-d' }}{% else %}{{ form.valid_from.value|date:'Y-m-d'|default:'' }}{% endif %}"
+              class="form-control {% if form.valid_from.errors %}is-invalid{% endif %}">
+            {% if form.valid_from.errors %}
+              <div class="invalid-feedback">{{ form.valid_from.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="col-6 col-md-3 d-flex align-items-end pb-1">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" name="is_active"
+                id="id_is_active"
+                {% if editing %}{% if editing.is_active %}checked{% endif %}{% else %}{% if form.is_active.value %}checked{% endif %}{% endif %}>
+              <label class="form-check-label" for="id_is_active">Activo</label>
+            </div>
+          </div>
+        </div>
+
+        {# ── Temporada alta ────────────────────────────────────────────────── #}
+        <h6 class="text-muted fw-semibold mb-2 mt-3">Temporada alta</h6>
+        <div class="row g-2 mb-3">
+          <div class="col-12">
+            <p class="small text-muted mb-2">
+              Si este tramo tiene tarifas diferenciadas por temporada, configura
+              el rango de temporada alta. El motor usará <strong>€ Pesados 2</strong>
+              durante ese período y <strong>€ Pesados 1</strong> el resto del año.
+              El año se ignora — solo importan el mes y el día.
+              Deja vacío si aplica un único precio todo el año.
+            </p>
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Inicio temporada alta</label>
+            <input type="date" name="season_high_start"
+              value="{% if editing %}{{ editing.season_high_start|date:'Y-m-d'|default:'' }}{% else %}{{ form.season_high_start.value|date:'Y-m-d'|default:'' }}{% endif %}"
+              class="form-control">
+            <div class="form-text text-muted">Solo mes y día (ej: cualquier año 15/06)</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label small text-muted">Fin temporada alta</label>
+            <input type="date" name="season_high_end"
+              value="{% if editing %}{{ editing.season_high_end|date:'Y-m-d'|default:'' }}{% else %}{{ form.season_high_end.value|date:'Y-m-d'|default:'' }}{% endif %}"
+              class="form-control">
+            <div class="form-text text-muted">Inclusive (ej: cualquier año 30/09)</div>
+          </div>
+        </div>
+
+        {# ── Gratuidad nocturna ────────────────────────────────────────────── #}
+        <h6 class="text-muted fw-semibold mb-2 mt-3">Gratuidad nocturna</h6>
+        <div class="row g-2 mb-3">
+          <div class="col-12 col-md-3 d-flex align-items-end pb-1">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" name="has_free_night"
+                id="id_has_free_night"
+                {% if editing %}{% if editing.has_free_night %}checked{% endif %}{% else %}{% if form.has_free_night.value %}checked{% endif %}{% endif %}>
+              <label class="form-check-label" for="id_has_free_night">Gratuito en horario nocturno</label>
+            </div>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted">Inicio gratuito</label>
+            <input type="time" name="free_night_start"
+              value="{% if editing %}{{ editing.free_night_start|default:'' }}{% else %}{{ form.free_night_start.value|default:'' }}{% endif %}"
+              class="form-control">
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted">Fin gratuito</label>
+            <input type="time" name="free_night_end"
+              value="{% if editing %}{{ editing.free_night_end|default:'' }}{% else %}{{ form.free_night_end.value|default:'' }}{% endif %}"
+              class="form-control">
+          </div>
+        </div>
+
+        {# ── Acciones ──────────────────────────────────────────────────────── #}
+        <div class="d-flex gap-2 mt-4 pt-2 border-top">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-floppy me-1"></i>
+            {% if editing %}Guardar cambios{% else %}Crear tramo{% endif %}
+          </button>
+          <a href="{% url 'budgets:toll_segment_list' %}" class="btn btn-outline-secondary">
+            Cancelar
+          </a>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
