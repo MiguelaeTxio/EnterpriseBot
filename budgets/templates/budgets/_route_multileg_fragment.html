@@ -110,6 +110,11 @@
       position: relative;
       z-index: 5;
     }
+    .route-planner-row {
+      flex: 1 1 auto;
+      overflow: hidden;
+      min-height: 0;
+    }
     .route-planner-map-col {
       padding: 0;
       display: flex;
@@ -351,7 +356,7 @@
     }
   </style>
 
-  <div class="row g-0" style="flex: 1 1 auto; overflow: hidden; min-height: 0;">
+  <div class="row g-0 route-planner-row">
     <div class="col-12 col-lg-4 route-planner-panel">
       <button type="button"
               class="route-planner-mobile-toggle d-lg-none"
@@ -399,12 +404,13 @@
               <label class="visually-hidden">
                 Buscar dirección o lugar
               </label>
-              {# PlaceAutocompleteElement se inyecta aquí por wizard_map.js #}
-              {# (reemplaza el input original en el DOM) #}
-              <input type="text" class="form-control form-control-sm mb-2 route-place-input"
-                     id="route-place-search"
-                     placeholder="Buscar dirección o lugar…"
-                     autocomplete="off">
+              {# PlaceAutocompleteElement (nueva API Places) inyectado por  #}
+              {# wizard_map.js como hijo de este div. El elemento crea su   #}
+              {# propio input — no se usa un <input> externo.               #}
+              {# PlaceAutocompleteElement (new Places API) injected by      #}
+              {# wizard_map.js as a child of this div. The element creates  #}
+              {# its own input — no external <input> is used.               #}
+              <div id="route-place-search" class="mb-2"></div>
               <button type="button" class="btn btn-outline-secondary btn-sm w-100"
                       id="route-btn-base-return">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
@@ -496,7 +502,6 @@
     </button>
   </div>
 
-
   {# Plantilla clonada por wizard_map.js (PASO 2) para cada parada añadida #}
   {# --- Cloned by wizard_map.js (next step) for each added stop --- #}
   <template id="route-stop-item-template">
@@ -523,6 +528,3 @@
   {# Hidden inputs — en _wizard_steps_fragment.html (dentro del form). #}
   {# wizard_map.js los localiza por ID desde cualquier punto del DOM.  #}
 </div>
-
-
-

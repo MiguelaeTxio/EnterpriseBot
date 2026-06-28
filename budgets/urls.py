@@ -1,4 +1,3 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/urls.py
 """
 URL configuration for the budgets application.
 All routes are prefixed with /panel/budgets/ via enterprise_core/urls.py.
@@ -546,6 +545,13 @@ urlpatterns = [
         "calendars/<int:pk>/",
         views.BaseCalendarDetailView.as_view(),
         name="base_calendar_detail",
+    ),
+    # Base calendar copy — copia el calendario de una base a otra. Solo ADMIN.
+    # Base calendar copy — copy calendar from one base to another. ADMIN only.
+    path(
+        "calendars/<int:pk>/copy-calendar/",
+        views.BaseCalendarCopyView.as_view(),
+        name="base_calendar_copy",
     ),
 
     # Base clear coords — HTMX POST, limpia coordenadas de las bases seleccionadas.

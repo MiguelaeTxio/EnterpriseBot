@@ -1,4 +1,5 @@
 
+
 // /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/wizard_map.js
 /**
  * Route planner modal logic (Google Maps JS API, Routes Library).
@@ -432,26 +433,41 @@
       }
     });
 
-    const searchInput = document.getElementById("route-place-search");
-    if (searchInput) {
-      const { Autocomplete } = PlacesLib;
-      const autocomplete = new Autocomplete(searchInput, {
-        fields: ["geometry", "name"],
+    // Migración Places API: PlaceAutocompleteElement (junio 2026)
+    // Autocomplete (legacy) no disponible para nuevos clientes desde 01/03/2025.
+    // Places API migration: PlaceAutocompleteElement (June 2026)
+    // Autocomplete (legacy) unavailable to new customers since 01/03/2025.
+    const searchContainer = document.getElementById("route-place-search");
+    if (searchContainer) {
+      const { PlaceAutocompleteElement } = PlacesLib;
+      const autocompleteEl = new PlaceAutocompleteElement({
         locationBias: {
           center: { lat: config.base.lat, lng: config.base.lng },
           radius: 50000,
         },
+        requestedLanguage: "es",
       });
-      autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        if (!place || !place.geometry || !place.geometry.location) return;
+      // PlaceAutocompleteElement genera su propio <input> interno.
+      // Se inserta como hijo del contenedor; hereda el ancho via CSS.
+      // PlaceAutocompleteElement creates its own internal <input>.
+      // Inserted as child of container; inherits width via CSS.
+      searchContainer.appendChild(autocompleteEl);
+      // gmp-select (sustituye a gmp-placeselect en la API actual).
+      // El evento devuelve placePrediction — hay que convertirlo con toPlace().
+      // gmp-select (replaces gmp-placeselect in current API).
+      // Event returns placePrediction — must convert with toPlace().
+      autocompleteEl.addEventListener("gmp-select", async (event) => {
+        const place = event.placePrediction.toPlace();
+        // fetchFields es necesario para obtener location y displayName.
+        // fetchFields is needed to retrieve location and displayName.
+        await place.fetchFields({ fields: ["location", "displayName"] });
+        if (!place.location) return;
         addWaypoint(
-          place.geometry.location.lat(),
-          place.geometry.location.lng(),
-          place.name || "Parada",
+          place.location.lat(),
+          place.location.lng(),
+          place.displayName || "Parada",
           false, false
         );
-        searchInput.value = "";
       });
     }
 
@@ -920,6 +936,7 @@
     setHiddenValue("id_is_overnight_route",      data.is_overnight);
     setHiddenValue("id_route_toll_budget_cost",  data.route_toll_budget_cost);
     setHiddenValue("id_route_calculation_mode",  "API");
+    setHiddenValue("id_encoded_polyline",        data.encoded_polyline || "");
 
     const summaryEl   = document.getElementById("route-confirmed-summary");
     const summaryText = document.getElementById("route-confirmed-text");

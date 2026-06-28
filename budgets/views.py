@@ -389,6 +389,16 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             _is_overnight_api = data.get("is_overnight_route", "false").strip().lower()
             is_overnight = _is_overnight_api == "true"
 
+        # encoded_polyline: Google Encoded Polyline of the confirmed route.
+        # Persisted so calculate_budget() can cross-reference TollSegment.
+        # Overnight services: two polylines joined by \x01.
+        # ---
+        # Polyline codificada Google de la ruta confirmada.
+        # Se persiste para que calculate_budget() cruce con TollSegment.
+        # Servicios de pernocta: dos polylines unidas por \x01.
+        encoded_polyline_raw = data.get("encoded_polyline", "").strip()
+        encoded_polyline = encoded_polyline_raw if encoded_polyline_raw else None
+
         route_toll_budget_cost_raw = data.get(
             "route_toll_budget_cost", ""
         ).strip()
@@ -550,6 +560,7 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             route_calculation_mode=route_calculation_mode,
             service_time=service_time_obj,
             waypoints_json=waypoints_json,
+            encoded_polyline=encoded_polyline,
             # Placeholders — set by the engine before save.
             # Valores provisionales — el motor los establece antes de guardar.
             total_amount=0,
@@ -1999,7 +2010,6 @@ class TollSegmentForm(django_forms.ModelForm):
             "price_light_high",
             "price_heavy_1_high",
             "price_heavy_2_high",
-            "markup_percent",
             "tariff_level",
             "has_free_night",
             "free_night_start",
@@ -5263,13 +5273,15 @@ class TollSegmentConfigView(AdminRoleRequiredMixin, View):
             toll_vehicle_type = Company.TOLL_VEHICLE_HEAVY_1
 
         try:
-            toll_markup_percent = Decimal(
+            from decimal import Decimal as _Decimal
+            toll_markup_percent = _Decimal(
                 request.POST.get("toll_markup_percent", "0").strip() or "0"
             )
             if toll_markup_percent < 0:
-                toll_markup_percent = Decimal("0")
+                toll_markup_percent = _Decimal("0")
         except Exception:
-            toll_markup_percent = Decimal("0")
+            from decimal import Decimal as _Decimal
+            toll_markup_percent = _Decimal("0")
 
         Company.objects.filter(pk=company.pk).update(
             toll_vehicle_type=toll_vehicle_type,
@@ -5668,14 +5680,22 @@ class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
         """
         base = self._get_base(request, pk)
         import json as _json
+        company_user = _get_company_user(request)
         raw = (base.labor_calendar or "").strip()
         try:
             dates = sorted(_json.loads(raw) if raw else [])
         except (ValueError, TypeError):
             dates = []
+        other_bases = (
+            Base.objects
+            .filter(company=company_user.company, is_active=True)
+            .exclude(pk=pk)
+            .order_by("municipality", "name")
+        )
         ctx = _build_base_context(request, {
             "base": base,
             "dates": dates,
+            "other_bases": other_bases,
             "active_nav": "budgets_calendars",
         })
         return render(request, self.template_name, ctx)
@@ -5761,14 +5781,76 @@ class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
             })
             return render(request, self.FRAGMENT_TEMPLATE, ctx)
 
-        if error:
-            messages.error(request, error)
-        return redirect("budgets:base_calendar_detail", pk=pk)
+class BaseCalendarCopyView(AdminRoleRequiredMixin, View):
+    """
+    Copy the labour calendar of one Base to another Base of the same
+    company. Only the target base's labor_calendar is overwritten —
+    the source base is not modified. Only ADMIN role is allowed.
+    ---
+    Copia el calendario laboral de una Base a otra Base de la misma
+    empresa. Solo se sobreescribe el labor_calendar de la base destino
+    — la base origen no se modifica. Solo rol ADMIN.
+    """
 
+    def post(self, request, pk):
+        """
+        POST bases/<pk>/copy-calendar/
+        Body param: target_base_id (PK of the destination base).
+        Copies source base labor_calendar JSON to target base and
+        redirects to the target base calendar detail page.
+        ---
+        Param body: target_base_id (PK de la base destino).
+        Copia el labor_calendar JSON de la base origen a la base
+        destino y redirige al detalle del calendario de la base destino.
+        """
+        import json as _json
+        company_user = _get_company_user(request)
+        company = company_user.company
 
+        source_base = get_object_or_404(Base, pk=pk, company=company)
+        target_base_id = request.POST.get("target_base_id", "").strip()
 
+        if not target_base_id:
+            messages.error(request, "Selecciona una base destino.")
+            return redirect("budgets:base_calendar_detail", pk=pk)
 
+        try:
+            target_base_id = int(target_base_id)
+        except (ValueError, TypeError):
+            messages.error(request, "Base destino no válida.")
+            return redirect("budgets:base_calendar_detail", pk=pk)
 
+        if target_base_id == source_base.pk:
+            messages.error(
+                request,
+                "La base destino no puede ser la misma que la base origen.",
+            )
+            return redirect("budgets:base_calendar_detail", pk=pk)
+
+        target_base = get_object_or_404(
+            Base, pk=target_base_id, company=company
+        )
+
+        target_base.labor_calendar = source_base.labor_calendar or "[]"
+        target_base.save(update_fields=["labor_calendar"])
+
+        # Count dates for the success message.
+        # Contar fechas para el mensaje de éxito.
+        try:
+            n_dates = len(
+                _json.loads(target_base.labor_calendar or "[]")
+            )
+        except (ValueError, TypeError):
+            n_dates = 0
+
+        messages.success(
+            request,
+            f"Calendario de \"{source_base.name}\" copiado a "
+            f"\"{target_base.name}\" ({n_dates} fechas).",
+        )
+        return redirect(
+            "budgets:base_calendar_detail", pk=target_base_id
+        )
 
 
 
