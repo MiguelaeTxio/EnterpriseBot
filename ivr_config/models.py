@@ -1,4 +1,3 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/ivr_config/models.py
 """
 Data models for the ivr_config multicompany IVR configuration engine.
 Defines the full entity graph: Company, CompanyUser, CorporateVoiceProfile,
@@ -1940,6 +1939,113 @@ class WorkerAbsence(models.Model):
 #     Periodo de trabajo activo de un operario de taller.
 # ---------------------------------------------------------------------------
 
+class WorkPeriodGroup(models.Model):
+    """
+    Represents a company-wide work period that groups individual
+    WorkPeriod records (one per operator) under a single administrative
+    entity. This is the primary UI object: supervisors create, view and
+    manage periods at the group level; individual operator rows are
+    subordinate.
+
+    A WorkPeriodGroup with is_closed=False is active — operators can
+    still be added and their work orders created/edited.
+    A WorkPeriodGroup with is_closed=True has been administratively
+    locked: all subordinate WorkPeriod records are also locked.
+    ---
+    Representa un periodo de trabajo de ámbito empresarial que agrupa
+    los registros WorkPeriod individuales (uno por operario) bajo una
+    única entidad administrativa. Es el objeto primario de la UI: los
+    supervisores crean, visualizan y gestionan los periodos a nivel de
+    grupo; las filas individuales de operario son subordinadas.
+
+    Un WorkPeriodGroup con is_closed=False está activo — se pueden
+    añadir operarios y sus partes pueden crearse y editarse.
+    Un WorkPeriodGroup con is_closed=True ha sido liquidado
+    administrativamente: todos los WorkPeriod subordinados también
+    quedan bloqueados.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="work_period_groups",
+        verbose_name="Empresa",
+        help_text=(
+            "Empresa a la que pertenece este grupo de periodos de trabajo."
+        ),
+    )
+    label = models.CharField(
+        max_length=100,
+        verbose_name="Etiqueta",
+        help_text=(
+            "Nombre descriptivo del periodo (p. ej. 'Junio-Julio 2026'). "
+            "Se muestra como cabecera en la lista de periodos y en el "
+            "historial de partes del operario."
+        ),
+    )
+    start_date = models.DateField(
+        verbose_name="Fecha de inicio",
+        help_text="Primer día del periodo de trabajo (inclusive).",
+    )
+    end_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de fin",
+        help_text=(
+            "Último día del periodo de trabajo (inclusive). "
+            "Puede establecerse al crear el grupo sin que implique cierre."
+        ),
+    )
+    is_closed = models.BooleanField(
+        default=False,
+        verbose_name="Liquidado",
+        db_index=True,
+        help_text=(
+            "Indica que el periodo ha sido liquidado administrativamente. "
+            "Cuando está activo, ningún parte dentro del rango puede editarse. "
+            "Se activa manualmente por el ADMIN o SUPERVISOR al cerrar el "
+            "periodo. Cierra también todos los WorkPeriod subordinados."
+        ),
+    )
+    created_by = models.ForeignKey(
+        "CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_work_period_groups",
+        verbose_name="Creado por",
+        help_text=(
+            "Supervisor o ADMIN que creó este grupo de periodos. "
+            "Se establece automáticamente desde el usuario autenticado."
+        ),
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última modificación",
+    )
+
+    class Meta:
+        verbose_name = "Grupo de periodos de trabajo"
+        verbose_name_plural = "Grupos de periodos de trabajo"
+        ordering = ["-start_date"]
+
+    def __str__(self):
+        end_label = (
+            self.end_date.strftime("%d/%m/%Y") if self.end_date
+            else "sin fecha fin"
+        )
+        closed_label = " [LIQUIDADO]" if self.is_closed else ""
+        return (
+            f"{self.company.name} — {self.label} "
+            f"({self.start_date:%d/%m/%Y} / {end_label})"
+            + closed_label
+        )
+
+
 class WorkPeriod(models.Model):
     """
     Represents a contiguous employment or contract period for a CompanyUser.
@@ -1966,6 +2072,19 @@ class WorkPeriod(models.Model):
         related_name="work_periods",
         verbose_name="Operario",
         help_text="Operario de taller al que pertenece este periodo de trabajo.",
+    )
+    group = models.ForeignKey(
+        WorkPeriodGroup,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="operator_periods",
+        verbose_name="Grupo de periodo",
+        help_text=(
+            "Grupo de periodo al que pertenece este registro individual. "
+            "Nulo para registros legacy creados antes de la introducción "
+            "de WorkPeriodGroup."
+        ),
     )
     start_date = models.DateField(
         verbose_name="Fecha de inicio",
@@ -2690,6 +2809,8 @@ class WorkshopFamilyMapping(models.Model):
             f"{self.company.name} — {self.catalogue_family} "
             f"→ {self.get_workshop_family_display()}"
         )
+
+
 
 
 

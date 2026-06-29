@@ -1190,101 +1190,97 @@
         {% elif active_tab == 'periods' %}
         <div class="p-0">
 
-            {# Action bar — Barra de acciones de períodos #}
+            {# Action bar #}
             <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center justify-content-between flex-wrap gap-2">
                 <span class="text-sm fw-semibold text-muted">
                     <i class="bi bi-calendar-range me-1"></i>Gestión de períodos de trabajo
                 </span>
-                <a href="#" class="btn btn-primary btn-sm px-3"
-                   data-bs-toggle="modal"
-                   data-bs-target="#modalWorkPeriodCreate"
-                   data-suggested-start="{{ suggested_period_start }}"
-                   data-suggested-end="{{ suggested_period_end }}">
+                <button type="button" class="btn btn-primary btn-sm px-3"
+                        data-bs-toggle="modal" data-bs-target="#modalCreatePeriodGroup">
                     <i class="bi bi-plus-circle me-1"></i>Nuevo periodo
-                </a>
+                </button>
             </div>
 
-            {% if period_operator_groups %}
-                {% for group in period_operator_groups %}
-                <div class="px-4 pt-4 pb-2">
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <i class="bi bi-person-fill text-muted"></i>
-                        <span class="fw-semibold text-sm">
-                            {{ group.operator.user.get_full_name|default:group.operator.user.username }}
-                        </span>
-                        {% if group.has_open %}
-                        <span class="badge bg-success ms-1">Periodo activo</span>
-                        {% endif %}
-                    </div>
+            {# Period group list #}
+            {% if period_groups %}
+            <div class="px-4 pt-4">
+                <div class="card border-0 shadow-sm">
                     <div class="table-responsive">
-                        <table class="table table-sm table-hover align-middle mb-0 border rounded">
+                        <table class="table table-hover align-middle mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th class="text-sm fw-semibold px-3">Inicio</th>
+                                    <th class="text-sm fw-semibold ps-4">Etiqueta</th>
+                                    <th class="text-sm fw-semibold">Inicio</th>
                                     <th class="text-sm fw-semibold">Fin</th>
                                     <th class="text-sm fw-semibold">Estado</th>
-                                    <th class="text-sm fw-semibold">Etiqueta</th>
-                                    <th class="text-sm fw-semibold">Creado por</th>
+                                    <th class="text-sm fw-semibold">Operarios</th>
                                     <th class="text-sm fw-semibold">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for period in group.periods %}
-                                <tr>
-                                    <td class="text-sm px-3">{{ period.start_date|date:"d/m/Y" }}</td>
+                                {% for row in period_groups %}
+                                {% with g=row.group %}
+                                <tr class="{% if g.is_closed %}table-secondary{% endif %}">
+                                    <td class="ps-4 fw-semibold text-sm">{{ g.label }}</td>
+                                    <td class="text-sm">{{ g.start_date|date:"d/m/Y" }}</td>
                                     <td class="text-sm">
-                                        {% if period.end_date %}
-                                            {{ period.end_date|date:"d/m/Y" }}
-                                        {% else %}
-                                            <span class="text-muted">Sin fecha fin</span>
-                                        {% endif %}
+                                        {% if g.end_date %}{{ g.end_date|date:"d/m/Y" }}
+                                        {% else %}<span class="text-muted">—</span>{% endif %}
                                     </td>
-                                    <td class="text-sm">
-                                        {% if period.is_closed %}
+                                    <td>
+                                        {% if g.is_closed %}
                                         <span class="badge bg-danger">Liquidado</span>
                                         {% else %}
                                         <span class="badge bg-success">Activo</span>
                                         {% endif %}
                                     </td>
-                                    <td class="text-sm text-muted">
-                                        {{ period.label|default:"—" }}
-                                    </td>
-                                    <td class="text-sm text-muted">
-                                        {% if period.created_by %}
-                                            {{ period.created_by.user.get_full_name|default:period.created_by.user.username }}
-                                        {% else %}—{% endif %}
-                                    </td>
                                     <td class="text-sm">
+                                        <span class="{% if row.operator_count < row.total_operators and not g.is_closed %}text-warning fw-semibold{% endif %}">
+                                            {{ row.operator_count }} / {{ row.total_operators }}
+                                        </span>
+                                        {% if row.operator_count < row.total_operators and not g.is_closed %}
+                                        <i class="bi bi-exclamation-circle text-warning ms-1"
+                                           title="Faltan operarios por añadir"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-nowrap">
+                                        <a href="{% url 'panel:work_period_group_detail' g.pk %}"
+                                           class="btn btn-outline-primary btn-sm py-0 px-2 me-1">
+                                            <i class="bi bi-eye me-1"></i>Ver / Gestionar
+                                        </a>
                                         {% if is_admin %}
                                         <form method="post"
-                                              action="{% url 'panel:work_period_lock' period.pk %}"
+                                              action="{% url 'panel:work_period_group_lock' g.pk %}"
                                               class="d-inline"
-                                              onsubmit="return confirm('{% if period.is_closed %}¿Reabrir este periodo?{% else %}¿Liquidar este periodo? Los partes dentro de él no podrán editarse.{% endif %}')">
+                                              onsubmit="return confirm('{% if g.is_closed %}Reabrir el periodo {{ g.label }}?{% else %}Liquidar el periodo {{ g.label }}?{% endif %}')">
                                             {% csrf_token %}
                                             <button type="submit"
-                                                    class="btn btn-sm {% if period.is_closed %}btn-outline-warning{% else %}btn-outline-danger{% endif %} py-0 px-2">
-                                                {% if period.is_closed %}
+                                                    class="btn btn-sm py-0 px-2 {% if g.is_closed %}btn-outline-warning{% else %}btn-outline-danger{% endif %}">
+                                                {% if g.is_closed %}
                                                 <i class="bi bi-unlock me-1"></i>Reabrir
                                                 {% else %}
                                                 <i class="bi bi-lock me-1"></i>Liquidar
                                                 {% endif %}
                                             </button>
                                         </form>
-                                        {% else %}
-                                        <span class="text-muted text-sm">—</span>
                                         {% endif %}
                                     </td>
                                 </tr>
+                                {% endwith %}
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 </div>
-                {% endfor %}
+            </div>
             {% else %}
             <div class="px-4 py-5 text-center text-muted">
                 <i class="bi bi-calendar-range fs-3 d-block mb-2"></i>
-                <span class="text-sm">No hay períodos de trabajo registrados.</span>
+                <p class="text-sm mb-3">No hay períodos de trabajo registrados.</p>
+                <button type="button" class="btn btn-primary btn-sm"
+                        data-bs-toggle="modal" data-bs-target="#modalCreatePeriodGroup">
+                    <i class="bi bi-plus-circle me-1"></i>Crear el primer periodo
+                </button>
             </div>
             {% endif %}
 
@@ -1367,90 +1363,61 @@
 {# ------------------------------------------------------------------ #}
 {# Modal — Crear nuevo periodo de trabajo                              #}
 {# ------------------------------------------------------------------ #}
-<div class="modal fade" id="modalWorkPeriodCreate" tabindex="-1"
-     aria-labelledby="modalWorkPeriodCreateLabel" aria-hidden="true">
+{# ------------------------------------------------------------------ #}
+{# Modal — Nuevo periodo (WorkPeriodGroup)                            #}
+{# ------------------------------------------------------------------ #}
+<div class="modal fade" id="modalCreatePeriodGroup" tabindex="-1"
+     aria-labelledby="modalCreatePeriodGroupLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-bottom py-3">
-                <h6 class="modal-title fw-semibold" id="modalWorkPeriodCreateLabel">
+                <h6 class="modal-title fw-semibold" id="modalCreatePeriodGroupLabel">
                     <i class="bi bi-calendar-plus me-2 text-muted"></i>Nuevo periodo de trabajo
                 </h6>
                 <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
-                <form method="post" id="formWorkPeriodCreate"
-                      action="{% url 'panel:work_period_create' %}">
+                <form method="post" id="formCreatePeriodGroup"
+                      action="{% url 'panel:work_period_group_create' %}">
                     {% csrf_token %}
-                    <p class="text-sm text-muted mb-3">
-                        <i class="bi bi-info-circle me-1"></i>
-                        El periodo se creará para <strong>todos los operarios activos</strong> de la empresa.
-                    </p>
-                    <div class="row g-3 mb-3">
+                    <div class="mb-3">
+                        <label class="form-label text-sm fw-semibold">
+                            Etiqueta <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" name="label"
+                               class="form-control form-control-sm"
+                               placeholder="Ej: Julio-Agosto 2026" required>
+                    </div>
+                    <div class="row g-3">
                         <div class="col-6">
-                            <label class="form-label text-sm fw-semibold">Fecha de inicio</label>
-                            <input type="date" name="start_date" id="wpStartDate"
+                            <label class="form-label text-sm fw-semibold">
+                                Fecha de inicio <span class="text-danger">*</span>
+                            </label>
+                            <input type="date" name="start_date"
                                    class="form-control form-control-sm" required>
                         </div>
                         <div class="col-6">
                             <label class="form-label text-sm fw-semibold">
-                                Fecha de fin <span class="text-muted fw-normal">(opcional)</span>
+                                Fecha de fin
+                                <span class="text-muted fw-normal">(opcional)</span>
                             </label>
-                            <input type="date" name="end_date" id="wpEndDate"
+                            <input type="date" name="end_date"
                                    class="form-control form-control-sm">
                         </div>
                     </div>
-                    <div class="mb-0">
-                        <label class="form-label text-sm fw-semibold">
-                            Etiqueta <span class="text-muted fw-normal">(opcional)</span>
-                        </label>
-                        <input type="text" name="label"
-                               class="form-control form-control-sm"
-                               placeholder="Ej: Contrato temporal verano 2026">
-                    </div>
+                    <p class="form-text text-muted mt-3 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        El periodo se creará para todos los operarios activos sin periodo
+                        abierto. Puedes añadir o excluir operarios desde el detalle del periodo.
+                    </p>
                 </form>
             </div>
             <div class="modal-footer border-top py-3">
                 <button type="button" class="btn btn-outline-secondary btn-sm px-3"
                         data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" form="formWorkPeriodCreate"
+                <button type="submit" form="formCreatePeriodGroup"
                         class="btn btn-primary btn-sm px-4">
                     <i class="bi bi-check2 me-1"></i>Crear periodo
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-{# ------------------------------------------------------------------ #}
-{# Modal — Cerrar periodo de trabajo                                   #}
-{# ------------------------------------------------------------------ #}
-<div class="modal fade" id="modalWorkPeriodClose" tabindex="-1"
-     aria-labelledby="modalWorkPeriodCloseLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header border-bottom py-3">
-                <h6 class="modal-title fw-semibold" id="modalWorkPeriodCloseLabel">
-                    <i class="bi bi-calendar-check me-2 text-muted"></i>Cerrar periodo de trabajo
-                </h6>
-                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-4">
-                <p class="text-sm text-muted mb-3" id="modalWorkPeriodCloseOperator"></p>
-                <form method="post" id="formWorkPeriodClose" action="">
-                    {% csrf_token %}
-                    <div class="mb-0">
-                        <label class="form-label text-sm fw-semibold">Fecha de fin</label>
-                        <input type="date" name="end_date"
-                               class="form-control form-control-sm" required>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer border-top py-3">
-                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
-                        data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" form="formWorkPeriodClose"
-                        class="btn btn-success btn-sm px-4">
-                    <i class="bi bi-check2 me-1"></i>Cerrar periodo
                 </button>
             </div>
         </div>
@@ -2013,6 +1980,7 @@ window.EB_EXPORT_TEMPLATES = {
 </script>
 <script src="{% static 'panel/js/export_templates.js' %}"></script>
 {% endblock %}
+
 
 
 

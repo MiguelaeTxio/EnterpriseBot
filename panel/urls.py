@@ -81,9 +81,11 @@ from panel.views import (
     WorkerAbsenceUpdateView,
     WorkerAbsenceDeleteView,
     WorkOrderAdminExportView,
-    WorkPeriodListView,
-    WorkPeriodCreateView,
-    WorkPeriodCloseView,
+    WorkPeriodGroupDetailView,
+    WorkPeriodGroupCreateView,
+    WorkPeriodGroupAddOperatorView,
+    WorkPeriodGroupCloseView,
+    WorkPeriodGroupLockView,
     WorkPeriodLockView,
     WorkOrderMachineFilterView,
     DigitalWorkOrderListView,
@@ -308,10 +310,12 @@ urlpatterns = [
 
     # Work period management — CRUD de periodos de trabajo para SUPERVISOR y ADMIN.
     # 1ª Acción — Hito 7 Sesión 017 (2026-05-08)
-    path("work-periods/", WorkPeriodListView.as_view(), name="work_period_list"),
-    path("work-periods/create/", WorkPeriodCreateView.as_view(), name="work_period_create"),
-    path("work-periods/close/", WorkPeriodCloseView.as_view(), name="work_period_close"),
-    path("work-periods/<int:pk>/lock/", WorkPeriodLockView.as_view(), name="work_period_lock"),
+    path("work-periods/create/", WorkPeriodGroupCreateView.as_view(), name="work_period_group_create"),
+    path("work-periods/<int:pk>/", WorkPeriodGroupDetailView.as_view(), name="work_period_group_detail"),
+    path("work-periods/<int:pk>/add-operator/", WorkPeriodGroupAddOperatorView.as_view(), name="work_period_group_add_operator"),
+    path("work-periods/<int:pk>/close/", WorkPeriodGroupCloseView.as_view(), name="work_period_group_close"),
+    path("work-periods/<int:pk>/lock/", WorkPeriodGroupLockView.as_view(), name="work_period_group_lock"),
+    path("work-periods/operator/<int:pk>/lock/", WorkPeriodLockView.as_view(), name="work_period_lock"),
 
     # Workday schedule management — Gestión de horarios de jornada (rol SUPERVISOR y ADMIN).
     # Paso G — CUARTA ACCION Hito 7 Sesion 029 (2026-05-14)
@@ -383,6 +387,7 @@ urlpatterns = [
     path("ivr/call-logs/<int:pk>/", InboundCallLogDetailView.as_view(), name="inbound_call_log_detail"),
     path("ivr/call-logs/<int:pk>/delete/", InboundCallLogDeleteView.as_view(), name="inbound_call_log_delete"),
 ]
+
 
 
 

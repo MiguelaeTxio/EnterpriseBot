@@ -97,10 +97,12 @@ from panel.views_workorders import (
     AbsenceCategoryUpdateView,
     AbsenceCategoryToggleView,
     WorkOrderAdminHistoryView,
-    WorkPeriodListView,
-    WorkPeriodCreateView,
-    WorkPeriodCloseView,
     WorkPeriodLockView,
+    WorkPeriodGroupDetailView,
+    WorkPeriodGroupCreateView,
+    WorkPeriodGroupAddOperatorView,
+    WorkPeriodGroupCloseView,
+    WorkPeriodGroupLockView,
     WorkOrderAdminExportView,
     WorkOrderMachineFilterView,
     ExportTemplateListView,
@@ -4027,4 +4029,5 @@ class InboundCallLogDeleteView(AdminRoleRequiredMixin, View):
         log.delete()
         messages.success(request, "Registro de llamada eliminado.")
         return redirect("panel:inbound_call_log_list")
+
 
