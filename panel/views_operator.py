@@ -2503,17 +2503,6 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                 _post_lb_start =_post_schedule .end_time_morning .strftime ("%H:%M")
             if _post_schedule .start_time_afternoon :
                 _post_lb_end =_post_schedule .start_time_afternoon .strftime ("%H:%M")
-        # Preserve operator-modified lunch times from POST over schedule defaults.
-        # On re-render after a validation error, the operator's input must not
-        # be overwritten by the schedule's configured window.
-        # Preservar los horarios de pausa modificados por el operario desde POST
-        # sobre los valores por defecto del schedule.
-        # Al re-renderizar tras un error de validacion, el input del operario no
-        # debe ser sobreescrito por la ventana configurada en el schedule.
-        if _lb_start_raw :
-            _post_lb_start =_lb_start_raw 
-        if _lb_end_raw :
-            _post_lb_end =_lb_end_raw 
         logger .info (
         "# [I2-DIAG] lunch_break_start_raw=%r lb_start=%r "
         "lunch_break_end_raw=%r lb_end=%r no_lunch_break=%r form_action=%r",
