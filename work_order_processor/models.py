@@ -1246,6 +1246,40 @@ class SparePartLine(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Spare parts warehouse link — Hito 10 / sesión S001
+    # Vínculo con el almacén de repuestos — Hito 10 / sesión S001
+    #
+    # Points to the SparePartEntry that materialised this line at work
+    # order closing time (see spare_parts app, annex H10 section 3.4).
+    # Uses a string reference to avoid a circular import: spare_parts
+    # already imports SparePartLine from this module.
+    # Null for historic lines populated by OCR before this hito and
+    # for lines entered manually outside the spare_parts circuit.
+    #
+    # Apunta a la SparePartEntry que materializó esta línea al cerrar
+    # el parte (ver app spare_parts, anexo H10 sección 3.4). Usa
+    # referencia de string para evitar import circular: spare_parts ya
+    # importa SparePartLine de este módulo.
+    # Nulo para líneas históricas pobladas por OCR antes de este hito
+    # y para líneas introducidas manualmente fuera del circuito de
+    # spare_parts.
+    # ------------------------------------------------------------------
+    spare_part_entry = models.ForeignKey(
+        "spare_parts.SparePartEntry",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resulting_spare_part_lines",
+        verbose_name=_("Entrada de Almacén Origen"),
+        help_text=_(
+            "Repuesto del almacén digital (app spare_parts) que originó "
+            "esta línea al cerrar el parte de trabajo. Nulo para líneas "
+            "históricas o introducidas manualmente sin pasar por el "
+            "circuito de almacén del Hito 10."
+        ),
+    )
+
     class Meta:
         verbose_name        = _("Línea de Repuesto")
         verbose_name_plural = _("Líneas de Repuesto")

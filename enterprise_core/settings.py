@@ -61,6 +61,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # Shared AI services (Gemini client helper) — servicios de IA
+    # compartidos (helper de cliente Gemini). Hito 10, principio DRY.
+    'ai_services',
     # Core voice bridge — puente de voz principal.
     'vox_bridge',
     # Multicompany IVR configuration engine — motor de configuración IVR multiempresa.
@@ -71,6 +74,8 @@ INSTALLED_APPS = [
     'whatsapp',
     'work_order_processor',
     'fleet',
+    # Supplier delivery notes and spare parts warehouse — albaranes de proveedor y almacén de repuestos (Hito 10).
+    'spare_parts',
     # IRC-style section chat rooms and breakdown agent — salas de chat IRC y agente de averías.
     'chat',
     # ASISTENCIA budget engine — motor de presupuestos ASISTENCIA.

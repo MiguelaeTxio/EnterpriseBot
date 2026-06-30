@@ -254,17 +254,69 @@
     #route-summary-overnight.is-overnight {
       color: var(--bs-primary, #0d6efd);
     }
-    /* ── PlaceAutocompleteElement — integración visual ────────────── */
-    gmp-place-autocomplete {
-      --gmp-mat-color-surface:          #f0fdf4;
-      --gmp-mat-color-on-surface:       #212529;
-      --gmp-mat-color-outline:          #ced4da;
-      --gmp-mat-color-primary:          #0d6efd;
+    /* ── Autocompletado propio — H18, S001-H10, 2026-06-30 ─────────── */
+    /* Sustituye a PlaceAutocompleteElement (Web Component de Google     */
+    /* con Shadow DOM cerrado, descartado tras diagnóstico exhaustivo —  */
+    /* el listbox de predicciones nunca se renderizaba pese a que las    */
+    /* peticiones de red funcionaban correctamente). Implementación      */
+    /* propia con AutocompleteSuggestion.fetchAutocompleteSuggestions()  */
+    /* y un <input> + <ul> de dropdown construidos en HTML normal,       */
+    /* totalmente bajo nuestro control y CSS.                            */
+    /* Custom autocomplete — H18, S001-H10, 2026-06-30.                  */
+    /* Replaces PlaceAutocompleteElement (Google's Web Component with a  */
+    /* closed Shadow DOM, dropped after exhaustive diagnosis — the       */
+    /* predictions listbox never rendered despite network requests       */
+    /* working correctly). Custom implementation using                   */
+    /* AutocompleteSuggestion.fetchAutocompleteSuggestions() with a      */
+    /* plain HTML <input> + <ul> dropdown, fully under our own control   */
+    /* and CSS.                                                          */
+    .route-place-search-custom {
+      position: relative;
       width: 100%;
-      display: block;
       margin-bottom: .5rem;
+    }
+    .route-place-input {
+      background: #f0fdf4;
+      color: #212529;
+      border: 1px solid #ced4da;
       border-radius: .375rem;
-      overflow: hidden;
+      width: 100%;
+      padding: .5rem .75rem;
+      font-size: .9rem;
+    }
+    .route-place-input:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 .2rem rgba(13,110,253,.15);
+    }
+    /* position/top/left/width se fijan dinámicamente desde JS
+       (positionDropdown() en wizard_map.js), ya que el elemento se
+       mueve a document.body para escapar de cualquier overflow de
+       contenedores ancestros (.route-planner-panel-scroll, etc.).
+       position/top/left/width are set dynamically from JS
+       (positionDropdown() in wizard_map.js), since the element is
+       moved to document.body to escape any ancestor container
+       overflow (.route-planner-panel-scroll, etc.). */
+    .route-place-dropdown-fixed {
+      z-index: 1090;
+      margin: 0;
+      padding: .25rem 0;
+      list-style: none;
+      background: #fff;
+      border: 1px solid #ced4da;
+      border-radius: .375rem;
+      box-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .route-place-dropdown-item {
+      padding: .5rem .75rem;
+      font-size: .88rem;
+      cursor: pointer;
+    }
+    .route-place-dropdown-item:hover,
+    .route-place-dropdown-item:focus {
+      background: #f0fdf4;
     }
     /* ── Spinner overlay sobre el mapa ───────────────────────────── */
     .route-planner-map-col {

@@ -87,14 +87,38 @@ from django.utils import timezone
 from google import genai
 from google.genai.types import GenerateContentConfig, HttpOptions, Part, ThinkingConfig
 
+from ai_services.gemini_client import get_gemini_client as _get_gemini_client
 from fleet.models import MachineAsset
 from .models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine, FaultCategory, FaultSubcategory
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Gemini client initialisation (Vertex AI — Directriz 4.1)
-# Inicialización del cliente Gemini (Vertex AI — Directriz 4.1)
+# Gemini client initialisation — Hito S001/H10: migrated to the shared
+# ai_services.gemini_client helper (DRY principle, see
+# doc-master-enterprisebot section 4.1.1). The local _get_gemini_client()
+# wrapper is gone; the name is kept as an alias via the import above so
+# every call site below (3 occurrences) needs no further change.
+#
+# _GEMINI_MODEL stays pinned to gemini-2.5-flash here intentionally —
+# this is the documented technical debt (doc-master-enterprisebot
+# 4.1.1) pending migration to gemini-3.5-flash before 2026-09-16. New
+# code (e.g. spare_parts.services) uses ai_services.gemini_client's
+# DEFAULT_MODEL (gemini-3.5-flash) instead.
+#
+# Inicialización del cliente Gemini — Hito S001/H10: migrado al helper
+# compartido ai_services.gemini_client (principio DRY, ver
+# doc-master-enterprisebot sección 4.1.1). El wrapper local
+# _get_gemini_client() desaparece; el nombre se conserva como alias vía
+# el import de arriba para que cada punto de llamada de abajo (3
+# ocurrencias) no requiera más cambios.
+#
+# _GEMINI_MODEL permanece fijado a gemini-2.5-flash aquí
+# intencionadamente — es la deuda técnica documentada
+# (doc-master-enterprisebot 4.1.1) pendiente de migrar a
+# gemini-3.5-flash antes del 2026-09-16. El código nuevo (p.ej.
+# spare_parts.services) usa el DEFAULT_MODEL de
+# ai_services.gemini_client (gemini-3.5-flash) en su lugar.
 # ---------------------------------------------------------------------------
 _GEMINI_MODEL = "gemini-2.5-flash"
 
@@ -116,44 +140,6 @@ _GEMINI_TIMEOUT_MS = 60_000
 _GEMINI_REQUEST_CONFIG = GenerateContentConfig(
     http_options=HttpOptions(timeout=_GEMINI_TIMEOUT_MS),
 )
-
-
-def _get_gemini_client() -> genai.Client:
-    """
-    Instantiates and returns a fresh Gemini client configured for Vertex AI.
-    A new client is created on every call to avoid stale connection state after
-    worker restarts (Celery prefork model). Credentials are sourced from the
-    GCP_CREDENTIALS_PATH, GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION
-    environment variables, consistent with the EnterpriseBot platform (Directriz 4.1).
-
-    ---
-
-    Instancia y devuelve un cliente Gemini nuevo configurado para Vertex AI.
-    Se crea un cliente nuevo en cada llamada para evitar estado de conexión obsoleto
-    tras reinicios del worker (modelo prefork de Celery). Las credenciales provienen
-    de las variables de entorno GCP_CREDENTIALS_PATH, GOOGLE_CLOUD_PROJECT y
-    GOOGLE_CLOUD_LOCATION, en coherencia con la plataforma EnterpriseBot (Directriz 4.1).
-    """
-    os.environ.setdefault(
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        os.environ.get("GCP_CREDENTIALS_PATH", ""),
-    )
-    # Use the global endpoint to dynamically route requests to the region with
-    # the most available capacity. This significantly reduces 429 errors caused
-    # by temporary resource contention on regional endpoints (us-central1).
-    # Official recommendation: https://cloud.google.com/vertex-ai/generative-ai/docs/standard-paygo
-    #
-    # Se usa el endpoint global para enrutar dinámicamente las peticiones a la
-    # región con más capacidad disponible, reduciendo los errores 429 causados
-    # por contención temporal en endpoints regionales (us-central1).
-    client = genai.Client(
-        http_options=HttpOptions(api_version="v1"),
-        vertexai=True,
-        project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-        location="global",
-    )
-    logger.info("# Cliente Gemini Vision inicializado correctamente (Vertex AI).")
-    return client
 
 
 # ---------------------------------------------------------------------------

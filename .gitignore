@@ -12,3 +12,4 @@ work_orders/
 !**/templates/**/work_orders/
 media/
 logs/
+/app/

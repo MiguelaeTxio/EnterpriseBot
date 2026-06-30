@@ -433,43 +433,216 @@
       }
     });
 
-    // Migración Places API: PlaceAutocompleteElement (junio 2026)
-    // Autocomplete (legacy) no disponible para nuevos clientes desde 01/03/2025.
-    // Places API migration: PlaceAutocompleteElement (June 2026)
-    // Autocomplete (legacy) unavailable to new customers since 01/03/2025.
+    // Migración Places API — H18, sesión S001-H10 (desvío), 2026-06-30.
+    //
+    // HISTORIAL DE LA INCIDENCIA: se intentó primero PlaceAutocompleteElement
+    // (Web Component oficial de Google). Diagnóstico exhaustivo confirmó:
+    // la librería carga bien, el elemento se construye sin error, recibe
+    // texto correctamente, dispara peticiones de red que Google responde
+    // con 200 OK y payload de datos reales — pero el listbox de
+    // predicciones nunca se renderiza visualmente. El input interno vive
+    // en un Shadow DOM CERRADO (gmpEl.shadowRoot === null desde JS
+    // externo), lo que impide tanto diagnosticar la causa exacta del
+    // fallo de renderizado como aplicar ningún fix CSS/JS sobre su
+    // contenido interno. Se descartaron, con evidencia directa: API no
+    // habilitada, restricciones de key, overflow de contenedores padre,
+    // dark-mode automático (ya corregido con color-scheme:light),
+    // duplicación del script de carga, canal weekly vs beta.
+    //
+    // SOLUCIÓN: prescindir del Web Component y usar la API programática
+    // AutocompleteSuggestion.fetchAutocompleteSuggestions(), construyendo
+    // nosotros mismos el <input> y el dropdown de sugerencias en HTML
+    // propio. Esto da control total y elimina cualquier dependencia de
+    // Shadow DOM cerrado.
+    //
+    // Places API migration — H18, S001-H10 session (detour), 2026-06-30.
+    //
+    // INCIDENT HISTORY: PlaceAutocompleteElement (Google's official Web
+    // Component) was tried first. Exhaustive diagnosis confirmed: the
+    // library loads fine, the element constructs without error, receives
+    // text correctly, fires network requests that Google answers with
+    // 200 OK and real data payloads — but the predictions listbox never
+    // renders visually. The internal input lives in a CLOSED Shadow DOM
+    // (gmpEl.shadowRoot === null from external JS), which prevented both
+    // diagnosing the exact rendering failure and applying any CSS/JS fix
+    // to its internal content. Ruled out with direct evidence: API not
+    // enabled, key restrictions, parent container overflow, automatic
+    // dark-mode (already fixed with color-scheme:light), duplicated
+    // loading script, weekly vs beta channel.
+    //
+    // FIX: drop the Web Component and use the programmatic
+    // AutocompleteSuggestion.fetchAutocompleteSuggestions() API,
+    // building our own <input> and suggestions dropdown in plain HTML.
+    // This gives full control and removes any dependency on a closed
+    // Shadow DOM.
     const searchContainer = document.getElementById("route-place-search");
     if (searchContainer) {
-      const { PlaceAutocompleteElement } = PlacesLib;
-      const autocompleteEl = new PlaceAutocompleteElement({
-        locationBias: {
-          center: { lat: config.base.lat, lng: config.base.lng },
-          radius: 50000,
-        },
-        requestedLanguage: "es",
-      });
-      // PlaceAutocompleteElement genera su propio <input> interno.
-      // Se inserta como hijo del contenedor; hereda el ancho via CSS.
-      // PlaceAutocompleteElement creates its own internal <input>.
-      // Inserted as child of container; inherits width via CSS.
-      searchContainer.appendChild(autocompleteEl);
-      // gmp-select (sustituye a gmp-placeselect en la API actual).
-      // El evento devuelve placePrediction — hay que convertirlo con toPlace().
-      // gmp-select (replaces gmp-placeselect in current API).
-      // Event returns placePrediction — must convert with toPlace().
-      autocompleteEl.addEventListener("gmp-select", async (event) => {
-        const place = event.placePrediction.toPlace();
+      const { AutocompleteSessionToken, AutocompleteSuggestion } = PlacesLib;
+
+      // Construcción del input propio + contenedor de dropdown.
+      // Building our own input + dropdown container.
+      searchContainer.innerHTML = "";
+      searchContainer.classList.add("route-place-search-custom");
+
+      const inputEl = document.createElement("input");
+      inputEl.type = "text";
+      inputEl.id = "route-place-input";
+      inputEl.name = "route_place_search";
+      inputEl.className = "form-control route-place-input";
+      inputEl.placeholder = "Buscar dirección o lugar";
+      inputEl.autocomplete = "off";
+      inputEl.setAttribute("role", "combobox");
+      inputEl.setAttribute("aria-expanded", "false");
+      inputEl.setAttribute("aria-autocomplete", "list");
+      inputEl.setAttribute("aria-controls", "route-place-listbox");
+
+      const dropdownEl = document.createElement("ul");
+      dropdownEl.id = "route-place-listbox";
+      dropdownEl.className = "route-place-dropdown";
+      dropdownEl.setAttribute("role", "listbox");
+      dropdownEl.hidden = true;
+
+      searchContainer.appendChild(inputEl);
+      // El dropdown se ancla al <body>, no al contenedor del input, con
+      // position:fixed calculado por JS en base a getBoundingClientRect().
+      // Esto evita que cualquier overflow:scroll/hidden de un contenedor
+      // ancestro (p. ej. .route-planner-panel-scroll) recorte el
+      // desplegable — el mismo problema que afectaba al enfoque anterior
+      // (Shadow DOM con posicionamiento relativo) ahora vuelve a ser
+      // posible con un <input> normal, así que se neutraliza desde el
+      // diseño en vez de depender de overflow:visible en cada ancestro.
+      // The dropdown anchors to <body>, not to the input's container,
+      // with JS-calculated position:fixed based on getBoundingClientRect().
+      // This prevents any ancestor container's overflow:scroll/hidden
+      // (e.g. .route-planner-panel-scroll) from clipping the dropdown —
+      // the same issue that affected the previous approach (Shadow DOM
+      // with relative positioning) becomes possible again with a plain
+      // <input>, so it's neutralised by design instead of relying on
+      // overflow:visible on every ancestor.
+      dropdownEl.classList.add("route-place-dropdown-fixed");
+      document.body.appendChild(dropdownEl);
+
+      function positionDropdown() {
+        const rect = inputEl.getBoundingClientRect();
+        dropdownEl.style.position = "fixed";
+        dropdownEl.style.top = (rect.bottom + 2) + "px";
+        dropdownEl.style.left = rect.left + "px";
+        dropdownEl.style.width = rect.width + "px";
+      }
+
+      let sessionToken = new AutocompleteSessionToken();
+      let currentSuggestions = [];
+      let debounceTimer = null;
+      let latestRequestId = 0;
+
+      function closeDropdown() {
+        dropdownEl.hidden = true;
+        dropdownEl.innerHTML = "";
+        inputEl.setAttribute("aria-expanded", "false");
+      }
+
+      function renderSuggestions(suggestions) {
+        currentSuggestions = suggestions;
+        dropdownEl.innerHTML = "";
+        if (!suggestions.length) {
+          closeDropdown();
+          return;
+        }
+        suggestions.forEach((suggestion, index) => {
+          const prediction = suggestion.placePrediction;
+          if (!prediction) return;
+          const li = document.createElement("li");
+          li.className = "route-place-dropdown-item";
+          li.setAttribute("role", "option");
+          li.textContent = prediction.text ? prediction.text.text : "";
+          li.addEventListener("click", () => selectSuggestion(index));
+          dropdownEl.appendChild(li);
+        });
+        positionDropdown();
+        dropdownEl.hidden = false;
+        inputEl.setAttribute("aria-expanded", "true");
+      }
+
+      async function selectSuggestion(index) {
+        const suggestion = currentSuggestions[index];
+        if (!suggestion || !suggestion.placePrediction) return;
+        const place = suggestion.placePrediction.toPlace();
         // fetchFields es necesario para obtener location y displayName.
         // fetchFields is needed to retrieve location and displayName.
         await place.fetchFields({ fields: ["location", "displayName"] });
-        if (!place.location) return;
-        addWaypoint(
-          place.location.lat(),
-          place.location.lng(),
-          place.displayName || "Parada",
-          false, false
-        );
+        if (place.location) {
+          addWaypoint(
+            place.location.lat(),
+            place.location.lng(),
+            place.displayName || "Parada",
+            false, false
+          );
+        }
+        inputEl.value = "";
+        closeDropdown();
+        // Nueva sesión tras completar una selección (recomendación de
+        // Google para agrupar correctamente la facturación por sesión).
+        // New session after completing a selection (Google's
+        // recommendation to correctly group billing per session).
+        sessionToken = new AutocompleteSessionToken();
+      }
+
+      inputEl.addEventListener("input", () => {
+        const value = inputEl.value.trim();
+        clearTimeout(debounceTimer);
+        if (!value) {
+          closeDropdown();
+          return;
+        }
+        // Debounce de 250ms para no disparar una petición por cada
+        // pulsación de tecla.
+        // 250ms debounce to avoid firing a request on every keystroke.
+        debounceTimer = setTimeout(async () => {
+          const requestId = ++latestRequestId;
+          try {
+            const request = {
+              input: value,
+              sessionToken: sessionToken,
+              locationBias: {
+                center: { lat: config.base.lat, lng: config.base.lng },
+                radius: 50000,
+              },
+              language: "es",
+            };
+            const { suggestions } =
+              await AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
+            // Descarta resultados de peticiones obsoletas (el usuario ya
+            // siguió escribiendo). Discard stale request results (the
+            // user kept typing).
+            if (requestId !== latestRequestId) return;
+            renderSuggestions(suggestions);
+          } catch (err) {
+            console.error("[ROUTE-PLANNER] Error en fetchAutocompleteSuggestions:", err);
+            showRoutePlannerError(
+              "No se han podido obtener sugerencias de direcciones. " +
+              "Revisa la configuración de la API key de Google Maps " +
+              "(Places API New debe estar habilitada y sin restricciones " +
+              "que la excluyan)."
+            );
+          }
+        }, 250);
+      });
+
+      // Cierra el dropdown al hacer click fuera del campo/lista.
+      // Closes the dropdown on click outside the input/list.
+      document.addEventListener("click", (event) => {
+        if (!searchContainer.contains(event.target)) {
+          closeDropdown();
+        }
+      });
+
+      // Cierra el dropdown con Escape.
+      // Closes the dropdown with Escape.
+      inputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeDropdown();
       });
     }
+
 
     bindStaticControls(config);
     mapInitialized = true;

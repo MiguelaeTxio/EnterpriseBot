@@ -20,10 +20,22 @@
 {# any HTMX fragment or wizard_map.js tries to use it.                     #}
 {# The API key is injected server-side from settings; the loading script    #}
 {# is async + defer so it does not block the wizard render.                #}
+{# v: "beta" es OBLIGATORIO (no "weekly"). PlaceAutocompleteElement solo    #}
+{# está disponible en el canal beta/alpha de Maps JS API a fecha de        #}
+{# S001-H10 (2026-06-30) — verificado en documentación oficial Google.     #}
+{# Causa raíz del bug del planificador de ruta en esta sesión: con         #}
+{# v:"weekly" el elemento se construye y recibe texto sin error, pero el   #}
+{# dropdown de predicciones del Shadow DOM nunca se renderiza.             #}
+{# v: "beta" is MANDATORY (not "weekly"). PlaceAutocompleteElement is only #}
+{# available in the beta/alpha channel of Maps JS API as of S001-H10       #}
+{# (2026-06-30) — verified in official Google documentation. Root cause    #}
+{# of the route planner bug in this session: with v:"weekly" the element   #}
+{# constructs and receives text with no error, but the Shadow DOM          #}
+{# predictions dropdown never renders.                                     #}
 {% block extra_head %}
 <script>
   (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
-  ({key: "{{ google_maps_api_key }}", v: "weekly"});
+  ({key: "{{ google_maps_api_key }}", v: "beta"});
 </script>
 {% endblock %}
 
