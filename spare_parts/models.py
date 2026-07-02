@@ -157,6 +157,18 @@ class DeliveryNoteLine(models.Model):
         blank=True,
         verbose_name='Precio total línea',
     )
+    machine_code_raw = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='Código máquina/almacén (bruto)',
+        help_text=(
+            'Código de máquina o almacén anotado a mano en el albarán, tal '
+            'como lo transcribió Gemini Vision (sin normalizar). Editable '
+            'en la revisión antes de confirmar la asignación. Añadido en '
+            'S002-H10 para soportar el Paso 3 del anexo (revisión de '
+            'DeliveryNoteDetailView).'
+        ),
+    )
     assignment_type = models.CharField(
         max_length=15,
         choices=ASSIGNMENT_TYPE_CHOICES,
@@ -510,3 +522,4 @@ class StockMovement(models.Model):
 
     def __str__(self):
         return f'{self.get_movement_type_display()} — {self.spare_part_entry}'
+

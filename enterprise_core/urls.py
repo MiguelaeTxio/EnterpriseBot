@@ -58,4 +58,10 @@ urlpatterns = [
         'panel/history/',
         include('history.urls', namespace='history'),
     ),
+    # Supplier delivery notes & spare parts warehouse — Albaranes de
+    # proveedores y almacén de repuestos (Hito 10).
+    path(
+        'panel/spare-parts/',
+        include('spare_parts.urls', namespace='spare_parts'),
+    ),
 ]

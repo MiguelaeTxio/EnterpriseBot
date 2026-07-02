@@ -1,0 +1,165 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/spare_parts/templates/spare_parts/delivery_note_detail.html #}
+{# Revisión y confirmación de albarán de proveedor -- Hito 10, Paso 3. #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Revisión de Albarán{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-10">
+
+        <div class="d-flex align-items-center justify-content-between mb-4 gap-2">
+            <h5 class="mb-0 fw-semibold">
+                Albarán #{{ delivery_note.pk }}
+                {% if delivery_note.status == 'ASSIGNED' %}
+                    <span class="badge bg-success ms-2">Asignado</span>
+                {% else %}
+                    <span class="badge bg-warning text-dark ms-2">Pendiente de confirmar</span>
+                {% endif %}
+            </h5>
+            <a href="{% url 'spare_parts:delivery_note_upload' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-upload me-1"></i>Subir otro albarán
+            </a>
+        </div>
+
+        {% if delivery_note.status == 'ASSIGNED' %}
+        <div class="alert alert-success">
+            Este albarán ya ha sido confirmado. Los datos quedan
+            bloqueados para edición.
+        </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'spare_parts:delivery_note_detail' pk=delivery_note.pk %}">
+            {% csrf_token %}
+
+            <div class="card shadow-sm mb-4">
+                <div class="card-header fw-semibold">Datos del proveedor</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">Proveedor</label>
+                            <input type="text" class="form-control" name="supplier_name"
+                                   value="{{ delivery_note.supplier_name }}"
+                                   {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label">NIF/CIF</label>
+                            <input type="text" class="form-control" name="supplier_tax_id"
+                                   value="{{ delivery_note.supplier_tax_id }}"
+                                   {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label">Número de albarán</label>
+                            <input type="text" class="form-control" name="delivery_number"
+                                   value="{{ delivery_note.delivery_number }}"
+                                   {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label class="form-label">Fecha</label>
+                            <input type="date" class="form-control" name="delivery_date"
+                                   value="{{ delivery_note.delivery_date|date:'Y-m-d' }}"
+                                   {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mb-4">
+                <div class="card-header fw-semibold">Líneas de artículo</div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Referencia</th>
+                                <th>Descripción</th>
+                                <th>Cantidad</th>
+                                <th>P. unitario</th>
+                                <th>P. total</th>
+                                <th>Código máquina/almacén</th>
+                                <th>Asignación detectada</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for line in lines %}
+                            <tr>
+                                <td>{{ line.line_number }}</td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm"
+                                           name="line_{{ line.pk }}_reference"
+                                           value="{{ line.reference }}"
+                                           {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm"
+                                           name="line_{{ line.pk }}_description"
+                                           value="{{ line.description }}"
+                                           {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm"
+                                           name="line_{{ line.pk }}_quantity"
+                                           value="{{ line.quantity }}"
+                                           {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm"
+                                           name="line_{{ line.pk }}_unit_price"
+                                           value="{{ line.unit_price|default_if_none:'' }}"
+                                           {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm"
+                                           name="line_{{ line.pk }}_total_price"
+                                           value="{{ line.total_price|default_if_none:'' }}"
+                                           {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm"
+                                           name="line_{{ line.pk }}_machine_code_raw"
+                                           value="{{ line.machine_code_raw }}"
+                                           {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                                </td>
+                                <td>
+                                    {% if line.assignment_type == 'WAREHOUSE' %}
+                                        <span class="badge bg-info text-dark">Almacén</span>
+                                        <input type="hidden" name="line_{{ line.pk }}_assignment_type" value="WAREHOUSE">
+                                    {% elif line.assignment_type == 'MACHINE' %}
+                                        <span class="badge bg-primary">{{ line.machine.code|default:"Máquina" }}</span>
+                                        <input type="hidden" name="line_{{ line.pk }}_assignment_type" value="MACHINE">
+                                    {% else %}
+                                        <span class="badge bg-secondary">Sin asignar</span>
+                                        <input type="hidden" name="line_{{ line.pk }}_assignment_type" value="UNASSIGNED">
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {% if delivery_note.status != 'ASSIGNED' %}
+            <div class="d-flex gap-2 justify-content-end mb-4">
+                <button type="submit" class="btn btn-outline-primary">
+                    <i class="bi bi-save me-1"></i>Guardar revisión
+                </button>
+            </div>
+            {% endif %}
+        </form>
+
+        {% if delivery_note.status != 'ASSIGNED' %}
+        <form method="post" action="{% url 'spare_parts:delivery_note_confirm' pk=delivery_note.pk %}"
+              onsubmit="return confirm('¿Confirmar la asignación de este albarán? Esta acción creará los repuestos y movimientos de stock correspondientes.');">
+            {% csrf_token %}
+            <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-check2-circle me-1"></i>Confirmar asignación
+                </button>
+            </div>
+        </form>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}

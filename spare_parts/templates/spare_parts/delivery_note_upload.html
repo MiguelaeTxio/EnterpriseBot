@@ -1,0 +1,206 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/spare_parts/templates/spare_parts/delivery_note_upload.html #}
+{# Formulario de subida de albaranes de proveedor -- Hito 10, Paso 3. #}
+{# S004-H10: añadida captura directa por cámara (adaptado del prototipo #}
+{# PAIRS/delivery_note_processor/camera_capture.js -- envío vía         #}
+{# DataTransfer + submit del formulario existente en vez de fetch AJAX, #}
+{# para no tocar la vista Python ni su flujo de mensajes de Django).    #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Subir Albarán de Proveedor{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+
+        <div class="d-flex align-items-center mb-4 gap-2">
+            <h5 class="mb-0 fw-semibold">Subir Albarán de Proveedor</h5>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <p class="text-muted mb-4">
+                    Sube una foto o un PDF del albarán, o haz la foto
+                    directamente desde aquí. El sistema extraerá
+                    automáticamente el proveedor, el número y fecha de
+                    albarán, y las líneas de artículo mediante visión
+                    artificial. Podrás revisar y corregir los datos antes
+                    de confirmar la asignación.
+                </p>
+
+                <div class="d-flex gap-2 justify-content-center mb-4">
+                    <button id="show-upload-btn" type="button" class="btn btn-primary btn-sm">
+                        <i class="bi bi-file-earmark-arrow-up me-1"></i>Subir archivo
+                    </button>
+                    <button id="show-camera-btn" type="button" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-camera-fill me-1"></i>Hacer foto
+                    </button>
+                </div>
+
+                <div id="file-upload-section">
+                    <form method="post" enctype="multipart/form-data" id="upload-form">
+                        {% csrf_token %}
+
+                        <div class="mb-4">
+                            <label for="delivery_note_file" class="form-label fw-semibold">
+                                Foto o PDF del albarán <span class="text-danger">*</span>
+                            </label>
+                            <input type="file"
+                                   class="form-control"
+                                   id="delivery_note_file"
+                                   name="delivery_note_file"
+                                   accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                   required>
+                            <div class="form-text">
+                                Formatos admitidos: PDF, JPG, PNG, WEBP.
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info d-flex gap-2 align-items-start mb-4" role="alert">
+                            <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+                            <div>
+                                La extracción con Gemini Vision puede tardar
+                                unos segundos. Al terminar se abrirá la
+                                pantalla de revisión con los datos detectados.
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-end">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-upload me-1"></i>Cargar y extraer
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="camera-section" class="d-none">
+                    <div class="text-center">
+                        <video id="camera-stream" autoplay playsinline class="w-100 mb-3 border bg-light rounded"></video>
+                        <canvas id="camera-canvas" class="d-none"></canvas>
+                        <button id="capture-btn" type="button" class="btn btn-success">
+                            <i class="bi bi-camera-fill me-1"></i>Capturar y enviar
+                        </button>
+                        <div id="camera-feedback" class="mt-3"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    "use strict";
+
+    /*
+     * Camera capture for delivery note photos -- adapted from the
+     * PAIRS/delivery_note_processor prototype (camera_capture.js).
+     * Unlike the original, this submits through the existing upload
+     * form (DataTransfer injected into the file input) instead of a
+     * separate AJAX/JSON endpoint, so the Python view and its Django
+     * messages flow stay untouched.
+     * ---
+     * Captura de cámara para fotos de albarán -- adaptado del
+     * prototipo PAIRS/delivery_note_processor (camera_capture.js).
+     * A diferencia del original, esto envía a través del formulario
+     * de subida existente (DataTransfer inyectado en el input file)
+     * en vez de un endpoint AJAX/JSON separado, para no tocar la
+     * vista Python ni su flujo de mensajes de Django.
+     */
+    var showUploadBtn = document.getElementById("show-upload-btn");
+    var showCameraBtn = document.getElementById("show-camera-btn");
+    var captureBtn    = document.getElementById("capture-btn");
+
+    var fileUploadSection = document.getElementById("file-upload-section");
+    var cameraSection     = document.getElementById("camera-section");
+
+    var video      = document.getElementById("camera-stream");
+    var canvas     = document.getElementById("camera-canvas");
+    var feedbackEl = document.getElementById("camera-feedback");
+
+    var uploadForm = document.getElementById("upload-form");
+    var fileInput  = document.getElementById("delivery_note_file");
+
+    var currentStream = null;
+
+    function startCameraStream() {
+        if (!("mediaDevices" in navigator) || !navigator.mediaDevices.getUserMedia) {
+            feedbackEl.innerHTML =
+                '<div class="alert alert-danger">Tu navegador no soporta ' +
+                'acceso a la cámara. Usa "Subir archivo" en su lugar.</div>';
+            captureBtn.disabled = true;
+            return;
+        }
+        stopCameraStream();
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(function (stream) {
+                video.srcObject = stream;
+                currentStream = stream;
+                feedbackEl.innerHTML = "";
+            })
+            .catch(function (error) {
+                console.error("# Error al acceder a la cámara:", error);
+                var message = "No se pudo acceder a la cámara. ";
+                if (error.name === "NotAllowedError") {
+                    message += "Concede permiso de cámara en el navegador.";
+                } else {
+                    message += "Puede que otra aplicación la esté usando.";
+                }
+                feedbackEl.innerHTML =
+                    '<div class="alert alert-warning">' + message + "</div>";
+            });
+    }
+
+    function stopCameraStream() {
+        if (currentStream) {
+            currentStream.getTracks().forEach(function (track) { track.stop(); });
+            currentStream = null;
+            video.srcObject = null;
+        }
+    }
+
+    showCameraBtn.addEventListener("click", function () {
+        fileUploadSection.classList.add("d-none");
+        cameraSection.classList.remove("d-none");
+        showCameraBtn.classList.replace("btn-outline-primary", "btn-primary");
+        showUploadBtn.classList.replace("btn-primary", "btn-outline-primary");
+        startCameraStream();
+    });
+
+    showUploadBtn.addEventListener("click", function () {
+        cameraSection.classList.add("d-none");
+        fileUploadSection.classList.remove("d-none");
+        showUploadBtn.classList.replace("btn-outline-primary", "btn-primary");
+        showCameraBtn.classList.replace("btn-primary", "btn-outline-primary");
+        stopCameraStream();
+    });
+
+    captureBtn.addEventListener("click", function () {
+        feedbackEl.innerHTML =
+            '<div class="alert alert-info">Preparando imagen…</div>';
+        captureBtn.disabled = true;
+
+        var context = canvas.getContext("2d");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(function (blob) {
+            var file = new File([blob], "albaran-camara.jpg", { type: "image/jpeg" });
+            var dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+
+            stopCameraStream();
+            feedbackEl.innerHTML =
+                '<div class="alert alert-info">Enviando…</div>';
+            uploadForm.submit();
+        }, "image/jpeg", 0.9);
+    });
+
+}());
+</script>
+{% endblock %}

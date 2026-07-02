@@ -26,6 +26,7 @@
 {#   "whatsapp_sessions"  → Sesiones activas (WhatsApp)      (ADMIN)               #}
 {#   "bot_management"     → Gestión del bot (WhatsApp)        (ADMIN)               #}
 {#   "operator_dashboard" → Nuevo parte                      (WORKSHOP, ADMIN)     #}
+{#   "spare_parts_upload" → Subir albarán                    (WORKSHOP, ADMIN)     #}
 {#   "work_orders"        → PDFs                             (ADMIN, SUPERVISOR)    #}
 {#   "fleet"              → Centros de gasto                 (ADMIN, SUPERVISOR) #}
 {#   "fleet_analytics"    → Analítica de centros de gasto   (ADMIN, SUPERVISOR) #}
@@ -277,9 +278,9 @@
         </li>
     {% endif %}
     {# ------------------------------------------------------------------ #}
-    {# Sección: Operarios — todos los roles excepto ASSISTANCE             #}
-    {# Incluye: Nuevo parte, Historial, Partes digitales                   #}
-    {# Section: Operators — all roles except ASSISTANCE                    #}
+    {# Sección: Mecánicos — todos los roles excepto ASSISTANCE             #}
+    {# Incluye: Nuevo parte, Subir albarán, Historial, Partes digitales    #}
+    {# Section: Mechanics — all roles except ASSISTANCE                    #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role != 'ASSISTANCE' %}
         <li class="nav-item sidebar-accordion-section">
@@ -291,7 +292,7 @@
                     aria-controls="acc-operarios"
                     data-acc-id="acc-operarios">
                 <i class="bi bi-tools"></i>
-                <span>Operarios</span>
+                <span>Mecánicos</span>
                 <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
             </button>
             <div class="collapse sidebar-accordion-body" id="acc-operarios">
@@ -302,6 +303,16 @@
                             <i class="bi bi-tools"></i>Nuevo parte
                         </a>
                     </li>
+                    {# Subir albarán de proveedor — WORKSHOP y ADMIN (Hito 10, S003).      #}
+                    {# Upload supplier delivery note — WORKSHOP and ADMIN (Hito 10, S003). #}
+                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'spare_parts_upload' %}active{% endif %}"
+                               href="{% url 'spare_parts:delivery_note_upload' %}">
+                                <i class="bi bi-box-seam"></i>Subir albarán
+                            </a>
+                        </li>
+                    {% endif %}
                     {# Historial de partes del operario — solo WORKSHOP y WORKSHOPBOSS.    #}
                     {# Operator work-order history — WORKSHOP and WORKSHOPBOSS only.        #}
                     {% if company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
@@ -519,6 +530,7 @@
         'company_settings':         'acc-administracion',
         'analytics_lab':            'acc-analitica',
         'operator_dashboard':       'acc-operarios',
+        'spare_parts_upload':       'acc-operarios',
         'operator_history':         'acc-operarios',
         'machine_history':          'acc-operarios',
         'workorder_history':        'acc-operarios',
