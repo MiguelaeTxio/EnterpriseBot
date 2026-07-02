@@ -12,6 +12,12 @@ Mixin hierarchy:
   SupervisorAccessMixin        — restricts to SUPERVISOR and ADMIN roles.
                                  Introduced in Hito 8 / Bloque G for PDF work-order
                                  review and export workflow.
+  AssistanceRequiredMixin      — restricts to ASSISTANCE and ADMIN roles.
+                                 Introduced in Hito 16 for the budget wizard.
+  BudgetAuditAccessMixin       — restricts to ADMIN, or ASSISTANCE with the
+                                 per-user can_view_budget_breakdown flag.
+                                 Introduced for special ASSISTANCE users who
+                                 need budget history/breakdown visibility.
 ---
 Mixins de autenticación y autorización para la aplicación panel.
 Proporciona control de acceso por capas para las cuentas CompanyUser.
@@ -24,6 +30,12 @@ Jerarquía de mixins:
   SupervisorAccessMixin        — restringe a los roles SUPERVISOR y ADMIN.
                                  Introducido en Hito 8 / Bloque G para el flujo de
                                  revisión y exportación de partes de trabajo PDF.
+  AssistanceRequiredMixin      — restringe a los roles ASSISTANCE y ADMIN.
+                                 Introducido en Hito 16 para el asistente de presupuestos.
+  BudgetAuditAccessMixin       — restringe a ADMIN, o ASSISTANCE con el flag
+                                 por usuario can_view_budget_breakdown.
+                                 Introducido para usuarios ASISTENCIA especiales
+                                 que necesitan visibilidad de historial/desglose.
 """
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -213,6 +225,66 @@ class AssistanceRequiredMixin(CompanyUserRequiredMixin):
         return response
 
 
+class BudgetAuditAccessMixin(CompanyUserRequiredMixin):
+    """
+    Mixin that grants access to the budget history list and detail/
+    breakdown views. ADMIN always has access. ASSISTANCE has access only
+    when their CompanyUser.can_view_budget_breakdown flag is True — a
+    granular per-user override, not a role-wide grant, introduced for
+    special ASSISTANCE users who need audit visibility into calculated
+    budgets without any other ADMIN privilege.
+    Any other role, or an ASSISTANCE user without the flag, receives a
+    redirect to the dashboard with an error message.
+    ---
+    Mixin que concede acceso al listado de historial de presupuestos y a
+    las vistas de detalle/desglose. ADMIN tiene acceso siempre.
+    ASSISTANCE tiene acceso solo cuando su flag
+    CompanyUser.can_view_budget_breakdown es True — un override granular
+    por usuario, no una concesión a todo el rol, introducido para
+    usuarios ASISTENCIA especiales que necesitan visibilidad de
+    auditoría sobre los presupuestos calculados sin ningún otro
+    privilegio de ADMIN.
+    Cualquier otro rol, o un usuario ASSISTANCE sin el flag, recibe una
+    redirección al dashboard con mensaje de error.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Verify that the authenticated CompanyUser holds ADMIN, or holds
+        ASSISTANCE with can_view_budget_breakdown=True. Delegates to
+        parent for authentication and CompanyUser checks first.
+        ---
+        Verifica que el CompanyUser autenticado posee ADMIN, o posee
+        ASSISTANCE con can_view_budget_breakdown=True. Delega al padre
+        las comprobaciones de autenticación y CompanyUser primero.
+        """
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+
+        company_user = getattr(request.user, "company_user", None)
+        if company_user is None:
+            return response
+
+        has_access = (
+            company_user.role == CompanyUser.ROLE_ADMIN
+            or (
+                company_user.role == CompanyUser.ROLE_ASSISTANCE
+                and company_user.can_view_budget_breakdown
+            )
+        )
+        if not has_access:
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Administrador, o el permiso de visualización de "
+                "desglose de presupuestos.",
+            )
+            return redirect("/panel/")
+
+        return response
+
+
 class SupervisorAccessMixin(CompanyUserRequiredMixin):
     """
     Mixin that grants access to CompanyUsers with the SUPERVISOR or ADMIN role.
@@ -357,4 +429,6 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
             return redirect("/panel/")
 
         return response
+
+
 

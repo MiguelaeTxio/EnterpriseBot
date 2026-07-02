@@ -1,3 +1,5 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/views.py
+
 
 
 
@@ -43,11 +45,16 @@ from budgets.models import (
     NightSchedule,
     TariffConcept,
     TariffLine,
+    TariffPdfImport,
     VehicleType,
 )
 from budgets.services import calculate_budget, _is_holiday
 from ivr_config.models import CompanyUser, PresenceStatus
-from panel.mixins import AdminRoleRequiredMixin, AssistanceRequiredMixin
+from panel.mixins import (
+    AdminRoleRequiredMixin,
+    AssistanceRequiredMixin,
+    BudgetAuditAccessMixin,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +414,36 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             if route_toll_budget_cost_raw else None
         )
 
+        # --- Manual calculation mode fields (route_calculation_mode=MANUAL) ---
+        # --- Campos del modo de cálculo Manual (route_calculation_mode=MANUAL) ---
+        # manual_is_night_holiday: operator checkbox, sole source of truth
+        #   for is_night_or_holiday when present — bypasses the automatic
+        #   calendar-based calculation entirely (see calculate_budget()).
+        # manual_toll_total: operator-entered total toll amount, fed
+        #   directly into route_toll_budget_cost (the engine already
+        #   falls back to this value as a single TOLL_COST line whenever
+        #   there is no stored polyline, which manual-mode budgets never have).
+        # ---
+        # manual_is_night_holiday: checkbox del operario, única fuente de
+        #   verdad para is_night_or_holiday cuando está presente — evita
+        #   por completo el cálculo automático basado en calendario (ver
+        #   calculate_budget()).
+        # manual_toll_total: importe total de peajes introducido por el
+        #   operario, se vuelca directamente en route_toll_budget_cost (el
+        #   motor ya recurre a este valor como línea única TOLL_COST
+        #   siempre que no haya polyline almacenada, que nunca la hay en
+        #   presupuestos de modo manual).
+        manual_toll_total_raw = data.get("manual_toll_total", "").strip()
+        manual_toll_total = (
+            _Dec(manual_toll_total_raw.replace(",", "."))
+            if manual_toll_total_raw else None
+        )
+        is_night_or_holiday_manual_override = (
+            (data.get("manual_is_night_holiday") == "1")
+            if route_calculation_mode == "MANUAL"
+            else None
+        )
+
         service_time_raw = data.get("service_time", "").strip()
         # Normalise decimal separator: JS may write '.' or ','
         # depending on the browser locale.
@@ -530,6 +567,9 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             km_phase2=km_phase2,
             has_unlock=has_unlock,
             is_night=is_night,
+            is_night_or_holiday_manual_override=(
+                is_night_or_holiday_manual_override
+            ),
             is_loaded=is_loaded,
             base=(
                 InsurerBase.objects.filter(
@@ -555,7 +595,7 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             route_toll_budget_cost=(
                 route_toll_budget_cost
                 if route_calculation_mode == "API"
-                else None
+                else manual_toll_total
             ),
             route_calculation_mode=route_calculation_mode,
             service_time=service_time_obj,
@@ -687,15 +727,13 @@ class BudgetRouteCalcView(AssistanceRequiredMixin, View):
                 "error": f"Datos inválidos: {exc}",
             })
 
-        # Validate that service_datetime is in the future (Routes API requirement).
-        # Validar que service_datetime sea futuro (requisito de Routes API).
-        if service_datetime <= _dt.datetime.utcnow():
-            return render(request, self.template_name, {
-                "error": (
-                    "La fecha y hora del servicio deben ser futuras para calcular "
-                    "la ruta con peajes. Ajusta la fecha u hora en el paso 2b."
-                ),
-            })
+        # Any date (past, present or future) is now accepted — the service
+        # layer omits departureTime for non-future dates since Google's
+        # Routes API rejects a past departureTime for DRIVE mode.
+        # Cualquier fecha (pasada, presente o futura) es aceptada ahora —
+        # la capa de servicios omite departureTime para fechas no futuras,
+        # ya que la Routes API de Google rechaza un departureTime pasado
+        # en modo DRIVE.
 
         from budgets.services import calculate_route, RouteCalculationError
         try:
@@ -812,19 +850,12 @@ class BudgetRouteDualView(AssistanceRequiredMixin, View):
                 "route_without_tolls": None,
             })
 
-        # Validate that service_datetime is in the future.
-        # Validar que service_datetime sea futuro.
-        if service_datetime <= _dt.datetime.utcnow():
-            return render(request, self.template_name, {
-                "error": (
-                    "La fecha y hora del servicio deben ser futuras "
-                    "para calcular la ruta con peajes. "
-                    "Ajusta la fecha u hora en el paso 2b."
-                ),
-                "show_dual": False,
-                "route_with_tolls": None,
-                "route_without_tolls": None,
-            })
+        # Any date (past, present or future) is now accepted — the
+        # service layer omits departureTime for non-future dates since
+        # Google's Routes API rejects a past departureTime for DRIVE mode.
+        # Cualquier fecha es aceptada ahora — la capa de servicios omite
+        # departureTime para fechas no futuras, ya que la Routes API de
+        # Google rechaza un departureTime pasado en modo DRIVE.
 
         from budgets.services import calculate_route, RouteCalculationError
         try:
@@ -1089,19 +1120,12 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
                 {"error": f"Fecha u hora inválidas: {exc}"}, status=400
             )
 
-        # Validate future datetime (Routes API requirement for toll data).
-        # Validar que sea futuro (requisito de Routes API para datos de peajes).
-        if service_datetime <= _dt.datetime.utcnow():
-            return JsonResponse(
-                {
-                    "error": (
-                        "La fecha y hora del servicio deben ser futuras "
-                        "para calcular la ruta. "
-                        "Ajusta la fecha u hora en el paso 2b."
-                    )
-                },
-                status=400,
-            )
+        # Any date (past, present or future) is now accepted — the
+        # service layer omits departureTime for non-future dates since
+        # Google's Routes API rejects a past departureTime for DRIVE mode.
+        # Cualquier fecha es aceptada ahora — la capa de servicios omite
+        # departureTime para fechas no futuras, ya que la Routes API de
+        # Google rechaza un departureTime pasado en modo DRIVE.
 
         api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 
@@ -1479,16 +1503,18 @@ class BudgetStatusUpdateView(AssistanceRequiredMixin, View):
 
 
 # ---------------------------------------------------------------------------
-# Budget history — ADMIN only
+# Budget history — ADMIN, or ASSISTANCE with can_view_budget_breakdown
 # ---------------------------------------------------------------------------
 
-class BudgetHistoryView(AdminRoleRequiredMixin, View):
+class BudgetHistoryView(BudgetAuditAccessMixin, View):
     """
     Lists all budgets for the company with filters by insurer, date and status.
-    Visible to ADMIN only.
+    Visible to ADMIN, and to ASSISTANCE users whose
+    CompanyUser.can_view_budget_breakdown flag is True.
     ---
     Lista todos los presupuestos de la empresa con filtros por aseguradora,
-    fecha y estado. Visible solo para ADMIN.
+    fecha y estado. Visible para ADMIN, y para usuarios ASSISTANCE cuyo
+    flag CompanyUser.can_view_budget_breakdown sea True.
     """
 
     template_name = "budgets/history.html"
@@ -1550,17 +1576,21 @@ class BudgetHistoryView(AdminRoleRequiredMixin, View):
 
 
 # ---------------------------------------------------------------------------
-# Budget detail — ADMIN audit view (full breakdown)
+# Budget detail — ADMIN, or ASSISTANCE with can_view_budget_breakdown
 # ---------------------------------------------------------------------------
 
-class BudgetDetailView(AdminRoleRequiredMixin, View):
+class BudgetDetailView(BudgetAuditAccessMixin, View):
     """
-    Displays the full calculation breakdown of a budget for ADMIN audit.
-    Shows all BudgetLine records with concept, units, unit price and subtotal.
+    Displays the full calculation breakdown of a budget for audit.
+    Shows all BudgetLine records with concept, units, unit price and
+    subtotal. Visible to ADMIN, and to ASSISTANCE users whose
+    CompanyUser.can_view_budget_breakdown flag is True.
     ---
-    Muestra el desglose completo del calculo de un presupuesto para auditoria
-    ADMIN. Muestra todos los registros BudgetLine con concepto, unidades,
-    precio unitario y subtotal.
+    Muestra el desglose completo del calculo de un presupuesto para
+    auditoria. Muestra todos los registros BudgetLine con concepto,
+    unidades, precio unitario y subtotal. Visible para ADMIN, y para
+    usuarios ASSISTANCE cuyo flag CompanyUser.can_view_budget_breakdown
+    sea True.
     """
 
     template_name = "budgets/detail.html"
@@ -1593,6 +1623,8 @@ class BudgetDetailView(AdminRoleRequiredMixin, View):
             "lines": lines,
             "iva_amount": iva_amount,
             "active_nav": "budgets_history",
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "google_maps_map_id": os.environ.get("GOOGLE_MAPS_MAP_ID", ""),
         })
         return render(request, self.template_name, ctx)
 
@@ -2235,10 +2267,31 @@ class InsurerDeleteView(AdminRoleRequiredMixin, View):
     Deletes an insurer and all its related data (vehicle types, tariffs,
     tariff lines) via CASCADE. Redirects to insurer list with a success
     or error message.
+
+    SpecialRateTariff.insurer_tariff and SpecialRateLine.vehicle_type use
+    on_delete=PROTECT (by design, to avoid accidental loss of night/holiday
+    rate history via unrelated cascades). Because of this, a direct
+    insurer.delete() fails with ProtectedError whenever the insurer has an
+    active SpecialRateTariff. This view explicitly deletes the
+    SpecialRateTariff row(s) for the insurer's tariffs first (which
+    CASCADEs their SpecialRateLine rows), then deletes the insurer, so the
+    remaining CASCADE chain (VehicleType, InsurerTariff, TariffLine,
+    InsurerBase) completes cleanly.
     ---
     Elimina una aseguradora y todos sus datos relacionados (tipos de vehiculo,
     tarifas, lineas de tarifa) via CASCADE. Redirige al listado con un mensaje
     de exito o error.
+
+    SpecialRateTariff.insurer_tariff y SpecialRateLine.vehicle_type usan
+    on_delete=PROTECT (por diseño, para evitar pérdida accidental del
+    histórico de tarifas nocturno/festivo por cascadas ajenas). Por esto,
+    un insurer.delete() directo falla con ProtectedError siempre que la
+    aseguradora tenga una SpecialRateTariff activa. Esta vista borra
+    explícitamente la(s) SpecialRateTariff de las tarifas de la aseguradora
+    primero (lo que arrastra sus SpecialRateLine vía CASCADE), y solo
+    entonces borra la aseguradora, para que el resto de la cadena CASCADE
+    (VehicleType, InsurerTariff, TariffLine, InsurerBase) se complete
+    limpiamente.
     """
 
     def post(self, request, pk):
@@ -2247,6 +2300,8 @@ class InsurerDeleteView(AdminRoleRequiredMixin, View):
         ---
         Elimina la instancia de aseguradora. Redirige al listado.
         """
+        from budgets.models import InsurerTariff, SpecialRateTariff
+
         company_user = _get_company_user(request)
         insurer = get_object_or_404(
             Insurer,
@@ -2255,7 +2310,15 @@ class InsurerDeleteView(AdminRoleRequiredMixin, View):
         )
         name = insurer.name
         try:
-            insurer.delete()
+            with transaction.atomic():
+                # Explicitly remove SpecialRateTariff rows first (PROTECT
+                # FK blocks the automatic CASCADE otherwise).
+                # Eliminar primero explícitamente las SpecialRateTariff
+                # (la FK PROTECT bloquea el CASCADE automático si no).
+                SpecialRateTariff.objects.filter(
+                    insurer_tariff__insurer=insurer
+                ).delete()
+                insurer.delete()
             messages.success(
                 request,
                 f"Aseguradora '{name}' eliminada correctamente.",
@@ -5859,3 +5922,730 @@ class BaseCalendarCopyView(AdminRoleRequiredMixin, View):
 
 
 
+
+
+# Bloque a AÑADIR al final de budgets/views.py
+
+# ---------------------------------------------------------------------------
+# Insurer tariff PDF import — upload + Gemini extraction + clone + review
+# ---------------------------------------------------------------------------
+
+class InsurerTariffPdfUploadView(AdminRoleRequiredMixin, View):
+    """
+    Handles the upload of a tariff PDF for an existing Insurer.
+    On POST:
+      1. Validates the uploaded file (PDF/image, max 20 MB).
+      2. Clones the source Insurer as '<name> copia' (atomic, using
+         the same logic as InsurerCloneView but with a fixed suffix).
+      3. Runs TariffPdfExtractionService.extract() passing
+         insurer.insurer_company_name so Gemini selects the right column.
+      4. Saves the raw extraction as TariffPdfImport.extraction_raw (JSON).
+      5. Redirects to InsurerTariffPdfReviewView for human validation.
+    On error: sets TariffPdfImport.status = ERROR, shows error message,
+    redirects back to the insurer edit form.
+    ---
+    Gestiona la subida de un PDF de tarifa para una Insurer existente.
+    En POST:
+      1. Valida el archivo subido (PDF/imagen, máx. 20 MB).
+      2. Clona la Insurer origen como '<nombre> copia' (atómico, usando
+         la misma lógica que InsurerCloneView pero con sufijo fijo).
+      3. Ejecuta TariffPdfExtractionService.extract() pasando
+         insurer.insurer_company_name para que Gemini seleccione la columna.
+      4. Guarda la extracción bruta como TariffPdfImport.extraction_raw (JSON).
+      5. Redirige a InsurerTariffPdfReviewView para validación humana.
+    En error: establece TariffPdfImport.status = ERROR, muestra mensaje
+    de error, redirige al formulario de edición de la aseguradora.
+    """
+
+    _MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
+    _ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+
+    def post(self, request, pk):
+        import datetime as _dt
+        import json as _json
+        from budgets.models import (
+            TariffPdfImport, InsurerTariff, TariffLine, VehicleType,
+            InsurerBase, SpecialRateTariff, SpecialRateLine,
+        )
+        from budgets.services import TariffPdfExtractionService
+
+        company_user = _get_company_user(request)
+        source = get_object_or_404(
+            Insurer,
+            pk=pk,
+            company=company_user.company,
+        )
+
+        # --- Validate uploaded file ---
+        # --- Validar archivo subido ---
+        pdf_file = request.FILES.get("tariff_pdf")
+        if not pdf_file:
+            messages.error(request, "No se ha seleccionado ningún archivo.")
+            return redirect("budgets:insurer_update", pk=pk)
+
+        import pathlib as _pl
+        ext = _pl.Path(pdf_file.name).suffix.lower()
+        if ext not in self._ALLOWED_EXTENSIONS:
+            messages.error(
+                request,
+                f"Tipo de archivo no válido ({ext}). "
+                f"Se aceptan: PDF, JPG, PNG, WEBP.",
+            )
+            return redirect("budgets:insurer_update", pk=pk)
+
+        if pdf_file.size > self._MAX_PDF_BYTES:
+            messages.error(
+                request,
+                "El archivo supera el tamaño máximo permitido (20 MB).",
+            )
+            return redirect("budgets:insurer_update", pk=pk)
+
+        # --- Build the copy name: '<name> copia' (with numeric suffix if
+        # collision exists) ---
+        # --- Construir el nombre de copia: '<nombre> copia' (con sufijo
+        # numérico si ya existe) ---
+        base_copy_name = f"{source.name} copia"
+        copy_name = base_copy_name
+        copy_suffix = 1
+        while Insurer.objects.filter(
+            company=company_user.company,
+            name=copy_name,
+        ).exists():
+            copy_name = f"{base_copy_name} {copy_suffix}"
+            copy_suffix += 1
+
+        # Derive code for the copy using same logic as InsurerCloneView.
+        # Derivar código de la copia usando la misma lógica que InsurerCloneView.
+        import re as _re
+
+        def _norm(s):
+            s = s.upper()
+            s = _re.sub(r"[\s\-\.\(\)\/]+", "_", s)
+            s = _re.sub(r"_+", "_", s)
+            return s.strip("_")
+
+        copy_code_base = (
+            _norm(copy_name)[:45]
+        )
+        copy_code = copy_code_base
+        code_suffix = 1
+        while Insurer.objects.filter(
+            company=company_user.company,
+            code=copy_code,
+        ).exists():
+            copy_code = f"{copy_code_base}_{code_suffix}"
+            code_suffix += 1
+
+        pdf_import = None
+
+        try:
+            with transaction.atomic():
+                # --- Clone Insurer as copy ---
+                # --- Clonar Insurer como copia ---
+                copy_insurer = Insurer.objects.create(
+                    company=source.company,
+                    name=copy_name,
+                    insurer_company_name=source.insurer_company_name,
+                    service_company_name=source.service_company_name,
+                    code=copy_code,
+                    management_fee_percent=source.management_fee_percent,
+                    surcharges_are_cumulative=source.surcharges_are_cumulative,
+                    is_active=False,
+                    is_insurance_company=source.is_insurance_company,
+                    always_apply_iva=source.always_apply_iva,
+                    special_night_holiday_tariff=source.special_night_holiday_tariff,
+                    local_service_km_threshold=source.local_service_km_threshold,
+                    notes=source.notes,
+                )
+
+                # Clone VehicleType catalogue, building pk map for TariffLine FKs.
+                # Clonar catálogo VehicleType, construyendo mapa pk para FK de TariffLine.
+                vt_map = {}
+                for vt in source.vehicle_types.all().order_by("sort_order", "name"):
+                    clone_vt = VehicleType.objects.create(
+                        insurer=copy_insurer,
+                        name=vt.name,
+                        sort_order=vt.sort_order,
+                        is_active=vt.is_active,
+                    )
+                    vt_map[vt.pk] = clone_vt
+
+                # Clone active tariff + lines.
+                # Clonar tarifa activa + líneas.
+                source_tariff = InsurerTariff.objects.filter(
+                    insurer=source,
+                    valid_to__isnull=True,
+                ).prefetch_related("lines").first()
+
+                clone_tariff = None
+                clone_srt = None
+
+                if source_tariff:
+                    clone_tariff = InsurerTariff.objects.create(
+                        insurer=copy_insurer,
+                        year=source_tariff.year,
+                        valid_from=_dt.date.today(),
+                        valid_to=None,
+                        notes=source_tariff.notes,
+                    )
+                    for line in source_tariff.lines.all():
+                        TariffLine.objects.create(
+                            tariff=clone_tariff,
+                            vehicle_type=(
+                                vt_map.get(line.vehicle_type_id)
+                                if line.vehicle_type_id else None
+                            ),
+                            concept=line.concept,
+                            unit=line.unit,
+                            price=line.price,
+                            km_threshold=line.km_threshold,
+                            min_units=line.min_units,
+                            requires_authorization=line.requires_authorization,
+                        )
+
+                    try:
+                        source_srt = source_tariff.special_rate
+                        clone_srt = SpecialRateTariff.objects.create(
+                            insurer_tariff=clone_tariff,
+                            notes=source_srt.notes,
+                        )
+                        for srl in source_srt.lines.all():
+                            SpecialRateLine.objects.create(
+                                special_rate_tariff=clone_srt,
+                                vehicle_type=(
+                                    vt_map.get(srl.vehicle_type_id)
+                                    if srl.vehicle_type_id else None
+                                ),
+                                concept=srl.concept,
+                                unit=srl.unit,
+                                price=srl.price,
+                                km_threshold=srl.km_threshold,
+                                min_units=srl.min_units,
+                            )
+                    except SpecialRateTariff.DoesNotExist:
+                        pass
+
+                # Clone InsurerBase links.
+                # Clonar vínculos InsurerBase.
+                for ib in InsurerBase.objects.filter(insurer=source):
+                    InsurerBase.objects.create(
+                        insurer=copy_insurer,
+                        base=ib.base,
+                        is_active=ib.is_active,
+                    )
+
+                # Create TariffPdfImport record (PDF saved here).
+                # Crear registro TariffPdfImport (PDF guardado aquí).
+                pdf_import = TariffPdfImport.objects.create(
+                    insurer=source,
+                    insurer_copy=copy_insurer,
+                    pdf_file=pdf_file,
+                    status=TariffPdfImport.STATUS_PENDING,
+                )
+
+            # --- Run Gemini extraction OUTSIDE the atomic block ---
+            # --- Ejecutar extracción Gemini FUERA del bloque atómico ---
+            svc = TariffPdfExtractionService()
+            extraction = svc.extract(
+                file_path=pdf_import.pdf_file.path,
+                insurer=source,
+            )
+
+            # Persist raw extraction as JSON for audit.
+            # Persistir extracción bruta como JSON para auditoría.
+            pdf_import.extraction_raw = extraction.model_dump()
+            pdf_import.save(update_fields=["extraction_raw", "updated_at"])
+
+        except Exception as exc:
+            _logger_upload = __import__("logging").getLogger(__name__)
+            _logger_upload.exception(
+                "# Error en TariffPdfUploadView para insurer pk=%s: %s",
+                pk, exc,
+            )
+            if pdf_import is not None:
+                pdf_import.status = TariffPdfImport.STATUS_ERROR
+                pdf_import.error_message = str(exc)
+                pdf_import.save(
+                    update_fields=["status", "error_message", "updated_at"]
+                )
+            messages.error(
+                request,
+                f"Error durante la extracción del PDF: {exc}",
+            )
+            return redirect("budgets:insurer_update", pk=pk)
+
+        return redirect("budgets:insurer_tariff_pdf_review", pk=pdf_import.pk)
+
+
+class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
+    """
+    GET: Displays two groups of extracted data for human review:
+      1. Matched lines — extracted prices that Gemini paired with an
+         EXISTING TariffConcept, shown side-by-side against the copy
+         insurer's current price for that concept/vehicle_type/period.
+      2. New concept proposals — extracted lines Gemini could not match
+         to any existing concept, grouped by proposed label, with an
+         editable name/unit and their price rows.
+    All values are editable before applying.
+
+    POST 'apply': updates matched TariffLine/SpecialRateLine prices,
+    creates any new TariffConcept the operator confirms (company-scoped,
+    auto-generated code) together with their TariffLine/SpecialRateLine
+    rows, and — for insurers using a percent night/holiday surcharge
+    instead of a full table — updates the NYF_PERCENT line if a value
+    was extracted. Sets TariffPdfImport.status = APPLIED, keeps the copy.
+
+    POST 'discard' (button labelled 'Cancelar'): permanently deletes the
+    copy insurer (SpecialRateTariff is removed explicitly first, since
+    SpecialRateTariff.insurer_tariff and SpecialRateLine.vehicle_type use
+    on_delete=PROTECT and would otherwise block the cascade), marks the
+    import DISCARDED, redirects to the source insurer. No trace of the
+    copy remains.
+
+    ---
+
+    GET: Muestra dos grupos de datos extraídos para revisión humana:
+      1. Líneas coincidentes — precios extraídos que Gemini emparejó con
+         un TariffConcept YA EXISTENTE, mostrados junto al precio actual
+         de la aseguradora copia para ese concepto/tipo de vehículo/
+         periodo.
+      2. Propuestas de concepto nuevo — líneas extraídas que Gemini no
+         pudo emparejar con ningún concepto existente, agrupadas por
+         nombre propuesto, con nombre/unidad editables y sus filas de
+         precio.
+    Todos los valores son editables antes de aplicar.
+
+    POST 'apply': actualiza los precios de TariffLine/SpecialRateLine
+    coincidentes, crea cualquier TariffConcept nuevo que el operario
+    confirme (propio de la empresa, código auto-generado) junto con sus
+    filas TariffLine/SpecialRateLine, y — para aseguradoras que usan
+    recargo porcentual nocturno/festivo en vez de tabla completa —
+    actualiza la línea NYF_PERCENT si se extrajo un valor. Marca
+    TariffPdfImport.status = APPLIED, conserva la copia.
+
+    POST 'discard' (botón 'Cancelar'): elimina permanentemente la
+    aseguradora copia (se borra primero explícitamente SpecialRateTariff,
+    ya que SpecialRateTariff.insurer_tariff y SpecialRateLine.vehicle_type
+    usan on_delete=PROTECT y bloquearían la cascada si no), marca la
+    importación como DISCARDED, redirige a la aseguradora origen. No
+    queda ningún rastro de la copia.
+    """
+
+    @staticmethod
+    def _norm(name):
+        return (name or "").strip().upper()
+
+    def _build_review_context(self, pdf_import):
+        """
+        Builds the context dict for the review template: matched_rows
+        (existing concept, grouped laborable/festivo) and
+        new_concept_groups (proposed concepts with their price rows).
+        ---
+        Construye el dict de contexto para el template de revisión:
+        matched_rows (concepto existente, agrupado laborable/festivo) y
+        new_concept_groups (conceptos propuestos con sus filas de precio).
+        """
+        from budgets.models import (
+            InsurerTariff, TariffLine, TariffConcept,
+            SpecialRateTariff, SpecialRateLine, VehicleType,
+        )
+
+        copy = pdf_import.insurer_copy
+        extraction = pdf_import.extraction_raw or {}
+
+        copy_tariff = InsurerTariff.objects.filter(
+            insurer=copy,
+            valid_to__isnull=True,
+        ).prefetch_related(
+            "lines__vehicle_type", "lines__concept"
+        ).first()
+
+        # Index existing lines by (vt_name_norm, concept_code) for
+        # matched-concept comparison, and VehicleType by normalised name
+        # for new-concept line creation.
+        # Indexar líneas existentes por (vt_name_norm, concept_code) para
+        # comparación de conceptos coincidentes, y VehicleType por nombre
+        # normalizado para creación de líneas de concepto nuevo.
+        lab_line_index = {}
+        spe_line_index = {}
+        vt_index = {}
+        srt = None
+
+        if copy_tariff:
+            for vt in copy.vehicle_types.all():
+                vt_index[self._norm(vt.name)] = vt
+
+            for ln in copy_tariff.lines.all():
+                vt_norm = self._norm(
+                    ln.vehicle_type.name if ln.vehicle_type else "GENERAL"
+                )
+                lab_line_index[(vt_norm, ln.concept.code)] = ln
+
+            try:
+                srt = copy_tariff.special_rate
+                for srl in srt.lines.all():
+                    vt_norm = self._norm(
+                        srl.vehicle_type.name if srl.vehicle_type else "GENERAL"
+                    )
+                    spe_line_index[(vt_norm, srl.concept.code)] = srl
+            except SpecialRateTariff.DoesNotExist:
+                srt = None
+
+        matched_rows = {"laborable": [], "festivo": []}
+        # new_concept_groups keyed by normalised proposed label to dedupe
+        # multiple lines proposing the "same" new concept.
+        # new_concept_groups indexado por etiqueta propuesta normalizada
+        # para deduplicar varias líneas que proponen el "mismo" concepto.
+        new_concept_groups = {}
+
+        def _process(raw_lines, period, line_index):
+            for item in raw_lines:
+                vt_name = item.get("vehicle_type_name") or ""
+                vt_norm = self._norm(vt_name) if vt_name else self._norm("GENERAL")
+                price = item.get("price") or ""
+                code_match = item.get("concept_code_match")
+
+                if code_match:
+                    current_line = line_index.get((vt_norm, code_match))
+                    concept_label = code_match
+                    try:
+                        concept_label = TariffConcept.objects.get(
+                            code=code_match
+                        ).label
+                    except TariffConcept.DoesNotExist:
+                        pass
+                    field_name = f"match_{period}_{vt_norm}_{code_match}"
+                    matched_rows[period].append({
+                        "vt_name": vt_name or "General",
+                        "concept_code": code_match,
+                        "concept_label": concept_label,
+                        "current_price": (
+                            str(current_line.price) if current_line else ""
+                        ),
+                        "extracted_price": price,
+                        "line_pk": current_line.pk if current_line else "",
+                        "field_name": field_name,
+                    })
+                else:
+                    new_label = (item.get("concept_new_label") or "").strip()
+                    if not new_label:
+                        continue
+                    key = self._norm(new_label)
+                    group = new_concept_groups.setdefault(key, {
+                        "label": new_label,
+                        "unit": item.get("concept_new_unit") or "FIXED",
+                        "rows": [],
+                    })
+                    row_idx = len(group["rows"])
+                    field_name = f"newconcept_{key}_{period}_{vt_norm}_{row_idx}"
+                    group["rows"].append({
+                        "vt_name": vt_name or "General",
+                        "vt_norm": vt_norm,
+                        "period": period,
+                        "extracted_price": price,
+                        "field_name": field_name,
+                    })
+
+        _process(
+            extraction.get("laborable_lines", []), "laborable", lab_line_index
+        )
+        _process(
+            extraction.get("festivo_lines", []), "festivo", spe_line_index
+        )
+
+        # Night/holiday percent surcharge (percent-surcharge insurers only).
+        # Recargo porcentual nocturno/festivo (solo aseguradoras sin tabla completa).
+        nyf_percent_extracted = extraction.get("night_holiday_surcharge_percent")
+        nyf_current_line = lab_line_index.get(
+            (self._norm("GENERAL"), "NYF_PERCENT")
+        )
+
+        return {
+            "pdf_import": pdf_import,
+            "source_insurer": pdf_import.insurer,
+            "copy_insurer": copy,
+            "detected_insurer_name": extraction.get("detected_insurer_name", ""),
+            "uses_full_night_holiday_table": bool(
+                pdf_import.insurer.special_night_holiday_tariff
+            ),
+            "matched_laborable_rows": matched_rows["laborable"],
+            "matched_festivo_rows": matched_rows["festivo"],
+            "new_concept_groups": list(new_concept_groups.values()),
+            "nyf_percent_extracted": nyf_percent_extracted or "",
+            "nyf_percent_current": (
+                str(nyf_current_line.price) if nyf_current_line else ""
+            ),
+            "nyf_percent_line_pk": (
+                nyf_current_line.pk if nyf_current_line else ""
+            ),
+            "copy_tariff": copy_tariff,
+        }
+
+    def get(self, request, pk):
+        from budgets.models import TariffPdfImport
+        pdf_import = get_object_or_404(TariffPdfImport, pk=pk)
+        company_user = _get_company_user(request)
+        if pdf_import.insurer.company != company_user.company:
+            return redirect("budgets:insurer_list")
+
+        if pdf_import.status == TariffPdfImport.STATUS_ERROR:
+            messages.error(
+                request,
+                f"La extracción falló: {pdf_import.error_message}",
+            )
+            return redirect("budgets:insurer_update", pk=pdf_import.insurer.pk)
+
+        ctx = self._build_review_context(pdf_import)
+        return render(request, "budgets/tariff_pdf_review.html", ctx)
+
+    def post(self, request, pk):
+        from decimal import Decimal, InvalidOperation
+        import re as _re
+        from budgets.models import (
+            TariffPdfImport, TariffLine, SpecialRateLine, TariffConcept,
+            InsurerTariff, SpecialRateTariff, VehicleType,
+        )
+
+        pdf_import = get_object_or_404(TariffPdfImport, pk=pk)
+        company_user = _get_company_user(request)
+        if pdf_import.insurer.company != company_user.company:
+            return redirect("budgets:insurer_list")
+
+        # 'Cancelar' action: deletes the copy insurer. SpecialRateTariff
+        # must be removed explicitly first (PROTECT FK blocks the
+        # automatic CASCADE otherwise). Marks the import DISCARDED.
+        # ---
+        # Acción 'Cancelar': elimina la aseguradora copia. Hay que borrar
+        # SpecialRateTariff explícitamente primero (la FK PROTECT bloquea
+        # el CASCADE automático si no). Marca la importación DISCARDED.
+        if request.POST.get("action") == "discard":
+            source_pk = pdf_import.insurer.pk
+            copy = pdf_import.insurer_copy
+            with transaction.atomic():
+                pdf_import.status = TariffPdfImport.STATUS_DISCARDED
+                pdf_import.insurer_copy = None
+                pdf_import.save(
+                    update_fields=["status", "insurer_copy", "updated_at"]
+                )
+                if copy is not None:
+                    SpecialRateTariff.objects.filter(
+                        insurer_tariff__insurer=copy
+                    ).delete()
+                    copy.delete()
+            messages.info(
+                request,
+                "Importación cancelada. La aseguradora copia ha sido eliminada.",
+            )
+            return redirect("budgets:insurer_update", pk=source_pk)
+
+        # 'Aceptar' action.
+        # Acción 'Aceptar'.
+        copy = pdf_import.insurer_copy
+        if copy is None:
+            messages.error(request, "La aseguradora copia ya no existe.")
+            return redirect("budgets:insurer_list")
+
+        def _safe_decimal(raw):
+            if not raw:
+                return None
+            try:
+                return Decimal(str(raw).replace(",", "."))
+            except (InvalidOperation, ValueError):
+                return None
+
+        errors = []
+        updated_count = 0
+        created_concepts = 0
+
+        with transaction.atomic():
+            # --- 1. Matched lines: update existing TariffLine/SpecialRateLine ---
+            # --- 1. Líneas coincidentes: actualizar TariffLine/SpecialRateLine existentes ---
+            for key, raw_val in request.POST.items():
+                if not raw_val:
+                    continue
+                new_price = _safe_decimal(raw_val)
+                if new_price is None:
+                    continue
+
+                if key.startswith("match_laborable_"):
+                    line_pk = request.POST.get(f"line_pk_{key}")
+                    if not line_pk:
+                        continue
+                    try:
+                        line = TariffLine.objects.get(pk=int(line_pk))
+                        line.price = new_price
+                        line.save(update_fields=["price"])
+                        updated_count += 1
+                    except (TariffLine.DoesNotExist, ValueError):
+                        errors.append(f"TariffLine pk={line_pk} no encontrada.")
+
+                elif key.startswith("match_festivo_"):
+                    srl_pk = request.POST.get(f"srl_pk_{key}")
+                    if not srl_pk:
+                        continue
+                    try:
+                        srl = SpecialRateLine.objects.get(pk=int(srl_pk))
+                        srl.price = new_price
+                        srl.save(update_fields=["price"])
+                        updated_count += 1
+                    except (SpecialRateLine.DoesNotExist, ValueError):
+                        errors.append(f"SpecialRateLine pk={srl_pk} no encontrada.")
+
+            # --- 2. Night/holiday percent surcharge (if applicable) ---
+            # --- 2. Recargo porcentual nocturno/festivo (si aplica) ---
+            nyf_raw = request.POST.get("nyf_percent_value")
+            nyf_line_pk = request.POST.get("nyf_percent_line_pk")
+            nyf_price = _safe_decimal(nyf_raw)
+            if nyf_price is not None:
+                copy_tariff = InsurerTariff.objects.filter(
+                    insurer=copy, valid_to__isnull=True
+                ).first()
+                if nyf_line_pk:
+                    try:
+                        line = TariffLine.objects.get(pk=int(nyf_line_pk))
+                        line.price = nyf_price
+                        line.save(update_fields=["price"])
+                        updated_count += 1
+                    except (TariffLine.DoesNotExist, ValueError):
+                        errors.append("Línea NYF_PERCENT no encontrada.")
+                elif copy_tariff:
+                    try:
+                        nyf_concept = TariffConcept.objects.get(
+                            code="NYF_PERCENT"
+                        )
+                        TariffLine.objects.create(
+                            tariff=copy_tariff,
+                            vehicle_type=None,
+                            concept=nyf_concept,
+                            unit=TariffLine.UNIT_PERCENT,
+                            price=nyf_price,
+                        )
+                        updated_count += 1
+                    except TariffConcept.DoesNotExist:
+                        errors.append(
+                            "Concepto de sistema NYF_PERCENT no encontrado."
+                        )
+
+            # --- 3. New concept proposals: create TariffConcept + lines ---
+            # --- 3. Propuestas de concepto nuevo: crear TariffConcept + líneas ---
+            new_group_keys = set()
+            for key in request.POST:
+                if key.startswith("newconcept_label_"):
+                    new_group_keys.add(key[len("newconcept_label_"):])
+
+            copy_tariff = InsurerTariff.objects.filter(
+                insurer=copy, valid_to__isnull=True
+            ).first()
+            srt = None
+            if copy_tariff:
+                try:
+                    srt = copy_tariff.special_rate
+                except SpecialRateTariff.DoesNotExist:
+                    srt = None
+
+            vt_index = {
+                self._norm(vt.name): vt for vt in copy.vehicle_types.all()
+            }
+
+            for group_key in new_group_keys:
+                create_flag = request.POST.get(f"newconcept_create_{group_key}")
+                if not create_flag:
+                    # Operator unchecked / did not confirm creation for
+                    # this proposed concept — skip entirely.
+                    # El operario no marcó / confirmó la creación de este
+                    # concepto propuesto — se omite por completo.
+                    continue
+
+                label = (
+                    request.POST.get(f"newconcept_label_{group_key}") or ""
+                ).strip()
+                unit = request.POST.get(f"newconcept_unit_{group_key}") or "FIXED"
+                if not label:
+                    continue
+
+                # Auto-generate a unique code from the label.
+                # Auto-generar un código único a partir del nombre.
+                base_code = _re.sub(r"[^A-Z0-9]+", "_", label.upper()).strip("_")[:40]
+                code = base_code
+                suffix = 1
+                while TariffConcept.objects.filter(code=code).exists():
+                    code = f"{base_code}_{suffix}"
+                    suffix += 1
+
+                max_sort = TariffConcept.objects.filter(
+                    company=copy.company
+                ).count()
+                concept = TariffConcept.objects.create(
+                    code=code,
+                    label=label,
+                    default_unit=unit,
+                    is_system=False,
+                    company=copy.company,
+                    sort_order=100 + max_sort,
+                )
+                created_concepts += 1
+
+                # Create the line(s) for this new concept.
+                # Crear la(s) línea(s) de este concepto nuevo.
+                row_idx = 0
+                while True:
+                    price_key = f"newconcept_price_{group_key}_{row_idx}"
+                    if price_key not in request.POST:
+                        break
+                    price_val = _safe_decimal(request.POST.get(price_key))
+                    vt_norm_key = f"newconcept_vt_{group_key}_{row_idx}"
+                    period_key = f"newconcept_period_{group_key}_{row_idx}"
+                    vt_norm = request.POST.get(vt_norm_key, "")
+                    period = request.POST.get(period_key, "laborable")
+                    row_idx += 1
+
+                    if price_val is None:
+                        continue
+
+                    vt_obj = (
+                        vt_index.get(vt_norm)
+                        if vt_norm and vt_norm != self._norm("GENERAL")
+                        else None
+                    )
+
+                    if period == "laborable" and copy_tariff:
+                        TariffLine.objects.create(
+                            tariff=copy_tariff,
+                            vehicle_type=vt_obj,
+                            concept=concept,
+                            unit=unit,
+                            price=price_val,
+                        )
+                        updated_count += 1
+                    elif period == "festivo" and srt:
+                        SpecialRateLine.objects.create(
+                            special_rate_tariff=srt,
+                            vehicle_type=vt_obj,
+                            concept=concept,
+                            unit=unit,
+                            price=price_val,
+                        )
+                        updated_count += 1
+
+            pdf_import.status = TariffPdfImport.STATUS_APPLIED
+            pdf_import.save(update_fields=["status", "updated_at"])
+
+        if errors:
+            messages.warning(
+                request,
+                f"Importación aplicada con {len(errors)} advertencia(s): "
+                + "; ".join(errors),
+            )
+        else:
+            extra = (
+                f", {created_concepts} concepto(s) nuevo(s) creado(s)"
+                if created_concepts else ""
+            )
+            messages.success(
+                request,
+                f"Tarifa importada correctamente ({updated_count} "
+                f"precio(s) aplicado(s){extra}) en la aseguradora copia "
+                f"'{copy.name}'.",
+            )
+
+        return redirect("budgets:insurer_update", pk=copy.pk)

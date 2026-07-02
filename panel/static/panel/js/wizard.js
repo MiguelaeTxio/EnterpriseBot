@@ -1,3 +1,4 @@
+// /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/wizard.js
 //
 // Budget wizard — minimal client-side logic.
 // Step sequencing is handled entirely by chained HTMX attributes in the templates.
@@ -43,26 +44,77 @@
   // Modo B — toggle de campos de calculo de ruta
   // ---------------------------------------------------------------------------
 
-  function toggleRouteCalc(active) {
-    var fields = document.getElementById('route-calc-fields');
-    if (!fields) return;
-    fields.classList.toggle('d-none', !active);
-    if (!active) {
-      // Clear route result and reset all route-related hidden inputs.
-      // Limpiar el resultado de ruta y resetear los inputs ocultos de ruta.
+  // ---------------------------------------------------------------------------
+  // Paso 4 — Modo de cálculo: Manual vs Planificación de ruta.
+  // Cada modo anula al otro por completo: al cambiar, se oculta la tarjeta
+  // del modo contrario, se fija route_calculation_mode directamente (fuente
+  // única de verdad leída por la vista), y en modo Manual se limpian los
+  // campos de ruta para que nunca viajen datos de un modo abandonado.
+  // ---------------------------------------------------------------------------
+  //
+  // Paso 4 — Calculation mode: Manual vs Route planning.
+  // Each mode fully overrides the other: on change, the opposite card is
+  // hidden, route_calculation_mode is set directly (single source of truth
+  // read by the view), and in Manual mode the route fields are cleared so
+  // no data from an abandoned mode is ever submitted.
+
+  function toggleCalcMode(mode) {
+    var manualCard = document.getElementById('step-km-manual');
+    var routeCard  = document.getElementById('step-route');
+    var hiddenMode = document.getElementById('id_route_calculation_mode');
+
+    if (mode === 'MANUAL') {
+      if (manualCard) manualCard.classList.remove('d-none');
+      if (routeCard)  routeCard.classList.add('d-none');
+      if (hiddenMode) hiddenMode.value = 'MANUAL';
+
+      // Clear route-side data so an abandoned route selection never
+      // gets submitted alongside manual values.
+      // Limpiar datos de ruta para que una selección de ruta abandonada
+      // nunca se envíe junto a los valores manuales.
       var resultSection = document.getElementById('route-result-section');
       if (resultSection) resultSection.innerHTML = '';
-      ['id_route_calculation_mode', 'id_route_distance_km',
-       'id_route_toll_cost', 'id_road_name', 'id_pk_km', 'id_dest_location',
-       'id_km_phase1',
+      var confirmedSummary = document.getElementById('route-confirmed-summary');
+      if (confirmedSummary) confirmedSummary.classList.add('d-none');
+      [
+        'id_route_distance_km', 'id_route_toll_cost', 'id_road_name',
+        'id_pk_km', 'id_dest_location', 'id_waypoints_json',
+        'id_km_phase1_route', 'id_km_phase2_route',
+        'id_is_overnight_route', 'id_route_toll_budget_cost',
+        'id_encoded_polyline',
       ].forEach(function (id) {
         var el = document.getElementById(id);
-        if (!el) return;
-        el.value = id === 'id_route_calculation_mode' ? 'MANUAL' : '';
+        if (el) el.value = '';
       });
+    } else {
+      if (manualCard) manualCard.classList.add('d-none');
+      if (routeCard)  routeCard.classList.remove('d-none');
+      if (hiddenMode) hiddenMode.value = 'API';
+
+      // Clear manual-side data so it never gets submitted alongside a
+      // confirmed route. Overnight is reset too — in Route mode it is
+      // detected automatically from the waypoints (base-return stop),
+      // not from this radio.
+      // Limpiar datos manuales para que nunca se envíen junto a una
+      // ruta confirmada. La pernocta también se resetea — en modo Ruta
+      // se detecta automáticamente desde las paradas (retorno a base),
+      // no desde este radio.
+      var km1 = document.getElementById('id_km_phase1');
+      var km2 = document.getElementById('id_km_phase2');
+      var nyf = document.getElementById('id_manual_is_night_holiday');
+      var toll = document.getElementById('id_manual_toll_total');
+      var overnightNo = document.getElementById('overnight-no');
+      if (km1) km1.value = '';
+      if (km2) km2.value = '';
+      if (nyf) nyf.checked = false;
+      if (toll) toll.value = '';
+      if (overnightNo) {
+        overnightNo.checked = true;
+        toggleOvernightFields(false);
+      }
     }
   }
-  window.toggleRouteCalc = toggleRouteCalc;
+  window.toggleCalcMode = toggleCalcMode;
 
   // ---------------------------------------------------------------------------
   // Modo B — dual route calculation GET (route-dual/ endpoint)
@@ -217,3 +269,5 @@
   })();
 
 })();
+
+

@@ -1,162 +1,281 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/detail.html #}
 {#                                                                                   #}
-{# Budget detail — ADMIN only. Full calculation breakdown for audit purposes.        #}
-{# Detalle de presupuesto — solo ADMIN. Desglose completo del calculo para auditoria.#}
+{# Budget detail — ADMIN, or ASSISTANCE with can_view_budget_breakdown.              #}
+{# Full calculation breakdown for audit purposes.                                    #}
+{# Detalle de presupuesto — ADMIN, o ASSISTANCE con can_view_budget_breakdown.        #}
+{# Desglose completo del calculo para auditoria.                                     #}
 {% extends "panel/base.html" %}
-
 {% block title %}Desglose presupuesto #{{ budget.pk }}{% endblock %}
-
+{# Maps JS API — Dynamic Library Import (mismo patrón que budgets/wizard.html). #}
+{# Solo se carga cuando el presupuesto tiene polyline almacenada (modo ruta).   #}
+{# v: "beta" es OBLIGATORIO en este proyecto — ver nota en wizard.html.        #}
+{% if budget.encoded_polyline %}
+    {% block extra_head %}
+        <script>
+  (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
+  ({key: "{{ google_maps_api_key }}", v: "beta"});
+        </script>
+    {% endblock %}
+{% endif %}
 {% block content %}
-<div class="container-fluid px-3 py-3">
-  <div class="row justify-content-center">
-    <div class="col-12 col-lg-8">
-
-      <div class="d-flex align-items-center gap-3 mb-4">
-        <a href="{% url 'budgets:history' %}" class="btn btn-sm btn-outline-secondary">
-          <i class="bi bi-arrow-left"></i>
-        </a>
-        <h4 class="mb-0">
-          <i class="bi bi-receipt-cutoff me-2"></i>
-          Desglose presupuesto #{{ budget.pk }}
-        </h4>
-      </div>
-
-      {# Summary card #}
-      <div class="card mb-4">
-        <div class="card-body">
-          <div class="row g-2 small">
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Compañía:</span>
-              <strong>{{ budget.insurer.name }}</strong>
+    <div class="container-fluid px-3 py-3">
+        <div class="row justify-content-center">
+            <div class="col-12 col-lg-8">
+                <div class="d-flex align-items-center gap-3 mb-4">
+                    <a href="{% url 'budgets:history' %}"
+                       class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+                    <h4 class="mb-0">
+                        <i class="bi bi-receipt-cutoff me-2"></i>
+                        Desglose presupuesto #{{ budget.pk }}
+                    </h4>
+                </div>
+                {# Summary card #}
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <div class="row g-2 small">
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Compañía:</span>
+                                <strong>{{ budget.insurer.name }}</strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Vehículo:</span>
+                                <strong>{{ budget.vehicle_type.name }}</strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Tarifa:</span>
+                                <strong>{{ budget.tariff }}</strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Fecha servicio:</span>
+                                <strong>{{ budget.service_date|date:"d/m/Y" }}</strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Operario:</span>
+                                <strong>{{ budget.operator.user.username }}</strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Estado:</span>
+                                {% if budget.status == 'ACCEPTED' %}
+                                    <span class="badge bg-success">Aceptado</span>
+                                {% elif budget.status == 'REJECTED' %}
+                                    <span class="badge bg-danger">Rechazado</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Borrador</span>
+                                {% endif %}
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Km totales:</span>
+                                <strong>{{ budget.km_total }} km</strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Pernocta:</span>
+                                <strong>
+                                    {% if budget.is_overnight %}
+                                        Sí
+                                    {% else %}
+                                        No
+                                    {% endif %}
+                                </strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Desbloqueo:</span>
+                                <strong>
+                                    {% if budget.has_unlock %}
+                                        Sí
+                                    {% else %}
+                                        No
+                                    {% endif %}
+                                </strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Nocturno/Festivo:</span>
+                                <strong>
+                                    {% if budget.is_night_or_holiday %}
+                                        Sí
+                                    {% else %}
+                                        No
+                                    {% endif %}
+                                </strong>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <span class="text-muted">Vehículo cargado:</span>
+                                <strong>
+                                    {% if budget.is_loaded %}
+                                        Sí
+                                    {% else %}
+                                        No
+                                    {% endif %}
+                                </strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% if budget.encoded_polyline %}
+                    {# Route map — read-only viewer (zoom/pan only, no editing). #}
+                    {# Mapa de ruta — visor de solo lectura (zoom/desplazamiento, sin edición). #}
+                    <div class="card mb-4">
+                        <div class="card-header fw-semibold small">
+                            <i class="bi bi-map me-1"></i>Mapa de la ruta
+                        </div>
+                        <div class="card-body p-0">
+                            <div id="budget-route-map" style="height: 400px; width: 100%;"></div>
+                        </div>
+                    </div>
+                    {{ budget.encoded_polyline|json_script:"budget-polyline-data" }}
+                    {{ budget.waypoints_json|json_script:"budget-waypoints-data" }}
+                {% endif %}
+                {# Breakdown table #}
+                <div class="card mb-4">
+                    <div class="card-header fw-semibold small">Desglose del cálculo</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Concepto</th>
+                                    <th class="text-end">Unidades</th>
+                                    <th class="text-end">Precio unit.</th>
+                                    <th class="text-end">Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for line in lines %}
+                                    {% if line.concept_code != 'IVA' %}
+                                        <tr {% if line.is_surcharge %}class="table-warning"{% endif %}>
+                                            <td>
+                                                {{ line.concept_label }}
+                                                {% if line.is_surcharge %}<span class="badge bg-warning text-dark ms-1 small">Recargo</span>{% endif %}
+                                            </td>
+                                            <td class="text-end">{{ line.units }}</td>
+                                            <td class="text-end">{{ line.unit_price }} €</td>
+                                            <td class="text-end fw-semibold">{{ line.subtotal }} €</td>
+                                        </tr>
+                                    {% endif %}
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                {% if budget.apply_iva %}
+                                    <tr class="text-muted small">
+                                        <td colspan="3" class="text-end">Base imponible</td>
+                                        <td class="text-end">{{ budget.total_amount }} €</td>
+                                    </tr>
+                                    <tr class="text-muted small">
+                                        <td colspan="3" class="text-end">IVA (21%)</td>
+                                        <td class="text-end">{{ iva_amount }} €</td>
+                                    </tr>
+                                    <tr class="table-primary">
+                                        <td colspan="3" class="text-end fw-bold">TOTAL CON IVA</td>
+                                        <td class="text-end fw-bold fs-5 text-primary">{{ budget.total_amount_with_iva }} €</td>
+                                    </tr>
+                                {% else %}
+                                    <tr>
+                                        <td colspan="3" class="text-end fw-bold">TOTAL</td>
+                                        <td class="text-end fw-bold fs-5 text-primary">{{ budget.total_amount }} €</td>
+                                    </tr>
+                                {% endif %}
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+                {% if budget.extra_notes %}
+                    <div class="card mb-4">
+                        <div class="card-header fw-semibold small">Notas</div>
+                        <div class="card-body small">{{ budget.extra_notes }}</div>
+                    </div>
+                {% endif %}
             </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Vehículo:</span>
-              <strong>{{ budget.vehicle_type.name }}</strong>
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Tarifa:</span>
-              <strong>{{ budget.tariff }}</strong>
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Fecha servicio:</span>
-              <strong>{{ budget.service_date|date:"d/m/Y" }}</strong>
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Operario:</span>
-              <strong>{{ budget.operator.user.username }}</strong>
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Estado:</span>
-              {% if budget.status == 'ACCEPTED' %}
-              <span class="badge bg-success">Aceptado</span>
-              {% elif budget.status == 'REJECTED' %}
-              <span class="badge bg-danger">Rechazado</span>
-              {% else %}
-              <span class="badge bg-secondary">Borrador</span>
-              {% endif %}
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Km totales:</span>
-              <strong>{{ budget.km_total }} km</strong>
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Pernocta:</span>
-              <strong>{% if budget.is_overnight %}Sí{% else %}No{% endif %}</strong>
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Desbloqueo:</span>
-              <strong>{% if budget.has_unlock %}Sí{% else %}No{% endif %}</strong>
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Nocturno/Festivo:</span>
-              <strong>
-                {% if budget.is_night_or_holiday %}Sí{% else %}No{% endif %}
-              </strong>
-            </div>
-            <div class="col-6 col-md-4">
-              <span class="text-muted">Vehículo cargado:</span>
-              <strong>{% if budget.is_loaded %}Sí{% else %}No{% endif %}</strong>
-            </div>
-          </div>
         </div>
-      </div>
-
-      {# Breakdown table #}
-      <div class="card mb-4">
-        <div class="card-header fw-semibold small">
-          Desglose del cálculo
-        </div>
-        <div class="table-responsive">
-          <table class="table table-sm mb-0 align-middle">
-            <thead class="table-light">
-              <tr>
-                <th>Concepto</th>
-                <th class="text-end">Unidades</th>
-                <th class="text-end">Precio unit.</th>
-                <th class="text-end">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for line in lines %}
-              {% if line.concept_code != 'IVA' %}
-              <tr {% if line.is_surcharge %}class="table-warning"{% endif %}>
-                <td>
-                  {{ line.concept_label }}
-                  {% if line.is_surcharge %}
-                  <span class="badge bg-warning text-dark ms-1 small">
-                    Recargo
-                  </span>
-                  {% endif %}
-                </td>
-                <td class="text-end">{{ line.units }}</td>
-                <td class="text-end">{{ line.unit_price }} €</td>
-                <td class="text-end fw-semibold">{{ line.subtotal }} €</td>
-              </tr>
-              {% endif %}
-              {% endfor %}
-            </tbody>
-            <tfoot class="table-light">
-              {% if budget.apply_iva %}
-              <tr class="text-muted small">
-                <td colspan="3" class="text-end">Base imponible</td>
-                <td class="text-end">{{ budget.total_amount }} €</td>
-              </tr>
-              <tr class="text-muted small">
-                <td colspan="3" class="text-end">IVA (21%)</td>
-                <td class="text-end">{{ iva_amount }} €</td>
-              </tr>
-              <tr class="table-primary">
-                <td colspan="3" class="text-end fw-bold">TOTAL CON IVA</td>
-                <td class="text-end fw-bold fs-5 text-primary">
-                  {{ budget.total_amount_with_iva }} €
-                </td>
-              </tr>
-              {% else %}
-              <tr>
-                <td colspan="3" class="text-end fw-bold">TOTAL</td>
-                <td class="text-end fw-bold fs-5 text-primary">
-                  {{ budget.total_amount }} €
-                </td>
-              </tr>
-              {% endif %}
-            </tfoot>
-          </table>
-        </div>
-      </div>
-
-      {% if budget.extra_notes %}
-      <div class="card mb-4">
-        <div class="card-header fw-semibold small">Notas</div>
-        <div class="card-body small">{{ budget.extra_notes }}</div>
-      </div>
-      {% endif %}
-
     </div>
-  </div>
-</div>
+    {% block extra_scripts %}
+        {% if budget.encoded_polyline %}
+            <script>
+document.addEventListener("DOMContentLoaded", async function () {
+    // Read-only route map: decodes the stored polyline(s) and draws them
+    // on the map for visual reference. Zoom/pan only — no editing, no
+    // draggable markers, no modification of the route.
+    // Overnight services store two polylines joined by \x01 (phase 1 /
+    // phase 2), drawn in different colors for clarity.
+    // ---
+    // Mapa de ruta de solo lectura: decodifica la(s) polyline(s)
+    // almacenada(s) y las dibuja en el mapa como referencia visual.
+    // Solo zoom/desplazamiento — sin edición, sin marcadores arrastrables,
+    // sin modificación de la ruta.
+    // Los servicios de pernocta almacenan dos polylines unidas por \x01
+    // (fase 1 / fase 2), dibujadas en colores distintos para mayor claridad.
+    var polylineEl = document.getElementById("budget-polyline-data");
+    if (!polylineEl) return;
 
-{% block extra_scripts %}
-<script>
+    var encodedPolyline = JSON.parse(polylineEl.textContent);
+    if (!encodedPolyline) return;
+
+    var waypointsEl = document.getElementById("budget-waypoints-data");
+    var waypoints = waypointsEl ? JSON.parse(waypointsEl.textContent) : null;
+
+    var mapsLib     = await google.maps.importLibrary("maps");
+    var markerLib   = await google.maps.importLibrary("marker");
+    var geometryLib = await google.maps.importLibrary("geometry");
+
+    var mapEl = document.getElementById("budget-route-map");
+    if (!mapEl) return;
+
+    var map = new mapsLib.Map(mapEl, {
+        center: { lat: 36.7213, lng: -4.4213 },
+        zoom: 9,
+        mapId: "{{ google_maps_map_id|default:'' }}",
+        // Read-only viewer: only zoom and pan controls, nothing that
+        // implies editing capability.
+        // Visor de solo lectura: solo controles de zoom y desplazamiento,
+        // nada que implique capacidad de edición.
+        streetViewControl: false,
+        mapTypeControl: false,
+        fullscreenControl: true,
+    });
+
+    var bounds = new google.maps.LatLngBounds();
+    var colors = ["#0d6efd", "#fd7e14"];
+    var segments = String(encodedPolyline).split("\x01");
+
+    segments.forEach(function (segment, idx) {
+        segment = segment.trim();
+        if (!segment) return;
+        var path = geometryLib.encoding.decodePath(segment);
+        var polyline = new google.maps.Polyline({
+            path: path,
+            geodesic: true,
+            strokeColor: colors[idx % colors.length],
+            strokeOpacity: 0.9,
+            strokeWeight: 4,
+            map: map,
+            clickable: false,
+        });
+        path.forEach(function (pt) { bounds.extend(pt); });
+    });
+
+    // Optional stop markers from waypoints_json, if present. Plain
+    // non-draggable pins — informational only.
+    // Marcadores opcionales de paradas desde waypoints_json, si existen.
+    // Pines simples no arrastrables — solo informativos.
+    if (Array.isArray(waypoints)) {
+        waypoints.forEach(function (wp) {
+            if (typeof wp.lat !== "number" || typeof wp.lng !== "number") return;
+            var position = { lat: wp.lat, lng: wp.lng };
+            new markerLib.AdvancedMarkerElement({
+                map: map,
+                position: position,
+                title: wp.label || "",
+            });
+            bounds.extend(position);
+        });
+    }
+
+    if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, 40);
+    }
+});
+            </script>
+        {% endif %}
+        <script>
 document.addEventListener("DOMContentLoaded", function () {
     window.EbTour.register("budget_detail", [
         {
@@ -188,6 +307,6 @@ document.addEventListener("DOMContentLoaded", function () {
     ]);
     window.EbTour.startIfNew("budget_detail");
 });
-</script>
-{% endblock extra_scripts %}
+        </script>
+    {% endblock extra_scripts %}
 {% endblock %}

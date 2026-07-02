@@ -1,0 +1,322 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/tariff_pdf_review.html #}
+{# Tariff PDF import review — matched-concept comparison + new-concept  #}
+{# proposals + night/holiday percent surcharge. Allows editing before  #}
+{# applying (POST action=apply) or cancelling (POST action=discard).   #}
+{# ------------------------------------------------------------------- #}
+{# Revisión de importación PDF de tarifa — comparación de conceptos    #}
+{# coincidentes + propuestas de concepto nuevo + recargo porcentual    #}
+{# nocturno/festivo. Permite editar antes de aplicar (POST             #}
+{# action=apply) o cancelar (POST action=discard).                     #}
+{% extends "panel/base.html" %}
+{% block title %}Revisión de importación — {{ copy_insurer.name }}{% endblock %}
+{% block content %}
+    <div class="container-fluid py-4" style="max-width:1200px;">
+        {# ------------------------------------------------------------ #}
+        {# Header                                                        #}
+        {# ------------------------------------------------------------ #}
+        <div class="d-flex align-items-start justify-content-between mb-4 flex-wrap gap-3">
+            <div>
+                <h4 class="mb-1">
+                    <i class="bi bi-file-earmark-check me-2 text-secondary"></i>
+                    Revisión de importación PDF
+                </h4>
+                <p class="text-muted small mb-0">
+                    Origen:
+                    <a href="{% url 'budgets:insurer_update' source_insurer.pk %}"
+                       class="text-decoration-none">{{ source_insurer.name }}</a>
+                    &nbsp;→&nbsp;
+                    Copia creada: <strong>{{ copy_insurer.name }}</strong>
+                    {% if detected_insurer_name %}
+                        &nbsp;<span class="badge bg-light text-dark border">Gemini detectó: {{ detected_insurer_name }}</span>
+                    {% endif %}
+                </p>
+            </div>
+            <div class="text-end">
+                <span class="badge bg-warning text-dark px-3 py-2">
+                    <i class="bi bi-hourglass-split me-1"></i>Pendiente de revisión
+                </span>
+            </div>
+        </div>
+        <div class="alert alert-info small mb-4">
+            <i class="bi bi-info-circle me-1"></i>
+            Revisa los precios extraídos por Gemini. Puedes editarlos directamente
+            antes de confirmar. Al pulsar <strong>Aceptar</strong> los cambios se
+            guardarán en la copia <strong>«{{ copy_insurer.name }}»</strong>, que se
+            conserva; el original <strong>no se modifica</strong>. Si los datos no
+            son correctos pulsa <strong>Cancelar</strong>: la aseguradora copia se
+            eliminará y no quedará ningún rastro.
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            {# ---------------------------------------------------------- #}
+            {# SECTION 1 — Matched concepts, LABORABLE                     #}
+            {# SECCIÓN 1 — Conceptos coincidentes, LABORABLE               #}
+            {# ---------------------------------------------------------- #}
+            {% if matched_laborable_rows %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-light fw-semibold small py-2">
+                        <i class="bi bi-sun me-1 text-warning"></i>
+                        Conceptos existentes — LABORABLE
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0 small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3">Tipo de vehículo</th>
+                                    <th>Concepto</th>
+                                    <th class="text-end">Precio actual (copia)</th>
+                                    <th class="text-end" style="min-width:130px;">
+                                        Valor extraído <span class="text-muted fw-normal">(editable)</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in matched_laborable_rows %}
+                                    <tr class="{% if row.extracted_price and row.extracted_price != row.current_price %}table-warning{% endif %}">
+                                        <td class="ps-3 text-muted">{{ row.vt_name }}</td>
+                                        <td>{{ row.concept_label }}</td>
+                                        <td class="text-end font-monospace">
+                                            {% if row.current_price %}
+                                                {{ row.current_price }} €
+                                            {% else %}
+                                                <span class="text-muted">—</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-end">
+                                            <input type="hidden"
+                                                   name="line_pk_{{ row.field_name }}"
+                                                   value="{{ row.line_pk }}">
+                                            <input type="text"
+                                                   class="form-control form-control-sm text-end font-monospace"
+                                                   name="{{ row.field_name }}"
+                                                   value="{{ row.extracted_price }}"
+                                                   style="max-width:110px;
+                                                          margin-left:auto"
+                                                   placeholder="—">
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endif %}
+            {# ---------------------------------------------------------- #}
+            {# SECTION 2 — Matched concepts, FESTIVO (only full-table mode) #}
+            {# SECCIÓN 2 — Conceptos coincidentes, FESTIVO (solo modo tabla) #}
+            {# ---------------------------------------------------------- #}
+            {% if matched_festivo_rows %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-light fw-semibold small py-2">
+                        <i class="bi bi-moon-stars me-1 text-primary"></i>
+                        Conceptos existentes — FESTIVO / NOCTURNO
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0 small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3">Tipo de vehículo</th>
+                                    <th>Concepto</th>
+                                    <th class="text-end">Precio actual (copia)</th>
+                                    <th class="text-end" style="min-width:130px;">
+                                        Valor extraído <span class="text-muted fw-normal">(editable)</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in matched_festivo_rows %}
+                                    <tr class="{% if row.extracted_price and row.extracted_price != row.current_price %}table-warning{% endif %}">
+                                        <td class="ps-3 text-muted">{{ row.vt_name }}</td>
+                                        <td>{{ row.concept_label }}</td>
+                                        <td class="text-end font-monospace">
+                                            {% if row.current_price %}
+                                                {{ row.current_price }} €
+                                            {% else %}
+                                                <span class="text-muted">—</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-end">
+                                            <input type="hidden"
+                                                   name="srl_pk_{{ row.field_name }}"
+                                                   value="{{ row.line_pk }}">
+                                            <input type="text"
+                                                   class="form-control form-control-sm text-end font-monospace"
+                                                   name="{{ row.field_name }}"
+                                                   value="{{ row.extracted_price }}"
+                                                   style="max-width:110px;
+                                                          margin-left:auto"
+                                                   placeholder="—">
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endif %}
+            {# ---------------------------------------------------------- #}
+            {# SECTION 3 — Night/holiday percent surcharge (percent mode) #}
+            {# SECCIÓN 3 — Recargo porcentual nocturno/festivo (modo %)   #}
+            {# ---------------------------------------------------------- #}
+            {% if not uses_full_night_holiday_table %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-light fw-semibold small py-2">
+                        <i class="bi bi-percent me-1 text-secondary"></i>
+                        Recargo nocturno / festivo
+                    </div>
+                    <div class="card-body py-2">
+                        <div class="row align-items-center g-2">
+                            <div class="col-auto text-muted small">Recargo actual (copia):</div>
+                            <div class="col-auto font-monospace">
+                                {% if nyf_percent_current %}
+                                    {{ nyf_percent_current }} %
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </div>
+                            <div class="col-auto text-muted small ms-3">Valor extraído (editable):</div>
+                            <div class="col-auto">
+                                <input type="hidden"
+                                       name="nyf_percent_line_pk"
+                                       value="{{ nyf_percent_line_pk }}">
+                                <input type="text"
+                                       class="form-control form-control-sm text-end font-monospace"
+                                       name="nyf_percent_value"
+                                       value="{{ nyf_percent_extracted }}"
+                                       style="max-width:100px"
+                                       placeholder="—">
+                                <span class="small text-muted">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+            {# ---------------------------------------------------------- #}
+            {# SECTION 4 — New concept proposals                           #}
+            {# SECCIÓN 4 — Propuestas de concepto nuevo                    #}
+            {# ---------------------------------------------------------- #}
+            {% if new_concept_groups %}
+                <div class="card shadow-sm mb-4 border-primary">
+                    <div class="card-header bg-primary bg-opacity-10 fw-semibold small py-2">
+                        <i class="bi bi-stars me-1 text-primary"></i>
+                        Conceptos nuevos detectados en el PDF
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted mb-3">
+                            Gemini no encontró estos conceptos en el catálogo existente.
+                            Revisa el nombre propuesto, ajústalo si hace falta, y marca
+                            <strong>Crear este concepto</strong> para darlo de alta en el
+                            catálogo de tu empresa junto con sus precios. Si desmarcas la
+                            casilla, este concepto y sus precios se ignoran por completo.
+                        </p>
+                        {% for group in new_concept_groups %}
+                            <div class="border rounded p-3 mb-3">
+                                <div class="row g-2 align-items-center mb-2">
+                                    <div class="col-auto">
+                                        <div class="form-check">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="create_{{ forloop.counter0 }}"
+                                                   name="newconcept_create_{{ group.label|slugify }}_{{ forloop.counter0 }}"
+                                                   checked>
+                                            <label class="form-check-label small fw-semibold"
+                                                   for="create_{{ forloop.counter0 }}">Crear este concepto</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-muted mb-0">Nombre del concepto</label>
+                                        <input type="text"
+                                               class="form-control form-control-sm"
+                                               name="newconcept_label_{{ group.label|slugify }}_{{ forloop.counter0 }}"
+                                               value="{{ group.label }}">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-0">Unidad</label>
+                                        <select class="form-select form-select-sm"
+                                                name="newconcept_unit_{{ group.label|slugify }}_{{ forloop.counter0 }}">
+                                            <option value="FIXED" {% if group.unit == "FIXED" %}selected{% endif %}>Importe fijo</option>
+                                            <option value="PER_KM" {% if group.unit == "PER_KM" %}selected{% endif %}>Por kilómetro</option>
+                                            <option value="PER_HOUR" {% if group.unit == "PER_HOUR" %}selected{% endif %}>Por hora</option>
+                                            <option value="PER_DAY" {% if group.unit == "PER_DAY" %}selected{% endif %}>Por día</option>
+                                            <option value="PERCENT" {% if group.unit == "PERCENT" %}selected{% endif %}>Porcentaje</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-0 small">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Tipo de vehículo</th>
+                                                <th>Periodo</th>
+                                                <th class="text-end" style="min-width:120px;">Precio (editable)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for row in group.rows %}
+                                                <tr>
+                                                    <td class="text-muted">{{ row.vt_name }}</td>
+                                                    <td>
+                                                        {% if row.period == "laborable" %}
+                                                            Laborable
+                                                        {% else %}
+                                                            Festivo/Nocturno
+                                                        {% endif %}
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <input type="hidden"
+                                                               name="newconcept_vt_{{ group.label|slugify }}_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}"
+                                                               value="{{ row.vt_norm }}">
+                                                        <input type="hidden"
+                                                               name="newconcept_period_{{ group.label|slugify }}_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}"
+                                                               value="{{ row.period }}">
+                                                        <input type="text"
+                                                               class="form-control form-control-sm text-end font-monospace"
+                                                               name="newconcept_price_{{ group.label|slugify }}_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}"
+                                                               value="{{ row.extracted_price }}"
+                                                               style="max-width:110px;
+                                                                      margin-left:auto">
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+            {# Empty extraction warning #}
+            {# Aviso de extracción vacía #}
+            {% if not matched_laborable_rows and not matched_festivo_rows and not new_concept_groups %}
+                <div class="alert alert-warning mb-4">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Gemini no extrajo ningún dato del PDF. Comprueba que el PDF contiene
+                    la tabla de tarifas de
+                    <strong>{{ source_insurer.insurer_company_name|default:source_insurer.name }}</strong>
+                    y vuelve a intentarlo.
+                </div>
+            {% endif %}
+            {# ---------------------------------------------------------- #}
+            {# Action buttons — Cancelar (elimina la copia) / Aceptar (persiste) #}
+            {# ---------------------------------------------------------- #}
+            <div class="d-flex justify-content-end gap-2 mt-2">
+                <button type="submit"
+                        name="action"
+                        value="discard"
+                        class="btn btn-outline-danger btn-sm"
+                        onclick="return confirm('¿Cancelar esta importación? La aseguradora copia se eliminará permanentemente.');">
+                    <i class="bi bi-x-circle me-1"></i>Cancelar
+                </button>
+                <button type="submit"
+                        name="action"
+                        value="apply"
+                        class="btn btn-success btn-sm">
+                    <i class="bi bi-check-circle me-1"></i>Aceptar
+                </button>
+            </div>
+        </form>
+    </div>
+{% endblock %}

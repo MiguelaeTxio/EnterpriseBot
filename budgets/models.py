@@ -914,6 +914,35 @@ class Budget(models.Model):
             "No editar directamente — se recalcula en cada llamada a calculate_budget()."
         ),
     )
+    # Explicit manual override for is_night_or_holiday, set only from the
+    # wizard's Manual calculation mode (route_calculation_mode=MANUAL).
+    # When not null, this value REPLACES the automatic calculation
+    # entirely (is_night OR calendar holiday) — the operator's checkbox
+    # becomes the sole source of truth, with no calendar lookup involved.
+    # Null when the budget uses route planning (route_calculation_mode=API):
+    # in that case the existing automatic calculation is used unchanged.
+    # ---
+    # Override manual explícito de is_night_or_holiday, establecido solo
+    # desde el modo de cálculo Manual del wizard
+    # (route_calculation_mode=MANUAL). Cuando no es null, este valor
+    # SUSTITUYE por completo al cálculo automático (is_night O festivo de
+    # calendario) — el checkbox del operario pasa a ser la única fuente
+    # de verdad, sin consulta al calendario. Null cuando el presupuesto
+    # usa planificación de ruta (route_calculation_mode=API): en ese caso
+    # se usa el cálculo automático existente sin cambios.
+    is_night_or_holiday_manual_override = models.BooleanField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Nocturno / Festivo (override manual)",
+        help_text=(
+            "Cuando no es null, sustituye por completo el cálculo "
+            "automático de is_night_or_holiday. Se establece desde el "
+            "checkbox del modo Manual del wizard de presupuestos. Null "
+            "en presupuestos con planificación de ruta o anteriores a "
+            "esta funcionalidad."
+        ),
+    )
     is_loaded = models.BooleanField(
         default=False,
         verbose_name="Vehiculo cargado",
@@ -3382,6 +3411,135 @@ class TollSegment(models.Model):
             f"[{self.tariff_level}] "
             f"€{self.price_light}/{self.price_heavy_1}/{self.price_heavy_2}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 17. TARIFF PDF IMPORT — Tracks a tariff-PDF upload, its Gemini extraction
+#     result, the copy Insurer created for comparison, and the processing status.
+#     Registra la subida de un PDF de tarifa, el resultado de la extracción
+#     de Gemini, la Insurer copia creada para comparación y el estado.
+# ---------------------------------------------------------------------------
+
+import os as _os
+
+
+def _tariff_pdf_upload_to(instance, filename):
+    """
+    Storage path for uploaded tariff PDFs.
+    budgets/tariff_pdfs/<insurer_pk>/<filename>
+    ---
+    Ruta de almacenamiento para los PDF de tarifa subidos.
+    budgets/tariff_pdfs/<insurer_pk>/<filename>
+    """
+    return _os.path.join(
+        "budgets", "tariff_pdfs",
+        str(instance.insurer.pk),
+        filename,
+    )
+
+
+class TariffPdfImport(models.Model):
+    """
+    Records a tariff PDF import operation: the uploaded PDF, the
+    Insurer copy created from it, the raw JSON extraction result from
+    Gemini, and the current processing status.
+    One record per upload attempt. A 'copy' Insurer is created
+    atomically at upload time so the operator can compare original vs.
+    extracted before committing the changes.
+
+    ---
+
+    Registra una operación de importación de tarifa por PDF: el PDF
+    subido, la copia de Insurer creada a partir de él, el resultado
+    JSON bruto de la extracción de Gemini, y el estado de procesamiento
+    actual. Un registro por intento de subida. Se crea una Insurer
+    'copia' atómicamente en el momento de la subida para que el
+    operario pueda comparar el original con el resultado extraído antes
+    de confirmar los cambios.
+    """
+
+    # Status choices / Opciones de estado
+    STATUS_PENDING = "PENDING_REVIEW"
+    STATUS_APPLIED = "APPLIED"
+    STATUS_DISCARDED = "DISCARDED"
+    STATUS_ERROR = "ERROR"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendiente de revisión"),
+        (STATUS_APPLIED, "Aplicado"),
+        (STATUS_DISCARDED, "Descartado"),
+        (STATUS_ERROR, "Error de extracción"),
+    ]
+
+    # Source insurer (original, never modified by the import).
+    # Aseguradora origen (original, nunca modificada por la importación).
+    insurer = models.ForeignKey(
+        "Insurer",
+        on_delete=models.CASCADE,
+        related_name="tariff_pdf_imports",
+        verbose_name="Aseguradora origen",
+    )
+
+    # Copy insurer created atomically at upload time (may be null if
+    # cloning failed before the copy was saved).
+    # Aseguradora copia creada atómicamente al subir (puede ser null si
+    # el clonado falló antes de guardar la copia).
+    insurer_copy = models.ForeignKey(
+        "Insurer",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tariff_pdf_import_copy",
+        verbose_name="Aseguradora copia",
+    )
+
+    # Uploaded PDF file.
+    # Archivo PDF subido.
+    pdf_file = models.FileField(
+        upload_to=_tariff_pdf_upload_to,
+        verbose_name="PDF de tarifa",
+    )
+
+    # Raw JSON extraction result from Gemini (stored for audit/debug).
+    # Resultado JSON bruto de la extracción de Gemini (guardado para auditoría/depuración).
+    extraction_raw = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Extracción bruta (JSON)",
+    )
+
+    # Processing status.
+    # Estado de procesamiento.
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        verbose_name="Estado",
+    )
+
+    # Error message if status == STATUS_ERROR.
+    # Mensaje de error si status == STATUS_ERROR.
+    error_message = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Mensaje de error",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Importación de tarifa por PDF"
+        verbose_name_plural = "Importaciones de tarifa por PDF"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"PDF import #{self.pk} — {self.insurer.name} "
+            f"[{self.get_status_display()}]"
+        )
+
+
 
 
 

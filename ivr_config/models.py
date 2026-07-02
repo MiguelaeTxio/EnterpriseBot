@@ -332,6 +332,33 @@ class CompanyUser(models.Model):
             "entre sesiones hasta que se modifique explícitamente."
         ),
     )
+    # Granular per-user override, independent of role: grants a user with
+    # role=ASSISTANCE access to the budget history list and the full
+    # breakdown detail view (normally ADMIN-only). Introduced for special
+    # ASSISTANCE users who need audit visibility into calculated budgets
+    # without gaining any other ADMIN privilege. Has no effect for any
+    # role other than ASSISTANCE — ADMIN already has full access
+    # regardless of this flag.
+    # ---
+    # Override granular por usuario, independiente del rol: concede a un
+    # usuario con role=ASSISTANCE acceso al listado de historial de
+    # presupuestos y a la vista de desglose completo (normalmente
+    # exclusiva de ADMIN). Introducido para usuarios ASISTENCIA
+    # especiales que necesitan visibilidad de auditoría sobre los
+    # presupuestos calculados sin ganar ningún otro privilegio de ADMIN.
+    # No tiene efecto para ningún rol distinto de ASSISTANCE — ADMIN ya
+    # tiene acceso completo independientemente de este flag.
+    can_view_budget_breakdown = models.BooleanField(
+        default=False,
+        verbose_name="Puede ver desglose de presupuestos",
+        help_text=(
+            "Solo aplica a usuarios con rol Operario de Asistencia. "
+            "Cuando está activo, además de crear presupuestos, el usuario "
+            "puede ver el historial completo y el desglose detallado de "
+            "cualquier presupuesto — funcionalidad normalmente exclusiva "
+            "de Administrador. No concede ningún otro permiso de ADMIN."
+        ),
+    )
     alias = models.CharField(
         max_length=50,
         blank=True,

@@ -1,5 +1,3 @@
-
-
 // /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/wizard_map.js
 /**
  * Route planner modal logic (Google Maps JS API, Routes Library).
@@ -740,10 +738,43 @@
     recalculateRouteDisplay();
   }
 
+  /**
+   * Resincroniza el número (glyph) de cada pin del mapa con la posición
+   * actual de su waypoint en el array `waypoints`. Necesario tras
+   * reordenar (drag and drop) o eliminar una parada intermedia, ya que
+   * el glyph de un PinElement se fija en el momento de construirlo
+   * (ver addWaypoint) y no se actualiza solo — la Maps JS API no expone
+   * mutación en caliente documentada de PinElement.glyphText, así que
+   * se reconstruye el PinElement completo por cada parada afectada,
+   * igual que hace addWaypoint.
+   *
+   * Resynchronises each map pin's number (glyph) with its waypoint's
+   * current position in the `waypoints` array. Needed after reordering
+   * (drag and drop) or removing an intermediate stop, since a
+   * PinElement's glyph is fixed at construction time (see addWaypoint)
+   * and never updates on its own — the Maps JS API does not document
+   * live mutation of PinElement.glyphText, so the PinElement is fully
+   * rebuilt for each affected stop, the same way addWaypoint does it.
+   */
+  function refreshMarkerLabels() {
+    const { PinElement } = MarkerLib;
+    let stopNum = 0;
+    waypoints.forEach((wp) => {
+      if (wp.isVia || wp.isBaseReturn || !wp.marker) return;
+      stopNum += 1;
+      const pin = new PinElement({
+        glyphText: String(stopNum),
+        background: "#0d6efd", borderColor: "#0d6efd", glyphColor: "#fff",
+      });
+      wp.marker.content = pin;
+    });
+  }
+
   function removeWaypointAt(index) {
     const removed = waypoints.splice(index, 1)[0];
     if (removed && removed.marker) removed.marker.map = null;
     _invalidateCalculation(false);
+    refreshMarkerLabels();
     renderStopsList();
     recalculateRouteDisplay();
   }
@@ -756,6 +787,7 @@
     const [moved] = waypoints.splice(fromIndex, 1);
     waypoints.splice(toIndex, 0, moved);
     _invalidateCalculation(false);
+    refreshMarkerLabels();
     renderStopsList();
     recalculateRouteDisplay();
   }

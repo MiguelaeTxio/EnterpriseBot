@@ -1,3 +1,4 @@
+
 """
 URL configuration for the budgets application.
 All routes are prefixed with /panel/budgets/ via enterprise_core/urls.py.
@@ -203,6 +204,26 @@ urlpatterns = [
         "insurers/<int:pk>/clone/",
         views.InsurerCloneView.as_view(),
         name="insurer_clone",
+    ),
+
+    # Insurer tariff PDF upload — POST, sube PDF de tarifa, clona aseguradora
+    # como '<nombre> copia' y lanza extracción Gemini Vision. Solo ADMIN.
+    # Insurer tariff PDF upload — POST, uploads tariff PDF, clones insurer
+    # as '<name> copia' and runs Gemini Vision extraction. ADMIN only.
+    path(
+        "insurers/<int:pk>/tariff-pdf-upload/",
+        views.InsurerTariffPdfUploadView.as_view(),
+        name="insurer_tariff_pdf_upload",
+    ),
+
+    # Insurer tariff PDF review — GET/POST, muestra comparación extracción
+    # vs. tarifa actual y aplica/descarta la importación. Solo ADMIN.
+    # Insurer tariff PDF review — GET/POST, shows extraction vs. current
+    # tariff comparison and applies/discards the import. ADMIN only.
+    path(
+        "insurers/tariff-pdf-review/<int:pk>/",
+        views.InsurerTariffPdfReviewView.as_view(),
+        name="insurer_tariff_pdf_review",
     ),
 
     # Insurer copy tariff — POST, copia la tarifa activa a una aseguradora
@@ -659,6 +680,8 @@ urlpatterns = [
         name="work_order_pdf",
     ),
 ]
+
+
 
 
 

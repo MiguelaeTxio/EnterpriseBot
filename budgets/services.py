@@ -298,6 +298,7 @@ def _call_routes_api(
     departure_time_str: str,
     api_key: str,
     avoid_tolls: bool = False,
+    include_traffic: bool = True,
 ) -> dict:
     """
     Execute a single Google Routes API call and return a normalised result dict.
@@ -305,6 +306,11 @@ def _call_routes_api(
     and travelAdvisory.tollInfo.
     If avoid_tolls=True, the routeModifiers.avoidTolls flag is set in the
     request payload.
+
+    include_traffic=False omits departureTime and falls back to
+    TRAFFIC_UNAWARE — required for past/present service dates, since
+    Google's Routes API rejects a past departureTime for DRIVE mode.
+
     Returns: {"distance_km": Decimal, "has_tolls": bool, "encoded_polyline": str}
     Raises RouteCalculationError on any HTTP or network failure.
     ---
@@ -313,6 +319,11 @@ def _call_routes_api(
     polyline.encodedPolyline y travelAdvisory.tollInfo.
     Si avoid_tolls=True, se activa el flag routeModifiers.avoidTolls en el
     payload de la peticion.
+
+    include_traffic=False omite departureTime y cae a TRAFFIC_UNAWARE —
+    necesario para fechas de servicio pasadas/presentes, ya que la
+    Routes API de Google rechaza un departureTime pasado en modo DRIVE.
+
     Devuelve: {"distance_km": Decimal, "has_tolls": bool, "encoded_polyline": str}
     Lanza RouteCalculationError ante cualquier fallo HTTP o de red.
     """
@@ -342,10 +353,14 @@ def _call_routes_api(
             }
         },
         "travelMode": "DRIVE",
-        "routingPreference": "TRAFFIC_AWARE",
-        "departureTime": departure_time_str,
         "extraComputations": ["TOLLS"],
     }
+
+    if include_traffic:
+        payload["routingPreference"] = "TRAFFIC_AWARE"
+        payload["departureTime"] = departure_time_str
+    else:
+        payload["routingPreference"] = "TRAFFIC_UNAWARE"
 
     if avoid_tolls:
         # Request a toll-free alternative route.
@@ -571,6 +586,13 @@ def calculate_route(
     # PythonAnywhere opera en UTC — no se necesita conversion.
     departure_time_str = service_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Google's Routes API rejects a past departureTime for DRIVE mode —
+    # only include it (with TRAFFIC_AWARE) when the service date is in
+    # the future. Verified against current Routes API docs (2026-06).
+    # Google rechaza un departureTime pasado para modo DRIVE — solo se
+    # incluye (con TRAFFIC_AWARE) cuando la fecha de servicio es futura.
+    include_traffic = service_datetime > datetime.datetime.utcnow()
+
     # Step 4: primary call (with tolls).
     # Paso 4: llamada primaria (con peajes).
     route_with_tolls = _call_routes_api(
@@ -581,6 +603,7 @@ def calculate_route(
         departure_time_str,
         api_key,
         avoid_tolls=False,
+        include_traffic=include_traffic,
     )
 
     # Step 5: secondary call (without tolls) — only when needed.
@@ -597,6 +620,7 @@ def calculate_route(
                 departure_time_str,
                 api_key,
                 avoid_tolls=True,
+                include_traffic=include_traffic,
             )
             # Force has_tolls=False on the toll-free route regardless of
             # what the API returns (should be False, but we guarantee it).
@@ -630,6 +654,7 @@ def _call_routes_multileg(
     departure_time_str: str,
     api_key: str,
     avoid_tolls: bool = False,
+    include_traffic: bool = True,
 ) -> dict:
     """
     Execute a single Google Routes API call with intermediate waypoints
@@ -641,6 +666,17 @@ def _call_routes_multileg(
 
     If avoid_tolls=True, the routeModifiers.avoidTolls flag is set and
     TOLLS extra computation is omitted (toll-free route).
+
+    include_traffic controls whether departureTime/TRAFFIC_AWARE are
+    sent. Google's Routes API rejects any departureTime in the past for
+    RouteTravelMode=DRIVE (confirmed against current API docs — only
+    TRANSIT mode supports past departure times). For budgets with a
+    past or present service date, the caller sets include_traffic=False
+    so departureTime is omitted entirely (defaults to request time) and
+    routingPreference becomes TRAFFIC_UNAWARE — route geometry, distance
+    and toll segments are date-independent, so this has no effect on
+    accuracy for historical budgets; only live-traffic ETA prediction is
+    skipped, which is irrelevant for a service already rendered.
 
     Returns:
     {
@@ -660,6 +696,19 @@ def _call_routes_multileg(
 
     Si avoid_tolls=True, se activa routeModifiers.avoidTolls y se omite
     TOLLS de extraComputations (ruta sin peajes).
+
+    include_traffic controla si se envían departureTime/TRAFFIC_AWARE.
+    La Routes API de Google rechaza cualquier departureTime en el pasado
+    para RouteTravelMode=DRIVE (confirmado contra la documentación
+    actual de la API — solo el modo TRANSIT admite departure times
+    pasados). Para presupuestos con fecha de servicio pasada o presente,
+    el llamador pasa include_traffic=False para omitir departureTime por
+    completo (usa la hora de la petición por defecto) y routingPreference
+    pasa a ser TRAFFIC_UNAWARE — la geometría de la ruta, la distancia y
+    los tramos de peaje no dependen de la fecha, así que esto no afecta
+    a la precisión para presupuestos históricos; solo se omite la
+    predicción de tráfico en vivo para el ETA, irrelevante para un
+    servicio ya prestado.
 
     Devuelve el dict descrito arriba.
     Lanza RouteCalculationError ante cualquier fallo HTTP o de red.
@@ -704,14 +753,24 @@ def _call_routes_multileg(
             }
         },
         "travelMode": "DRIVE",
-        "routingPreference": "TRAFFIC_AWARE",
-        "departureTime": departure_time_str,
         "routeModifiers": {
             "avoidTolls": avoid_tolls,
             "avoidHighways": False,
             "avoidFerries": False,
         },
     }
+
+    if include_traffic:
+        payload["routingPreference"] = "TRAFFIC_AWARE"
+        payload["departureTime"] = departure_time_str
+    else:
+        # Past/present service date: departureTime omitted (Google
+        # rejects past values for DRIVE), routingPreference falls back
+        # to time-independent computation.
+        # Fecha de servicio pasada/presente: departureTime omitido
+        # (Google rechaza valores pasados para DRIVE), routingPreference
+        # cae a cómputo independiente del tiempo.
+        payload["routingPreference"] = "TRAFFIC_UNAWARE"
 
     # Only request toll computation when not avoiding tolls — the
     # toll-free call does not need extraComputations=TOLLS.
@@ -983,7 +1042,23 @@ def _compute_toll_cost(
     }
     high_field = HIGH_FIELD_MAP.get(price_field)
 
-    SNAP_KM = 1.5
+    # Maximum distance (km) between a polyline point and a toll gantry
+    # coordinate to consider it a match. Reduced from 1.5 to 1.0 km after
+    # confirming empirically that troncal/salida gantry pairs on the AP-7
+    # (Calahonda, San Pedro, Manilva) sit ~2.6-2.9 km apart — 1.0 km keeps
+    # a safe margin against cross-matching a troncal barrier with its
+    # nearby salida barrier (or vice versa) while still tolerating GPS/
+    # polyline noise. Adjust empirically per Miguel Ángel's testing.
+    # ---
+    # Distancia máxima (km) entre un punto de la polyline y la
+    # coordenada de una cabina de peaje para considerarlo coincidencia.
+    # Reducido de 1.5 a 1.0 km tras confirmar empíricamente que los
+    # pares troncal/salida de la AP-7 (Calahonda, San Pedro, Manilva)
+    # están separados ~2,6-2,9 km — 1.0 km deja margen de seguridad
+    # frente a confundir una barrera troncal con su salida cercana (o
+    # viceversa) sin dejar de tolerar el ruido de GPS/polyline. Ajustar
+    # empíricamente según las pruebas de Miguel Ángel.
+    SNAP_KM = 1.0
 
     # Load all geocoded active segments.
     # Cargar todos los segmentos geocodificados activos.
@@ -1004,56 +1079,70 @@ def _compute_toll_cost(
 
     result = []
 
-    for seg in segments:
-        o_lat = float(seg.origin_lat)
-        o_lng = float(seg.origin_lng)
-        d_lat = float(seg.dest_lat)
-        d_lng = float(seg.dest_lng)
+    def _find_occurrences(target_lat, target_lng, snap_km):
+        """
+        Scans the polyline sequentially and returns the index of the
+        closest point for EACH separate pass near (target_lat,
+        target_lng) — i.e. every time the route comes within snap_km
+        and then moves away again counts as one occurrence. This is
+        the key fix versus a single global-nearest search: a round
+        trip passes the same physical point twice (outbound + return),
+        and each pass must be detected independently.
+        ---
+        Recorre la polyline secuencialmente y devuelve el índice del
+        punto más cercano para CADA pase por separado cerca de
+        (target_lat, target_lng) — es decir, cada vez que la ruta entra
+        en snap_km y luego se aleja cuenta como una ocurrencia. Esta es
+        la corrección clave frente a una búsqueda de mínimo global
+        único: un viaje de ida y vuelta pasa por el mismo punto físico
+        dos veces (ida + vuelta), y cada paso debe detectarse de forma
+        independiente.
+        """
+        occurrences = []
+        i = 0
+        n = len(points)
+        while i < n:
+            p_lat, p_lng = points[i]
+            dist = _haversine_km(p_lat, p_lng, target_lat, target_lng)
+            if dist <= snap_km:
+                # Start of a contiguous close cluster (one physical
+                # pass) — find its closest point, then skip past it.
+                # Inicio de un cluster contiguo cercano (un pase
+                # físico) — buscar su punto más cercano y saltarlo.
+                best_idx = i
+                best_dist = dist
+                j = i
+                while j < n:
+                    pj_lat, pj_lng = points[j]
+                    dj = _haversine_km(pj_lat, pj_lng, target_lat, target_lng)
+                    if dj <= snap_km:
+                        if dj < best_dist:
+                            best_dist = dj
+                            best_idx = j
+                        j += 1
+                    else:
+                        break
+                occurrences.append(best_idx)
+                i = j
+            else:
+                i += 1
+        return occurrences
 
-        best_o_idx = None
-        best_o_dist = float("inf")
-        best_d_idx = None
-        best_d_dist = float("inf")
-
-        for i, (p_lat, p_lng) in enumerate(points):
-            dist_o = _haversine_km(p_lat, p_lng, o_lat, o_lng)
-            if dist_o < best_o_dist:
-                best_o_dist = dist_o
-                best_o_idx = i
-            dist_d = _haversine_km(p_lat, p_lng, d_lat, d_lng)
-            if dist_d < best_d_dist:
-                best_d_dist = dist_d
-                best_d_idx = i
-
-        same_point = (
-            abs(o_lat - d_lat) < 0.0001
-            and abs(o_lng - d_lng) < 0.0001
-        )
-
-        matched = (
-            (same_point and best_o_dist <= SNAP_KM)
-            or (
-                not same_point
-                and best_o_dist <= SNAP_KM
-                and best_d_dist <= SNAP_KM
-                and best_o_idx is not None
-                and best_d_idx is not None
-                and best_o_idx < best_d_idx
-            )
-        )
-
-        if not matched:
-            continue
-
-        # Determine effective price field and season type.
-        # Determinar campo de precio efectivo y tipo de temporada.
+    def _price_for_segment(seg):
+        """
+        Determines the effective price, high-season flag and season type
+        for a segment on service_date. Shared by both the AP-7 gate
+        resolution and the generic point/segment matching below.
+        ---
+        Determina el precio efectivo, el flag de temporada alta y el tipo
+        de temporada de un tramo en service_date. Compartido por la
+        resolución de puertas AP-7 y el emparejamiento genérico de abajo.
+        """
         effective_field = price_field
         is_high_season  = False
         season_type     = None
 
         if service_date is not None and high_field is not None:
-            # Check calendar high-season range first.
-            # Comprobar primero el rango de temporada alta del calendario.
             if (
                 seg.season_high_start is not None
                 and seg.season_high_end is not None
@@ -1078,8 +1167,6 @@ def _compute_toll_cost(
                     is_high_season  = True
                     season_type     = "VERANO"
 
-            # If not already high-season, check Semana Santa.
-            # Si no es ya temporada alta, comprobar Semana Santa.
             if (
                 not is_high_season
                 and getattr(seg, high_field) is not None
@@ -1089,22 +1176,206 @@ def _compute_toll_cost(
                 is_high_season  = True
                 season_type     = "SEMANA_SANTA"
 
-        price = _round2(
-            Decimal(str(getattr(seg, effective_field) or 0))
-        )
+        price = _round2(Decimal(str(getattr(seg, effective_field) or 0)))
+        return price, is_high_season, season_type
 
+    def _append_segment_result(seg, count):
+        """
+        Appends `count` result entries for a fully-resolved segment.
+        ---
+        Añade `count` entradas de resultado para un tramo ya resuelto.
+        """
+        price, is_high_season, season_type = _price_for_segment(seg)
         segment_name = (
-            f"{seg.road_code} | "
-            f"{seg.origin_name} \u2192 {seg.dest_name}"
+            f"{seg.road_code} | {seg.origin_name} \u2192 {seg.dest_name}"
+        )
+        for _ in range(count):
+            result.append({
+                "segment_name":       segment_name,
+                "vehicle_type_label": vehicle_label,
+                "price":              price,
+                "is_high_season":     is_high_season,
+                "season_type":        season_type,
+            })
+
+    # -------------------------------------------------------------------
+    # AP-7 TRONCAL / SALIDA gate resolution — the physical toll booths at
+    # Calahonda, San Pedro and Manilva each have TWO separate gantries: a
+    # 'Troncal' one on the main carriageway (crossed when the route drives
+    # straight through) and a 'Salida' one on the exit ramp (crossed only
+    # when the route actually exits/enters at that junction). Matching
+    # each booth's coordinate independently (as the generic point-matching
+    # below does) cannot tell these apart when both booths sit within
+    # SNAP_KM of each other's vicinity along the corridor — it would
+    # wrongly charge BOTH.
+    #
+    # Instead, for each of these three locations, two checkpoint
+    # coordinates further along the corridor (provided by Miguel Ángel,
+    # verified empirically against the real road) determine which gantry
+    # applies: if the route passes checkpoint_a AND checkpoint_b, it
+    # continued past the junction → TRONCAL; if it passes checkpoint_a but
+    # NOT checkpoint_b, it exited/entered at the junction → SALIDA. Each
+    # occurrence of checkpoint_a is resolved independently, so a round
+    # trip that continues through on the outbound leg but exits on the
+    # return leg (or vice versa) is billed correctly per direction.
+    #
+    # AP-46 (Casabermeja) has no such ambiguity — it is a single physical
+    # barrier with no separate troncal/salida gantries — so it is left to
+    # the generic point-matching loop below, unaffected by this block.
+    # ---
+    # Resolución de puertas TRONCAL / SALIDA de la AP-7 — las cabinas
+    # físicas de Calahonda, San Pedro y Manilva tienen cada una DOS
+    # pórticos separados: uno 'Troncal' en el carril principal (se cruza
+    # si la ruta sigue recto) y uno 'Salida' en el ramal de salida (se
+    # cruza solo si la ruta realmente sale/entra por ese enlace). Emparejar
+    # la coordenada de cada cabina de forma independiente (como hace el
+    # emparejamiento genérico de más abajo) no puede distinguirlas cuando
+    # ambas caen dentro de SNAP_KM la una de la otra a lo largo del
+    # corredor — cobraría las DOS por error.
+    #
+    # En su lugar, para cada una de estas tres ubicaciones, dos
+    # coordenadas de control más adelante en el corredor (proporcionadas
+    # por Miguel Ángel, verificadas empíricamente contra la carretera
+    # real) determinan qué pórtico aplica: si la ruta pasa por checkpoint_a
+    # Y checkpoint_b, siguió recto pasado el enlace → TRONCAL; si pasa por
+    # checkpoint_a pero NO por checkpoint_b, salió/entró por el enlace →
+    # SALIDA. Cada ocurrencia de checkpoint_a se resuelve de forma
+    # independiente, así que un viaje de ida y vuelta que sigue recto a la
+    # ida pero sale a la vuelta (o al revés) se factura correctamente por
+    # sentido.
+    #
+    # La AP-46 (Casabermeja) no tiene esta ambigüedad — es una barrera
+    # física única sin pórticos troncal/salida separados — así que queda
+    # para el bucle genérico de más abajo, sin verse afectada por este
+    # bloque.
+    AP7_GATE_PAIRS = [
+        {
+            "checkpoint_a": (36.53893578993178, -4.676974059446321),
+            "checkpoint_b": (36.50508152174629, -4.740510226751807),
+            "troncal_name": "Calahonda Troncal",
+            "salida_name":  "Salida Calahonda",
+        },
+        {
+            "checkpoint_a": (36.52631071669154, -4.964125499305323),
+            "checkpoint_b": (36.490054579403406, -5.043082933396812),
+            "troncal_name": "San Pedro Troncal",
+            "salida_name":  "Salida San Pedro",
+        },
+        {
+            "checkpoint_a": (36.394235158954636, -5.252037189233206),
+            "checkpoint_b": (36.37092252215686, -5.268302104630619),
+            "troncal_name": "Manilva Troncal",
+            "salida_name":  "Salida Manilva",
+        },
+    ]
+
+    def _resolve_gate_pair(checkpoint_a, checkpoint_b):
+        """
+        Returns a list with one 'TRONCAL' or 'SALIDA' string per detected
+        pass through checkpoint_a, decided by whether that same pass also
+        reaches checkpoint_b.
+        ---
+        Devuelve una lista con un 'TRONCAL' o 'SALIDA' por cada pase
+        detectado por checkpoint_a, decidido según si ese mismo pase
+        alcanza también checkpoint_b.
+        """
+        a_lat, a_lng = checkpoint_a
+        b_lat, b_lng = checkpoint_b
+        a_occurrences = sorted(_find_occurrences(a_lat, a_lng, SNAP_KM))
+        b_occurrences = sorted(_find_occurrences(b_lat, b_lng, SNAP_KM))
+
+        used_b = set()
+        decisions = []
+        for a_idx in a_occurrences:
+            best_b_idx = None
+            best_gap = None
+            for b_idx in b_occurrences:
+                if b_idx in used_b:
+                    continue
+                gap = abs(b_idx - a_idx)
+                if best_gap is None or gap < best_gap:
+                    best_gap = gap
+                    best_b_idx = b_idx
+            if best_b_idx is not None:
+                used_b.add(best_b_idx)
+                decisions.append("TRONCAL")
+            else:
+                decisions.append("SALIDA")
+        return decisions
+
+    segments_by_name = {s.origin_name: s for s in segments}
+    gated_names = set()
+    for gate in AP7_GATE_PAIRS:
+        gated_names.add(gate["troncal_name"])
+        gated_names.add(gate["salida_name"])
+
+        decisions = _resolve_gate_pair(
+            gate["checkpoint_a"], gate["checkpoint_b"]
+        )
+        troncal_count = decisions.count("TRONCAL")
+        salida_count  = decisions.count("SALIDA")
+
+        if troncal_count:
+            seg = segments_by_name.get(gate["troncal_name"])
+            if seg is not None:
+                _append_segment_result(seg, troncal_count)
+        if salida_count:
+            seg = segments_by_name.get(gate["salida_name"])
+            if seg is not None:
+                _append_segment_result(seg, salida_count)
+
+    # -------------------------------------------------------------------
+    # Generic point/segment matching — for everything NOT covered by the
+    # AP-7 gate logic above (e.g. AP-46 Casabermeja, a single physical
+    # barrier with no troncal/salida ambiguity, and any future toll with
+    # the same simple structure).
+    # ---
+    # Emparejamiento genérico de punto/tramo — para todo lo NO cubierto
+    # por la lógica de puertas AP-7 de arriba (p.ej. AP-46 Casabermeja,
+    # una barrera física única sin ambigüedad troncal/salida, y cualquier
+    # peaje futuro con la misma estructura simple).
+    for seg in segments:
+        if seg.origin_name in gated_names:
+            continue
+
+        o_lat = float(seg.origin_lat)
+        o_lng = float(seg.origin_lng)
+        d_lat = float(seg.dest_lat)
+        d_lng = float(seg.dest_lng)
+
+        same_point = (
+            abs(o_lat - d_lat) < 0.0001
+            and abs(o_lng - d_lng) < 0.0001
         )
 
-        result.append({
-            "segment_name":       segment_name,
-            "vehicle_type_label": vehicle_label,
-            "price":              price,
-            "is_high_season":     is_high_season,
-            "season_type":        season_type,
-        })
+        matched_pairs = []
+
+        if same_point:
+            for idx in _find_occurrences(o_lat, o_lng, SNAP_KM):
+                matched_pairs.append((idx, idx))
+        else:
+            o_occurrences = sorted(_find_occurrences(o_lat, o_lng, SNAP_KM))
+            d_occurrences = sorted(_find_occurrences(d_lat, d_lng, SNAP_KM))
+
+            used_d = set()
+            for o_idx in o_occurrences:
+                best_d_idx = None
+                best_gap = None
+                for d_idx in d_occurrences:
+                    if d_idx in used_d:
+                        continue
+                    gap = abs(d_idx - o_idx)
+                    if best_gap is None or gap < best_gap:
+                        best_gap = gap
+                        best_d_idx = d_idx
+                if best_d_idx is not None:
+                    used_d.add(best_d_idx)
+                    matched_pairs.append((o_idx, best_d_idx))
+
+        if not matched_pairs:
+            continue
+
+        _append_segment_result(seg, len(matched_pairs))
 
     return result
 
@@ -1197,6 +1468,13 @@ def calculate_route_multileg(
     origin_lng = float(base.longitude)
     departure_time_str = service_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Google's Routes API rejects a past departureTime for DRIVE mode —
+    # only include it (with TRAFFIC_AWARE) when the service date is in
+    # the future. Verified against current Routes API docs (2026-06).
+    # Google rechaza un departureTime pasado para modo DRIVE — solo se
+    # incluye (con TRAFFIC_AWARE) cuando la fecha de servicio es futura.
+    include_traffic = service_datetime > datetime.datetime.utcnow()
+
     # Detect overnight split: find first waypoint with is_base_return=True
     # that has at least one real stop after it (not via, not base-return).
     # A single "Return to base" closing a normal circuit is NOT overnight.
@@ -1230,6 +1508,7 @@ def calculate_route_multileg(
                 dest_lng=origin_lng,
                 departure_time_str=departure_time_str,
                 api_key=api_key,
+                include_traffic=include_traffic,
             )
 
             # Alternative route: same circuit avoiding tolls.
@@ -1246,6 +1525,7 @@ def calculate_route_multileg(
                     dest_lng=origin_lng,
                     departure_time_str=departure_time_str,
                     api_key=api_key,
+                include_traffic=include_traffic,
                     avoid_tolls=True,
                 )
                 encoded_polyline_alt = result_alt["encoded_polyline"]
@@ -1294,6 +1574,7 @@ def calculate_route_multileg(
                 dest_lng=origin_lng,
                 departure_time_str=departure_time_str,
                 api_key=api_key,
+                include_traffic=include_traffic,
             )
 
             # Phase 2: Base → delivery stops → Base.
@@ -1310,6 +1591,7 @@ def calculate_route_multileg(
                 dest_lng=origin_lng,
                 departure_time_str=departure_time_str,
                 api_key=api_key,
+                include_traffic=include_traffic,
             )
 
             # Alternative routes (avoid tolls) — silenced on error.
@@ -1323,6 +1605,7 @@ def calculate_route_multileg(
                     dest_lng=origin_lng,
                     departure_time_str=departure_time_str,
                     api_key=api_key,
+                include_traffic=include_traffic,
                     avoid_tolls=True,
                 )
                 result2_alt = _call_routes_multileg(
@@ -1333,6 +1616,7 @@ def calculate_route_multileg(
                     dest_lng=origin_lng,
                     departure_time_str=departure_time_str,
                     api_key=api_key,
+                include_traffic=include_traffic,
                     avoid_tolls=True,
                 )
                 encoded_polyline_alt = (
@@ -1502,6 +1786,426 @@ def _build_toll_budget_lines(
     return lines, total_with_markup
 
 
+# ---------------------------------------------------------------------------
+# Tariff PDF extraction service (Gemini Vision)
+# Servicio de extracción de PDF de tarifa (Gemini Vision)
+# ---------------------------------------------------------------------------
+
+import logging as _log_svc
+import pathlib as _pathlib_svc
+from decimal import Decimal as _Decimal, InvalidOperation as _InvalidOperation
+from typing import Optional as _Optional
+
+from google.genai import types as _genai_types
+from pydantic import BaseModel as _BaseModel, Field as _Field
+
+from ai_services.gemini_client import (
+    DEFAULT_MODEL as _DEFAULT_MODEL,
+    get_gemini_client as _get_gemini_client,
+    get_request_config as _get_request_config,
+)
+
+_logger_tariff = _log_svc.getLogger(__name__)
+
+
+class ExtractedTariffLine(_BaseModel):
+    """
+    Single price line extracted from the tariff PDF, for one rate period
+    (LABORABLE or FESTIVO/NOCTURNO). May match an existing concept from the
+    catalog passed in the prompt, or propose a new one when no existing
+    concept is semantically equivalent.
+    ---
+    Línea de precio individual extraída del PDF de tarifa, para un periodo
+    de tarifa (LABORABLE o FESTIVO/NOCTURNO). Puede emparejar con un
+    concepto existente del catálogo pasado en el prompt, o proponer uno
+    nuevo cuando ningún concepto existente es semánticamente equivalente.
+    """
+
+    concept_code_match: _Optional[str] = _Field(
+        default=None,
+        description=(
+            "Código EXACTO (tal cual aparece en el catálogo proporcionado) "
+            "del concepto existente que corresponde semánticamente a esta "
+            "línea del PDF. Null si esta línea representa un concepto de "
+            "facturación distinto a todos los del catálogo."
+        ),
+    )
+    concept_new_label: _Optional[str] = _Field(
+        default=None,
+        description=(
+            "Obligatorio solo si concept_code_match es null. Nombre "
+            "descriptivo y distintivo propuesto para el concepto nuevo, en "
+            "castellano, tal como debería aparecer en el desplegable de "
+            "líneas de tarifa (ej. 'Forfait Salida (Reparación in situ)', "
+            "'Hora de trabajo mecánico (in situ)'). Debe distinguirse "
+            "claramente de cualquier concepto ya existente en el catálogo "
+            "aunque el nombre en el PDF se parezca."
+        ),
+    )
+    concept_new_unit: _Optional[str] = _Field(
+        default=None,
+        description=(
+            "Solo si concept_code_match es null. Unidad del concepto "
+            "nuevo: uno de 'FIXED' (importe fijo), 'PER_KM' (por "
+            "kilómetro), 'PER_HOUR' (por hora), 'PER_DAY' (por día), "
+            "'PERCENT' (porcentaje)."
+        ),
+    )
+    vehicle_type_name: _Optional[str] = _Field(
+        default=None,
+        description=(
+            "Nombre exacto del tramo de peso o tipo de vehículo al que "
+            "aplica esta línea, tal como aparece en el PDF. Null si el "
+            "concepto es genérico y no varía por tipo de vehículo (aplica "
+            "un único precio para toda la tarifa)."
+        ),
+    )
+    price: _Optional[str] = _Field(
+        default=None,
+        description=(
+            "Precio de esta línea, como texto numérico con punto decimal, "
+            "sin símbolo de moneda. Para conceptos PERCENT, el número del "
+            "porcentaje (ej. '45' para un recargo del 45%). Null si no es "
+            "legible."
+        ),
+    )
+
+
+class TariffPdfExtraction(_BaseModel):
+    """
+    Full structured extraction from a single insurer column of a tariff
+    PDF, driven entirely by the concept catalog and night/holiday mode
+    supplied in the prompt at call time — no concept names are hardcoded
+    in this schema or in the service.
+    ---
+    Extracción estructurada completa de la columna de una aseguradora en
+    un PDF de tarifa, guiada por completo por el catálogo de conceptos y
+    el modo nocturno/festivo suministrados en el prompt en cada llamada —
+    ningún nombre de concepto está hardcodeado en este esquema ni en el
+    servicio.
+    """
+
+    detected_insurer_name: _Optional[str] = _Field(
+        default=None,
+        description=(
+            "Nombre de la aseguradora tal como figura en la cabecera de la "
+            "columna seleccionada. Null si no es legible."
+        ),
+    )
+    laborable_lines: list[ExtractedTariffLine] = _Field(
+        default_factory=list,
+        description=(
+            "TODAS las líneas de precio LABORABLE encontradas en la "
+            "columna seleccionada del PDF, de TODAS las secciones/tablas "
+            "presentes (remolcaje, reparación in situ, u otras), no solo "
+            "las que coincidan con conceptos ya conocidos."
+        ),
+    )
+    festivo_lines: list[ExtractedTariffLine] = _Field(
+        default_factory=list,
+        description=(
+            "TODAS las líneas de precio FESTIVO/NOCTURNO encontradas, "
+            "misma estructura que laborable_lines. Se rellena SOLO si el "
+            "prompt indica modo de tabla festiva completa; en modo "
+            "recargo porcentual, dejar vacío."
+        ),
+    )
+    night_holiday_surcharge_percent: _Optional[str] = _Field(
+        default=None,
+        description=(
+            "Solo relevante en modo de recargo porcentual: el porcentaje "
+            "de recargo nocturno/festivo indicado en el PDF (ej. '45' si "
+            "el texto dice 'recargo del 45%'), como texto numérico. Null "
+            "si no se indica o si el modo es de tabla festiva completa."
+        ),
+    )
+
+
+def _build_concept_catalog_text(concepts) -> str:
+    """
+    Renders the TariffConcept queryset as a plain-text catalog listing for
+    injection into the Gemini prompt. Dynamic — reflects whatever concepts
+    currently exist (system + company-custom) at call time.
+    ---
+    Renderiza el queryset de TariffConcept como listado de texto plano para
+    inyectar en el prompt de Gemini. Dinámico — refleja los conceptos que
+    existan en ese momento (sistema + personalizados de la empresa).
+    """
+    lines = []
+    for c in concepts:
+        lines.append(f"- código: {c.code} | nombre: {c.label} | unidad: {c.default_unit}")
+    return "\n".join(lines) if lines else "(catálogo vacío)"
+
+
+def _build_tariff_extraction_prompt(
+    insurer_company_name: str,
+    concept_catalog_text: str,
+    full_night_holiday_table: bool,
+) -> str:
+    """
+    Builds the Gemini prompt for tariff PDF extraction. Fully generic:
+    no company or concept names are hardcoded anywhere in this function.
+    Two dynamic inputs shape the instructions:
+      - concept_catalog_text: the current TariffConcept catalog (system +
+        company-custom), so Gemini can match or propose concepts against
+        real data rather than a fixed schema.
+      - full_night_holiday_table: derived from
+        insurer.special_night_holiday_tariff, tells Gemini whether to
+        extract a full separate FESTIVO/NOCTURNO price table or just a
+        single surcharge percentage.
+    ---
+    Construye el prompt de Gemini para extracción de PDF de tarifa.
+    Totalmente genérico: ningún nombre de empresa o concepto está
+    hardcodeado en esta función. Dos entradas dinámicas dan forma a las
+    instrucciones:
+      - concept_catalog_text: el catálogo TariffConcept actual (sistema +
+        personalizados de la empresa), para que Gemini empareje o
+        proponga conceptos contra datos reales en vez de un esquema fijo.
+      - full_night_holiday_table: derivado de
+        insurer.special_night_holiday_tariff, indica a Gemini si debe
+        extraer una tabla FESTIVO/NOCTURNO completa separada o solo un
+        porcentaje de recargo único.
+    """
+    if full_night_holiday_table:
+        night_holiday_instructions = (
+            "MODO NOCTURNO/FESTIVO: esta aseguradora usa una TABLA DE "
+            "PRECIOS COMPLETA Y SEPARADA para servicios nocturnos/"
+            "festivos (no un simple recargo porcentual). Busca en el PDF "
+            "las secciones o columnas tituladas 'Festivo', 'Nocturno', "
+            "'Festivo/Nocturno' o similar, y extrae TODAS sus líneas de "
+            "precio en festivo_lines, con la misma estructura y el mismo "
+            "criterio de emparejamiento de conceptos que laborable_lines. "
+            "Dejar night_holiday_surcharge_percent en null."
+        )
+    else:
+        night_holiday_instructions = (
+            "MODO RECARGO PORCENTUAL: esta aseguradora NO tiene tabla de "
+            "precios festiva separada. Busca en el texto del PDF una "
+            "mención a un recargo nocturno y/o festivo expresado en "
+            "porcentaje (ej. 'recargo del 45%', 'incremento nocturno "
+            "20%') y extrae ese número en night_holiday_surcharge_percent. "
+            "Deja festivo_lines vacío."
+        )
+
+    return (
+        f"Eres un asistente experto en tarifas de asistencia en carretera "
+        f"para vehículos industriales pesados (camiones, grúas, autocares, "
+        f"cabezas tractoras).\n\n"
+        f"El documento adjunto es un PDF de tarifa de asistencia que puede "
+        f"contener columnas de precios para varias compañías aseguradoras.\n\n"
+        f"AVISO SOBRE EL NOMBRE DE LA ASEGURADORA: el nombre proporcionado "
+        f"es '{insurer_company_name}'. Si este nombre tiene el formato "
+        f"'CompañíaA - CompañíaB' (dos nombres de compañía separados por "
+        f"un guion), significa que se trata de un PAR de aseguradoras que "
+        f"colaboran entre sí. En ese caso, si el PDF muestra una columna "
+        f"de precios para CompañíaA y otra columna distinta para "
+        f"CompañíaB, debes extraer ÚNICAMENTE la columna de la PRIMERA "
+        f"compañía nombrada (CompañíaA, la que aparece antes del guion), "
+        f"e ignorar por completo la columna de la segunda (CompañíaB) y "
+        f"cualquier otra columna presente en el documento. El orden "
+        f"importa: 'CompañíaA - CompañíaB' y 'CompañíaB - CompañíaA' "
+        f"identifican columnas distintas dentro del mismo PDF.\n\n"
+        f"Si el nombre proporcionado NO tiene formato de par (es una única "
+        f"compañía), localiza directamente la columna cuya cabecera "
+        f"coincida con ese nombre.\n\n"
+        f"CATÁLOGO DE CONCEPTOS EXISTENTES (código | nombre | unidad):\n"
+        f"{concept_catalog_text}\n\n"
+        f"TAREA: Extrae TODAS las líneas de precio de la columna "
+        f"seleccionada, de TODAS las secciones/tablas del PDF que "
+        f"contengan precios negociados con esta aseguradora (remolcaje "
+        f"por tramo de peso, reparación en el sitio sin remolcaje, "
+        f"conceptos generales sueltos como desbloqueo/espera/mano de "
+        f"obra, o cualquier otra sección de precios que exista). No te "
+        f"limites a categorías predefinidas: si el PDF tiene una sección "
+        f"de precios que no aparece en el catálogo, extráela igualmente "
+        f"como concepto nuevo.\n\n"
+        f"EMPAREJAMIENTO DE CONCEPTOS: para cada línea, decide si "
+        f"corresponde a un concepto YA EXISTENTE en el catálogo de "
+        f"arriba:\n"
+        f"- Empareja (concept_code_match) SOLO si es real y "
+        f"genuinamente el MISMO concepto de facturación: mismo tipo de "
+        f"servicio, mismo ámbito de aplicación (por ejemplo, un forfait "
+        f"de salida de REMOLCAJE que varía por tramo de peso NO es lo "
+        f"mismo que un forfait de salida de REPARACIÓN IN SITU con un "
+        f"único importe fijo, aunque ambos se llamen 'Forfait Salida' en "
+        f"el PDF — son conceptos distintos).\n"
+        f"- Si tienes dudas razonables de que sea el mismo concepto, o el "
+        f"concepto pertenece a una sección/servicio distinto aunque el "
+        f"nombre se parezca, NO empareges: deja concept_code_match en "
+        f"null y propón un concepto nuevo (concept_new_label, "
+        f"concept_new_unit) con un nombre que lo distinga claramente del "
+        f"existente.\n\n"
+        f"{night_holiday_instructions}\n\n"
+        f"REGLAS GENERALES:\n"
+        f"- Devuelve los precios como texto numérico simple, usando punto "
+        f"como separador decimal, sin símbolo de moneda.\n"
+        f"- Si un precio usa coma como decimal en el PDF (p. ej. "
+        f"'138,88'), conviértelo a punto ('138.88').\n"
+        f"- Si un concepto no figura en la columna seleccionada, omítelo "
+        f"(no generes líneas con precio null salvo que el dato "
+        f"simplemente no sea legible).\n"
+        f"- No inventes precios ni conceptos que no puedas leer con "
+        f"certeza en el documento."
+    )
+
+
+class TariffPdfExtractionService:
+    """
+    Extracts structured tariff data from a single insurer column of a
+    tariff PDF using Gemini Vision via the shared ai_services.gemini_client
+    helper. Uses gemini-3.5-flash (Directriz 4.1, mandatory for new code).
+    Fully data-driven: the concept catalog and night/holiday mode are
+    read from the database at call time and injected into the prompt —
+    no insurer or concept names are hardcoded in this service, so it
+    works identically for any insurer pair or single insurer, and for
+    any concept negotiated with any company.
+
+    ---
+
+    Extrae datos estructurados de tarifa de la columna de una aseguradora
+    en un PDF de tarifa usando Gemini Vision a través del helper
+    compartido ai_services.gemini_client. Usa gemini-3.5-flash (Directriz
+    4.1, obligatorio para código nuevo).
+    Totalmente guiado por datos: el catálogo de conceptos y el modo
+    nocturno/festivo se leen de la base de datos en el momento de la
+    llamada y se inyectan en el prompt — ningún nombre de aseguradora o
+    concepto está hardcodeado en este servicio, así que funciona igual
+    para cualquier par de aseguradoras o aseguradora individual, y para
+    cualquier concepto negociado con cualquier empresa.
+    """
+
+    _MIME_TYPES = {
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
+
+    def __init__(self, model: str = _DEFAULT_MODEL):
+        self._model = model
+
+    def extract(self, file_path: str, insurer) -> TariffPdfExtraction:
+        """
+        Sends the tariff PDF at file_path to Gemini Vision and returns
+        the structured extraction for the column matching
+        insurer.insurer_company_name, using insurer.company's concept
+        catalog and insurer.special_night_holiday_tariff to shape the
+        prompt.
+
+        Args:
+            file_path: Absolute path to the PDF file on disk.
+            insurer: Insurer instance (the ORIGINAL/source insurer, not
+                the copy) whose insurer_company_name, company and
+                special_night_holiday_tariff drive the extraction.
+
+        Raises:
+            ValueError: if the file extension is not a supported MIME
+                type.
+
+        ---
+
+        Envía el PDF de tarifa en file_path a Gemini Vision y devuelve
+        la extracción estructurada de la columna que corresponde a
+        insurer.insurer_company_name, usando el catálogo de conceptos de
+        insurer.company e insurer.special_night_holiday_tariff para dar
+        forma al prompt.
+
+        Args:
+            file_path: Ruta absoluta al archivo PDF en disco.
+            insurer: Instancia de Insurer (la ORIGEN, no la copia) cuyo
+                insurer_company_name, company y
+                special_night_holiday_tariff guían la extracción.
+
+        Raises:
+            ValueError: si la extensión del archivo no es un tipo MIME
+                soportado.
+        """
+        from budgets.models import TariffConcept
+        from django.db.models import Q as _Q
+
+        path = _pathlib_svc.Path(file_path)
+        mime_type = self._MIME_TYPES.get(path.suffix.lower())
+        if mime_type is None:
+            raise ValueError(
+                f"Extensión no soportada para extracción de tarifa: "
+                f"{path.suffix!r}. Tipos válidos: {sorted(self._MIME_TYPES)}."
+            )
+
+        insurer_company_name = insurer.insurer_company_name or insurer.name
+
+        concepts = TariffConcept.objects.filter(
+            _Q(is_system=True) | _Q(company=insurer.company)
+        ).order_by("sort_order", "label")
+        concept_catalog_text = _build_concept_catalog_text(concepts)
+
+        client = _get_gemini_client()
+        request_config = _get_request_config()
+
+        file_part = _genai_types.Part.from_bytes(
+            data=path.read_bytes(),
+            mime_type=mime_type,
+        )
+
+        prompt = _build_tariff_extraction_prompt(
+            insurer_company_name=insurer_company_name,
+            concept_catalog_text=concept_catalog_text,
+            full_night_holiday_table=bool(insurer.special_night_holiday_tariff),
+        )
+
+        generation_config = _genai_types.GenerateContentConfig(
+            http_options=request_config.http_options,
+            response_mime_type="application/json",
+            response_schema=TariffPdfExtraction,
+        )
+
+        _logger_tariff.info(
+            "# Enviando PDF de tarifa a Gemini Vision (modelo=%s, "
+            "archivo=%s, aseguradora=%r, modo_festivo_completo=%s).",
+            self._model, path.name, insurer_company_name,
+            insurer.special_night_holiday_tariff,
+        )
+
+        response = client.models.generate_content(
+            model=self._model,
+            contents=[file_part, prompt],
+            config=generation_config,
+        )
+
+        extraction = TariffPdfExtraction.model_validate_json(response.text)
+
+        _logger_tariff.info(
+            "# Extracción de tarifa completada: aseguradora_detectada=%r, "
+            "lineas_lab=%d, lineas_fest=%d, recargo_pct=%r.",
+            extraction.detected_insurer_name,
+            len(extraction.laborable_lines),
+            len(extraction.festivo_lines),
+            extraction.night_holiday_surcharge_percent,
+        )
+
+        return extraction
+
+
+def _parse_tariff_decimal(value: _Optional[str]) -> _Optional[_Decimal]:
+    """
+    Safely parses a numeric string from Gemini tariff extraction into a
+    Decimal. Returns None if value is missing or not parseable.
+    ---
+    Parsea de forma segura un texto numérico de la extracción de tarifa
+    de Gemini a Decimal. Devuelve None si el valor falta o no es parseable.
+    """
+    if not value:
+        return None
+    try:
+        return _Decimal(str(value).replace(",", "."))
+    except (_InvalidOperation, ValueError):
+        _logger_tariff.warning(
+            "# Valor numérico no parseable en extracción de tarifa: %r.",
+            value,
+        )
+        return None
+
+
 def calculate_budget(budget: Budget) -> list[BudgetLine]:
     """
     Core calculation engine. Receives a Budget instance with all input fields
@@ -1545,15 +2249,23 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
     )
 
     # Calculate is_night_or_holiday from is_night (operator) and
-    # is_holiday (automatic from labor_calendar + weekends).
+    # is_holiday (automatic from labor_calendar + weekends) — UNLESS the
+    # wizard's Manual mode set an explicit override, in which case that
+    # value is used as-is, with no calendar lookup at all.
     # Calcular is_night_or_holiday desde is_night (operario) e
-    # is_holiday (automatico desde labor_calendar + fines de semana).
-    is_holiday = (
-        _is_holiday(budget.service_date, budget.base)
-        if budget.service_date
-        else False
-    )
-    budget.is_night_or_holiday = budget.is_night or is_holiday
+    # is_holiday (automatico desde labor_calendar + fines de semana) —
+    # SALVO que el modo Manual del wizard haya fijado un override
+    # explícito, en cuyo caso se usa ese valor tal cual, sin ninguna
+    # consulta al calendario.
+    if budget.is_night_or_holiday_manual_override is not None:
+        budget.is_night_or_holiday = budget.is_night_or_holiday_manual_override
+    else:
+        is_holiday = (
+            _is_holiday(budget.service_date, budget.base)
+            if budget.service_date
+            else False
+        )
+        budget.is_night_or_holiday = budget.is_night or is_holiday
 
     # Force apply_iva if the insurer always requires IVA.
     # Forzar apply_iva si la aseguradora siempre requiere IVA.

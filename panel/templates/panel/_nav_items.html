@@ -1,4 +1,3 @@
-
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_nav_items.html #}
 {#                                                                                   #}
 {# Partial template: navigation items shared by the fixed sidebar and the           #}
@@ -37,9 +36,7 @@
 {#   "machine_history"    → Historial de Máquina             (WORKSHOP, ADMIN)      #}
 {#   "workorder_history" → Mis partes                        (WORKSHOP, WORKSHOPBOSS, ADMIN) #}
 {# ================================================================================ #}
-
 <ul class="nav flex-column mt-2" id="sidebar-accordion">
-
     {# ------------------------------------------------------------------ #}
     {# Ítem global: Inicio — visible para ADMIN, SUPERVISOR y WORKSHOPBOSS  #}
     {# Global item: Dashboard — visible to ADMIN, SUPERVISOR, WORKSHOPBOSS  #}
@@ -47,59 +44,56 @@
     {# Stays outside the accordion: always visible, never collapsed.        #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-    <li class="nav-item">
-        <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}"
-           href="{% url 'panel:dashboard' %}">
-            <i class="bi bi-speedometer2"></i>Inicio
-        </a>
-    </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}"
+               href="{% url 'panel:dashboard' %}">
+                <i class="bi bi-speedometer2"></i>Inicio
+            </a>
+        </li>
     {% endif %}
-
     {# ================================================================== #}
     {# ACORDEON PRINCIPAL DEL SIDEBAR                                      #}
     {# MAIN SIDEBAR ACCORDION                                              #}
     {# Cada sección es un bloque Bootstrap Collapse independiente.          #}
     {# Each section is an independent Bootstrap Collapse block.            #}
     {# ================================================================== #}
-
     {# ------------------------------------------------------------------ #}
     {# Sección: Mi perfil — todos los roles excepto ASSISTANCE            #}
     {# Section: My profile — all roles except ASSISTANCE                   #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role != 'ASSISTANCE' %}
-    <li class="nav-item sidebar-accordion-section">
-        <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#acc-mi-perfil"
-                aria-expanded="false"
-                aria-controls="acc-mi-perfil"
-                data-acc-id="acc-mi-perfil">
-            <i class="bi bi-person-circle"></i>
-            <span>Mi perfil</span>
-            <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-        </button>
-        <div class="collapse sidebar-accordion-body" id="acc-mi-perfil">
-            <ul class="nav flex-column ps-3">
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'own_profile' %}active{% endif %}"
-                       href="{% url 'panel:own_profile' %}">
-                        <i class="bi bi-person-circle"></i>Mi perfil
-                    </a>
-                </li>
-                {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'presence' %}active{% endif %}"
-                       href="{% url 'panel:presence_status' %}">
-                        <i class="bi bi-person-check"></i>Mi estado
-                    </a>
-                </li>
-                {% endif %}
-            </ul>
-        </div>
-    </li>
+        <li class="nav-item sidebar-accordion-section">
+            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#acc-mi-perfil"
+                    aria-expanded="false"
+                    aria-controls="acc-mi-perfil"
+                    data-acc-id="acc-mi-perfil">
+                <i class="bi bi-person-circle"></i>
+                <span>Mi perfil</span>
+                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
+            </button>
+            <div class="collapse sidebar-accordion-body" id="acc-mi-perfil">
+                <ul class="nav flex-column ps-3">
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'own_profile' %}active{% endif %}"
+                           href="{% url 'panel:own_profile' %}">
+                            <i class="bi bi-person-circle"></i>Mi perfil
+                        </a>
+                    </li>
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'presence' %}active{% endif %}"
+                               href="{% url 'panel:presence_status' %}">
+                                <i class="bi bi-person-check"></i>Mi estado
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </li>
     {% endif %}
-
     {# ------------------------------------------------------------------ #}
     {# Sección: Telefónía — solo ADMIN                                       #}
     {# Engloba IVR (voz) y WhatsApp (mensajería).                           #}
@@ -107,76 +101,74 @@
     {# Covers IVR (voice) and WhatsApp (messaging).                        #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' %}
-    <li class="nav-item sidebar-accordion-section">
-        <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#acc-telefonia"
-                aria-expanded="false"
-                aria-controls="acc-telefonia"
-                data-acc-id="acc-telefonia">
-            <i class="bi bi-telephone"></i>
-            <span>Telefónía</span>
-            <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-        </button>
-        <div class="collapse sidebar-accordion-body" id="acc-telefonia">
-            <ul class="nav flex-column ps-3">
-                {# IVR #}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
-                       href="{% url 'panel:callflow_list' %}">
-                        <i class="bi bi-gear-wide-connected"></i>Flujos IVR
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'phonenumbers' %}active{% endif %}"
-                       href="{% url 'panel:phonenumber_list' %}">
-                        <i class="bi bi-telephone-inbound"></i>Números de teléfono
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'voiceprofile' %}active{% endif %}"
-                       href="{% url 'panel:voiceprofile_detail' %}">
-                        <i class="bi bi-mic"></i>Perfil de voz
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'blockedcallers' %}active{% endif %}"
-                       href="{% url 'panel:blockedcaller_list' %}">
-                        <i class="bi bi-slash-circle"></i>Bloqueados
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
-                       href="{% url 'panel:datacaptureset_list' %}">
-                        <i class="bi bi-ui-checks"></i>Conjuntos de captura
-                    </a>
-                </li>
-                {# WhatsApp #}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'whatsapp_templates' %}active{% endif %}"
-                       href="{% url 'panel:whatsapp_template_list' %}">
-                        <i class="bi bi-whatsapp"></i>Plantillas WA
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'whatsapp_sessions' %}active{% endif %}"
-                       href="{% url 'panel:whatsapp_active_sessions' %}">
-                        <i class="bi bi-chat-dots"></i>Sesiones activas WA
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'bot_management' %}active{% endif %}"
-                       href="{% url 'analytics:bot_management' %}">
-                        <i class="bi bi-robot"></i>Gestión del bot
-                    </a>
-                </li>
-            </ul>
-        </div>
-    </li>
-
+        <li class="nav-item sidebar-accordion-section">
+            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#acc-telefonia"
+                    aria-expanded="false"
+                    aria-controls="acc-telefonia"
+                    data-acc-id="acc-telefonia">
+                <i class="bi bi-telephone"></i>
+                <span>Telefónía</span>
+                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
+            </button>
+            <div class="collapse sidebar-accordion-body" id="acc-telefonia">
+                <ul class="nav flex-column ps-3">
+                    {# IVR #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
+                           href="{% url 'panel:callflow_list' %}">
+                            <i class="bi bi-gear-wide-connected"></i>Flujos IVR
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'phonenumbers' %}active{% endif %}"
+                           href="{% url 'panel:phonenumber_list' %}">
+                            <i class="bi bi-telephone-inbound"></i>Números de teléfono
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'voiceprofile' %}active{% endif %}"
+                           href="{% url 'panel:voiceprofile_detail' %}">
+                            <i class="bi bi-mic"></i>Perfil de voz
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'blockedcallers' %}active{% endif %}"
+                           href="{% url 'panel:blockedcaller_list' %}">
+                            <i class="bi bi-slash-circle"></i>Bloqueados
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
+                           href="{% url 'panel:datacaptureset_list' %}">
+                            <i class="bi bi-ui-checks"></i>Conjuntos de captura
+                        </a>
+                    </li>
+                    {# WhatsApp #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'whatsapp_templates' %}active{% endif %}"
+                           href="{% url 'panel:whatsapp_template_list' %}">
+                            <i class="bi bi-whatsapp"></i>Plantillas WA
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'whatsapp_sessions' %}active{% endif %}"
+                           href="{% url 'panel:whatsapp_active_sessions' %}">
+                            <i class="bi bi-chat-dots"></i>Sesiones activas WA
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'bot_management' %}active{% endif %}"
+                           href="{% url 'analytics:bot_management' %}">
+                            <i class="bi bi-robot"></i>Gestión del bot
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </li>
     {% endif %}
-
     {# ------------------------------------------------------------------ #}
     {# Sección: Administración — ADMIN, SUPERVISOR y WORKSHOPBOSS          #}
     {# Incluye: PDFs, Centros de gasto, Usuarios, Contactos, Secciones,    #}
@@ -185,307 +177,312 @@
     {# Section: Administration — ADMIN, SUPERVISOR and WORKSHOPBOSS        #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-    <li class="nav-item sidebar-accordion-section">
-        <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#acc-administracion"
-                aria-expanded="false"
-                aria-controls="acc-administracion"
-                data-acc-id="acc-administracion">
-            <i class="bi bi-grid"></i>
-            <span>Administración</span>
-            <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-        </button>
-        <div class="collapse sidebar-accordion-body" id="acc-administracion">
-            <ul class="nav flex-column ps-3">
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
-                       href="{% url 'panel:work_order_list' %}">
-                        <i class="bi bi-file-earmark-pdf"></i>PDFs
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'fleet' %}active{% endif %}"
-                       href="{% url 'panel:fleet_list' %}">
-                        <i class="bi bi-truck"></i>Centros de gasto
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
-                       href="{% url 'panel:user_list' %}">
-                        <i class="bi bi-people"></i>Usuarios
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'contacts' %}active{% endif %}"
-                       href="{% url 'panel:contact_list' %}">
-                        <i class="bi bi-person-lines-fill"></i>Contactos
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'sections' %}active{% endif %}"
-                       href="{% url 'panel:section_list' %}">
-                        <i class="bi bi-diagram-3"></i>Secciones
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'workday_schedule' %}active{% endif %}"
-                       href="{% url 'panel:workday_schedule' %}">
-                        <i class="bi bi-calendar-week"></i>Horarios de jornada
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'absence_categories' %}active{% endif %}"
-                       href="{% url 'panel:absence_category_list' %}">
-                        <i class="bi bi-journal-x"></i>Categorías de ausencia
-                    </a>
-                </li>
-                {# Configuración empresa — solo ADMIN / Company settings — ADMIN only #}
-                {% if company_user.role == 'ADMIN' %}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'company_settings' %}active{% endif %}"
-                       href="{% url 'panel:company_settings' %}">
-                        <i class="bi bi-gear"></i>Configuración empresa
-                    </a>
-                </li>
-                {% endif %}
-            </ul>
-        </div>
-    </li>
+        <li class="nav-item sidebar-accordion-section">
+            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#acc-administracion"
+                    aria-expanded="false"
+                    aria-controls="acc-administracion"
+                    data-acc-id="acc-administracion">
+                <i class="bi bi-grid"></i>
+                <span>Administración</span>
+                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
+            </button>
+            <div class="collapse sidebar-accordion-body" id="acc-administracion">
+                <ul class="nav flex-column ps-3">
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
+                           href="{% url 'panel:work_order_list' %}">
+                            <i class="bi bi-file-earmark-pdf"></i>PDFs
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'fleet' %}active{% endif %}"
+                           href="{% url 'panel:fleet_list' %}">
+                            <i class="bi bi-truck"></i>Centros de gasto
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
+                           href="{% url 'panel:user_list' %}">
+                            <i class="bi bi-people"></i>Usuarios
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'contacts' %}active{% endif %}"
+                           href="{% url 'panel:contact_list' %}">
+                            <i class="bi bi-person-lines-fill"></i>Contactos
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'sections' %}active{% endif %}"
+                           href="{% url 'panel:section_list' %}">
+                            <i class="bi bi-diagram-3"></i>Secciones
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'workday_schedule' %}active{% endif %}"
+                           href="{% url 'panel:workday_schedule' %}">
+                            <i class="bi bi-calendar-week"></i>Horarios de jornada
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'absence_categories' %}active{% endif %}"
+                           href="{% url 'panel:absence_category_list' %}">
+                            <i class="bi bi-journal-x"></i>Categorías de ausencia
+                        </a>
+                    </li>
+                    {# Configuración empresa — solo ADMIN / Company settings — ADMIN only #}
+                    {% if company_user.role == 'ADMIN' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'company_settings' %}active{% endif %}"
+                               href="{% url 'panel:company_settings' %}">
+                                <i class="bi bi-gear"></i>Configuración empresa
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </li>
     {% endif %}
-
     {# ------------------------------------------------------------------ #}
     {# Sección: Analítica — solo ADMIN                                       #}
     {# Hito 20 — Laboratorio de Análisis Unificado (S048)                   #}
     {# Section: Analytics — ADMIN only                                      #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' %}
-    <li class="nav-item sidebar-accordion-section">
-        <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#acc-analitica"
-                aria-expanded="false"
-                aria-controls="acc-analitica"
-                data-acc-id="acc-analitica">
-            <i class="bi bi-bar-chart"></i>
-            <span>Analítica</span>
-            <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-        </button>
-        <div class="collapse sidebar-accordion-body" id="acc-analitica">
-            <ul class="nav flex-column ps-3">
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'analytics_lab' %}active{% endif %}"
-                       href="{% url 'analytics:analytics_lab' %}">
-                        <i class="bi bi-flask"></i>Laboratorio de Análisis
-                    </a>
-                </li>
-            </ul>
-        </div>
-    </li>
+        <li class="nav-item sidebar-accordion-section">
+            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#acc-analitica"
+                    aria-expanded="false"
+                    aria-controls="acc-analitica"
+                    data-acc-id="acc-analitica">
+                <i class="bi bi-bar-chart"></i>
+                <span>Analítica</span>
+                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
+            </button>
+            <div class="collapse sidebar-accordion-body" id="acc-analitica">
+                <ul class="nav flex-column ps-3">
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'analytics_lab' %}active{% endif %}"
+                           href="{% url 'analytics:analytics_lab' %}">
+                            <i class="bi bi-flask"></i>Laboratorio de Análisis
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </li>
     {% endif %}
-
     {# ------------------------------------------------------------------ #}
     {# Sección: Operarios — todos los roles excepto ASSISTANCE             #}
     {# Incluye: Nuevo parte, Historial, Partes digitales                   #}
     {# Section: Operators — all roles except ASSISTANCE                    #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role != 'ASSISTANCE' %}
-    <li class="nav-item sidebar-accordion-section">
-        <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#acc-operarios"
-                aria-expanded="false"
-                aria-controls="acc-operarios"
-                data-acc-id="acc-operarios">
-            <i class="bi bi-tools"></i>
-            <span>Operarios</span>
-            <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-        </button>
-        <div class="collapse sidebar-accordion-body" id="acc-operarios">
-            <ul class="nav flex-column ps-3">
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
-                       href="{% url 'panel:operator_dashboard' %}">
-                        <i class="bi bi-tools"></i>Nuevo parte
-                    </a>
-                </li>
-                {# Historial de partes del operario — solo WORKSHOP y WORKSHOPBOSS.    #}
-                {# Operator work-order history — WORKSHOP and WORKSHOPBOSS only.        #}
-                {% if company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'operator_history' %}active{% endif %}"
-                       href="{% url 'panel:operator_history' %}">
-                        <i class="bi bi-clock-history"></i>Historial
-                    </a>
-                </li>
-                {% endif %}
-                {# Historial de maquina — WORKSHOP y ADMIN (Hito 22)                  #}
-                {# Machine history viewer — WORKSHOP and ADMIN (Hito 22)               #}
-                {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'machine_history' %}active{% endif %}"
-                       href="{% url 'history:machine_history' %}">
-                        <i class="bi bi-truck"></i>Historial de Máquina
-                    </a>
-                </li>
-                {% endif %}
-                {# Mis partes — WORKSHOP, WORKSHOPBOSS y ADMIN (Hito 22 / S056)        #}
-                {# My work orders — WORKSHOP, WORKSHOPBOSS and ADMIN (Hito 22 / S056)  #}
-                {% if company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'ADMIN' %}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'workorder_history' %}active{% endif %}"
-                       href="{% url 'history:workorder_history_list' %}">
-                        <i class="bi bi-file-earmark-text"></i>Mis partes
-                    </a>
-                </li>
-                {% endif %}
-                {# Historial de administración — ADMIN y SUPERVISOR únicamente          #}
-                {# Admin work-order history — ADMIN and SUPERVISOR only                 #}
-                {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
-                       href="{% url 'panel:work_order_admin_history' %}">
-                        <i class="bi bi-clock-history"></i>Historial
-                    </a>
-                </li>
-                {% endif %}
-                {# Partes digitales eliminado del sidebar — accesible solo via URL directa si procede. #}
-                {# Digital work orders removed from sidebar — accessible via direct URL if needed.    #}
-            </ul>
-        </div>
-    </li>
+        <li class="nav-item sidebar-accordion-section">
+            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#acc-operarios"
+                    aria-expanded="false"
+                    aria-controls="acc-operarios"
+                    data-acc-id="acc-operarios">
+                <i class="bi bi-tools"></i>
+                <span>Operarios</span>
+                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
+            </button>
+            <div class="collapse sidebar-accordion-body" id="acc-operarios">
+                <ul class="nav flex-column ps-3">
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
+                           href="{% url 'panel:operator_dashboard' %}">
+                            <i class="bi bi-tools"></i>Nuevo parte
+                        </a>
+                    </li>
+                    {# Historial de partes del operario — solo WORKSHOP y WORKSHOPBOSS.    #}
+                    {# Operator work-order history — WORKSHOP and WORKSHOPBOSS only.        #}
+                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'operator_history' %}active{% endif %}"
+                               href="{% url 'panel:operator_history' %}">
+                                <i class="bi bi-clock-history"></i>Historial
+                            </a>
+                        </li>
+                    {% endif %}
+                    {# Historial de maquina — WORKSHOP y ADMIN (Hito 22)                  #}
+                    {# Machine history viewer — WORKSHOP and ADMIN (Hito 22)               #}
+                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'machine_history' %}active{% endif %}"
+                               href="{% url 'history:machine_history' %}">
+                                <i class="bi bi-truck"></i>Historial de Máquina
+                            </a>
+                        </li>
+                    {% endif %}
+                    {# Mis partes — WORKSHOP, WORKSHOPBOSS y ADMIN (Hito 22 / S056)        #}
+                    {# My work orders — WORKSHOP, WORKSHOPBOSS and ADMIN (Hito 22 / S056)  #}
+                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'ADMIN' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'workorder_history' %}active{% endif %}"
+                               href="{% url 'history:workorder_history_list' %}">
+                                <i class="bi bi-file-earmark-text"></i>Mis partes
+                            </a>
+                        </li>
+                    {% endif %}
+                    {# Historial de administración — ADMIN y SUPERVISOR únicamente          #}
+                    {# Admin work-order history — ADMIN and SUPERVISOR only                 #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
+                               href="{% url 'panel:work_order_admin_history' %}">
+                                <i class="bi bi-clock-history"></i>Historial
+                            </a>
+                        </li>
+                    {% endif %}
+                    {# Partes digitales eliminado del sidebar — accesible solo via URL directa si procede. #}
+                    {# Digital work orders removed from sidebar — accessible via direct URL if needed.    #}
+                </ul>
+            </div>
+        </li>
     {% endif %}
-
     {# ------------------------------------------------------------------ #}
     {# Sección: Tickets de Avería — ADMIN, SUPERVISOR, WORKSHOPBOSS        #}
     {# Section: Breakdown Tickets — ADMIN, SUPERVISOR, WORKSHOPBOSS        #}
     {# Hito 13                                                             #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-    <li class="nav-item sidebar-accordion-section">
-        <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#acc-tickets"
-                aria-expanded="false"
-                aria-controls="acc-tickets"
-                data-acc-id="acc-tickets">
-            <i class="bi bi-exclamation-triangle"></i>
-            <span>Tickets de Avería</span>
-            <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-        </button>
-        <div class="collapse sidebar-accordion-body" id="acc-tickets">
-            <ul class="nav flex-column ps-3">
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
-                       href="{% url 'panel:breakdown_ticket_list' %}">
-                        <i class="bi bi-exclamation-triangle"></i>Tickets de avería
-                    </a>
-                </li>
-            </ul>
-        </div>
-    </li>
+        <li class="nav-item sidebar-accordion-section">
+            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#acc-tickets"
+                    aria-expanded="false"
+                    aria-controls="acc-tickets"
+                    data-acc-id="acc-tickets">
+                <i class="bi bi-exclamation-triangle"></i>
+                <span>Tickets de Avería</span>
+                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
+            </button>
+            <div class="collapse sidebar-accordion-body" id="acc-tickets">
+                <ul class="nav flex-column ps-3">
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
+                           href="{% url 'panel:breakdown_ticket_list' %}">
+                            <i class="bi bi-exclamation-triangle"></i>Tickets de avería
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </li>
     {% endif %}
-
     {# ------------------------------------------------------------------ #}
     {# Sección: Asistencia — rol ASSISTANCE y ADMIN                         #}
     {# Section: ASISTENCIA Budgets — ASSISTANCE and ADMIN roles            #}
     {# Hito 16 (2026-05-26)                                               #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ADMIN' %}
-    <li class="nav-item sidebar-accordion-section">
-        <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#acc-asistencia"
-                aria-expanded="false"
-                aria-controls="acc-asistencia"
-                data-acc-id="acc-asistencia">
-            <i class="bi bi-truck-flatbed"></i>
-            <span>Asistencia</span>
-            <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-        </button>
-        <div class="collapse sidebar-accordion-body" id="acc-asistencia">
-            <ul class="nav flex-column ps-3">
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
-                       href="{% url 'budgets:wizard' %}">
-                        <i class="bi bi-calculator"></i>Nuevo presupuesto
-                    </a>
-                </li>
-                {# Historial — solo ADMIN / History — ADMIN only #}
-                {% if company_user.role == 'ADMIN' %}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'budgets_history' %}active{% endif %}"
-                       href="{% url 'budgets:history' %}">
-                        <i class="bi bi-clock-history"></i>Historial presupuestos
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'budgets_insurers' %}active{% endif %}"
-                       href="{% url 'budgets:insurer_list' %}">
-                        <i class="bi bi-building"></i>Aseguradoras
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'budgets_bases' %}active{% endif %}"
-                       href="{% url 'budgets:base_global' %}">
-                        <i class="bi bi-geo-alt-fill"></i>Bases
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'budgets_concepts' %}active{% endif %}"
-                       href="{% url 'budgets:tariff_concept_list' %}">
-                        <i class="bi bi-tag-fill"></i>Conceptos de tarifa
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'budgets_calendars' %}active{% endif %}"
-                       href="{% url 'budgets:base_calendar_list' %}">
-                        <i class="bi bi-calendar3"></i>Calendarios laborales
-                    </a>
-                </li>
-                {% endif %}
-                {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
-                {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'albaran_demo' %}active{% endif %}"
-                       href="{% url 'budgets:albaran_demo' %}">
-                        <i class="bi bi-file-earmark-text"></i>Albarán (demo)
-                    </a>
-                </li>
-                {% if company_user.role == 'ADMIN' %}
-                {# Peajes — gestion de tramos de peaje MITMA. Solo ADMIN.                 #}
-                {# Toll segments — MITMA toll segment management. ADMIN only.             #}
-                <li class="nav-item">
-                    <a class="nav-link {% if active_nav == 'budgets_toll_segments' %}active{% endif %}"
-                       href="{% url 'budgets:toll_segment_list' %}">
-                        <i class="bi bi-signpost-split"></i>Peajes
-                    </a>
-                </li>
-                {% endif %}
-            </ul>
-        </div>
-    </li>
+        <li class="nav-item sidebar-accordion-section">
+            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#acc-asistencia"
+                    aria-expanded="false"
+                    aria-controls="acc-asistencia"
+                    data-acc-id="acc-asistencia">
+                <i class="bi bi-truck-flatbed"></i>
+                <span>Asistencia</span>
+                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
+            </button>
+            <div class="collapse sidebar-accordion-body" id="acc-asistencia">
+                <ul class="nav flex-column ps-3">
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
+                           href="{% url 'budgets:wizard' %}">
+                            <i class="bi bi-calculator"></i>Nuevo presupuesto
+                        </a>
+                    </li>
+                    {# Historial — ADMIN, o ASSISTANCE con el flag por usuario  #}
+                    {# can_view_budget_breakdown (usuarios especiales de       #}
+                    {# auditoría, ej. juan.vazquez).                           #}
+                    {# History — ADMIN, or ASSISTANCE with the per-user flag   #}
+                    {# can_view_budget_breakdown (special audit users, e.g.    #}
+                    {# juan.vazquez).                                          #}
+                    {% if company_user.role == 'ADMIN' or company_user.can_view_budget_breakdown %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_history' %}active{% endif %}"
+                               href="{% url 'budgets:history' %}">
+                                <i class="bi bi-clock-history"></i>Historial presupuestos
+                            </a>
+                        </li>
+                    {% endif %}
+                    {# Aseguradoras / Bases / Conceptos / Calendarios — solo ADMIN. #}
+                    {# Insurers / Bases / Concepts / Calendars — ADMIN only.       #}
+                    {% if company_user.role == 'ADMIN' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_insurers' %}active{% endif %}"
+                               href="{% url 'budgets:insurer_list' %}">
+                                <i class="bi bi-building"></i>Aseguradoras
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_bases' %}active{% endif %}"
+                               href="{% url 'budgets:base_global' %}">
+                                <i class="bi bi-geo-alt-fill"></i>Bases
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_concepts' %}active{% endif %}"
+                               href="{% url 'budgets:tariff_concept_list' %}">
+                                <i class="bi bi-tag-fill"></i>Conceptos de tarifa
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_calendars' %}active{% endif %}"
+                               href="{% url 'budgets:base_calendar_list' %}">
+                                <i class="bi bi-calendar3"></i>Calendarios laborales
+                            </a>
+                        </li>
+                    {% endif %}
+                    {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
+                    {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'albaran_demo' %}active{% endif %}"
+                           href="{% url 'budgets:albaran_demo' %}">
+                            <i class="bi bi-file-earmark-text"></i>Albarán (demo)
+                        </a>
+                    </li>
+                    {% if company_user.role == 'ADMIN' %}
+                        {# Peajes — gestion de tramos de peaje MITMA. Solo ADMIN.                 #}
+                        {# Toll segments — MITMA toll segment management. ADMIN only.             #}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_toll_segments' %}active{% endif %}"
+                               href="{% url 'budgets:toll_segment_list' %}">
+                                <i class="bi bi-signpost-split"></i>Peajes
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </li>
     {% endif %}
-
     {# ------------------------------------------------------------------ #}
     {# Enlace al admin de Django — exclusivo para alvarez_admin            #}
     {# Django admin link — alvarez_admin only                              #}
     {# ------------------------------------------------------------------ #}
     {% if request.user.username == 'alvarez_admin' %}
-    <li class="nav-item mt-2">
-        <a class="nav-link" href="/admin/" target="_blank" rel="noopener noreferrer">
-            <i class="bi bi-shield-lock"></i>Django Admin
-        </a>
-    </li>
+        <li class="nav-item mt-2">
+            <a class="nav-link"
+               href="/admin/"
+               target="_blank"
+               rel="noopener noreferrer">
+                <i class="bi bi-shield-lock"></i>Django Admin
+            </a>
+        </li>
     {% endif %}
-
 </ul>
-
 {# ================================================================== #}
 {# JS: Acordeón sidebar — persistencia via sessionStorage              #}
 {# Abre automáticamente la sección activa al cargar la página.            #}
@@ -620,5 +617,3 @@
     );
 }());
 </script>
-
-
