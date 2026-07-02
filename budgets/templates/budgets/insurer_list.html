@@ -1,6 +1,4 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/insurer_list.html #}
-{#                                                                                        #}
-{# Insurer list view for ADMIN role.                                                      #}
 {# Displays all insurers for the company with search, status filter and CRUD actions.     #}
 {# HTMX live search + toggle active/inactive badge.                                       #}
 {#                                                                                        #}
@@ -142,6 +140,39 @@ document.addEventListener("DOMContentLoaded", function () {
         },
     ]);
     window.EbTour.startIfNew("insurer_list");
+
+    // Wire the insurer-delete confirmation modal via event delegation on
+    // document.body. #insurer-table-wrapper (and the modal markup inside
+    // it) gets replaced by HTMX on every search/filter, so a listener
+    // bound directly to #deleteModal or to DOMContentLoaded would only
+    // work on the very first render. document.body is never replaced by
+    // the HTMX swap, so this delegated listener keeps working no matter
+    // how many times the fragment reloads.
+    // ---
+    // Conecta el modal de confirmacion de borrado de aseguradora mediante
+    // delegacion de eventos sobre document.body. #insurer-table-wrapper
+    // (y el modal que contiene) se sustituye via HTMX en cada busqueda o
+    // filtro, asi que un listener enganchado directamente a #deleteModal
+    // o a DOMContentLoaded solo funcionaria en el primer render.
+    // document.body nunca es sustituido por el swap de HTMX, por lo que
+    // este listener delegado sigue funcionando sin importar cuantas veces
+    // se recargue el fragmento.
+    document.body.addEventListener("show.bs.modal", function (event) {
+        if (event.target.id !== "deleteModal") {
+            return;
+        }
+        var btn = event.relatedTarget;
+        var pk = btn.getAttribute("data-insurer-pk");
+        var name = btn.getAttribute("data-insurer-name");
+        var nameEl = document.getElementById("delete-insurer-name");
+        if (nameEl) {
+            nameEl.textContent = name;
+        }
+        var form = document.getElementById("delete-insurer-form");
+        if (form) {
+            form.action = "/panel/budgets/insurers/" + pk + "/delete/";
+        }
+    });
 });
 </script>
 {% endblock extra_scripts %}

@@ -138,20 +138,9 @@
   </div>
 </div>
 
-<script>
-  // Wire delete modal with the correct insurer pk and name on show.
-  // Conectar el modal de eliminacion con el pk y nombre correctos al mostrarse.
-  document.addEventListener('DOMContentLoaded', function () {
-    var deleteModal = document.getElementById('deleteModal');
-    if (deleteModal) {
-      deleteModal.addEventListener('show.bs.modal', function (event) {
-        var btn = event.relatedTarget;
-        var pk   = btn.getAttribute('data-insurer-pk');
-        var name = btn.getAttribute('data-insurer-name');
-        document.getElementById('delete-insurer-name').textContent = name;
-        var form = document.getElementById('delete-insurer-form');
-        form.action = '/panel/budgets/insurers/' + pk + '/delete/';
-      });
-    }
-  });
-</script>
+{# Modal wiring (show.bs.modal listener) lives in insurer_list.html now — #}
+{# delegated on document.body so it survives every HTMX reload of this   #}
+{# fragment (search, status filter).                                    #}
+{# El enganche del modal (listener show.bs.modal) vive ahora en          #}
+{# insurer_list.html — delegado sobre document.body para que sobreviva   #}
+{# a cada recarga HTMX de este fragmento (busqueda, filtro de estado).   #}

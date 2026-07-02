@@ -1,5 +1,4 @@
-{# _schedule_fields_fragment.html #}
-{# HTMX partial — rendered by WorkshopIntensiveToggleView after persisting  #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/_schedule_fields_fragment.html #}
 {# is_intensive_override. Replaces #schedule-dependent-fields in-place via  #}
 {# outerHTML swap — this wrapper div IS the target element.                 #}
 {# Partial HTMX — renderizado por WorkshopIntensiveToggleView tras persistir #}
@@ -29,7 +28,7 @@
             {# Jornada partida: checkbox "sin pausa" (pausa activa por defecto). #}
             <div class="form-check mb-3" id="no-lunch-check-wrapper">
                 <input class="form-check-input" type="checkbox"
-                       id="id_no_lunch_toggle">
+                       id="id_no_lunch_toggle"{% if no_lunch_break %} checked{% endif %}>
                 <input type="hidden" id="id_no_lunch_break_value"
                        name="no_lunch_break" value="0">
                 <label class="form-check-label fw-medium" for="id_no_lunch_toggle">
@@ -48,7 +47,7 @@
             {# defecto). Permite registrar una avería de tarde en intensiva.     #}
             <div class="form-check mb-3" id="had-lunch-check-wrapper">
                 <input class="form-check-input" type="checkbox"
-                       id="id_had_lunch_toggle">
+                       id="id_had_lunch_toggle"{% if lunch_break_start %} checked{% endif %}>
                 <input type="hidden" id="id_no_lunch_break_value"
                        name="no_lunch_break" value="1">
                 <label class="form-check-label fw-medium" for="id_had_lunch_toggle">
@@ -223,3 +222,4 @@
     {% endif %}
 
 </div>
+

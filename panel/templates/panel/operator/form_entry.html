@@ -1,4 +1,3 @@
-
 <!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/form_entry.html -->
 <!--                                                                                             -->
 <!-- Work-order structured form — Via A entry path (Paso 7, Hito 7, 2026-04-30).               -->
@@ -501,7 +500,6 @@ window.EB_CONFIG = {
     descriptionsUrl:    "{% url 'panel:operator_descriptions' %}",
     lunchBreakStart:    "{{ lunch_break_start }}",
     lunchBreakEnd:      "{{ lunch_break_end }}",
-    noLunchBreak:       false,
     endTimeMorning:     "{{ end_time_morning }}",
     endTimeAfternoon:   "{{ end_time_afternoon }}",
     startTimeAfternoon: "{{ start_time_afternoon }}",
@@ -653,6 +651,7 @@ window.EB_CONFIG = {
 {# Time Picker Widget #}
 {% include "panel/_time_picker_widget.html" %}
 {% endblock %}
+
 
 
 

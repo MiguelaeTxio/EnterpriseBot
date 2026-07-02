@@ -2965,8 +2965,12 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
     SpecialRateTariff and SpecialRateLine records) from a source insurer
     to an existing target insurer. The target insurer's current active tariff
     is closed (valid_to = today - 1 day) before the new one is created.
-    The target insurer's own VehicleType catalogue is rebuilt from the source's
-    catalogue; existing VehicleType records for the target are deleted first.
+    The target insurer's own VehicleType catalogue is merged with the
+    source's catalogue by exact (trimmed) name: matching names are reused
+    in place (sort_order/is_active updated); target names absent from the
+    source are deactivated, never deleted. No VehicleType row is ever
+    deleted by this view, so no protected relation (budgets,
+    special_rate_lines, work_orders_assistance) can ever block the copy.
     Existing Budget records for the target insurer are not touched.
     Redirects to the target insurer detail view on success.
     ---
@@ -2974,8 +2978,13 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
     VehicleType, SpecialRateTariff y SpecialRateLine) de una aseguradora origen
     a una aseguradora destino existente. La tarifa activa actual de la destino
     se cierra (valid_to = hoy - 1 dia) antes de crear la nueva.
-    El catalogo VehicleType de la destino se reconstruye desde el de la origen;
-    los registros VehicleType existentes de la destino se eliminan primero.
+    El catalogo VehicleType de la destino se fusiona con el de la origen por
+    nombre exacto (recortado): los nombres coincidentes se reutilizan en
+    sitio (se actualiza sort_order/is_active); los nombres de la destino
+    ausentes en la origen se desactivan, nunca se borran. Esta vista jamas
+    borra ninguna fila VehicleType, por lo que ninguna relacion protegida
+    (budgets, special_rate_lines, work_orders_assistance) puede bloquear
+    la copia.
     Los registros Budget de la aseguradora destino no se modifican.
     Redirige a la vista de detalle de la aseguradora destino en exito.
     """
@@ -3050,32 +3059,68 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
                 valid_to__isnull=True,
             ).update(valid_to=today - _dt.timedelta(days=1))
 
-            # Rebuild VehicleType catalogue for target from source.
-            # Only delete VehicleType records not referenced by any Budget
-            # (PROTECT would block otherwise). Budgets keep their VehicleType FK
-            # intact; only orphaned (non-budgeted) VehicleType records are removed.
-            # Reconstruir el catalogo VehicleType de la destino desde la origen.
-            # Solo elimina los VehicleType no referenciados por ningun Budget
-            # (el PROTECT lo bloquearia). Los Budget conservan su FK VehicleType
-            # intacta; solo se eliminan los VehicleType sin presupuestos.
-            for old_vt in VehicleType.objects.filter(insurer=target):
-                if not old_vt.budgets.exists():
-                    old_vt.delete()
+            # Merge VehicleType catalogue for target from source, matched
+            # by exact (trimmed) name. Matching names are reused in place
+            # (sort_order/is_active updated) — no row is ever deleted, so
+            # no protected relation (budgets, special_rate_lines,
+            # work_orders_assistance) can ever block this operation.
+            # Target VehicleType names absent from the source (e.g. a
+            # renamed concept) are deactivated, never deleted, and
+            # reported in the success message for manual review.
+            # ---
+            # Fusiona el catalogo VehicleType de la destino con la origen,
+            # emparejando por nombre exacto (recortado). Los nombres
+            # coincidentes se reutilizan en sitio (se actualiza
+            # sort_order/is_active) — nunca se borra ninguna fila, por lo
+            # que ninguna relacion protegida (budgets, special_rate_lines,
+            # work_orders_assistance) puede bloquear esta operacion.
+            # Los VehicleType de la destino cuyo nombre no aparece en la
+            # origen (p.ej. un concepto renombrado) se desactivan, nunca
+            # se borran, y se informan en el mensaje de exito para
+            # revision manual.
+            source_types = list(
+                source.vehicle_types.order_by("sort_order", "name")
+            )
+            source_names = {vt.name.strip() for vt in source_types}
 
-            # Build VehicleType map: source_vt_pk -> new target VehicleType.
-            # Construir mapa VehicleType: source_vt_pk -> nuevo VehicleType destino.
+            target_types_by_name = {
+                vt.name.strip(): vt
+                for vt in VehicleType.objects.filter(insurer=target)
+            }
+
+            # Build VehicleType map: source_vt_pk -> target VehicleType
+            # (reused if the name matches, created new otherwise).
+            # Construir mapa VehicleType: source_vt_pk -> VehicleType
+            # destino (reutilizado si el nombre coincide, creado nuevo
+            # en caso contrario).
             vt_map = {}
-            for vt in (
-                source.vehicle_types
-                .order_by("sort_order", "name")
-            ):
-                new_vt = VehicleType.objects.create(
-                    insurer=target,
-                    name=vt.name,
-                    sort_order=vt.sort_order,
-                    is_active=vt.is_active,
-                )
-                vt_map[vt.pk] = new_vt
+            for vt in source_types:
+                key = vt.name.strip()
+                existing = target_types_by_name.get(key)
+                if existing is not None:
+                    existing.sort_order = vt.sort_order
+                    existing.is_active = vt.is_active
+                    existing.save(update_fields=["sort_order", "is_active"])
+                    vt_map[vt.pk] = existing
+                else:
+                    new_vt = VehicleType.objects.create(
+                        insurer=target,
+                        name=vt.name,
+                        sort_order=vt.sort_order,
+                        is_active=vt.is_active,
+                    )
+                    vt_map[vt.pk] = new_vt
+
+            # Deactivate target VehicleType names not present in the
+            # source — never delete.
+            # Desactivar los nombres VehicleType de la destino ausentes
+            # en la origen — nunca borrar.
+            deactivated_names = []
+            for name, vt in target_types_by_name.items():
+                if name not in source_names and vt.is_active:
+                    vt.is_active = False
+                    vt.save(update_fields=["is_active"])
+                    deactivated_names.append(vt.name)
 
             # Clone the active tariff to target.
             # Clonar la tarifa activa a la destino.
@@ -3132,10 +3177,21 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
                         price=sline.price,
                     )
 
-        messages.success(
-            request,
-            f"Tarifa de '{source.name}' copiada correctamente a '{target.name}'.",
-        )
+        if deactivated_names:
+            names_str = ", ".join(sorted(deactivated_names))
+            messages.success(
+                request,
+                f"Tarifa de '{source.name}' copiada correctamente a "
+                f"'{target.name}'. Se han desactivado "
+                f"{len(deactivated_names)} tipo(s) de vehículo no "
+                f"presentes en la tarifa origen: {names_str}."
+            )
+        else:
+            messages.success(
+                request,
+                f"Tarifa de '{source.name}' copiada correctamente a "
+                f"'{target.name}'.",
+            )
         return redirect("budgets:insurer_detail", pk=target.pk)
 
 
@@ -3814,20 +3870,30 @@ class VehicleTypeToggleView(AdminRoleRequiredMixin, View):
 
 class VehicleTypeDeleteView(AdminRoleRequiredMixin, View):
     """
-    Deletes a VehicleType via HTMX POST with modal confirmation.
-    Rejects deletion if the vehicle type has associated tariff lines or budgets.
+    Deactivates a VehicleType via HTMX POST with modal confirmation.
+    "Delete" no longer performs a real database deletion — it sets
+    is_active=False. The record, and every reference to it (TariffLine,
+    Budget, SpecialRateLine, WorkOrderAssistance), remains intact; the
+    vehicle type simply disappears from operative dropdowns and listings.
     Returns empty 200 response for HTMX row removal.
     ---
-    Elimina un VehicleType via HTMX POST con confirmación modal.
-    Rechaza la eliminación si tiene líneas de tarifa o presupuestos asociados.
+    Desactiva un VehicleType via HTMX POST con confirmación modal.
+    "Eliminar" ya no realiza un borrado real en base de datos — establece
+    is_active=False. El registro, y toda referencia a él (TariffLine,
+    Budget, SpecialRateLine, WorkOrderAssistance), permanece intacto; el
+    tipo de vehículo simplemente desaparece de los desplegables operativos
+    y del listado.
     Devuelve respuesta 200 vacía para eliminación HTMX de la fila.
     """
 
     def post(self, request, pk):
         """
-        Delete VehicleType if safe. Return empty response or error.
+        Deactivate VehicleType. Always safe — no referential integrity
+        check is needed, since no row is ever deleted.
         ---
-        Elimina VehicleType si es seguro. Devuelve respuesta vacía o error.
+        Desactiva VehicleType. Siempre seguro — no requiere ninguna
+        comprobación de integridad referencial, ya que ninguna fila se
+        borra jamás.
         """
         from django.http import HttpResponse
         company_user = _get_company_user(request)
@@ -3836,16 +3902,8 @@ class VehicleTypeDeleteView(AdminRoleRequiredMixin, View):
             pk=pk,
             insurer__company=company_user.company,
         )
-        if vt.tariff_lines.exists():
-            return HttpResponseBadRequest(
-                "No se puede eliminar un tipo de vehículo con líneas de tarifa asociadas. "
-                "Elimina primero las líneas de tarifa."
-            )
-        if vt.budgets.exists():
-            return HttpResponseBadRequest(
-                "No se puede eliminar un tipo de vehículo con presupuestos asociados."
-            )
-        vt.delete()
+        vt.is_active = False
+        vt.save(update_fields=["is_active"])
         return HttpResponse(status=200)
 
 
@@ -6649,3 +6707,4 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
             )
 
         return redirect("budgets:insurer_update", pk=copy.pk)
+

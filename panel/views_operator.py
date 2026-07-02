@@ -2205,10 +2205,11 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             "entradas_enriched":entradas_enriched ,
             "repuestos_enriched":repuestos_enriched ,
             "min_date":min_date .isoformat ()if min_date else "",
-            "lunch_break_start":_lunch_start_edit ,
-            "lunch_break_end":_lunch_end_edit ,
+            "lunch_break_start":first_entry .lunch_break_start .strftime ("%H:%M")if first_entry and first_entry .lunch_break_start else _lunch_start_edit ,
+            "lunch_break_end":first_entry .lunch_break_end .strftime ("%H:%M")if first_entry and first_entry .lunch_break_end else _lunch_end_edit ,
             "first_block_hc":_first_hc_edit ,
             "first_block_hf":_first_hf_edit ,
+            "no_lunch_break":first_entry .no_lunch_break if first_entry else False ,
             "show_lunch_break":_show_lunch_edit ,
             "end_time_morning":_end_time_morning_edit ,
             "end_time_afternoon":_end_time_afternoon_edit ,
@@ -4869,6 +4870,7 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
             'panel/operator/_schedule_fields_fragment.html',
             _ctx ,
         )
+
 
 
 
