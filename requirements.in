@@ -52,6 +52,13 @@ google-genai==2.7.0
 celery==5.6.3
 redis
 
+# Email transaccional / Transactional email
+# Twilio SendGrid -- envío del PDF/foto de albarán por correo tras confirmar la
+# asignación (S004-H10). Requiere SENDGRID_API_KEY propia en .env -- NO es la
+# misma credencial que TWILIO_API_KEY_SID/TWILIO_API_KEY_SECRET usada para
+# Voz/SMS, aunque ambos productos sean de Twilio.
+sendgrid
+
 # Development and Linting / Desarrollo y Auditoría
 # Tools for code quality and protocol adherence (PEP8, DjLint).
 # Herramientas para calidad de código y adherencia a protocolos (PEP8, DjLint).
