@@ -1680,17 +1680,6 @@ class BreakdownAgentService:
 
 _ONBOARDING_SENTINEL = "__onboarding__"
 
-ELEVATION_KEYWORDS = (
-    "elevaci", "elevacion", "elevación",
-    "plataforma", "carretilla", "tijera",
-)
-
-
-def _is_elevation_section(section_name: str) -> bool:
-    """Returns True if the section name matches the elevation family."""
-    name_lower = section_name.lower()
-    return any(kw in name_lower for kw in ELEVATION_KEYWORDS)
-
 
 class OnboardingService:
     """
@@ -1953,12 +1942,13 @@ class OnboardingService:
                 "Por favor, contacta con el administrador."
             )
 
-        # Determine role.
-        role = (
-            _CU.ROLE_WORKSHOP
-            if _is_elevation_section(section.name)
-            else _CU.ROLE_DRIVER
-        )
+        # Determine role from the section's own configuration — never infer
+        # it from the section name. Section.default_role is the single
+        # source of truth for the role assigned on WhatsApp onboarding.
+        # Determinar el rol desde la configuración propia de la sección —
+        # nunca inferirlo del nombre. Section.default_role es la única
+        # fuente de verdad para el rol asignado en el alta por WhatsApp.
+        role = section.default_role
 
         # Build username.
         def _normalize(s: str) -> str:
@@ -2024,9 +2014,7 @@ class OnboardingService:
             )
             cls.clear_state(session)
 
-            role_label = (
-                "Operario de taller" if role == _CU.ROLE_WORKSHOP else "Chofer"
-            )
+            role_label = dict(_CU.ROLE_CHOICES).get(role, role)
             panel_url = (
                 "https://enterprisebot-miguelaetxio.pythonanywhere.com"
                 "/panel/users/"
