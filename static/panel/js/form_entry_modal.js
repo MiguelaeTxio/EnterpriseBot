@@ -26,6 +26,8 @@
 
     var form              = document.getElementById("form-entry");
     var btnTrigger        = document.getElementById("btn-form-submit");
+    var btnSaveBlocks     = document.getElementById("btn-save-blocks");
+    var formActionEl      = document.getElementById("form-action-input");
     var saveConfirmedEl   = document.getElementById("save-confirmed-input");
     var zeroMetersEl      = document.getElementById("zero-meters-confirmed-input");
     var summaryEl         = document.getElementById("confirm-save-summary");
@@ -142,6 +144,36 @@
 
     if (btnTrigger) {
         btnTrigger.addEventListener("click", _onSaveTrigger);
+    }
+
+    /*
+     * "Guardar tareas" trigger -- I-BUG confirmed in S004 (cross-cutting,
+     * no anexo propio): btn-save-blocks had NO click listener anywhere in
+     * the codebase, so clicking it did nothing at all -- no request ever
+     * reached the server, nothing was ever persisted. Mirrors the same
+     * pattern as btnSaveFinal (native form.submit(), which the browser
+     * does not route through form_entry_assets.js's "submit" event
+     * listener -- same behaviour already relied upon by "Cerrar parte").
+     * No zero-meter / confirm-summary modal chain here on purpose: the
+     * backend already skips save_confirmed validation for
+     * form_action=save_blocks (panel/views_operator.py).
+     *
+     * Disparador de "Guardar tareas" -- I-BUG confirmado en S004
+     * (cross-cutting, sin anexo propio): btn-save-blocks no tenia NINGUN
+     * listener de clic en todo el codigo, asi que pulsarlo no hacia nada
+     * -- ninguna peticion llegaba nunca al servidor, nada se persistia
+     * jamas. Replica el mismo patron que btnSaveFinal (form.submit()
+     * nativo, que el navegador no enruta a traves del listener "submit"
+     * de form_entry_assets.js -- el mismo comportamiento del que ya
+     * depende "Cerrar parte"). Sin cadena de modales de ceros/resumen
+     * aqui a proposito: el backend ya omite la validacion save_confirmed
+     * para form_action=save_blocks (panel/views_operator.py).
+     */
+    if (btnSaveBlocks && form && formActionEl) {
+        btnSaveBlocks.addEventListener("click", function () {
+            formActionEl.value = "save_blocks";
+            form.submit();
+        });
     }
 }
 
