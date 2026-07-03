@@ -27,6 +27,7 @@ from .services import (
     confirm_delivery_note,
     parse_decimal,
     resolve_line_assignment,
+    resolve_recipient_company_code,
 )
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,11 @@ class DeliveryNoteUploadView(CompanyUserRequiredMixin, View):
 
         delivery_note.supplier_name = extraction.supplier_name or ''
         delivery_note.supplier_tax_id = extraction.supplier_tax_id or ''
+        delivery_note.recipient_name = extraction.recipient_name or ''
+        delivery_note.recipient_tax_id = extraction.recipient_tax_id or ''
+        delivery_note.recipient_company_code = resolve_recipient_company_code(
+            extraction.recipient_tax_id
+        )
         delivery_note.delivery_number = extraction.delivery_number or ''
         if extraction.delivery_date:
             try:
@@ -213,6 +219,7 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             'active_nav': 'spare_parts_upload',
             'delivery_note': delivery_note,
             'lines': delivery_note.lines.all(),
+            'recipient_resolved': bool(delivery_note.recipient_company_code),
         })
 
     def post(self, request, pk):
@@ -236,6 +243,17 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
         delivery_note.supplier_tax_id = request.POST.get(
             'supplier_tax_id', '',
         ).strip()
+        delivery_note.recipient_name = request.POST.get(
+            'recipient_name', '',
+        ).strip()
+        new_recipient_tax_id = request.POST.get(
+            'recipient_tax_id', '',
+        ).strip()
+        if new_recipient_tax_id != (delivery_note.recipient_tax_id or ''):
+            delivery_note.recipient_company_code = (
+                resolve_recipient_company_code(new_recipient_tax_id)
+            )
+        delivery_note.recipient_tax_id = new_recipient_tax_id
         delivery_note.delivery_number = request.POST.get(
             'delivery_number', '',
         ).strip()
@@ -327,6 +345,15 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
             )
             return redirect(
                 'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
+
+        if not delivery_note.recipient_company_code:
+            messages.warning(
+                request,
+                'La empresa destinataria no se ha podido resolver '
+                'automáticamente (CIF no reconocido). Revisa y '
+                'corrige el CIF destinatario si es necesario -- la '
+                'asignación se confirmará igualmente.',
             )
 
         counts = confirm_delivery_note(delivery_note, request.user.company_user)

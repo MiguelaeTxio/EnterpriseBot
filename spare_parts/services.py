@@ -18,6 +18,8 @@ a través del helper compartido ai_services.gemini_client.
 """
 import logging
 import pathlib
+import re
+import unicodedata
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
@@ -30,6 +32,8 @@ from ai_services.gemini_client import (
     get_gemini_client,
     get_request_config,
 )
+from fleet.models import MachineAsset
+
 # Reuses the machine-code normaliser already validated in
 # work_order_processor (Hito 8) for the historic PDF work-order
 # reader, per the DRY directive (annex H10, section 3.1, step 4).
@@ -117,6 +121,19 @@ class DeliveryNoteExtraction(BaseModel):
         description='Dirección del proveedor, si figura en el '
                      'albarán. Null si no aparece.',
     )
+    recipient_name: Optional[str] = Field(
+        default=None,
+        description='Razón social de la empresa DESTINATARIA del '
+                     'albarán (a quién va dirigido, no el proveedor '
+                     'que lo emite). Suele figurar en un bloque '
+                     '"Cliente"/"Destino"/"Entregar a". Null si no es '
+                     'legible.',
+    )
+    recipient_tax_id: Optional[str] = Field(
+        default=None,
+        description='NIF/CIF de la empresa destinataria del albarán. '
+                     'Null si no aparece o no es legible.',
+    )
     delivery_number: Optional[str] = Field(
         default=None,
         description='Número de albarán. Null si no es legible.',
@@ -143,19 +160,32 @@ plataformas, carretillas, remolques).
 
 Analiza la imagen o documento del albarán adjunto y extrae:
 
-1. Datos del proveedor: nombre comercial, NIF/CIF si aparece, \
-dirección si aparece.
-2. Número de albarán y fecha (formato YYYY-MM-DD).
-3. Cada línea de artículo del albarán, en orden, con: número de \
+1. Datos del proveedor (quién EMITE el albarán): nombre comercial, \
+NIF/CIF si aparece, dirección si aparece.
+2. Datos del destinatario (a quién va dirigido el albarán, suele \
+figurar en un bloque "Cliente" / "Destino" / "Entregar a" / \
+"Facturar a"): razón social y NIF/CIF. Es una empresa distinta del \
+proveedor -- no confundir ambos bloques.
+3. Número de albarán y fecha (formato YYYY-MM-DD).
+4. Cada línea de artículo del albarán, en orden, con: número de \
 línea, referencia (si tiene), descripción, cantidad, precio \
 unitario, precio total.
-4. Para cada línea, si hay una anotación manuscrita junto al \
-artículo indicando a qué máquina o almacén va destinado (por \
-ejemplo un código como "B14", "A-054", "ALM", "ALMACEN"), \
-transcríbela tal cual está escrita en el campo machine_code_raw. \
-Si no hay anotación, deja ese campo en null.
+5. Para cada línea, busca una anotación manuscrita junto al \
+artículo indicando a qué máquina o centro de gasto va destinado. \
+Esta anotación puede venir encerrada entre almohadillas (ej. \
+"#B14#", "#TALLER MECANICO#") -- si ves ese patrón, transcribe \
+únicamente el texto entre las almohadillas, sin ellas. Puede ser: \
+  - Un código de máquina o matrícula (ej. "B14", "A-054", "G12"). \
+  - Un alias de almacén general (ej. "ALM", "ALMACEN"). \
+  - El nombre de un centro de gasto general de la empresa, escrito \
+tal cual (ej. "TALLER MECANICO", "ALMACEN HUELVA", "LOGISTICA", \
+"DEPENDENCIAS", "TALLER ELEVACION", "ALMACEN ELEVACION", \
+"ALMACEN MECANICO", "ALMACEN DEPENDENCIAS"). \
+Transcribe la anotación tal cual está escrita en el campo \
+machine_code_raw, sin normalizar ni corregir. Si no hay anotación, \
+deja ese campo en null.
 
-No inventes datos que no sean legibles en el documento — usa null \
+No inventes datos que no sean legibles en el documento -- usa null \
 en los campos opcionales cuando no puedas leerlos con certeza. Los \
 precios y cantidades devuélvelos como texto numérico simple (sin \
 símbolo de moneda, usando punto como separador decimal).
@@ -308,6 +338,138 @@ def parse_decimal(value: Optional[str]) -> Optional[Decimal]:
 
 
 # ---------------------------------------------------------------------------
+# Recipient company resolution / Resolución de empresa destinataria
+# (Annex H10, TAREA INMEDIATA punto 1, S004)
+# ---------------------------------------------------------------------------
+
+# Confirmed by Miguel Ángel in S004: only these three group companies
+# receive supplier delivery notes today. Keyed by tax ID (the only stable
+# identifier -- the same company appears in fleet.MachineAsset under
+# several free-text name variants). New entries are added here as new
+# recipient companies are encountered, same organic-growth philosophy as
+# the MachineAsset company_code catalogue.
+# ---
+# Confirmado por Miguel Ángel en S004: solo estas tres empresas del grupo
+# reciben albaranes de proveedor hoy. Indexado por CIF (el único
+# identificador estable -- la misma empresa aparece en fleet.MachineAsset
+# bajo varias variantes de texto libre). Se añaden entradas nuevas aquí a
+# medida que aparezcan nuevas empresas destinatarias, misma filosofía de
+# crecimiento orgánico que el catálogo company_code de MachineAsset.
+_RECIPIENT_TAX_ID_TO_COMPANY_CODE = {
+    'B29405040': 'GRA',  # Gruas Adolfo Alvarez, S.L.
+    'B92493022': 'TRA',  # Transgrual, S.L.
+    'B93261824': 'GRG',  # Asistencia y Gruas Granada, S.L.
+}
+
+
+def _normalise_tax_id(raw: Optional[str]) -> str:
+    """
+    Uppercases and strips spaces/dashes from a tax ID for lookup.
+    ---
+    Pasa a mayúsculas y elimina espacios/guiones de un CIF para su
+    búsqueda.
+    """
+    if not raw:
+        return ''
+    return re.sub(r'[\s\-.]', '', raw.strip().upper())
+
+
+def resolve_recipient_company_code(raw_tax_id: Optional[str]) -> str:
+    """
+    Resolves the raw recipient tax ID extracted from a delivery note
+    into the short company_code used by fleet.MachineAsset. Returns
+    '' when the tax ID is missing or not yet in the catalogue -- the
+    line stays for manual review rather than guessing.
+
+    ---
+
+    Resuelve el CIF destinatario extraído del albarán al
+    company_code corto usado por fleet.MachineAsset. Devuelve '' si
+    el CIF falta o todavía no está en el catálogo -- se deja para
+    revisión manual en vez de adivinar.
+    """
+    return _RECIPIENT_TAX_ID_TO_COMPANY_CODE.get(
+        _normalise_tax_id(raw_tax_id), ''
+    )
+
+
+# ---------------------------------------------------------------------------
+# General cost-centre resolution / Resolución de centro de gasto general
+# (Annex H10, TAREA INMEDIATA punto 2, S004)
+# ---------------------------------------------------------------------------
+
+# Prefix shared by every MachineAsset that represents an aggregate company
+# cost centre (warehouse, workshop, logistics...) rather than an
+# individual physical machine -- e.g. EMPRESA_TALLER_MECANICO,
+# EMPRESA_ALMACEN_HUELVA. Confirmed empirically against the real catalogue
+# in S004 (panel filtrado por "EMP").
+# ---
+# Prefijo compartido por todo MachineAsset que representa un centro de
+# gasto agregado de empresa (almacén, taller, logística...) en vez de una
+# máquina física individual -- ej. EMPRESA_TALLER_MECANICO,
+# EMPRESA_ALMACEN_HUELVA. Confirmado empíricamente contra el catálogo real
+# en S004 (panel filtrado por "EMP").
+_COMPANY_COST_CENTER_PREFIX = 'EMPRESA_'
+
+
+def _normalise_alias_text(raw: str) -> str:
+    """
+    Uppercases, strips accents and collapses whitespace, for
+    accent/case-insensitive comparison of free-text cost-centre
+    names (e.g. "Almacén Huelva" == "ALMACEN HUELVA").
+    ---
+    Pasa a mayúsculas, elimina acentos y colapsa espacios, para
+    comparar sin distinguir acentos/mayúsculas nombres de centro de
+    gasto en texto libre (ej. "Almacén Huelva" == "ALMACEN HUELVA").
+    """
+    text = unicodedata.normalize('NFD', raw.strip().upper())
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _resolve_company_cost_center(
+    raw_code: str, company,
+) -> Optional[MachineAsset]:
+    """
+    Resolves a general (non-machine) cost-centre annotation -- e.g.
+    "TALLER MECANICO", "Almacén Huelva" -- against the MachineAsset
+    rows that represent aggregate company cost centres (code prefix
+    EMPRESA_). Comparison is accent- and case-insensitive on both
+    sides, since the annotation is handwritten free text and the
+    catalogue code may itself carry accents (ej. EMPRESA_LOGÍSTICA).
+
+    ---
+
+    Resuelve una anotación de centro de gasto general (no una
+    máquina) -- ej. "TALLER MECANICO", "Almacén Huelva" -- contra
+    las filas de MachineAsset que representan centros de gasto
+    agregados de empresa (prefijo de código EMPRESA_). La
+    comparación no distingue acentos ni mayúsculas en ninguno de los
+    dos lados, ya que la anotación es texto libre manuscrito y el
+    propio código del catálogo puede llevar acentos (ej.
+    EMPRESA_LOGÍSTICA).
+    """
+    target = _normalise_alias_text(raw_code)
+    if not target:
+        return None
+
+    qs = MachineAsset.objects.filter(
+        code__startswith=_COMPANY_COST_CENTER_PREFIX,
+    )
+    if company is not None:
+        qs = qs.filter(company=company)
+
+    for asset in qs:
+        candidate = _normalise_alias_text(
+            asset.code[len(_COMPANY_COST_CENTER_PREFIX):].replace('_', ' ')
+        )
+        if candidate == target:
+            return asset
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Line assignment resolution / Resolución de asignación de línea
 # (Annex H10, section 3.1, step 4-5)
 # ---------------------------------------------------------------------------
@@ -318,9 +480,12 @@ _WAREHOUSE_CODE_ALIASES = {'ALM', 'AL', 'ALMACEN', 'ALMACÉN', 'WAREHOUSE'}
 def resolve_line_assignment(raw_code: Optional[str], company):
     """
     Resolves a raw machine/warehouse code annotated on a delivery
-    note line into an assignment_type + MachineAsset, reusing the
-    same normaliser validated in work_order_processor (Hito 8) per
-    the DRY directive.
+    note line into an assignment_type + MachineAsset. Tries, in
+    order: the WAREHOUSE alias list, a general company cost centre
+    (EMPRESA_* MachineAsset rows, S004 TAREA INMEDIATA punto 2), and
+    finally the individual-machine normaliser/resolver already
+    validated in work_order_processor (Hito 8) per the DRY
+    directive.
 
     Returns a tuple (assignment_type, machine) where assignment_type
     is one of 'WAREHOUSE', 'MACHINE', 'UNASSIGNED' and machine is the
@@ -329,9 +494,12 @@ def resolve_line_assignment(raw_code: Optional[str], company):
     ---
 
     Resuelve un código bruto de máquina/almacén anotado en una línea
-    de albarán a un assignment_type + MachineAsset, reutilizando el
-    mismo normalizador validado en work_order_processor (Hito 8)
-    según la directriz DRY.
+    de albarán a un assignment_type + MachineAsset. Prueba, en
+    orden: la lista de alias WAREHOUSE, un centro de gasto general
+    de empresa (filas MachineAsset EMPRESA_*, S004 TAREA INMEDIATA
+    punto 2), y por último el normalizador/resolver de máquina
+    individual ya validado en work_order_processor (Hito 8) según la
+    directriz DRY.
 
     Devuelve una tupla (assignment_type, machine) donde
     assignment_type es 'WAREHOUSE', 'MACHINE' o 'UNASSIGNED', y
@@ -343,6 +511,10 @@ def resolve_line_assignment(raw_code: Optional[str], company):
     stripped_upper = raw_code.strip().upper()
     if stripped_upper in _WAREHOUSE_CODE_ALIASES:
         return 'WAREHOUSE', None
+
+    cost_center = _resolve_company_cost_center(raw_code, company)
+    if cost_center is not None:
+        return 'MACHINE', cost_center
 
     normalised = _normalise_machine_code(raw_code)
     machine = _resolve_machine_asset(normalised, company=company)

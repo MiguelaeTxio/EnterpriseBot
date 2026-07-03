@@ -38,6 +38,57 @@ class DeliveryNote(models.Model):
         related_name='delivery_notes',
         verbose_name='Empresa',
     )
+    # ------------------------------------------------------------------
+    # Empresa destinataria del grupo (S004-H10, TAREA INMEDIATA punto 1).
+    # Grupo Álvarez es una única Company en ivr_config, pero un albarán
+    # va dirigido a una empresa concreta del grupo (razón social + CIF
+    # propios). recipient_company_code reutiliza el mismo catálogo corto
+    # que fleet.MachineAsset.company_code (GRA, TRA, GRG...) para no
+    # duplicar catálogo -- ver resolve_recipient_company_code() en
+    # services.py. Campo libre, no choices: el catálogo de empresas del
+    # grupo emerge orgánicamente igual que los centros de gasto.
+    # ------------------------------------------------------------------
+    # Recipient company within the group (S004-H10, TAREA INMEDIATA
+    # point 1). Grupo Álvarez is a single Company in ivr_config, but a
+    # delivery note is addressed to a specific company within the group
+    # (its own legal name + tax ID). recipient_company_code reuses the
+    # same short catalogue as fleet.MachineAsset.company_code (GRA, TRA,
+    # GRG...) to avoid a duplicate catalogue -- see
+    # resolve_recipient_company_code() in services.py. Free field, no
+    # choices: the group company catalogue emerges organically just
+    # like cost centres do.
+    # ------------------------------------------------------------------
+    recipient_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name='Razón social destinataria',
+        help_text=(
+            'Nombre legal de la empresa del grupo a la que va dirigido '
+            'el albarán, tal como figura impreso en el documento.'
+        ),
+    )
+    recipient_tax_id = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name='NIF/CIF destinatario',
+        help_text=(
+            'CIF de la empresa destinataria tal como figura en el '
+            'albarán. Es la clave usada para resolver '
+            'recipient_company_code de forma fiable, ya que la razón '
+            'social aparece con variantes de texto en el catálogo.'
+        ),
+    )
+    recipient_company_code = models.CharField(
+        max_length=20,
+        blank=True,
+        verbose_name='Código de empresa destinataria',
+        help_text=(
+            'Código corto de la empresa del grupo, resuelto desde '
+            'recipient_tax_id (ej: GRA, TRA, GRG). Vacío si el CIF no '
+            'se ha podido leer o no está todavía en el catálogo -- '
+            'requiere revisión manual en ese caso.'
+        ),
+    )
     source_type = models.CharField(
         max_length=10,
         choices=SOURCE_TYPE_CHOICES,
