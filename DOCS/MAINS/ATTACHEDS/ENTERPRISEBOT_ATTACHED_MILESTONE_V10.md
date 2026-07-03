@@ -393,57 +393,72 @@ decide el destino.
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
-### ESTADO AL CIERRE DE S003
+### ESTADO AL CIERRE DE S004
 
 - **Paso 1 — COMPLETADO** (sin cambios desde S001).
-- **Paso 2 — COMPLETADO.** `GeminiVisionExtractionService` integrado en
-  `DeliveryNoteUploadView`. Probado por Miguel Ángel con un albarán real
-  de Grupo Álvarez en producción — la extracción funciona bien.
-- **Paso 3 — puntos 1-3 COMPLETADOS, punto 4 PARCIAL.**
-  `DeliveryNoteUploadView`, `DeliveryNoteDetailView` y
-  `DeliveryNoteConfirmView` creadas y desplegadas (spare_parts/views.py,
-  spare_parts/urls.py). Campo `machine_code_raw` añadido a
-  `DeliveryNoteLine` (migración 0002). `resolve_line_assignment()` y
-  `confirm_delivery_note()` en `spare_parts/services.py` implementan el
-  circuito completo de la sección 3.1. Sidebar: sección "Operarios"
-  renombrada a "Mecánicos", con nuevo ítem "Subir albarán". Captura por
-  cámara integrada en `delivery_note_upload.html` (adaptada de
-  `PAIRS/delivery_note_processor/camera_capture.js`). Punto 4 (test
-  end-to-end): la extracción se ha probado con un albarán real y
-  funciona, pero Miguel Ángel ha detectado que el modelo de datos actual
-  no recoge dos cosas necesarias — ver TAREA INMEDIATA. No se ha llegado
-  a probar la revisión ni la confirmación con ese albarán real.
+- **Paso 2 — COMPLETADO** (sin cambios desde S003).
+- **Paso 3 — puntos 1-4 COMPLETADOS a nivel de código.** La TAREA
+  INMEDIATA que bloqueaba el punto 4 quedó resuelta en S004 con la
+  especificación que trajo Miguel Ángel:
+  - **Empresa destinataria del albarán:** `DeliveryNote` gana
+    `recipient_name`/`recipient_tax_id`/`recipient_company_code`.
+    Gemini Vision extrae ahora también el bloque destinatario
+    (distinto del proveedor). `resolve_recipient_company_code()`
+    (`spare_parts/services.py`) resuelve por CIF contra las tres
+    empresas confirmadas por Miguel Ángel: GRA=B29405040 (Grúas
+    Adolfo Álvarez), TRA=B92493022 (Transgrual), GRG=B93261824
+    (Asistencia y Grúas Granada) — reutilizando el mismo catálogo
+    corto `company_code` que ya usa `fleet.MachineAsset`, sin tabla
+    nueva. Campo libre (no choices): nuevas empresas del grupo se
+    añaden al diccionario a medida que aparezcan.
+  - **Centro de gasto general por línea:** `resolve_line_assignment()`
+    gana un paso intermedio (`_resolve_company_cost_center`) que
+    resuelve anotaciones de texto libre tipo "TALLER MECANICO" o
+    "Almacén Huelva" contra los `MachineAsset` con prefijo `EMPRESA_`
+    ya existentes en el catálogo (9 centros de gasto generales
+    confirmados empíricamente por PVR en S004: almacén/taller ×
+    dependencias/Huelva/logística/mecánico/elevación), comparación
+    insensible a acentos/mayúsculas en ambos lados. El prompt de
+    extracción reconoce la convención física de anotación entre
+    almohadillas (`#TALLER MECANICO#`) definida por Miguel Ángel.
+  - **PENDIENTE:** validación end-to-end real (subida → revisión →
+    confirmación → verificación en admin) con un albarán físico de
+    Grupo Álvarez que tenga destinatario legible y al menos una línea
+    anotada entre almohadillas. No se ejecutó en S004 — el bloque se
+    cerró a nivel de código y quedó para desplegar en el cierre de
+    sesión.
 - **Pasos 4 a 7 — sin iniciar** (sin cambios).
 
-### TAREA INMEDIATA — Multiempresa del grupo + centro de gasto por línea (BLOQUEANTE del cierre del Paso 3)
+### Trabajo realizado en S004 fuera de la hoja de ruta de H10
 
-Al probar con un albarán real ("Grúas Adolfo Álvarez, SL"), Miguel Ángel
-ha detectado dos datos que el circuito actual NO recoge. Miguel Ángel
-traerá la especificación exacta al inicio de la próxima sesión —
-**NO implementar nada de este punto hasta recibirla**, para no construir
-sobre una suposición equivocada de la estructura de datos existente.
+Dos incidencias de mantenimiento cross-cutting, sin anexo de hito
+propio, resueltas en el mismo bloque de sesión (H10 se mantuvo EN
+PROGRESO todo el tiempo, sin PCH):
 
-1. **Empresa del grupo destinataria del albarán.** Grupo Álvarez no es
-   una única empresa — el albarán de prueba iba dirigido a "Grúas Adolfo
-   Álvarez, SL", una entre varias empresas del grupo. Antes de tocar
-   nada, hacer un PVR completo de `ivr_config/models.py` (o donde
-   corresponda) para verificar si esa estructura multiempresa ya existe
-   en el sistema (¿es un desglose dentro de `Company`, o hay que
-   modelarlo?) — no asumir, comprobar empíricamente. Después decidir
-   junto con Miguel Ángel dónde y cómo capturar ese dato en `DeliveryNote`
-   (posiblemente extraíble por Gemini Vision si la razón social aparece
-   impresa en el propio albarán, a confirmar).
-2. **Centro de gasto por línea de repuesto.** Miguel Ángel indica que en
-   el albarán físico se anota, junto a cada línea de repuesto, el centro
-   de gasto de destino — dato adicional a (o quizás relacionado con) el
-   `machine_code_raw` ya capturado. Miguel Ángel necesita cotejar varios
-   datos antes de dar la especificación exacta.
+1. **Bug de alta por WhatsApp:** `OnboardingService._create_user()`
+   (`whatsapp/services.py`) ignoraba `Section.default_role` y
+   asignaba el rol mediante una heurística de palabras clave sobre el
+   nombre de sección (`_is_elevation_section`), cayendo en `DRIVER`
+   para cualquier sección sin esas palabras (p.ej. "Taller Mecánico").
+   Corregido: `role = section.default_role`. Código huérfano
+   eliminado.
+2. **Sección "Guardas" dada de alta** (`ivr_config.Section`, id=15,
+   `default_role=WORKSHOP`, sin flujo IVR: `ivr_transfer_enabled=False`,
+   `ivr_breakdown_enabled=False`) vía Comando S directo en BD de
+   producción. Se detectó que la señal `auto_manage_section_call_flow`
+   (`ivr_config/signals.py`) genera un `CallFlow` para toda `Section`
+   nueva sin excepción; se desactivó (`is_active=False`, no se borró —
+   borrar habría causado su regeneración automática en la siguiente
+   edición de la sección, según la propia lógica de la señal) para
+   dejarla efectivamente fuera del IVR.
 
-**Al inicio de la próxima sesión:** preguntar a Miguel Ángel por estos dos
-datos antes de retomar cualquier otro punto del Paso 3. Una vez
-incorporados, repetir la prueba de extremo a extremo completa (subida →
-revisión → confirmación → verificación en admin) con el mismo albarán u
-otro nuevo de Grupo Álvarez.
+### Próxima sesión — orden de trabajo
+
+1. **Validar E2E el punto 4 del Paso 3** con un albarán real de Grupo
+   Álvarez (destinatario + anotaciones entre almohadillas), una vez
+   desplegado el código de S004 en producción.
+2. Continuar con el Paso 4 (`StockAssignmentService` y circuito en
+   parte de trabajo) si la validación E2E resulta correcta.
 
 ### Paso 4 — StockAssignmentService y circuito en parte de trabajo
 - Implementar `StockAssignmentService.assign_to_work_order()` con
@@ -502,3 +517,4 @@ otro nuevo de Grupo Álvarez.
 | S001 | 2026-06-30 | Paso 1 completo, Paso 2 parcial | App `spare_parts` creada: modelos `DeliveryNote`/`DeliveryNoteLine`/`SparePartEntry`/`StockMovement` con limbo de pre-asignación (status WAREHOUSE/PRE_ASSIGNED/CONSUMED), procedencia dual (origin_type SUPPLIER/SALVAGED para canibalización interna), relación con `work_order_processor.SparePartLine` (FK `spare_part_entry` nueva). Migración cruzada aplicada, admin registrado, reload OK. `GeminiVisionExtractionService` construido con `gemini-3.5-flash` (no 2.5, deuda técnica documentada en doc-master-enterprisebot 4.1.1). App compartida `ai_services` creada por principio DRY — `work_order_processor.services` migrado al mismo helper. Desvío completo a H18 por incidencia crítica de regresión del planificador de ruta (autocompletado roto): diagnosticado y resuelto sustituyendo `PlaceAutocompleteElement` por implementación propia — ver anexo H18 S018 para el detalle técnico completo. Paso 2 de H10 queda pendiente de integrar `GeminiVisionExtractionService.extract()` en `DeliveryNoteUploadView` (Paso 3) y testar con albaranes reales. |
 | S002 | 2026-07-02 | NOTA DE DESVÍO — sin trabajo directo en H10 | H10 se mantuvo EN PROGRESO durante toda la sesión sin recibir ningún avance directo. Sesión desviada por completo a H16 (motor de presupuestos: importación de tarifas por PDF, modo manual del wizard, control de acceso granular, mapa de ruta en desglose — ver anexo H16 S055) y a H18 (bug de peajes ida/vuelta y tramos AP-7, fechas pasadas en planificación de ruta, fix drag-and-drop del planificador — ver anexo H18 S019). Al cierre de sesión se ejecutó PCH: `eb-annex-router` mueve `← EN PROGRESO` de H10 a H07 (incidencia de pausa de comida en jornada partida, partes digitales). La hoja de ruta de H10 (Sección 5) queda intacta, con el Paso 3 pendiente exactamente como estaba, para cuando `eb-annex-router` vuelva a marcar H10 EN PROGRESO. |
 | S003 | 2026-07-02 | Paso 2 completo, Paso 3 puntos 1-3 completos, punto 4 iniciado | Añadido campo `machine_code_raw` a `DeliveryNoteLine` (migración `0002_deliverynoteline_machine_code_raw`, aplicada OK). Añadidas a `spare_parts/services.py`: `resolve_line_assignment()` (detecta WAREHOUSE vía alias ALM/AL/ALMACEN/ALMACÉN/WAREHOUSE, o MACHINE reutilizando `_normalise_machine_code()`/`_resolve_machine_asset()` de `work_order_processor.services` por DRY) y `confirm_delivery_note()` (ejecuta el circuito completo de la sección 3.1: SparePartEntry WAREHOUSE con suma de stock, o PRE_ASSIGNED en el limbo con búsqueda de BreakdownTicket OPEN/IN_PROGRESS, y StockMovement IN en ambos casos). Creadas `DeliveryNoteUploadView`, `DeliveryNoteDetailView`, `DeliveryNoteConfirmView` (spare_parts/views.py, protegidas con `CompanyUserRequiredMixin`), `spare_parts/urls.py` (namespace `spare_parts`), y las plantillas `delivery_note_upload.html`/`delivery_note_detail.html` (extienden `panel/base.html`). Añadido include en `enterprise_core/urls.py` (`panel/spare-parts/`). Renombrada la sección del sidebar "Operarios" → "Mecánicos" (`panel/_nav_items.html`) y añadido el ítem "Subir albarán" (WORKSHOP/ADMIN). Reescrita `delivery_note_upload.html` con captura directa por cámara, adaptada del prototipo `PAIRS/delivery_note_processor/camera_capture.js` (getUserMedia + canvas.toBlob), pero inyectando el archivo capturado vía `DataTransfer` en el `<input>` existente y reutilizando el submit normal del formulario en vez del endpoint AJAX/JSON del original — cero cambios en la vista Python para esa parte. Todos los despliegues vía `com-install-files` y `put` directo, con reload 200 OK confirmado en cada bloque. Miguel Ángel ha probado la extracción con un albarán real de Grupo Álvarez ("Grúas Adolfo Álvarez, SL") en producción — la extracción Gemini Vision funciona bien — pero ha detectado dos carencias de modelo de datos (empresa del grupo destinataria del albarán, y centro de gasto por línea de repuesto anotado en el albarán físico) que impiden dar el punto 4 (test end-to-end) por completado. Ver Sección 5 para el detalle y el plan de la siguiente sesión. |
+| S004 | 2026-07-03 | Paso 3 punto 4 completado a nivel de código (TAREA INMEDIATA resuelta); desvío cross-cutting sin anexo propio | Primera sesión del flujo directo contra GitHub (`nfs-enterprisebot-*`), con token de sesión. Miguel Ángel trajo la especificación de los dos datos bloqueantes: (1) empresa destinataria — confirmó por CIF las tres empresas del grupo que reciben albaranes hoy (GRA=B29405040 Grúas Adolfo Álvarez, TRA=B92493022 Transgrual, GRG=B93261824 Asistencia y Grúas Granada), y que el resto de `company_code` de `fleet.MachineAsset` no importan para este propósito; (2) centro de gasto general por línea — explicó la convención física de anotar cada línea entre almohadillas (`#CODIGO#` o `#NOMBRE CENTRO#`) y confirmó por PVR sobre el panel que existen 9 `MachineAsset` con prefijo `EMPRESA_` que representan centros de gasto agregados (almacén/taller × dependencias/Huelva/logística/mecánico/elevación). Implementado en `spare_parts/models.py` (campos `recipient_name`/`recipient_tax_id`/`recipient_company_code` en `DeliveryNote`, pendiente de migración en el despliegue), `spare_parts/services.py` (`resolve_recipient_company_code()` por CIF, `_resolve_company_cost_center()` accent-insensitive contra `MachineAsset` `EMPRESA_*`, prompt de extracción actualizado para leer el bloque destinatario y reconocer la convención de almohadillas), `spare_parts/views.py` (`DeliveryNoteUploadView`/`DeliveryNoteDetailView`/`DeliveryNoteConfirmView` pobladas y con badge de resolución) y `delivery_note_detail.html` (nueva tarjeta "Empresa destinataria", reformateada con `djlint --reformat`). Pendiente de validación E2E real con albarán físico tras el despliegue. Además, fuera de la hoja de ruta de H10: corregido bug de alta por WhatsApp que ignoraba `Section.default_role` (`whatsapp/services.py`, heurística `_is_elevation_section` eliminada), y dada de alta la sección `Guardas` (`ivr_config.Section` id=15, `default_role=WORKSHOP`, sin flujo IVR) con desactivación del `CallFlow` auto-generado por la señal `auto_manage_section_call_flow`. Dos commits de código pusheados a GitHub (`9333125` fix WhatsApp, `f9d8dc1` H10 punto 4); despliegue a producción pendiente del cierre de sesión. |
