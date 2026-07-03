@@ -3151,7 +3151,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
 
-        if work_date is not None :
+        if work_date is not None and _form_action !="save_blocks":
             from decimal import Decimal as _Dec_C 
             from ivr_config .models import WorkerAbsence as _WA_C 
             _total_hours_c =sum (
