@@ -216,14 +216,56 @@ S051 (2026-06-09):
      Migracion 0023_operator_monthly_cost generada y aplicada correctamente.
      Tabla work_order_processor_operatormonthlycost operativa en BD.
 
+S052 (2026-06-24):
+  1. Correccion bug p.pk -> p.id en labLoadProfiles: selector de plantillas operativo.
+  2. Minimo de campos reducido a 1 en labAnalyze (antes 2).
+  3. Eliminacion de spare_part del selector frontend y labFieldTypeChanged.
+     Eliminacion de funcion muerta labBuildFieldsParam.
+  4. Correccion critica de bundle: GET subido como template -- revertido y
+     corregido con extraccion sed del archivo limpio.
+  5. Responsive CSS completo para movil (<768px) y tablet (768-991px):
+     layout vertical apilado, alturas fijas y ResizeObserver para ECharts.
+  6. Expansion del selector de campos de 4 a 17 dimensiones: fault_subcategory,
+     machine_family, machine_type, work_order_source, or_val, has_diet,
+     is_on_site, has_ticket, reviewed, no_lunch_break, machine_company,
+     ordinary_hours, extra_hours. Eliminado extraction_confidence y D5 (Budget).
+  7. Correccion grafico de tarta: pieData desde xAxis + series[0].data con
+     nombres reales en leyenda. Eliminado dataZoom del pie.
+  8. Col-chooser: checkboxes sobre la tabla para activar/desactivar columnas.
+  9. Subcategorias de averia traducidas al espanol en _handle_cross via
+     _FAULT_SUBCAT_LABELS (antes mostraba claves internas ET_ENGINE etc).
+  10. Metricas Horas ordinarias y Horas extra: calculo proporcional por jornada
+      8h. Activables como columnas opcionales desde el selector.
+  11. Orden de columnas en tabla respeta el orden de campos elegidos: helper
+      _field_value() + ordered_dim_types sustituyen if group_by_* fijos.
+  12. CRUD completo de plantillas: AnalyticsProfileUpdateView (PATCH),
+      AnalyticsProfileCloneView (POST clone), modal rediseñado con
+      lista+preview, botones Cargar/Renombrar/Clonar/Eliminar y formulario
+      de nueva plantilla. Nuevas rutas: profiles/<pk>/update/ y /clone/.
+  13. Normalizacion de 207 WorkOrderEntry.worker_name en BD:
+      ANTONIO FOLTABA/FONTALBA SERON -> ANTONIO FONTALBA SERON (con tilde),
+      PABLO CAÑAMERO NAVARO -> PABLO CAÑAMERO NAVARRO,
+      JOSE CRUCES HEREDIA -> JOSE MANUEL CRUCES HEREDIA,
+      MANUEL ALONSO -> MANUEL ALONSO PEDROSA,
+      JOSE ZAFRA BALBUENA -> JOSE ANTONIO ZAFRA BALBUENA.
+  14. Creacion de usuario jeronimo (SUPERVISOR, must_change_password=True)
+      para acceso al Laboratorio de Analisis.
+
 ---
 
 ### Hoja de Ruta para la Siguiente Sesion
 
-NOTA: La siguiente sesion es H21 (split de panel/views.py). El H20 retoma
-tras completar el split. Ver anexo ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md.
+#### Estado actual
 
-Pendiente en H20 al retomar:
+El Pendiente 0 (depuracion y mejoras UX) esta COMPLETADO en S052.
+Los pendientes A/B/C quedan aparcados a la espera de feedback de
+Jeronimo (SUPERVISOR) sobre necesidades adicionales del laboratorio
+y posible mejora del CRUD de plantillas.
+
+---
+
+Pendiente en H20 (en espera -- no arrancar sin instruccion explicita):
+
   A) Vistas de gestion de OperatorMonthlyCost:
      - OperatorMonthlyCostListView   GET  /panel/analytics/costs/
      - OperatorMonthlyCostCreateView POST /panel/analytics/costs/create/
@@ -258,3 +300,24 @@ Pendiente en H20 al retomar:
          Operario, Maquina/CdG, Periodo, Horas, Coste (EUR).
      - Actualizar col_labels en _handle_cross() para incluir coste cuando
        el campo 'cost' este activo.
+
+  D) NOTA — Posible dimension D7 (coste de manipulacion de almacen),
+     surgida durante el diseno del Hito 10 (S001-H10, no iniciado a
+     fecha de esta nota). Idea de Miguel Angel: el coste real de un
+     repuesto no es solo su precio de compra (o el de la maquina
+     donante si es SALVAGED, ver anexo H10 seccion 3.6) sino tambien
+     el tiempo de manipulacion logistica -- meter y sacar el repuesto
+     del almacen, gestionar su pre-asignacion en el limbo, etc. Ese
+     tiempo de almacen, repercutido proporcionalmente entre todas las
+     maquinas que reciben repuestos (formula de reparto analoga a la
+     de D6/OperatorMonthlyCost), daria un coste total mas preciso por
+     maquina y por repuesto.
+     Base de datos ya disponible para esto sin migracion adicional:
+     StockMovement.created_by + StockMovement.created_at (anexo H10,
+     app spare_parts) registran quien y cuando se realizo cada
+     movimiento de almacen. Si en el futuro se aborda esta dimension,
+     valorar si haria falta un OperatorMonthlyCost especifico para el
+     rol de logistica/almacen, o si se reutiliza el existente filtrando
+     por operario con StockMovement asociados.
+     PENDIENTE DE DECISION DE ALCANCE -- no iniciar sin instruccion
+     explicita de Miguel Angel, igual que el resto de pendientes de H20.

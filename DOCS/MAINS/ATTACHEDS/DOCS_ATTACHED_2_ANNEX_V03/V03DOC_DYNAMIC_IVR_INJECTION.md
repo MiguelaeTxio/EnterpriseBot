@@ -1,5 +1,3 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V03/V03DOC_DYNAMIC_IVR_INJECTION.md
-
 # INYECCIÓN DINÁMICA DE CONFIGURACIÓN IVR
 # DYNAMIC IVR CONFIGURATION INJECTION
 ---
@@ -23,9 +21,6 @@ Se implementa ivr_config/services.py con la función build_live_config():
     def build_live_config(twilio_number: str) -> tuple[str, str]:
         """
         Builds the dynamic SYSTEM_INSTRUCTION and INITIAL_GREETING for a call.
-        ---
-        Construye el SYSTEM_INSTRUCTION e INITIAL_GREETING dinámicos para una llamada.
-
         Args:
             twilio_number: The Twilio number that received the call (E.164 format).
         Returns:
@@ -60,22 +55,19 @@ Lógica interna:
 ## 3. Impacto real en el código — Flujo de ejecución corregido
 
 ### CORRECCIÓN ARQUITECTÓNICA (sesión 2026-04-08)
-La especificación original de esta sección era incorrecta. Identificaba
-vox_bridge/views.py (InboundCallView) como el punto de instanciación de
-VoiceOrchestrationService. El análisis del código real durante la sesión
-de implementación reveló que InboundCallView no instancia el servicio en
-ningún momento — únicamente genera el TwiML <Connect><Stream> de respuesta.
+La especificación original era incorrecta. InboundCallView NO instancia
+VoiceOrchestrationService en ningún momento — únicamente genera el TwiML
+<Connect><Stream> de respuesta.
 
-El flujo de ejecución real de una llamada entrante es el siguiente:
+El flujo de ejecución real de una llamada entrante es:
 
     1. Twilio realiza POST /api/vox/inbound/
        → UniversalVoiceBridge.handle_twiml_post() en voice_sidecar_bridge.py
        → Responde con TwiML <Connect><Stream url="wss://{host}/media" />
-       → El número 'To' está disponible aquí en el body del POST de aiohttp,
-         pero VoiceOrchestrationService aún no se instancia en este punto.
+       → VoiceOrchestrationService NO se instancia aquí.
 
     2. Twilio abre WebSocket GET /media
-       → UniversalVoiceBridge.handle_websocket_stream() en voice_sidecar_bridge.py
+       → UniversalVoiceBridge.handle_websocket_stream()
        → Se inicia el bucle lector de eventos de Twilio.
        → VoiceOrchestrationService NO se instancia todavía.
 
@@ -108,39 +100,26 @@ Llamada a build_live_config(twilio_number) con fallback de seguridad:
         self.system_instruction = SYSTEM_INSTRUCTION_FALLBACK
         self.initial_greeting_text = INITIAL_GREETING_FALLBACK
 
-Las constantes originales SYSTEM_INSTRUCTION e INITIAL_GREETING_TEXT han
-sido renombradas a SYSTEM_INSTRUCTION_FALLBACK e INITIAL_GREETING_FALLBACK.
+Las constantes originales han sido renombradas a *_FALLBACK.
 
 #### run_voice_session()
-Referencias a las constantes globales sustituidas por atributos de instancia:
+Referencias a constantes globales sustituidas por atributos de instancia:
     SYSTEM_INSTRUCTION        →  self.system_instruction
     INITIAL_GREETING_TEXT     →  self.initial_greeting_text
 
 ### Cambios implementados en voice_sidecar_bridge.py
 
 #### UniversalVoiceBridge.handle_websocket_stream()
-- La instanciación de VoiceOrchestrationService se ha diferido desde el
-  inicio del método hasta el interior del manejador del evento 'start',
-  donde el número Twilio 'to' está disponible en el payload WebSocket.
-- service y voice_task se inicializan a None al inicio del método y se
-  asignan dentro del manejador de 'start'.
-- Todos los manejadores de eventos posteriores ('media', 'stop', CLOSED,
-  ERROR) incluyen guardia defensiva (if service is not None) para el caso
-  extremo en que el WebSocket se cierre antes de recibir el evento 'start'.
-- La guardia del bloque finally comprueba voice_task is not None antes de
-  intentar cancelarla.
+- Instanciación de VoiceOrchestrationService diferida al evento 'start'.
+- service y voice_task se inicializan a None al inicio del método.
+- Todos los manejadores posteriores ('media', 'stop', CLOSED, ERROR)
+  incluyen guardia defensiva (if service is not None).
+- El bloque finally comprueba voice_task is not None antes de cancelarla.
 
 ### vox_bridge/views.py — Sin modificación
-InboundCallView no forma parte del flujo de instanciación del servicio
-y no ha sido modificada en este hito. Su única responsabilidad es generar
-el TwiML <Connect><Stream> de respuesta al POST inicial de Twilio cuando
-el sistema opera en modo Django WSGI (no aplica al bridge aiohttp activo).
+InboundCallView no forma parte del flujo de instanciación del servicio.
 
 ## 4. Fallback de Seguridad / Safety Fallback
-
-Si build_live_config() lanza una excepción (número no configurado, sin CallFlow),
-el sistema cae al comportamiento de demo hardcodeado para no dejar
-al llamante sin respuesta:
 
     try:
         system_instruction, initial_greeting = build_live_config(twilio_number)
@@ -149,6 +128,5 @@ al llamante sin respuesta:
         system_instruction = SYSTEM_INSTRUCTION_FALLBACK
         initial_greeting = INITIAL_GREETING_FALLBACK
 
-Las constantes SYSTEM_INSTRUCTION_FALLBACK e INITIAL_GREETING_FALLBACK se
-definen en vox_bridge/services.py y contienen la configuración actual de
-Alia/Grupo Álvarez como red de seguridad.
+Las constantes *_FALLBACK se definen en vox_bridge/services.py con la
+configuración de Alia/Grupo Álvarez como red de seguridad.

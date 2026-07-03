@@ -1,75 +1,4 @@
 ---
-name: enterprisebot-annex-v14
-description: "Anexo del Hito 14 de EnterpriseBot (Gestión de Tickets de Avería y Órdenes de Reparación). Contiene el historial de sesiones y la arquitectura del módulo: BreakdownTicket, ciclo de vida, integración con partes digitales del operario, CRUD manual desde el panel y futura entrada vía WhatsApp. Activar cuando el enrutador indique que el Hito 14 está EN PROGRESO, o cuando se necesite consultar BreakdownTicket, BreakdownTicketCreateView, BreakdownTicketDetailView, breakdown_ticket_list.html, breakdown_ticket_detail.html, o el flujo de órdenes de reparación."
----
-
-# ENTERPRISEBOT — ANEXO HITO 14
-## Gestión de Tickets de Avería y Órdenes de Reparación
-
----
-
-## PARTE 1 — COMPORTAMIENTO DE LA SKILL
-
-### RUTA EN PYTHONANYWHERE
-
-```
-/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md
-```
-
-### ACTIVACIÓN
-
-Esta skill se activa en dos casos:
-
-1. **El enrutador de anexos** indica que el Hito 14 está EN PROGRESO.
-2. **Cualquier skill o sesión** necesita consultar la arquitectura de
-   `BreakdownTicket`, `BreakdownTicketCreateView`, `BreakdownTicketDetailView`,
-   el flujo de órdenes de reparación o la integración con partes digitales.
-
-### PROTOCOLO DE CIERRE — LO QUE HACE ESTA SKILL AL SER INVOCADA POR PCS
-
-Al cierre de sesión, si se ha trabajado en este hito:
-
-#### PASO 1 — Redactar el registro de sesión
-
-Nueva fila en la tabla `## 7. Registro de Sesiones`.
-
-#### PASO 2 — Actualizar la Hoja de Ruta
-
-Reescribir la sección `## 8. Hoja de Ruta para la Siguiente Sesión`.
-
-#### PASO 3 — Reescribir el SKILL.md completo
-
-```
-/home/claude/skills/enterprisebot-annex-v14/SKILL.md
-```
-
-#### PASO 4 — Empaquetar
-
-```bash
-cd /mnt/skills/examples/skill-creator && \
-python -m scripts.package_skill \
-    /home/claude/skills/enterprisebot-annex-v14 \
-    /mnt/user-data/outputs/skills
-```
-
-#### PASO 5 — Presentar el `.skill` para descarga
-
-```python
-present_files(["/mnt/user-data/outputs/skills/enterprisebot-annex-v14.skill"])
-```
-
-#### PASO 6 — Backup en PythonAnywhere
-
-```sftp
-put "/sdcard/Download/EnterpriseBot_{NNN}_PUT.txt" "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md"
-exit
-```
-
----
-
-## PARTE 2 — CONTENIDO DEL ANEXO
-
----
 
 ## 1. Título
 
@@ -91,33 +20,76 @@ operario, y la futura entrada automática vía WhatsApp.
 
 ## 3. Arquitectura Técnica
 
-### Modelo `BreakdownTicket` — Estado actual
+### Modelo `BreakdownTicket` — Estado tras S050
 
-Campos confirmados tras S010:
+Campos confirmados:
 - `room` (FK `ChatRoom`)
 - `contact` (FK `Contact`)
-- `machine` (FK `MachineAsset`)
-- `section` (FK `Section`)
-- `status` — choices: OPEN, IN_PROGRESS, CLOSED
-- `is_repair_order` (BooleanField)
-- `resolved_by` (FK `CompanyUser` nullable)
-- `assigned_to` (FK `CompanyUser` nullable, related_name `assigned_tickets`)
-- `urgency` — choices: LOW/MEDIUM/HIGH/CRITICAL (cubre el campo `priority` previsto)
+- `machine` (FK `MachineAsset`, nullable)
+- `machine_raw` (CharField — código raw tal como lo reportó el contacto)
+- `fault_summary` (CharField)
+- `location` (CharField)
+- `section` (FK `Section`, nullable)
+- `status` — choices: OPEN, IN_PROGRESS, PAUSED, CLOSED
+- `origin` — choices: MANUAL, CHATBOT
+- `urgency` — choices: LOW/MEDIUM/HIGH/CRITICAL
+- `ticket_date_code` (CharField, formato YYYYMMDD-NN, asignado en `save()`)
+- `fault_category` (CharField, nullable)
+- `paused_at` (DateTimeField, nullable)
+- `reported_by` (CharField, nullable)
+- `resolved_by` (FK `CompanyUser`, nullable)
+- `assigned_to` (FK `CompanyUser`, nullable)
 - `created_at`, `updated_at`
+- Eliminados: `is_repair_order`, `ticket_number`
+- Migración aplicada: `chat/0004`
 
-### Vistas actuales
+### Modelo `BreakdownConversationTurn`
 
+Turnos de conversación Gemini asociados al ticket:
+- `ticket` (FK `BreakdownTicket`)
+- `role` — ROLE_USER / ROLE_MODEL
+- `content` (TextField)
+- `created_at`
+
+### Vistas — chat/views_tickets.py (split de chat/views.py)
+
+- `BreakdownTicketListView` — dashboard 3 paneles (igual que analytics_lab):
+  - Panel top: CRUD con filtros por estado
+  - Panel bottom-left: operarios con estado activo/libre
+  - Panel bottom-right: tickets OPEN/PAUSED/IN_PROGRESS asignables
+  - Drag & Drop operario → ticket → modal confirmación → POST action=assign
+  - Divisor arrastrable idéntico a analytics_lab
+  - Contexto: `operators` (WORKSHOPBOSS activos), `assignable_tickets`, `STATUS_CHOICES`
+- `BreakdownTicketDetailView` — detalle con acciones POST:
+  - `assign` — asigna operario, pausa OT previa automáticamente
+  - `self_assign` — autoasignación
+  - `pause` — pausa ticket, libera operario
+  - `close` — cierre con resolved_by y resolved_at
 - `BreakdownTicketCreateView` — creación manual desde panel
-- `BreakdownTicketDetailView` — detalle con acciones: `assign`, `convert_repair`, `set_urgency`, `close`
-- `breakdown_ticket_list.html` — listado con botón "Nuevo ticket"
-- `breakdown_ticket_detail.html` — detalle y acciones ciclo de vida
-- `breakdown_ticket_form.html` — formulario de creación
 
-### Integración con partes digitales
+### Canal WhatsApp BREAKDOWNS — chat/services.py
 
-`_get_context_base` de `WorkOrderEntryFormView` enriquecido con
-`repair_orders` (OTs abiertas disponibles para el operario: sin
-`assigned_to` o asignadas a él), con prerelleno automático via `data-*`.
+- `dispatch_inbound_message` — Rule 5b excluye contactos internos (`is_internal=True`);
+  solo externos (choferes) reciben el Quick Reply de avería
+- `_handle_breakdown_confirm` — envía Quick Reply y guarda `routing_state=AWAITING_BREAKDOWN_CONFIRM`
+- `_resolve_breakdown_confirm` — procesa respuesta Sí/No con detección robusta
+  (unicodedata NFD, startswith "si,", "si ")
+- `process_breakdown_turn` — agente Gemini sin catálogo; valida máquina server-side
+  via `_normalise_machine_code` + `_resolve_machine_asset`
+- `_dispatch_breakdown_card` — notifica sala Taller/Elevación:
+  - Enrutamiento por `machine.family`: PLATAFOR → Elevación, resto → Taller Mecánico
+  - Persiste tarjeta OUTBOUND en sala IRC
+  - Respeta ventana 24h: sesión activa → `send_reply`; inactiva → `send_template`
+    (chat_session_renewal) + encola en `WhatsAppSession.pending_broadcast_messages`
+
+### Resolución de máquina en views_operator.py
+
+Pasadas 1-4 para resolver `machine_raw` incluso cuando el input contiene
+el label completo (`"B43 — PALFINGER PK 72002"`):
+- Pasada 1: `code__iexact=machine_raw`
+- Pasada 2: `code__iexact=_normalise_machine_code(machine_raw)`
+- Pasada 3: extrae código antes de ` — ` con regex, reintenta pasadas 1-2
+- Pasada 4: `brand_model__iexact` / `brand_model__icontains`
 
 ---
 
@@ -136,23 +108,21 @@ Campos confirmados tras S010:
 | 9 | Color diferencial rojo/naranja en secciones completas/incompletas | S010 |
 | 10 | Panel lateral de miembros en salas de sección y sala BREAKDOWNS | S010 |
 | 11 | Botón Gestionar membresía de Averías en lista de salas (solo ADMIN) | S010 |
+| 12 | Fix I-BUG-A: `asset_code` → `code` en `BreakdownTicketCreateView` | S050 |
+| 13 | Split `chat/views.py` → `chat/views_tickets.py` | S050 |
+| 14 | Rediseño modelo `BreakdownTicket`: STATUS_PAUSED/CLOSED, `ticket_date_code`, `origin`, `fault_category`, `paused_at`, `reported_by`; eliminados `is_repair_order`, `ticket_number`; migración 0004 aplicada | S050 |
+| 15 | Dashboard 3 paneles `breakdown_ticket_list.html` (igual que analytics_lab): CRUD top, operarios bottom-left, tickets asignables bottom-right, drag & drop, divisor arrastrable | S050 |
+| 16 | Canal WhatsApp BREAKDOWNS operativo: Quick Reply → agente Gemini → ticket creado con `origin=CHATBOT` | S050 |
+| 17 | `_dispatch_breakdown_card`: enrutamiento por familia (PLATAFOR→Elevación, resto→Taller Mecánico), ventana 24h (send_reply / renewal + pending_broadcast_messages) | S050 |
+| 18 | Rule 5b: contactos internos (`is_internal=True`) nunca reciben Quick Reply de avería | S050 |
+| 19 | `views_operator.py`: pasadas 3-4 para resolver máquina desde label completo | S050 |
+| 20 | Fix autocomplete `form_entry_assets.js`: input muestra label completo; servidor resuelve por código o brand_model | S050 |
 
 ---
 
 ## 5. Incidencias Activas
 
-### I-BUG-A — FieldError en BreakdownTicketCreateView
-
-**Síntoma:** `FieldError: Cannot resolve keyword 'asset_code' into field`
-al acceder a `GET /panel/chat/breakdowns/tickets/create/`.
-
-**Origen:** `BreakdownTicketCreateView` filtra o ordena `MachineAsset`
-por `asset_code`, campo que no existe en el modelo. Los campos válidos
-incluyen `code`, `type_code`, `company_code`, entre otros.
-
-**Fix:** Localizar en `chat/views.py` la referencia a `asset_code` y
-sustituirla por el campo correcto (`code` o el que corresponda según
-el contexto).
+Sin incidencias activas.
 
 ---
 
@@ -161,38 +131,24 @@ el contexto).
 | Sesión | Fecha | Resumen |
 |--------|-------|---------|
 | S010 | 2026-05-21 | Implementación completa de los pasos 1-11 originales del hito. Arquitectura base de BreakdownTicket operativa. |
+| S050 | 2026-06-18 | Fix I-BUG-A. Split views. Rediseño modelo (ticket_date_code, origin, PAUSED/CLOSED). Dashboard 3 paneles. Canal WhatsApp BREAKDOWNS operativo de punta a punta: Quick Reply → Gemini → ticket creado → tarjeta al Taller con ventana 24h. Fixes autocomplete partes (regresión H07). Rule 5b: internos no reciben Quick Reply. |
+| S051 | 2026-06-18 | Paso 21: panel operarios vacío — fix views_tickets.py ampliando role__in=[ROLE_WORKSHOP, ROLE_WORKSHOPBOSS] en operators_qs y acción assign. Paso 22: jerarquía visual sidebar — reglas CSS sidebar-accordion-toggle y sidebar-accordion-body. Desvíos: fix STATUS_RESOLVED→STATUS_CLOSED en analytics/views.py y purge task; send_template añadido a WhatsAppChatService; fix lunch_window time→minutes en views_operator.py; selector 1:1 bot dashboard secciones→usuarios; opt_out_broadcast alvarez_admin False; sección Taller Huelva + usuarios Carlos Bas y David Contreras; PVR bloqueante en com-file-request. |
+| S014 | 2026-06-20 | Paso 23 completado: migración chat/0006 (fault_location, geo_lat, geo_lng, location_warning en BreakdownTicket). Rediseño arquitectónico completo acordado: toda comunicación interna es avería, se eliminan ChatRoom y lógica de salas, se unifica IVR+WA en un motor de averías único con log de conversación en ticket. H14 queda absorbido por H17 (Unificación IVR+WA — Motor de Averías y Log de Conversaciones). H14 PAUSADO. |
 
 ---
 
 ## 7. Hoja de Ruta para la Siguiente Sesión
 
-### Paso 12 — Fix I-BUG-A: FieldError `asset_code` en BreakdownTicketCreateView
+### Contexto — H14 PAUSADO
 
-Localizar en `chat/views.py` el filtro/orden por `asset_code` en el
-queryset de `MachineAsset` de `BreakdownTicketCreateView`. Sustituir
-por el campo correcto (`code`). Verificar que la vista GET responde
-sin errores tras el fix.
+H14 queda pausado tras S014. La arquitectura de averías ha sido
+rediseñada completamente en S014 y el trabajo restante se continúa
+en **H17 (Unificación IVR+WA — Motor de Averías y Log de Conversaciones)**.
 
-### Paso 13 — Auditoría y smoke test del CRUD completo de tickets
+Los pasos 24-27 definidos anteriormente han sido absorbidos por H17
+con la arquitectura actualizada. El modelo `BreakdownTicket` y la
+migración `chat/0006` (fault_location, geo_lat, geo_lng, location_warning)
+son la base sobre la que construye H17.
 
-Tras el fix del Paso 12, recorrer el flujo completo:
-- Crear ticket manual desde el panel.
-- Asignar a WORKSHOPBOSS.
-- Convertir a OT (`is_repair_order=True`).
-- Establecer urgencia.
-- Cerrar ticket.
-- Verificar que la OT aparece en el desplegable del formulario de parte.
-
-### Paso 14 — CRUD de tickets desde el panel: mejoras UX
-
-Revisar y mejorar la interfaz de gestión de tickets:
-- Listado con filtros por estado, sección, urgencia y operario asignado.
-- Acciones bulk (cerrar varios tickets a la vez).
-- Vista de detalle completa con historial de cambios de estado.
-- Badge de urgencia con color diferencial en el listado.
-
-### Paso 15 — Entrada de tickets vía WhatsApp (robot)
-
-Diseño e implementación del flujo de creación automática de tickets
-desde mensajes entrantes de WhatsApp al robot de la sala BREAKDOWNS.
-(Alcance a definir en la sesión correspondiente.)
+**No hay pasos pendientes en H14.** Todo el trabajo futuro de averías
+se ejecuta en H17.

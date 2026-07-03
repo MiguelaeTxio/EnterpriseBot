@@ -1,93 +1,3 @@
----
-name: enterprisebot-annex-v07
-description: "Anexo del Hito 7 de EnterpriseBot (Partes Diarios de Reparación — Entrada Digital desde el Panel). Contiene el historial completo de sesiones y la arquitectura del módulo de partes digitales: formulario unificado WorkOrderEntryFormView, vista única de creación/edición, validación al cierre (modal guardián), selector de ausencias PERSONAL, circulares WhatsApp por sección y migraciones de ivr_config/whatsapp asociadas. Activar cuando el enrutador de anexos indique que el Hito 7 está EN PROGRESO, cuando se necesite consultar WorkOrder/WorkOrderEntry/WorkOrderEntryLine/WorkdayGap/AbsenceCategory, el formulario form_entry.html, el flujo de circulares group_broadcast/pending_broadcast_messages, o cuando el cierre de sesión (v00-pcs) invoque este anexo."
----
-
-# ENTERPRISEBOT — ANEXO HITO 7
-# Partes Diarios de Reparación — Entrada Digital desde el Panel
-
----
-
-## ═══════════════════════════════════════════
-## PARTE 1 — COMPORTAMIENTO DE LA SKILL
-## ═══════════════════════════════════════════
-
-### RUTA EN PYTHONANYWHERE
-
-```
-/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md
-```
-
-### ACTIVACIÓN
-
-Esta skill se activa en dos casos:
-
-1. **El enrutador de anexos** indica que el Hito 7 está EN PROGRESO (caso
-   normal) o que hay un desvío de sesión hacia H7 (Caso A — incidencia
-   fuera del hito EN PROGRESO).
-2. **Cualquier skill o sesión** necesita consultar la arquitectura del
-   módulo de partes digitales: `WorkOrder`, `WorkOrderEntry`,
-   `WorkOrderEntryLine`, `WorkdayGap`, `AbsenceCategory`, el formulario
-   `form_entry.html` / `form_entry_assets.js`, las vistas
-   `WorkOrderEntryFormView` / `WorkOrderEditView` /
-   `WorkOrderEntryHistoryView` / `WorkOrderAdminHistoryView`, o el flujo de
-   circulares WhatsApp por sección (`group_broadcast`,
-   `pending_broadcast_messages`, `Section.is_broadcast_enabled`).
-
-### PROTOCOLO DE CIERRE — LO QUE HACE ESTA SKILL AL SER INVOCADA POR PCS
-
-Al cierre de sesión, si se ha trabajado en este hito (EN PROGRESO o por
-desvío — Caso A del enrutador):
-
-#### PASO 1 — Redactar el registro de sesión
-
-Nueva fila en la tabla `## 7. Registro de Sesiones` con el número
-siguiente al último registrado (actualmente S045). Si la sesión fue un
-desvío (Caso A), indicarlo explícitamente en la columna "Resumen" —
-incluyendo de qué hito EN PROGRESO se desvió y qué se resolvió — sin
-alterar el resto de la hoja de ruta.
-
-#### PASO 2 — Actualizar la Hoja de Ruta
-
-Reescribir la sección `## 8. Hoja de Ruta para la Siguiente Sesion` con
-los cambios pertinentes. Recordar que el hito está PAUSADO: la
-continuidad funcional (exportación, filtros, búsqueda) vive en el Hito 19
-(`enterprisebot-annex-v19`), no en este anexo.
-
-#### PASO 3 — Reescribir el SKILL.md completo
-
-Escribir en:
-```
-/home/claude/skills/enterprisebot-annex-v07/SKILL.md
-```
-
-#### PASO 4 — Empaquetar
-
-```bash
-cd /mnt/skills/examples/skill-creator && \
-python -m scripts.package_skill \
-    /home/claude/skills/enterprisebot-annex-v07 \
-    /mnt/user-data/outputs/skills
-```
-
-#### PASO 5 — Presentar el `.skill` para descarga
-
-```python
-present_files(["/mnt/user-data/outputs/skills/enterprisebot-annex-v07.skill"])
-```
-
-#### PASO 6 — Backup en PythonAnywhere
-
-```sftp
-put "sdcard/Download/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md" "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md"
-```
-
----
-
-## ═══════════════════════════════════════════
-## PARTE 2 — TEXTO ÍNTEGRO DEL ANEXO
-## ═══════════════════════════════════════════
-
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md
 
 # Anexo de Hito V07 — Partes Diarios de Reparación — Entrada Digital desde el Panel
@@ -295,33 +205,83 @@ desde el formulario de edición de sección.
 | S045 | 2026-06-13 | Eliminación del Gate 4, vista única de partes digitales y refuerzo de validación al cierre. Sesión incidencia del Hito 7 atendida por desvío mientras el hito EN PROGRESO era el Hito 18 (Gestión de Mapas y Geolocalización). Reingeniería completa del flujo de creación/edición: eliminación total del Gate 4 (WorkdayGapResolutionView, WorkOrderEntryMergeView, funciones _detect_workday_gaps/_detect_overlaps/_serialize_pending_lines, rutas operator/gaps/ y operator/merge/); vista única WorkOrderEntryFormView para todos los roles, WorkOrderEditView reservada a partes PDF históricos (recuperada estructura de form_entry.html del commit 76c184a, previo al Gate 4); validación de fecha duplicada corregida (excluye IN_PROGRESS propios y parte en edición) y validación de fecha futura añadida; modal guardián de cierre (lagunas, solapamientos, jornada <8h, con guía de tarea PERSONAL); selector de ausencias con foco automático y validación condicional por requires_note, fix de serialización JSON de absence_categories; pausa de comida según tipo de jornada con checkboxes "No he parado a comer"/"He parado a comer" y reinicialización tras swap HTMX; auto-relleno de horarios al añadir tarea; unificación de nomenclatura "bloque"→"tarea"; copia de seguridad por log `# [PARTE-BACKUP]`; smoke test 9/9. Archivos: panel/views_operator.py, panel/views.py, panel/urls.py, form_entry.html, _schedule_fields_fragment.html, form_entry_assets.js. Detalle del desvío anotado también en el anexo del Hito 18. |
 | S046 | 2026-06-15 | Fix validators.py/views_operator.py (lunch_window desacoplado), fix Android asset-search y reset contraseña Fontalba. Sesión incidencia del Hito 7 atendida por desvío mientras el hito EN PROGRESO era el Hito 18. **Fix lunch_window (Paso 46):** desacoplada la ventana de comida hardcodeada en `validators.py` — eliminadas constantes `_LUNCH_WINDOW_START_MIN/_LUNCH_WINDOW_END_MIN`; `_is_lunch_gap` recibe ahora `lunch_window` (devuelve False si None); `validate_intra_gaps` y `run_intra_part_validation` propagan el parámetro. En `views_operator.py` (WorkOrderEntryFormView.post, ~línea 2873): añadido bloque de resolución de `_lunch_window` a partir de `_lb_start/_lb_end/_no_lunch_break` (turno declarado) o `WorkdaySchedule.end_time_morning/start_time_afternoon` si no es jornada intensiva. WorkOrderEntryConfirmView.post (~línea 1417, Vía C/PDF) no tocado — sigue pasando lunch_window=None. Ambos archivos verificados con py_compile OK, sftp put confirmado (validators.py 30 KB, views_operator.py 172 KB), backups SWAP .v01 ejecutados. Reload con timeout (ReadTimeout 15s) — timeout conocido de la API de PythonAnywhere que no implica fallo; webapp verificada como operativa. Workaround de WO #162 / entry #1412 (bloque único ficticio 07:00-21:30, Pablo Cañamero, 2026-06-10) pendiente de revertir/recalcular en caliente cuando se confirme el fix en producción. **Fix Android asset-search:** el campo `.asset-search` no disparaba el desplegable de búsqueda en Android (teclado virtual IME, keyCode 229, no propagaba evento `input`). Fix: añadido listener `keyup` como fallback en `attachAutocomplete` de `form_entry_assets.js` (`input.addEventListener("keyup", _onInputChange)`), junto al listener `input` ya existente. Verificado en consola Eruda: dropdown funciona con búsqueda "G1" mostrando G10-G16. **Reset contraseña Fontalba:** contraseña de Antonio Fontalba restablecida a `1234` vía shell interactiva Django (`set_password`), con flag `must_change_password=True` para forzar cambio en el primer login. |
 | S049 | 2026-06-17 | Paso 49: plantillas de exportación compartidas por empresa. `is_global` + `company` en `ExportTemplate`, migración 0024, vistas CREATE/UPDATE/LIST ampliadas, modal de gestión inline en `admin_history.html`, JS estático `export_templates.js`, fix lookup en `WorkOrderAdminExportByTemplateView`. Skills de nomenclatura `_GET`/`_PUT` actualizadas (9 skills). |
-| S048 | 2026-06-17 | Sesión de continuación H07 con desvíos a H08 y mejoras en WorkOrderAdminHistoryView. **Desvío H08:** fix regresión editor fecha inline en edit.html — el handler JS (btn-date-edit-toggle/btn-date-cancel) se había perdido del IIFE en un merge; añadido antes del cierre }();. **Fix duplicación entries (H07):** restaurado work_order.entries.all().delete() antes de work_order.status=DONE en bloque if _reuse_wo is not None de close_order en views_operator.py. Entries WO#172 y WO#173 verificadas limpias (1 entry cada una). **Botón eliminar tarea en modo edición:** añadido btn-remove-block-static con data-block-id en bloques server-side de form_entry.html; handler en form_entry_assets.js (row.remove() + decremento numEntradasInput + e.preventDefault()/stopPropagation()). **Columna H. Extra en WorkOrderAdminHistoryView:** campo horas_extra=max(0,horas_totales-8) añadido a _enrich_work_orders en views_workorders.py; columna H. Extra con badge verde (+Xh) en las tres pestañas de admin_history.html; horas_extra añadida a _VALID_SORT_COLS y al sort-stack JS de admin_history.js (initBulkGroup("reviewed") también añadido). **Colores horas extra:** overtime-positive → verde en operator/history.html; lógica negativo eliminada. **Selección múltiple revisados:** initBulkGroup("reviewed") faltaba en admin_history.js. **H. Extra en plantillas exportación:** horas_extra añadida a COLUMN_DEFS de build_export_from_template en services.py y a column_choices en views_workorders.py. **Autoajuste columnas Excel:** función _autofit_columns añadida en services.py, aplicada en single_sheet y multi_sheet. Skill enterprisebot-annex-v08 creada. Skill v01-edit creada (sin backup SWAP). |
+| S048 | 2026-06-17 | Sesión de continuación H07 con desvíos a H08 y mejoras en WorkOrderAdminHistoryView. **Desvío H08:** fix regresión editor fecha inline en edit.html — el handler JS (btn-date-edit-toggle/btn-date-cancel) se había perdido del IIFE en un merge; añadido antes del cierre }();. **Fix duplicación entries (H07):** restaurado work_order.entries.all().delete() antes de work_order.status=DONE en bloque if _reuse_wo is not None de close_order en views_operator.py. Entries WO#172 y WO#173 verificadas limpias (1 entry cada una). **Botón eliminar tarea en modo edición:** añadido btn-remove-block-static con data-block-id en bloques server-side de form_entry.html; handler en form_entry_assets.js (row.remove() + decremento numEntradasInput + e.preventDefault()/stopPropagation()). **Columna H. Extra en WorkOrderAdminHistoryView:** campo horas_extra=max(0,horas_totales-8) añadido a _enrich_work_orders en views_workorders.py; columna H. Extra con badge verde (+Xh) en las tres pestañas de admin_history.html; horas_extra añadida a _VALID_SORT_COLS y al sort-stack JS de admin_history.js (initBulkGroup("reviewed") también añadido). **Colores horas extra:** overtime-positive → verde en operator/history.html; lógica negativo eliminada. **Selección múltiple revisados:** initBulkGroup("reviewed") faltaba en admin_history.js. **H. Extra en plantillas exportación:** horas_extra añadida a COLUMN_DEFS de build_export_from_template en services.py y a column_choices en views_workorders.py. **Autoajuste columnas Excel:** función _autofit_columns añadida en services.py, aplicada en single_sheet y multi_sheet. Skill enterprisebot-annex-v08 creada. Skill com-edit creada (sin backup SWAP). |
+| S050 | 2026-06-18 | Desvío H07 durante sesión H14. **Fix NoReverseMatch digital_list.html:** eliminado `<li>` con `{% url 'panel:work_order_export' wo.pk %}` de la pestaña Revisados (URL no acepta pk). **Fix autocomplete máquina form_entry_assets.js:** input muestra label completo al seleccionar (`B43 — PALFINGER PK 72002`) como confirmación visual; servidor resuelve el activo aunque llegue el label completo (pasadas 3-4 en views_operator.py: regex extrae código antes de ` — `, fallback por brand_model). Regresión intermedia detectada y corregida en la misma sesión. |
+| S051 | 2026-06-19 | **Fix I-S007:** pausa de comida no editable en modo edición. Causa raíz: `form_entry.html` condicionaba el `{% include "_schedule_fields_fragment.html" %}` con `{% if not entradas_enriched %}`, omitiendo el fragment completo en modo edición. Fix: eliminada la guarda exterior — el fragment se incluye siempre; guarda interna protege el bloque-1 dinámico. Smoke test OK. **Desactivación Vía C (Upload/Gemini Vision):** tarjeta eliminada de `dashboard.html`, URLs `operator/upload/` y `operator/confirm/` comentadas en `urls.py`. Código preservado para reactivación futura. PCH ejecutado: H07 → H03 + H14. |
+| S_H07_02 | 2026-06-22 | **S_H07_01 — Fix edición admin de partes digitales.** (1) `_enrich_work_orders` en `views_workorders.py`: añadido `"source": wo.source` al dict enriquecido. (2) `admin_history.html`: botón "Editar / Revisar" condiciona la URL según `wo.source` — `DIGITAL`/`GENERATED` → `operator_form_edit`; PDF → `work_order_edit`. (3) `WorkOrderEntryFormView.get`: filtro `uploaded_by=cu` suprimido para `ADMIN`/`SUPERVISOR`; redirect de error corregido a `work_order_admin_history`. (4) `WorkOrderEntryFormView.post` (close): mismo fix en bloque `edit_wo_pk`. **Fix pausa de comida invisible en jornada intensiva.** En modo edición GET, `_show_lunch_edit` ignoraba `first_entry.lunch_break_start/end`. Fix: Prioridad 1 — leer pausa real del parte guardado (independientemente del tipo de jornada); Prioridad 2 — fallback al horario base para jornada partida sin pausa guardada. Añadido `no_lunch_break` al `context.update`. **Fix redirección tras guardar como admin.** (a) `save_blocks`: `WORKSHOP` → `/panel/operator/form/`; `ADMIN`/`SUPERVISOR` → `work_order_admin_history`. (b) Overlap: `ADMIN`/`SUPERVISOR` redirigen a `work_order_admin_history` en lugar de render de `form_entry.html`. Archivos: `panel/views_workorders.py`, `panel/templates/panel/work_orders/admin_history.html`, `panel/views_operator.py`. py_compile/djlint OK. Reloads 200 OK. PCH: H07 → H17. |
+
+---
+
+| S_H07_05 | 2026-06-23 | **Implementación is_on_site, has_diet y dropdown EMPRESA_* en partes digitales.** [1] `WorkOrderEntryLine.is_on_site` (BooleanField, nivel bloque) + `WorkOrderEntry.has_diet` (BooleanField, nivel parte) añadidos a `work_order_processor/models.py`; migración `0026_workorderentry_has_diet_and_more` generada y aplicada. [2] `panel/views_operator.py`: `_parse_entry_lines_from_post` lee `entrada_{i}_is_on_site` y `empresa_subtype` del POST; ambas rutas de persistencia (save_blocks + close_order) pasan `is_on_site` a `WorkOrderEntryLine.create`; close_order lee `has_diet` y lo pasa a `WorkOrderEntry.create`; GET inyecta `empresa_subtypes` (dict código→lista subtipos) en contexto para paths creación + in_progress. Fix residual H17: `room__company=company` → `company=company` en query `BreakdownTicket` de `_get_context_base`. [3] `form_entry.html`: checkbox `has_diet` en card de jornada; wrapper `empresa-selector-wrap` en bloques server-rendered; `empresaSubtypes` en `EB_CONFIG`. [4] `_schedule_fields_fragment.html`: wrapper `empresa-selector-wrap-1` + checkbox `is_on_site` añadidos al primer bloque (Tarea 1). [5] `form_entry_assets.js`: `_toggleEmpresaMode(idx, isEmpresa, assetCode)` implementada (oculta avería, muestra select subtipo, repair_notes como nota obligatoria); detección `EMPRESA_*` en autocomplete handler; wrappers en template JS de bloque dinámico. [6] `seed_empresa_assets.py` reescrito: desactiva `EMPRESA_ALMACEN` genérico; crea 4 activos ALMACEN_* (`EMPRESA_ALMACEN_MECANICO`, `EMPRESA_ALMACEN_ELEVACION`, `EMPRESA_ALMACEN_HUELVA`, `EMPRESA_ALMACEN_DEPENDENCIAS`); define `EMPRESA_SUBTYPES` (taller/dependencias: Orden y limpieza/Reparación/Otros; almacén: +Inventario) y `get_empresa_subtype_group`. Seed ejecutado: 4 creados, EMPRESA_ALMACEN desactivado. collectstatic + reload 200 OK en todos los despliegues. |
+| S_H07_04 | 2026-06-22 | Sesión de desvíos masivos desde H07 (enrutador marcaba H07 EN PROGRESO, PCH H07→H17 pendiente). 12 incidencias de producción resueltas. **[1]** fix `form_entry_assets.js` `_applyMeterFields`: `_canPrefill()` evita sobreescribir lecturas de km/horas que el operario modifica manualmente. **[2]** fix visibilidad campos km/horas en modo edición: meter-divs revelados server-side en `form_entry.html` con `{% if entrada.machine_asset.has_odometer %}`; on-load JS extrae código limpio del label y preserva valores del servidor. **[3]** fix `digital_list.html` corrupto (TemplateSyntaxError línea 311): pestaña Pendientes truncada desde commit 379fc76, reconstruido bloque completo (20 líneas añadidas, 624 total). **[4]** fix `import_machine_catalog.py`: `mileage`/`hours` excluidos de `defaults` en `update_or_create` — solo se aplican en creación; activos existentes preservan lecturas reales. **[5]** corrección manual `WorkOrderEntryLine` pk=3056 (WO#216 Fontalba 22/06): `odometer_reading` 995270→117515 vía shell Django. **[6]** `MachineAsset` A58: `mileage` corregido a 117515 vía shell Django. **[7]** `validators.py` R6/R7: lectura menor convertida de error bloqueante a warning confirmable via `meterWarningModal`; cualquier discrepancia (< o > threshold) es warning. **[8]** fix Gate0 fecha duplicada en edición admin: el ADMIN tenía un parte de prueba para 22/06 — eliminado manualmente. **[9]** `form_entry.html` enlace "Volver al historial" y botón Cancelar: discriminan por rol (`WORKSHOP`/`WORKSHOPBOSS`→`operator_history`, resto→`digital_work_order_list`). **[10]** `digital_list.html` (con dropdown) borrado — era una copia corrupta generada al reconstruir el template truncado. **[11]** `views_operator.py`: 3 redirects y `_elevated_url` fallback cambiados de `work_order_admin_history`/`digital_work_order_list` a `operator_history`. **[12]** `budgets/views.py` `InsurerUpdateView.get`: `night_schedules` añadido al contexto (faltaba en el dict de `_build_base_context`). Archivos: `form_entry_assets.js`, `form_entry.html`, `digital_list.html` (eliminado), `import_machine_catalog.py`, `validators.py`, `views_operator.py`, `views_workorders.py`, `budgets/views.py`. |
+| S_H07_06 | 2026-07-02 | **Fix H07 PASO 0 — pausa de comida y checkbox no persisten en modo edición (wo_pk).** Causa raíz confirmada en `panel/views_operator.py`: la rama de edición `wo_pk is not None` (WorkOrder DIGITAL/GENERATED, reviewed=False) construía `lunch_break_start`/`lunch_break_end` exclusivamente desde `_schedule_edit` (fallback WorkdaySchedule), ignorando `first_entry.lunch_break_start/end`; el fix de S_H07_02 solo se había aplicado a la rama paralela `in_progress` (`_ip_first_entry`), nunca a esta. Solo se manifestaba en jornada partida porque es la única rama donde el fallback de horario realmente rellena algo (en intensiva ese bloque nunca setea `_lunch_start_edit`/`_lunch_end_edit`). Fix: mismo patrón de prioridad que la rama in_progress — `lunch_break_start`/`lunch_break_end` priorizan el valor real guardado (`first_entry.lunch_break_start/end`), con fallback al horario base solo si no hay valor guardado. Añadido también `no_lunch_break` al contexto de esta rama (ausente hasta ahora). Segundo hallazgo relacionado, mismo bloque: `_schedule_fields_fragment.html` renderizaba los checkboxes `id_no_lunch_toggle`/`id_had_lunch_toggle` sin atributo `checked` condicional — arrancaban desmarcados siempre, en ambas ramas de edición, ignorando el contexto Django. Fix: `id_no_lunch_toggle` con `{% if no_lunch_break %}checked{% endif %}`; `id_had_lunch_toggle` con `{% if lunch_break_start %}checked{% endif %}` (checked solo si hay pausa real guardada, ya que el fallback de horario nunca rellena `lunch_break_start` en intensiva). Eliminada `EB_CONFIG.noLunchBreak` en `form_entry.html` — hardcodeada a `false`, confirmado por grep que no se lee en ningún punto de `form_entry_assets.js` (código muerto). Archivos: `panel/views_operator.py`, `panel/templates/panel/operator/_schedule_fields_fragment.html`, `panel/templates/panel/operator/form_entry.html`. `form_entry_assets.js` solo se leyó, no se modificó. Verificado `py_compile`/`djlint` sin errores nuevos, `install_files` OK, reload `200 {"status":"OK"}`. Pendiente de confirmación funcional por Pablo Cañamero en producción — anotar resultado cuando llegue. Sesión con dos desvíos previos a H16 (ver anexo H16): fix `ProtectedError` en `InsurerCopyTariffView` (borrado+recreación de `VehicleType` sustituido por merge-por-nombre con desactivación — nunca se borra ninguna fila, ninguna relación PROTECT puede volver a bloquear la operación; mismo criterio aplicado a `VehicleTypeDeleteView`, que pasó de `.delete()` real a `is_active=False`) y fix 405 al borrar aseguradora tras búsqueda HTMX en el listado (listener `show.bs.modal` movido de `DOMContentLoaded`/fragmento recargado por HTMX a delegación sobre `document.body` en `insurer_list.html`). Ambos fixes de H16 confirmados en real por Miguel Ángel. PCH ejecutado al cierre: H07 → H10 (Albaranes de Proveedores y Almacén de Repuestos). |
 
 ---
 
 ## 8. Hoja de Ruta para la Siguiente Sesion
 
-### Estado: Hito PAUSADO
+Sin pasos comprometidos pendientes. PASO 0 (pausa de comida no persiste en
+jornada partida) resuelto en S_H07_06 — pendiente únicamente de
+confirmación funcional de Pablo Cañamero en producción (probará el fix en
+el uso real y reportará el resultado). Si reporta algún fallo, retomar
+empezando por `panel/views_operator.py` líneas ~2198-2219 (rama
+`wo_pk is not None`) y
+`panel/templates/panel/operator/_schedule_fields_fragment.html` (checkboxes
+`id_no_lunch_toggle`/`id_had_lunch_toggle`).
 
-La hoja de ruta del Paso 49 fue completada en S049. Sin pasos pendientes
-para la siguiente sesión en este hito.
+Trabajo futuro sugerido (no comprometido, sin cambios respecto a sesiones
+anteriores):
 
-### Criterios de reapertura de este hito (H7)
+- **Validación EMPRESA_*** — añadir al Gate 1 de
+  `_parse_entry_lines_from_post` una comprobación de que `empresa_subtype`
+  no llegue vacío cuando la máquina tiene prefijo `EMPRESA_`. Explicado a
+  Miguel Ángel en S_H07_06 y pospuesto por decisión suya — no hay
+  incidencia real reportada en pruebas, no urgente. Retomar cuando
+  convenga o cuando se detecte el fallo en producción.
+- **Exportación Excel** — columnas `is_on_site`, `has_diet` y
+  `empresa_subtype` disponibles en el motor de plantillas (H19). Añadirlas
+  a `COLUMN_DEFS` en `work_order_processor/services.py` cuando se retome
+  H19.
+- **Analítica** — `is_on_site` y `has_diet` son candidatas a dimensiones
+  en el Laboratorio de Análisis (H20).
 
-Este anexo puede reabrirse — como hito EN PROGRESO o por desvío (Caso A)
-— para:
+---
 
-1. Regresiones en el flujo unificado `WorkOrderEntryFormView` tras la
-   reingeniería de S045 (Gate 4 eliminado, vista única de creación/edición).
-2. Ajustes al modal guardián de cierre, al selector de ausencias PERSONAL
-   o al auto-relleno de horarios.
-3. Extensiones al flujo de circulares WhatsApp por sección
-   (`group_broadcast`, `pending_broadcast_messages`).
-4. Cualquier incidencia sobre `WorkOrder`/`WorkOrderEntry`/
-   `WorkOrderEntryLine`/`WorkdayGap`/`AbsenceCategory` no cubierta por el
-   alcance del Hito 19.
-5. Ajustes o ampliaciones al sistema de plantillas de exportación compartidas
-   implementado en S049.
+## 9. Registro adicional — S_H07_03 (2026-06-22, desvíos desde H12)
 
-**Continuar el trabajo planificado en**
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md` (`enterprisebot-annex-v19`).
+Cuatro incidencias de H07 resueltas por desvío durante la sesión H12:
+
+**[1] Fix permisos SUPERVISOR en WorkOrderEntryFormView:** Carolina (SUPERVISOR)
+recibía 403 al editar partes digitales desde el historial de taller.
+`WorkOrderEntryFormView` usaba `WorkshopRequiredMixin` ({WORKSHOP,WORKSHOPBOSS,ADMIN}).
+Solución: nuevo mixin `WorkOrderFormAccessMixin` en `panel/mixins.py`
+({WORKSHOP,WORKSHOPBOSS,SUPERVISOR,ADMIN}), aplicado a `WorkOrderEntryFormView`
+en `panel/views_operator.py`. Import actualizado.
+
+**[5] Filtros persistentes + periodos en historial:** (a) `digital_list.html`:
+hidden input `tab` en form GET, pestañas con onclick, show/active server-side.
+`DigitalWorkOrderListView`: `active_tab` leído de GET param. (b)
+`WorkOrderAdminHistoryView`: `period_operator_groups` añadido al contexto —
+pestaña Períodos del historial de taller ahora muestra todos los periodos. (c)
+`WorkOrderEditView`: `back_url` leído de `?back=` GET param; campo hidden
+`back_url` en form regenerate de `edit.html`; POST redirige al `back_url`.
+
+**[6] Redirect correcto tras guardar en WorkOrderEntryFormView:** Los redirects
+de SUPERVISOR/ADMIN iban hardcodeados a `work_order_admin_history` ("vista rara").
+Solución: `_elevated_url` en el POST (lee `back_url` del hidden o fallback a
+`digital_work_order_list`). Los 3 puntos de redirect sustituidos. `form_entry.html`:
+campo hidden `back_url` añadido con `{% if back_url %}`.
+
+**[7] WorkPeriod.is_closed — periodos liquidables:** `end_date` causaba que
+periodos con fecha de fin aparecieran como "cerrados". Nuevo campo
+`is_closed=BooleanField(default=False)` en `ivr_config/models.py` (migración
+`0036` generada y aplicada). `has_open` basado en `is_closed=False`. Nueva
+`WorkPeriodLockView` (ADMIN, toggle `is_closed` por pk). Guards en
+`WorkOrderEditView.get` y `WorkOrderEntryFormView.get` bloquean edición en
+periodos liquidados. Templates con columna Estado badge Activo/Liquidado y
+botón Liquidar/Reabrir solo para ADMIN.
+
+Archivos modificados: `panel/mixins.py`, `panel/views_operator.py`,
+`panel/views_workorders.py`, `panel/views.py`, `panel/urls.py`,
+`ivr_config/models.py`, `digital_list.html`, `edit.html`, `form_entry.html`,
+`admin_history.html`, `work_period_list.html`.

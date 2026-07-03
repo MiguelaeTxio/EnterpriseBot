@@ -47,6 +47,37 @@ Modelo `ExportTemplate` añadido a `work_order_processor/models.py` con `SheetFo
 
 ---
 
+### Trabajo Realizado en S046
+
+#### PASO 0 — Fix duplicación fila TOTAL en exportación Excel por plantillas ✓
+Diagnosticada y corregida la causa raíz: `build_export_from_template` itera
+`WorkOrderEntryLine` pero `delta_horas`/`horas_extra` son métricas de
+`WorkOrderEntry` — con N líneas por entry el acumulador sumaba N veces.
+- `work_order_processor/services.py`: añadido `seen_entry_pks` (set) en ambos
+  bucles (`single_sheet` y `multi_sheet`). Los acumuladores `NUMERIC_KEYS` solo
+  se incrementan en la primera línea de cada entry (`is_first_line_of_entry`).
+  Las columnas `NUMERIC_KEYS` se escriben en blanco en líneas posteriores de la
+  misma entry (Opción B — una vez por día). Añadido `.distinct()` al queryset
+  `rows` como red de seguridad.
+- `panel/views_workorders.py`: eliminado `prefetch_related` del qs que se pasa
+  a `build_export_from_template` — el prefetch causaba duplicados al usarse como
+  subquery. TOTAL verificado en producción: 30,5h correctas.
+
+#### Desvío — Fix borrado bulk en pestaña Revisados ✓
+El botón "Eliminar" de `form-bulk-reviewed` no enviaba el POST. Causa: campos
+`required` de otro formulario de la misma página (`company_user_pk`, `start_date`,
+`end_date`) bloqueaban la validación HTML5 del navegador antes del submit.
+Fix: `novalidate` añadido a los tres formularios bulk (`form-bulk-pending`,
+`form-bulk-reviewed`, `form-bulk-history`) en `admin_history.html`.
+Verificado en producción: 12 partes eliminados correctamente.
+
+#### Desvío — Fix residuo H17 en analytics/views.py ✓
+`BreakdownTicket.objects.filter(room__company=...)` en `analytics/views.py`
+línea 2164 causaba `FieldError` (campo `room` eliminado en H17).
+Fix: `room__company` → `company`. Archivo: `analytics/views.py`.
+
+---
+
 ### Bugs Pendientes de Auditoría
 
 #### BUG ACTIVO — Filtro familia de avería no filtra correctamente
@@ -70,23 +101,38 @@ Modelo `ExportTemplate` añadido a `work_order_processor/models.py` con `SheetFo
 
 ---
 
-### Hoja de Ruta para la Siguiente Sesión (S046)
+### Hoja de Ruta para la Siguiente Sesión
 
-#### Paso 1 — Auditoría del filtro de familia de avería
+#### Paso 1 — Auditoría del filtro de familia de avería (pendiente desde S045)
 Verificar en producción si el filtro funciona tras el `.distinct()` aplicado en S045.
-Si no funciona, auditar el flujo completo:
-1. Confirmar que el desplegable envía el valor interno correcto (ej. `ENGINE_TRANSMISSION`) y no el label.
-2. Confirmar que `_apply_filters` recibe el valor GET correctamente.
-3. Confirmar que el filtro ORM `entries__lines__fault_category=fault_category` produce el queryset esperado ejecutando la query en la shell de Django.
-4. Si el problema persiste, considerar filtrar via subquery con `WorkOrder.pk__in` en lugar de JOIN directo.
+Flujo a auditar: valor GET del desplegable → `_apply_filters()` → queryset →
+`_enrich_work_orders()` → template. Verificar que el valor GET coincide exactamente
+con los valores almacenados en BD (`FaultCategory` choices).
 
 #### Paso 2 — Verificación E2E completa de la pestaña Revisados
-- Verificar bulk bar: Desmarcar revisados, Marcar revisados, Eliminar.
-- Verificar botón HTMX individual de desmarcar.
-- Verificar botón Exportar y modal de plantillas.
+Verificar bulk bar (desmarcar/marcar/eliminar), botón HTMX individual de desmarcar
+y modal de exportación por plantilla.
 
 #### Paso 3 — Fix botón Exportar cortado en bulk bar
-El botón verde "Exportar" se desborda por la derecha en la bulk bar de Revisados. Ajustar el layout Bootstrap para que quede contenido.
+El botón verde "Exportar" se desborda por la derecha. Ajustar layout Bootstrap.
 
-#### Paso 4 — Verificación E2E motor de exportación
-Probar exportación completa: seleccionar partes revisados → abrir modal → seleccionar plantilla → exportar → verificar xlsx descargado.
+---
+
+## Registro adicional — Desvíos desde H12 (2026-06-22)
+
+**[3] Fila TOTAL en exportación Excel por plantillas:**
+`build_export_from_template` en `work_order_processor/services.py` no generaba
+fila de totales. Añadida constante `NUMERIC_KEYS = {"delta_horas", "horas_extra"}`,
+helper `_write_totals_row` (fondo D6E4F0, fuente azul oscuro negrita, "TOTAL" en col 1,
+suma redondeada por columna numérica activa en plantilla). `single_sheet`: acumulador
+global, TOTAL al final. `multi_sheet`: acumulador por hoja, TOTAL al cerrar cada hoja.
+Sin columnas numéricas activas: no se escribe TOTAL.
+Archivo: `work_order_processor/services.py`.
+
+**[4] Fila TOTAL en vista Revisados de WorkOrderAdminHistoryView:**
+La pestaña Revisados de `admin_history.html` no mostraba totales de horas.
+Solución: (a) `views_workorders.py`: `reviewed_totals={horas_totales, horas_extra}`
+calculado sumando `reviewed_list` ya filtrada por operario/fechas/máquina, pasado
+al contexto. (b) `admin_history.html`: fila TOTAL con `table-primary` al final
+del tbody de Revisados. Solo se renderiza si hay partes. Respeta todos los filtros
+activos. Archivos: `panel/views_workorders.py`, `admin_history.html`.

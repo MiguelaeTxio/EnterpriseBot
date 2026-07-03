@@ -1,203 +1,176 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md
 
-# Anexo de Hito V17 -- Albaranes y Ordenes de Trabajo ASISTENCIA
+# Anexo de Hito V17 — Unificación IVR + WhatsApp — Motor de Averías y Log de Conversaciones
 # Proyecto: EnterpriseBot
-# Fecha de creacion: 2026-05-29
+# Fecha de inicio: pendiente
 
 ---
 
-## 1. Vision General del Hito
+## 1. Visión General del Hito
 
-La seccion de ASISTENCIA necesita digitalizar el flujo completo de trabajo
-desde que se acepta un presupuesto (o se genera una orden directa) hasta que
-el operario entrega el servicio al cliente y este firma el albaran. El objetivo
-es eliminar el papel, reducir errores de transcripcion y dejar el albaran
-listo para facturacion con un solo clic desde el panel de administracion.
+Este hito unifica los canales IVR y WhatsApp bajo una única lógica de
+averías. Cualquier comunicación interna — llamada o mensaje — es
+tratada automáticamente como avería y genera un BreakdownTicket.
+Se elimina el modelo ChatRoom y toda su lógica de routing por salas.
 
-**Vias de entrada:**
-1. Presupuesto aceptado -> se convierte automaticamente en Orden de Trabajo.
-2. Orden de Trabajo nueva directa -> sin presupuesto previo.
+Principios rectores:
 
-**Flujo de salida:**
-El albaran digital firmado queda en el sistema listo para revision ADMIN
-y exportacion a facturacion.
+1. **Todo contacto interno es avería.** Si el llamante o remitente
+   pertenece a la empresa (Contact registrado), la llamada o el
+   mensaje generan un ticket de avería. Sin excepciones.
+2. **Un único número de contacto.** El número desde el que llama o
+   escribe el trabajador es el único identificador. No hay distinción
+   entre número IVR y número WA — es el mismo número para todo.
+3. **Log de conversación en el ticket.** Tanto la transcripción de la
+   llamada IVR como el hilo de mensajes WA quedan persistidos en el
+   propio BreakdownTicket. No hay salas de chat separadas.
+4. **Geolocalización vía WhatsApp.** Si la ubicación no coincide con
+   una base conocida, el sistema envía una plantilla WA al número del
+   llamante solicitando su ubicación. El ticket se completa con la
+   respuesta o se marca `location_warning=True` si no hay respuesta
+   en el timeout configurado.
+5. **Broadcast a Taller Mecánico.** Al crear el ticket, se notifica
+   por Broadcast a todos los miembros de Taller Mecánico, excluyendo
+   al contacto que haya sido fuente del ticket si pertenece a esa
+   sección.
+6. **Onboarding en sección Usuarios.** El flujo de onboarding WA
+   se mueve a la sección de Usuarios del panel. Desaparece la
+   sección Salas de Chat del sidebar.
 
 ---
 
-## 2. Arquitectura Tecnica -- DISENO REVISADO EN S001
+## 2. Arquitectura Técnica
 
-### 2.1. Decisiones de diseno tomadas en S001
+### 2.1. Modelos afectados
 
-**Arquitectura de N vehiculos por servicio:**
-Un servicio puede requerir multiples vehiculos simultaneos (grua, coche taller,
-plataforma, etc.). Cada vehiculo genera su propio albaran individual. El modelo
-original contemplaba unicamente dos fases/operarios -- redisenado para N unidades.
+**Eliminados:**
+- `ChatRoom` y toda la lógica de routing por salas.
+- Relaciones M2M `breakdown_contacts`, `breakdown_sections` en ChatRoom.
 
-**Estrategia offline:**
-La PWA con Service Worker fue descartada. Solucion adoptada: app Android nativa
-(AlbaranApp) distribuida desde la app web Django, con persistencia offline via
-SharedPreferences y sincronizacion al recuperar cobertura.
+**Modificados:**
+- `BreakdownTicket`: añadir campo `conversation_log` (JSONField) para
+  persistir el hilo de mensajes WA y la transcripción IVR.
 
-**Prototipo AlbaranApp:**
-App Android nativa compilada y desplegada. Package: com.miguelaetxio.albaran.
-Distribuida desde /panel/budgets/albaran-demo/. Codigo fuente en GitHub repo AlbaranApp.
+**Sin cambios:**
+- `Contact`, `Section`, `BreakdownTicket` (campos existentes).
+- Flujo de onboarding — solo se mueve de ubicación en el panel.
 
-**Campos adicionales identificados desde PDF Allianz Partners (pendiente validacion):**
-- codigo_proveedor, num_poliza, tiempo_llegada, tipo_servicio
-- averia, cod_averia, reparacion_in_situ (bool)
-- nombre_asegurado, segundo_servicio (bool), gestion_propia_grua (bool)
-- accidente (bool), comentarios (cobertura autorizada por la aseguradora)
-- diferido (bool -- pendiente confirmar si es sinonimo de is_overnight)
-- rueda_gemela (bool), num_pasajeros, anchura, cp_recogida
+### 2.2. Lógica de validación del llamante/remitente
 
-### 2.2. Modelos Django -- Arquitectura definitiva
+Regla única: si `Contact.objects.filter(phone_number=caller, company=company).exists()`
+→ es avería → crear ticket. No se comprueban secciones ni salas.
 
-WorkOrderAssistance -- Expediente del servicio completo.
-  FK a Budget (nullable), Insurer, CompanyUser (gestor), Base.
-  Campos de servicio: expediente, num_poliza, codigo_proveedor, tiempo_llegada,
-  tipo_servicio, averia, cod_averia, reparacion_in_situ, nombre_asegurado,
-  segundo_servicio, gestion_propia_grua, accidente, comentarios, diferido.
-  Campos de vehiculo: vehicle_plate, vehicle_brand, vehicle_model, vehicle_color,
-  vehicle_height, vehicle_length, vehicle_width, vehicle_pma, rueda_gemela, num_pasajeros.
-  Campos de localizacion: vehicle_locality, vehicle_province, pickup_location, cp_recogida.
-  status: PENDING / IN_PROGRESS / COMPLETED / INVOICED.
-  service_date, created_at, updated_at.
+### ⚠️ DIRECTRIZ CRÍTICA — ivr_breakdown_enabled NO interviene en averías
 
-WorkOrderAssistanceUnit -- Un albaran individual por vehiculo que asiste.
-  FK a WorkOrderAssistance.
-  unit_number -- ordinal (1,2,3...). Albaran impreso: work_order_number-unit_number.
-  FK a CompanyUser (operario), machine (matricula), FK nullable a Base.
-  is_overnight (bool).
-  Datos de servicio: km_phase1, km_phase2, horas espera, horas rescate, departure_fee.
-  status: PENDING / IN_PROGRESS / COMPLETED.
-  synced_at (DateTimeField nullable) -- momento de sincronizacion offline.
-  created_at, updated_at.
+`Section.ivr_breakdown_enabled` controla ÚNICA Y EXCLUSIVAMENTE si esa sección
+aparece en el `section_callflow_map` para enrutar llamantes **externos** al flujo
+IVR de esa sección. No interviene en ningún otro mecanismo del sistema.
 
-WorkOrderAssistanceSignature -- Firma digital del cliente.
-  OneToOneField a WorkOrderAssistanceUnit.
-  signature_data (TextField, base64 PNG, app Android).
-  signed_at (DateTimeField auto).
-  signer_name (CharField, opcional).
-  signed_offline (bool) -- firma capturada sin cobertura.
+Para detectar que una llamada es una avería interna, la ÚNICA condición es:
+`Contact.objects.filter(company=company, phone_number=caller_number).first()`
 
-WorkOrderAssistanceIncidence -- Delta de incidencias por unidad.
-  FK a WorkOrderAssistanceUnit.
-  Todos los campos de servicio de la unidad, todos nullable/blank.
-  Solo se rellena lo que cambio respecto al albaran original.
-  memo (TextField) -- memoriamdum de justificacion obligatorio.
-  recorded_by FK a CompanyUser.
-  recorded_at (DateTimeField auto).
+**QUEDA TERMINANTEMENTE PROHIBIDO** condicionar el STEP 4C (perfil Alia, greeting
+personalizado, creación de ticket) a que exista `breakdown_context` o a que alguna
+sección tenga `ivr_breakdown_enabled=True`. Esas flags son irrelevantes para el
+flujo de averías internas.
 
-### 2.3. Grafo de modelos
+### 2.3. Flujo IVR (Alia)
 
-WorkOrderAssistance (expediente)
-    WorkOrderAssistanceUnit x N (un albaran por vehiculo)
-        WorkOrderAssistanceSignature (1:1, firma del conductor)
-        WorkOrderAssistanceIncidence (0:1, delta de incidencias + memo)
+1. Llamada entrante → validar Contact por número llamante.
+2. Si no es Contact registrado → informar y colgar.
+3. Si es Contact registrado → Alia actúa como mecánica experta
+   (vehículos ligeros a gran tonelaje: mecánica, electricidad,
+   hidráulica) para diagnosticar la avería.
+4. Recoger: máquina, descripción avería, ubicación en máquina,
+   ubicación física (base o ruta).
+5. Crear BreakdownTicket con `origin=IVR`.
+6. Confirmar verbalmente el código del ticket al llamante.
+7. Si ubicación no es base conocida → enviar plantilla WA al número
+   del llamante solicitando ubicación GPS.
+8. Persistir transcripción en `conversation_log` del ticket.
+
+### 2.4. Flujo WhatsApp
+
+1. Mensaje entrante → validar Contact por número remitente.
+2. Si no es Contact registrado → flujo onboarding.
+3. Si es Contact registrado → agente de averías puro.
+4. Recoger todos los datos de la avería en conversación 1:1.
+5. Crear BreakdownTicket con `origin=WHATSAPP`.
+6. Persistir hilo de mensajes en `conversation_log` del ticket.
+7. Broadcast a Taller Mecánico (excluyendo fuente si pertenece a esa sección).
+
+### 2.5. Panel — cambios en sidebar
+
+- **Eliminar:** sección "Salas de Chat".
+- **Añadir:** "Log de Tickets" bajo la sección de Tickets/Averías.
+- **Mover:** Onboarding a sección "Usuarios".
+
+### 2.6. Geolocalización
+
+- Base conocida: coordenadas resueltas desde `Base` model (budgets app).
+- En ruta: plantilla WA con timeout configurable (setting `GEO_TIMEOUT_MINUTES`).
+  Si no hay respuesta → `location_warning=True`.
+- Respuesta WA con ubicación → actualizar `geo_lat`, `geo_lng` en ticket.
+
+### 2.7. Prompt Alia — Técnica de Flota (ivr_config/services.py STEP 4C)
+
+El bloque `alia_mechanic_context` en `build_live_config()` se activa cuando
+el llamante es un Contact interno registrado en la empresa (única condición).
+No depende de `breakdown_context` ni de `ivr_breakdown_enabled`. El prompt
+define la personalidad experta con el flujo numerado 1→6 y tres reglas críticas:
+
+- **Razonamiento técnico inmediato**: ante un fallo descrito (p.ej. "no lucen
+  los intermitentes"), Alia evalúa el riesgo sin preguntar lo que ya sabe
+  y orienta al conductor directamente.
+- **Número WA ≠ número IVR**: cuando el conductor está en ruta, Alia dice
+  exactamente: "Le vamos a enviar un mensaje de WhatsApp al número desde el
+  que está llamando. Respóndalo con su ubicación." NUNCA pide que envíe
+  la ubicación a este número.
+- **Invocación explícita de report_breakdown**: solo tras confirmación expresa
+  del conductor, inmediatamente después, una sola vez por llamada.
 
 ---
 
 ## 3. Hoja de Ruta
 
-### Paso 1 -- Modelos y migracion
-- Estado: PENDIENTE
-- PREREQUISITO: validar con responsables los campos del PDF Allianz antes de makemigrations.
-- Confirmar si diferido es sinonimo de is_overnight o campo independiente.
-- Crear los cuatro modelos en budgets/models.py.
-- Ejecutar makemigrations + migrate.
-
-### Paso 2 -- Vistas y URLs
-- Estado: PENDIENTE
-- WorkOrderCreateFromBudgetView, WorkOrderCreateDirectView,
-  WorkOrderAlbaranView, WorkOrderDetailView, WorkOrderPdfView.
-
-### Paso 3 -- Template movil operario
-- Estado: PENDIENTE
-- albaran_operario.html: mobile-first, integracion con app Android nativa.
-
-### Paso 4 -- Notificacion WhatsApp al operario
-- Estado: PENDIENTE
-
-### Paso 5 -- Exportacion PDF
-- Estado: PENDIENTE
-- albaran_pdf.html + WorkOrderPdfView con weasyprint.
-
-### Paso 6 -- Boton en BudgetResultView
-- Estado: PENDIENTE
-- Boton Generar orden de trabajo en result.html cuando budget.status == ACCEPTED.
-
-### Paso 7 -- Sidebar acordeon (incidencia transversal)
-- Estado: PENDIENTE
-- Refactorizar panel/templates/panel/_nav_items.html para convertir la barra
-  lateral en un acordeon colapsable por secciones usando Bootstrap Collapse.
-- Cada seccion del sidebar se representa como un bloque colapsable independiente.
-- Solo una seccion expandida a la vez (comportamiento acordeon).
-- Persistencia del estado via sessionStorage.
-
-### Paso 8 -- Nuevo campo servicios locales (< 20 km)
-- Estado: PENDIENTE
-- Anadir campo local_service (BooleanField, default=False) en
-  WorkOrderAssistanceUnit para identificar servicios de corta distancia.
-- Confirmar con responsables si es booleano simple o umbral numerico.
-
-### Paso 9 -- Gestion de horarios nocturnos
-- Estado: PENDIENTE
-- Modelo NightSchedule con nombre, hora_inicio, hora_fin y grupo
-  (choices: INSURER / INDIVIDUAL).
-- CRUD completo desde el panel.
-- Vinculado al calculo de tarifas nocturnas en WorkOrderAssistanceUnit.
-
-### Paso 10 -- Clonado de aseguradora con nombre nuevo
-- Estado: PENDIENTE
-- Boton Clonar en listado/detalle de Insurer (app budgets).
-- El clon copia todos los campos de tarifa; el usuario introduce nombre nuevo.
-- InsurerCloneView en budgets/views.py.
+### Paso 1 — Eliminar ChatRoom y lógica de salas ✅ S_H17_01
+### Paso 2 — Añadir conversation_log a BreakdownTicket ✅ S_H17_01
+### Paso 3 — Refactorizar validación de llamante en vox_bridge ✅ S_H17_01
+### Paso 4 — Prompt Alia experta en mecánica ✅ S_H17_01 + S057
+### Paso 5 — Flujo geolocalización vía WhatsApp post-llamada — BLOQUEADO Meta
+### Paso 6 — Agente WhatsApp de averías puro ✅ S055 + S056
+### Paso 7 — Broadcast a Taller Mecánico — BLOQUEADO Meta
+### Paso 8 — Refactorizar sidebar ✅ S056
+### Paso 9 — Log de conversación en panel de tickets ✅ S056
 
 ---
 
 ## 4. Registro de Sesiones
 
-Sesion | Fecha      | Pasos trabajados | Resumen
-S001   | 2026-06-02 | Ninguno (diseno) | Hito iniciado. Rediseno completo arquitectura modelos: N vehiculos por servicio, estrategia offline Android nativa, identificacion campos adicionales PDF Allianz. Incidencias paralelas: fix nocturno/festivo wizard, fix redirect operario, prototipo AlbaranApp Android compilado y desplegado, 6 skills Android creadas, PEE y PICP actualizados.
-S002   | 2026-06-09 | Incidencias previas (0.1 y parcial) | Sidebar acordeon Bootstrap Collapse con 9 secciones, persistencia sessionStorage y chevron animado. Fusion IVR+WhatsApp en seccion Telefonia. Iconos homogeneizados: bi-buildings-fill en cabecera sidebar y login, bi-truck-flatbed en acordeon Asistencia, bi-bar-chart en acordeon Analitica, bi-building reservado para Aseguradoras. Bloque 0.2 (autocompletado matricula) pendiente para S003.
-S003   | 2026-06-10 | Incidencias previas (0.2 completado) + incidencia is_intensive_override | Fix autocompletado matricula: threshold 2 caracteres, reset lastQuery, busqueda por plate en WorkshopAssetAutocompleteView, matricula visible en dropdown. Fix NameError PresenceStatus en views_workorders.py. Nuevo campo is_intensive_override en CompanyUser (migracion 0033). WorkshopIntensiveToggleView: endpoint POST que persiste el flag y devuelve campos de horario actualizados. Checkbox jornada intensiva en form_entry.html con handler JS que recarga EB_CONFIG y actualiza DOM sin recarga de pagina. Correccion is_default WINTER/SUMMER en BD. PENDIENTE S004: corregir schedule para operarios con workday_schedule_id=2 asignado individualmente que ignoran el override.
-S004   | 2026-06-10 | Incidencias (Bloque 0 + HTMX toggle parcial) | Fix Gate 1 _resolve_operator_schedule: condicional is_intensive_override vs schedule intensivo individual (cu=14, cu=12). Implementacion HTMX toggle jornada intensiva: partial _schedule_fields_fragment.html, WorkshopIntensiveToggleView convierte de JSON a render HTML, form_entry.html usa hx-post/hx-target. Fix form_entry_assets.js: prereelleno HC/HF bloques adicionales corregido (EB_CONFIG en tiempo de click, logica tarde/manana). Actualizacion ped-format.skill. Toggle HTMX reporta error en produccion -- diagnostico pendiente S005.
-S005   | 2026-06-10 | Incidencias (Bloque 0 parcial) | Diagnostico error toggle HTMX jornada intensiva: causa raiz identificada como conflicto entre JS nativo fetch+json y respuesta HTML de WorkshopIntensiveToggleView. Eliminado bloque <script> nativo del toggle en form_entry.html (115 lineas). Anadido hx-on::after-request al checkbox para feedback visual via HTMX puro. PMA aplicado y validado con djlint + integridad OK. Pendientes S006: Issue A (campos pausa duplicados al volver de intensiva a partida) e Issue B (HF Tarea 1 muestra end_time_afternoon en lugar de end_time_morning al desmarcar intensiva).
-S006   | 2026-06-10 | Incidencias previas (B0 duplicidad pausa + autocomplete matricula) | Fix duplicidad visual inputs pausa comida: causa raiz doble div#schedule-dependent-fields en _schedule_fields_fragment.html introducida por modelo anterior. Eliminado div duplicado via PMA. Fix widget TimePicker: MutationObserver deferia con setTimeout(0) para estabilizar DOM tras swap HTMX; guarda tp-wrapper en initAll() para evitar doble envoltorio; inputs de pausa marcados d-none en HTML para ocultar nativo sin depender de JS. Fix autocompletado matricula: WorkshopAssetAutocompleteView ampliado con rama _q_digits para buscar subcadena numerica en plate (encuentra AB1234C escribiendo 1234). Fix re-adjuncion autocomplete tras swap HTMX: MutationObserver en form_entry_assets.js re-adjunta attachAutocomplete a inputs .asset-search nuevos insertados por HTMX.
-S007   | 2026-06-10 | Incidencias + Bloque 1 parcial + Paso 10 | Fix autocompletado de maquina en partes: guardia idempotente data-ac-attached en attachAutocomplete + filtro de mutaciones .asset-dropdown en MutationObserver para evitar listeners duplicados. Restriccion busqueda por digitos de matricula a minimo 4 digitos consecutivos en WorkshopAssetAutocompleteView. Campo local_service_km_threshold (PositiveSmallIntegerField, default=20, nullable) anadido a Insurer, migracion 0016 generada y aplicada. Motor services.py: logica _is_local_service sustituye DEPARTURE+km por forfait SERVICE_LOCAL cuando km_total <= umbral. InsurerCloneView implementada: clona Insurer con catalogo VehicleType, InsurerTariff activa, TariffLines e InsurerBase links; ruta insurer_clone registrada en urls.py. Skill pisa blindada con seccion de prohibicion absoluta de re-solicitud de documentos de sesion e invencion de rutas; empaquetada con skill-creator.
+| Sesion | Fecha | Pasos trabajados | Resumen |
+|--------|-------|-----------------|---------|
+| — | — | — | Hito no iniciado. Arquitectura definida en S014 de H03/H14. |
+| S_H17_01 | 2026-06-22 | 1,2,3,3b,4 | **Paso 1**: Eliminacion ChatRoom/ChatMessage/BreakdownConversationTurn. BreakdownTicket.room→company. Migracion 0007 OK. Limpieza whatsapp/views.py, panel/views.py, panel/urls.py, analytics/views.py, _nav_items.html. **Paso 2**: conversation_log JSONField en BreakdownTicket. Migracion 0008 OK. **Paso 3**: _create_breakdown() en vox_bridge/services.py simplificado: puerta de seguridad Contact.objects.filter(company,phone). **Extra 3b**: breakdown_ticket FK + ticket_closed BooleanField en WorkOrderEntryLine. Migracion 0025 OK. **Paso 4**: STEP 4C en build_live_config() — perfil Alia mecanica experta activado cuando caller es Contact interno con breakdown_context activo. Incidencias resueltas: FieldError room__company en views_operator.py; AbsenceCategory HORAS_JEFE creada. install_files management command creado. skill com-install-files creada. |
+| S054 | 2026-06-24 | INCIDENCIA DNI | **INCIDENCIA PRIORITARIA — Campo DNI en CompanyUser**: (1) CompanyUserCreateForm: campo dni añadido (opcional), get_initial_password() derivada por rol — WORKSHOP/WORKSHOPBOSS: 4 ultimas cifras del DNI (fallback 1234), must_change_password=False; ADMIN/SUPERVISOR: initial_password explicito, must_change_password=True. (2) CompanyUserCreateView.post(): logica must_change_password por rol, new_cu.dni persistido. (3) CompanyUserUpdateView: dni añadido a fields, atributos Bootstrap en get_form(). (4) panel/users/form.html: campo DNI visible y editable con help text. **Desvio a H16**: ver anexo V16. **Auditoria WA**: 7 plantillas en BD identificadas (presence_reminder, welcome_message, alias_confirmation, breakdown_confirm, chat_onboarding, chat_session_renewal, ivr_capture_notification), infraestructura Content API correcta, todas con content_sid HX real. Paso 0 de H17 pendiente. |
+| S055 | 2026-06-25 | Paso 0, Paso 6 + Onboarding WA | **Paso 0 — Plantillas WhatsApp**: Auditoria completa BD vs Twilio Content API v1. Corregido welcome_message→MARKETING, chat_session_renewal→UTILITY en BD. Eliminada alias_confirmation (legacy H13). 5 plantillas breakdown_* creadas en Twilio y enviadas a Meta (pending): breakdown_ticket_created HX32d590d2a40360c789060a7f88fa50ef, breakdown_location_request HXb9139eb63adb500855a679957d3de232, breakdown_info_request HXe3baa955000b20e312d6d000f775533b, breakdown_assigned HX41a742714147cc5ec92fa83dbf5c3db6, breakdown_broadcast HXa1b32520e94663a32d3c7c1453429fe3. Rechazadas por Meta (variable al final del body) y recreadas con patron "Hola {{1}}, usted recibe este mensaje...". seed_whatsapp_templates.py reescrito con inventario completo (11 plantillas). **Paso 6 — Agente WA averias + Onboarding**: Bifurcacion en IncomingWhatsAppView: Rama A (Contact interno + ticket abierto → BreakdownAgentService), Rama B (Contact interno sin ticket → Gemini decide averia/ayuda), Rama C (desconocido con onboarding activo → OnboardingService), Rama D (desconocido → chatbot generico + deteccion EMPLOYEE_ONBOARDING). BreakdownAgentService: get_or_create_ticket(), build_system_prompt() prompt Alia mecanica experta, build_history_from_log(), append_log(), parse_and_apply_ticket_data() marcador [TICKET_DATA:{...}]. OnboardingService (primera version): maquina de estados NAME→LASTNAME→DNI→SECTION con confirmacion en cada paso. Refinado a OnboardingService Gemini-driven: Gemini gestiona la conversacion completa, marcador [ONBOARDING_DATA:{...}] al confirmar todos los datos, _create_user() crea DjangoUser+CompanyUser (WORKSHOP si seccion Elevacion, DRIVER resto)+Contact+SectionContact. Username nombre.apellido1 (fallback nombre.apellido2). Contrasena: ultimos 4 digitos numericos DNI. Validado en produccion con Miguel Angel Munoz Cara y Jose Antonio Zafra. |
+| S056 | 2026-06-25 | 6 ref., 8, 9, UI partes↔tickets | **Paso 8**: Auditado _nav_items.html — sin cambios necesarios (acc-chat eliminado S_H17_01, log accesible desde detalle ticket). **Paso 9**: Reescritura breakdown_ticket_detail.html — iteracion sobre ticket.conversation_log (JSONField); badge por canal (IVR/WA/Sistema); scroll 520px; contador mensajes. **Paso 6 refinamiento**: whatsapp/services.py — get_or_create_ticket: ticket nace IN_PROGRESS con assigned_to si rol WORKSHOP/WORKSHOPBOSS; build_system_prompt: instruccion reported_by para WORKSHOPBOSS/ADMIN; parse_and_apply_ticket_data: resolucion reported_by por nombre iexact→icontains. **Integracion UI partes↔tickets**: form_entry.html (selector ticket + checkbox ticket_closed por bloque), form_entry_assets.js (_buildTicketBlock), views_operator.py (parseo entrada_N_ticket_pk/ticket_closed, cierre ticket en close_order). |
+| S057 | 2026-06-25 | Incidencias IVR + periodos + mapa + PDF | **Prompt Alia (ivr_config/services.py STEP 4C)**: Reescritura completa del bloque alia_mechanic_context con dos fixes criticos: (1) razonamiento experto inmediato — ante fallo de senalizacion, Alia evalua riesgo sin preguntar lo que ya sabe y orienta al conductor; (2) numero WA != numero IVR — cuando conductor en ruta, texto exacto: "Le vamos a enviar un mensaje de WhatsApp al numero desde el que esta llamando." Hash en servidor: 44a4542815c4ccf398eca621c348e282. Auditado que el PUT anterior no habia persistido — verificacion por md5sum sistematizada. **Identificacion de logs**: LOG_VOICE_ORCHESTRATOR=/var/log/alwayson-log-234987.log, LOG_CELERY_WORKER=/var/log/alwayson-log-242133.log. bridge.log movido de SWAP a logs/bridge.log permanente en voice_orchestrator.py. Session variables actualizadas con LOG_BRIDGE y tabla completa de logs. **Liquidacion de periodos (WorkPeriodCloseView + WorkPeriodLockView)**: WorkPeriodCloseView: bloquea cierre si hay partes sin revisar (reviewed=False) y force_close!=1; lista operarios afectados en el error. WorkPeriodLockView: advertencia warning si periodo individual se cierra con partes sin revisar. work_period_list.html: checkbox "Liquidar igualmente" con force_close=1 en modal de cierre global. **Modal planificador rutas (_route_multileg_fragment.html)**: panel-summary movido dentro de panel-scroll; #routePlannerPanelBody como flex container; overflow-y:scroll + max-height:480px en panel-scroll — barra de desplazamiento siempre visible. **Añadir dia en partes PDF (WorkOrderEntryAddView)**: Nueva vista en views_workorders.py (POST /panel/work-orders/<wo_pk>/entries/add/) — crea WorkOrderEntry con work_date + WorkOrderEntryLine vacia (line_number=1), devuelve _entry_group_fragment.html. URL work_order_entry_add registrada en panel/urls.py. Re-export en panel/views.py. Boton "Anyadir dia" + modal fecha + JS fetch en edit.html (solo visible para is_digital=False). Borrado automatico de WorkOrderEntry en WorkOrderLineDeleteView: si entry.lines.exists()==False tras borrar linea, entry.delete(). |
+
+| S059 | 2026-06-26 | 5, 7, mejoras IVR/panel | **Paso 7 — Broadcast taller**: send_breakdown_broadcast() en WhatsAppChatService; filtra Contacts en secciones ivr_breakdown_enabled=True, excluye contact fuente; llamada desde BreakdownAgentService.get_or_create_ticket() y _create_breakdown() en vox_bridge. **Paso 5 — Geoloc post-IVR**: en _create_breakdown(), si not _at_base → envía breakdown_location_request al caller_number; en whatsapp/views.py Rama A: si is_location_msg y ticket abierto → persiste geo_lat/geo_lng en ticket y SYSTEM log. **intro.mp3**: recortada de 4,05s a 2,04s con ffmpeg; TwiML reemplazado por Pause length=1 sin Play. **Contact.first_name/last_name**: migración 0037 aplicada; fix is_internal=True en pk=17,18,28; diccionario de correcciones manuales aplicado a 16 internos; management command split_contact_names creado. **Prompt Alia**: fix _caller_display con first_name; activación desacoplada de breakdown_context (if caller_number); paso 6 con unmistakably según best practices Google; estructura de bloques restaurada (breakdown_context antes que alia_mechanic_context). **sort usuarios**: CompanyUserListView con sort server-side por username/fullname/role/status vía ?sort=&dir=. **Validación E2E**: flujo IVR completo con at_base=False validado en producción. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (S008)
+## 5. Hoja de Ruta para la Siguiente Sesion
 
-### CONTEXTO
+Hito completado en S059. Todos los pasos ejecutados y validados en
+producción. No hay trabajo pendiente en H17.
 
-En S007 se completaron las incidencias de autocompletado, el campo
-local_service_km_threshold en Insurer con migracion 0016, la logica
-de forfait SERVICE_LOCAL en el motor de presupuestos, y la
-InsurerCloneView. El hito queda pausado. La siguiente sesion sobre
-V17 debe retomar los pasos formales pendientes:
-
-### BLOQUE 1 -- Confirmar campo diferido
-
-Verificar con responsables si el campo diferido del PDF Allianz Partners
-es sinonimo de is_overnight (ya existe en WorkOrderAssistance) o requiere
-campo independiente en el modelo. Hasta confirmar, no ejecutar makemigrations
-sobre WorkOrderAssistance.
-
-### BLOQUE 2 -- Pasos pendientes del hito
-
-Con los modelos ya en BD (WorkOrderAssistance, WorkOrderAssistanceUnit,
-WorkOrderAssistanceSignature, WorkOrderAssistanceIncidence desde S001),
-las vistas y URLs ya implementadas (Paso 2 completado en sesiones previas),
-continuar por este orden:
-
-- Paso 3: Template movil operario (albaran_operario.html mobile-first,
-  integracion con AlbaranApp Android).
-- Paso 4: Notificacion WhatsApp al operario al asignar unidad.
-- Paso 5: Exportacion PDF (albaran_pdf.html + WorkOrderPdfView weasyprint).
-- Paso 6: Boton Generar orden de trabajo en BudgetResultView cuando
-  budget.status == ACCEPTED.
-- Paso 9: Modelo NightSchedule con nombre, hora_inicio, hora_fin y grupo
-  (choices: INSURER / INDIVIDUAL). CRUD desde el panel. Vinculado al
-  calculo de tarifas nocturnas en WorkOrderAssistanceUnit.
+Incidencias menores registradas para futura atención:
+- **views_workorders.py línea 1747**: IntegrityError duplicate entry
+  en /panel/work-orders/92/lines/insert/ — bug preexistente sin resolver.
+- **SWAP en .gitignore del repo sistema** — pendiente fix.
+- **Formulario Contact en panel**: first_name, last_name y alias
+  editables desde el panel — pendiente implementar (desvío H17 o H10).
+- **Prompt Alia — directorio de conductores con alias**: inyectar lista
+  de Contacts internos con first_name + alias en el system_instruction
+  para resolución de motes en tickets — pendiente cuando haya alias en BD.

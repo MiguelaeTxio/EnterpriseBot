@@ -1,5 +1,3 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/MAINS/ATTACHEDS/DOCS_ATTACHED_2_ANNEX_V03/V03DOC_DATA_MODEL.md
-
 # MODELO DE DATOS IVR MULTIEMPRESA
 # MULTICOMPANY IVR DATA MODEL
 ---
@@ -126,8 +124,8 @@
     system_instruction  TextField()
     initial_greeting    TextField()
     notification_contact ForeignKey(Contact, null=True, blank=True,  # NUEVO
-                                    on_delete=SET_NULL,               # persona designada para
-                                    related_name='notification_flows') # actividad no recogida
+                                    on_delete=SET_NULL,
+                                    related_name='notification_flows')
     is_active       BooleanField(default=True)
     created_at      DateTimeField(auto_now_add=True)
     updated_at      DateTimeField(auto_now=True)
@@ -183,7 +181,7 @@
 ### BlockedCaller  ← NUEVO
     company         ForeignKey(Company, on_delete=CASCADE)
     phone_number    CharField(max_length=20)        # formato E.164
-    reason          TextField(blank=True)           # motivo del bloqueo
+    reason          TextField(blank=True)
     blocked_at      DateTimeField(auto_now_add=True)
     blocked_until   DateTimeField()                 # default: blocked_at + 24h
     blocked_by      ForeignKey(auth.User, null=True, blank=True, on_delete=SET_NULL)
@@ -196,8 +194,6 @@
     - Si está bloqueado: Alia responde con mensaje estándar educado y termina.
     - La duración por defecto es 24 horas. Configurable por el ADMIN desde el panel.
     - El ADMIN puede desbloquear manualmente antes del vencimiento desde el panel.
-    - Gestión desde el panel: listado de bloqueados activos, alta manual de bloqueo,
-      desbloqueo manual, historial de bloqueos expirados.
 
 ---
 
@@ -248,33 +244,22 @@ Al recibir cualquier llamada entrante, antes de cualquier otra acción:
 | Modo demo                        | Frase clave → DTMF 7463 → simulación sin acciones reales                      |
 
 ### 4.3. Toma de datos conversacional
-Alia recoge los siguientes datos de forma conversacional natural,
-sin formatos ni instrucciones explícitas al llamante:
+Alia recoge los siguientes datos de forma conversacional natural:
     1. Nombre del cliente.
     2. Teléfono de contacto (si difiere del número llamante).
     3. Descripción del servicio necesario.
-    4. Ubicación: nombre de vía, calle, municipio o referencia de lugar
-       (texto libre — sin coordenadas GPS en fase actual).
+    4. Ubicación: nombre de vía, calle, municipio o referencia de lugar.
     5. Campos adicionales según DataCaptureSet de la sección detectada.
-
-Cuando WhatsApp esté operativo (Hito 4):
-    - La ubicación conversacional se enriquece con localización GPS nativa
-      de WhatsApp + Grounding Google Maps para cálculo de precios y rutas.
 
 ### 4.4. Notificación al responsable
 Una vez completada la toma de datos, Alia notifica al responsable de la sección:
     1. Llamada saliente Twilio al teléfono del Contact responsable.
-       Alia lee el resumen: nombre cliente, teléfono, servicio, ubicación.
     2. Correo electrónico al Contact.email del responsable con el resumen completo.
-    Cuando WhatsApp esté operativo: mensaje WhatsApp al responsable (sustituye al correo).
+    Cuando WhatsApp esté operativo: mensaje WhatsApp al responsable.
 
 ### 4.5. Modo demo
     1. Llamante pronuncia frase clave: "Yo soy tu padre".
     2. Alia responde: "Introduzca la clave maestra."
     3. Llamante introduce DTMF: 7463.
     4. Alia confirma activación del modo demo.
-    5. Alia simula el flujo IVR completo sin ejecutar acciones reales:
-       - No realiza llamadas salientes.
-       - No envía correos.
-       - No registra datos en BD.
-       - Describe verbalmente lo que haría en cada paso.
+    5. Alia simula el flujo IVR completo sin ejecutar acciones reales.

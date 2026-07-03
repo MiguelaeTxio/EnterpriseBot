@@ -167,69 +167,28 @@ Principios de reorganizacion:
 | Sesion | Fecha | Pasos trabajados | Resumen |
 |--------|-------|-----------------|---------|
 | 001 | 2026-05-04 | 1,2(desc),3,4,5 + Nomenclatura | Renombrado completo de campos fleet a ingles (migracion 0003). Parser PDF import_machine_catalog reescrito con estrategia de ancla de fecha: 474 registros importados. Vistas CRUD MachineAsset con HTMX (List, Create, Update, Deactivate, Reactivate, Delete). Reorganizacion completa del sidebar del panel. |
+| 003 | 2026-06-23 | Split fleet/views.py + mejoras CRUD + CdG EMPRESA_* + PCH→H07 | Split de vistas fleet de panel/views.py a fleet/views.py (neonato) y fleet/forms.py (neonato); re-exports en panel/views.py y panel/forms.py. Tabla CRUD mejorada: columnas Tipo, Contad. (iconos), badges EMP/PER, ordenación por columna via GET sort/dir. 5 CdG EMPRESA_* creados en producción (TALLER_MECANICO, TALLER_ELEVACION, TALLER_HUELVA, ALMACEN, DEPENDENCIAS) vía seed_empresa_assets.py (neonato). Fix DateInput format="%Y-%m-%d". Fix persistencia de filtros tras edición: hidden inputs renombrados a _f_* para evitar colisión con campos del formulario — diagnóstico con script JS de interceptación XHR (método empírico). PCH ejecutado: H12→H07. |
 
 ---
 
-## 5. Hoja de Ruta para la Siguiente Sesion (002)
+## 5. Hoja de Ruta para la Siguiente Sesion
 
-### Orden de trabajo sesion 002
+H12 queda PAUSADO. PCH H12→H07 ejecutado (2026-06-23).
 
-PRIORIDAD 0 — Borrado de CdG:
-  El boton de eliminacion definitiva de MachineAssetDeleteView esta operativo
-  pero en la sesion S039 (2026-05-23) se detecto que al intentar crear un CdG
-  con datos erroneos no se llego a grabar (correcto), pero no existe mecanismo
-  de borrado de registros ya persistidos desde el panel para el rol ADMIN.
-  Verificar el estado real de MachineAssetDeleteView en produccion:
-    - Solicitar panel/views.py y panel/templates/panel/fleet/list.html via SFTP.
-    - Comprobar que el boton de borrado aparece en la tabla para ADMIN.
-    - Comprobar que la confirmacion es correcta y que la vista valida integridad
-      (no borrar si hay WorkOrderEntryLine asociadas).
-    - Si hay deficiencia: aplicar PMA sobre la vista y el template afectados.
+Trabajo pendiente cuando H12 vuelva a EN PROGRESO:
 
-PRIORIDAD 1 — Mejoras y filtros en la lista de CdG:
-  La vista MachineAssetListView actual tiene filtro por familia y por activo/inactivo.
-  Ampliar con:
-    - Filtro por texto libre (codigo, marca_modelo, matricula).
-    - Ordenacion por columna (codigo, familia, activo).
-    - Paginacion ajustable (25/50/100 registros por pagina).
-    - Badge visual diferencial activo (verde) / inactivo (gris) en la tabla.
-    - Indicador de uso: numero de WorkOrderEntryLine asociadas por CdG
-      (columna "Usos" en la tabla — COUNT via anotacion Django).
+PRIORIDAD 0 — Validar borrado de CdG desde el panel (MachineAssetDeleteView).
 
-PRIORIDAD 2 — Informes y analiticas de CdG en la sidebar:
-  Crear una nueva entrada en la seccion Analitica del sidebar para acceder
-  a un informe de actividad por centro de gasto. El informe debe incluir:
-    - Total de horas trabajadas por CdG (suma de WorkOrderEntryLine.delta_hours).
-    - Total de partes asociados por CdG.
-    - Filtros: rango de fechas, familia, activo/inactivo.
-    - Exportacion CSV del informe.
-  Nueva vista: MachineAssetAnalyticsView (AdminRoleRequiredMixin).
-  Endpoint: GET /panel/fleet/analytics/
-  Nueva entrada en _nav_items.html bajo la seccion Analitica, visible para ADMIN y SUPERVISOR.
-  Nueva URL en panel/urls.py.
-  Nuevo template: panel/templates/panel/fleet/analytics.html.
+PRIORIDAD 1 — Mejoras adicionales al CRUD:
+  - Paginación ajustable (25/50/100 registros por página).
+  - Indicador de uso mejorado.
 
-DEUDA TECNICA PENDIENTE — work_order_processor Regla de Oro del Idioma:
-  Campos a renombrar en WorkOrderEntryLine:
-    maquina_raw       -> machine_raw
-    maquina_norm      -> machine_norm
-    descripcion_averia -> fault_description
-    reparacion        -> repair_notes
-  Campos a renombrar en WorkOrderEntry:
-    fecha_incierta    -> uncertain_date
-  Archivos afectados con referencias cruzadas:
-    work_order_processor/models.py
-    work_order_processor/services.py
-    work_order_processor/tasks.py
-    work_order_processor/admin.py
-    work_order_processor/management/commands/repair_entry_lines.py
-    panel/views.py (WorkOrderEditView y relacionadas)
-    panel/templates/panel/work_orders/ (todos los templates)
-  OBLIGATORIO: solicitar todos estos archivos via SFTP al inicio de sesion
-  antes de generar ninguna migracion RenameField. Las migraciones tienen datos
-  de produccion — ejecutar con extrema precaucion.
+PRIORIDAD 2 — Analítica de CdG (MachineAssetAnalyticsView):
+  - Ya implementada en fleet/views.py — verificar que sigue funcionando
+    tras el split (URL /panel/fleet/analytics/).
 
-NOTA CRITICA: La columna Activo resuelto en el editor de PDFs historicos
-aparece vacia cuando machine_asset es NULL (codigo no coincide con ningun
-MachineAsset del catalogo). Esto debe mostrarse con un indicador visual
-claro (badge de advertencia) — queda pendiente para el Hito 8.
+DEUDA TÉCNICA — Renombrado de campos en work_order_processor (Regla de Oro
+del Idioma): maquina_raw→machine_raw, maquina_norm→machine_norm,
+descripcion_averia→fault_description, reparacion→repair_notes,
+fecha_incierta→uncertain_date. Requiere solicitar todos los archivos
+afectados via SFTP antes de generar migraciones RenameField.
