@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # Destinatario de negocio fijo (S004-H10) -- no es un secreto, se
 # mantiene como constante de código en vez de variable de entorno,
 # según indicación de Miguel Ángel.
-_RECIPIENT_EMAIL = 'administración@gruasalvarez.com'
+_RECIPIENT_EMAIL = 'administracion@gruasalvarez.com'
 
 _MIME_TYPES = {
     '.pdf': 'application/pdf',
