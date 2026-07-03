@@ -397,9 +397,10 @@ decide el destino.
 
 - **Paso 1 — COMPLETADO** (sin cambios desde S001).
 - **Paso 2 — COMPLETADO** (sin cambios desde S003).
-- **Paso 3 — puntos 1-4 COMPLETADOS a nivel de código.** La TAREA
-  INMEDIATA que bloqueaba el punto 4 quedó resuelta en S004 con la
-  especificación que trajo Miguel Ángel:
+- **Paso 3 — COMPLETADO, incluido el punto 4.** La TAREA INMEDIATA
+  que bloqueaba el punto 4 quedó resuelta en S004 con la
+  especificación que trajo Miguel Ángel, implementada y **validada
+  end-to-end en producción**:
   - **Empresa destinataria del albarán:** `DeliveryNote` gana
     `recipient_name`/`recipient_tax_id`/`recipient_company_code`.
     Gemini Vision extrae ahora también el bloque destinatario
@@ -421,17 +422,40 @@ decide el destino.
     insensible a acentos/mayúsculas en ambos lados. El prompt de
     extracción reconoce la convención física de anotación entre
     almohadillas (`#TALLER MECANICO#`) definida por Miguel Ángel.
-  - **PENDIENTE:** validación end-to-end real (subida → revisión →
-    confirmación → verificación en admin) con un albarán físico de
-    Grupo Álvarez que tenga destinatario legible y al menos una línea
-    anotada entre almohadillas. No se ejecutó en S004 — el bloque se
-    cerró a nivel de código y quedó para desplegar en el cierre de
-    sesión.
+  - **VALIDACIÓN E2E — COMPLETADA.** Probado en producción con un
+    albarán real (BA/2604254, LUIS MOLEÓN RECAMBIOS → GRUAS ADOLFO
+    ALVAREZ, S.L., 3 líneas anotadas `#S06#`/`#V02#`/`#S02#`):
+    destinatario resuelto automáticamente a `GRA` por CIF, las tres
+    líneas resueltas correctamente a `assignment_type=MACHINE` contra
+    los códigos de máquina S06/V02/S02, confirmado dato a dato contra
+    la foto del albarán físico por Miguel Ángel. El registro de
+    prueba (`DeliveryNote` id=2) se borró a petición de Miguel Ángel
+    tras la validación — no queda en BD, era solo de prueba.
 - **Pasos 4 a 7 — sin iniciar** (sin cambios).
+
+### Envío por correo del albarán (S004) — pendiente de un paso externo
+
+Implementado con la API nativa **Twilio Email**
+(`https://comms.twilio.com/v1/Emails`, NO Twilio SendGrid clásico —
+corregido a mitad de S004 tras verificación online, ver Registro de
+Sesiones). Reutiliza `TWILIO_API_KEY_SID`/`TWILIO_API_KEY_SECRET` ya
+existentes, sin secreto nuevo. Remitente y destinatario:
+`administracion@gruasalvarez.com` (mismo buzón real, confirmado por
+Miguel Ángel).
+
+**Bloqueante restante — fuera del control del modelo:** Twilio exige
+autenticación de dominio (DNS) para `gruasalvarez.com`. Miguel Ángel
+no tiene acceso al DNS del dominio; al cierre de S004 ha delegado el
+paso vía la función nativa de Twilio "Forward instructions to a
+colleague" (Manual setup → 4 registros CNAME) a la persona que sí
+gestiona el DNS. Pendiente de que esa persona complete los registros
+(Twilio puede tardar hasta 48h en verificar). Ninguna acción de
+código pendiente por parte del modelo — en cuanto el dominio quede
+verificado, el envío debería funcionar sin más despliegues.
 
 ### Trabajo realizado en S004 fuera de la hoja de ruta de H10
 
-Dos incidencias de mantenimiento cross-cutting, sin anexo de hito
+Cinco incidencias de mantenimiento cross-cutting, sin anexo de hito
 propio, resueltas en el mismo bloque de sesión (H10 se mantuvo EN
 PROGRESO todo el tiempo, sin PCH):
 
@@ -451,14 +475,59 @@ PROGRESO todo el tiempo, sin PCH):
    borrar habría causado su regeneración automática en la siguiente
    edición de la sección, según la propia lógica de la señal) para
    dejarla efectivamente fuera del IVR.
+3. **Botón "Guardar tareas" del formulario de partes (H07) — tres
+   bugs encadenados, todos confirmados empíricamente (dos de ellos
+   verificando directamente en BD, no solo leyendo código):**
+   - `btn-save-blocks` (`panel/templates/panel/operator/form_entry.html`)
+     no tenía NINGÚN listener de clic en todo el proyecto — botón
+     muerto. Fix: nuevo listener en `form_entry_modal.js` que fija
+     `form-action-input=save_blocks` y llama a `form.submit()` (mismo
+     patrón que "Cerrar parte").
+   - **Trampa de proceso propia:** el primer intento de este fix se
+     aplicó a `static/panel/js/form_entry_modal.js`, que resultó ser
+     literalmente `STATIC_ROOT` (`settings.py`), no la fuente — el
+     siguiente `collectstatic --clear` lo borró sin avisar. La fuente
+     real es `panel/static/panel/js/form_entry_modal.js`
+     (`AppDirectoriesFinder`, único finder activo — `STATICFILES_DIRS`
+     no está definido). **Nota para toda sesión futura: cualquier
+     estático del app `panel` se edita SIEMPRE en
+     `panel/static/panel/js|css/...`, nunca en `static/panel/...`.**
+   - `WorkOrderEntryFormView.post()` (`panel/views_operator.py`) tenía
+     dos gates de confirmación (`save_confirmed`, `meter_warnings`) y
+     un gate de cobertura de jornada (8h mínimas) sin la excepción
+     `and _form_action != "save_blocks"` que sí tiene correctamente
+     `WorkOrderEntryConfirmView` (vista hermana, mismo patrón
+     duplicado entre ambas). Efecto: cualquier guardado parcial
+     (jornada sin completar) se re-renderizaba sin persistir nada en
+     BD, sin mostrar ningún error visible — parecía funcionar porque
+     los datos seguían en pantalla. Confirmado con consulta directa a
+     BD (cero `WorkOrder IN_PROGRESS`) antes y después de cada fix.
+   - **Confirmado en real por Miguel Ángel:** guardado parcial
+     persiste, "Mis partes" lo muestra "En curso", y "Nuevo parte"
+     recupera el parte pendiente para seguir editándolo.
+
+### Para la próxima sesión — nuevo tema, sin diagnosticar todavía
+
+Miguel Ángel ha detectado al cierre de S004 que **las familias y
+tipos de avería aparecen en inglés en el laboratorio de análisis**
+(sección Analítica), usando los identificadores internos en vez de
+su traducción al castellano — la interfaz debe estar siempre en
+castellano. Miguel Ángel indica que podría no ser el único lugar
+donde ocurra. Sin investigar en S004 — empezar la próxima sesión
+haciendo un PVR completo (grep de los identificadores de
+familia/tipo de avería en inglés, plantillas y vistas que los
+consuman) antes de proponer ningún fix, en vez de asumir que es un
+único punto aislado.
 
 ### Próxima sesión — orden de trabajo
 
-1. **Validar E2E el punto 4 del Paso 3** con un albarán real de Grupo
-   Álvarez (destinatario + anotaciones entre almohadillas), una vez
-   desplegado el código de S004 en producción.
-2. Continuar con el Paso 4 (`StockAssignmentService` y circuito en
-   parte de trabajo) si la validación E2E resulta correcta.
+1. **Familias/tipos de avería en inglés** en el laboratorio de
+   análisis (y donde más aparezca) — nuevo tema, ver arriba.
+2. Confirmar si la persona delegada ya verificó el dominio
+   `gruasalvarez.com` en Twilio; si es así, probar el envío por
+   correo real de un albarán confirmado.
+3. Continuar con el Paso 4 de H10 (`StockAssignmentService` y
+   circuito en parte de trabajo).
 
 ### Paso 4 — StockAssignmentService y circuito en parte de trabajo
 - Implementar `StockAssignmentService.assign_to_work_order()` con
@@ -517,4 +586,4 @@ PROGRESO todo el tiempo, sin PCH):
 | S001 | 2026-06-30 | Paso 1 completo, Paso 2 parcial | App `spare_parts` creada: modelos `DeliveryNote`/`DeliveryNoteLine`/`SparePartEntry`/`StockMovement` con limbo de pre-asignación (status WAREHOUSE/PRE_ASSIGNED/CONSUMED), procedencia dual (origin_type SUPPLIER/SALVAGED para canibalización interna), relación con `work_order_processor.SparePartLine` (FK `spare_part_entry` nueva). Migración cruzada aplicada, admin registrado, reload OK. `GeminiVisionExtractionService` construido con `gemini-3.5-flash` (no 2.5, deuda técnica documentada en doc-master-enterprisebot 4.1.1). App compartida `ai_services` creada por principio DRY — `work_order_processor.services` migrado al mismo helper. Desvío completo a H18 por incidencia crítica de regresión del planificador de ruta (autocompletado roto): diagnosticado y resuelto sustituyendo `PlaceAutocompleteElement` por implementación propia — ver anexo H18 S018 para el detalle técnico completo. Paso 2 de H10 queda pendiente de integrar `GeminiVisionExtractionService.extract()` en `DeliveryNoteUploadView` (Paso 3) y testar con albaranes reales. |
 | S002 | 2026-07-02 | NOTA DE DESVÍO — sin trabajo directo en H10 | H10 se mantuvo EN PROGRESO durante toda la sesión sin recibir ningún avance directo. Sesión desviada por completo a H16 (motor de presupuestos: importación de tarifas por PDF, modo manual del wizard, control de acceso granular, mapa de ruta en desglose — ver anexo H16 S055) y a H18 (bug de peajes ida/vuelta y tramos AP-7, fechas pasadas en planificación de ruta, fix drag-and-drop del planificador — ver anexo H18 S019). Al cierre de sesión se ejecutó PCH: `eb-annex-router` mueve `← EN PROGRESO` de H10 a H07 (incidencia de pausa de comida en jornada partida, partes digitales). La hoja de ruta de H10 (Sección 5) queda intacta, con el Paso 3 pendiente exactamente como estaba, para cuando `eb-annex-router` vuelva a marcar H10 EN PROGRESO. |
 | S003 | 2026-07-02 | Paso 2 completo, Paso 3 puntos 1-3 completos, punto 4 iniciado | Añadido campo `machine_code_raw` a `DeliveryNoteLine` (migración `0002_deliverynoteline_machine_code_raw`, aplicada OK). Añadidas a `spare_parts/services.py`: `resolve_line_assignment()` (detecta WAREHOUSE vía alias ALM/AL/ALMACEN/ALMACÉN/WAREHOUSE, o MACHINE reutilizando `_normalise_machine_code()`/`_resolve_machine_asset()` de `work_order_processor.services` por DRY) y `confirm_delivery_note()` (ejecuta el circuito completo de la sección 3.1: SparePartEntry WAREHOUSE con suma de stock, o PRE_ASSIGNED en el limbo con búsqueda de BreakdownTicket OPEN/IN_PROGRESS, y StockMovement IN en ambos casos). Creadas `DeliveryNoteUploadView`, `DeliveryNoteDetailView`, `DeliveryNoteConfirmView` (spare_parts/views.py, protegidas con `CompanyUserRequiredMixin`), `spare_parts/urls.py` (namespace `spare_parts`), y las plantillas `delivery_note_upload.html`/`delivery_note_detail.html` (extienden `panel/base.html`). Añadido include en `enterprise_core/urls.py` (`panel/spare-parts/`). Renombrada la sección del sidebar "Operarios" → "Mecánicos" (`panel/_nav_items.html`) y añadido el ítem "Subir albarán" (WORKSHOP/ADMIN). Reescrita `delivery_note_upload.html` con captura directa por cámara, adaptada del prototipo `PAIRS/delivery_note_processor/camera_capture.js` (getUserMedia + canvas.toBlob), pero inyectando el archivo capturado vía `DataTransfer` en el `<input>` existente y reutilizando el submit normal del formulario en vez del endpoint AJAX/JSON del original — cero cambios en la vista Python para esa parte. Todos los despliegues vía `com-install-files` y `put` directo, con reload 200 OK confirmado en cada bloque. Miguel Ángel ha probado la extracción con un albarán real de Grupo Álvarez ("Grúas Adolfo Álvarez, SL") en producción — la extracción Gemini Vision funciona bien — pero ha detectado dos carencias de modelo de datos (empresa del grupo destinataria del albarán, y centro de gasto por línea de repuesto anotado en el albarán físico) que impiden dar el punto 4 (test end-to-end) por completado. Ver Sección 5 para el detalle y el plan de la siguiente sesión. |
-| S004 | 2026-07-03 | Paso 3 punto 4 completado a nivel de código (TAREA INMEDIATA resuelta); desvío cross-cutting sin anexo propio | Primera sesión del flujo directo contra GitHub (`nfs-enterprisebot-*`), con token de sesión. Miguel Ángel trajo la especificación de los dos datos bloqueantes: (1) empresa destinataria — confirmó por CIF las tres empresas del grupo que reciben albaranes hoy (GRA=B29405040 Grúas Adolfo Álvarez, TRA=B92493022 Transgrual, GRG=B93261824 Asistencia y Grúas Granada), y que el resto de `company_code` de `fleet.MachineAsset` no importan para este propósito; (2) centro de gasto general por línea — explicó la convención física de anotar cada línea entre almohadillas (`#CODIGO#` o `#NOMBRE CENTRO#`) y confirmó por PVR sobre el panel que existen 9 `MachineAsset` con prefijo `EMPRESA_` que representan centros de gasto agregados (almacén/taller × dependencias/Huelva/logística/mecánico/elevación). Implementado en `spare_parts/models.py` (campos `recipient_name`/`recipient_tax_id`/`recipient_company_code` en `DeliveryNote`, pendiente de migración en el despliegue), `spare_parts/services.py` (`resolve_recipient_company_code()` por CIF, `_resolve_company_cost_center()` accent-insensitive contra `MachineAsset` `EMPRESA_*`, prompt de extracción actualizado para leer el bloque destinatario y reconocer la convención de almohadillas), `spare_parts/views.py` (`DeliveryNoteUploadView`/`DeliveryNoteDetailView`/`DeliveryNoteConfirmView` pobladas y con badge de resolución) y `delivery_note_detail.html` (nueva tarjeta "Empresa destinataria", reformateada con `djlint --reformat`). Pendiente de validación E2E real con albarán físico tras el despliegue. Además, fuera de la hoja de ruta de H10: corregido bug de alta por WhatsApp que ignoraba `Section.default_role` (`whatsapp/services.py`, heurística `_is_elevation_section` eliminada), y dada de alta la sección `Guardas` (`ivr_config.Section` id=15, `default_role=WORKSHOP`, sin flujo IVR) con desactivación del `CallFlow` auto-generado por la señal `auto_manage_section_call_flow`. Dos commits de código pusheados a GitHub (`9333125` fix WhatsApp, `f9d8dc1` H10 punto 4); despliegue a producción pendiente del cierre de sesión. |
+| S004 | 2026-07-03 | H10 Paso 3 completado y validado E2E; envío por correo del albarán (pendiente de autenticación de dominio externa); tres fixes encadenados en H07 (botón "Guardar tareas"); fix bug alta WhatsApp; alta sección Guardas | Primera sesión del flujo directo contra GitHub (`nfs-enterprisebot-*`), con token de sesión. **H10:** Miguel Ángel trajo la especificación de los dos datos bloqueantes del Paso 3 punto 4 — empresa destinataria por CIF (GRA/TRA/GRG) y centro de gasto general por línea vía convención de almohadillas contra los 9 `MachineAsset` `EMPRESA_*`. Implementado en `spare_parts/{models,services,views}.py` y `delivery_note_detail.html`, con migración `0003`. Validado end-to-end en producción con un albarán real (BA/2604254): destinatario resuelto a GRA, tres líneas resueltas a S06/V02/S02, confirmado dato a dato por Miguel Ángel contra la foto física; registro de prueba borrado a petición suya tras la validación. **Envío por correo (S004, nuevo):** `spare_parts/tasks.py`, tarea Celery que adjunta el archivo y lo borra del servidor tras confirmar. Primer intento con `sendgrid-python` revertido tras verificación online y captura de Miguel Ángel: el producto correcto es la API nativa **Twilio Email** (`comms.twilio.com/v1/Emails`), reutiliza `TWILIO_API_KEY_SID`/`SECRET` ya existentes. Bloqueado al cierre por autenticación de dominio DNS de `gruasalvarez.com`, que Miguel Ángel no gestiona — delegado a un tercero vía "Forward instructions to a colleague" de Twilio (Manual setup), sin acción de código pendiente. **Fuera de la hoja de ruta de H10:** (1) bug de alta por WhatsApp — `OnboardingService._create_user()` ignoraba `Section.default_role`, corregido; (2) sección `Guardas` dada de alta (`id=15`, `default_role=WORKSHOP`, sin IVR), con desactivación del `CallFlow` auto-generado por la señal `auto_manage_section_call_flow`; (3) H07, botón "Guardar tareas" del formulario de partes — tres bugs encadenados confirmados empíricamente, dos de ellos verificando directamente en BD: botón sin listener de clic (nunca llegaba al servidor); fix aplicado por error a `static/panel/js/...` (que es `STATIC_ROOT`, no la fuente) en vez de `panel/static/panel/js/...` (la fuente real vía `AppDirectoriesFinder`); y dos gates de confirmación (`save_confirmed`, `meter_warnings`) más el gate de 8h de jornada en `WorkOrderEntryFormView.post()` sin la excepción `form_action != "save_blocks"` que sí tenía correctamente la vista hermana `WorkOrderEntryConfirmView` — bloqueaban en silencio (sin error visible) todo guardado parcial. Confirmado en real por Miguel Ángel: persiste, aparece "En curso" en Mis partes, y se recupera al pulsar "Nuevo parte". Ocho commits de código + un commit de cierre de documentación pusheados a GitHub. Nuevo tema para la próxima sesión, sin diagnosticar: familias/tipos de avería en inglés en el laboratorio de análisis (y posiblemente en más sitios). |
