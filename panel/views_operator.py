@@ -2966,7 +2966,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         # de aviso. Al pulsar "Continuar de todas formas" el formulario
         # se reenvía con meter_warnings_confirmed=1 y se salta este bloque.
         _meter_confirmed =POST .get ("meter_warnings_confirmed","")=="1"
-        if meter_warnings and not _meter_confirmed :
+        if meter_warnings and not _meter_confirmed and _form_action !="save_blocks":
             entradas_post =[
             {
             "idx":ld ["line_number"],
@@ -3010,7 +3010,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
             })
             return render (request ,self .template_name ,context )
 
-        if not POST .get ("save_confirmed"):
+        if not POST .get ("save_confirmed")and _form_action !="save_blocks":
             entradas_post =[
             {
             "idx":ld ["line_number"],
