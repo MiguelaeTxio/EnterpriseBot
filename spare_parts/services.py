@@ -23,6 +23,7 @@ import unicodedata
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from django.db import transaction
 from django.utils.timezone import now
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -684,5 +685,303 @@ def confirm_delivery_note(delivery_note, company_user):
     delivery_note.save(update_fields=['status', 'processed_by'])
 
     return counts
+
+
+# =============================================================================
+# StockAssignmentService -- Paso 4 de H10 (seccion 3.3, 3.4, 3.5 del anexo)
+# =============================================================================
+
+class StockAssignmentService:
+    """
+    Encapsulates spare-part usage in a digital work order: the
+    pre-assigned listing helper (annex H10, section 3.3), the three
+    consumption cases (section 3.5, A/B/C), and the shared
+    materialisation into SparePartLine + StockMovement OUT at closing
+    time (section 3.4).
+
+    NOTA DE INTERPRETACION (aclarar con Miguel Angel): la seccion 3.4
+    punto 4 dice que en Caso A el descuento de stock_quantity ocurre
+    "al anadir la linea, no en el cierre" -- pero la seccion 3.5 Caso A
+    dice literalmente que el status pasa a CONSUMED en ese mismo
+    momento. Aplicado sin matices a la SparePartEntry de almacen
+    compartida, eso la haria desaparecer del almacen aunque le quede
+    stock. Esta implementacion resuelve la contradiccion asi: la
+    entrada de almacen permanece en WAREHOUSE mientras le quede stock
+    tras el descuento, y solo pasa a CONSUMED cuando llega
+    exactamente a cero (contables) o siempre que se registre un uso
+    (incontables, que no tienen "cantidad restante" numerica sino
+    nivel). Pendiente de confirmacion de Miguel Angel.
+    """
+
+    LEVEL_CHOICES = ('FULL', 'MEDIUM', 'LOW', 'EMPTY')
+
+    @staticmethod
+    def list_pre_assigned(machine=None, breakdown_ticket=None):
+        """Seccion 3.3 -- listado automatico de pre-asignados."""
+        from .models import SparePartEntry
+
+        qs = SparePartEntry.objects.filter(
+            status=SparePartEntry.STATUS_PRE_ASSIGNED,
+        )
+        if breakdown_ticket is not None:
+            return qs.filter(
+                breakdown_ticket=breakdown_ticket,
+            ).order_by('pre_assigned_at')
+        if machine is not None:
+            return qs.filter(
+                machine=machine,
+                breakdown_ticket__isnull=True,
+            ).order_by('pre_assigned_at')
+        return SparePartEntry.objects.none()
+
+    @staticmethod
+    def search_warehouse(company, query, limit=20):
+        """Paso 1 de 3.5 -- busqueda en almacen digital."""
+        from django.db.models import Q
+
+        from .models import SparePartEntry
+
+        query = (query or '').strip()
+        if not query:
+            return SparePartEntry.objects.none()
+
+        return SparePartEntry.objects.filter(
+            company=company,
+            status=SparePartEntry.STATUS_WAREHOUSE,
+        ).filter(
+            Q(reference__icontains=query) | Q(description__icontains=query)
+        )[:limit]
+
+    @staticmethod
+    def _next_line_number(entry_line):
+        """Siguiente line_number libre para una SparePartLine nueva."""
+        from work_order_processor.models import SparePartLine
+
+        last = (
+            SparePartLine.objects
+            .filter(entry_line=entry_line)
+            .order_by('-line_number')
+            .first()
+        )
+        return (last.line_number + 1) if last else 1
+
+    @staticmethod
+    def _materialize_consumption(
+        entry, entry_line, machine, breakdown_ticket, created_by,
+        quantity_out=None, level_before='', level_after='', notes='',
+    ):
+        """
+        Seccion 3.4 -- comun a los tres casos. Crea la SparePartLine
+        vinculada a entry via spare_part_entry (ya migrada, ver
+        work_order_processor/migrations/0027_sparepartline_spare_part_entry.py)
+        y el StockMovement OUT correspondiente.
+        """
+        from work_order_processor.models import SparePartLine
+
+        from .models import SparePartEntry, StockMovement
+
+        if quantity_out is None:
+            quantity_out = Decimal('0')
+
+        is_supplier = entry.origin_type == SparePartEntry.ORIGIN_SUPPLIER
+        spare_part_line = SparePartLine.objects.create(
+            entry_line=entry_line,
+            line_number=StockAssignmentService._next_line_number(entry_line),
+            reference=entry.reference,
+            material=entry.description,
+            vehicle=machine,
+            quantity=quantity_out if not entry.is_uncountable else None,
+            unit_price=entry.purchase_unit_price if is_supplier else None,
+            source=(
+                SparePartLine.Source.SUPPLIER
+                if is_supplier else SparePartLine.Source.WAREHOUSE
+            ),
+            spare_part_entry=entry,
+        )
+
+        StockMovement.objects.create(
+            spare_part_entry=entry,
+            movement_type=StockMovement.MOVEMENT_OUT,
+            quantity=quantity_out,
+            level_before=level_before,
+            level_after=level_after,
+            machine=machine,
+            breakdown_ticket=breakdown_ticket,
+            work_order_entry_line=entry_line,
+            spare_part_line=spare_part_line,
+            created_by=created_by,
+            notes=notes,
+        )
+        return spare_part_line
+
+    @staticmethod
+    @transaction.atomic
+    def consume_from_warehouse(
+        entry, entry_line, machine, breakdown_ticket, created_by,
+        quantity_used=None, new_level=None, notes='',
+    ):
+        """
+        Caso A (anexo H10, seccion 3.5). entry debe estar en
+        status=WAREHOUSE. Contable: descuenta quantity_used de
+        stock_quantity (ValueError si el stock es insuficiente); la
+        entrada permanece en WAREHOUSE si queda stock, o pasa a
+        CONSUMED si llega exactamente a cero (ver nota de
+        interpretacion en el docstring de la clase). Incontable:
+        new_level debe ser uno de LEVEL_CHOICES; la entrada permanece
+        en WAREHOUSE con el nuevo nivel.
+        """
+        from .models import SparePartEntry
+
+        if entry.status != SparePartEntry.STATUS_WAREHOUSE:
+            raise ValueError(
+                f'SparePartEntry #{entry.pk} no esta en almacen '
+                f'(status={entry.status}).'
+            )
+
+        if entry.is_uncountable:
+            if new_level not in StockAssignmentService.LEVEL_CHOICES:
+                raise ValueError(
+                    'new_level debe ser uno de FULL/MEDIUM/LOW/EMPTY '
+                    'para un repuesto incontable.'
+                )
+            level_before = entry.stock_level
+            entry.stock_level = new_level
+            entry.save(update_fields=['stock_level'])
+            return StockAssignmentService._materialize_consumption(
+                entry, entry_line, machine, breakdown_ticket, created_by,
+                quantity_out=Decimal('0'),
+                level_before=level_before,
+                level_after=new_level,
+                notes=notes,
+            )
+
+        if quantity_used is None or quantity_used <= 0:
+            raise ValueError(
+                'quantity_used debe ser un numero positivo para un '
+                'repuesto contable.'
+            )
+        current = entry.stock_quantity or Decimal('0')
+        if quantity_used > current:
+            raise ValueError(
+                f'Stock insuficiente en SparePartEntry #{entry.pk}: '
+                f'quedan {current}, se solicitan {quantity_used}.'
+            )
+        entry.stock_quantity = current - quantity_used
+        if entry.stock_quantity == 0:
+            entry.status = SparePartEntry.STATUS_CONSUMED
+            entry.consumed_at = now()
+            entry.save(update_fields=['stock_quantity', 'status', 'consumed_at'])
+        else:
+            entry.save(update_fields=['stock_quantity'])
+        return StockAssignmentService._materialize_consumption(
+            entry, entry_line, machine, breakdown_ticket, created_by,
+            quantity_out=quantity_used, notes=notes,
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def consume_pre_assigned(entry, entry_line, created_by, notes=''):
+        """
+        Caso B (anexo H10, seccion 3.5 / 3.3). entry debe estar en
+        status=PRE_ASSIGNED. Se consume de golpe toda la cantidad/
+        nivel reservado. entry.status pasa a CONSUMED sin condicion,
+        consistente con la seccion 3.4 punto 1.
+        """
+        from .models import SparePartEntry
+
+        if entry.status != SparePartEntry.STATUS_PRE_ASSIGNED:
+            raise ValueError(
+                f'SparePartEntry #{entry.pk} no esta pre-asignado '
+                f'(status={entry.status}).'
+            )
+
+        machine = entry.machine
+        if machine is None and entry.breakdown_ticket is not None:
+            machine = entry.breakdown_ticket.machine
+
+        quantity_out = (
+            Decimal('0') if entry.is_uncountable
+            else (entry.stock_quantity or Decimal('0'))
+        )
+
+        entry.status = SparePartEntry.STATUS_CONSUMED
+        entry.consumed_at = now()
+        entry.save(update_fields=['status', 'consumed_at'])
+
+        return StockAssignmentService._materialize_consumption(
+            entry, entry_line, machine, entry.breakdown_ticket, created_by,
+            quantity_out=quantity_out, notes=notes,
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def register_new_and_consume(
+        company, entry_line, machine, breakdown_ticket, created_by,
+        description, reference='', is_uncountable=False,
+        stock_quantity_remaining=None, stock_level_remaining=None,
+        quantity_used=None, notes='',
+    ):
+        """
+        Caso C (anexo H10, seccion 3.5). Crea una SparePartEntry
+        nueva directamente en status=CONSUMED (digitalizacion
+        organica retroactiva, seccion 1 principio 1) y materializa el
+        consumo en el mismo paso.
+
+        stock_quantity_remaining/stock_level_remaining: lo que queda
+        en el almacen fisico TRAS este uso (segun redaccion literal
+        del anexo) -- se convierte en el stock_quantity/stock_level
+        de la entrada. quantity_used (por defecto 1) es lo que se
+        registra como consumido esta vez -- el anexo no lo especifica
+        explicitamente, solo pregunta "cuantos quedan".
+
+        origin_type se fija a SUPPLIER con supplier_* vacios -- el
+        modelo solo distingue SUPPLIER/SALVAGED y esta alta ad-hoc no
+        tiene ni albaran escaneado ni maquina donante. Senalado para
+        que Miguel Angel confirme o proponga mejor convencion.
+        """
+        from .models import SparePartEntry
+
+        if not description or not description.strip():
+            raise ValueError('description es obligatorio en el Caso C.')
+
+        if is_uncountable:
+            if stock_level_remaining not in StockAssignmentService.LEVEL_CHOICES:
+                raise ValueError(
+                    'stock_level_remaining debe ser uno de '
+                    'FULL/MEDIUM/LOW/EMPTY para un repuesto incontable.'
+                )
+        else:
+            if stock_quantity_remaining is None or stock_quantity_remaining < 0:
+                raise ValueError(
+                    'stock_quantity_remaining debe ser un numero >= 0 '
+                    'para un repuesto contable.'
+                )
+
+        if quantity_used is None:
+            quantity_used = Decimal('1')
+
+        entry = SparePartEntry.objects.create(
+            company=company,
+            reference=reference or '',
+            description=description.strip(),
+            is_uncountable=is_uncountable,
+            stock_quantity=(
+                Decimal('0') if is_uncountable
+                else Decimal(str(stock_quantity_remaining))
+            ),
+            stock_level=stock_level_remaining or '',
+            status=SparePartEntry.STATUS_CONSUMED,
+            machine=machine,
+            breakdown_ticket=breakdown_ticket,
+            consumed_at=now(),
+            origin_type=SparePartEntry.ORIGIN_SUPPLIER,
+        )
+
+        return StockAssignmentService._materialize_consumption(
+            entry, entry_line, machine, breakdown_ticket, created_by,
+            quantity_out=(Decimal('0') if is_uncountable else quantity_used),
+            level_after=(stock_level_remaining or '') if is_uncountable else '',
+            notes=notes,
+        )
 
 
