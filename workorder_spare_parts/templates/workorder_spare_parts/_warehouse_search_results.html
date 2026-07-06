@@ -22,6 +22,9 @@
         </div>
         <form method="post"
               action="{% url 'workorder_spare_parts:consume_warehouse' entry_line.pk entry.pk %}"
+              hx-post="{% url 'workorder_spare_parts:consume_warehouse' entry_line.pk entry.pk %}"
+              hx-target="#spare-part-search-results-{{ entry_line.pk }}"
+              hx-swap="innerHTML"
               class="d-flex align-items-center gap-2">
             {% csrf_token %}
             {% if entry.is_uncountable %}

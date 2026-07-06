@@ -411,3 +411,173 @@ class SparePartConsumeFromWarehouseView(CatalogReadAccessMixin, View):
             'spare_part_line': spare_part_line,
             'entry': entry,
         })
+
+
+class SparePartPreAssignedListView(CatalogReadAccessMixin, View):
+    """
+    HTMX endpoint: lists pre-assigned entries (Caso B, sección 3.3/3.5)
+    for the entry_line's breakdown_ticket if it has one, otherwise for
+    its machine_asset. Auto-loaded when the consumption widget renders
+    (hx-trigger="load"), no search input needed -- the limbo listing
+    is always scoped to a specific machine/ticket, never free-text.
+    ---
+    Endpoint HTMX: lista los repuestos pre-asignados (Caso B, sección
+    3.3/3.5) para el breakdown_ticket de la entry_line si lo tiene, o
+    si no para su machine_asset. Se carga automáticamente al
+    renderizar el widget de consumo (hx-trigger="load"), sin campo de
+    búsqueda -- el listado del limbo siempre está acotado a una
+    máquina/ticket concreta, nunca es texto libre.
+    """
+
+    template_name = 'workorder_spare_parts/_pre_assigned_results.html'
+
+    def get(self, request, entry_line_pk):
+        entry_line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=entry_line_pk,
+            entry__work_order__company=request.user.company_user.company,
+        )
+        if entry_line.breakdown_ticket is not None:
+            results = StockAssignmentService.list_pre_assigned(
+                breakdown_ticket=entry_line.breakdown_ticket,
+            )
+        elif entry_line.machine_asset is not None:
+            results = StockAssignmentService.list_pre_assigned(
+                machine=entry_line.machine_asset,
+            )
+        else:
+            results = SparePartEntry.objects.none()
+        return render(request, self.template_name, {
+            'entry_line': entry_line,
+            'results': results,
+        })
+
+
+class SparePartConsumePreAssignedView(CatalogReadAccessMixin, View):
+    """
+    HTMX endpoint: executes StockAssignmentService.consume_pre_assigned
+    (Caso B) for a given SparePartEntry against a given
+    WorkOrderEntryLine. No quantity/level input needed -- the whole
+    reserved amount is consumed at once (section 3.4 punto 1).
+    ---
+    Endpoint HTMX: ejecuta StockAssignmentService.consume_pre_assigned
+    (Caso B) para un SparePartEntry dado contra una WorkOrderEntryLine
+    dada. No hace falta cantidad/nivel -- se consume toda la reserva
+    de golpe (sección 3.4 punto 1).
+    """
+
+    results_template_name = 'workorder_spare_parts/_pre_assigned_results.html'
+    confirm_template_name = 'workorder_spare_parts/_consumption_confirmed.html'
+
+    def post(self, request, entry_line_pk, entry_pk):
+        company = request.user.company_user.company
+        entry_line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=entry_line_pk,
+            entry__work_order__company=company,
+        )
+        entry = get_object_or_404(SparePartEntry, pk=entry_pk, company=company)
+        notes = request.POST.get('notes', '').strip()
+
+        try:
+            spare_part_line = StockAssignmentService.consume_pre_assigned(
+                entry=entry, entry_line=entry_line,
+                created_by=request.user.company_user, notes=notes,
+            )
+        except ValueError as exc:
+            if entry_line.breakdown_ticket is not None:
+                results = StockAssignmentService.list_pre_assigned(
+                    breakdown_ticket=entry_line.breakdown_ticket,
+                )
+            else:
+                results = StockAssignmentService.list_pre_assigned(
+                    machine=entry_line.machine_asset,
+                )
+            return render(request, self.results_template_name, {
+                'entry_line': entry_line, 'results': results, 'error': str(exc),
+            })
+
+        return render(request, self.confirm_template_name, {
+            'entry_line': entry_line,
+            'spare_part_line': spare_part_line,
+            'entry': entry,
+        })
+
+
+class SparePartRegisterNewAndConsumeView(CatalogReadAccessMixin, View):
+    """
+    HTMX endpoint: GET renders the ad-hoc registration form (Caso C),
+    POST executes StockAssignmentService.register_new_and_consume --
+    organic digitisation of a spare part never seen before, straight
+    from the work order form. Only used when the part is not in the
+    warehouse (Caso A) nor pre-assigned (Caso B).
+    ---
+    Endpoint HTMX: GET renderiza el formulario de alta ad-hoc (Caso C),
+    POST ejecuta StockAssignmentService.register_new_and_consume --
+    digitalización orgánica de un repuesto nunca visto, directamente
+    desde el formulario de parte. Solo se usa cuando la pieza no está
+    en almacén (Caso A) ni pre-asignada (Caso B).
+    """
+
+    form_template_name = 'workorder_spare_parts/_register_new_form.html'
+    confirm_template_name = 'workorder_spare_parts/_consumption_confirmed.html'
+
+    def get(self, request, entry_line_pk):
+        entry_line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=entry_line_pk,
+            entry__work_order__company=request.user.company_user.company,
+        )
+        return render(request, self.form_template_name, {'entry_line': entry_line})
+
+    def post(self, request, entry_line_pk):
+        company = request.user.company_user.company
+        entry_line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=entry_line_pk,
+            entry__work_order__company=company,
+        )
+
+        description = request.POST.get('description', '').strip()
+        reference = request.POST.get('reference', '').strip()
+        is_uncountable = request.POST.get('is_uncountable') == 'on'
+        notes = request.POST.get('notes', '').strip()
+
+        def _to_decimal(raw):
+            raw = (raw or '').strip()
+            if not raw:
+                return None
+            try:
+                return Decimal(raw)
+            except InvalidOperation:
+                return None
+
+        stock_quantity_remaining = _to_decimal(request.POST.get('stock_quantity_remaining'))
+        stock_level_remaining = request.POST.get('stock_level_remaining', '').strip() or None
+        quantity_used = _to_decimal(request.POST.get('quantity_used'))
+
+        try:
+            spare_part_line = StockAssignmentService.register_new_and_consume(
+                company=company,
+                entry_line=entry_line,
+                machine=entry_line.machine_asset,
+                breakdown_ticket=entry_line.breakdown_ticket,
+                created_by=request.user.company_user,
+                description=description,
+                reference=reference,
+                is_uncountable=is_uncountable,
+                stock_quantity_remaining=stock_quantity_remaining,
+                stock_level_remaining=stock_level_remaining,
+                quantity_used=quantity_used,
+                notes=notes,
+            )
+        except ValueError as exc:
+            return render(request, self.form_template_name, {
+                'entry_line': entry_line, 'error': str(exc),
+            })
+
+        return render(request, self.confirm_template_name, {
+            'entry_line': entry_line,
+            'spare_part_line': spare_part_line,
+            'entry': spare_part_line.spare_part_entry,
+        })

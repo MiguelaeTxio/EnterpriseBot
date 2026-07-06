@@ -42,4 +42,21 @@ urlpatterns = [
         views.SparePartConsumeFromWarehouseView.as_view(),
         name='consume_warehouse',
     ),
+    # --- Caso B: consumo pre-asignado (limbo) ---
+    path(
+        'lineas/<int:entry_line_pk>/pre-asignados/',
+        views.SparePartPreAssignedListView.as_view(),
+        name='pre_assigned_list',
+    ),
+    path(
+        'lineas/<int:entry_line_pk>/consumir-pre-asignado/<int:entry_pk>/',
+        views.SparePartConsumePreAssignedView.as_view(),
+        name='consume_pre_assigned',
+    ),
+    # --- Caso C: alta ad-hoc + consumo (digitalizacion organica) ---
+    path(
+        'lineas/<int:entry_line_pk>/alta-nuevo/',
+        views.SparePartRegisterNewAndConsumeView.as_view(),
+        name='register_new',
+    ),
 ]

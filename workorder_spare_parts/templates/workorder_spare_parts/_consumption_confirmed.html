@@ -1,14 +1,8 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/_consumption_confirmed.html #}
-{# Fragmento HTMX -- confirmacion de consumo desde almacen (Caso A). H10 Paso 4, bloque 2/4. #}
-<div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
-    <span>
-        <i class="bi bi-check-circle me-1"></i>
-        Repuesto <strong>{{ entry.description }}</strong> registrado en la línea del parte.
-    </span>
-    <button type="button" class="btn btn-sm btn-outline-secondary"
-            hx-get="{% url 'workorder_spare_parts:search_warehouse' entry_line.pk %}"
-            hx-target="closest .spare-part-consumption-widget"
-            hx-swap="innerHTML">
-        Añadir otro
-    </button>
+{# Fragmento HTMX -- confirmacion de consumo (Casos A/B/C). Se renderiza  #}
+{# dentro del contenedor propio de cada caso, sin tocar el resto del     #}
+{# widget -- H10 Paso 4, bloque 3/4.                                     #}
+<div class="alert alert-success py-2 mb-0">
+    <i class="bi bi-check-circle me-1"></i>
+    Repuesto <strong>{{ entry.description }}</strong> registrado en la línea del parte.
 </div>

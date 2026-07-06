@@ -1,0 +1,37 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/_pre_assigned_results.html #}
+{# Fragmento HTMX -- Caso B, repuestos pre-asignados (limbo) para esta maquina/ticket. H10 Paso 4, bloque 3/4. #}
+{% if error %}
+<div class="alert alert-danger py-2 mb-2">{{ error }}</div>
+{% endif %}
+
+{% if results %}
+<ul class="list-group mb-2">
+    {% for entry in results %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+        <div>
+            <strong>{{ entry.description }}</strong>
+            {% if entry.internal_reference %}<code class="ms-1">{{ entry.internal_reference }}</code>{% endif %}
+            <br>
+            <small class="text-muted">
+                Reservado desde {{ entry.pre_assigned_at|date:"d/m/Y" }} --
+                {% if entry.is_uncountable %}
+                    Nivel: {{ entry.stock_level|default:"—" }}
+                {% else %}
+                    Cantidad: {{ entry.stock_quantity }}
+                {% endif %}
+            </small>
+        </div>
+        <form method="post"
+              action="{% url 'workorder_spare_parts:consume_pre_assigned' entry_line.pk entry.pk %}"
+              hx-post="{% url 'workorder_spare_parts:consume_pre_assigned' entry_line.pk entry.pk %}"
+              hx-target="#spare-part-pre-assigned-{{ entry_line.pk }}"
+              hx-swap="innerHTML">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-primary">Usar</button>
+        </form>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="text-muted small mb-2">Sin repuestos pre-asignados para esta máquina/ticket.</p>
+{% endif %}
