@@ -2520,7 +2520,7 @@ class WorkOrderExportView (SupervisorAccessMixin ,View ):
                 entry =line .entry 
                 wo =entry .work_order 
                 worker_name =_get_worker_name (wo )
-                date_key =entry .work_date or ""
+                date_key =entry .work_date .isoformat ()if entry .work_date else ""
                 enriched .append ({
                 "worker_name":worker_name ,
                 "date_key":date_key ,
