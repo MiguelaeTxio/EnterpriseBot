@@ -120,9 +120,26 @@ Mismo procedimiento que Fase B aplicado al bloque auth + WhatsApp.
 
 ### Trabajo Realizado
 
-S052 (pendiente): Fase A -- auditoria y clasificacion de clases.
+**Nota de reparación (2026-07-06):** este registro estaba desactualizado
+-- decía "Fase A pendiente" cuando en realidad las Fases B y C ya se
+habían ejecutado en una sesión anterior sin dejar constancia aquí.
+Reparado tras verificación empírica del tamaño real de los archivos
+(`wc -l`), no de memoria.
 
----
+- **Fase B -- COMPLETADA.** `panel/views_operator.py` existe: 4.879
+  líneas (vistas de operario: `WorkOrderEntryFormView`,
+  `WorkOrderEntryConfirmView`, `WorkOrderEntryUploadView`,
+  `OperatorDashboardView`, etc.).
+- **Fase C -- COMPLETADA.** `panel/views_workorders.py` existe: 6.488
+  líneas (vistas de supervisor/partes/presupuestos -- más grande que
+  la estimación original de ~3.500, sin más detalle disponible sobre
+  cuándo ni en qué sesión se ejecutó).
+- **Fase D (`views_fleet.py`), Fase E (`views_ivr.py`), Fase F
+  (`views_auth.py`) -- PENDIENTES.** Ninguno de los tres archivos
+  existe todavía.
+- **Fase G (limpieza final) -- PENDIENTE.** `panel/views.py` tiene
+  actualmente 4.033 líneas -- lejos del objetivo `<200`, porque
+  todavía contiene las clases de flota/IVR/auth sin extraer.
 
 ### Hoja de Ruta para la Siguiente Sesion (S052)
 
@@ -132,25 +149,33 @@ Auditar el numero de lineas actual de panel/views.py antes de comenzar:
 
   wc -l /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views.py
 
-#### Paso 1 - Fase A: mapa de clases
+**Reparación 2026-07-06:** confirmado en 4.033 líneas -- ver "Trabajo
+Realizado" arriba. Las Fases A y B originales de este documento ya NO
+aplican (B y C están hechas). Empezar directamente por la Fase D.
 
-Ejecutar el grep de clasificacion y entregar el mapa al usuario:
+#### Paso 1 - Fase D: extraccion views_fleet.py (~820 lineas estimadas)
 
-  grep -n "^class " \
-      /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views.py \
-      | tee /home/MiguelAeTxio/SWAP/class_map.txt
+Mismo procedimiento que Fase B/C (ya validado en la práctica): mapa de
+clases del bloque flota (`MachineAsset*`, `Fleet*`, `MaintenanceLog*`)
+dentro de `panel/views.py`, auditoría de imports, extracción como
+Neonato Puro, re-exports, verificación `py_compile` + `django check
+--deploy` + recarga y navegación real.
 
-Clasificar cada clase en su modulo destino segun la matriz de Fase A.
-Presentar la clasificacion al usuario para validacion. No extraer ninguna
-clase hasta recibir confirmacion explicita.
+#### Paso 2 - Fase E: extraccion views_ivr.py (~1.500 lineas estimadas)
 
-#### Paso 2 - Fase B: extraccion views_operator.py
+Bloque IVR config (`Section*`, `Contact*`, `CallFlow*`, `PhoneNumber*`,
+`CorporateVoiceProfile*`, `BlockedCaller*`, `DataCapture*`, `IVR*`,
+`VoiceProfile*`). Mismo procedimiento.
 
-Con el mapa validado, ejecutar la extraccion del bloque operator siguiendo
-el procedimiento de Fase B al completo. Una sola caja de modificacion por
-prompt. Verificacion py_compile + django check + recarga tras cada fase.
+#### Paso 3 - Fase F: extraccion views_auth.py (~740 lineas estimadas)
 
-#### Paso 3 - Fases C a G
+Bloque auth + WhatsApp (`PanelLogin*`, `Logout*`, `TrustDevice*`,
+`CompanyUser*`, `Password*`, `OwnProfile*`, `CompanySettings*`,
+`WhatsApp*`). Mismo procedimiento.
 
-Ejecutar en sesiones sucesivas segun disponibilidad. Cada fase es
-autocontenida y verificable de forma independiente.
+#### Paso 4 - Fase G: limpieza final
+
+Solo tras D/E/F: verificar `panel/views.py < 200 líneas`, eliminar
+imports huérfanos, `django check --deploy`, verificación E2E completa
+de navegación (operario, supervisor, admin, IVR, flota, auth,
+WhatsApp).
