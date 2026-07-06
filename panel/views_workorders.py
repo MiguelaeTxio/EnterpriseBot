@@ -6,7 +6,6 @@
 from django.contrib import messages as django_messages
 from django.views.generic import View, ListView
 from django.shortcuts import redirect, render
-from django.db import models as django_models
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 from django.forms import modelformset_factory
@@ -1745,11 +1744,35 @@ class WorkOrderLineInsertView (SupervisorAccessMixin ,View ):
         from django .db import transaction 
         with transaction .atomic ():
 
-
+            # Shift line_number of subsequent lines DESCENDING (highest
+            # first), one row at a time -- a bulk .update(F()+1) races
+            # against the (entry_id, line_number) unique constraint under
+            # MySQL, which does not guarantee row processing order for a
+            # mass UPDATE. Processing highest-to-lowest guarantees each
+            # target slot is already vacated before the next row claims
+            # it. Diagnosed via error.log (2026-07-06):
+            # IntegrityError Duplicate entry '1299-3' for key
+            # ..._entry_id_line_number_..._uniq.
+            # ---
+            # Desplazar line_number de las lineas posteriores en orden
+            # DESCENDENTE (la mayor primero), fila a fila -- un
+            # .update(F()+1) en bloque compite contra la constraint unica
+            # (entry_id, line_number) bajo MySQL, que no garantiza el
+            # orden de procesamiento de filas en un UPDATE masivo.
+            # Procesar de mayor a menor garantiza que cada hueco destino
+            # ya esta libre antes de que la siguiente fila lo reclame.
+            # Diagnosticado via error.log (2026-07-06): IntegrityError
+            # Duplicate entry '1299-3' para la clave
+            # ..._entry_id_line_number_..._uniq.
+            lines_to_shift =list (
             WorkOrderEntryLine .objects .filter (
             entry =entry ,
             line_number__gt =after_line .line_number ,
-            ).update (line_number =django_models .F ("line_number")+1 )
+            ).order_by ("-line_number")
+            )
+            for line_to_shift in lines_to_shift :
+                line_to_shift .line_number =line_to_shift .line_number +1 
+                line_to_shift .save (update_fields =["line_number"])
 
 
 
