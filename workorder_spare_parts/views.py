@@ -30,6 +30,7 @@ costes (H9), que cruza mano de obra con historial de consumo de
 repuestos.
 """
 import logging
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.db.models import Q
@@ -42,6 +43,8 @@ from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
 from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 from spare_parts.models import SparePartEntry, StockMovement
+from spare_parts.services import StockAssignmentService
+from work_order_processor.models import WorkOrderEntryLine
 
 from .forms import SparePartEntryCatalogForm
 
@@ -297,3 +300,109 @@ class SparePartEntryDeleteView(SupervisorAccessMixin, View):
         entry.delete()
         messages.success(request, f"Repuesto '{description}' eliminado correctamente.")
         return redirect('workorder_spare_parts:catalog_list')
+
+
+class SparePartWarehouseSearchView(CatalogReadAccessMixin, View):
+    """
+    HTMX endpoint: searches the digital warehouse (StockAssignmentService
+    Caso A, paso 1 de la sección 3.5) scoped to the entry_line's company,
+    for use from within the work order form/confirm templates (H10 Paso 4,
+    bloque 2/4). Returns an HTML fragment with matching entries, or an
+    empty-state fragment.
+    ---
+    Endpoint HTMX: busca en el almacén digital (Caso A de
+    StockAssignmentService, paso 1 de la sección 3.5) acotado a la
+    empresa de la entry_line, para usarse desde dentro de las plantillas
+    del formulario de parte (H10 Paso 4, bloque 2/4). Devuelve un
+    fragmento HTML con los resultados, o un fragmento de estado vacío.
+    """
+
+    template_name = 'workorder_spare_parts/_warehouse_search_results.html'
+
+    def get(self, request, entry_line_pk):
+        entry_line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=entry_line_pk,
+            entry__work_order__company=request.user.company_user.company,
+        )
+        query = request.GET.get('q', '')
+        results = StockAssignmentService.search_warehouse(
+            company=request.user.company_user.company,
+            query=query,
+        )
+        return render(request, self.template_name, {
+            'entry_line': entry_line,
+            'results': results,
+            'query': query,
+        })
+
+
+class SparePartConsumeFromWarehouseView(CatalogReadAccessMixin, View):
+    """
+    HTMX endpoint: executes StockAssignmentService.consume_from_warehouse
+    (Caso A) for a given SparePartEntry against a given WorkOrderEntryLine.
+    machine and breakdown_ticket are resolved from the entry_line itself,
+    never from client input. Returns a confirmation fragment on success,
+    or the search results fragment with an inline error banner on
+    ValueError (insufficient stock, wrong entry status, etc.).
+    ---
+    Endpoint HTMX: ejecuta StockAssignmentService.consume_from_warehouse
+    (Caso A) para un SparePartEntry dado contra una WorkOrderEntryLine
+    dada. machine y breakdown_ticket se resuelven desde la propia
+    entry_line, nunca desde la entrada del cliente. Devuelve un
+    fragmento de confirmación si tiene éxito, o el fragmento de
+    resultados de búsqueda con un banner de error inline ante
+    ValueError (stock insuficiente, estado incorrecto de la entrada,
+    etc.).
+    """
+
+    results_template_name = 'workorder_spare_parts/_warehouse_search_results.html'
+    confirm_template_name = 'workorder_spare_parts/_consumption_confirmed.html'
+
+    def post(self, request, entry_line_pk, entry_pk):
+        company = request.user.company_user.company
+        entry_line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=entry_line_pk,
+            entry__work_order__company=company,
+        )
+        entry = get_object_or_404(SparePartEntry, pk=entry_pk, company=company)
+
+        quantity_raw = request.POST.get('quantity_used', '').strip()
+        new_level = request.POST.get('new_level', '').strip() or None
+        notes = request.POST.get('notes', '').strip()
+
+        quantity_used = None
+        if quantity_raw:
+            try:
+                quantity_used = Decimal(quantity_raw)
+            except InvalidOperation:
+                quantity_used = None
+
+        try:
+            spare_part_line = StockAssignmentService.consume_from_warehouse(
+                entry=entry,
+                entry_line=entry_line,
+                machine=entry_line.machine_asset,
+                breakdown_ticket=entry_line.breakdown_ticket,
+                created_by=request.user.company_user,
+                quantity_used=quantity_used,
+                new_level=new_level,
+                notes=notes,
+            )
+        except ValueError as exc:
+            results = StockAssignmentService.search_warehouse(
+                company=company, query=entry.description,
+            )
+            return render(request, self.results_template_name, {
+                'entry_line': entry_line,
+                'results': results,
+                'query': entry.description,
+                'error': str(exc),
+            })
+
+        return render(request, self.confirm_template_name, {
+            'entry_line': entry_line,
+            'spare_part_line': spare_part_line,
+            'entry': entry,
+        })

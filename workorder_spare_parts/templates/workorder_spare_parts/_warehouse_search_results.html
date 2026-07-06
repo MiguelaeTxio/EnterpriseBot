@@ -1,0 +1,46 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/_warehouse_search_results.html #}
+{# Fragmento HTMX -- Caso A, resultados de busqueda en almacen digital. H10 Paso 4, bloque 2/4. #}
+{% if error %}
+<div class="alert alert-danger py-2 mb-2">{{ error }}</div>
+{% endif %}
+
+{% if results %}
+<ul class="list-group">
+    {% for entry in results %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+        <div>
+            <strong>{{ entry.description }}</strong>
+            {% if entry.reference %}<span class="text-muted">({{ entry.reference }})</span>{% endif %}
+            <br>
+            <small class="text-muted">
+                {% if entry.is_uncountable %}
+                    Nivel actual: {{ entry.stock_level|default:"—" }}
+                {% else %}
+                    Stock: {{ entry.stock_quantity }}
+                {% endif %}
+            </small>
+        </div>
+        <form method="post"
+              action="{% url 'workorder_spare_parts:consume_warehouse' entry_line.pk entry.pk %}"
+              class="d-flex align-items-center gap-2">
+            {% csrf_token %}
+            {% if entry.is_uncountable %}
+                <select name="new_level" class="form-select form-select-sm" style="width: auto;">
+                    <option value="FULL">FULL</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="LOW">LOW</option>
+                    <option value="EMPTY">EMPTY</option>
+                </select>
+            {% else %}
+                <input type="number" step="0.01" min="0.01" name="quantity_used"
+                       class="form-control form-control-sm" style="width: 90px;"
+                       placeholder="Cantidad" required>
+            {% endif %}
+            <button type="submit" class="btn btn-sm btn-primary">Usar</button>
+        </form>
+    </li>
+    {% endfor %}
+</ul>
+{% elif query %}
+<p class="text-muted small mb-0">Sin resultados para "{{ query }}" en el almacén.</p>
+{% endif %}

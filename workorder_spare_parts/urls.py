@@ -31,4 +31,15 @@ urlpatterns = [
         views.SparePartEntryDeleteView.as_view(),
         name='catalog_delete',
     ),
+    # --- Caso A: consumo desde almacen (H10 Paso 4, bloque 2/4) ---
+    path(
+        'lineas/<int:entry_line_pk>/buscar-almacen/',
+        views.SparePartWarehouseSearchView.as_view(),
+        name='search_warehouse',
+    ),
+    path(
+        'lineas/<int:entry_line_pk>/consumir-almacen/<int:entry_pk>/',
+        views.SparePartConsumeFromWarehouseView.as_view(),
+        name='consume_warehouse',
+    ),
 ]

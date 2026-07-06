@@ -1,0 +1,18 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/_consumption_widget.html #}
+{# Widget compartido de consumo de repuestos (Caso A por ahora; B y C se #}
+{# añaden en los siguientes bloques). Se incluye TAL CUAL, sin cambios,  #}
+{# tanto en form_entry.html (WorkOrderEntryFormView) como en la          #}
+{# plantilla de WorkOrderEntryConfirmView -- H10 Paso 4, confirmado por  #}
+{# Miguel Ángel: una única vista de edición/creación de parte y una      #}
+{# única plantilla de este widget para ambas.                           #}
+{# Requiere `entry_line` en el contexto de la plantilla que lo incluye. #}
+<div class="spare-part-consumption-widget card card-body p-3 mb-3">
+    <label class="form-label small text-muted mb-1">Buscar repuesto en almacén</label>
+    <input type="text" name="q" class="form-control form-control-sm mb-2"
+           placeholder="Referencia o descripción..."
+           hx-get="{% url 'workorder_spare_parts:search_warehouse' entry_line.pk %}"
+           hx-trigger="keyup changed delay:400ms"
+           hx-target="#spare-part-search-results-{{ entry_line.pk }}"
+           hx-swap="innerHTML">
+    <div id="spare-part-search-results-{{ entry_line.pk }}"></div>
+</div>
