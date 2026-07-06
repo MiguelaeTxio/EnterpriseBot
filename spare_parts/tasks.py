@@ -18,6 +18,14 @@ live on the server once administración has a copy by email, and it
 avoids accumulating photos/PDFs on PythonAnywhere while there is no
 OneDrive/SharePoint integration yet (see Hito 15).
 
+Sender domain (S005-H10 update): campustudionline.com, authenticated
+in the Twilio console -- domain owned by Miguel Ángel, used to avoid
+depending on a third party authenticating gruasalvarez.com, which
+remained blocked. The real administración recipient is unchanged and
+confirmed by Miguel Ángel: administracion@gruasalvarez.com, receiving
+via its own normal MX, unrelated to Twilio's sender-domain
+authentication.
+
 ---
 
 Tareas Celery para la aplicación spare_parts.
@@ -36,6 +44,14 @@ origen. Es una regla de negocio deliberada (S004-H10): el archivo ya
 no necesita vivir en el servidor una vez que administración tiene una
 copia por correo, y evita acumular fotos/PDFs en PythonAnywhere
 mientras no exista integración con OneDrive/SharePoint (ver Hito 15).
+
+Dominio remitente (actualización S005-H10): campustudionline.com,
+autenticado en la consola de Twilio -- dominio propiedad de Miguel
+Ángel, usado para no depender de que un tercero autentique
+gruasalvarez.com, que seguía bloqueado. El destinatario real de
+administración no cambia y está confirmado por Miguel Ángel:
+administracion@gruasalvarez.com, que recibe por su propio MX normal,
+sin relación con la autenticación de dominio remitente de Twilio.
 """
 import base64
 import logging
@@ -66,12 +82,25 @@ logger = logging.getLogger(__name__)
 # anotado aquí como posible paso futuro.
 _TWILIO_EMAIL_API_URL = 'https://comms.twilio.com/v1/Emails'
 
-# Mismo buzón real para remitente y destinatario, confirmado por
-# Miguel Ángel en S004 (no existe no-reply@ en el dominio del grupo).
-# Same real mailbox for sender and recipient, confirmed by Miguel
-# Ángel in S004 (no no-reply@ address exists on the group's domain).
-_ADMIN_EMAIL = 'administracion@gruasalvarez.com'
-_ADMIN_NAME = 'Administración Grupo Álvarez'
+# Remitente: dominio autenticado en Twilio (S005-H10, verificado en
+# consola Twilio: campustudionline.com, propiedad de Miguel Ángel --
+# evita depender de que un tercero autentique gruasalvarez.com).
+# no-reply@ no necesita existir como buzón real -- Twilio Email es solo
+# de envío, no gestiona ni requiere acceso a ninguna bandeja de entrada.
+# Destinatario: buzón real de administración, sin relación con la
+# autenticación de dominio de Twilio -- recibe por su propio MX normal.
+# ---
+# Sender: domain authenticated in Twilio (S005-H10, verified in Twilio
+# console: campustudionline.com, owned by Miguel Ángel -- avoids
+# depending on a third party authenticating gruasalvarez.com). no-reply@
+# does not need to exist as a real mailbox -- Twilio Email is send-only,
+# it does not manage or require access to any inbox.
+# Recipient: real administración mailbox, unrelated to Twilio's domain
+# authentication -- receives via its own normal MX.
+_SENDER_EMAIL = 'no-reply@campustudionline.com'
+_SENDER_NAME = 'EnterpriseBot'
+_RECIPIENT_EMAIL = 'administracion@gruasalvarez.com'
+_RECIPIENT_NAME = 'Administración Grupo Álvarez'
 
 _MIME_TYPES = {
     '.pdf': 'application/pdf',
@@ -162,8 +191,8 @@ def send_delivery_note_photo_email(self, delivery_note_id: int) -> None:
         encoded = base64.b64encode(f.read()).decode()
 
     payload = {
-        'from': {'address': _ADMIN_EMAIL, 'name': _ADMIN_NAME},
-        'to': [{'address': _ADMIN_EMAIL, 'name': _ADMIN_NAME}],
+        'from': {'address': _SENDER_EMAIL, 'name': _SENDER_NAME},
+        'to': [{'address': _RECIPIENT_EMAIL, 'name': _RECIPIENT_NAME}],
         'content': {'subject': subject, 'html': html_body},
         'attachments': [{
             'filename': file_name,
@@ -214,5 +243,5 @@ def send_delivery_note_photo_email(self, delivery_note_id: int) -> None:
     logger.info(
         '# [Tarea] Albarán #%d enviado por correo a %s '
         '(operationId=%s) y archivo origen eliminado del servidor.',
-        delivery_note_id, _ADMIN_EMAIL, operation_id,
+        delivery_note_id, _RECIPIENT_EMAIL, operation_id,
     )
