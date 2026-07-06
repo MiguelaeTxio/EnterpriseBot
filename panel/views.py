@@ -113,3 +113,19 @@ from panel.views_auth import (
     OwnProfileView,
     CompanySettingsView,
 )
+
+# --- Fleet views — re-exported from fleet.views (H12/H21 split) ---
+# Recuperado el 2026-07-06: este re-export vivia originalmente entre dos
+# clases IVR (efecto colateral de una extraccion de Fase E basada solo en
+# limites de "class ", que no detecto este import suelto). Restaurado a
+# panel/views.py, que es su sitio real -- panel/urls.py importa estas 7
+# vistas de aqui sin cambios.
+from fleet.views import (
+    MachineAssetListView,
+    MachineAssetCreateView,
+    MachineAssetUpdateView,
+    MachineAssetDeactivateView,
+    MachineAssetReactivateView,
+    MachineAssetDeleteView,
+    MachineAssetAnalyticsView,
+)

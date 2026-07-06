@@ -1870,20 +1870,6 @@ class DataCaptureSetUpdateView (AdminRoleRequiredMixin ,UpdateView ):
         ).order_by ("-starts_at").first ()
 
 
-# ---------------------------------------------------------------------------
-# Fleet views — re-exported from fleet.views (H12/H21 split)
-# Vistas de flota — re-exportadas desde fleet.views (split H12/H21)
-# ---------------------------------------------------------------------------
-from fleet.views import (
-    MachineAssetListView,
-    MachineAssetCreateView,
-    MachineAssetUpdateView,
-    MachineAssetDeactivateView,
-    MachineAssetReactivateView,
-    MachineAssetDeleteView,
-    MachineAssetAnalyticsView,
-)
-
 class SectionDefaultRoleView (AdminRoleRequiredMixin ,View ):
     """
     AJAX endpoint that returns the default_role of a Section as JSON.
