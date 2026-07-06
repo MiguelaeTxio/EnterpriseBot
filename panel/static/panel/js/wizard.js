@@ -68,6 +68,13 @@
       if (routeCard)  routeCard.classList.add('d-none');
       if (hiddenMode) hiddenMode.value = 'MANUAL';
 
+      // km_phase1 vuelve a ser obligatorio — es el único modo que lo usa.
+      var km1Manual = document.getElementById('id_km_phase1');
+      if (km1Manual) {
+        km1Manual.required = true;
+        km1Manual.disabled = false;
+      }
+
       // Clear route-side data so an abandoned route selection never
       // gets submitted alongside manual values.
       // Limpiar datos de ruta para que una selección de ruta abandonada
@@ -104,7 +111,15 @@
       var nyf = document.getElementById('id_manual_is_night_holiday');
       var toll = document.getElementById('id_manual_toll_total');
       var overnightNo = document.getElementById('overnight-no');
-      if (km1) km1.value = '';
+      if (km1) {
+        km1.value = '';
+        // Modo Ruta calcula los km por la Routes API — km_phase1 deja de
+        // ser obligatorio aquí. Se deshabilita también para que no viaje
+        // un campo required oculto (bloquearía el submit sin feedback
+        // visible al estar detrás de d-none).
+        km1.required = false;
+        km1.disabled = true;
+      }
       if (km2) km2.value = '';
       if (nyf) nyf.checked = false;
       if (toll) toll.value = '';

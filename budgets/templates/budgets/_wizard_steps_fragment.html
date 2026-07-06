@@ -118,7 +118,8 @@
                    id="id_km_phase1"
                    min="0"
                    step="1"
-                   placeholder="Km ida y vuelta fase 1">
+                   placeholder="Km ida y vuelta fase 1"
+                   {% if not base_has_coords %}required{% endif %}>
         </div>
         <div id="km-phase2-wrapper" class="d-none">
             <label class="form-label small text-muted" for="id_km_phase2">Km totales (ida y vuelta) — Fase 2</label>
