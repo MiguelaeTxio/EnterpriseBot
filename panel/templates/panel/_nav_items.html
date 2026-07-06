@@ -36,6 +36,7 @@
 {#   "absence_categories" → Categorías de ausencia           (ADMIN, SUPERVISOR)    #}
 {#   "machine_history"    → Historial de Máquina             (WORKSHOP, ADMIN)      #}
 {#   "workorder_history" → Mis partes                        (WORKSHOP, WORKSHOPBOSS, ADMIN) #}
+{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (ADMIN, SUPERVISOR) (Hito 10 Paso 4) #}
 {# ================================================================================ #}
 <ul class="nav flex-column mt-2" id="sidebar-accordion">
     {# ------------------------------------------------------------------ #}
@@ -353,6 +354,16 @@
                             </a>
                         </li>
                     {% endif %}
+                    {# Catálogo de repuestos — ADMIN y SUPERVISOR (Hito 10, Paso 4).         #}
+                    {# Spare parts catalog — ADMIN and SUPERVISOR (Hito 10, Paso 4).         #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
+                               href="{% url 'workorder_spare_parts:catalog_list' %}">
+                                <i class="bi bi-boxes"></i>Catálogo de repuestos
+                            </a>
+                        </li>
+                    {% endif %}
                     {# Partes digitales eliminado del sidebar — accesible solo via URL directa si procede. #}
                     {# Digital work orders removed from sidebar — accessible via direct URL if needed.    #}
                 </ul>
@@ -535,6 +546,7 @@
         'machine_history':          'acc-operarios',
         'workorder_history':        'acc-operarios',
         'work_order_admin_history': 'acc-operarios',
+        'workorder_spare_parts_catalog': 'acc-operarios',
         'breakdown_ticket_list':    'acc-tickets',
         'budgets_wizard':           'acc-asistencia',
         'budgets_history':          'acc-asistencia',

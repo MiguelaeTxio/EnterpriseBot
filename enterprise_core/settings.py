@@ -76,6 +76,8 @@ INSTALLED_APPS = [
     'fleet',
     # Supplier delivery notes and spare parts warehouse — albaranes de proveedor y almacén de repuestos (Hito 10).
     'spare_parts',
+    # Bridge between digital work orders and the spare parts warehouse — puente entre partes digitales y almacén de repuestos (Hito 10, Paso 4).
+    'workorder_spare_parts',
     # IRC-style section chat rooms and breakdown agent — salas de chat IRC y agente de averías.
     'chat',
     # ASISTENCIA budget engine — motor de presupuestos ASISTENCIA.

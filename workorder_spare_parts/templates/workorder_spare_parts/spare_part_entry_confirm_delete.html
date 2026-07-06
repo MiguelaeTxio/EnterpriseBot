@@ -1,0 +1,43 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/spare_part_entry_confirm_delete.html #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Eliminar Repuesto{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="fw-semibold mb-3">Eliminar Repuesto</h5>
+
+                {% if has_movements %}
+                <div class="alert alert-danger">
+                    <strong>No se puede eliminar.</strong> Este repuesto ya tiene
+                    movimientos de stock registrados -- eliminarlo afectaría al
+                    historial de analítica de costes (Hito 9).
+                </div>
+                <a href="{% url 'workorder_spare_parts:catalog_list' %}" class="btn btn-outline-secondary">
+                    Volver
+                </a>
+                {% else %}
+                <p>
+                    ¿Confirmas que quieres eliminar
+                    <strong>{{ entry.description }}</strong>
+                    ({{ entry.reference|default:"sin referencia" }})?
+                    Esta acción no se puede deshacer.
+                </p>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{% url 'workorder_spare_parts:catalog_list' %}" class="btn btn-outline-secondary">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-danger">Eliminar</button>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

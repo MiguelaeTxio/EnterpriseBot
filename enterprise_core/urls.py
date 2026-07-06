@@ -64,4 +64,10 @@ urlpatterns = [
         'panel/spare-parts/',
         include('spare_parts.urls', namespace='spare_parts'),
     ),
+    # Bridge between digital work orders and the spare parts warehouse —
+    # puente entre partes digitales y almacén de repuestos (Hito 10, Paso 4).
+    path(
+        'panel/repuestos/',
+        include('workorder_spare_parts.urls', namespace='workorder_spare_parts'),
+    ),
 ]
