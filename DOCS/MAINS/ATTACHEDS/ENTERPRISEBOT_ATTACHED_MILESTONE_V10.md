@@ -519,32 +519,88 @@ familia/tipo de avería en inglés, plantillas y vistas que los
 consuman) antes de proponer ningún fix, en vez de asumir que es un
 único punto aislado.
 
-### Próxima sesión — orden de trabajo
+### Próxima sesión — orden de trabajo (actualizado al cierre de S005)
 
-1. **Familias/tipos de avería en inglés** en el laboratorio de
-   análisis (y donde más aparezca) — nuevo tema, ver arriba.
-2. Confirmar si la persona delegada ya verificó el dominio
-   `gruasalvarez.com` en Twilio; si es así, probar el envío por
-   correo real de un albarán confirmado.
-3. Continuar con el Paso 4 de H10 (`StockAssignmentService` y
-   circuito en parte de trabajo).
+Los tres puntos que quedaron pendientes al cierre de S004 se resolvieron
+en S005:
+1. ~~Familias/tipos de avería en inglés~~ — **RESUELTO S005.** Bug real
+   encontrado en `chat/breakdown_ticket_detail.html`
+   (`BreakdownTicket.fault_category` sin `choices=`, a diferencia de
+   `WorkOrderEntryLine`) — corregido resolviendo el label en la vista.
+   `admin_history.html` se investigó y **no tenía el bug** (ya
+   traducido correctamente vía `_dominant_fault_category`).
+2. ~~Confirmar dominio Twilio~~ — **RESUELTO S005**, con cambio de
+   planteamiento: Miguel Ángel usó su propio dominio ya autenticado
+   (`campustudionline.com`) en vez de esperar a `gruasalvarez.com`
+   (seguía bloqueado). Envío real validado E2E. Ver Paso 8 (arriba)
+   para el bloqueante nuevo detectado (cuarentena de Microsoft 365
+   Defender) y la solución puente temporal.
+3. **Paso 4 de H10 — backend completado en S005, UI pendiente.** Ver
+   detalle actualizado abajo.
 
 ### Paso 4 — StockAssignmentService y circuito en parte de trabajo
-- Implementar `StockAssignmentService.assign_to_work_order()` con
-  los 3 casos del circuito (A, B, C) de la sección 3.5, más el
-  listado automático de pre-asignados (3.3) al seleccionar máquina
-  o ticket en `WorkOrderEntry`.
-- Auto-relleno del parte desde el ticket de avería (centro de gasto,
-  familia/tipo de avería) cuando existe ticket abierto, excepto
-  variables propias del parte (horas, pausas de comida).
-- Añadir selector de repuesto en `form_entry.html`, con sección
-  separada para repuestos pre-asignados (listado automático,
-  selección directa) y repuestos no pre-asignados (búsqueda manual,
-  Caso A/C).
-- Modal de registro de nuevo repuesto (Caso C) con selector
-  contable/incontable y captura de stock inicial.
-- Lógica de cierre de parte (3.4): transición PRE_ASSIGNED→CONSUMED,
-  `consumed_at`, `StockMovement OUT`.
+
+**Backend — COMPLETADO en S005.** `StockAssignmentService` en
+`spare_parts/services.py`: `list_pre_assigned()` (sección 3.3),
+`search_warehouse()` (paso 1 de 3.5), y los 3 casos de consumo —
+`consume_from_warehouse()` (Caso A), `consume_pre_assigned()` (Caso
+B), `register_new_and_consume()` (Caso C) — con materialización
+compartida (`_materialize_consumption()`, sección 3.4) hacia
+`SparePartLine` (FK `spare_part_entry` ya existía y ya migrada,
+`work_order_processor/migrations/0027_...`) + `StockMovement OUT`.
+
+**Dos notas de interpretación sin confirmar, documentadas en el
+docstring de la clase — revisar antes de dar el backend por
+cerrado del todo:**
+1. Contradicción entre 3.4pto4 y 3.5CasoA sobre si una entrada de
+   almacén con stock restante pasa a `CONSUMED` o se queda en
+   `WAREHOUSE` tras un uso parcial — implementado como "se queda en
+   WAREHOUSE mientras tenga stock, solo pasa a CONSUMED al llegar a
+   cero".
+2. `origin_type` del Caso C (alta ad-hoc sin albarán ni máquina
+   donante) fijado a `SUPPLIER` con campos de proveedor vacíos, a
+   falta de una categoría mejor en el modelo actual.
+
+**UI — SIN EMPEZAR, decisión de planteamiento pendiente antes de
+tocar código.** Hallazgo clave de S005: el mecanismo actual de
+repuestos en `WorkOrderEntryFormView`/`WorkOrderEntryConfirmView`
+(`panel/views_operator.py`, ~2.200 y ~1.000 líneas respectivamente)
+es **completamente independiente** del almacén digital — hoy el
+mecánico escribe referencia/material/unidades/origen a mano, sin
+tocar `SparePartEntry` ni `StockMovement`. Integrar los 3 casos aquí
+no es "añadir un selector", es cambiar cómo un formulario en
+producción documenta sus repuestos.
+
+Miguel Ángel plantea, a decidir/concretar al empezar la sesión:
+- Los archivos ya son demasiado grandes para seguir ampliándolos
+  dentro — evaluar un archivo aparte, o directamente una app Django
+  independiente que hable con `spare_parts` en vez de mezclar la
+  lógica dentro de `views_operator.py`.
+- Antes de tocar el formulario del parte, hace falta el **CRUD de
+  artículos de repuesto** (dar de alta/editar el catálogo de
+  `SparePartEntry` fuera del circuito de albaranes) — sin esto no
+  hay nada que buscar en el Caso A.
+- Decisión pendiente: ¿los 3 casos **sustituyen** la entrada de texto
+  libre actual, o **conviven** como opción adicional mientras se
+  completa la digitalización orgánica del almacén?
+
+**No bloquea nada más** — es un bloque independiente, se puede
+abordar en cualquier orden respecto al resto de pasos y respecto al
+Hito 21 (ver nota cruzada abajo).
+
+### Nota cruzada — Hito 21 (split de panel/views.py), candidato paralelo
+
+Detectado en S005 al revisar el tamaño de `views_operator.py`
+(~4.900 líneas): H21 (refactorización, actualmente PAUSADO) tenía su
+propio registro desactualizado — Fases B y C (`views_operator.py`,
+`views_workorders.py`) **ya estaban completadas**, no "pendientes"
+como decía el anexo (reparado en S005, ver
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md`). Solo quedan Fases D
+(`views_fleet.py`), E (`views_ivr.py`), F (`views_auth.py`) y G
+(limpieza final). Es trabajo mecánico y de bajo riesgo, desacoplado
+del Paso 4 de H10 — no hace falta terminar uno para empezar el otro.
+Miguel Ángel decide el orden al empezar la próxima sesión según
+tiempo/energía disponible.
 
 ### Paso 5 — Vista de almacén y movimientos
 - `SparePartListView`: listado de repuestos con filtros por máquina,
