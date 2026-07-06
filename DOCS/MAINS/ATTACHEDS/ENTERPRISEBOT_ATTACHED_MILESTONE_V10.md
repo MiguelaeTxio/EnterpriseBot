@@ -577,9 +577,66 @@ consuman) antes de proponer ningún fix, en vez de asumir que es un
   automáticamente, solo documenta la tarea en texto libre. Ver
   principio rector de separación en 3.6.
 
+### Paso 8 — Persistencia real en la nube M365 (sustituye el correo temporal)
+
+**Confirmado por Miguel Ángel (2026-07-06) — principio arquitectónico
+de obligado cumplimiento, no solo para este hito:**
+
+**PythonAnywhere NUNCA es almacén permanente de fotografías.** El
+servidor solo las retiene de forma **temporal**, mientras dura el
+procesamiento (llamada a Gemini Vision para extracción de datos), y se
+borran automáticamente en cuanto se persisten en su destino real — tal
+como ya hace `send_delivery_note_photo_email` con el archivo del
+albarán tras el envío confirmado (202/DELIVERED). Esto evita que el
+almacenamiento en disco de PythonAnywhere crezca sin límite.
+
+**El almacén permanente real es la nube Microsoft 365 (SharePoint/
+OneDrive) de Grupo Álvarez.** En cuanto se resuelva el acceso (reunión
+prevista esta tarde con el responsable de M365 de Grupo Álvarez), el
+paso de envío por correo (actual solución puente, con destinatario
+temporal `nummenor@proton.me` mientras dura la cuarentena de Microsoft
+365 Defender sobre el remitente Twilio — ver `spare_parts/tasks.py`)
+se sustituye por persistencia directa en la carpeta M365 que
+corresponda, vía Microsoft Graph API (registro de aplicación en Azure
+AD necesario — a diferencia del caso de H15, aquí Django corre en
+PythonAnywhere, no en un PC con OneDrive sincronizado localmente, así
+que Graph API no es evitable como sí lo fue en H15).
+
+**En base de datos nunca se guarda la foto — solo la referencia.**
+`DeliveryNote` (y cualquier modelo futuro con fotos, ver Pendiente
+cruzado abajo) debe tener un campo tipo `cloud_storage_path`
+(`CharField`/`URLField`, nombre exacto a decidir en la sesión de
+implementación) que guarde la ruta/ID del archivo en M365, para
+recuperarlo bajo demanda vía API — nunca el binario en BD ni en disco
+de PythonAnywhere de forma permanente.
+
+**Pendiente de implementación** (bloqueado hasta acceso M365):
+- Nuevo campo en `DeliveryNote` para la referencia de ruta en la nube.
+- Servicio de subida a M365 (Graph API) que sustituye
+  `send_delivery_note_photo_email` como paso final del circuito de
+  confirmación (o convive con él, a decidir).
+- Migración correspondiente (`makemigrations`/`migrate`, flujo NFS
+  completo ya establecido en `com-migrations`).
+
+**Pendiente cruzado — Partes de Trabajo (fuera del alcance directo de
+H10, anotado aquí porque comparte la misma decisión arquitectónica):**
+Miguel Ángel ha identificado una necesidad nueva, no cubierta por
+ningún hito existente: permitir que el operario adjunte fotografías a
+una `WorkOrderEntryLine` concreta (ejemplo real: foto del cableado de
+un motor eléctrico antes de desmontarlo, para referencia futura), y
+que esas fotos sean recuperables después desde el historial de partes
+del propio operario. Mismo principio: nunca persistir en
+PythonAnywhere, subir a M365 vía Graph API, guardar solo la
+referencia en BD. Requiere su propio campo/modelo nuevo en
+`work_order_processor` (a diseñar) y su propia migración. **No se
+implementa en H10** — queda anotado aquí para no perderlo, a la espera
+de decidir en qué hito se aborda (posible Caso C de
+`nfs-enterprisebot-pch`: hito nuevo, o ampliación de H7/H8 si Miguel
+Ángel prefiere agruparlo con los partes digitales existentes).
+
 ---
 
-## 6. Registro de Sesiones
+
 
 | Sesion | Fecha | Pasos trabajados | Resumen |
 |--------|-------|-----------------|---------|
