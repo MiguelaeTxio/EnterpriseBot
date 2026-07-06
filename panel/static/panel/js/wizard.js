@@ -108,7 +108,6 @@
       // no desde este radio.
       var km1 = document.getElementById('id_km_phase1');
       var km2 = document.getElementById('id_km_phase2');
-      var nyf = document.getElementById('id_manual_is_night_holiday');
       var toll = document.getElementById('id_manual_toll_total');
       var overnightNo = document.getElementById('overnight-no');
       if (km1) {
@@ -121,7 +120,9 @@
         km1.disabled = true;
       }
       if (km2) km2.value = '';
-      if (nyf) nyf.checked = false;
+      // Nota: manual_is_night_holiday (nyf) ya NO se limpia aquí -- es un
+      // campo compartido por ambos modos (S005), vive fuera de las
+      // tarjetas de modo, y debe conservar su valor al cambiar de modo.
       if (toll) toll.value = '';
       // Limpiar la tabla itemizada de peajes por tramo (nº de pases),
       // generada dinámicamente por tramo — no tiene un id fijo único.

@@ -48,6 +48,31 @@
         </div>
     </div>
 </div>
+{# ── PASO 2c: Nocturno/Festivo forzado — compartido por ambos modos ─────────── #}
+{# Aplica tanto a Planificación de ruta como a Manual: el cálculo automático   #}
+{# por calendario se ejecuta siempre (ver calculate_budget()); esta casilla    #}
+{# solo fuerza el resultado a True cuando se marca, para servicios acordados   #}
+{# con la aseguradora fuera de zona aunque la fecha/horario no lo justifiquen. #}
+<div class="card mb-3" id="step-night-holiday-override">
+    <div class="card-body">
+        <div class="form-check form-switch">
+            <input class="form-check-input"
+                   type="checkbox"
+                   name="manual_is_night_holiday"
+                   id="id_manual_is_night_holiday"
+                   value="1">
+            <label class="form-check-label fw-semibold" for="id_manual_is_night_holiday">¿Servicio nocturno / festivo?</label>
+        </div>
+        <div class="form-text text-muted">
+            Marcada: fuerza el recargo nocturno/festivo aunque la fecha
+            no lo sea (p. ej. acuerdo con la aseguradora para un servicio
+            fuera de zona). Sin marcar: se calcula automáticamente
+            cruzando la fecha con el calendario laboral de la base y el
+            horario nocturno de la aseguradora — válido en los dos modos
+            de cálculo.
+        </div>
+    </div>
+</div>
 {% if base_has_coords %}
     {# ── PASO 3: Modo de cálculo — Manual anula Planificación de ruta y viceversa ── #}
     {# Planificación de ruta es la opción por defecto (automática); Manual queda    #}
@@ -130,20 +155,6 @@
                    min="0"
                    step="1"
                    placeholder="Km ida y vuelta fase 2">
-        </div>
-        <div class="form-check form-switch mt-3">
-            <input class="form-check-input"
-                   type="checkbox"
-                   name="manual_is_night_holiday"
-                   id="id_manual_is_night_holiday"
-                   value="1">
-            <label class="form-check-label fw-semibold" for="id_manual_is_night_holiday">¿Servicio nocturno / festivo?</label>
-        </div>
-        <div class="form-text text-muted mb-2">
-            Marcada: fuerza el recargo nocturno/festivo aunque la fecha
-            no lo sea (p. ej. acuerdo con la aseguradora). Sin marcar: se
-            calcula automáticamente cruzando la fecha con el calendario
-            laboral de la base y el horario nocturno de la aseguradora.
         </div>
         {% if toll_segments %}
             <div class="mt-3">

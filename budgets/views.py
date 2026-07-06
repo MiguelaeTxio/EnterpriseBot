@@ -415,12 +415,32 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             if route_toll_budget_cost_raw else None
         )
 
+        # --- Nocturno/Festivo forzado — compartido por ambos modos (S005) ---
+        # --- Forced nocturno/festivo — shared by both calculation modes (S005) ---
+        # manual_is_night_holiday: operator checkbox, shown once in the
+        #   wizard regardless of calculation mode (API or MANUAL). FORCES
+        #   is_night_or_holiday to True when checked — the automatic
+        #   calendar-based calculation still always runs underneath and is
+        #   used whenever this checkbox is left unchecked (see
+        #   calculate_budget()). Covers services agreed with the insurer as
+        #   nocturno/festivo (e.g. an out-of-zone job) even when using route
+        #   planning, not just Manual mode.
+        # ---
+        # manual_is_night_holiday: checkbox del operario, mostrado una sola
+        #   vez en el wizard independientemente del modo de cálculo (API o
+        #   MANUAL). FUERZA is_night_or_holiday a True cuando está marcado —
+        #   el cálculo automático por calendario sigue ejecutándose siempre
+        #   por debajo y es el que se usa cuando esta casilla queda sin
+        #   marcar (ver calculate_budget()). Cubre servicios acordados con la
+        #   aseguradora como nocturno/festivo (p. ej. un servicio fuera de
+        #   zona) también cuando se usa planificación de ruta, no solo en
+        #   modo Manual.
+        is_night_or_holiday_manual_override = (
+            data.get("manual_is_night_holiday") == "1"
+        )
+
         # --- Manual calculation mode fields (route_calculation_mode=MANUAL) ---
         # --- Campos del modo de cálculo Manual (route_calculation_mode=MANUAL) ---
-        # manual_is_night_holiday: operator checkbox. FORCES is_night_or_holiday
-        #   to True when checked — the automatic calendar-based calculation
-        #   still always runs underneath and is used whenever this checkbox
-        #   is left unchecked (see calculate_budget()).
         # manual_toll_total: operator-entered "Otros peajes" catch-all amount,
         #   fed into route_toll_budget_cost. Additive with the itemized toll
         #   segment table below — not a replacement for it.
@@ -429,11 +449,6 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         #   AP-7/AP-46). Collected into manual_toll_segments as
         #   {segment_id: passes}, ignoring blank/zero entries.
         # ---
-        # manual_is_night_holiday: checkbox del operario. FUERZA
-        #   is_night_or_holiday a True cuando está marcado — el cálculo
-        #   automático por calendario sigue ejecutándose siempre por debajo
-        #   y es el que se usa cuando esta casilla queda sin marcar (ver
-        #   calculate_budget()).
         # manual_toll_total: importe catch-all "Otros peajes" introducido
         #   por el operario, se vuelca en route_toll_budget_cost. Es aditivo
         #   con la tabla itemizada de tramos de peaje de abajo — no la
@@ -446,11 +461,6 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         manual_toll_total = (
             _Dec(manual_toll_total_raw.replace(",", "."))
             if manual_toll_total_raw else None
-        )
-        is_night_or_holiday_manual_override = (
-            (data.get("manual_is_night_holiday") == "1")
-            if route_calculation_mode == "MANUAL"
-            else None
         )
         manual_toll_segments = None
         if route_calculation_mode == "MANUAL":
@@ -1449,16 +1459,42 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         price_field, _vehicle_label, _high_field = _resolve_toll_pricing(
             company_user.company
         )
+
+        def _toll_sort_key(seg):
+            """
+            Orden pedido por Miguel Ángel: Casabermeja (AP-46) primero,
+            luego todos los tramos troncal de AP-7, y las salidas al
+            final. Se basa en el mismo patrón de nombres ya usado en
+            _compute_toll_cost() para resolver puertas troncal/salida
+            (origin_name = "<Lugar> Troncal" / "Salida <Lugar>").
+            ---
+            Order requested by Miguel Ángel: Casabermeja (AP-46) first,
+            then all AP-7 troncal segments, salidas last. Based on the
+            same naming pattern already used by _compute_toll_cost() to
+            resolve troncal/salida gates (origin_name = "<Place>
+            Troncal" / "Salida <Place>").
+            """
+            if seg.road_code == "AP-46":
+                group = 0
+            elif seg.origin_name.strip().lower().startswith("salida"):
+                group = 2
+            else:
+                group = 1
+            return (group, seg.origin_name)
+
         toll_segments = [
             {
                 "id": seg.pk,
                 "label": f"{seg.road_code} | {seg.origin_name} \u2192 {seg.dest_name}",
                 "price": getattr(seg, price_field, None),
             }
-            for seg in TollSegment.objects.filter(
-                road_code__in=["AP-7", "AP-46"],
-                is_active=True,
-            ).order_by("road_code", "origin_name")
+            for seg in sorted(
+                TollSegment.objects.filter(
+                    road_code__in=["AP-7", "AP-46"],
+                    is_active=True,
+                ),
+                key=_toll_sort_key,
+            )
         ]
 
         return render(request, self.template_name, {
