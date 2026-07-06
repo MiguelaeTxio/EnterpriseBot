@@ -34,14 +34,32 @@ tabla — nunca `doc-project-directory-enterprisebot` (manifiesto de
 árbol de código fuente, no cubre `/var/log/` ni rutas fuera del
 proyecto).
 
+**Mecanismo de descarga — NO es sftp.** `/var/log/` está fuera del
+alcance del sftp de PythonAnywhere (que solo llega a
+`/home/MiguelAeTxio/`). Estos archivos se descargan desde el
+navegador del dashboard de PythonAnywhere (pestaña "Files" o el
+propio panel "Log files" de la web app) y Miguel Ángel los sube al
+chat como cualquier archivo — **nunca** una caja sftp para estos.
+
 **Nota de reparación (2026-07-06):** esta tabla estaba anotada como
 "actualizada" en el registro de S057 (anexo H17) pero no existía en
-este archivo — reparado en esta sesión tras detectar la
-discrepancia empíricamente.
+este archivo — reparado en esta sesión tras detectar la discrepancia
+empíricamente. Confirmado con Miguel Ángel el mismo día: de las
+cuatro URLs de tareas always-on de su cuenta, solo dos pertenecen a
+EnterpriseBot — ver tabla.
 
-- **LOG_VOICE_ORCHESTRATOR**: /var/log/alwayson-log-234987.log
-- **LOG_CELERY_WORKER**: /var/log/alwayson-log-242133.log
-- **LOG_BRIDGE**: {SERVER_ROOT}logs/bridge.log
-- **LOG_WEB_ACCESS**: /var/log/enterprisebot-miguelaetxio.pythonanywhere.com.access.log
-- **LOG_WEB_ERROR**: /var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log
-- **LOG_WEB_SERVER**: /var/log/enterprisebot-miguelaetxio.pythonanywhere.com.server.log
+| Variable | Ruta | Tarea / Log |
+|---|---|---|
+| `LOG_VOICE_ORCHESTRATOR` | `/var/log/alwayson-log-234987.log` | EnterpriseBot — Bridge de Voz Conversacional (Twilio + gemini-live-2.5-flash-native-audio) |
+| `LOG_CELERY_WORKER` | `/var/log/alwayson-log-242133.log` | EnterpriseBot — Worker Celery, procesamiento de partes de trabajo PDF |
+| `LOG_BRIDGE` | `{SERVER_ROOT}logs/bridge.log` | EnterpriseBot — bridge.log permanente (movido de SWAP en S057), sí versionable por sftp normal (está dentro del proyecto, no en `/var/log/`) |
+| `LOG_WEB_ACCESS` | `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.access.log` | EnterpriseBot — access log estándar de la web app (confirmado por captura del dashboard, 2026-07-06) |
+| `LOG_WEB_ERROR` | `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log` | EnterpriseBot — error log estándar de la web app (ídem) |
+| `LOG_WEB_SERVER` | `/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.server.log` | EnterpriseBot — server log estándar de la web app (ídem) |
+
+**QUEDA TERMINANTEMENTE PROHIBIDO usar estas dos rutas para EnterpriseBot** —
+pertenecen a otro proyecto de la cuenta (Campus Studio Online), no a
+esta plataforma. Anotadas aquí únicamente para que nunca se confundan:
+
+- `/var/log/alwayson-log-182748.log` — Campus Studio Online, NO EnterpriseBot.
+- `/var/log/alwayson-log-209547.log` — Campus Studio Online, NO EnterpriseBot.
