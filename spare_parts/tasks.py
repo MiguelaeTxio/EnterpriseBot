@@ -65,20 +65,29 @@ from .models import DeliveryNote
 
 logger = logging.getLogger(__name__)
 
-# Twilio Email API -- verified in S004-H10 against current Twilio docs
-# (docs.twilio.com/email/api/overview, /getting-started, 2026). Async
-# endpoint: a 202 response means Twilio accepted the send request, not
-# final delivery confirmation. Full delivery tracking (SENT/DELIVERED/
-# FAILED) would require polling the returned operationLocation or a
-# status webhook -- out of scope for S004, noted here for a future step.
+# Twilio Email API -- re-verified 2026-07-06 against
+# docs.twilio.com/email/api/reference/mail-send-resource: attachments
+# is a CHILD property of `content`, not a top-level sibling. The
+# original S004 implementation had it at the top level, which Twilio
+# rejected with "Invalid value 'attachments' provided for field
+# 'attachments'" (400) -- confirmed empirically in S005 against a real
+# send attempt (albarán #6). Async endpoint: a 202 response means
+# Twilio accepted the send request, not final delivery confirmation.
+# Full delivery tracking (SENT/DELIVERED/FAILED) would require polling
+# the returned operationLocation or a status webhook -- out of scope,
+# noted here for a future step.
 # ---
-# API Twilio Email -- verificada en S004-H10 contra la documentación
-# actual de Twilio (docs.twilio.com/email/api/overview,
-# /getting-started, 2026). Endpoint asíncrono: una respuesta 202
+# API Twilio Email -- re-verificada 2026-07-06 contra
+# docs.twilio.com/email/api/reference/mail-send-resource: attachments
+# es una propiedad HIJA de `content`, no un hermano de nivel raíz. La
+# implementación original de S004 lo tenía en la raíz, lo que Twilio
+# rechazaba con "Invalid value 'attachments' provided for field
+# 'attachments'" (400) -- confirmado empíricamente en S005 contra un
+# envío real (albarán #6). Endpoint asíncrono: una respuesta 202
 # significa que Twilio aceptó la solicitud de envío, no que la entrega
 # final esté confirmada. El seguimiento completo de entrega
 # (SENT/DELIVERED/FAILED) requeriría sondear el operationLocation
-# devuelto o un webhook de estado -- fuera de alcance de S004, se deja
+# devuelto o un webhook de estado -- fuera de alcance, se deja
 # anotado aquí como posible paso futuro.
 _TWILIO_EMAIL_API_URL = 'https://comms.twilio.com/v1/Emails'
 
@@ -193,12 +202,15 @@ def send_delivery_note_photo_email(self, delivery_note_id: int) -> None:
     payload = {
         'from': {'address': _SENDER_EMAIL, 'name': _SENDER_NAME},
         'to': [{'address': _RECIPIENT_EMAIL, 'name': _RECIPIENT_NAME}],
-        'content': {'subject': subject, 'html': html_body},
-        'attachments': [{
-            'filename': file_name,
-            'contentType': mime_type,
-            'content': encoded,
-        }],
+        'content': {
+            'subject': subject,
+            'html': html_body,
+            'attachments': [{
+                'filename': file_name,
+                'contentType': mime_type,
+                'content': encoded,
+            }],
+        },
     }
 
     try:
