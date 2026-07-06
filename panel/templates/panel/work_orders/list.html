@@ -924,21 +924,49 @@
         });
     }
 
+    function _submitExportAfterModalHides(mode) {
+        /*
+         * Waits for the modal's own 'hidden.bs.modal' event (fired once its
+         * fade-out transition truly finishes) before submitting the export
+         * form. Submitting immediately after calling hide() races against
+         * the CSS transition -- if the browser is busy handling the file
+         * download response at that exact moment, the transition's end
+         * event can be missed, leaving an orphaned .modal-backdrop on
+         * screen (reported by Miguel Angel 2026-07-06: "queda como un
+         * modal por encima" after downloading).
+         * ---
+         * Espera al propio evento 'hidden.bs.modal' del modal (se dispara
+         * cuando su transición de desvanecido termina de verdad) antes de
+         * enviar el formulario de exportación. Enviar inmediatamente tras
+         * llamar a hide() compite contra la transición CSS -- si el
+         * navegador está ocupado gestionando la respuesta de descarga del
+         * archivo justo en ese instante, el evento de fin de transición
+         * puede perderse, dejando un .modal-backdrop huérfano en pantalla
+         * (reportado por Miguel Ángel 2026-07-06: "queda como un modal por
+         * encima" tras la descarga).
+         */
+        if (exportModeInput) { exportModeInput.value = mode; }
+        var bsModal = bootstrap.Modal.getInstance(exportModal);
+        if (!bsModal) {
+            if (exportForm) { exportForm.submit(); }
+            return;
+        }
+        exportModal.addEventListener("hidden.bs.modal", function onHidden() {
+            exportModal.removeEventListener("hidden.bs.modal", onHidden);
+            if (exportForm) { exportForm.submit(); }
+        });
+        bsModal.hide();
+    }
+
     if (document.getElementById("btn-export-single")) {
         document.getElementById("btn-export-single").addEventListener("click", function () {
-            if (exportModeInput) { exportModeInput.value = "single_sheet"; }
-            var bsModal = bootstrap.Modal.getInstance(exportModal);
-            if (bsModal) { bsModal.hide(); }
-            if (exportForm) { exportForm.submit(); }
+            _submitExportAfterModalHides("single_sheet");
         });
     }
 
     if (document.getElementById("btn-export-multi")) {
         document.getElementById("btn-export-multi").addEventListener("click", function () {
-            if (exportModeInput) { exportModeInput.value = "multi_sheet"; }
-            var bsModal = bootstrap.Modal.getInstance(exportModal);
-            if (bsModal) { bsModal.hide(); }
-            if (exportForm) { exportForm.submit(); }
+            _submitExportAfterModalHides("multi_sheet");
         });
     }
 
