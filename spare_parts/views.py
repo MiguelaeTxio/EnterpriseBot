@@ -19,9 +19,10 @@ from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
-from panel.mixins import CompanyUserRequiredMixin
+from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 
-from .models import DeliveryNote, DeliveryNoteLine
+from .forms import SupplierForm
+from .models import DeliveryNote, DeliveryNoteLine, Supplier
 from .services import (
     GeminiVisionExtractionService,
     confirm_delivery_note,
@@ -393,3 +394,162 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
         return redirect(
             'spare_parts:delivery_note_detail', pk=delivery_note.pk,
         )
+
+
+class SupplierListView(SupervisorAccessMixin, View):
+    """
+    Lists Supplier records for the current company, including
+    SALVAGE-type (internal recycling) entries -- confirmed by Miguel
+    Ángel (2026-07-06): recycling is modelled as another Supplier,
+    not a separate mechanism.
+    ---
+    Lista los registros Supplier de la empresa actual, incluyendo los
+    de tipo SALVAGE (reciclado interno) -- confirmado por Miguel
+    Ángel (2026-07-06): el reciclado se modela como otro Supplier, no
+    como un mecanismo aparte.
+    """
+
+    template_name = 'spare_parts/supplier_list.html'
+
+    def get(self, request):
+        company = request.user.company_user.company
+        suppliers = Supplier.objects.filter(company=company)
+        return render(request, self.template_name, {
+            'company_user': request.user.company_user,
+            'active_nav': 'suppliers',
+            'suppliers': suppliers,
+        })
+
+
+class SupplierCreateView(SupervisorAccessMixin, View):
+    """
+    Manual creation of a Supplier record.
+    ---
+    Alta manual de un registro Supplier.
+    """
+
+    template_name = 'spare_parts/supplier_form.html'
+
+    def get(self, request):
+        return render(request, self.template_name, {
+            'company_user': request.user.company_user,
+            'active_nav': 'suppliers',
+            'form': SupplierForm(),
+            'action': 'Crear',
+        })
+
+    def post(self, request):
+        form = SupplierForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {
+                'company_user': request.user.company_user,
+                'active_nav': 'suppliers',
+                'form': form,
+                'action': 'Crear',
+            })
+        supplier = form.save(commit=False)
+        supplier.company = request.user.company_user.company
+        supplier.save()
+        messages.success(request, f"Proveedor '{supplier.name}' creado correctamente.")
+        return redirect('spare_parts:supplier_list')
+
+
+class SupplierUpdateView(SupervisorAccessMixin, View):
+    """
+    Edits an existing Supplier record.
+    ---
+    Edita un registro Supplier existente.
+    """
+
+    template_name = 'spare_parts/supplier_form.html'
+
+    def get(self, request, pk):
+        company = request.user.company_user.company
+        supplier = get_object_or_404(Supplier, pk=pk, company=company)
+        return render(request, self.template_name, {
+            'company_user': request.user.company_user,
+            'active_nav': 'suppliers',
+            'form': SupplierForm(instance=supplier),
+            'action': 'Editar',
+            'supplier': supplier,
+        })
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        supplier = get_object_or_404(Supplier, pk=pk, company=company)
+        form = SupplierForm(request.POST, instance=supplier)
+        if not form.is_valid():
+            return render(request, self.template_name, {
+                'company_user': request.user.company_user,
+                'active_nav': 'suppliers',
+                'form': form,
+                'action': 'Editar',
+                'supplier': supplier,
+            })
+        supplier = form.save()
+        messages.success(request, f"Proveedor '{supplier.name}' actualizado correctamente.")
+        return redirect('spare_parts:supplier_list')
+
+
+class SupplierDeactivateView(SupervisorAccessMixin, View):
+    """
+    Sets is_active=False on a Supplier -- does not delete, preserves
+    historical traceability of any SparePartEntry that references it.
+    ---
+    Establece is_active=False en un Supplier -- no elimina, preserva
+    la trazabilidad histórica de cualquier SparePartEntry que lo
+    referencie.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        supplier = get_object_or_404(Supplier, pk=pk, company=company)
+        supplier.is_active = False
+        supplier.save(update_fields=['is_active'])
+        messages.success(request, f"Proveedor '{supplier.name}' desactivado.")
+        return redirect('spare_parts:supplier_list')
+
+
+class SupplierReactivateView(SupervisorAccessMixin, View):
+    """
+    Sets is_active=True on a Supplier. Counterpart to
+    SupplierDeactivateView.
+    ---
+    Establece is_active=True en un Supplier. Contraparte de
+    SupplierDeactivateView.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        supplier = get_object_or_404(Supplier, pk=pk, company=company)
+        supplier.is_active = True
+        supplier.save(update_fields=['is_active'])
+        messages.success(request, f"Proveedor '{supplier.name}' reactivado.")
+        return redirect('spare_parts:supplier_list')
+
+
+class SupplierDeleteView(SupervisorAccessMixin, View):
+    """
+    Permanently deletes a Supplier only if it has no linked
+    SparePartEntry records (referential integrity guard) --
+    same pattern as MachineAssetDeleteView in fleet/views.py.
+    ---
+    Elimina permanentemente un Supplier solo si no tiene
+    SparePartEntry vinculados (guarda de integridad referencial) --
+    mismo patrón que MachineAssetDeleteView en fleet/views.py.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        supplier = get_object_or_404(Supplier, pk=pk, company=company)
+        if supplier.spare_part_entries.exists():
+            messages.error(
+                request,
+                f"No se puede eliminar '{supplier.name}': tiene repuestos "
+                f"vinculados. Desactívalo en su lugar.",
+            )
+            return redirect('spare_parts:supplier_list')
+        name = supplier.name
+        supplier.delete()
+        messages.success(request, f"Proveedor '{name}' eliminado correctamente.")
+        return redirect('spare_parts:supplier_list')

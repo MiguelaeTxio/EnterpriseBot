@@ -27,4 +27,10 @@ urlpatterns = [
         views.DeliveryNoteConfirmView.as_view(),
         name='delivery_note_confirm',
     ),
+    path('suppliers/', views.SupplierListView.as_view(), name='supplier_list'),
+    path('suppliers/create/', views.SupplierCreateView.as_view(), name='supplier_create'),
+    path('suppliers/<int:pk>/edit/', views.SupplierUpdateView.as_view(), name='supplier_edit'),
+    path('suppliers/<int:pk>/deactivate/', views.SupplierDeactivateView.as_view(), name='supplier_deactivate'),
+    path('suppliers/<int:pk>/reactivate/', views.SupplierReactivateView.as_view(), name='supplier_reactivate'),
+    path('suppliers/<int:pk>/delete/', views.SupplierDeleteView.as_view(), name='supplier_delete'),
 ]

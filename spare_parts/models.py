@@ -12,6 +12,107 @@ from ivr_config.models import Company, CompanyUser
 from work_order_processor.models import WorkOrderEntryLine, SparePartLine
 
 
+class Supplier(models.Model):
+    """
+    Supplier of spare parts -- external companies AND the internal
+    salvage/recycling circuit, modelled as the same kind of entity.
+    Confirmed by Miguel Ángel (2026-07-06): the traceability of a
+    spare part (where it physically came from) is given by which
+    Supplier it references, not by a separate origin_type flag --
+    "reciclado interno" is just another Supplier record (TYPE_SALVAGE),
+    not a different mechanism.
+
+    This model is additive in this commit: SparePartEntry gains a
+    nullable `supplier` FK alongside its existing supplier_name/
+    supplier_tax_id/supplier_address free-text fields and origin_type,
+    which remain untouched for now. Wiring the delivery-note ingestion
+    pipeline (confirm_delivery_note, Gemini Vision extraction) and the
+    salvage flow (Paso 7 canibalización) to resolve/create a Supplier
+    record instead of writing free text is a separate, larger step --
+    both are already-validated production flows and Miguel Ángel has
+    not yet confirmed how the resolution (by tax_id? by name?) should
+    work, so it is intentionally left for a follow-up decision.
+
+    ---
+
+    Proveedor de repuestos -- tanto empresas externas COMO el circuito
+    interno de reciclado/canibalización, modelados como el mismo tipo
+    de entidad. Confirmado por Miguel Ángel (2026-07-06): la
+    trazabilidad de un repuesto (de dónde viene físicamente) la da a
+    qué Supplier referencia, no un flag origin_type aparte --
+    "reciclado interno" es solo otro registro de Supplier
+    (TYPE_SALVAGE), no un mecanismo distinto.
+
+    Este modelo es aditivo en este commit: SparePartEntry gana un FK
+    `supplier` nullable junto a sus campos de texto libre existentes
+    supplier_name/supplier_tax_id/supplier_address y origin_type, que
+    de momento no se tocan. Conectar el pipeline de ingesta de
+    albaranes (confirm_delivery_note, extracción Gemini Vision) y el
+    flujo de reciclado (Paso 7 canibalización) para que resuelvan/creen
+    un Supplier en vez de escribir texto libre es un paso aparte y
+    mayor -- ambos son flujos ya validados en producción y Miguel
+    Ángel todavía no ha confirmado cómo debe funcionar la resolución
+    (¿por CIF? ¿por nombre?), así que se deja intencionadamente para
+    una decisión de seguimiento.
+    """
+
+    TYPE_EXTERNAL = 'EXTERNAL'
+    TYPE_SALVAGE = 'SALVAGE'
+    TYPE_CHOICES = [
+        (TYPE_EXTERNAL, 'Proveedor externo'),
+        (TYPE_SALVAGE, 'Reciclado interno'),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name='suppliers',
+        verbose_name='Empresa',
+    )
+    supplier_type = models.CharField(
+        max_length=10,
+        choices=TYPE_CHOICES,
+        default=TYPE_EXTERNAL,
+        verbose_name='Tipo de proveedor',
+    )
+    name = models.CharField(
+        max_length=255,
+        verbose_name='Nombre',
+    )
+    tax_id = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name='NIF/CIF',
+        help_text='Vacío para el proveedor de tipo Reciclado interno.',
+    )
+    address = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name='Dirección',
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name='Activo',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Proveedor'
+        verbose_name_plural = 'Proveedores'
+        ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'tax_id'],
+                condition=~models.Q(tax_id=''),
+                name='unique_supplier_tax_id_per_company',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.get_supplier_type_display()})'
+
+
 class DeliveryNote(models.Model):
     """
     Supplier delivery note, ingested via photo or PDF using Gemini
@@ -400,15 +501,30 @@ class SparePartEntry(models.Model):
     )
 
     # --- Supplier block / Bloque proveedor (origin_type=SUPPLIER) -----
+    supplier = models.ForeignKey(
+        Supplier,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='spare_part_entries',
+        verbose_name='Proveedor',
+        help_text=(
+            'Referencia real al modelo Supplier (2026-07-06, aditivo). '
+            'Los campos supplier_name/supplier_tax_id/supplier_address '
+            'de abajo son el texto libre extraído por Gemini Vision del '
+            'albarán -- todavía no se resuelven automáticamente contra '
+            'este FK. Ver docstring de Supplier.'
+        ),
+    )
     supplier_name = models.CharField(
         max_length=255,
         blank=True,
-        verbose_name='Proveedor',
+        verbose_name='Proveedor (texto libre, histórico)',
     )
     supplier_tax_id = models.CharField(
         max_length=50,
         blank=True,
-        verbose_name='NIF/CIF proveedor',
+        verbose_name='NIF/CIF proveedor (texto libre, histórico)',
     )
     supplier_address = models.CharField(
         max_length=255,

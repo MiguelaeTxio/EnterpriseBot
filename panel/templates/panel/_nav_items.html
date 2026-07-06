@@ -34,6 +34,7 @@
 {#   "analytics_lab"      → Laboratorio de Análisis          (ADMIN)               #}
 {#   "workday_schedule"   → Horarios de jornada              (ADMIN, SUPERVISOR)    #}
 {#   "absence_categories" → Categorías de ausencia           (ADMIN, SUPERVISOR)    #}
+{#   "suppliers"          → Proveedores (incl. reciclado interno) (ADMIN, SUPERVISOR) #}
 {#   "machine_history"    → Historial de Máquina             (WORKSHOP, ADMIN)      #}
 {#   "workorder_history" → Mis partes                        (WORKSHOP, WORKSHOPBOSS, ADMIN) #}
 {#   "workorder_spare_parts_catalog" → Catálogo de repuestos (ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS -- lectura para taller, edición solo ADMIN/SUPERVISOR) (Hito 10 Paso 4) #}
@@ -235,6 +236,13 @@
                             <i class="bi bi-journal-x"></i>Categorías de ausencia
                         </a>
                     </li>
+                    {# Proveedores — incluye reciclado interno como Supplier (2026-07-06) #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'suppliers' %}active{% endif %}"
+                           href="{% url 'spare_parts:supplier_list' %}">
+                            <i class="bi bi-shop"></i>Proveedores
+                        </a>
+                    </li>
                     {# Configuración empresa — solo ADMIN / Company settings — ADMIN only #}
                     {% if company_user.role == 'ADMIN' %}
                         <li class="nav-item">
@@ -344,8 +352,6 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Historial de administración — ADMIN y SUPERVISOR únicamente          #}
-                    {# Admin work-order history — ADMIN and SUPERVISOR only                 #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
@@ -541,6 +547,7 @@
         'workday_schedule':         'acc-administracion',
         'absence_categories':       'acc-administracion',
         'company_settings':         'acc-administracion',
+        'suppliers':                'acc-administracion',
         'analytics_lab':            'acc-analitica',
         'operator_dashboard':       'acc-operarios',
         'spare_parts_upload':       'acc-operarios',

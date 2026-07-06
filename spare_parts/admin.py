@@ -8,7 +8,7 @@ repuestos.
 """
 from django.contrib import admin
 
-from .models import DeliveryNote, DeliveryNoteLine, SparePartEntry, StockMovement
+from .models import DeliveryNote, DeliveryNoteLine, SparePartEntry, StockMovement, Supplier
 
 
 class DeliveryNoteLineInline(admin.TabularInline):
@@ -115,3 +115,18 @@ class StockMovementAdmin(admin.ModelAdmin):
     search_fields = ('spare_part_entry__description', 'notes')
     date_hierarchy = 'created_at'
     readonly_fields = ('created_at',)
+
+
+@admin.register(Supplier)
+class SupplierAdmin(admin.ModelAdmin):
+    """
+    Admin registration for Supplier, including the SALVAGE (internal
+    recycling) type.
+    ---
+    Registro admin de Supplier, incluyendo el tipo SALVAGE (reciclado
+    interno).
+    """
+
+    list_display = ('name', 'supplier_type', 'tax_id', 'company', 'is_active')
+    list_filter = ('supplier_type', 'is_active', 'company')
+    search_fields = ('name', 'tax_id')
