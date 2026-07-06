@@ -918,10 +918,36 @@
                 if (exportModeInput) { exportModeInput.value = "single_sheet"; }
                 if (exportForm)      { exportForm.submit(); }
             } else {
-                var bsModal = new bootstrap.Modal(exportModal);
+                var bsModal = bootstrap.Modal.getOrCreateInstance(exportModal);
                 bsModal.show();
             }
         });
+    }
+
+    function _forceCleanupOrphanBackdrops() {
+        /*
+         * Safety net, independent of the root cause fixed below: removes
+         * any .modal-backdrop left in the DOM and restores <body> to its
+         * normal (non-modal) state if no modal is actually showing.
+         * Miguel Angel reported the dark overlay still appearing after
+         * the previous hidden.bs.modal fix (2026-07-06) -- this covers
+         * the case even if some other path leaves state behind.
+         * ---
+         * Red de seguridad, independiente de la causa raiz corregida
+         * abajo: elimina cualquier .modal-backdrop que quede en el DOM y
+         * restaura <body> a su estado normal (sin modal) si no hay
+         * ningun modal realmente visible. Miguel Angel reporto que la
+         * capa oscura seguia apareciendo tras el fix anterior de
+         * hidden.bs.modal (2026-07-06) -- esto cubre el caso aunque
+         * algun otro camino deje estado a medias.
+         */
+        if (document.querySelector(".modal.show")) { return; }
+        document.querySelectorAll(".modal-backdrop").forEach(function (bd) {
+            bd.remove();
+        });
+        document.body.classList.remove("modal-open");
+        document.body.style.removeProperty("overflow");
+        document.body.style.removeProperty("padding-right");
     }
 
     function _submitExportAfterModalHides(mode) {
@@ -946,16 +972,19 @@
          * encima" tras la descarga).
          */
         if (exportModeInput) { exportModeInput.value = mode; }
-        var bsModal = bootstrap.Modal.getInstance(exportModal);
-        if (!bsModal) {
-            if (exportForm) { exportForm.submit(); }
-            return;
-        }
+        var bsModal = bootstrap.Modal.getOrCreateInstance(exportModal);
         exportModal.addEventListener("hidden.bs.modal", function onHidden() {
             exportModal.removeEventListener("hidden.bs.modal", onHidden);
+            _forceCleanupOrphanBackdrops();
             if (exportForm) { exportForm.submit(); }
         });
         bsModal.hide();
+        // Fallback in case 'hidden.bs.modal' never fires for any reason --
+        // guarantees the page is never left in a stuck state.
+        // Red de seguridad por si 'hidden.bs.modal' nunca llega a
+        // dispararse por cualquier motivo -- garantiza que la pagina
+        // nunca se queda atascada.
+        window.setTimeout(_forceCleanupOrphanBackdrops, 1000);
     }
 
     if (document.getElementById("btn-export-single")) {
