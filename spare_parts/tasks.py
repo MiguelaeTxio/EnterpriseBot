@@ -98,6 +98,22 @@ _TWILIO_EMAIL_API_URL = 'https://comms.twilio.com/v1/Emails'
 # de envío, no gestiona ni requiere acceso a ninguna bandeja de entrada.
 # Destinatario: buzón real de administración, sin relación con la
 # autenticación de dominio de Twilio -- recibe por su propio MX normal.
+#
+# TEMPORAL (S005, 2026-07-06): destinatario cambiado a una dirección de
+# prueba fuera de Microsoft 365 -- gruasalvarez.com (Exchange Online)
+# está poniendo en cuarentena silenciosa los envíos desde el dominio
+# recién autenticado campustudionline.com (Twilio marca DELIVERED a
+# nivel SMTP -- confirmado, respuesta 250 de PROD.OUTLOOK.COM -- pero
+# el mensaje nunca llega a ninguna carpeta visible del buzón, ni
+# siquiera Correo no deseado -- confirmado por captura real de Outlook,
+# probablemente cuarentena de Microsoft 365 Defender, capa distinta a
+# la carpeta de spam del cliente). Este cambio permite validar el resto
+# del flujo (adjunto, plantilla, borrado de archivo) sin depender de
+# que se resuelva la cuarentena. Miguel Ángel tiene reunión esta misma
+# tarde con el responsable de Microsoft 365 de Grupo Álvarez para dar
+# de alta el remitente -- revertir a
+# _RECIPIENT_EMAIL = 'administracion@gruasalvarez.com' en cuanto se
+# confirme la resolución.
 # ---
 # Sender: domain authenticated in Twilio (S005-H10, verified in Twilio
 # console: campustudionline.com, owned by Miguel Ángel -- avoids
@@ -106,10 +122,24 @@ _TWILIO_EMAIL_API_URL = 'https://comms.twilio.com/v1/Emails'
 # it does not manage or require access to any inbox.
 # Recipient: real administración mailbox, unrelated to Twilio's domain
 # authentication -- receives via its own normal MX.
+#
+# TEMPORARY (S005, 2026-07-06): recipient switched to a test address
+# outside Microsoft 365 -- gruasalvarez.com (Exchange Online) is
+# silently quarantining sends from the newly authenticated domain
+# campustudionline.com (Twilio marks it DELIVERED at SMTP level --
+# confirmed, 250 response from PROD.OUTLOOK.COM -- but the message
+# never reaches any visible mailbox folder, not even Junk -- confirmed
+# via real Outlook screenshot, most likely Microsoft 365 Defender
+# quarantine, a layer distinct from the client's spam folder). This
+# switch lets the rest of the flow (attachment, template, file
+# deletion) be validated without depending on the quarantine being
+# resolved. Miguel Ángel has a meeting this afternoon with Grupo
+# Álvarez's Microsoft 365 admin to allow-list the sender -- revert to
+# _RECIPIENT_EMAIL = 'administracion@gruasalvarez.com' once resolved.
 _SENDER_EMAIL = 'no-reply@campustudionline.com'
 _SENDER_NAME = 'EnterpriseBot'
-_RECIPIENT_EMAIL = 'administracion@gruasalvarez.com'
-_RECIPIENT_NAME = 'Administración Grupo Álvarez'
+_RECIPIENT_EMAIL = 'nummenor@proton.me'  # TEMPORAL -- ver nota arriba, revertir a administracion@gruasalvarez.com
+_RECIPIENT_NAME = 'Prueba temporal S005'
 
 _MIME_TYPES = {
     '.pdf': 'application/pdf',
