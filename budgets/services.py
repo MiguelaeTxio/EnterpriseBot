@@ -964,6 +964,182 @@ def _is_holy_week(d: datetime.date) -> bool:
     return holy_start <= d <= holy_end
 
 
+def _resolve_toll_pricing(company):
+    """
+    Resolve (price_field, vehicle_label, high_field) for a given company's
+    configured toll vehicle category. Shared by _compute_toll_cost() (Modo
+    B — route polyline matching) and _compute_manual_toll_cost() (Modo
+    Manual — itemized troncal/salida selection), so both price segments
+    identically per DRY principle (see ai_services precedent in H10).
+    ---
+    Resuelve (price_field, vehicle_label, high_field) para la categoría de
+    vehículo de peaje configurada en la empresa. Compartido por
+    _compute_toll_cost() (Modo B — cruce de polyline) y
+    _compute_manual_toll_cost() (Modo Manual — selección de troncal/salida
+    por tramo), para que ambas tarifiquen los tramos de forma idéntica
+    (principio DRY, mismo precedente que ai_services en H10).
+    """
+    from ivr_config.models import Company as _Company
+
+    vehicle_type = _Company.TOLL_VEHICLE_HEAVY_1
+    if company is not None:
+        vehicle_type = getattr(
+            company, "toll_vehicle_type", _Company.TOLL_VEHICLE_HEAVY_1
+        )
+
+    PRICE_FIELD_MAP = {
+        _Company.TOLL_VEHICLE_LIGHT:   "price_light",
+        _Company.TOLL_VEHICLE_HEAVY_1: "price_heavy_1",
+        _Company.TOLL_VEHICLE_HEAVY_2: "price_heavy_2",
+    }
+    VEHICLE_LABEL_MAP = {
+        _Company.TOLL_VEHICLE_LIGHT:   "Ligero",
+        _Company.TOLL_VEHICLE_HEAVY_1: "Pesado 1",
+        _Company.TOLL_VEHICLE_HEAVY_2: "Pesado 2",
+    }
+    price_field = PRICE_FIELD_MAP.get(vehicle_type, "price_heavy_1")
+    vehicle_label = VEHICLE_LABEL_MAP.get(vehicle_type, "Pesado 1")
+
+    HIGH_FIELD_MAP = {
+        "price_light":   "price_light_high",
+        "price_heavy_1": "price_heavy_1_high",
+        "price_heavy_2": "price_heavy_2_high",
+    }
+    high_field = HIGH_FIELD_MAP.get(price_field)
+
+    return price_field, vehicle_label, high_field
+
+
+def _price_for_toll_segment(seg, service_date, price_field, high_field):
+    """
+    Determines the effective price, high-season flag and season type for
+    a TollSegment on service_date. Extracted from the former closure inside
+    _compute_toll_cost() so _compute_manual_toll_cost() can reuse the exact
+    same seasonal logic (verano / Semana Santa) without duplicating it.
+    ---
+    Determina el precio efectivo, el flag de temporada alta y el tipo de
+    temporada de un TollSegment en service_date. Extraída del antiguo
+    closure de _compute_toll_cost() para que _compute_manual_toll_cost()
+    reutilice exactamente la misma lógica estacional (verano / Semana
+    Santa) sin duplicarla.
+    """
+    effective_field = price_field
+    is_high_season  = False
+    season_type     = None
+
+    if service_date is not None and high_field is not None:
+        if (
+            seg.season_high_start is not None
+            and seg.season_high_end is not None
+            and getattr(seg, high_field) is not None
+        ):
+            svc_md  = (service_date.month, service_date.day)
+            hi_s_md = (
+                seg.season_high_start.month,
+                seg.season_high_start.day,
+            )
+            hi_e_md = (
+                seg.season_high_end.month,
+                seg.season_high_end.day,
+            )
+            if hi_s_md <= hi_e_md:
+                in_range = hi_s_md <= svc_md <= hi_e_md
+            else:
+                in_range = svc_md >= hi_s_md or svc_md <= hi_e_md
+
+            if in_range:
+                effective_field = high_field
+                is_high_season  = True
+                season_type     = "VERANO"
+
+        if (
+            not is_high_season
+            and getattr(seg, high_field) is not None
+            and _is_holy_week(service_date)
+        ):
+            effective_field = high_field
+            is_high_season  = True
+            season_type     = "SEMANA_SANTA"
+
+    price = _round2(Decimal(str(getattr(seg, effective_field) or 0)))
+    return price, is_high_season, season_type
+
+
+def _compute_manual_toll_cost(
+    manual_toll_segments: dict,
+    company=None,
+    service_date=None,
+) -> list:
+    """
+    Build toll cost details from an itemized manual selection of TollSegment
+    rows and pass counts (Modo Manual del wizard de presupuestos) — same
+    output format as _compute_toll_cost() so both feed
+    _build_toll_budget_lines() identically:
+      {'segment_name': str, 'vehicle_type_label': str, 'price': Decimal,
+       'is_high_season': bool, 'season_type': str|None}
+
+    manual_toll_segments: dict {str(segment_id): passes_int}, as stored in
+    Budget.manual_toll_segments. Segments not found or inactive, and
+    entries with passes <= 0, are silently skipped.
+    ---
+    Construye el detalle de peajes desde una selección manual por tramo de
+    TollSegment y su número de pases (Modo Manual del wizard) — mismo
+    formato de salida que _compute_toll_cost() para que ambas alimenten
+    _build_toll_budget_lines() de forma idéntica.
+
+    manual_toll_segments: dict {str(segment_id): pases_int}, tal como se
+    almacena en Budget.manual_toll_segments. Los tramos no encontrados o
+    inactivos, y las entradas con pases <= 0, se omiten silenciosamente.
+    """
+    from budgets.models import TollSegment
+
+    if not manual_toll_segments:
+        return []
+
+    price_field, vehicle_label, high_field = _resolve_toll_pricing(company)
+
+    try:
+        segment_ids = [
+            int(sid) for sid in manual_toll_segments.keys()
+            if str(sid).lstrip("-").isdigit()
+        ]
+    except AttributeError:
+        return []
+
+    segments_by_id = {
+        seg.pk: seg
+        for seg in TollSegment.objects.filter(pk__in=segment_ids, is_active=True)
+    }
+
+    result = []
+    for sid_str, passes in manual_toll_segments.items():
+        try:
+            sid = int(sid_str)
+            count = int(passes)
+        except (TypeError, ValueError):
+            continue
+        if count <= 0:
+            continue
+        seg = segments_by_id.get(sid)
+        if seg is None:
+            continue
+        price, is_high_season, season_type = _price_for_toll_segment(
+            seg, service_date, price_field, high_field
+        )
+        segment_name = (
+            f"{seg.road_code} | {seg.origin_name} \u2192 {seg.dest_name}"
+        )
+        for _ in range(count):
+            result.append({
+                "segment_name":       segment_name,
+                "vehicle_type_label": vehicle_label,
+                "price":              price,
+                "is_high_season":     is_high_season,
+                "season_type":        season_type,
+            })
+    return result
+
+
 def _compute_toll_cost(
     encoded_polyline: str,
     company=None,
@@ -1001,7 +1177,6 @@ def _compute_toll_cost(
     Devuelve lista vacía si no se detectan tramos.
     """
     from budgets.models import TollSegment
-    from ivr_config.models import Company as _Company
 
     if not encoded_polyline:
         return []
@@ -1014,33 +1189,11 @@ def _compute_toll_cost(
     if not points:
         return []
 
-    # Determine vehicle type and label from company config.
-    # Determinar tipo de vehículo y etiqueta desde la config de empresa.
-    vehicle_type = _Company.TOLL_VEHICLE_HEAVY_1
-    if company is not None:
-        vehicle_type = getattr(
-            company, "toll_vehicle_type", _Company.TOLL_VEHICLE_HEAVY_1
-        )
-
-    PRICE_FIELD_MAP = {
-        _Company.TOLL_VEHICLE_LIGHT:   "price_light",
-        _Company.TOLL_VEHICLE_HEAVY_1: "price_heavy_1",
-        _Company.TOLL_VEHICLE_HEAVY_2: "price_heavy_2",
-    }
-    VEHICLE_LABEL_MAP = {
-        _Company.TOLL_VEHICLE_LIGHT:   "Ligero",
-        _Company.TOLL_VEHICLE_HEAVY_1: "Pesado 1",
-        _Company.TOLL_VEHICLE_HEAVY_2: "Pesado 2",
-    }
-    price_field = PRICE_FIELD_MAP.get(vehicle_type, "price_heavy_1")
-    vehicle_label = VEHICLE_LABEL_MAP.get(vehicle_type, "Pesado 1")
-
-    HIGH_FIELD_MAP = {
-        "price_light":   "price_light_high",
-        "price_heavy_1": "price_heavy_1_high",
-        "price_heavy_2": "price_heavy_2_high",
-    }
-    high_field = HIGH_FIELD_MAP.get(price_field)
+    # Determine vehicle type, label and high-season field from company
+    # config — shared helper, see _resolve_toll_pricing().
+    # Determinar tipo de vehículo, etiqueta y campo de temporada alta desde
+    # la config de empresa — helper compartido, ver _resolve_toll_pricing().
+    price_field, vehicle_label, high_field = _resolve_toll_pricing(company)
 
     # Maximum distance (km) between a polyline point and a toll gantry
     # coordinate to consider it a match. Reduced from 1.5 to 1.0 km after
@@ -1128,64 +1281,19 @@ def _compute_toll_cost(
                 i += 1
         return occurrences
 
-    def _price_for_segment(seg):
-        """
-        Determines the effective price, high-season flag and season type
-        for a segment on service_date. Shared by both the AP-7 gate
-        resolution and the generic point/segment matching below.
-        ---
-        Determina el precio efectivo, el flag de temporada alta y el tipo
-        de temporada de un tramo en service_date. Compartido por la
-        resolución de puertas AP-7 y el emparejamiento genérico de abajo.
-        """
-        effective_field = price_field
-        is_high_season  = False
-        season_type     = None
-
-        if service_date is not None and high_field is not None:
-            if (
-                seg.season_high_start is not None
-                and seg.season_high_end is not None
-                and getattr(seg, high_field) is not None
-            ):
-                svc_md  = (service_date.month, service_date.day)
-                hi_s_md = (
-                    seg.season_high_start.month,
-                    seg.season_high_start.day,
-                )
-                hi_e_md = (
-                    seg.season_high_end.month,
-                    seg.season_high_end.day,
-                )
-                if hi_s_md <= hi_e_md:
-                    in_range = hi_s_md <= svc_md <= hi_e_md
-                else:
-                    in_range = svc_md >= hi_s_md or svc_md <= hi_e_md
-
-                if in_range:
-                    effective_field = high_field
-                    is_high_season  = True
-                    season_type     = "VERANO"
-
-            if (
-                not is_high_season
-                and getattr(seg, high_field) is not None
-                and _is_holy_week(service_date)
-            ):
-                effective_field = high_field
-                is_high_season  = True
-                season_type     = "SEMANA_SANTA"
-
-        price = _round2(Decimal(str(getattr(seg, effective_field) or 0)))
-        return price, is_high_season, season_type
-
     def _append_segment_result(seg, count):
         """
         Appends `count` result entries for a fully-resolved segment.
+        Price/season resolution delegated to the shared helper
+        _price_for_toll_segment() (ver _resolve_toll_pricing() más arriba).
         ---
         Añade `count` entradas de resultado para un tramo ya resuelto.
+        Resolución de precio/temporada delegada al helper compartido
+        _price_for_toll_segment() (ver _resolve_toll_pricing() más arriba).
         """
-        price, is_high_season, season_type = _price_for_segment(seg)
+        price, is_high_season, season_type = _price_for_toll_segment(
+            seg, service_date, price_field, high_field
+        )
         segment_name = (
             f"{seg.road_code} | {seg.origin_name} \u2192 {seg.dest_name}"
         )
@@ -2248,24 +2356,36 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
         + Decimal(str(budget.km_phase2 or 0))
     )
 
-    # Calculate is_night_or_holiday from is_night (operator) and
-    # is_holiday (automatic from labor_calendar + weekends) — UNLESS the
-    # wizard's Manual mode set an explicit override, in which case that
-    # value is used as-is, with no calendar lookup at all.
-    # Calcular is_night_or_holiday desde is_night (operario) e
-    # is_holiday (automatico desde labor_calendar + fines de semana) —
-    # SALVO que el modo Manual del wizard haya fijado un override
-    # explícito, en cuyo caso se usa ese valor tal cual, sin ninguna
-    # consulta al calendario.
-    if budget.is_night_or_holiday_manual_override is not None:
-        budget.is_night_or_holiday = budget.is_night_or_holiday_manual_override
+    # Calculate is_night_or_holiday from is_night (operator/NightSchedule)
+    # and is_holiday (automatic from labor_calendar + weekends) — the
+    # calendar lookup ALWAYS runs, in both API and Manual mode. The wizard's
+    # Manual mode checkbox (is_night_or_holiday_manual_override) only FORCES
+    # the result to True when explicitly selected — it never suppresses a
+    # True calendar/night result, and leaving it unselected (False or None)
+    # simply falls back to the automatic calendar-based result. This lets
+    # an operator mark a service as nocturno/festivo by agreement with the
+    # insurer even when the date/schedule wouldn't otherwise qualify.
+    # ---
+    # Calcular is_night_or_holiday desde is_night (operario/NightSchedule) e
+    # is_holiday (automatico desde labor_calendar + fines de semana) — la
+    # consulta al calendario SIEMPRE se ejecuta, tanto en modo API como en
+    # modo Manual. El checkbox del modo Manual del wizard
+    # (is_night_or_holiday_manual_override) solo FUERZA el resultado a True
+    # cuando se selecciona explícitamente — nunca suprime un resultado True
+    # del calendario/horario, y dejarlo sin marcar (False o None) recurre
+    # simplemente al resultado automático basado en calendario. Esto permite
+    # marcar un servicio como nocturno/festivo por acuerdo con la
+    # aseguradora aunque la fecha/horario no lo justifique por sí solos.
+    is_holiday = (
+        _is_holiday(budget.service_date, budget.base)
+        if budget.service_date
+        else False
+    )
+    auto_night_or_holiday = budget.is_night or is_holiday
+    if budget.is_night_or_holiday_manual_override is True:
+        budget.is_night_or_holiday = True
     else:
-        is_holiday = (
-            _is_holiday(budget.service_date, budget.base)
-            if budget.service_date
-            else False
-        )
-        budget.is_night_or_holiday = budget.is_night or is_holiday
+        budget.is_night_or_holiday = auto_night_or_holiday
 
     # Force apply_iva if the insurer always requires IVA.
     # Forzar apply_iva si la aseguradora siempre requiere IVA.
@@ -2397,30 +2517,65 @@ def calculate_budget(budget: Budget) -> list[BudgetLine]:
             )
 
     # ------------------------------------------------------------------
-    # 3. TOLL COST (Modo B — route_calculation_mode=API)
-    # Cross-reference the confirmed route polyline with TollSegment to
-    # build one BudgetLine per matched toll segment showing: segment name,
-    # vehicle type applied, price, and season label (verano/Semana Santa).
-    # A markup line is appended if company.toll_markup_percent > 0.
-    # The total (with markup) is added to base_total so surcharges apply
-    # on top. Falls back to a single TOLL_COST line when no polyline is
-    # stored (legacy budgets).
-    # ---
-    # Desglose de peajes por tramo (Modo B — route_calculation_mode=API).
-    # Se cruza la polyline de la ruta confirmada con TollSegment para
-    # generar una BudgetLine por tramo con: nombre del tramo, tipo de
-    # vehículo aplicado, precio y etiqueta de temporada si aplica.
-    # Si company.toll_markup_percent > 0 se añade línea de recargo.
-    # El total (con recargo) se suma a base_total para que los recargos
-    # se apliquen encima. Fallback a línea única TOLL_COST en presupuestos
-    # legacy sin polyline almacenada.
+    # 3. TOLL COST
+    #
+    # Modo Manual (route_calculation_mode=MANUAL): dos fuentes de peaje,
+    # ambas opcionales y aditivas (no excluyentes entre sí):
+    #   (a) Budget.manual_toll_segments — selección itemizada de tramos
+    #       TollSegment (troncal/salida, tipicamente AP-7/AP-46) con nº de
+    #       pases, elegida en la tabla del wizard. Genera una BudgetLine
+    #       por tramo, igual formato que el desglose de Modo B.
+    #   (b) Budget.route_toll_budget_cost — importe manual "Otros peajes"
+    #       (campo libre del wizard) para peajes fuera de la tabla. Genera
+    #       una única línea catch-all TOLL_COST adicional si es > 0.
+    #
+    # Modo B (route_calculation_mode=API): cruza la polyline confirmada de
+    # la ruta con TollSegment para generar una BudgetLine por tramo
+    # detectado (nombre, tipo de vehículo, precio, temporada). Fallback a
+    # línea única TOLL_COST cuando no hay polyline almacenada (presupuestos
+    # legacy). Sin cambios respecto al comportamiento previo.
+    #
+    # En ambos modos: recargo de markup si company.toll_markup_percent > 0,
+    # y el total (con recargo) se suma a base_total para que los recargos
+    # NYF/cargado se apliquen encima.
     # ------------------------------------------------------------------
-    if budget.route_toll_budget_cost and budget.route_toll_budget_cost > 0:
-        company = getattr(insurer, "company", None)
-        markup_pct = Decimal(
-            str(getattr(company, "toll_markup_percent", 0) or 0)
-        ) if company else Decimal("0.00")
+    company = getattr(insurer, "company", None)
+    markup_pct = Decimal(
+        str(getattr(company, "toll_markup_percent", 0) or 0)
+    ) if company else Decimal("0.00")
 
+    if budget.route_calculation_mode == Budget.ROUTE_MODE_MANUAL:
+        # (a) Desglose itemizado por tramo elegido en la tabla del wizard.
+        if budget.manual_toll_segments:
+            toll_details = _compute_manual_toll_cost(
+                budget.manual_toll_segments,
+                company=company,
+                service_date=budget.service_date,
+            )
+            if toll_details:
+                toll_lines, toll_total = _build_toll_budget_lines(
+                    toll_details,
+                    markup_pct,
+                    sort_order_start=300,
+                )
+                for tl in toll_lines:
+                    tl.budget = budget
+                    result_lines.append(tl)
+                base_total += toll_total
+
+        # (b) Importe manual catch-all "Otros peajes" — aditivo, no
+        # sustituye al desglose itemizado de (a).
+        if budget.route_toll_budget_cost and budget.route_toll_budget_cost > 0:
+            toll_amount = _round2(
+                Decimal(str(budget.route_toll_budget_cost))
+            )
+            base_total += _add_line(
+                "TOLL_COST",
+                "Otros peajes",
+                Decimal("1"),
+                toll_amount,
+            )
+    elif budget.route_toll_budget_cost and budget.route_toll_budget_cost > 0:
         encoded_poly = (budget.encoded_polyline or "").strip()
         toll_details = []
 

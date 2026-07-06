@@ -108,6 +108,11 @@
       if (km2) km2.value = '';
       if (nyf) nyf.checked = false;
       if (toll) toll.value = '';
+      // Limpiar la tabla itemizada de peajes por tramo (nº de pases),
+      // generada dinámicamente por tramo — no tiene un id fijo único.
+      document.querySelectorAll('input[id^="id_toll_pases_"]').forEach(
+        function (el) { el.value = ''; }
+      );
       if (overnightNo) {
         overnightNo.checked = true;
         toggleOvernightFields(false);

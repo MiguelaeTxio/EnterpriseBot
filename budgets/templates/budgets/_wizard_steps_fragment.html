@@ -139,11 +139,49 @@
             <label class="form-check-label fw-semibold" for="id_manual_is_night_holiday">¿Servicio nocturno / festivo?</label>
         </div>
         <div class="form-text text-muted mb-2">
-            Marcada: se factura como nocturno/festivo. Sin marcar: laborable normal.
-            Esta casilla decide por sí sola, sin consultar el calendario.
+            Marcada: fuerza el recargo nocturno/festivo aunque la fecha
+            no lo sea (p. ej. acuerdo con la aseguradora). Sin marcar: se
+            calcula automáticamente cruzando la fecha con el calendario
+            laboral de la base y el horario nocturno de la aseguradora.
         </div>
+        {% if toll_segments %}
+            <div class="mt-3">
+                <label class="form-label small text-muted fw-semibold">Peajes por tramo (troncal / salida)</label>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-1">
+                        <thead>
+                            <tr class="small text-muted">
+                                <th>Tramo</th>
+                                <th class="text-end">Precio (€)</th>
+                                <th style="width:6.5rem;" class="text-end">Nº pases</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for seg in toll_segments %}
+                                <tr>
+                                    <td class="small">{{ seg.label }}</td>
+                                    <td class="text-end small">{{ seg.price|default_if_none:"—" }}</td>
+                                    <td>
+                                        <input type="number"
+                                               class="form-control form-control-sm text-end"
+                                               name="toll_pases_{{ seg.id }}"
+                                               id="id_toll_pases_{{ seg.id }}"
+                                               min="0"
+                                               step="1"
+                                               placeholder="0">
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="form-text text-muted">
+                    Indica el número de veces que el servicio pasa por cada tramo (troncal o salida). Se suma al importe de "Otros peajes" de abajo.
+                </div>
+            </div>
+        {% endif %}
         <div class="mt-3">
-            <label class="form-label small text-muted" for="id_manual_toll_total">Peajes — importe total (€)</label>
+            <label class="form-label small text-muted" for="id_manual_toll_total">Otros peajes — importe adicional (€)</label>
             <input type="number"
                    class="form-control"
                    name="manual_toll_total"
@@ -151,7 +189,7 @@
                    min="0"
                    step="0.01"
                    placeholder="0,00">
-            <div class="form-text text-muted">Déjalo vacío si la ruta no lleva peaje.</div>
+            <div class="form-text text-muted">Peajes que no figuren en la tabla anterior. Déjalo vacío si no aplica.</div>
         </div>
     </div>
 </div>

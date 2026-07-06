@@ -916,31 +916,61 @@ class Budget(models.Model):
     )
     # Explicit manual override for is_night_or_holiday, set only from the
     # wizard's Manual calculation mode (route_calculation_mode=MANUAL).
-    # When not null, this value REPLACES the automatic calculation
-    # entirely (is_night OR calendar holiday) — the operator's checkbox
-    # becomes the sole source of truth, with no calendar lookup involved.
-    # Null when the budget uses route planning (route_calculation_mode=API):
-    # in that case the existing automatic calculation is used unchanged.
+    # The automatic calendar-based calculation (is_night OR calendar
+    # holiday) ALWAYS runs, in both API and Manual mode. This field only
+    # FORCES the result to True when the operator explicitly checks the
+    # box — it never suppresses a True automatic result. Leaving it
+    # unchecked (False) or unset (None) simply falls back to the automatic
+    # result. Used when a service is agreed with the insurer to be billed
+    # as nocturno/festivo even though the date/schedule wouldn't otherwise
+    # qualify (see calculate_budget()).
     # ---
     # Override manual explícito de is_night_or_holiday, establecido solo
     # desde el modo de cálculo Manual del wizard
-    # (route_calculation_mode=MANUAL). Cuando no es null, este valor
-    # SUSTITUYE por completo al cálculo automático (is_night O festivo de
-    # calendario) — el checkbox del operario pasa a ser la única fuente
-    # de verdad, sin consulta al calendario. Null cuando el presupuesto
-    # usa planificación de ruta (route_calculation_mode=API): en ese caso
-    # se usa el cálculo automático existente sin cambios.
+    # (route_calculation_mode=MANUAL). El cálculo automático basado en
+    # calendario (is_night O festivo de calendario) SIEMPRE se ejecuta,
+    # tanto en modo API como en modo Manual. Este campo solo FUERZA el
+    # resultado a True cuando el operario marca explícitamente la casilla
+    # — nunca suprime un resultado automático True. Dejarlo sin marcar
+    # (False) o sin fijar (None) simplemente recurre al resultado
+    # automático. Se usa cuando un servicio se acuerda con la aseguradora
+    # como nocturno/festivo aunque la fecha/horario no lo justifiquen por
+    # sí solos (ver calculate_budget()).
     is_night_or_holiday_manual_override = models.BooleanField(
         null=True,
         blank=True,
         default=None,
-        verbose_name="Nocturno / Festivo (override manual)",
+        verbose_name="Nocturno / Festivo (forzar)",
         help_text=(
-            "Cuando no es null, sustituye por completo el cálculo "
-            "automático de is_night_or_holiday. Se establece desde el "
-            "checkbox del modo Manual del wizard de presupuestos. Null "
-            "en presupuestos con planificación de ruta o anteriores a "
-            "esta funcionalidad."
+            "Cuando es True, fuerza is_night_or_holiday a True aunque el "
+            "calendario/horario no lo indiquen. El cálculo automático por "
+            "calendario se ejecuta siempre — este campo no lo sustituye, "
+            "solo puede forzarlo a True. Se establece desde el checkbox "
+            "del modo Manual del wizard de presupuestos."
+        ),
+    )
+    # Itemized manual selection of toll segments (troncal/salida, tipicamente
+    # AP-7/AP-46) with pass count, chosen in the wizard's Manual calculation
+    # mode. Stored as {str(TollSegment.pk): passes_int}. Additive with
+    # route_toll_budget_cost (the free-text "Otros peajes" amount) — see
+    # calculate_budget() section 3.
+    # ---
+    # Selección manual itemizada de tramos de peaje (troncal/salida,
+    # tipicamente AP-7/AP-46) con número de pases, elegida en el modo de
+    # cálculo Manual del wizard. Se almacena como
+    # {str(TollSegment.pk): pases_int}. Es aditiva con
+    # route_toll_budget_cost (el importe libre "Otros peajes") — ver
+    # calculate_budget() sección 3.
+    manual_toll_segments = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Peajes por tramo (modo manual)",
+        help_text=(
+            "Selección itemizada de tramos TollSegment con número de "
+            "pases, del modo Manual del wizard. Formato: "
+            "{id_tramo: nº_pases}. Se suma a route_toll_budget_cost "
+            "(Otros peajes), no lo sustituye."
         ),
     )
     is_loaded = models.BooleanField(

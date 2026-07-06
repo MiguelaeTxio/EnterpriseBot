@@ -46,9 +46,10 @@ from budgets.models import (
     TariffConcept,
     TariffLine,
     TariffPdfImport,
+    TollSegment,
     VehicleType,
 )
-from budgets.services import calculate_budget, _is_holiday
+from budgets.services import calculate_budget, _is_holiday, _resolve_toll_pricing
 from ivr_config.models import CompanyUser, PresenceStatus
 from panel.mixins import (
     AdminRoleRequiredMixin,
@@ -416,23 +417,31 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
 
         # --- Manual calculation mode fields (route_calculation_mode=MANUAL) ---
         # --- Campos del modo de cálculo Manual (route_calculation_mode=MANUAL) ---
-        # manual_is_night_holiday: operator checkbox, sole source of truth
-        #   for is_night_or_holiday when present — bypasses the automatic
-        #   calendar-based calculation entirely (see calculate_budget()).
-        # manual_toll_total: operator-entered total toll amount, fed
-        #   directly into route_toll_budget_cost (the engine already
-        #   falls back to this value as a single TOLL_COST line whenever
-        #   there is no stored polyline, which manual-mode budgets never have).
+        # manual_is_night_holiday: operator checkbox. FORCES is_night_or_holiday
+        #   to True when checked — the automatic calendar-based calculation
+        #   still always runs underneath and is used whenever this checkbox
+        #   is left unchecked (see calculate_budget()).
+        # manual_toll_total: operator-entered "Otros peajes" catch-all amount,
+        #   fed into route_toll_budget_cost. Additive with the itemized toll
+        #   segment table below — not a replacement for it.
+        # toll_pases_<segment_id>: itemized pass count per TollSegment row
+        #   shown in the wizard's toll table (troncal/salida, typically
+        #   AP-7/AP-46). Collected into manual_toll_segments as
+        #   {segment_id: passes}, ignoring blank/zero entries.
         # ---
-        # manual_is_night_holiday: checkbox del operario, única fuente de
-        #   verdad para is_night_or_holiday cuando está presente — evita
-        #   por completo el cálculo automático basado en calendario (ver
+        # manual_is_night_holiday: checkbox del operario. FUERZA
+        #   is_night_or_holiday a True cuando está marcado — el cálculo
+        #   automático por calendario sigue ejecutándose siempre por debajo
+        #   y es el que se usa cuando esta casilla queda sin marcar (ver
         #   calculate_budget()).
-        # manual_toll_total: importe total de peajes introducido por el
-        #   operario, se vuelca directamente en route_toll_budget_cost (el
-        #   motor ya recurre a este valor como línea única TOLL_COST
-        #   siempre que no haya polyline almacenada, que nunca la hay en
-        #   presupuestos de modo manual).
+        # manual_toll_total: importe catch-all "Otros peajes" introducido
+        #   por el operario, se vuelca en route_toll_budget_cost. Es aditivo
+        #   con la tabla itemizada de tramos de peaje de abajo — no la
+        #   sustituye.
+        # toll_pases_<segment_id>: número de pases por cada fila TollSegment
+        #   de la tabla de peajes del wizard (troncal/salida, típicamente
+        #   AP-7/AP-46). Se recogen en manual_toll_segments como
+        #   {id_tramo: pases}, ignorando entradas vacías o a cero.
         manual_toll_total_raw = data.get("manual_toll_total", "").strip()
         manual_toll_total = (
             _Dec(manual_toll_total_raw.replace(",", "."))
@@ -443,6 +452,22 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             if route_calculation_mode == "MANUAL"
             else None
         )
+        manual_toll_segments = None
+        if route_calculation_mode == "MANUAL":
+            _toll_segments_dict = {}
+            for _key in data:
+                if not _key.startswith("toll_pases_"):
+                    continue
+                _sid = _key[len("toll_pases_"):].strip()
+                if not _sid.isdigit():
+                    continue
+                try:
+                    _passes = int(str(data.get(_key, "")).strip() or 0)
+                except ValueError:
+                    continue
+                if _passes > 0:
+                    _toll_segments_dict[_sid] = _passes
+            manual_toll_segments = _toll_segments_dict or None
 
         service_time_raw = data.get("service_time", "").strip()
         # Normalise decimal separator: JS may write '.' or ','
@@ -570,6 +595,7 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             is_night_or_holiday_manual_override=(
                 is_night_or_holiday_manual_override
             ),
+            manual_toll_segments=manual_toll_segments,
             is_loaded=is_loaded,
             base=(
                 InsurerBase.objects.filter(
@@ -1409,6 +1435,32 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         service_date_str  = request.GET.get("service_date", "").strip()
         insurer_id_str    = request.GET.get("insurer_id", "").strip()
 
+        # Resolve toll segments for the Manual mode itemized toll table
+        # (troncal/salida, AP-7 "Autopista del Sol" y AP-46 "Autopista de
+        # las Pedrizas"). Price shown is informational — the real price
+        # used at calculation time is re-resolved fresh in
+        # calculate_budget() via _compute_manual_toll_cost().
+        # ---
+        # Resolver tramos de peaje para la tabla itemizada del modo Manual
+        # (troncal/salida, AP-7 "Autopista del Sol" y AP-46 "Autopista de
+        # las Pedrizas"). El precio mostrado es informativo — el precio
+        # real usado en el cálculo se resuelve de nuevo en
+        # calculate_budget() vía _compute_manual_toll_cost().
+        price_field, _vehicle_label, _high_field = _resolve_toll_pricing(
+            company_user.company
+        )
+        toll_segments = [
+            {
+                "id": seg.pk,
+                "label": f"{seg.road_code} | {seg.origin_name} \u2192 {seg.dest_name}",
+                "price": getattr(seg, price_field, None),
+            }
+            for seg in TollSegment.objects.filter(
+                road_code__in=["AP-7", "AP-46"],
+                is_active=True,
+            ).order_by("road_code", "origin_name")
+        ]
+
         return render(request, self.template_name, {
             "concepts":             concepts,
             "has_loaded_surcharge": has_loaded,
@@ -1424,6 +1476,7 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
                 "GOOGLE_MAPS_API_KEY", ""
             ),
             "no_tariff_lines":      no_tariff_lines,
+            "toll_segments":        toll_segments,
         })
 
 
