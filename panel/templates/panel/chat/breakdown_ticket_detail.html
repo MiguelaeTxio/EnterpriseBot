@@ -76,7 +76,7 @@
 
             {% if ticket.fault_category %}
             <dt class="col-sm-4 text-muted">Categoría</dt>
-            <dd class="col-sm-8">{{ ticket.fault_category }}</dd>
+            <dd class="col-sm-8">{{ fault_category_display|default:ticket.fault_category }}</dd>
             {% endif %}
 
             <dt class="col-sm-4 text-muted">Ubicación</dt>

@@ -227,13 +227,31 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             .order_by("user__username")
         )
 
+        # fault_category se almacena con los mismos codigos internos que
+        # FaultCategory (work_order_processor) segun el propio help_text del
+        # campo, pero BreakdownTicket.fault_category no tiene choices=
+        # definido en el modelo -- por eso no hay get_fault_category_display
+        # disponible y hay que resolver el label aqui, en la vista.
+        # ---
+        # fault_category se guarda con los mismos codigos internos que
+        # FaultCategory (work_order_processor) segun el help_text del propio
+        # campo, pero el modelo no tiene choices= definido -- se resuelve el
+        # label aqui.
+        fault_category_display = ""
+        if ticket.fault_category:
+            from work_order_processor.models import FaultCategory
+            fault_category_display = dict(FaultCategory.choices).get(
+                ticket.fault_category, ticket.fault_category
+            )
+
         return render(request, self.template_name, {
-            "ticket":             ticket,
-            "company_user":       company_user,
-            "own_presence":       own_presence,
-            "active_nav":         "breakdown_ticket_list",
-            "workshopboss_users": workshopboss_users,
-            "URGENCY_CHOICES":    ticket.URGENCY_CHOICES,
+            "ticket":                 ticket,
+            "company_user":           company_user,
+            "own_presence":           own_presence,
+            "active_nav":             "breakdown_ticket_list",
+            "workshopboss_users":     workshopboss_users,
+            "URGENCY_CHOICES":        ticket.URGENCY_CHOICES,
+            "fault_category_display": fault_category_display,
         })
 
     def post(self, request, pk, *args, **kwargs):
