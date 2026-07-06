@@ -16,9 +16,22 @@
                 <form method="post">
                     {% csrf_token %}
 
+                    {% if form.instance.pk %}
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.internal_reference.label }}</label>
+                        {{ form.internal_reference }}
+                    </div>
+                    {% else %}
+                    <div class="mb-3">
+                        <div class="alert alert-secondary py-2 small mb-0">
+                            La referencia interna se genera automáticamente al guardar.
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="mb-3">
                         <label class="form-label">{{ form.reference.label }}</label>
                         {{ form.reference }}
+                        <div class="form-text">Opcional -- solo informativo, puede cambiar si cambia el proveedor.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">{{ form.description.label }}</label>

@@ -10,7 +10,7 @@
     <li class="list-group-item d-flex justify-content-between align-items-center">
         <div>
             <strong>{{ entry.description }}</strong>
-            {% if entry.reference %}<span class="text-muted">({{ entry.reference }})</span>{% endif %}
+            {% if entry.internal_reference %}<code class="ms-1">{{ entry.internal_reference }}</code>{% endif %}
             <br>
             <small class="text-muted">
                 {% if entry.is_uncountable %}

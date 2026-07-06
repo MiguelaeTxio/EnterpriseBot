@@ -321,7 +321,21 @@ class SparePartEntry(models.Model):
     reference = models.CharField(
         max_length=100,
         blank=True,
-        verbose_name='Referencia',
+        verbose_name='Referencia proveedor',
+    )
+    internal_reference = models.CharField(
+        max_length=20,
+        blank=True,
+        verbose_name='Referencia interna',
+        help_text=(
+            'Referencia propia de la empresa, estable frente a cambios de '
+            'proveedor. Generada automáticamente, nunca importada de un '
+            'albarán externo. Ver anexo H10, confirmado por Miguel Ángel '
+            'el 2026-07-06: la referencia del proveedor puede cambiar si '
+            'se cambia de proveedor para la misma pieza física, así que '
+            'el catálogo y el consumo se identifican por esta referencia '
+            'interna, no por la del proveedor.'
+        ),
     )
     description = models.CharField(
         max_length=255,
@@ -456,8 +470,17 @@ class SparePartEntry(models.Model):
         verbose_name = 'Repuesto'
         verbose_name_plural = 'Repuestos'
         ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'internal_reference'],
+                condition=~models.Q(internal_reference=''),
+                name='unique_internal_reference_per_company',
+            ),
+        ]
 
     def __str__(self):
+        if self.internal_reference:
+            return f'[{self.internal_reference}] {self.description} ({self.get_status_display()})'
         return f'{self.description} [{self.get_status_display()}]'
 
 

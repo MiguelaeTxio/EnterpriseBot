@@ -36,6 +36,7 @@ class SparePartEntryCatalogForm(forms.ModelForm):
     class Meta:
         model = SparePartEntry
         fields = [
+            'internal_reference',
             'reference',
             'description',
             'is_uncountable',
@@ -45,7 +46,13 @@ class SparePartEntryCatalogForm(forms.ModelForm):
             'machine',
         ]
         widgets = {
-            'reference': forms.TextInput(attrs={'class': 'form-control'}),
+            'internal_reference': forms.TextInput(attrs={
+                'class': 'form-control', 'readonly': 'readonly',
+            }),
+            'reference': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Opcional -- referencia del proveedor actual, si la hay',
+            }),
             'description': forms.TextInput(attrs={'class': 'form-control'}),
             'is_uncountable': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'stock_quantity': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),

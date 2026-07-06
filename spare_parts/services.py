@@ -525,6 +525,52 @@ def resolve_line_assignment(raw_code: Optional[str], company):
     return 'UNASSIGNED', None
 
 
+def generate_internal_reference(company):
+    """
+    Generates the next sequential internal reference for a company,
+    format 'REP-000001'. Internal reference is company-owned and
+    stable across supplier changes -- confirmed by Miguel Ángel
+    (2026-07-06): the supplier's own reference for the same physical
+    part can change if the company switches suppliers, so the
+    catalog must be identified by something the company controls,
+    never by the supplier's nomenclature.
+
+    Not fully race-safe under concurrent creation (single low-
+    concurrency admin environment) -- if that becomes a real issue,
+    replace with a per-company sequence table or
+    select_for_update() on a counter row.
+
+    ---
+
+    Genera la siguiente referencia interna secuencial de una empresa,
+    formato 'REP-000001'. La referencia interna es propiedad de la
+    empresa y estable frente a cambios de proveedor -- confirmado por
+    Miguel Ángel (2026-07-06): la referencia propia del proveedor
+    para la misma pieza física puede cambiar si la empresa cambia de
+    proveedor, así que el catálogo debe identificarse por algo que
+    controla la empresa, nunca por la nomenclatura del proveedor.
+
+    No es totalmente segura frente a concurrencia (entorno de un solo
+    administrador, baja concurrencia) -- si eso llega a ser un
+    problema real, sustituir por una tabla de secuencia por empresa o
+    un select_for_update() sobre una fila contador.
+    """
+    from .models import SparePartEntry
+
+    last = (
+        SparePartEntry.objects
+        .filter(company=company, internal_reference__startswith='REP-')
+        .exclude(internal_reference='')
+        .order_by('-internal_reference')
+        .first()
+    )
+    if last and last.internal_reference[4:].isdigit():
+        next_number = int(last.internal_reference[4:]) + 1
+    else:
+        next_number = 1
+    return f'REP-{next_number:06d}'
+
+
 def confirm_delivery_note(delivery_note, company_user):
     """
     Executes the delivery note assignment circuit described in annex
@@ -603,6 +649,7 @@ def confirm_delivery_note(delivery_note, company_user):
                 entry = SparePartEntry.objects.create(
                     company=company,
                     reference=line.reference,
+                    internal_reference=generate_internal_reference(company),
                     description=line.description,
                     is_uncountable=False,
                     status=SparePartEntry.STATUS_WAREHOUSE,
@@ -645,6 +692,7 @@ def confirm_delivery_note(delivery_note, company_user):
             entry = SparePartEntry.objects.create(
                 company=company,
                 reference=line.reference,
+                internal_reference=generate_internal_reference(company),
                 description=line.description,
                 is_uncountable=False,
                 status=SparePartEntry.STATUS_PRE_ASSIGNED,
@@ -749,7 +797,9 @@ class StockAssignmentService:
             company=company,
             status=SparePartEntry.STATUS_WAREHOUSE,
         ).filter(
-            Q(reference__icontains=query) | Q(description__icontains=query)
+            Q(internal_reference__icontains=query)
+            | Q(reference__icontains=query)
+            | Q(description__icontains=query)
         )[:limit]
 
     @staticmethod
@@ -963,6 +1013,7 @@ class StockAssignmentService:
         entry = SparePartEntry.objects.create(
             company=company,
             reference=reference or '',
+            internal_reference=generate_internal_reference(company),
             description=description.strip(),
             is_uncountable=is_uncountable,
             stock_quantity=(

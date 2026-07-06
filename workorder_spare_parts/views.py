@@ -43,7 +43,7 @@ from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
 from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 from spare_parts.models import SparePartEntry, StockMovement
-from spare_parts.services import StockAssignmentService
+from spare_parts.services import StockAssignmentService, generate_internal_reference
 from work_order_processor.models import WorkOrderEntryLine
 
 from .forms import SparePartEntryCatalogForm
@@ -121,7 +121,11 @@ class SparePartEntryListView(CatalogReadAccessMixin, ListView):
             qs = qs.filter(status=status)
         q = self.request.GET.get('q', '').strip()
         if q:
-            qs = qs.filter(Q(reference__icontains=q) | Q(description__icontains=q))
+            qs = qs.filter(
+                Q(internal_reference__icontains=q)
+                | Q(reference__icontains=q)
+                | Q(description__icontains=q)
+            )
         return qs
 
     def get_context_data(self, **kwargs):
@@ -181,6 +185,7 @@ class SparePartEntryCreateView(SupervisorAccessMixin, View):
         entry = form.save(commit=False)
         entry.company = request.user.company_user.company
         entry.origin_type = SparePartEntry.ORIGIN_SUPPLIER
+        entry.internal_reference = generate_internal_reference(entry.company)
         entry.save()
         if entry.stock_quantity:
             StockMovement.objects.create(
