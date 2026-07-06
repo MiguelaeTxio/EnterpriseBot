@@ -36,7 +36,7 @@
 {#   "absence_categories" → Categorías de ausencia           (ADMIN, SUPERVISOR)    #}
 {#   "machine_history"    → Historial de Máquina             (WORKSHOP, ADMIN)      #}
 {#   "workorder_history" → Mis partes                        (WORKSHOP, WORKSHOPBOSS, ADMIN) #}
-{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (ADMIN, SUPERVISOR) (Hito 10 Paso 4) #}
+{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS -- lectura para taller, edición solo ADMIN/SUPERVISOR) (Hito 10 Paso 4) #}
 {# ================================================================================ #}
 <ul class="nav flex-column mt-2" id="sidebar-accordion">
     {# ------------------------------------------------------------------ #}
@@ -354,9 +354,11 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Catálogo de repuestos — ADMIN y SUPERVISOR (Hito 10, Paso 4).         #}
-                    {# Spare parts catalog — ADMIN and SUPERVISOR (Hito 10, Paso 4).         #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+                    {# Catálogo de repuestos — ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS      #}
+                    {# (Hito 10, Paso 4). Lectura para WORKSHOP/WORKSHOPBOSS, edición         #}
+                    {# solo ADMIN/SUPERVISOR (gestionado en la vista/plantilla, no aquí).     #}
+                    {# Spare parts catalog — ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS        #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
                                href="{% url 'workorder_spare_parts:catalog_list' %}">

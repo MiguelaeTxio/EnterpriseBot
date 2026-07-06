@@ -33,12 +33,14 @@ import logging
 
 from django.contrib import messages
 from django.db.models import Q
+from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import ListView
 
 from fleet.models import MachineAsset
-from panel.mixins import SupervisorAccessMixin
+from ivr_config.models import CompanyUser
+from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 from spare_parts.models import SparePartEntry, StockMovement
 
 from .forms import SparePartEntryCatalogForm
@@ -46,7 +48,53 @@ from .forms import SparePartEntryCatalogForm
 logger = logging.getLogger(__name__)
 
 
-class SparePartEntryListView(SupervisorAccessMixin, ListView):
+class CatalogReadAccessMixin(CompanyUserRequiredMixin):
+    """
+    Read access to the spare part catalog for ADMIN, SUPERVISOR,
+    WORKSHOP and WORKSHOPBOSS -- confirmed by Miguel Ángel (2026-07-06):
+    the mechanics are the ones who will actually use the catalog once
+    the consumption endpoints (Paso 4, next block) replace the
+    free-text entry in the work order form. Create/edit/delete stay
+    restricted to SupervisorAccessMixin (ADMIN/SUPERVISOR) below --
+    only the listing is opened up.
+
+    Not reusing panel.mixins.WorkshopRequiredMixin as-is because it
+    excludes SUPERVISOR, and not widening it here to avoid touching a
+    shared mixin used across the whole panel app for an app-local need.
+    ---
+    Acceso de lectura al catálogo de repuestos para ADMIN, SUPERVISOR,
+    WORKSHOP y WORKSHOPBOSS -- confirmado por Miguel Ángel
+    (2026-07-06): los mecánicos son quienes realmente van a usar el
+    catálogo en cuanto los endpoints de consumo (Paso 4, siguiente
+    bloque) sustituyan la entrada de texto libre del formulario de
+    parte. Crear/editar/eliminar siguen restringidos a
+    SupervisorAccessMixin (ADMIN/SUPERVISOR) más abajo -- solo se abre
+    el listado.
+    """
+
+    _allowed_roles = {
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_SUPERVISOR,
+        CompanyUser.ROLE_WORKSHOP,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+    }
+
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+        company_user = getattr(request.user, "company_user", None)
+        if company_user is None:
+            return response
+        if company_user.role not in self._allowed_roles:
+            return HttpResponseForbidden(
+                "Acceso denegado. Esta sección requiere rol de "
+                "Administrador, Supervisor, Operario o Jefe de taller."
+            )
+        return response
+
+
+class SparePartEntryListView(CatalogReadAccessMixin, ListView):
     """
     Lists the SparePartEntry catalog for the current company, with
     optional filtering by status and free-text search over
@@ -75,11 +123,15 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx['company_user'] = self.request.user.company_user
+        company_user = self.request.user.company_user
+        ctx['company_user'] = company_user
         ctx['active_nav'] = 'workorder_spare_parts_catalog'
         ctx['status_choices'] = SparePartEntry.STATUS_CHOICES
         ctx['selected_status'] = self.request.GET.get('status', '')
         ctx['selected_q'] = self.request.GET.get('q', '')
+        ctx['can_edit'] = company_user.role in {
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+        }
         return ctx
 
 
