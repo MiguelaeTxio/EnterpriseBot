@@ -126,56 +126,57 @@ habían ejecutado en una sesión anterior sin dejar constancia aquí.
 Reparado tras verificación empírica del tamaño real de los archivos
 (`wc -l`), no de memoria.
 
-- **Fase B -- COMPLETADA.** `panel/views_operator.py` existe: 4.879
-  líneas (vistas de operario: `WorkOrderEntryFormView`,
-  `WorkOrderEntryConfirmView`, `WorkOrderEntryUploadView`,
-  `OperatorDashboardView`, etc.).
-- **Fase C -- COMPLETADA.** `panel/views_workorders.py` existe: 6.488
-  líneas (vistas de supervisor/partes/presupuestos -- más grande que
-  la estimación original de ~3.500, sin más detalle disponible sobre
-  cuándo ni en qué sesión se ejecutó).
-- **Fase D (`views_fleet.py`), Fase E (`views_ivr.py`), Fase F
-  (`views_auth.py`) -- PENDIENTES.** Ninguno de los tres archivos
-  existe todavía.
-- **Fase G (limpieza final) -- PENDIENTE.** `panel/views.py` tiene
-  actualmente 4.033 líneas -- lejos del objetivo `<200`, porque
-  todavía contiene las clases de flota/IVR/auth sin extraer.
+- **Fase B -- COMPLETADA.** `panel/views_operator.py`: 4.879 líneas
+  (vistas de operario).
+- **Fase C -- COMPLETADA.** `panel/views_workorders.py`: 6.488 líneas
+  (vistas de supervisor/partes/presupuestos).
+- **Fase D -- DESCARTADA (2026-07-06).** Las clases `MachineAsset*`/
+  `Fleet*`/`MaintenanceLog*` ya vivían en su propia app Django `fleet/`
+  (`fleet/views.py`), no en `panel/views.py` -- nada que extraer.
+  Confirmado por Miguel Ángel.
+- **Fase E -- COMPLETADA (2026-07-06, primera sesión NFS de este
+  hito).** `panel/views_ivr.py` creado: 1.986 líneas, 24 clases del
+  bloque IVR config (`Section*`, `Contact*`, `CallFlow*`,
+  `PhoneNumber*`, `CorporateVoiceProfile*`, `BlockedCaller*`,
+  `DataCaptureSet*`, `SectionDefaultRoleView`, `InboundCallLog*`).
+  Cabecera de imports auditada por grep contra el cuerpo extraído (no
+  copia superset). `panel/views.py` bajó de 4.033 a 2.084 líneas.
+- **Fase F -- COMPLETADA (misma sesión).** `panel/views_auth.py`
+  creado: 1.966 líneas, las 18 clases restantes (`CompanyUser*`,
+  `WorkerScheduleUpdateView`, `PanelLogin/LogoutView`, `TrustDevice*`,
+  `PresenceStatusUpdateView`, `PanelDashboardView`,
+  `PanelPasswordChangeView`, `WhatsApp*`, `OwnProfileView`,
+  `CompanySettingsView`).
+- **Fase G -- COMPLETADA de facto (misma sesión).** Al extraer las 18
+  clases de la Fase F no quedaba lógica propia en `panel/views.py`, así
+  que se reescribió directamente como archivo de solo imports y
+  re-exports encadenados (B→C→E→F): **115 líneas**, por debajo del
+  objetivo `<200`. Todos los imports de uso directo (django,
+  `panel.mixins`, `panel.forms`, `ivr_config.models`,
+  `whatsapp.models`, `work_order_processor`, `fleet`,
+  `logging`/`plotly`) se eliminaron por quedar huérfanos.
+  `panel/urls.py` sigue importando desde `panel.views` sin cambios
+  (cadena de re-exports intacta, verificado por grep).
 
-### Hoja de Ruta para la Siguiente Sesion (S052)
+**Verificación realizada:** `python3 -m py_compile` OK en los 5 módulos
+resultantes. **Verificación pendiente (fuera del alcance del modelo en
+este flujo NFS, sin acceso de red a PythonAnywhere):** `django check
+--deploy` y navegación E2E real (operario, supervisor, admin, IVR,
+flota, auth, WhatsApp) tras el `git pull` en producción.
 
-#### Contexto obligatorio previo
+### Hoja de Ruta para la Siguiente Sesión
 
-Auditar el numero de lineas actual de panel/views.py antes de comenzar:
+**H21 queda funcionalmente completo** salvo la verificación E2E real
+en producción, que no puede ejecutar el modelo. Próxima sesión que
+retome H21 (o continúe con H21 EN PROGRESO si se decide reactivar):
 
-  wc -l /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views.py
-
-**Reparación 2026-07-06:** confirmado en 4.033 líneas -- ver "Trabajo
-Realizado" arriba. Las Fases A y B originales de este documento ya NO
-aplican (B y C están hechas). Empezar directamente por la Fase D.
-
-#### Paso 1 - Fase D: extraccion views_fleet.py (~820 lineas estimadas)
-
-Mismo procedimiento que Fase B/C (ya validado en la práctica): mapa de
-clases del bloque flota (`MachineAsset*`, `Fleet*`, `MaintenanceLog*`)
-dentro de `panel/views.py`, auditoría de imports, extracción como
-Neonato Puro, re-exports, verificación `py_compile` + `django check
---deploy` + recarga y navegación real.
-
-#### Paso 2 - Fase E: extraccion views_ivr.py (~1.500 lineas estimadas)
-
-Bloque IVR config (`Section*`, `Contact*`, `CallFlow*`, `PhoneNumber*`,
-`CorporateVoiceProfile*`, `BlockedCaller*`, `DataCapture*`, `IVR*`,
-`VoiceProfile*`). Mismo procedimiento.
-
-#### Paso 3 - Fase F: extraccion views_auth.py (~740 lineas estimadas)
-
-Bloque auth + WhatsApp (`PanelLogin*`, `Logout*`, `TrustDevice*`,
-`CompanyUser*`, `Password*`, `OwnProfile*`, `CompanySettings*`,
-`WhatsApp*`). Mismo procedimiento.
-
-#### Paso 4 - Fase G: limpieza final
-
-Solo tras D/E/F: verificar `panel/views.py < 200 líneas`, eliminar
-imports huérfanos, `django check --deploy`, verificación E2E completa
-de navegación (operario, supervisor, admin, IVR, flota, auth,
-WhatsApp).
+1. Confirmar que el `git pull` en PythonAnywhere no dio conflictos
+   (ver script de despliegue entregado en la sesión de las Fases E/F/G).
+2. Ejecutar `django check --deploy` en el servidor y recargar la app.
+3. Navegación E2E real por las 7 áreas: operario, supervisor, admin,
+   IVR, flota, auth, WhatsApp -- confirmar 0 errores de rutas rotas
+   tras el split completo (`panel/views.py` ya no tiene lógica propia).
+4. Si todo verifica correctamente, dar H21 por **CERRADO** y evaluar
+   si procede la elevación de cada bloque a app Django independiente
+   (mencionada en el Objetivo del hito como paso posterior, no
+   incluida en el alcance de las Fases A-G).
