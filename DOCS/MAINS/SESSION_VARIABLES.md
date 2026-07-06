@@ -34,12 +34,12 @@ tabla — nunca `doc-project-directory-enterprisebot` (manifiesto de
 árbol de código fuente, no cubre `/var/log/` ni rutas fuera del
 proyecto).
 
-**Mecanismo de descarga — NO es sftp.** `/var/log/` está fuera del
-alcance del sftp de PythonAnywhere (que solo llega a
-`/home/MiguelAeTxio/`). Estos archivos se descargan desde el
-navegador del dashboard de PythonAnywhere (pestaña "Files" o el
-propio panel "Log files" de la web app) y Miguel Ángel los sube al
-chat como cualquier archivo — **nunca** una caja sftp para estos.
+**Mecanismo de descarga: sftp GET con ruta absoluta.** Verificado que
+PythonAnywhere sí permite sftp sobre `/var/log/` (no solo sobre
+`/home/MiguelAeTxio/`) — confirmado por Miguel Ángel y por evidencia
+pública (usuarios de PythonAnywhere descargando access logs desde
+`/var/log/` vía SFTP/paramiko). La caja sftp usa la ruta absoluta tal
+cual, sin prefijo de proyecto — ver `com-file-request`.
 
 **Nota de reparación (2026-07-06):** esta tabla estaba anotada como
 "actualizada" en el registro de S057 (anexo H17) pero no existía en
