@@ -1979,6 +1979,71 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
         return redirect (_reverse ("panel:operator_history"))
 
 
+def _resolve_editable_work_order(pk, cu, company):
+    """
+    Resolves the digital WorkOrder targeted by wo_pk/edit_wo_pk for
+    WorkOrderEntryFormView's edit mode, with role-aware scope.
+
+    Fix (2026-07-07, bug detectado por Miguel Ángel -- "Editar /
+    Revisar" en admin_history.html no entraba en modo edición real):
+    la condición original (uploaded_by=cu, reviewed=False) es correcta
+    SOLO para el operario editando su propio parte antes de revisión
+    -- pero esta misma vista también se usa desde el listado de ADMIN
+    (botón "Editar / Revisar" sobre partes de CUALQUIER operario,
+    revisados o no). Con la condición original, esa consulta fallaba
+    siempre que el ADMIN no fuera quien subió el parte, o que ya
+    estuviera revisado -- DoesNotExist, y la vista rebotaba al
+    historial sin entrar en modo edición.
+
+    ADMIN: acceso completo dentro de su empresa, cualquier autor,
+    revisado o no (coincide con "ADMIN: acceso completo" ya
+    documentado en CompanyUser).
+    Cualquier otro rol que llegue aquí (WORKSHOP, único otro permitido
+    por WorkshopRequiredMixin): solo su propio parte, sin revisar --
+    comportamiento sin cambios.
+
+    Raises WorkOrder.DoesNotExist si no hay coincidencia -- el
+    llamante decide qué hacer (mensaje + redirect en GET, None en
+    POST).
+
+    ---
+
+    Resuelve el WorkOrder digital señalado por wo_pk/edit_wo_pk para
+    el modo edición de WorkOrderEntryFormView, con alcance según rol.
+
+    Corrección (2026-07-07, bug detectado por Miguel Ángel -- "Editar
+    / Revisar" en admin_history.html no entraba en modo edición real):
+    la condición original (uploaded_by=cu, reviewed=False) es correcta
+    SOLO para el operario editando su propio parte antes de revisión
+    -- pero esta misma vista también se usa desde el listado de ADMIN
+    (botón "Editar / Revisar" sobre partes de CUALQUIER operario,
+    revisados o no). Con la condición original, esa consulta fallaba
+    siempre que el ADMIN no fuera quien subió el parte, o que ya
+    estuviera revisado -- DoesNotExist, y la vista rebotaba al
+    historial sin entrar en modo edición.
+
+    ADMIN: acceso completo dentro de su empresa, cualquier autor,
+    revisado o no (coincide con "ADMIN: acceso completo" ya
+    documentado en CompanyUser).
+    Cualquier otro rol que llegue aquí (WORKSHOP, único otro permitido
+    por WorkshopRequiredMixin): solo su propio parte, sin revisar --
+    comportamiento sin cambios.
+
+    Lanza WorkOrder.DoesNotExist si no hay coincidencia -- quien llama
+    decide qué hacer (mensaje + redirect en GET, None en POST).
+    """
+    base_filter = dict(
+        pk=pk,
+        company=company,
+        source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+    )
+    if cu.role == CompanyUser.ROLE_ADMIN:
+        return WorkOrder.objects.get(**base_filter)
+    return WorkOrder.objects.get(
+        uploaded_by=cu, reviewed=False, **base_filter,
+    )
+
+
 class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
     """
     Structured web form entry path for work orders (Via A).
@@ -2097,16 +2162,7 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
 
 
             try :
-                wo_edit =_WO_E .objects .get (
-                pk =wo_pk ,
-                company =company ,
-                uploaded_by =cu ,
-                reviewed =False ,
-                source__in =[
-                _WO_E .Source .DIGITAL ,
-                _WO_E .Source .GENERATED ,
-                ],
-                )
+                wo_edit =_resolve_editable_work_order (wo_pk ,cu ,company )
             except _WO_E .DoesNotExist :
                 django_messages .error (
                 request ,
@@ -2616,15 +2672,8 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         _edit_wo_pk_pre =POST .get ("edit_wo_pk","").strip ()
         if _edit_wo_pk_pre :
             try :
-                _wo_orig_pre =WorkOrder .objects .get (
-                pk =int (_edit_wo_pk_pre ),
-                company =company ,
-                uploaded_by =cu ,
-                reviewed =False ,
-                source__in =[
-                WorkOrder .Source .DIGITAL ,
-                WorkOrder .Source .GENERATED ,
-                ],
+                _wo_orig_pre =_resolve_editable_work_order (
+                int (_edit_wo_pk_pre ),cu ,company ,
                 )
                 # Parte verificado — no se borra. El flujo continua.
                 # Work order verified — not deleted. Flow continues.
@@ -3631,15 +3680,8 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         _reuse_wo =None 
         if edit_wo_pk :
             try :
-                _reuse_wo =WorkOrder .objects .get (
-                pk =int (edit_wo_pk ),
-                company =company ,
-                uploaded_by =cu ,
-                reviewed =False ,
-                source__in =[
-                WorkOrder .Source .DIGITAL ,
-                WorkOrder .Source .GENERATED ,
-                ],
+                _reuse_wo =_resolve_editable_work_order (
+                int (edit_wo_pk ),cu ,company ,
                 )
                 logger .info (
                 "# [FormView/close] Reutilizando WorkOrder pk=%d. "
