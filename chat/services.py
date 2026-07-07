@@ -1915,6 +1915,86 @@ def resolve_ticket_for_machine(machine) -> "TicketResolution":
     return TicketResolution(action="CREATE")
 
 
+def _resolve_ticket_contact(company_user):
+    """
+    Resolves (or lazily creates) the Contact used to satisfy the
+    mandatory BreakdownTicket.contact FK when a ticket is pregenerated
+    without a real external reporter (Paso 4-bis, bloque CREATE).
+
+    Resolution order:
+      1. Any Contact already linked to this company_user (its
+         `company_user` FK) — deliberately NOT filtered by
+         `is_internal`, because CompanyUserCreateView
+         (panel/views_auth.py) sets `is_internal=is_ivr_active` on
+         creation, so a linked Contact may exist with
+         `is_internal=False` and would be missed by the
+         is_internal=True filter used elsewhere (whatsapp/tasks.py,
+         chat/views.py) for a different purpose (WhatsApp-capable
+         contacts). Here we only need a valid Contact belonging to
+         this company_user, whatever its is_internal flag.
+      2. If none exists at all — CompanyUserCreateView only
+         links/creates a Contact when a phone_number or a section was
+         given at creation time (panel/views_auth.py:214-261), so some
+         CompanyUsers may have none — create one on the fly following
+         the exact same no-phone pattern already used there
+         (phone_number='', is_internal=True, company_user=company_user).
+
+    Never raises for a missing Contact — self-heals instead, so
+    get_or_create_ticket_for_machine() never fails on this account.
+    ---
+
+    Resuelve (o crea de forma perezosa) el Contact usado para
+    satisfacer el FK obligatorio BreakdownTicket.contact cuando se
+    pregenera un ticket sin un reportante externo real (Paso 4-bis,
+    bloque CREATE).
+
+    Orden de resolución:
+      1. Cualquier Contact ya vinculado a este company_user (su FK
+         `company_user`) — deliberadamente SIN filtrar por
+         `is_internal`, porque CompanyUserCreateView
+         (panel/views_auth.py) fija `is_internal=is_ivr_active` al
+         crear, así que puede existir un Contact vinculado con
+         `is_internal=False` que el filtro is_internal=True usado en
+         otros sitios (whatsapp/tasks.py, chat/views.py) para otro
+         propósito (contactos con capacidad de WhatsApp) no
+         encontraría. Aquí solo hace falta un Contact válido de este
+         company_user, sea cual sea su is_internal.
+      2. Si no existe ninguno — CompanyUserCreateView solo
+         vincula/crea un Contact cuando se dio phone_number o sección
+         al crear el usuario (panel/views_auth.py:214-261), así que
+         algunos CompanyUser pueden no tener ninguno — se crea uno al
+         vuelo siguiendo el mismo patrón sin teléfono ya usado allí
+         (phone_number='', is_internal=True, company_user=company_user).
+
+    Nunca lanza excepción por falta de Contact — se autorrepara, para
+    que get_or_create_ticket_for_machine() nunca falle por este motivo.
+    """
+    contact = Contact.objects.filter(
+        company=company_user.company,
+        company_user=company_user,
+    ).first()
+    if contact is not None:
+        return contact
+
+    display_name = (
+        company_user.user.get_full_name().strip()
+        or company_user.user.username
+    )
+    contact = Contact.objects.create(
+        company=company_user.company,
+        phone_number="",
+        name=display_name,
+        is_internal=True,
+        company_user=company_user,
+    )
+    logger.info(
+        "# [H10-BIS] Contact interno pk=%s creado sobre la marcha para "
+        "company_user pk=%s (no tenía ninguno vinculado todavía).",
+        contact.pk, company_user.pk,
+    )
+    return contact
+
+
 def get_or_create_ticket_for_machine(
     machine,
     company_user,
@@ -1939,10 +2019,10 @@ def get_or_create_ticket_for_machine(
     Parameters:
       machine          -- fleet.MachineAsset, the cost centre.
       company_user     -- ivr_config.CompanyUser performing the action.
-                           Used to resolve the mandatory
+                           Used to resolve (or lazily create, via
+                           _resolve_ticket_contact()) the mandatory
                            BreakdownTicket.contact field when a new
-                           ticket must be created (see assumption note
-                           below).
+                           ticket must be created.
       reopen           -- required (True/False) only when the
                            re-evaluated state is ASK_REOPEN. Ignored
                            otherwise.
@@ -1950,17 +2030,13 @@ def get_or_create_ticket_for_machine(
                           DISAMBIGUATE. Ignored otherwise.
 
     Returns the resolved chat.models.BreakdownTicket (existing,
-    reopened, or newly created).
+    reopened, or newly created). Never fails for lack of a Contact —
+    _resolve_ticket_contact() self-heals by creating one if needed.
 
     Raises ValueError if the caller's answer doesn't match what the
     re-evaluation actually needs (e.g. state is ASK_REOPEN but
     reopen=None) — this is treated as a caller bug (stale UI state),
     never silently guessed.
-
-    Raises ivr_config.models.Contact.DoesNotExist when a new ticket
-    must be created and company_user has no linked internal Contact —
-    see assumption note below; deliberately fails loud instead of
-    creating a ticket with invalid data.
 
     ---
 
@@ -2043,58 +2119,14 @@ def get_or_create_ticket_for_machine(
             # resolution.action ya fuera 'CREATE'.
 
         # resolution.action == 'CREATE', o 'ASK_REOPEN' con reopen=False.
-        # --------------------------------------------------------------
-        # NOTA DE ASUNCIÓN 1 (no bloqueante, a confirmar con Miguel
-        # Ángel): BreakdownTicket.contact es un FK obligatorio (sin
-        # null=True en el modelo, chat/models.py). Para un ticket
-        # pregenerado desde un parte o un albarán no hay un Contact
-        # externo real que lo origine -- se resuelve al Contact interno
-        # del company_user que ejecuta la acción, mismo patrón ya en uso
-        # en whatsapp/tasks.py:172 y chat/views.py:523-524
-        # (Contact.objects.filter(company_user=..., is_internal=True)).
-        # Si ese company_user no tiene Contact interno vinculado, esta
-        # llamada falla con Contact.DoesNotExist en vez de crear el
-        # ticket con datos inválidos -- decisión deliberada: fallar alto
-        # y claro en vez de adivinar.
-        #
-        # NOTA DE ASUNCIÓN 2 (no bloqueante): origin se deja en
-        # ORIGIN_MANUAL -- BreakdownTicket.ORIGIN_CHOICES no tiene un
-        # valor "auto-generado" (punto 6 del diseño lo trata como
-        # metadato meramente informativo). Añadir un choice nuevo es
-        # una decisión de modelo aparte, a confirmar con Miguel Ángel;
-        # no se ha tocado el modelo en este bloque.
-        # ---
-        # ASSUMPTION NOTE 1 (non-blocking, to confirm with Miguel
-        # Ángel): BreakdownTicket.contact is a mandatory FK (no
-        # null=True in the model, chat/models.py). A ticket pregenerated
-        # from a work order or a delivery note has no real external
-        # Contact originating it -- it is resolved to the internal
-        # Contact of the company_user performing the action, same
-        # pattern already in use in whatsapp/tasks.py:172 and
-        # chat/views.py:523-524 (Contact.objects.filter(company_user=...,
-        # is_internal=True)). If that company_user has no linked
-        # internal Contact, this call fails with Contact.DoesNotExist
-        # instead of creating a ticket with invalid data -- deliberate
-        # decision: fail loud and clear instead of guessing.
-        #
-        # ASSUMPTION NOTE 2 (non-blocking): origin is left as
-        # ORIGIN_MANUAL -- BreakdownTicket.ORIGIN_CHOICES has no
-        # "auto-generated" value (design point 6 treats it as purely
-        # informative metadata). Adding a new choice is a separate model
-        # decision, to confirm with Miguel Ángel; the model is untouched
-        # in this block.
-        contact = Contact.objects.get(
-            company=company_user.company,
-            company_user=company_user,
-            is_internal=True,
-        )
+        contact = _resolve_ticket_contact(company_user)
 
         ticket = BreakdownTicket.objects.create(
             company=company_user.company,
             contact=contact,
             machine=machine,
             machine_raw=machine.code,
-            origin=BreakdownTicket.ORIGIN_MANUAL,
+            origin=BreakdownTicket.ORIGIN_AUTO,
             status=BreakdownTicket.STATUS_OPEN,
         )
         logger.info(
