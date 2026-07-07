@@ -48,9 +48,13 @@ _persist_and_broadcast(room, contact, body) -> None
     Crea el ChatMessage(INBOUND) y encola la tarea Celery de broadcast.
 """
 
+import datetime
 import logging
 from dataclasses import dataclass
 from typing import Optional
+
+from django.db import transaction
+from django.utils import timezone
 
 from ivr_config.models import Contact
 from chat.models import ChatRoom, ChatMessage
@@ -1775,4 +1779,328 @@ def _dispatch_breakdown_card(ticket, contact, to_number: str) -> None:
         "sala '%s'.",
         ticket.pk, sent, renewed, skipped, target_room.name,
     )
+
+
+# ---------------------------------------------------------------------------
+# RESOLUCIÓN DE BREAKDOWNTICKET PARA ANCLAJE DE REPUESTOS (H10 Paso 4-bis)
+# Diseño cerrado en S006 — ver ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md,
+# sección "Paso 4-bis". Esta sección implementa SOLO los puntos 1 y 2 de
+# los 12 del diseño: resolución de ticket por centro de gasto (máquina)
+# y el mutex get_or_create con select_for_update(). NO implementa
+# todavía: tipo_tarea (punto 4), transición de estado al grabar la
+# tarea (punto 8), ni el punto de invocación real desde el formulario
+# de parte o desde confirm_delivery_note() (bloques posteriores del
+# mismo diseño) — ambos siguen sin tocar tras este bloque.
+#
+# BREAKDOWNTICKET RESOLUTION FOR SPARE PARTS ANCHORING (H10 Paso 4-bis).
+# Design closed in S006 — see ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md,
+# "Paso 4-bis" section. This section implements ONLY points 1 and 2 of
+# the 12-point design: cost-centre (machine) ticket resolution and the
+# select_for_update() get_or_create mutex. NOT implemented yet:
+# tipo_tarea (point 4), status transition on task save (point 8), or
+# the real call site from the work-order form or confirm_delivery_note()
+# (later blocks of the same design) — both remain untouched after this
+# block.
+# ---------------------------------------------------------------------------
+
+# Ventana de reapertura del punto 1 del diseño: si no hay ningún ticket
+# abierto para la máquina pero sí uno cerrado dentro de esta ventana, se
+# ofrece reabrirlo antes de generar uno nuevo (cubre el caso viernes →
+# lunes de fin de semana/festivo).
+# ---
+# Reopening window from design point 1: if there is no open ticket for
+# the machine but one was closed within this window, offer to reopen it
+# before generating a new one (covers the Friday → Monday weekend/
+# holiday case).
+REOPEN_WINDOW_HOURS = 72
+
+
+@dataclass(frozen=True)
+class TicketResolution:
+    """
+    Immutable, read-only result of evaluating the breakdown-ticket-per-
+    machine resolution rules (Paso 4-bis, punto 1) for a given
+    fleet.MachineAsset. Never creates, attaches, reopens or modifies
+    anything — used by the caller (work-order form view or
+    confirm_delivery_note()) to decide whether the mechanic needs to
+    answer a question before calling get_or_create_ticket_for_machine().
+
+    action:
+      'ATTACH'       — exactly one OPEN/IN_PROGRESS ticket exists.
+                       `ticket` holds that candidate. No question needed.
+      'CREATE'       — no OPEN/IN_PROGRESS ticket, and nothing closed
+                       within REOPEN_WINDOW_HOURS. Safe to create
+                       directly, no question needed.
+      'ASK_REOPEN'   — no OPEN/IN_PROGRESS ticket, but `ticket` was
+                       closed within REOPEN_WINDOW_HOURS. Caller must
+                       ask the mechanic in plain text ("¿es la misma
+                       avería?") before calling
+                       get_or_create_ticket_for_machine(reopen=True/False).
+      'DISAMBIGUATE' — more than one OPEN/IN_PROGRESS ticket exists.
+                       `candidates` holds the short list. Caller must
+                       ask the mechanic to pick one before calling
+                       get_or_create_ticket_for_machine(chosen_ticket_pk=...).
+
+    ---
+
+    Resultado inmutable y de solo lectura de evaluar las reglas de
+    resolución de ticket de avería por máquina (Paso 4-bis, punto 1)
+    para un fleet.MachineAsset dado. Nunca crea, engancha, reabre ni
+    modifica nada — lo usa quien llama (vista de formulario de parte o
+    confirm_delivery_note()) para decidir si hace falta preguntar algo
+    al mecánico antes de llamar a get_or_create_ticket_for_machine().
+    """
+
+    action: str
+    ticket: Optional[object] = None
+    candidates: tuple = ()
+
+
+def resolve_ticket_for_machine(machine) -> "TicketResolution":
+    """
+    Read-only evaluation of Paso 4-bis punto 1 for `machine`
+    (fleet.MachineAsset). Never locks, never writes — safe to call as
+    many times as needed while rendering a form or a confirmation
+    screen. The definitive, race-free evaluation happens again inside
+    get_or_create_ticket_for_machine(), under the mutex.
+    ---
+    Evaluación de solo lectura del punto 1 de Paso 4-bis para `machine`
+    (fleet.MachineAsset). Nunca bloquea, nunca escribe — se puede
+    llamar tantas veces como haga falta al renderizar un formulario o
+    una pantalla de confirmación. La evaluación definitiva y libre de
+    condiciones de carrera vuelve a ocurrir dentro de
+    get_or_create_ticket_for_machine(), bajo el mutex.
+    """
+    from chat.models import BreakdownTicket
+
+    open_candidates = list(
+        BreakdownTicket.objects.filter(
+            machine=machine,
+            status__in=[
+                BreakdownTicket.STATUS_OPEN,
+                BreakdownTicket.STATUS_IN_PROGRESS,
+            ],
+        ).order_by("-created_at")
+    )
+
+    if len(open_candidates) == 1:
+        return TicketResolution(action="ATTACH", ticket=open_candidates[0])
+    if len(open_candidates) > 1:
+        return TicketResolution(action="DISAMBIGUATE", candidates=tuple(open_candidates))
+
+    # 0 candidatos abiertos -- mirar cerrados dentro de la ventana de
+    # reapertura. Si hubiera más de uno cerrado dentro de la ventana se
+    # ofrece el más reciente -- el diseño de S006 no contempla varios
+    # candidatos cerrados simultáneos; asunción declarada, no bloqueante,
+    # a confirmar con Miguel Ángel si llega a darse en la práctica.
+    # ---
+    # 0 open candidates -- look at those closed within the reopening
+    # window. If more than one were closed within the window, the most
+    # recent is offered -- the S006 design does not contemplate several
+    # simultaneous closed candidates; declared, non-blocking assumption,
+    # to confirm with Miguel Ángel if it happens in practice.
+    cutoff = timezone.now() - datetime.timedelta(hours=REOPEN_WINDOW_HOURS)
+    recently_closed = (
+        BreakdownTicket.objects.filter(
+            machine=machine,
+            status=BreakdownTicket.STATUS_CLOSED,
+            resolved_at__gte=cutoff,
+        )
+        .order_by("-resolved_at")
+        .first()
+    )
+    if recently_closed is not None:
+        return TicketResolution(action="ASK_REOPEN", ticket=recently_closed)
+
+    return TicketResolution(action="CREATE")
+
+
+def get_or_create_ticket_for_machine(
+    machine,
+    company_user,
+    reopen: Optional[bool] = None,
+    chosen_ticket_pk: Optional[int] = None,
+):
+    """
+    Atomic, mutex-protected resolution of Paso 4-bis puntos 1-2. Must
+    be called from within the same DB transaction as the task save
+    that needs the ticket (punto 11 del diseño — transacción única por
+    tarea); Django reuses the caller's transaction if one is already
+    open instead of nesting a new one.
+
+    Re-evaluates the resolution rules AFTER acquiring the mutex (a
+    select_for_update() lock on the MachineAsset row), never before —
+    the read-only preview from resolve_ticket_for_machine() can be
+    stale by the time the mechanic answers a question, so it is
+    recomputed here to close the race between two concurrent requests
+    for the same machine (punto 2 del diseño: cubre tanto la vía parte
+    como la vía albarán, y el caso de "ayuda" entre operarios).
+
+    Parameters:
+      machine          -- fleet.MachineAsset, the cost centre.
+      company_user     -- ivr_config.CompanyUser performing the action.
+                           Used to resolve the mandatory
+                           BreakdownTicket.contact field when a new
+                           ticket must be created (see assumption note
+                           below).
+      reopen           -- required (True/False) only when the
+                           re-evaluated state is ASK_REOPEN. Ignored
+                           otherwise.
+      chosen_ticket_pk -- required only when the re-evaluated state is
+                          DISAMBIGUATE. Ignored otherwise.
+
+    Returns the resolved chat.models.BreakdownTicket (existing,
+    reopened, or newly created).
+
+    Raises ValueError if the caller's answer doesn't match what the
+    re-evaluation actually needs (e.g. state is ASK_REOPEN but
+    reopen=None) — this is treated as a caller bug (stale UI state),
+    never silently guessed.
+
+    Raises ivr_config.models.Contact.DoesNotExist when a new ticket
+    must be created and company_user has no linked internal Contact —
+    see assumption note below; deliberately fails loud instead of
+    creating a ticket with invalid data.
+
+    ---
+
+    Resolución atómica y protegida por mutex de los puntos 1-2 del
+    diseño de Paso 4-bis. Debe llamarse dentro de la misma transacción
+    de BD que el guardado de la tarea que necesita el ticket (punto 11
+    del diseño — transacción única por tarea); Django reutiliza la
+    transacción de quien llama si ya hay una abierta, en vez de anidar
+    una nueva.
+
+    Reevalúa las reglas DESPUÉS de adquirir el mutex (bloqueo
+    select_for_update() sobre la fila de MachineAsset), nunca antes —
+    la vista previa de solo lectura de resolve_ticket_for_machine()
+    puede haber quedado obsoleta para cuando el mecánico responde una
+    pregunta, así que se recalcula aquí para cerrar la carrera entre
+    dos peticiones concurrentes sobre la misma máquina (punto 2 del
+    diseño: cubre tanto la vía parte como la vía albarán, y el caso de
+    "ayuda" entre operarios).
+    """
+    from chat.models import BreakdownTicket
+    from fleet.models import MachineAsset
+
+    with transaction.atomic():
+        # Mutex -- punto 2 del diseño. select_for_update() sobre la
+        # fila de MachineAsset cubre tanto la vía parte como la vía
+        # albarán, y el caso de "ayuda" entre operarios sobre la misma
+        # máquina, sin condiciones de carrera.
+        MachineAsset.objects.select_for_update().get(pk=machine.pk)
+
+        resolution = resolve_ticket_for_machine(machine)
+
+        if resolution.action == "ATTACH":
+            return resolution.ticket
+
+        if resolution.action == "DISAMBIGUATE":
+            if not chosen_ticket_pk:
+                raise ValueError(
+                    "get_or_create_ticket_for_machine(): hay más de un "
+                    "ticket abierto para la máquina pk=%s y no se indicó "
+                    "chosen_ticket_pk -- el llamante debe desambiguar "
+                    "antes de invocar esta función." % machine.pk
+                )
+            chosen = next(
+                (t for t in resolution.candidates if t.pk == chosen_ticket_pk),
+                None,
+            )
+            if chosen is None:
+                raise ValueError(
+                    "get_or_create_ticket_for_machine(): chosen_ticket_pk=%s "
+                    "no está entre los candidatos abiertos actuales para la "
+                    "máquina pk=%s -- posible carrera o estado de UI "
+                    "obsoleto." % (chosen_ticket_pk, machine.pk)
+                )
+            return chosen
+
+        if resolution.action == "ASK_REOPEN":
+            if reopen is None:
+                raise ValueError(
+                    "get_or_create_ticket_for_machine(): hay un ticket "
+                    "cerrado hace menos de %sh para la máquina pk=%s y no "
+                    "se indicó reopen -- el llamante debe preguntar al "
+                    "mecánico antes de invocar esta función." % (
+                        REOPEN_WINDOW_HOURS, machine.pk,
+                    )
+                )
+            if reopen:
+                ticket = resolution.ticket
+                ticket.status = BreakdownTicket.STATUS_IN_PROGRESS
+                ticket.resolved_at = None
+                ticket.resolved_by = None
+                ticket.save(update_fields=["status", "resolved_at", "resolved_by"])
+                logger.info(
+                    "# [H10-BIS] Ticket pk=%s reabierto para máquina pk=%s "
+                    "(estaba cerrado hace menos de %sh).",
+                    ticket.pk, machine.pk, REOPEN_WINDOW_HOURS,
+                )
+                return ticket
+            # reopen=False -- el mecánico confirma que no es la misma
+            # avería -- cae al bloque CREATE de abajo, igual que si
+            # resolution.action ya fuera 'CREATE'.
+
+        # resolution.action == 'CREATE', o 'ASK_REOPEN' con reopen=False.
+        # --------------------------------------------------------------
+        # NOTA DE ASUNCIÓN 1 (no bloqueante, a confirmar con Miguel
+        # Ángel): BreakdownTicket.contact es un FK obligatorio (sin
+        # null=True en el modelo, chat/models.py). Para un ticket
+        # pregenerado desde un parte o un albarán no hay un Contact
+        # externo real que lo origine -- se resuelve al Contact interno
+        # del company_user que ejecuta la acción, mismo patrón ya en uso
+        # en whatsapp/tasks.py:172 y chat/views.py:523-524
+        # (Contact.objects.filter(company_user=..., is_internal=True)).
+        # Si ese company_user no tiene Contact interno vinculado, esta
+        # llamada falla con Contact.DoesNotExist en vez de crear el
+        # ticket con datos inválidos -- decisión deliberada: fallar alto
+        # y claro en vez de adivinar.
+        #
+        # NOTA DE ASUNCIÓN 2 (no bloqueante): origin se deja en
+        # ORIGIN_MANUAL -- BreakdownTicket.ORIGIN_CHOICES no tiene un
+        # valor "auto-generado" (punto 6 del diseño lo trata como
+        # metadato meramente informativo). Añadir un choice nuevo es
+        # una decisión de modelo aparte, a confirmar con Miguel Ángel;
+        # no se ha tocado el modelo en este bloque.
+        # ---
+        # ASSUMPTION NOTE 1 (non-blocking, to confirm with Miguel
+        # Ángel): BreakdownTicket.contact is a mandatory FK (no
+        # null=True in the model, chat/models.py). A ticket pregenerated
+        # from a work order or a delivery note has no real external
+        # Contact originating it -- it is resolved to the internal
+        # Contact of the company_user performing the action, same
+        # pattern already in use in whatsapp/tasks.py:172 and
+        # chat/views.py:523-524 (Contact.objects.filter(company_user=...,
+        # is_internal=True)). If that company_user has no linked
+        # internal Contact, this call fails with Contact.DoesNotExist
+        # instead of creating a ticket with invalid data -- deliberate
+        # decision: fail loud and clear instead of guessing.
+        #
+        # ASSUMPTION NOTE 2 (non-blocking): origin is left as
+        # ORIGIN_MANUAL -- BreakdownTicket.ORIGIN_CHOICES has no
+        # "auto-generated" value (design point 6 treats it as purely
+        # informative metadata). Adding a new choice is a separate model
+        # decision, to confirm with Miguel Ángel; the model is untouched
+        # in this block.
+        contact = Contact.objects.get(
+            company=company_user.company,
+            company_user=company_user,
+            is_internal=True,
+        )
+
+        ticket = BreakdownTicket.objects.create(
+            company=company_user.company,
+            contact=contact,
+            machine=machine,
+            machine_raw=machine.code,
+            origin=BreakdownTicket.ORIGIN_MANUAL,
+            status=BreakdownTicket.STATUS_OPEN,
+        )
+        logger.info(
+            "# [H10-BIS] Ticket pk=%s pregenerado para máquina pk=%s "
+            "(sin candidato abierto ni cerrado reciente).",
+            ticket.pk, machine.pk,
+        )
+        return ticket
 
