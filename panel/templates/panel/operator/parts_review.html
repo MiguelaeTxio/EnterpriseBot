@@ -1,0 +1,43 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/parts_review.html #}
+{# H10 Paso 4-bis (bloque B). Pantalla posterior al guardado del parte -- solo se visita  #}
+{# cuando alguna tarea guardada quedo vinculada a un ticket de averia. Reutiliza el widget #}
+{# de consumo ya construido en S006 (workorder_spare_parts._consumption_widget.html), una  #}
+{# vez por cada tarea con ticket -- el mecanico confirma que repuestos pre-asignados se    #}
+{# han colocado de verdad. No es un paso bloqueante, se puede continuar sin confirmar nada.#}
+{% extends "panel/base.html" %}
+
+{% block title %}Confirmar repuestos — EnterpriseBot{% endblock %}
+
+{% block page_title %}Confirmar repuestos utilizados{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="alert alert-info">
+        Antes de continuar, confirma qué repuestos pre-asignados se han colocado de verdad
+        en cada tarea. Los que confirmes se descuentan del limbo de pre-asignación; los que
+        dejes sin tocar siguen reservados tal cual, para cuando retomes el ticket.
+    </div>
+
+    {% for line in lines_with_ticket %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold d-flex align-items-center justify-content-between">
+            <span>
+                Tarea {{ line.line_number }} —
+                {{ line.machine_asset.code|default:line.machine_raw|default:"Sin máquina" }}
+            </span>
+            <span class="badge bg-warning text-dark">
+                Ticket {{ line.breakdown_ticket.ticket_date_code|default:line.breakdown_ticket.pk }}
+                — {{ line.breakdown_ticket.get_status_display }}
+            </span>
+        </div>
+        <div class="card-body">
+            {% include "workorder_spare_parts/_consumption_widget.html" with entry_line=line %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <a href="{% url 'panel:operator_history' %}" class="btn btn-primary">
+        Continuar a Mi historial
+    </a>
+</div>
+{% endblock %}

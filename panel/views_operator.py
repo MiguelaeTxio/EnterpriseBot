@@ -3,7 +3,7 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_operator.py
 from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.db import models as django_models
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
@@ -4145,15 +4145,100 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         f"El informe Excel está disponible en la lista de partes."
         )
 
+        from django .urls import reverse as _reverse_co
 
+        # H10 Paso 4-bis (bloque B): si alguna tarea guardada quedo
+        # vinculada a un ticket de averia, desviar a la revision de
+        # repuestos pre-asignados antes de ir al historial -- el
+        # mecanico confirma cuales se han colocado de verdad. Solo
+        # ahora existe entry_line.pk real, por eso no puede hacerse
+        # antes de guardar (mismo hallazgo que motivo el pivote de
+        # S006).
+        _lines_with_ticket = [
+            _l .pk for _l in created_lines .values ()
+            if _l .breakdown_ticket_id is not None
+        ]
+        if _lines_with_ticket :
+            return redirect (
+            _reverse_co ("panel:operator_parts_review",kwargs ={"entry_pk":entry .pk }),
+            )
 
-
-
-
-        from django .urls import reverse as _reverse_co 
         if cu .role =="WORKSHOP":
             return redirect (_reverse_co ("panel:operator_history"))
         return redirect (_reverse_co ("panel:digital_work_order_list"))
+
+
+class WorkOrderEntryPartsReviewView(WorkshopRequiredMixin, View):
+    """
+    H10 Paso 4-bis (bloque B). Post-save screen shown only when at
+    least one WorkOrderEntryLine just created/edited carries a
+    breakdown_ticket -- reuses the consumption widget already built in
+    S006 (workorder_spare_parts._consumption_widget.html, Caso B
+    autoloaded via SparePartPreAssignedListView) per line, scoped to
+    each line's own ticket.
+
+    Confirmed by Miguel Ángel (2026-07-07): el mecánico que trabajó la
+    máquina es quien da conformidad a qué repuestos pre-asignados se
+    han colocado de verdad -- los confirmados se consumen (ya
+    materializado por SparePartConsumePreAssignedView, Caso B, sin
+    cambios aquí), los que no se confirman siguen en pre-asignación
+    tal cual, tanto si el ticket se cierra como si queda en pausa/en
+    curso para retomar más tarde. No es un paso bloqueante -- el
+    mecánico puede continuar sin confirmar nada si no toca ahora.
+
+    GET /panel/operator/form/<entry_pk>/repuestos/
+
+    ---
+
+    H10 Paso 4-bis (bloque B). Pantalla posterior al guardado, mostrada
+    solo cuando alguna WorkOrderEntryLine recién creada/editada lleva
+    un breakdown_ticket -- reutiliza el widget de consumo ya construido
+    en S006 (workorder_spare_parts._consumption_widget.html, Caso B
+    autocargado vía SparePartPreAssignedListView) por línea, acotado al
+    ticket propio de cada línea.
+
+    Confirmado por Miguel Ángel (2026-07-07): el mecánico que trabajó
+    la máquina es quien da conformidad a qué repuestos pre-asignados se
+    han colocado de verdad -- los confirmados se consumen (ya
+    materializado por SparePartConsumePreAssignedView, Caso B, sin
+    cambios aquí), los que no se confirman siguen en pre-asignación tal
+    cual, tanto si el ticket se cierra como si queda en pausa/en curso
+    para retomar más tarde. No es un paso bloqueante -- el mecánico
+    puede continuar sin confirmar nada si no toca ahora.
+
+    GET /panel/operator/form/<entry_pk>/repuestos/
+    """
+
+    template_name = "panel/operator/parts_review.html"
+
+    def get(self, request, entry_pk):
+        from work_order_processor.models import WorkOrderEntry
+
+        cu = request.user.company_user
+        entry = get_object_or_404(
+            WorkOrderEntry,
+            pk=entry_pk,
+            work_order__company=cu.company,
+        )
+        lines_with_ticket = list(
+            entry.lines
+            .filter(breakdown_ticket__isnull=False)
+            .select_related("breakdown_ticket", "machine_asset")
+            .order_by("line_number")
+        )
+        if not lines_with_ticket:
+            # Estado de URL obsoleto (p. ej. se quitó el ticket de
+            # todas las líneas tras un reintento) -- no hay nada que
+            # revisar, seguir al historial directamente.
+            from django.urls import reverse as _reverse_prv
+            return redirect(_reverse_prv("panel:operator_history"))
+
+        return render(request, self.template_name, {
+            "company_user": cu,
+            "active_nav": "operator_dashboard",
+            "entry": entry,
+            "lines_with_ticket": lines_with_ticket,
+        })
 
 
 class WorkOrderEntryHistoryView (WorkshopRequiredMixin ,View ):

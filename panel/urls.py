@@ -66,6 +66,7 @@ from panel.views import (
     WorkOrderEntryUploadView,
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
+    WorkOrderEntryPartsReviewView,
     WorkOrderEntryHistoryView,
     WorkOrderAdminHistoryView,
     WorkerAbsenceCreateView,
@@ -218,6 +219,9 @@ urlpatterns = [
     # Operator form edit — Edición de parte digital no revisado desde Mi historial.
     # S019 — Hito 7 (2026-05-11)
     path("operator/form/<int:wo_pk>/edit/", WorkOrderEntryFormView.as_view(), name="operator_form_edit"),
+    # Revisión de repuestos pre-asignados tras guardar el parte (H10 Paso 4-bis, bloque B).
+    # Solo se visita si alguna tarea guardada quedó vinculada a un ticket de avería.
+    path("operator/form/<int:entry_pk>/repuestos/", WorkOrderEntryPartsReviewView.as_view(), name="operator_parts_review"),
 
     # Operator merge — Resolucion de conflicto de parte duplicado (rol WORKSHOP y ADMIN).
     # Primera Accion — Hito 7 Sesion 018 (2026-05-11)
