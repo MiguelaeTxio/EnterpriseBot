@@ -583,19 +583,11 @@ def confirm_delivery_note(delivery_note, company_user):
     status=WAREHOUSE, sums stock_quantity, and records a
     StockMovement IN.
 
-    MACHINE lines: resolves the target BreakdownTicket via the shared
-    Paso 4-bis mechanism (chat.services.get_or_create_ticket_for_machine),
-    the same one used from the work-order form -- creates a
-    SparePartEntry with status=PRE_ASSIGNED (limbo), always attached
-    to a ticket (never directly to the machine -- design point 12:
-    the old "MACHINE sin ticket -> directo a la máquina" branch is
-    gone), and records a StockMovement IN. Lines whose ticket
-    resolution needs a human decision (more than one open ticket, or
-    one closed within the reopening window) are left UNASSIGNED
-    instead of guessing -- confirm_delivery_note() processes a whole
-    delivery note in one batch, with no interactive turn available to
-    ask the mechanic mid-loop; counted separately as
-    needs_ticket_decision so the confirming user knows why.
+    MACHINE lines: looks up an open BreakdownTicket (OPEN /
+    IN_PROGRESS) for the target machine; creates a SparePartEntry
+    with status=PRE_ASSIGNED (limbo), attached to the ticket if one
+    is open or directly to the machine otherwise, and records a
+    StockMovement IN.
 
     All entries created here are countable (is_uncountable=False) —
     supplier delivery notes always state a quantity; uncountable
@@ -604,8 +596,7 @@ def confirm_delivery_note(delivery_note, company_user):
 
     Sets delivery_note.status = 'ASSIGNED' on completion.
 
-    Returns a dict with counts: warehouse, pre_assigned, unassigned,
-    needs_ticket_decision.
+    Returns a dict with counts: warehouse, pre_assigned, unassigned.
 
     ---
 
@@ -619,20 +610,11 @@ def confirm_delivery_note(delivery_note, company_user):
     status=WAREHOUSE, suma stock_quantity, y registra un
     StockMovement IN.
 
-    Líneas MACHINE: resuelve el `BreakdownTicket` destino vía el
-    mecanismo compartido de Paso 4-bis
-    (chat.services.get_or_create_ticket_for_machine), el mismo que se
-    usa desde el formulario de parte -- crea un SparePartEntry con
-    status=PRE_ASSIGNED (limbo), siempre vinculado a un ticket (nunca
-    directamente a la máquina -- punto 12 del diseño: la rama antigua
-    "MACHINE sin ticket -> directo a la máquina" desaparece), y
-    registra un StockMovement IN. Las líneas cuya resolución de ticket
-    necesita una decisión humana (más de un ticket abierto, o uno
-    cerrado dentro de la ventana de reapertura) se dejan UNASSIGNED en
-    vez de adivinar -- confirm_delivery_note() procesa un albarán
-    entero de una vez, sin turno interactivo para preguntarle al
-    mecánico a mitad del bucle; se cuentan aparte como
-    needs_ticket_decision para que quien confirma sepa por qué.
+    Líneas MACHINE: busca un BreakdownTicket abierto (OPEN /
+    IN_PROGRESS) para la máquina destino; crea un SparePartEntry con
+    status=PRE_ASSIGNED (limbo), vinculado al ticket si hay uno
+    abierto o directamente a la máquina en caso contrario, y
+    registra un StockMovement IN.
 
     Todas las entradas creadas aquí son contables
     (is_uncountable=False) — los albaranes de proveedor siempre
@@ -643,22 +625,14 @@ def confirm_delivery_note(delivery_note, company_user):
     Al finalizar establece delivery_note.status = 'ASSIGNED'.
 
     Devuelve un diccionario con los contadores: warehouse,
-    pre_assigned, unassigned, needs_ticket_decision.
+    pre_assigned, unassigned.
     """
-    from chat.services import (
-        get_or_create_ticket_for_machine,
-        resolve_ticket_for_machine,
-    )
+    from chat.models import BreakdownTicket
 
     from .models import SparePartEntry, StockMovement
 
     company = delivery_note.company
-    counts = {
-        'warehouse': 0,
-        'pre_assigned': 0,
-        'unassigned': 0,
-        'needs_ticket_decision': 0,
-    }
+    counts = {'warehouse': 0, 'pre_assigned': 0, 'unassigned': 0}
 
     for line in delivery_note.lines.all():
         quantity = line.quantity or Decimal('0')
@@ -710,21 +684,10 @@ def confirm_delivery_note(delivery_note, company_user):
             counts['warehouse'] += 1
 
         elif line.assignment_type == 'MACHINE' and line.machine is not None:
-            preview = resolve_ticket_for_machine(line.machine)
-
-            if preview.action in ('DISAMBIGUATE', 'ASK_REOPEN'):
-                # Decisión no bloqueante declarada: confirm_delivery_note()
-                # procesa el albarán entero en un solo lote, sin turno
-                # interactivo para preguntarle al mecánico a mitad del
-                # bucle -- se deja la línea sin asignar en vez de
-                # desambiguar/reabrir por cuenta propia. A confirmar con
-                # Miguel Ángel si conviene en su lugar superficiar la
-                # pregunta en DeliveryNoteConfirmView antes de confirmar
-                # todo el albarán.
-                counts['needs_ticket_decision'] += 1
-                continue
-
-            ticket = get_or_create_ticket_for_machine(line.machine, company_user)
+            ticket = BreakdownTicket.objects.filter(
+                machine=line.machine,
+                status__in=['OPEN', 'IN_PROGRESS'],
+            ).first()
 
             entry = SparePartEntry.objects.create(
                 company=company,
@@ -733,7 +696,7 @@ def confirm_delivery_note(delivery_note, company_user):
                 description=line.description,
                 is_uncountable=False,
                 status=SparePartEntry.STATUS_PRE_ASSIGNED,
-                machine=None,
+                machine=None if ticket else line.machine,
                 breakdown_ticket=ticket,
                 pre_assigned_at=now(),
                 origin_type=SparePartEntry.ORIGIN_SUPPLIER,

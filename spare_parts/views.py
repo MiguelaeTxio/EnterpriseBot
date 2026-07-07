@@ -381,21 +381,12 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
             f'almacén, {counts["pre_assigned"]} línea(s) '
             f'pre-asignada(s) a máquina/ticket.'
         )
-        warning_parts = []
         if counts['unassigned']:
-            warning_parts.append(
-                f'{counts["unassigned"]} línea(s) quedaron sin '
-                f'asignar (código no reconocido)'
+            summary += (
+                f' {counts["unassigned"]} línea(s) quedaron sin '
+                f'asignar (código no reconocido) -- revísalas '
+                f'manualmente.'
             )
-        if counts['needs_ticket_decision']:
-            warning_parts.append(
-                f'{counts["needs_ticket_decision"]} línea(s) necesitan '
-                f'una decisión manual sobre el ticket de avería (hay '
-                f'más de uno abierto para esa máquina, o uno cerrado '
-                f'recientemente)'
-            )
-        if warning_parts:
-            summary += ' ' + '; '.join(warning_parts).capitalize() + ' -- revísalas manualmente.'
             messages.warning(request, summary)
         else:
             messages.success(request, summary)
