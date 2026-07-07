@@ -380,7 +380,11 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         """
         Builds the three querysets (pending / reviewed / error) scoped to
         DIGITAL and GENERATED sources and renders digital_list.html.
-        Optional GET filters operator_pk and period_pk are applied when present.
+        Optional GET filters operator_pks (multi-value, 2026-07-07 --
+        upgraded from single operator_pk at Miguel Ángel's request: sum
+        horas extra/dietas for a chosen subset of operators directly in
+        the list, without exporting to Excel) and period_pk are applied
+        when present.
         The default active tab is "pending" if wo_pending has results;
         otherwise "reviewed".
 
@@ -395,9 +399,13 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
 
         Construye los tres querysets (pendiente / revisados / error) acotados
         a orígenes DIGITAL y GENERATED y renderiza digital_list.html.
-        Los filtros GET opcionales operator_pk y period_pk se aplican cuando
-        están presentes. La pestaña activa por defecto es "pending" si
-        wo_pending tiene resultados; en caso contrario "reviewed".
+        Los filtros GET opcionales operator_pks (multivalor, 2026-07-07 --
+        ampliado desde operator_pk único a petición de Miguel Ángel: sumar
+        horas extra/dietas de un subconjunto de operarios elegido
+        directamente en el listado, sin exportar a Excel) y period_pk se
+        aplican cuando están presentes. La pestaña activa por defecto es
+        "pending" si wo_pending tiene resultados; en caso contrario
+        "reviewed".
 
         Anota horas_totales/horas_extra/dietas en cada WorkOrder de
         wo_pending/wo_reviewed (2026-07-07, mismo criterio que
@@ -416,10 +424,12 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
 
 
 
-        try :
-            operator_pk =int (request .GET .get ("operator_pk",""))
-        except (ValueError ,TypeError ):
-            operator_pk =None 
+        operator_pks =[]
+        for _raw_pk in request .GET .getlist ("operator_pks"):
+            try :
+                operator_pks .append (int (_raw_pk ))
+            except (ValueError ,TypeError ):
+                continue 
 
         try :
             period_pk =int (request .GET .get ("period_pk",""))
@@ -448,8 +458,8 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
 
 
 
-        if operator_pk :
-            _base =_base .filter (uploaded_by__pk =operator_pk )
+        if operator_pks :
+            _base =_base .filter (uploaded_by__pk__in =operator_pks )
 
 
 
@@ -545,7 +555,7 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         "active_tab":active_tab ,
         "operators":operators ,
         "periods":periods ,
-        "operator_pk":operator_pk ,
+        "operator_pks":operator_pks ,
         "period_pk":period_pk ,
         }
         return render (request ,self .template_name ,context )
