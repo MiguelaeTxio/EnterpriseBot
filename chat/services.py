@@ -1819,36 +1819,66 @@ REOPEN_WINDOW_HOURS = 72
 class TicketResolution:
     """
     Immutable, read-only result of evaluating the breakdown-ticket-per-
-    machine resolution rules (Paso 4-bis, punto 1) for a given
-    fleet.MachineAsset. Never creates, attaches, reopens or modifies
-    anything — used by the caller (work-order form view or
-    confirm_delivery_note()) to decide whether the mechanic needs to
-    answer a question before calling get_or_create_ticket_for_machine().
+    machine resolution rules (Paso 4-bis, punto 1, revisado en S007 a
+    petición de Miguel Ángel) for a given fleet.MachineAsset. Never
+    creates, attaches, reopens or modifies anything — used by the
+    caller (work-order form view or confirm_delivery_note()) to decide
+    what to tell the mechanic before calling
+    get_or_create_ticket_for_machine().
 
     action:
-      'ATTACH'       — exactly one OPEN/IN_PROGRESS ticket exists.
-                       `ticket` holds that candidate. No question needed.
-      'CREATE'       — no OPEN/IN_PROGRESS ticket, and nothing closed
-                       within REOPEN_WINDOW_HOURS. Safe to create
-                       directly, no question needed.
-      'ASK_REOPEN'   — no OPEN/IN_PROGRESS ticket, but `ticket` was
-                       closed within REOPEN_WINDOW_HOURS. Caller must
-                       ask the mechanic in plain text ("¿es la misma
-                       avería?") before calling
-                       get_or_create_ticket_for_machine(reopen=True/False).
-      'DISAMBIGUATE' — more than one OPEN/IN_PROGRESS ticket exists.
-                       `candidates` holds the short list. Caller must
-                       ask the mechanic to pick one before calling
-                       get_or_create_ticket_for_machine(chosen_ticket_pk=...).
+      'CREATE'  — no OPEN/IN_PROGRESS/PAUSED ticket for this machine,
+                  and nothing closed within REOPEN_WINDOW_HOURS. No
+                  choice possible — the caller must simply NOTIFY the
+                  mechanic a new ticket will be generated (no question,
+                  per Miguel Ángel: "no hay elección cuando no haya").
+      'ASK_REOPEN' — no OPEN/IN_PROGRESS/PAUSED ticket, but `ticket`
+                  was closed within REOPEN_WINDOW_HOURS. Caller must
+                  ask ("¿es la misma avería?") before calling
+                  get_or_create_ticket_for_machine(reopen=True/False).
+      'CHOOSE'  — one or more OPEN/IN_PROGRESS/PAUSED tickets exist
+                  for this machine (`candidates` holds them, length
+                  1+). Revised behaviour (S007): even with a single
+                  candidate there is no silent auto-attach anymore —
+                  the caller must always ask the mechanic to confirm
+                  ("¿esta tarea es del ticket [X]?") with an explicit
+                  "es una avería nueva" option alongside the
+                  candidate(s), before calling
+                  get_or_create_ticket_for_machine(chosen_ticket_pk=...)
+                  or (..., create_new=True).
 
     ---
 
     Resultado inmutable y de solo lectura de evaluar las reglas de
-    resolución de ticket de avería por máquina (Paso 4-bis, punto 1)
-    para un fleet.MachineAsset dado. Nunca crea, engancha, reabre ni
-    modifica nada — lo usa quien llama (vista de formulario de parte o
-    confirm_delivery_note()) para decidir si hace falta preguntar algo
-    al mecánico antes de llamar a get_or_create_ticket_for_machine().
+    resolución de ticket de avería por máquina (Paso 4-bis, punto 1,
+    revisado en S007 a petición de Miguel Ángel) para un
+    fleet.MachineAsset dado. Nunca crea, engancha, reabre ni modifica
+    nada — lo usa quien llama (vista de formulario de parte o
+    confirm_delivery_note()) para decidir qué decirle al mecánico
+    antes de llamar a get_or_create_ticket_for_machine().
+
+    action:
+      'CREATE'  — no hay ningún ticket OPEN/IN_PROGRESS/PAUSED para
+                  esta máquina, ni nada cerrado dentro de
+                  REOPEN_WINDOW_HOURS. Sin elección posible — el
+                  llamante solo debe AVISAR al mecánico de que se va a
+                  generar un ticket nuevo (sin pregunta, según Miguel
+                  Ángel: "no hay elección cuando no haya").
+      'ASK_REOPEN' — no hay ticket OPEN/IN_PROGRESS/PAUSED, pero
+                  `ticket` se cerró dentro de REOPEN_WINDOW_HOURS. El
+                  llamante debe preguntar ("¿es la misma avería?")
+                  antes de llamar a
+                  get_or_create_ticket_for_machine(reopen=True/False).
+      'CHOOSE'  — hay uno o más tickets OPEN/IN_PROGRESS/PAUSED para
+                  esta máquina (`candidates` los contiene, longitud
+                  1+). Comportamiento revisado (S007): incluso con un
+                  único candidato ya no hay enganche silencioso — el
+                  llamante siempre debe preguntar al mecánico
+                  ("¿esta tarea es del ticket [X]?") con una opción
+                  explícita "es una avería nueva" junto al/los
+                  candidato(s), antes de llamar a
+                  get_or_create_ticket_for_machine(chosen_ticket_pk=...)
+                  o (..., create_new=True).
     """
 
     action: str
@@ -1858,18 +1888,31 @@ class TicketResolution:
 
 def resolve_ticket_for_machine(machine) -> "TicketResolution":
     """
-    Read-only evaluation of Paso 4-bis punto 1 for `machine`
-    (fleet.MachineAsset). Never locks, never writes — safe to call as
-    many times as needed while rendering a form or a confirmation
-    screen. The definitive, race-free evaluation happens again inside
-    get_or_create_ticket_for_machine(), under the mutex.
+    Read-only evaluation of Paso 4-bis punto 1 (revisado en S007) for
+    `machine` (fleet.MachineAsset). Never locks, never writes — safe
+    to call as many times as needed while rendering a form or a
+    confirmation screen. The definitive, race-free evaluation happens
+    again inside get_or_create_ticket_for_machine(), under the mutex.
+
+    PAUSED counts as an open candidate (S007, confirmado por Miguel
+    Ángel): un ticket se pausa cuando el mecánico se reasigna a una
+    avería de otra máquina con más prioridad, y sigue siendo un
+    candidato real a retomar en esta máquina — no un estado terminal
+    como CLOSED.
     ---
-    Evaluación de solo lectura del punto 1 de Paso 4-bis para `machine`
-    (fleet.MachineAsset). Nunca bloquea, nunca escribe — se puede
-    llamar tantas veces como haga falta al renderizar un formulario o
-    una pantalla de confirmación. La evaluación definitiva y libre de
-    condiciones de carrera vuelve a ocurrir dentro de
-    get_or_create_ticket_for_machine(), bajo el mutex.
+    Evaluación de solo lectura del punto 1 de Paso 4-bis (revisado en
+    S007) para `machine` (fleet.MachineAsset). Nunca bloquea, nunca
+    escribe — se puede llamar tantas veces como haga falta al
+    renderizar un formulario o una pantalla de confirmación. La
+    evaluación definitiva y libre de condiciones de carrera vuelve a
+    ocurrir dentro de get_or_create_ticket_for_machine(), bajo el
+    mutex.
+
+    PAUSED cuenta como candidato abierto (S007, confirmado por Miguel
+    Ángel): un ticket se pausa cuando el mecánico se reasigna a una
+    avería de otra máquina con más prioridad, y sigue siendo un
+    candidato real a retomar en esta máquina — no es un estado
+    terminal como CLOSED.
     """
     from chat.models import BreakdownTicket
 
@@ -1879,26 +1922,27 @@ def resolve_ticket_for_machine(machine) -> "TicketResolution":
             status__in=[
                 BreakdownTicket.STATUS_OPEN,
                 BreakdownTicket.STATUS_IN_PROGRESS,
+                BreakdownTicket.STATUS_PAUSED,
             ],
         ).order_by("-created_at")
     )
 
-    if len(open_candidates) == 1:
-        return TicketResolution(action="ATTACH", ticket=open_candidates[0])
-    if len(open_candidates) > 1:
-        return TicketResolution(action="DISAMBIGUATE", candidates=tuple(open_candidates))
+    if open_candidates:
+        return TicketResolution(action="CHOOSE", candidates=tuple(open_candidates))
 
-    # 0 candidatos abiertos -- mirar cerrados dentro de la ventana de
-    # reapertura. Si hubiera más de uno cerrado dentro de la ventana se
-    # ofrece el más reciente -- el diseño de S006 no contempla varios
-    # candidatos cerrados simultáneos; asunción declarada, no bloqueante,
-    # a confirmar con Miguel Ángel si llega a darse en la práctica.
+    # 0 candidatos abiertos/pausados -- mirar cerrados dentro de la
+    # ventana de reapertura. Si hubiera más de uno cerrado dentro de la
+    # ventana se ofrece el más reciente -- el diseño de S006 no
+    # contempla varios candidatos cerrados simultáneos; asunción
+    # declarada, no bloqueante, a confirmar con Miguel Ángel si llega a
+    # darse en la práctica.
     # ---
-    # 0 open candidates -- look at those closed within the reopening
-    # window. If more than one were closed within the window, the most
-    # recent is offered -- the S006 design does not contemplate several
-    # simultaneous closed candidates; declared, non-blocking assumption,
-    # to confirm with Miguel Ángel if it happens in practice.
+    # 0 open/paused candidates -- look at those closed within the
+    # reopening window. If more than one were closed within the
+    # window, the most recent is offered -- the S006 design does not
+    # contemplate several simultaneous closed candidates; declared,
+    # non-blocking assumption, to confirm with Miguel Ángel if it
+    # happens in practice.
     cutoff = timezone.now() - datetime.timedelta(hours=REOPEN_WINDOW_HOURS)
     recently_closed = (
         BreakdownTicket.objects.filter(
@@ -2000,13 +2044,14 @@ def get_or_create_ticket_for_machine(
     company_user,
     reopen: Optional[bool] = None,
     chosen_ticket_pk: Optional[int] = None,
+    create_new: bool = False,
 ):
     """
-    Atomic, mutex-protected resolution of Paso 4-bis puntos 1-2. Must
-    be called from within the same DB transaction as the task save
-    that needs the ticket (punto 11 del diseño — transacción única por
-    tarea); Django reuses the caller's transaction if one is already
-    open instead of nesting a new one.
+    Atomic, mutex-protected resolution of Paso 4-bis puntos 1-2
+    (revisado en S007). Must be called from within the same DB
+    transaction as the task save that needs the ticket (punto 11 del
+    diseño — transacción única por tarea); Django reuses the caller's
+    transaction if one is already open instead of nesting a new one.
 
     Re-evaluates the resolution rules AFTER acquiring the mutex (a
     select_for_update() lock on the MachineAsset row), never before —
@@ -2025,27 +2070,36 @@ def get_or_create_ticket_for_machine(
                            ticket must be created.
       reopen           -- required (True/False) only when the
                            re-evaluated state is ASK_REOPEN. Ignored
-                           otherwise.
-      chosen_ticket_pk -- required only when the re-evaluated state is
-                          DISAMBIGUATE. Ignored otherwise.
+                           otherwise. False means "no es la misma
+                           avería" -- falls through to CREATE, same as
+                           create_new=True would for CHOOSE.
+      chosen_ticket_pk -- when the re-evaluated state is CHOOSE, pass
+                          this to attach to that specific candidate
+                          (mechanic confirmed "sí, es este ticket").
+                          Mutually exclusive with create_new.
+      create_new       -- when the re-evaluated state is CHOOSE, pass
+                          True to force a brand new ticket even though
+                          candidate(s) exist (mechanic confirmed "es
+                          una avería nueva"). Mutually exclusive with
+                          chosen_ticket_pk.
 
     Returns the resolved chat.models.BreakdownTicket (existing,
     reopened, or newly created). Never fails for lack of a Contact —
     _resolve_ticket_contact() self-heals by creating one if needed.
 
     Raises ValueError if the caller's answer doesn't match what the
-    re-evaluation actually needs (e.g. state is ASK_REOPEN but
-    reopen=None) — this is treated as a caller bug (stale UI state),
-    never silently guessed.
+    re-evaluation actually needs (e.g. state is CHOOSE but neither
+    chosen_ticket_pk nor create_new was given, or both were) — this is
+    treated as a caller bug (stale UI state), never silently guessed.
 
     ---
 
     Resolución atómica y protegida por mutex de los puntos 1-2 del
-    diseño de Paso 4-bis. Debe llamarse dentro de la misma transacción
-    de BD que el guardado de la tarea que necesita el ticket (punto 11
-    del diseño — transacción única por tarea); Django reutiliza la
-    transacción de quien llama si ya hay una abierta, en vez de anidar
-    una nueva.
+    diseño de Paso 4-bis (revisado en S007). Debe llamarse dentro de
+    la misma transacción de BD que el guardado de la tarea que
+    necesita el ticket (punto 11 del diseño — transacción única por
+    tarea); Django reutiliza la transacción de quien llama si ya hay
+    una abierta, en vez de anidar una nueva.
 
     Reevalúa las reglas DESPUÉS de adquirir el mutex (bloqueo
     select_for_update() sobre la fila de MachineAsset), nunca antes —
@@ -2068,31 +2122,34 @@ def get_or_create_ticket_for_machine(
 
         resolution = resolve_ticket_for_machine(machine)
 
-        if resolution.action == "ATTACH":
-            return resolution.ticket
-
-        if resolution.action == "DISAMBIGUATE":
-            if not chosen_ticket_pk:
+        if resolution.action == "CHOOSE":
+            if bool(chosen_ticket_pk) == bool(create_new):
                 raise ValueError(
-                    "get_or_create_ticket_for_machine(): hay más de un "
-                    "ticket abierto para la máquina pk=%s y no se indicó "
-                    "chosen_ticket_pk -- el llamante debe desambiguar "
-                    "antes de invocar esta función." % machine.pk
+                    "get_or_create_ticket_for_machine(): hay %d ticket(s) "
+                    "abierto(s)/pausado(s) para la máquina pk=%s -- el "
+                    "llamante debe pasar exactamente uno de "
+                    "chosen_ticket_pk o create_new=True (nunca ambos, "
+                    "nunca ninguno) tras preguntar al mecánico." % (
+                        len(resolution.candidates), machine.pk,
+                    )
                 )
-            chosen = next(
-                (t for t in resolution.candidates if t.pk == chosen_ticket_pk),
-                None,
-            )
-            if chosen is None:
-                raise ValueError(
-                    "get_or_create_ticket_for_machine(): chosen_ticket_pk=%s "
-                    "no está entre los candidatos abiertos actuales para la "
-                    "máquina pk=%s -- posible carrera o estado de UI "
-                    "obsoleto." % (chosen_ticket_pk, machine.pk)
+            if create_new:
+                pass  # cae al bloque CREATE de abajo, igual que ASK_REOPEN con reopen=False.
+            else:
+                chosen = next(
+                    (t for t in resolution.candidates if t.pk == chosen_ticket_pk),
+                    None,
                 )
-            return chosen
+                if chosen is None:
+                    raise ValueError(
+                        "get_or_create_ticket_for_machine(): chosen_ticket_pk=%s "
+                        "no está entre los candidatos actuales (abiertos/"
+                        "pausados) para la máquina pk=%s -- posible carrera "
+                        "o estado de UI obsoleto." % (chosen_ticket_pk, machine.pk)
+                    )
+                return chosen
 
-        if resolution.action == "ASK_REOPEN":
+        elif resolution.action == "ASK_REOPEN":
             if reopen is None:
                 raise ValueError(
                     "get_or_create_ticket_for_machine(): hay un ticket "
@@ -2115,10 +2172,10 @@ def get_or_create_ticket_for_machine(
                 )
                 return ticket
             # reopen=False -- el mecánico confirma que no es la misma
-            # avería -- cae al bloque CREATE de abajo, igual que si
-            # resolution.action ya fuera 'CREATE'.
+            # avería -- cae al bloque CREATE de abajo.
 
-        # resolution.action == 'CREATE', o 'ASK_REOPEN' con reopen=False.
+        # resolution.action == 'CREATE', o 'CHOOSE' con create_new=True,
+        # o 'ASK_REOPEN' con reopen=False.
         contact = _resolve_ticket_contact(company_user)
 
         ticket = BreakdownTicket.objects.create(
@@ -2131,8 +2188,8 @@ def get_or_create_ticket_for_machine(
         )
         logger.info(
             "# [H10-BIS] Ticket pk=%s pregenerado para máquina pk=%s "
-            "(sin candidato abierto ni cerrado reciente).",
-            ticket.pk, machine.pk,
+            "(resolución: %s).",
+            ticket.pk, machine.pk, resolution.action,
         )
         return ticket
 
