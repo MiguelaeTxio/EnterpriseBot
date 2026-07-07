@@ -37,7 +37,7 @@
 {#   "suppliers"          → Proveedores (incl. reciclado interno) (ADMIN, SUPERVISOR) #}
 {#   "machine_history"    → Historial de Máquina             (WORKSHOP, ADMIN)      #}
 {#   "workorder_history" → Mis partes                        (WORKSHOP, WORKSHOPBOSS, ADMIN) #}
-{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS -- lectura para taller, edición solo ADMIN/SUPERVISOR) (Hito 10 Paso 4) #}
+{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (Administración) / Almacén (Mecánicos) -- misma vista (ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS -- lectura para taller, edición solo ADMIN/SUPERVISOR) (Hito 10 Paso 4, reorganizado 2026-07-07) #}
 {# ================================================================================ #}
 <ul class="nav flex-column mt-2" id="sidebar-accordion">
     {# ------------------------------------------------------------------ #}
@@ -243,6 +243,20 @@
                             <i class="bi bi-shop"></i>Proveedores
                         </a>
                     </li>
+                    {# Catálogo de repuestos — movido aquí desde Mecánicos (2026-07-07,   #}
+                    {# a petición de Miguel Ángel): es gestión/CRUD del catálogo, tarea    #}
+                    {# administrativa. Mecánicos conserva su propio acceso de consulta    #}
+                    {# bajo "Almacén", mismo destino, ver sección Mecánicos abajo.         #}
+                    {# Spare parts catalog — moved here from Mechanics (2026-07-07, at    #}
+                    {# Miguel Ángel's request): it's catalog management/CRUD, an          #}
+                    {# administrative task. Mechanics keep their own read-only access     #}
+                    {# under "Almacén", same destination, see Mechanics section below.    #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
+                           href="{% url 'workorder_spare_parts:catalog_list' %}">
+                            <i class="bi bi-boxes"></i>Catálogo de repuestos
+                        </a>
+                    </li>
                     {# Configuración empresa — solo ADMIN / Company settings — ADMIN only #}
                     {% if company_user.role == 'ADMIN' %}
                         <li class="nav-item">
@@ -360,15 +374,27 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Catálogo de repuestos — ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS      #}
-                    {# (Hito 10, Paso 4). Lectura para WORKSHOP/WORKSHOPBOSS, edición         #}
-                    {# solo ADMIN/SUPERVISOR (gestionado en la vista/plantilla, no aquí).     #}
-                    {# Spare parts catalog — ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS        #}
+                    {# Almacén — antes "Catálogo de repuestos" aquí mismo, renombrado y      #}
+                    {# reorganizado 2026-07-07 a petición de Miguel Ángel: el CRUD/gestión    #}
+                    {# vive en Administración (mismo destino); aquí es la consulta de         #}
+                    {# almacén que usan los mecánicos día a día. Misma vista, mismo permiso   #}
+                    {# de lectura ya abierto a WORKSHOP/WORKSHOPBOSS desde el commit 2bb5c81.  #}
+                    {# NOTA: cuando se construya el Paso 5 de H10 (vista de almacén y         #}
+                    {# movimientos, limbo de pre-asignación) este enlace debería apuntar ahí   #}
+                    {# en vez de al catálogo -- pendiente, hoja de ruta H10 Paso 5.            #}
+                    {# Almacén (Warehouse) — previously "Catálogo de repuestos" here,         #}
+                    {# renamed and reorganised 2026-07-07 at Miguel Ángel's request: CRUD/     #}
+                    {# management now lives in Administración (same destination); this is     #}
+                    {# the day-to-day warehouse lookup mechanics use. Same view, same read     #}
+                    {# permission already open to WORKSHOP/WORKSHOPBOSS since commit 2bb5c81.  #}
+                    {# NOTE: once H10 Paso 5 (warehouse/stock-movements view, pre-assignment   #}
+                    {# limbo) is built, this link should point there instead -- pending, H10   #}
+                    {# roadmap Paso 5.                                                         #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
                                href="{% url 'workorder_spare_parts:catalog_list' %}">
-                                <i class="bi bi-boxes"></i>Catálogo de repuestos
+                                <i class="bi bi-archive-fill"></i>Almacén
                             </a>
                         </li>
                     {% endif %}
