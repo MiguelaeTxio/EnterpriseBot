@@ -138,7 +138,7 @@ _TWILIO_EMAIL_API_URL = 'https://comms.twilio.com/v1/Emails'
 # _RECIPIENT_EMAIL = 'administracion@gruasalvarez.com' once resolved.
 _SENDER_EMAIL = 'no-reply@campustudionline.com'
 _SENDER_NAME = 'EnterpriseBot'
-_RECIPIENT_EMAIL = 'nummenor@proton.me'  # TEMPORAL -- ver nota arriba, revertir a administracion@gruasalvarez.com
+_RECIPIENT_EMAIL = 'nummenor@gmail.com'  # TEMPORAL -- ver nota arriba, revertir a administracion@gruasalvarez.com
 _RECIPIENT_NAME = 'Prueba temporal S005'
 
 _MIME_TYPES = {
