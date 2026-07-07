@@ -72,4 +72,51 @@
 </div>
 <input type="hidden" name="entrada_{{ block_idx }}_ticket_action" value="choose">
 {% endif %}
+
+{% if pre_assigned_parts %}
+<div class="border rounded p-2 mt-3">
+    <p class="mb-2 small">
+        <i class="bi bi-box-seam me-1 text-primary"></i>
+        Este centro de gasto tiene los siguientes repuestos pre-asignados.
+        Marca los que se han consumido de verdad en esta reparación:
+    </p>
+    <table class="table table-sm table-borderless mb-0">
+        <thead>
+            <tr class="small text-muted border-bottom">
+                <th style="width:2rem;"></th>
+                <th>Repuesto</th>
+                <th>Ref. interna</th>
+                <th>Cantidad / Nivel</th>
+                <th>Reservado desde</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for part in pre_assigned_parts %}
+            <tr>
+                <td>
+                    <input class="form-check-input" type="checkbox"
+                           name="entrada_{{ block_idx }}_consume_part_{{ part.pk }}"
+                           id="id_entrada_{{ block_idx }}_consume_part_{{ part.pk }}"
+                           value="1">
+                </td>
+                <td>
+                    <label class="mb-0" for="id_entrada_{{ block_idx }}_consume_part_{{ part.pk }}">
+                        {{ part.description }}
+                    </label>
+                </td>
+                <td><code>{{ part.internal_reference|default:"—" }}</code></td>
+                <td>
+                    {% if part.is_uncountable %}
+                        Nivel: {{ part.stock_level|default:"—" }}
+                    {% else %}
+                        {{ part.stock_quantity }}
+                    {% endif %}
+                </td>
+                <td class="small text-muted">{{ part.pre_assigned_at|date:"d/m/Y" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
 {% endif %}

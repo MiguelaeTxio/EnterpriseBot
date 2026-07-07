@@ -719,6 +719,21 @@ def _parse_entry_lines_from_post (POST ,company ):
         )
         _ticket_closed = POST.get(f"{pfx}ticket_closed", "") == "1"
 
+        # H10 (a peticion de Miguel Angel, 2026-07-07): repuestos ya
+        # pre-asignados a la maquina (sin ticket) que el mecanico marca
+        # como consumidos de verdad en esta tarea -- casillas
+        # entrada_{i}_consume_part_{pk}, numero variable por linea.
+        _consume_part_pks = []
+        _consume_prefix = f"{pfx}consume_part_"
+        for _post_key in POST.keys():
+            if not _post_key.startswith(_consume_prefix):
+                continue
+            if POST.get(_post_key) != "1":
+                continue
+            _pk_suffix = _post_key[len(_consume_prefix):]
+            if _pk_suffix.isdigit():
+                _consume_part_pks.append(int(_pk_suffix))
+
         # EMPRESA_* block — detect and resolve subtype label.
         # Bloque EMPRESA_* — detectar y resolver el label del subtipo.
         _is_empresa_block = (
@@ -758,6 +773,7 @@ def _parse_entry_lines_from_post (POST ,company ):
         "ticket_create_new":_ticket_create_new ,
         "ticket_chosen_pk":_ticket_chosen_pk ,
         "ticket_closed":_ticket_closed ,
+        "consume_part_pks":_consume_part_pks ,
         })
 
     return entry_lines_data 
@@ -3962,6 +3978,43 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                                     " a ticket pk=%s (resolución: %s).",
                                     line.pk, _bt.pk, _ticket_action,
                                 )
+
+                    # Consumo de repuestos ya pre-asignados a la maquina
+                    # (sin ticket) confirmados por el mecanico en esta
+                    # misma tarea -- a peticion de Miguel Angel
+                    # (2026-07-07). Reutiliza StockAssignmentService.
+                    # consume_pre_assigned() (Caso B, ya construido en
+                    # S006), sin cambios ahi.
+                    for _part_pk in ld.get("consume_part_pks", []):
+                        from spare_parts.models import SparePartEntry as _SPE_consume
+                        from spare_parts.services import StockAssignmentService as _SAS_consume
+                        try:
+                            _spare_entry = _SPE_consume.objects.get(
+                                pk=_part_pk,
+                                company=company,
+                                status=_SPE_consume.STATUS_PRE_ASSIGNED,
+                            )
+                            _SAS_consume.consume_pre_assigned(
+                                _spare_entry, line, cu,
+                            )
+                            logger.info(
+                                "# [FormView] Repuesto pk=%s consumido"
+                                " en línea pk=%s.",
+                                _spare_entry.pk, line.pk,
+                            )
+                        except _SPE_consume.DoesNotExist:
+                            logger.warning(
+                                "# [FormView] consume_part_pk=%s no"
+                                " encontrado o ya no PRE_ASSIGNED para"
+                                " empresa pk=%s -- omitido.",
+                                _part_pk, company.pk,
+                            )
+                        except ValueError as _consume_exc:
+                            logger.warning(
+                                "# [FormView] Error consumiendo"
+                                " repuesto pk=%s en línea pk=%s: %s",
+                                _part_pk, line.pk, _consume_exc,
+                            )
 
                 for spd in spare_parts_data :
 

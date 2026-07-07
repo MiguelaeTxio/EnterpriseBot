@@ -597,6 +597,18 @@ _REOPEN_WINDOW_HOURS_DISPLAY = 72
 
 class TaskTicketResolutionView(CatalogReadAccessMixin, View):
     """
+    Ampliado 2026-07-07 a petición de Miguel Ángel: además de resolver
+    el ticket, este mismo endpoint devuelve también los SparePartEntry
+    PRE_ASSIGNED anclados solo a la máquina (sin ticket) -- si el
+    centro de gasto ya tiene repuestos reservados (p. ej. de un
+    albarán confirmado antes de que existiera ninguna avería), se
+    muestran con checkbox para que el mecánico marque cuáles se han
+    consumido de verdad en esta tarea. Se materializan al guardar
+    (ver panel/views_operator.py, WorkOrderEntryFormView.post()) vía
+    StockAssignmentService.consume_pre_assigned(), sin tocar ese
+    método existente.
+
+    ---
     HTMX endpoint: resolves the breakdown-ticket-per-machine question
     for a single work-order-form block (a "tarea") BEFORE it is saved
     -- there is no WorkOrderEntryLine yet at this point (Vía A,
@@ -706,9 +718,15 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
 
         resolution = resolve_ticket_for_machine(machine)
 
+        from spare_parts.services import StockAssignmentService
+        pre_assigned_parts = list(
+            StockAssignmentService.list_pre_assigned(machine=machine)
+        )
+
         return render(request, self.template_name, {
             'machine': machine,
             'block_idx': block_idx,
             'resolution': resolution,
             'reopen_window_hours': _REOPEN_WINDOW_HOURS_DISPLAY,
+            'pre_assigned_parts': pre_assigned_parts,
         })
