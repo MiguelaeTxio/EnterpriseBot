@@ -99,4 +99,15 @@ urlpatterns = [
         views.SparePartQuickIntakeCreateView.as_view(),
         name='quick_intake_create',
     ),
+    # --- Selector de material en el parte de trabajo (2026-07-07) ---
+    path(
+        'materiales/buscar/',
+        views.SparePartMaterialSearchView.as_view(),
+        name='material_search',
+    ),
+    path(
+        'materiales/alta-rapida/',
+        views.SparePartMaterialQuickCreateView.as_view(),
+        name='material_quick_create',
+    ),
 ]

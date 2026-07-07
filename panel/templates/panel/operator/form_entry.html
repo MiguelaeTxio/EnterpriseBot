@@ -381,11 +381,24 @@
                                     <label class="form-label fw-medium">
                                         Material <span class="text-danger">*</span>
                                     </label>
-                                    <input type="text"
-                                           name="repuesto_{{ rep.ridx }}_material"
-                                           class="form-control {% if not rep.material %}field-flagged{% endif %}"
-                                           value="{{ rep.material }}"
-                                           placeholder="Descripción del material">
+                                    <input type="hidden"
+                                           name="repuesto_{{ rep.ridx }}_spare_part_entry_pk"
+                                           value="{{ rep.spare_part_entry_pk|default:'' }}">
+                                    <div class="input-group">
+                                        <input type="text"
+                                               name="repuesto_{{ rep.ridx }}_material"
+                                               class="form-control {% if not rep.material %}field-flagged{% endif %}"
+                                               value="{{ rep.material }}"
+                                               placeholder="Descripción del material">
+                                        <button type="button"
+                                                class="btn btn-outline-secondary btn-material-search"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#materialPickerModal"
+                                                data-repuesto-idx="{{ rep.ridx }}"
+                                                title="Buscar en almacén o dar de alta">
+                                            <i class="bi bi-search"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="col-6 col-md-2">
                                     <label class="form-label fw-medium">
@@ -483,6 +496,75 @@
 </div>
 
 {# ================================================================ #}
+{# Modal de seleccion/alta rapida de repuesto (2026-07-07)          #}
+{# Unico, reutilizado por todas las filas de "Repuestos utilizados" #}
+{# via data-bs-toggle="modal" + data-repuesto-idx en el boton que   #}
+{# lo abre (ver material_picker.js).                                #}
+{# ================================================================ #}
+<div class="modal fade" id="materialPickerModal" tabindex="-1"
+     aria-labelledby="materialPickerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="materialPickerModalLabel">
+                    <i class="bi bi-search me-2 text-muted"></i>Elegir repuesto del almacén
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <label class="form-label small text-muted mb-1">Buscar en almacén</label>
+                <input type="text" id="materialPickerSearchInput" class="form-control mb-2"
+                       placeholder="Escribe el nombre del repuesto..." autocomplete="off">
+                <div id="materialPickerResults" class="mb-2"></div>
+
+                <div id="materialPickerQuickCreateToggleWrap" class="mt-2 d-none">
+                    <button type="button" id="materialPickerQuickCreateToggle"
+                            class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-plus-circle me-1"></i>No está en el almacén, dar de alta
+                    </button>
+                </div>
+
+                <div id="materialPickerQuickCreateForm" class="d-none border-top pt-3 mt-3">
+                    <div class="mb-2">
+                        <label class="form-label small fw-medium">Descripción</label>
+                        <input type="text" id="materialPickerQcDescription" class="form-control form-control-sm">
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="materialPickerQcUncountable">
+                        <label class="form-check-label small" for="materialPickerQcUncountable">Es incontable</label>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6" id="materialPickerQcQuantityWrap">
+                            <label class="form-label small fw-medium">Cantidad</label>
+                            <input type="number" step="0.01" id="materialPickerQcQuantity" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-6 d-none" id="materialPickerQcLevelWrap">
+                            <label class="form-label small fw-medium">Nivel</label>
+                            <select id="materialPickerQcLevel" class="form-select form-select-sm">
+                                <option value="">—</option>
+                                <option value="FULL">Lleno</option>
+                                <option value="MEDIUM">Medio</option>
+                                <option value="LOW">Bajo</option>
+                                <option value="EMPTY">Vacío</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="materialPickerQcError" class="text-danger small mb-2 d-none"></div>
+                    <button type="button" id="materialPickerQcSubmit" class="btn btn-sm btn-primary">
+                        Crear y usar
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer border-top py-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ================================================================ #}
 {# JS configuration                                                  #}
 {# ================================================================ #}
 {% load static %}
@@ -491,6 +573,8 @@ window.EB_CONFIG = {
     assetsUrl:          "{% url 'panel:operator_assets' %}",
     assetDetailUrl:     "{% url 'panel:operator_asset_detail' %}",
     ticketResolutionUrl: "{% url 'workorder_spare_parts:task_ticket_resolution' %}",
+    materialSearchUrl:      "{% url 'workorder_spare_parts:material_search' %}",
+    materialQuickCreateUrl: "{% url 'workorder_spare_parts:material_quick_create' %}",
     descriptionsUrl:    "{% url 'panel:operator_descriptions' %}",
     lunchBreakStart:    "{{ lunch_break_start }}",
     lunchBreakEnd:      "{{ lunch_break_end }}",
@@ -506,6 +590,7 @@ window.EB_CONFIG = {
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>
+<script src="{% static 'panel/js/material_picker.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_modal.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_tour.js' %}"></script>
 

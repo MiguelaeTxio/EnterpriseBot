@@ -794,6 +794,12 @@ def _parse_spare_parts_from_post (POST ,company ,entry_lines_data =None ):
     entry_lines_data is accepted for backwards compatibility but is no longer
     used to populate vehiculo_raw — the POST value is authoritative.
 
+    Also resolves, per line, an optional real SparePartEntry chosen (or
+    just quick-created) via the material-picker modal in the work-order
+    form (2026-07-07, flagged by Miguel Ángel) — repuesto_{r}_spare_part_entry_pk.
+    None when the mechanic typed the material free-hand without using the
+    modal, same behaviour as always.
+
     Returns a list of dicts ready to feed the integrity gate and the
     atomic persistence block.
     ---
@@ -810,11 +816,19 @@ def _parse_spare_parts_from_post (POST ,company ,entry_lines_data =None ):
     entry_lines_data se acepta por compatibilidad hacia atrás pero ya no se
     usa para poblar vehiculo_raw — el valor del POST es autoritativo.
 
+    También resuelve, por línea, un SparePartEntry real opcional elegido
+    (o dado de alta rápida en el momento) vía el modal de selección de
+    material del formulario de parte (2026-07-07, señalado por Miguel
+    Ángel) — repuesto_{r}_spare_part_entry_pk. None cuando el mecánico
+    escribió el material a mano sin pasar por el modal, mismo
+    comportamiento de siempre.
+
     Devuelve una lista de dicts lista para la barrera de integridad y el
     bloque de persistencia atómica.
     """
     from decimal import Decimal ,InvalidOperation 
     from fleet .models import MachineAsset as _MachineAsset 
+    from spare_parts .models import SparePartEntry as _SparePartEntry 
     from work_order_processor .services import _normalise_machine_code as _norm_code 
 
     num_repuestos =int (POST .get ("num_repuestos","0")or "0")
@@ -827,6 +841,23 @@ def _parse_spare_parts_from_post (POST ,company ,entry_lines_data =None ):
         unidades_str =POST .get (f"{pfx}unidades","").strip ()
         origen =POST .get (f"{pfx}origen","WAREHOUSE").strip ()
         proveedor =POST .get (f"{pfx}proveedor","").strip ()
+
+        # Repuesto elegido (o dado de alta por via rapida) desde el
+        # modal de material del propio parte -- 2026-07-07, senalado
+        # por Miguel Angel. Vincula la SparePartLine resultante al
+        # SparePartEntry real del almacen digital, en vez de quedar
+        # como texto libre puro. None si el mecanico escribio el
+        # material a mano sin pasar por el modal (compatibilidad
+        # retroactiva, comportamiento identico al de siempre).
+        spare_part_entry =None 
+        _spe_pk =POST .get (f"{pfx}spare_part_entry_pk","").strip ()
+        if _spe_pk and company is not None :
+            try :
+                spare_part_entry =_SparePartEntry .objects .get (
+                pk =_spe_pk ,company =company ,
+                )
+            except (_SparePartEntry .DoesNotExist ,ValueError ,TypeError ):
+                spare_part_entry =None 
 
 
 
@@ -902,6 +933,7 @@ def _parse_spare_parts_from_post (POST ,company ,entry_lines_data =None ):
         "supplier":proveedor if origen =="SUPPLIER"else "",
         "flags":[],
         "cg_incident":cg_incident ,
+        "spare_part_entry":spare_part_entry ,
         })
 
     return spare_parts_data 
@@ -1673,6 +1705,7 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
                     source =spd ["source"],
                     supplier =spd ["supplier"],
                     flags =spd ["flags"],
+                    spare_part_entry =spd .get ("spare_part_entry"),
                     )
 
 
@@ -2225,6 +2258,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                         "proveedor":spare .supplier or "",
                         "unit_price":str (spare .unit_price )if spare .unit_price is not None else "",
                         "flags":spare .flags or [],
+                        "spare_part_entry_pk":spare .spare_part_entry_id or "",
                         })
                         ridx +=1 
 
@@ -4034,6 +4068,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     source =spd ["source"],
                     supplier =spd ["supplier"],
                     flags =spd ["flags"],
+                    spare_part_entry =spd .get ("spare_part_entry"),
                     )
 
 

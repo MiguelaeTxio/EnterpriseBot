@@ -34,7 +34,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.db.models import Q, Case, When
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import ListView
@@ -1278,3 +1278,113 @@ class SparePartQuickIntakeCreateView(CatalogReadAccessMixin, View):
             f"dado de alta en almacén, sin proveedor conocido todavía.",
         )
         return redirect('workorder_spare_parts:warehouse_list')
+
+
+# =============================================================================
+# Selector de material en el parte de trabajo (2026-07-07) -- gap senalado
+# por Miguel Angel: al anadir un repuesto desde el propio parte, en vez de
+# escribirlo libre, hay que escogerlo del almacen o darlo de alta por la
+# via rapida, sin salir del formulario ni tener que guardar la tarea
+# (que puede estar incompleta todavia). JSON, no HTML/HTMX -- el
+# formulario de parte (panel/operator/form_entry.html) usa fetch()
+# vanilla en todo su JS, no HTMX (ver form_entry_assets.js).
+# =============================================================================
+
+class SparePartMaterialSearchView(CatalogReadAccessMixin, View):
+    """
+    Endpoint JSON: busqueda libre en el almacen digital
+    (status=WAREHOUSE) para el modal de seleccion de material del
+    parte de trabajo. A diferencia de SparePartWarehouseSearchView
+    (H10 Paso 4, fragmento HTML anclado a un entry_line_pk ya
+    existente), este no necesita ningun entry_line -- se usa mientras
+    se rellena el parte, antes de que exista en BD.
+
+    GET params: q (texto, minimo 2 caracteres).
+    Respuesta: {"results": [{"pk", "description", "internal_reference",
+    "stock_label"}, ...]}
+
+    ---
+
+    JSON endpoint: free search in the digital warehouse
+    (status=WAREHOUSE) for the work-order form's material picker
+    modal. Unlike SparePartWarehouseSearchView (H10 Paso 4, HTML
+    fragment anchored to an already-existing entry_line_pk), this
+    needs no entry_line at all -- used while filling in the work
+    order, before it exists in the DB.
+    """
+
+    def get(self, request):
+        query = request.GET.get('q', '').strip()
+        if len(query) < 2:
+            return JsonResponse({'results': []})
+
+        company = request.user.company_user.company
+        results = StockAssignmentService.search_warehouse(company, query, limit=15)
+        payload = []
+        for entry in results:
+            stock_label = (
+                (entry.stock_level or '—') if entry.is_uncountable
+                else str(entry.stock_quantity)
+            )
+            payload.append({
+                'pk': entry.pk,
+                'description': entry.description,
+                'internal_reference': entry.internal_reference,
+                'stock_label': stock_label,
+            })
+        return JsonResponse({'results': payload})
+
+
+class SparePartMaterialQuickCreateView(CatalogReadAccessMixin, View):
+    """
+    Endpoint JSON: alta rápida en almacén desde el mismo modal de
+    selección de material, sin salir del formulario de parte ni tener
+    que guardar la tarea todavía -- mismo servicio que
+    SparePartQuickIntakeCreateView
+    (register_uninventoried_warehouse_stock()), pero responde en JSON
+    en vez de redirigir, para uso desde fetch() en el modal.
+
+    POST params: description, is_uncountable ('1' o vacío),
+    stock_quantity, stock_level.
+    Respuesta: {"pk", "description", "internal_reference"}, o
+    {"error": "..."} con status 400.
+
+    ---
+
+    JSON endpoint: quick warehouse intake from the same material
+    picker modal, without leaving the work-order form or having to
+    save the task yet -- same service as SparePartQuickIntakeCreateView
+    (register_uninventoried_warehouse_stock()), but responds in JSON
+    instead of redirecting, for use from the modal's fetch() call.
+    """
+
+    def post(self, request):
+        description = request.POST.get('description', '').strip()
+        is_uncountable = request.POST.get('is_uncountable') == '1'
+        stock_quantity_raw = request.POST.get('stock_quantity', '').strip()
+        stock_level = request.POST.get('stock_level', '').strip() or None
+
+        stock_quantity = None
+        if stock_quantity_raw:
+            try:
+                stock_quantity = Decimal(stock_quantity_raw)
+            except (InvalidOperation, ValueError):
+                return JsonResponse({'error': 'Cantidad no válida.'}, status=400)
+
+        try:
+            entry = register_uninventoried_warehouse_stock(
+                company=request.user.company_user.company,
+                created_by=request.user.company_user,
+                description=description,
+                is_uncountable=is_uncountable,
+                stock_quantity=stock_quantity,
+                stock_level=stock_level,
+            )
+        except ValueError as exc:
+            return JsonResponse({'error': str(exc)}, status=400)
+
+        return JsonResponse({
+            'pk': entry.pk,
+            'description': entry.description,
+            'internal_reference': entry.internal_reference,
+        })

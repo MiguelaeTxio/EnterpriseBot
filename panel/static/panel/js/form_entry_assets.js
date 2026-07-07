@@ -861,8 +861,16 @@
                 '</div>' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
-                    '<input type="text" name="repuesto_' + ridx + '_material" ' +
-                           'class="form-control" placeholder="Descripcion del material">' +
+                    '<input type="hidden" name="repuesto_' + ridx + '_spare_part_entry_pk" value="">' +
+                    '<div class="input-group">' +
+                        '<input type="text" name="repuesto_' + ridx + '_material" ' +
+                               'class="form-control" placeholder="Descripcion del material">' +
+                        '<button type="button" class="btn btn-outline-secondary btn-material-search" ' +
+                                'data-bs-toggle="modal" data-bs-target="#materialPickerModal" ' +
+                                'data-repuesto-idx="' + ridx + '" title="Buscar en almacén o dar de alta">' +
+                            '<i class="bi bi-search"></i>' +
+                        '</button>' +
+                    '</div>' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">Unidades <span class="text-danger">*</span></label>' +
