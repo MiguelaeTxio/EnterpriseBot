@@ -1,0 +1,72 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/spare_part_quick_intake_form.html #}
+{# Alta rapida en almacen sin proveedor conocido -- gap senalado por Miguel Angel (2026-07-07). #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Alta rápida en almacén{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+
+        <div class="d-flex align-items-center mb-4 gap-2">
+            <h5 class="mb-0 fw-semibold">Alta rápida en almacén</h5>
+        </div>
+        <p class="text-muted small mb-4">
+            Para repuestos que coges del almacén físico y todavía no están
+            inventariados. No hace falta proveedor ni referencia -- se
+            vincularán automáticamente en cuanto llegue un albarán del
+            mismo artículo.
+        </p>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <div class="alert alert-secondary py-2 small mb-0">
+                            La referencia interna se genera automáticamente al guardar.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.description.label }}</label>
+                        {{ form.description }}
+                        {% for error in form.description.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="form-check mb-3">
+                        {{ form.is_uncountable }}
+                        <label class="form-check-label">{{ form.is_uncountable.label }}</label>
+                    </div>
+                    <div class="row mb-4">
+                        <div class="col-6">
+                            <label class="form-label">{{ form.stock_quantity.label }}</label>
+                            {{ form.stock_quantity }}
+                            {% for error in form.stock_quantity.errors %}
+                            <div class="text-danger small">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">{{ form.stock_level.label }}</label>
+                            {{ form.stock_level }}
+                            {% for error in form.stock_level.errors %}
+                            <div class="text-danger small">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{% url 'workorder_spare_parts:warehouse_list' %}" class="btn btn-outline-secondary">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-primary">Dar de alta</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

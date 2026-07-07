@@ -400,6 +400,44 @@ def _normalise_tax_id(raw: Optional[str]) -> str:
     return re.sub(r'[\s\-.]', '', raw.strip().upper())
 
 
+def _normalise_description(raw: Optional[str]) -> str:
+    """
+    Lowercases and collapses whitespace in a spare-part description,
+    for case-insensitive comparison between an ad-hoc warehouse entry
+    (registered by a mechanic without knowing the supplier's exact
+    wording) and a delivery-note line's description. Confirmed by
+    Miguel Ángel (2026-07-07): normalise to lowercase for these
+    comparisons.
+
+    Does not strip accents (unlike _normalise_alias_text, used for
+    cost-centre aliases) -- a spare-part description is free text
+    written by a human each time, and over-aggressive normalisation
+    risks matching two genuinely different parts. Kept intentionally
+    conservative; can be revisited if real-world data shows accent
+    variants causing missed matches.
+
+    ---
+
+    Pasa a minúsculas y colapsa espacios en una descripción de
+    repuesto, para comparar sin distinguir mayúsculas entre una
+    entrada de almacén ad-hoc (dada de alta por un mecánico sin
+    conocer la redacción exacta del proveedor) y la descripción de
+    una línea de albarán. Confirmado por Miguel Ángel (2026-07-07):
+    normalizar a minúsculas para estas comparaciones.
+
+    No elimina acentos (a diferencia de _normalise_alias_text, usado
+    para alias de centro de gasto) -- la descripción de un repuesto es
+    texto libre escrito por una persona cada vez, y una normalización
+    demasiado agresiva arriesga emparejar dos piezas realmente
+    distintas. Mantenido intencionadamente conservador; revisable si
+    los datos reales muestran variantes de acentuación que provocan
+    emparejamientos perdidos.
+    """
+    if not raw:
+        return ''
+    return re.sub(r'\s+', ' ', raw.strip().lower())
+
+
 def resolve_recipient_company_code(raw_tax_id: Optional[str]) -> str:
     """
     Resolves the raw recipient tax ID extracted from a delivery note
@@ -667,7 +705,9 @@ def confirm_delivery_note(delivery_note, company_user):
     are skipped and reported back for manual review.
 
     WAREHOUSE lines: creates or updates (matched by company +
-    reference when reference is set) a SparePartEntry with
+    reference when reference is set; falls back to matching an
+    ad-hoc, supplier-less warehouse entry by normalised description --
+    2026-07-07, see _normalise_description) a SparePartEntry with
     status=WAREHOUSE, sums stock_quantity, and records a
     StockMovement IN.
 
@@ -702,9 +742,11 @@ def confirm_delivery_note(delivery_note, company_user):
     queden UNASSIGNED se omiten y se reportan para revisión manual.
 
     Líneas WAREHOUSE: crea o actualiza (emparejado por empresa +
-    referencia cuando hay referencia) un SparePartEntry con
-    status=WAREHOUSE, suma stock_quantity, y registra un
-    StockMovement IN.
+    referencia cuando hay referencia; si no hay coincidencia, se
+    intenta emparejar con una entrada ad-hoc de almacén sin proveedor
+    conocido por descripción normalizada -- 2026-07-07, ver
+    _normalise_description) un SparePartEntry con status=WAREHOUSE,
+    suma stock_quantity, y registra un StockMovement IN.
 
     Líneas MACHINE: busca un BreakdownTicket abierto (OPEN /
     IN_PROGRESS) para la máquina destino; crea un SparePartEntry con
@@ -759,6 +801,25 @@ def confirm_delivery_note(delivery_note, company_user):
                     status=SparePartEntry.STATUS_WAREHOUSE,
                 ).first()
             if entry is None:
+                # Segundo intento: repuestos dados de alta rapidamente
+                # por los propios mecanicos desde el Almacen, sin
+                # proveedor conocido todavia (reference='',
+                # supplier=None) -- se emparejan por descripcion
+                # normalizada (minusculas, espacios colapsados) con la
+                # linea del primer albaran que documente el mismo
+                # articulo. Confirmado por Miguel Angel (2026-07-07).
+                normalised_desc = _normalise_description(line.description)
+                if normalised_desc:
+                    for candidate in SparePartEntry.objects.filter(
+                        company=company,
+                        status=SparePartEntry.STATUS_WAREHOUSE,
+                        reference='',
+                        supplier__isnull=True,
+                    ):
+                        if _normalise_description(candidate.description) == normalised_desc:
+                            entry = candidate
+                            break
+            if entry is None:
                 entry = SparePartEntry.objects.create(
                     company=company,
                     reference=line.reference,
@@ -774,6 +835,11 @@ def confirm_delivery_note(delivery_note, company_user):
                     purchase_total_price=line.total_price,
                     source_delivery_note_line=line,
                 )
+            elif not entry.reference and line.reference:
+                # Emparejado por descripcion (ad-hoc) -- aprende la
+                # referencia real del proveedor para acelerar el
+                # emparejamiento directo en futuros albaranes.
+                entry.reference = line.reference
             entry.stock_quantity = (
                 entry.stock_quantity or Decimal('0')
             ) + quantity
@@ -993,6 +1059,110 @@ def register_salvaged_entry(
         notes=(
             f'Entrada por canibalización de la máquina '
             f'{origin_machine.code}.'
+        ),
+    )
+
+    return entry
+
+
+@transaction.atomic
+def register_uninventoried_warehouse_stock(
+    company, created_by, description, is_uncountable=False,
+    stock_quantity=None, stock_level=None,
+):
+    """
+    Alta rápida en el almacén digital de un repuesto que un mecánico
+    acaba de coger del almacén físico y que todavía no estaba
+    inventoriado -- gap señalado por Miguel Ángel (2026-07-07):
+    "faltaba dar de alta repuestos por los mecánicos cuando van
+    cogiendo del almacén y aún no se han inventariado". No requiere
+    ni referencia de proveedor ni CIF -- se dejan intencionadamente
+    sin resolver (reference='', supplier=None): en cuanto llegue un
+    albarán que documente el mismo artículo, confirm_delivery_note()
+    lo empareja automáticamente por descripción normalizada
+    (_normalise_description) y rellena entonces el proveedor real y
+    la referencia.
+
+    Siempre status=WAREHOUSE -- a diferencia del Caso C
+    (register_new_and_consume), esto no consume nada en el momento;
+    es una digitalización orgánica pura del almacén físico (anexo
+    H10, sección 1, principio 1), sin ninguna tarea de parte de
+    trabajo asociada.
+
+    Genera un StockMovement ADJUST (mismo patrón que el alta manual
+    de catálogo, SparePartEntryCreateView) con nota explícita de que
+    el origen es "alta rápida sin proveedor conocido".
+
+    ---
+
+    Quick digital-warehouse intake of a spare part a mechanic just
+    took off the physical shelf and that was not inventoried yet --
+    gap flagged by Miguel Ángel (2026-07-07): "mechanics need a way to
+    register spare parts when they pick them up from the warehouse
+    and they haven't been inventoried yet". Requires neither a
+    supplier reference nor a tax ID -- both are intentionally left
+    unresolved (reference='', supplier=None): as soon as a delivery
+    note documenting the same article arrives, confirm_delivery_note()
+    automatically matches it by normalised description
+    (_normalise_description) and fills in the real supplier and
+    reference then.
+
+    Always status=WAREHOUSE -- unlike Caso C
+    (register_new_and_consume), this does not consume anything at
+    intake time; it is a pure organic digitisation of the physical
+    warehouse (annex H10, section 1, principle 1), with no work-order
+    task attached.
+
+    Generates a StockMovement ADJUST (same pattern as the manual
+    catalog intake, SparePartEntryCreateView) with an explicit note
+    that the origin is "quick intake, supplier unknown".
+    """
+    from .models import SparePartEntry, StockMovement
+
+    if not description or not description.strip():
+        raise ValueError('description es obligatorio.')
+
+    if is_uncountable:
+        if stock_level not in StockAssignmentService.LEVEL_CHOICES:
+            raise ValueError(
+                'stock_level debe ser uno de FULL/MEDIUM/LOW/EMPTY '
+                'para un repuesto incontable.'
+            )
+        entry_stock_quantity = Decimal('0')
+        entry_stock_level = stock_level
+    else:
+        if stock_quantity is None or stock_quantity <= 0:
+            raise ValueError(
+                'stock_quantity debe ser un numero > 0 para un '
+                'repuesto contable.'
+            )
+        entry_stock_quantity = Decimal(str(stock_quantity))
+        entry_stock_level = ''
+
+    entry = SparePartEntry.objects.create(
+        company=company,
+        reference='',
+        internal_reference=generate_internal_reference(company),
+        description=description.strip(),
+        is_uncountable=is_uncountable,
+        stock_quantity=entry_stock_quantity,
+        stock_level=entry_stock_level,
+        status=SparePartEntry.STATUS_WAREHOUSE,
+        origin_type=SparePartEntry.ORIGIN_SUPPLIER,
+        supplier=None,
+    )
+
+    StockMovement.objects.create(
+        spare_part_entry=entry,
+        movement_type=StockMovement.MOVEMENT_ADJUST,
+        quantity=entry_stock_quantity,
+        level_after=entry_stock_level,
+        created_by=created_by,
+        notes=(
+            'Alta rápida en almacén por mecánico -- repuesto tomado '
+            'del almacén físico sin inventariar todavía, sin proveedor '
+            'conocido (se resolverá automáticamente cuando llegue un '
+            'albarán del mismo artículo).'
         ),
     )
 

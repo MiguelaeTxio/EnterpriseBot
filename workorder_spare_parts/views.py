@@ -47,10 +47,11 @@ from spare_parts.services import (
     StockAssignmentService,
     generate_internal_reference,
     register_salvaged_entry,
+    register_uninventoried_warehouse_stock,
 )
 from work_order_processor.models import WorkOrderEntryLine
 
-from .forms import SalvageEntryForm, SparePartEntryCatalogForm
+from .forms import QuickWarehouseIntakeForm, SalvageEntryForm, SparePartEntryCatalogForm
 
 logger = logging.getLogger(__name__)
 
@@ -1192,5 +1193,88 @@ class SparePartSalvageCreateView(CatalogReadAccessMixin, View):
             request,
             f"Repuesto '{entry.description}' [{entry.internal_reference}] "
             f"dado de alta por canibalización correctamente.",
+        )
+        return redirect('workorder_spare_parts:warehouse_list')
+
+
+class SparePartQuickIntakeCreateView(CatalogReadAccessMixin, View):
+    """
+    Alta rápida en el almacén digital de un repuesto que un mecánico
+    acaba de coger del almacén físico y que todavía no estaba
+    inventariado -- gap señalado por Miguel Ángel (2026-07-07): "faltaba
+    dar de alta repuestos por los mecánicos cuando van cogiendo del
+    almacén y aún no se han inventariado".
+
+    Sin proveedor conocido (se resuelve más adelante en cuanto llegue
+    un albarán del mismo artículo, ver
+    spare_parts.services.confirm_delivery_note()) y sin destino a
+    máquina (el destino se decide después, con el consumo normal
+    desde el almacén) -- delega toda la lógica en
+    spare_parts.services.register_uninventoried_warehouse_stock().
+
+    Acceso: mismo permiso que el resto del Almacén (ADMIN/SUPERVISOR/
+    WORKSHOP/WORKSHOPBOSS) -- son los mecánicos quienes hacen este
+    alta sobre la marcha, según lo confirmado por Miguel Ángel.
+
+    ---
+
+    Quick digital-warehouse intake of a spare part a mechanic just
+    took off the physical shelf that was not inventoried yet -- gap
+    flagged by Miguel Ángel (2026-07-07): "mechanics need a way to
+    register spare parts when they pick them up from the warehouse
+    and they haven't been inventoried yet".
+
+    No known supplier (resolved later once a delivery note for the
+    same article arrives, see
+    spare_parts.services.confirm_delivery_note()) and no machine
+    destination (decided afterwards through normal consumption from
+    the warehouse) -- delegates all logic to
+    spare_parts.services.register_uninventoried_warehouse_stock().
+
+    Access: same permission as the rest of the Almacén (ADMIN/
+    SUPERVISOR/WORKSHOP/WORKSHOPBOSS) -- mechanics are the ones doing
+    this intake on the spot, per Miguel Ángel's confirmation.
+    """
+
+    template_name = 'workorder_spare_parts/spare_part_quick_intake_form.html'
+
+    def get(self, request):
+        return render(request, self.template_name, {
+            'company_user': request.user.company_user,
+            'active_nav': 'workorder_spare_parts_warehouse',
+            'form': QuickWarehouseIntakeForm(),
+        })
+
+    def post(self, request):
+        form = QuickWarehouseIntakeForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {
+                'company_user': request.user.company_user,
+                'active_nav': 'workorder_spare_parts_warehouse',
+                'form': form,
+            })
+
+        cleaned = form.cleaned_data
+        try:
+            entry = register_uninventoried_warehouse_stock(
+                company=request.user.company_user.company,
+                created_by=request.user.company_user,
+                description=cleaned['description'],
+                is_uncountable=cleaned['is_uncountable'],
+                stock_quantity=cleaned['stock_quantity'],
+                stock_level=cleaned['stock_level'],
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return render(request, self.template_name, {
+                'company_user': request.user.company_user,
+                'active_nav': 'workorder_spare_parts_warehouse',
+                'form': form,
+            })
+
+        messages.success(
+            request,
+            f"Repuesto '{entry.description}' [{entry.internal_reference}] "
+            f"dado de alta en almacén, sin proveedor conocido todavía.",
         )
         return redirect('workorder_spare_parts:warehouse_list')

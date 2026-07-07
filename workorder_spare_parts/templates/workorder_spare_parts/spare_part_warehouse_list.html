@@ -16,9 +16,14 @@
             El catálogo general con proveedores y precios de compra lo gestiona Administración.
         </p>
     </div>
-    <a href="{% url 'workorder_spare_parts:salvage_create' %}" class="btn btn-outline-secondary btn-sm text-nowrap">
-        <i class="bi bi-recycle me-1"></i>Alta por canibalización
-    </a>
+    <div class="d-flex gap-2">
+        <a href="{% url 'workorder_spare_parts:quick_intake_create' %}" class="btn btn-outline-secondary btn-sm text-nowrap">
+            <i class="bi bi-plus-circle me-1"></i>Alta rápida
+        </a>
+        <a href="{% url 'workorder_spare_parts:salvage_create' %}" class="btn btn-outline-secondary btn-sm text-nowrap">
+            <i class="bi bi-recycle me-1"></i>Alta por canibalización
+        </a>
+    </div>
 </div>
 
 <div class="d-flex gap-2 mb-3 small">

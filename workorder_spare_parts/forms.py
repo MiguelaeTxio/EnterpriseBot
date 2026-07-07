@@ -209,3 +209,70 @@ class SalvageEntryForm(forms.Form):
             )
 
         return cleaned
+
+
+class QuickWarehouseIntakeForm(forms.Form):
+    """
+    Alta rápida en el almacén digital de un repuesto que un mecánico
+    acaba de coger del almacén físico y que todavía no estaba
+    inventoriado -- gap señalado por Miguel Ángel (2026-07-07). Sin
+    referencia de proveedor, sin CIF, sin máquina -- se resuelven más
+    adelante: el proveedor se empareja automáticamente cuando llega
+    un albarán del mismo artículo
+    (spare_parts.services.confirm_delivery_note(), emparejamiento por
+    descripción normalizada), y el destino (a qué máquina va) se
+    decide después mediante el consumo normal desde el almacén.
+
+    ---
+
+    Quick digital-warehouse intake of a spare part a mechanic just
+    took off the physical shelf that was not inventoried yet -- gap
+    flagged by Miguel Ángel (2026-07-07). No supplier reference, no
+    tax ID, no machine -- resolved later: the supplier is matched
+    automatically once a delivery note for the same article arrives
+    (spare_parts.services.confirm_delivery_note(), normalised-
+    description matching), and the destination (which machine it goes
+    to) is decided afterwards through normal consumption from the
+    warehouse.
+    """
+
+    description = forms.CharField(
+        label='Descripción',
+        max_length=255,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Ej: Filtro de aceite hidráulico',
+        }),
+    )
+    is_uncountable = forms.BooleanField(
+        label='Es incontable',
+        required=False,
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+    )
+    stock_quantity = forms.DecimalField(
+        label='Cantidad',
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+    )
+    stock_level = forms.ChoiceField(
+        label='Nivel',
+        required=False,
+        choices=[('', '—'), ('FULL', 'Lleno'), ('MEDIUM', 'Medio'), ('LOW', 'Bajo'), ('EMPTY', 'Vacío')],
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        is_uncountable = cleaned.get('is_uncountable')
+        stock_quantity = cleaned.get('stock_quantity')
+        stock_level = cleaned.get('stock_level')
+
+        if is_uncountable:
+            if not stock_level:
+                self.add_error('stock_level', 'Obligatorio para un repuesto incontable.')
+        else:
+            if not stock_quantity:
+                self.add_error('stock_quantity', 'Obligatorio (mayor que 0) para un repuesto contable.')
+
+        return cleaned

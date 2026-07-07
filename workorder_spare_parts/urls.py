@@ -93,4 +93,10 @@ urlpatterns = [
         views.SparePartSalvageOriginLinesView.as_view(),
         name='salvage_origin_lines',
     ),
+    # --- Alta rapida en almacen sin proveedor conocido (2026-07-07) ---
+    path(
+        'almacen/alta-rapida/',
+        views.SparePartQuickIntakeCreateView.as_view(),
+        name='quick_intake_create',
+    ),
 ]
