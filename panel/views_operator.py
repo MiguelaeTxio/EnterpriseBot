@@ -8,7 +8,7 @@ from django.db import models as django_models
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 
-from panel.mixins import WorkshopRequiredMixin, SupervisorAccessMixin
+from panel.mixins import WorkshopRequiredMixin, SupervisorAccessMixin, WorkOrderFormAccessMixin
 from ivr_config.models import (
     PresenceStatus,
     CompanyUser,
@@ -1995,12 +1995,17 @@ def _resolve_editable_work_order(pk, cu, company):
     estuviera revisado -- DoesNotExist, y la vista rebotaba al
     historial sin entrar en modo edición.
 
-    ADMIN: acceso completo dentro de su empresa, cualquier autor,
-    revisado o no (coincide con "ADMIN: acceso completo" ya
-    documentado en CompanyUser).
+    ADMIN y SUPERVISOR: acceso completo dentro de su empresa, cualquier
+    autor, revisado o no (confirmado por Miguel Ángel 2026-07-07: los
+    supervisores -- p. ej. Carolina -- son quienes hacen el cómputo de
+    horas y necesitan poder editar/revisar el parte de cualquier
+    operario). WORKSHOPBOSS se trata igual que WORKSHOP (restringido a
+    lo propio) -- lectura del propio docstring de WorkOrderFormAccessMixin
+    ("WORKSHOPBOSS -- igual que WORKSHOP"), no confirmado explícitamente
+    por Miguel Ángel en esta sesión; a revisar si hiciera falta ampliarlo.
     Cualquier otro rol que llegue aquí (WORKSHOP, único otro permitido
-    por WorkshopRequiredMixin): solo su propio parte, sin revisar --
-    comportamiento sin cambios.
+    por WorkOrderFormAccessMixin además de WORKSHOPBOSS): solo su
+    propio parte, sin revisar -- comportamiento sin cambios.
 
     Raises WorkOrder.DoesNotExist si no hay coincidencia -- el
     llamante decide qué hacer (mensaje + redirect en GET, None en
@@ -2011,23 +2016,18 @@ def _resolve_editable_work_order(pk, cu, company):
     Resuelve el WorkOrder digital señalado por wo_pk/edit_wo_pk para
     el modo edición de WorkOrderEntryFormView, con alcance según rol.
 
-    Corrección (2026-07-07, bug detectado por Miguel Ángel -- "Editar
-    / Revisar" en admin_history.html no entraba en modo edición real):
-    la condición original (uploaded_by=cu, reviewed=False) es correcta
-    SOLO para el operario editando su propio parte antes de revisión
-    -- pero esta misma vista también se usa desde el listado de ADMIN
-    (botón "Editar / Revisar" sobre partes de CUALQUIER operario,
-    revisados o no). Con la condición original, esa consulta fallaba
-    siempre que el ADMIN no fuera quien subió el parte, o que ya
-    estuviera revisado -- DoesNotExist, y la vista rebotaba al
-    historial sin entrar en modo edición.
-
-    ADMIN: acceso completo dentro de su empresa, cualquier autor,
-    revisado o no (coincide con "ADMIN: acceso completo" ya
-    documentado en CompanyUser).
+    ADMIN y SUPERVISOR: acceso completo dentro de su empresa, cualquier
+    autor, revisado o no (confirmado por Miguel Ángel 2026-07-07: los
+    supervisores -- p. ej. Carolina -- son quienes hacen el cómputo de
+    horas y necesitan poder editar/revisar el parte de cualquier
+    operario). WORKSHOPBOSS se trata igual que WORKSHOP (restringido a
+    lo propio) -- lectura del propio docstring de
+    WorkOrderFormAccessMixin ("WORKSHOPBOSS -- igual que WORKSHOP"), no
+    confirmado explícitamente por Miguel Ángel en esta sesión; a
+    revisar si hiciera falta ampliarlo.
     Cualquier otro rol que llegue aquí (WORKSHOP, único otro permitido
-    por WorkshopRequiredMixin): solo su propio parte, sin revisar --
-    comportamiento sin cambios.
+    por WorkOrderFormAccessMixin además de WORKSHOPBOSS): solo su
+    propio parte, sin revisar -- comportamiento sin cambios.
 
     Lanza WorkOrder.DoesNotExist si no hay coincidencia -- quien llama
     decide qué hacer (mensaje + redirect en GET, None en POST).
@@ -2037,14 +2037,14 @@ def _resolve_editable_work_order(pk, cu, company):
         company=company,
         source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
     )
-    if cu.role == CompanyUser.ROLE_ADMIN:
+    if cu.role in (CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR):
         return WorkOrder.objects.get(**base_filter)
     return WorkOrder.objects.get(
         uploaded_by=cu, reviewed=False, **base_filter,
     )
 
 
-class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
+class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
     """
     Structured web form entry path for work orders (Via A).
     Allows WORKSHOP and ADMIN users to submit a daily work-order part
