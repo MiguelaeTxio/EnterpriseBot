@@ -3,6 +3,7 @@
 {# de Administracion (spare_part_entry_list.html). Sin proveedor ni precio; con limbo, avisos  #}
 {# de antiguedad y ajuste de stock directo por los propios mecanicos.                           #}
 {% extends "panel/base.html" %}
+{% load spare_parts_extras %}
 
 {% block page_title %}Almacén{% endblock %}
 
@@ -78,7 +79,7 @@
                                 {% if row.entry.is_uncountable %}
                                     <select name="stock_level" class="form-select form-select-sm" style="width:auto;">
                                         {% for lvl in level_choices %}
-                                        <option value="{{ lvl }}" {% if lvl == row.entry.stock_level %}selected{% endif %}>{{ lvl }}</option>
+                                        <option value="{{ lvl }}" {% if lvl == row.entry.stock_level %}selected{% endif %}>{{ lvl|level_label }}</option>
                                         {% endfor %}
                                     </select>
                                 {% else %}
@@ -91,7 +92,7 @@
                                 </button>
                             </form>
                         {% elif row.entry.is_uncountable %}
-                            Nivel: {{ row.entry.stock_level|default:"—" }}
+                            Nivel: {{ row.entry.stock_level|default:"—"|level_label }}
                         {% else %}
                             {{ row.entry.stock_quantity }}
                         {% endif %}

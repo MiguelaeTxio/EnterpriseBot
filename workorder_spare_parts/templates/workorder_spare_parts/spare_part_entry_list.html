@@ -3,6 +3,7 @@
 {# Corregido 2026-07-07: entidad distinta del Almacen de Mecanicos (ver spare_part_warehouse_list.html) -- #}
 {# aqui va proveedor y precio de compra, sin limbo ni avisos de stock (eso es cosa del Almacen). #}
 {% extends "panel/base.html" %}
+{% load spare_parts_extras %}
 
 {% block page_title %}Catálogo de Repuestos{% endblock %}
 
@@ -89,7 +90,7 @@
                     </td>
                     <td>
                         {% if entry.is_uncountable %}
-                            {{ entry.stock_level|default:"—" }}
+                            {{ entry.stock_level|default:"—"|level_label }}
                         {% else %}
                             {{ entry.stock_quantity }}
                         {% endif %}

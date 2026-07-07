@@ -1,5 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/_pre_assigned_results.html #}
 {# Fragmento HTMX -- Caso B, repuestos pre-asignados (limbo) para esta maquina/ticket. H10 Paso 4, bloque 3/4. #}
+{% load spare_parts_extras %}
 {% if error %}
 <div class="alert alert-danger py-2 mb-2">{{ error }}</div>
 {% endif %}
@@ -15,7 +16,7 @@
             <small class="text-muted">
                 Reservado desde {{ entry.pre_assigned_at|date:"d/m/Y" }} --
                 {% if entry.is_uncountable %}
-                    Nivel: {{ entry.stock_level|default:"—" }}
+                    Nivel: {{ entry.stock_level|default:"—"|level_label }}
                 {% else %}
                     Cantidad: {{ entry.stock_quantity }}
                 {% endif %}

@@ -1,5 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/_ticket_resolution.html #}
 {# Fragmento HTMX -- H10 Paso 4-bis, punto 1 (revisado en S007). Resuelve el ticket de averia por tarea antes de guardar. #}
+{% load spare_parts_extras %}
 {% if not machine %}
 {# PERSONAL, EMPRESA_*, o codigo sin resolver todavia -- estos bloques nunca llevan ticket. #}
 {% else %}
@@ -107,7 +108,7 @@
                 <td><code>{{ part.internal_reference|default:"—" }}</code></td>
                 <td>
                     {% if part.is_uncountable %}
-                        Nivel: {{ part.stock_level|default:"—" }}
+                        Nivel: {{ part.stock_level|default:"—"|level_label }}
                     {% else %}
                         {{ part.stock_quantity }}
                     {% endif %}

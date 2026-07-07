@@ -63,10 +63,10 @@ class SparePartEntryCatalogForm(forms.ModelForm):
                 attrs={'class': 'form-select'},
                 choices=[
                     ('', '—'),
-                    ('FULL', 'FULL'),
-                    ('MEDIUM', 'MEDIUM'),
-                    ('LOW', 'LOW'),
-                    ('EMPTY', 'EMPTY'),
+                    ('FULL', 'Lleno'),
+                    ('MEDIUM', 'Medio'),
+                    ('LOW', 'Bajo'),
+                    ('EMPTY', 'Vacío'),
                 ],
             ),
             'status': forms.Select(attrs={'class': 'form-select'}),
@@ -130,7 +130,7 @@ class SalvageEntryForm(forms.Form):
     stock_level = forms.ChoiceField(
         label='Nivel',
         required=False,
-        choices=[('', '—'), ('FULL', 'FULL'), ('MEDIUM', 'MEDIUM'), ('LOW', 'LOW'), ('EMPTY', 'EMPTY')],
+        choices=[('', '—'), ('FULL', 'Lleno'), ('MEDIUM', 'Medio'), ('LOW', 'Bajo'), ('EMPTY', 'Vacío')],
         widget=forms.Select(attrs={'class': 'form-select'}),
     )
     origin_machine = forms.ModelChoiceField(
