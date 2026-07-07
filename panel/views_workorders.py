@@ -384,6 +384,12 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         The default active tab is "pending" if wo_pending has results;
         otherwise "reviewed".
 
+        Annotates horas_totales/horas_extra on every WorkOrder in
+        wo_pending/wo_reviewed (2026-07-07, same criterion as
+        WorkOrderAdminHistoryView._enrich_work_orders) and provides
+        reviewed_totals with the summed values for wo_reviewed, for the
+        totals row in the Revisados tab.
+
         ---
 
         Construye los tres querysets (pendiente / revisados / error) acotados
@@ -391,8 +397,15 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         Los filtros GET opcionales operator_pk y period_pk se aplican cuando
         están presentes. La pestaña activa por defecto es "pending" si
         wo_pending tiene resultados; en caso contrario "reviewed".
+
+        Anota horas_totales/horas_extra en cada WorkOrder de
+        wo_pending/wo_reviewed (2026-07-07, mismo criterio que
+        WorkOrderAdminHistoryView._enrich_work_orders) y provee
+        reviewed_totals con los valores sumados para wo_reviewed, para la
+        fila de totales de la pestaña Revisados.
         """
         from ivr_config .models import WorkPeriod 
+        from decimal import Decimal 
 
         cu =request .user .company_user 
         company =cu .company 
@@ -445,9 +458,45 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
 
 
 
-        wo_pending =_base .filter (status =WorkOrder .Status .DONE ,reviewed =False ).order_by ("-upload_date")
-        wo_reviewed =_base .filter (status =WorkOrder .Status .DONE ,reviewed =True ).select_related ("uploaded_by__user").order_by ("-upload_date")
+        wo_pending =_base .filter (status =WorkOrder .Status .DONE ,reviewed =False ).order_by ("-upload_date").prefetch_related ("entries__lines")
+        wo_reviewed =_base .filter (status =WorkOrder .Status .DONE ,reviewed =True ).select_related ("uploaded_by__user").prefetch_related ("entries__lines").order_by ("-upload_date")
         wo_error =_base .filter (status =WorkOrder .Status .ERROR ).order_by ("-upload_date")
+
+        # Cómputo de horas_totales/horas_extra por parte -- mismo criterio que
+        # WorkOrderAdminHistoryView._enrich_work_orders() (2026-07-07, replicado
+        # a peticion de Miguel Angel: esta funcionalidad vivia solo en el
+        # listado "Historial", nunca en Partes Digitales). Se anota como
+        # atributo directo sobre cada instancia WorkOrder (no se persiste en
+        # BD) para poder seguir usando wo.pk/wo.uploaded_by/etc. tal cual en
+        # la plantilla, sin convertir a lista de dicts.
+        # ---
+        # horas_totales/horas_extra computation per work order -- same
+        # criterion as WorkOrderAdminHistoryView._enrich_work_orders()
+        # (2026-07-07, replicated at Miguel Angel's request: this
+        # functionality only lived in the "Historial" list, never in Partes
+        # Digitales). Annotated as a plain attribute on each WorkOrder
+        # instance (not persisted to the DB) so the template can keep using
+        # wo.pk/wo.uploaded_by/etc. as-is, without converting to a dict list.
+        reviewed_hours_total =Decimal ("0")
+        reviewed_extra_total =Decimal ("0")
+        for _wo_list in (wo_pending ,wo_reviewed ):
+            for _wo in _wo_list :
+                _horas =sum (
+                (line .delta_hours 
+                for entry in _wo .entries .all ()
+                for line in entry .lines .all ()
+                if line .delta_hours is not None ),
+                Decimal ("0"),
+                )
+                _wo .horas_totales =_horas 
+                _wo .horas_extra =max (Decimal ("0"),_horas -Decimal ("8"))
+                if _wo_list is wo_reviewed :
+                    reviewed_hours_total +=_horas 
+                    reviewed_extra_total +=_wo .horas_extra 
+        reviewed_totals ={
+        "horas_totales":reviewed_hours_total ,
+        "horas_extra":reviewed_extra_total ,
+        }
 
 
 
@@ -484,6 +533,7 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         "wo_pending":wo_pending ,
         "wo_reviewed":wo_reviewed ,
         "wo_error":wo_error ,
+        "reviewed_totals":reviewed_totals ,
         "default_tab":default_tab ,
         "active_tab":active_tab ,
         "operators":operators ,
