@@ -82,4 +82,15 @@ urlpatterns = [
         views.TaskTicketResolutionView.as_view(),
         name='task_ticket_resolution',
     ),
+    # --- H10 Paso 7: alta de repuestos por canibalizacion ---
+    path(
+        'canibalizacion/crear/',
+        views.SparePartSalvageCreateView.as_view(),
+        name='salvage_create',
+    ),
+    path(
+        'canibalizacion/lineas-origen/',
+        views.SparePartSalvageOriginLinesView.as_view(),
+        name='salvage_origin_lines',
+    ),
 ]

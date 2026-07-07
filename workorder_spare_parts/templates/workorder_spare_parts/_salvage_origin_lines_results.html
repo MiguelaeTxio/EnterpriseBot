@@ -1,0 +1,24 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/_salvage_origin_lines_results.html #}
+{# Fragmento HTMX -- H10 Paso 7, busqueda libre de partes recientes de la maquina donante. #}
+{% if results %}
+<ul class="list-group">
+    {% for line in results %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+        <div>
+            <small class="text-muted">
+                {{ line.entry.work_date|date:"d/m/Y"|default:"sin fecha" }} --
+                {{ line.entry.worker_name|default:"operario desconocido" }}
+            </small>
+            <br>
+            {{ line.fault_description|default:line.repair_notes|default:"—"|truncatechars:80 }}
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary"
+                onclick="selectSalvageOriginLine('{{ line.pk }}', '{{ line.fault_description|default:line.repair_notes|default:"—"|escapejs|truncatechars:60 }}')">
+            Vincular
+        </button>
+    </li>
+    {% endfor %}
+</ul>
+{% elif searched %}
+<p class="text-muted small mb-0">No se encontraron partes recientes de esta máquina.</p>
+{% endif %}

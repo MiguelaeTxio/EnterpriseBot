@@ -760,6 +760,154 @@ def confirm_delivery_note(delivery_note, company_user):
     return counts
 
 
+@transaction.atomic
+def register_salvaged_entry(
+    company, created_by, description, origin_machine,
+    destination, is_uncountable=False, stock_quantity=None,
+    stock_level=None, origin_work_order_entry_line=None,
+    destination_machine=None, reference='',
+):
+    """
+    H10 Paso 7 -- alta manual de una SparePartEntry recuperada por
+    canibalización de otra máquina de la propia flota (anexo H10,
+    seccion 3.6). Siempre iniciada desde spare_parts (responsable de
+    almacen/logistica), nunca disparada automaticamente desde el
+    parte de trabajo -- principio rector de separacion total entre
+    parte y almacen, seccion 3.6.
+
+    destination='WAREHOUSE': la entrada queda en almacen general
+    (status=WAREHOUSE, sin machine/breakdown_ticket), lista para
+    rectificar/reutilizar mas adelante.
+
+    destination='PRE_ASSIGNED': ya se sabe que va para
+    destination_machine (obligatorio en este caso). Reutiliza
+    literalmente la misma resolucion de ticket que confirm_delivery_note()
+    para las lineas MACHINE (busca un BreakdownTicket OPEN/IN_PROGRESS
+    para destination_machine; si existe se engancha ahi, si no se
+    pre-asigna directamente a la maquina) -- no la maquinaria mas
+    elaborada de resolucion CHOOSE/ASK_REOPEN de chat.ticket_resolution,
+    que es especifica del flujo de tareas del parte de trabajo
+    (Paso 4-bis) y no aplica aqui (aqui no hay "tarea" que este
+    generando el ticket, es un alta de almacen).
+
+    origin_work_order_entry_line es opcional -- queda null para
+    piezas ya retiradas de antiguo sin parte asociado en el sistema
+    (seccion 3.6, punto 3).
+
+    Genera un StockMovement SALVAGE. origin_type se fija a SALVAGED.
+
+    ---
+
+    H10 Paso 7 -- manual creation of a SparePartEntry recovered via
+    cannibalisation of another machine in the company's own fleet
+    (annex H10, section 3.6). Always initiated from spare_parts
+    (warehouse/logistics responsible), never automatically triggered
+    from the work order -- guiding principle of total separation
+    between the work order and warehouse management, section 3.6.
+
+    destination='WAREHOUSE': the entry stays in the general warehouse
+    (status=WAREHOUSE, no machine/breakdown_ticket), ready to be
+    rectified/reused later.
+
+    destination='PRE_ASSIGNED': it is already known it will go to
+    destination_machine (required in this case). Literally reuses the
+    same ticket resolution as confirm_delivery_note() for MACHINE
+    lines (looks up an open BreakdownTicket OPEN/IN_PROGRESS for
+    destination_machine; if one exists it attaches there, otherwise
+    it pre-assigns directly to the machine) -- not the more elaborate
+    CHOOSE/ASK_REOPEN resolution machinery in chat.ticket_resolution,
+    which is specific to the work-order task flow (Paso 4-bis) and
+    does not apply here (there is no "task" generating the ticket,
+    this is a warehouse intake).
+
+    origin_work_order_entry_line is optional -- left null for parts
+    already removed long ago with no associated part record in the
+    system (section 3.6, point 3).
+
+    Generates a StockMovement SALVAGE. origin_type is set to
+    SALVAGED.
+    """
+    from chat.models import BreakdownTicket
+
+    from .models import SparePartEntry, StockMovement
+
+    if not description or not description.strip():
+        raise ValueError('description es obligatorio.')
+
+    if destination not in (
+        SparePartEntry.STATUS_WAREHOUSE, SparePartEntry.STATUS_PRE_ASSIGNED,
+    ):
+        raise ValueError(
+            "destination debe ser 'WAREHOUSE' o 'PRE_ASSIGNED'."
+        )
+
+    if destination == SparePartEntry.STATUS_PRE_ASSIGNED and destination_machine is None:
+        raise ValueError(
+            'destination_machine es obligatorio cuando destination=PRE_ASSIGNED.'
+        )
+
+    if is_uncountable:
+        if stock_level not in StockAssignmentService.LEVEL_CHOICES:
+            raise ValueError(
+                'stock_level debe ser uno de FULL/MEDIUM/LOW/EMPTY '
+                'para un repuesto incontable.'
+            )
+        entry_stock_quantity = Decimal('0')
+        entry_stock_level = stock_level
+    else:
+        if stock_quantity is None or stock_quantity < 0:
+            raise ValueError(
+                'stock_quantity debe ser un numero >= 0 para un '
+                'repuesto contable.'
+            )
+        entry_stock_quantity = Decimal(str(stock_quantity))
+        entry_stock_level = ''
+
+    machine = None
+    ticket = None
+    pre_assigned_at = None
+    if destination == SparePartEntry.STATUS_PRE_ASSIGNED:
+        ticket = BreakdownTicket.objects.filter(
+            machine=destination_machine,
+            status__in=['OPEN', 'IN_PROGRESS'],
+        ).first()
+        machine = None if ticket else destination_machine
+        pre_assigned_at = now()
+
+    entry = SparePartEntry.objects.create(
+        company=company,
+        reference=reference or '',
+        internal_reference=generate_internal_reference(company),
+        description=description.strip(),
+        is_uncountable=is_uncountable,
+        stock_quantity=entry_stock_quantity,
+        stock_level=entry_stock_level,
+        status=destination,
+        machine=machine,
+        breakdown_ticket=ticket,
+        pre_assigned_at=pre_assigned_at,
+        origin_type=SparePartEntry.ORIGIN_SALVAGED,
+        origin_machine=origin_machine,
+        origin_work_order_entry_line=origin_work_order_entry_line,
+    )
+
+    StockMovement.objects.create(
+        spare_part_entry=entry,
+        movement_type=StockMovement.MOVEMENT_SALVAGE,
+        quantity=entry_stock_quantity,
+        level_after=entry_stock_level,
+        machine=machine,
+        breakdown_ticket=ticket,
+        created_by=created_by,
+        notes=(
+            f'Entrada por canibalización de la máquina '
+            f'{origin_machine.code}.'
+        ),
+    )
+
+    return entry
+
+
 # =============================================================================
 # StockAssignmentService -- Paso 4 de H10 (seccion 3.3, 3.4, 3.5 del anexo)
 # =============================================================================

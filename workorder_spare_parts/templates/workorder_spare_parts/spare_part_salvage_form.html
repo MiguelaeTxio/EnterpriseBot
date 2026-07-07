@@ -1,0 +1,168 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/spare_part_salvage_form.html #}
+{# H10 Paso 7 -- alta manual de repuesto por canibalizacion (anexo, seccion 3.6). #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Alta por canibalización{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+
+        <div class="d-flex align-items-center mb-4 gap-2">
+            <h5 class="mb-0 fw-semibold">Alta por canibalización</h5>
+        </div>
+        <p class="text-muted small mb-4">
+            Da de alta un repuesto recuperado de otra máquina de la flota
+            (activa o de baja). El parte de trabajo nunca crea esta entrada
+            automáticamente -- este alta se hace siempre a mano, por separado.
+        </p>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+                    {{ form.origin_work_order_entry_line }}
+
+                    <div class="mb-3">
+                        <div class="alert alert-secondary py-2 small mb-0">
+                            La referencia interna se genera automáticamente al guardar.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.description.label }}</label>
+                        {{ form.description }}
+                        {% for error in form.description.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="form-check mb-3">
+                        {{ form.is_uncountable }}
+                        <label class="form-check-label">{{ form.is_uncountable.label }}</label>
+                    </div>
+                    <div class="row mb-4">
+                        <div class="col-6">
+                            <label class="form-label">{{ form.stock_quantity.label }}</label>
+                            {{ form.stock_quantity }}
+                            {% for error in form.stock_quantity.errors %}
+                            <div class="text-danger small">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">{{ form.stock_level.label }}</label>
+                            {{ form.stock_level }}
+                            {% for error in form.stock_level.errors %}
+                            <div class="text-danger small">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.origin_machine.label }}</label>
+                        {{ form.origin_machine }}
+                        <div class="form-text">Máquina de la que se retira la pieza.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label mb-1">Parte de origen (opcional)</label>
+                        <div class="form-text mb-2">
+                            Búsqueda libre entre los partes recientes de la máquina donante,
+                            por si quieres vincular la retirada al parte donde se documentó.
+                            Déjalo sin vincular si la pieza se retiró de antiguo y no hay
+                            parte asociado en el sistema.
+                        </div>
+                        <input type="text" id="salvageOriginLineSearch"
+                               class="form-control form-control-sm mb-2"
+                               placeholder="Buscar por descripción de avería o reparación..."
+                               hx-get="{% url 'workorder_spare_parts:salvage_origin_lines' %}"
+                               hx-trigger="keyup changed delay:400ms"
+                               hx-target="#salvageOriginLineResults"
+                               hx-swap="innerHTML"
+                               hx-include="#salvageOriginMachine, this"
+                               name="origin_line_q">
+                        <div id="salvageOriginLineResults"></div>
+                        <div id="salvageOriginLineSelected" class="mt-2"></div>
+                    </div>
+
+                    <hr>
+
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.destination.label }}</label>
+                        {{ form.destination }}
+                    </div>
+                    <div id="salvageDestinationMachineWrapper" class="mb-4"
+                         style="display: none;">
+                        <label class="form-label">{{ form.destination_machine.label }}</label>
+                        {{ form.destination_machine }}
+                        {% for error in form.destination_machine.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                        <div class="form-text">
+                            Si esta máquina tiene un ticket de avería abierto, el
+                            repuesto se enganchará ahí automáticamente; si no, se
+                            pre-asigna directamente a la máquina.
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{% url 'workorder_spare_parts:warehouse_list' %}" class="btn btn-outline-secondary">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-primary">Dar de alta</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<script>
+/* Muestra/oculta el selector de maquina receptora segun el destino
+   elegido, y rellena el campo oculto origin_work_order_entry_line al
+   elegir un resultado de busqueda de parte de origen. */
+(function () {
+    "use strict";
+
+    function toggleDestinationMachine() {
+        var destination = document.getElementById("salvageDestination");
+        var wrapper = document.getElementById("salvageDestinationMachineWrapper");
+        if (!destination || !wrapper) { return; }
+        wrapper.style.display = (destination.value === "PRE_ASSIGNED") ? "" : "none";
+    }
+
+    window.selectSalvageOriginLine = function (pk, label) {
+        var hidden = document.getElementById("salvageOriginLine");
+        var selected = document.getElementById("salvageOriginLineSelected");
+        if (hidden) { hidden.value = pk; }
+        if (selected) {
+            selected.innerHTML =
+                '<div class="alert alert-info py-2 px-3 small mb-0 d-flex ' +
+                'justify-content-between align-items-center">' +
+                '<span>Vinculado: ' + label + '</span>' +
+                '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" ' +
+                'onclick="clearSalvageOriginLine()">Quitar</button></div>';
+        }
+    };
+
+    window.clearSalvageOriginLine = function () {
+        var hidden = document.getElementById("salvageOriginLine");
+        var selected = document.getElementById("salvageOriginLineSelected");
+        if (hidden) { hidden.value = ""; }
+        if (selected) { selected.innerHTML = ""; }
+    };
+
+    document.addEventListener("DOMContentLoaded", function () {
+        var destination = document.getElementById("salvageDestination");
+        if (destination) {
+            destination.addEventListener("change", toggleDestinationMachine);
+            toggleDestinationMachine();
+        }
+    });
+}());
+</script>
+{% endblock %}

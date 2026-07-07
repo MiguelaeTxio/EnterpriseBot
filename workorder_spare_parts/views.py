@@ -43,10 +43,14 @@ from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
 from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 from spare_parts.models import SparePartEntry, StockMovement
-from spare_parts.services import StockAssignmentService, generate_internal_reference
+from spare_parts.services import (
+    StockAssignmentService,
+    generate_internal_reference,
+    register_salvaged_entry,
+)
 from work_order_processor.models import WorkOrderEntryLine
 
-from .forms import SparePartEntryCatalogForm
+from .forms import SalvageEntryForm, SparePartEntryCatalogForm
 
 logger = logging.getLogger(__name__)
 
@@ -1030,3 +1034,163 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
             'reopen_window_hours': _REOPEN_WINDOW_HOURS_DISPLAY,
             'pre_assigned_parts': pre_assigned_parts,
         })
+
+
+# =============================================================================
+# H10 Paso 7 -- Alta de repuestos por canibalización (anexo, sección 3.6)
+# =============================================================================
+
+class SparePartSalvageOriginLinesView(CatalogReadAccessMixin, View):
+    """
+    HTMX endpoint: búsqueda libre de partes de trabajo recientes de
+    una máquina donante, para el selector opcional
+    `origin_work_order_entry_line` del alta por canibalización (anexo
+    H10, sección 3.6, punto 3). Nunca obligatorio -- una pieza puede
+    haberse retirado hace tiempo sin parte asociado en el sistema.
+
+    GET params:
+      origin_machine -- pk de fleet.MachineAsset (donante), obligatorio
+                         para devolver resultados.
+      origin_line_q  -- texto libre opcional, filtra por
+                         fault_description/repair_notes.
+
+    ---
+
+    HTMX endpoint: free-text search of recent work-order lines for a
+    donor machine, for the optional `origin_work_order_entry_line`
+    selector of the cannibalisation intake (annex H10, section 3.6,
+    point 3). Never mandatory -- a part may have been removed long
+    ago with no associated record in the system.
+    """
+
+    template_name = 'workorder_spare_parts/_salvage_origin_lines_results.html'
+
+    def get(self, request):
+        company = request.user.company_user.company
+        machine_pk = request.GET.get('origin_machine', '').strip()
+        query = request.GET.get('origin_line_q', '').strip()
+
+        if not machine_pk:
+            return render(request, self.template_name, {
+                'results': [], 'searched': False,
+            })
+
+        qs = WorkOrderEntryLine.objects.filter(
+            machine_asset_id=machine_pk,
+            entry__work_order__company=company,
+        ).select_related('entry')
+        if query:
+            qs = qs.filter(
+                Q(fault_description__icontains=query)
+                | Q(repair_notes__icontains=query)
+            )
+        results = qs.order_by('-entry__work_date', '-pk')[:20]
+
+        return render(request, self.template_name, {
+            'results': results, 'searched': True,
+        })
+
+
+class SparePartSalvageCreateView(CatalogReadAccessMixin, View):
+    """
+    Alta manual de un repuesto recuperado por canibalización (H10
+    Paso 7, anexo sección 3.6). Siempre iniciada desde aquí (nunca
+    disparada automáticamente desde el parte de trabajo -- principio
+    rector de separación total, ya validado en confirm_delivery_note()
+    y en el diseño Paso 4-bis). Delega toda la lógica de creación y
+    resolución de destino (WAREHOUSE vs PRE_ASSIGNED + ticket) en
+    spare_parts.services.register_salvaged_entry().
+
+    Acceso: mismo permiso que el Almacén (ADMIN/SUPERVISOR/WORKSHOP/
+    WORKSHOPBOSS) -- son los mecánicos quienes retiran piezas
+    reaprovechables y dan de alta el circuito, igual que gestionan el
+    resto del almacén desde S007.
+
+    ASUNCIÓN (a confirmar con Miguel Ángel): el anexo describe esto
+    como "modal de alta manual", pero se implementa aquí como página
+    dedicada, siguiendo el mismo patrón que el resto de altas
+    manuales del módulo (SparePartEntryCreateView, SupplierCreateView)
+    -- ninguna de ellas usa un modal real, y este formulario tiene
+    lógica dinámica (búsqueda HTMX de parte de origen, aparición
+    condicional de la máquina receptora) que encaja mejor en una
+    página propia que en un modal embebido. Si Miguel Ángel prefiere
+    un modal real sobre spare_part_warehouse_list.html, es un cambio
+    de plantilla sin tocar la vista ni el servicio.
+
+    ---
+
+    Manual creation of a spare part recovered via cannibalisation
+    (H10 Paso 7, annex section 3.6). Always initiated from here
+    (never automatically triggered from the work order -- guiding
+    principle of total separation, already validated in
+    confirm_delivery_note() and in the Paso 4-bis design). Delegates
+    all creation and destination-resolution logic (WAREHOUSE vs
+    PRE_ASSIGNED + ticket) to
+    spare_parts.services.register_salvaged_entry().
+
+    Access: same permission as the Almacén (ADMIN/SUPERVISOR/WORKSHOP/
+    WORKSHOPBOSS) -- mechanics are the ones removing reusable parts
+    and registering the intake, same as they manage the rest of the
+    warehouse since S007.
+
+    ASSUMPTION (to confirm with Miguel Ángel): the annex describes
+    this as a "manual creation modal", but it is implemented here as
+    a dedicated page, following the same pattern as the rest of the
+    module's manual intakes (SparePartEntryCreateView,
+    SupplierCreateView) -- none of them use a real modal, and this
+    form has dynamic logic (HTMX search of the origin part,
+    conditional appearance of the receiving machine) that fits a
+    dedicated page better than an embedded modal. If Miguel Ángel
+    prefers a real modal over spare_part_warehouse_list.html, it is a
+    template-only change, no view or service changes needed.
+    """
+
+    template_name = 'workorder_spare_parts/spare_part_salvage_form.html'
+
+    def _get_form(self, request, data=None):
+        return SalvageEntryForm(data, company=request.user.company_user.company)
+
+    def get(self, request):
+        return render(request, self.template_name, {
+            'company_user': request.user.company_user,
+            'active_nav': 'workorder_spare_parts_warehouse',
+            'form': self._get_form(request),
+        })
+
+    def post(self, request):
+        form = self._get_form(request, request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {
+                'company_user': request.user.company_user,
+                'active_nav': 'workorder_spare_parts_warehouse',
+                'form': form,
+            })
+
+        cleaned = form.cleaned_data
+        try:
+            entry = register_salvaged_entry(
+                company=request.user.company_user.company,
+                created_by=request.user.company_user,
+                description=cleaned['description'],
+                origin_machine=cleaned['origin_machine'],
+                destination=cleaned['destination'],
+                is_uncountable=cleaned['is_uncountable'],
+                stock_quantity=cleaned['stock_quantity'],
+                stock_level=cleaned['stock_level'],
+                origin_work_order_entry_line=cleaned['origin_work_order_entry_line'],
+                destination_machine=cleaned['destination_machine'],
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return render(request, self.template_name, {
+                'company_user': request.user.company_user,
+                'active_nav': 'workorder_spare_parts_warehouse',
+                'form': form,
+            })
+
+        messages.success(
+            request,
+            f"Repuesto '{entry.description}' [{entry.internal_reference}] "
+            f"dado de alta por canibalización correctamente.",
+        )
+        return redirect('workorder_spare_parts:warehouse_list')
