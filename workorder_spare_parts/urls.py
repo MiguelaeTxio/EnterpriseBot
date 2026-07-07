@@ -59,4 +59,10 @@ urlpatterns = [
         views.SparePartRegisterNewAndConsumeView.as_view(),
         name='register_new',
     ),
+    # --- H10 Paso 4-bis: resolucion de ticket por tarea (antes de guardar) ---
+    path(
+        'resolucion-ticket/',
+        views.TaskTicketResolutionView.as_view(),
+        name='task_ticket_resolution',
+    ),
 ]

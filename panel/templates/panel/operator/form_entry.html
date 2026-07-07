@@ -300,28 +300,22 @@
                                         </label>
                                     </div>
                                 </div>
-                                {# ---- Ticket de avería vinculado (H17) ---- #}
-                                {% if repair_orders %}
-                                <div class="col-12 col-md-8">
-                                    <label class="form-label fw-medium">
-                                        <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
-                                        Ticket de avería vinculado
-                                    </label>
-                                    <select name="entrada_{{ entrada.idx }}_ticket_pk"
-                                            class="form-select form-select-sm ticket-select"
-                                            data-block-idx="{{ entrada.idx }}">
-                                        <option value="">— Sin ticket —</option>
-                                        {% for ot in repair_orders %}
-                                        <option value="{{ ot.pk }}"
-                                            {% if entrada.ticket_pk == ot.pk %}selected{% endif %}>
-                                            {{ ot.ticket_date_code|default:ot.pk }}
-                                            {% if ot.machine_raw %} — {{ ot.machine_raw }}{% endif %}
-                                            {% if ot.fault_summary %} | {{ ot.fault_summary|truncatechars:40 }}{% endif %}
-                                        </option>
-                                        {% endfor %}
-                                    </select>
+                                {# ---- Ticket de avería (H10 Paso 4-bis: resolución automática por máquina, sustituye el desplegable manual de H17) ---- #}
+                                <div class="col-12 col-md-8 ticket-section" data-block-idx="{{ entrada.idx }}">
+                                    <div id="ticket-resolution-{{ entrada.idx }}"
+                                         class="ticket-resolution-container"
+                                         data-block-idx="{{ entrada.idx }}"
+                                         {% if entrada.machine_asset %}
+                                         hx-get="{% url 'workorder_spare_parts:task_ticket_resolution' %}?code={{ entrada.machine_asset.code|urlencode }}&block_idx={{ entrada.idx }}"
+                                         hx-trigger="load"
+                                         hx-swap="innerHTML"
+                                         {% endif %}>
+                                        {% if not entrada.machine_asset %}
+                                        <span class="text-muted small">Selecciona una máquina para resolver el ticket de avería.</span>
+                                        {% endif %}
+                                    </div>
                                 </div>
-                                <div class="col-12 col-md-4 d-flex align-items-end">
+                                <div class="col-12 col-md-4 d-flex align-items-end ticket-section" data-block-idx="{{ entrada.idx }}">
                                     <div class="form-check mb-2">
                                         <input class="form-check-input ticket-close-check"
                                                type="checkbox"
@@ -336,7 +330,6 @@
                                         </label>
                                     </div>
                                 </div>
-                                {% endif %}
                             </div>
                         </div>
                         {% endfor %}
@@ -497,6 +490,7 @@
 window.EB_CONFIG = {
     assetsUrl:          "{% url 'panel:operator_assets' %}",
     assetDetailUrl:     "{% url 'panel:operator_asset_detail' %}",
+    ticketResolutionUrl: "{% url 'workorder_spare_parts:task_ticket_resolution' %}",
     descriptionsUrl:    "{% url 'panel:operator_descriptions' %}",
     lunchBreakStart:    "{{ lunch_break_start }}",
     lunchBreakEnd:      "{{ lunch_break_end }}",
@@ -508,8 +502,7 @@ window.EB_CONFIG = {
     empresaSubtypes:    JSON.parse('{{ empresa_subtypes|default:"{}"|escapejs }}'),
     intensiveToggleUrl: "{% url 'panel:operator_intensive_toggle' %}",
     isIntensiveOverride: {{ is_intensive_override|default:False|yesno:"true,false" }},
-    meterWarnings: {{ meter_warnings|default:"[]"|safe }},
-    repairOrders:  JSON.parse('{{ repair_orders_json|default:"[]"|escapejs }}')
+    meterWarnings: {{ meter_warnings|default:"[]"|safe }}
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>

@@ -581,3 +581,133 @@ class SparePartRegisterNewAndConsumeView(CatalogReadAccessMixin, View):
             'spare_part_line': spare_part_line,
             'entry': spare_part_line.spare_part_entry,
         })
+
+
+# =============================================================================
+# TaskTicketResolutionView -- H10 Paso 4-bis, punto 1 (revisado en S007)
+# =============================================================================
+
+# Solo para mostrar el numero en el fragmento sin importar la constante
+# interna de chat.services en cada peticion -- valor identico, duplicado
+# deliberado y minimo para no acoplar la vista al modulo de chat mas de
+# lo necesario (ya se importa resolve_ticket_for_machine bajo demanda).
+_REOPEN_WINDOW_HOURS_DISPLAY = 72
+
+
+class TaskTicketResolutionView(CatalogReadAccessMixin, View):
+    """
+    HTMX endpoint: resolves the breakdown-ticket-per-machine question
+    for a single work-order-form block (a "tarea") BEFORE it is saved
+    -- there is no WorkOrderEntryLine yet at this point (Vía A,
+    creación directa), only a machine code the mechanic just picked
+    from the asset autocomplete. Uses
+    chat.services.resolve_ticket_for_machine() (read-only preview,
+    Paso 4-bis punto 1, revisado en S007: PAUSED cuenta como abierto,
+    con 1+ candidatos siempre hay que confirmar) -- never creates or
+    touches any ticket here, that only happens at save time inside
+    get_or_create_ticket_for_machine() under its own mutex.
+
+    Replaces the old free-choice `ticket_pk` dropdown (H17) scoped to
+    every open/paused ticket of the whole company -- confirmed by
+    Miguel Ángel (2026-07-07): una vez el mecánico fija el centro de
+    gasto de la tarea, el ticket se resuelve automáticamente (o se
+    pregunta, si hay ambigüedad), nunca se elige libremente de una
+    lista de toda la empresa.
+
+    GET params:
+      code       -- fleet.MachineAsset.code, required. If it doesn't
+                     resolve to an active machine of this company
+                     (e.g. PERSONAL, EMPRESA_* pseudo-assets, or a
+                     code not yet matched), renders nothing (empty
+                     fragment) -- those blocks never carry a ticket.
+      block_idx  -- the work-order-form block index (`entrada.idx`),
+                     required, used to build unique field names
+                     (`entrada_{block_idx}_ticket_*`) matching the
+                     rest of the form.
+
+    Returns an HTML fragment: a notice (CREATE), a Sí/No question
+    (ASK_REOPEN), or a short-list + "avería nueva" choice (CHOOSE) --
+    see workorder_spare_parts/_ticket_resolution.html.
+    ---
+
+    Endpoint HTMX: resuelve la pregunta de ticket de avería por
+    máquina para un bloque del formulario de parte (una "tarea")
+    ANTES de guardarse -- todavía no existe ningún
+    WorkOrderEntryLine (Vía A, creación directa), solo un código de
+    máquina que el mecánico acaba de elegir del autocompletado de
+    activos. Usa chat.services.resolve_ticket_for_machine() (vista
+    previa de solo lectura, Paso 4-bis punto 1, revisado en S007:
+    PAUSED cuenta como abierto, con 1+ candidatos siempre hay que
+    confirmar) -- nunca crea ni toca ningún ticket aquí, eso solo
+    ocurre al guardar dentro de get_or_create_ticket_for_machine(),
+    bajo su propio mutex.
+
+    Sustituye el desplegable de elección libre `ticket_pk` (H17)
+    acotado a todos los tickets abiertos/pausados de la empresa --
+    confirmado por Miguel Ángel (2026-07-07): una vez el mecánico fija
+    el centro de gasto de la tarea, el ticket se resuelve
+    automáticamente (o se pregunta, si hay ambigüedad), nunca se elige
+    libremente de una lista de toda la empresa.
+
+    Parámetros GET:
+      code       -- fleet.MachineAsset.code, obligatorio. Si no
+                     resuelve a una máquina activa de esta empresa
+                     (p. ej. pseudo-activos PERSONAL, EMPRESA_*, o un
+                     código todavía sin coincidencia), no renderiza
+                     nada (fragmento vacío) -- esos bloques nunca
+                     llevan ticket.
+      block_idx  -- el índice de bloque del formulario de parte
+                     (`entrada.idx`), obligatorio, se usa para
+                     construir nombres de campo únicos
+                     (`entrada_{block_idx}_ticket_*`) iguales al resto
+                     del formulario.
+
+    Devuelve un fragmento HTML: un aviso (CREATE), una pregunta Sí/No
+    (ASK_REOPEN), o una lista corta + opción "avería nueva" (CHOOSE) --
+    ver workorder_spare_parts/_ticket_resolution.html.
+    """
+
+    template_name = 'workorder_spare_parts/_ticket_resolution.html'
+
+    def get(self, request):
+        from chat.services import resolve_ticket_for_machine
+        from work_order_processor.management.commands.seed_personal_asset import (
+            PERSONAL_ASSET_CODE,
+        )
+        from work_order_processor.management.commands.seed_empresa_assets import (
+            EMPRESA_ASSETS,
+        )
+
+        code = request.GET.get('code', '').strip()
+        block_idx = request.GET.get('block_idx', '').strip()
+
+        empresa_codes = {a['code'].upper() for a in EMPRESA_ASSETS}
+        if (
+            not code or not block_idx
+            or code.upper() == PERSONAL_ASSET_CODE.upper()
+            or code.upper() in empresa_codes
+        ):
+            # PERSONAL y EMPRESA_* son pseudo-activos (ausencias,
+            # bloques administrativos) -- nunca llevan ticket de
+            # avería, aunque sean MachineAsset reales en catálogo.
+            return render(request, self.template_name, {'machine': None})
+
+        machine = MachineAsset.objects.filter(
+            company=request.user.company_user.company,
+            code=code,
+            is_active=True,
+        ).first()
+
+        if machine is None:
+            # Código sin coincidencia todavía (autocompletado a medio
+            # escribir) -- ningún ticket que resolver por ahora.
+            return render(request, self.template_name, {'machine': None})
+
+        resolution = resolve_ticket_for_machine(machine)
+
+        return render(request, self.template_name, {
+            'machine': machine,
+            'block_idx': block_idx,
+            'resolution': resolution,
+            'reopen_window_hours': _REOPEN_WINDOW_HOURS_DISPLAY,
+        })

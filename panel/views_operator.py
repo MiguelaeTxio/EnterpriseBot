@@ -700,10 +700,23 @@ def _parse_entry_lines_from_post (POST ,company ):
         # is_on_site — checkbox enviado como "1" cuando está marcado.
         _is_on_site = POST.get(f"{pfx}is_on_site", "") == "1"
 
-        # breakdown ticket link — optional FK + close flag (H17).
-        # Vínculo con ticket de avería — FK opcional + flag de cierre (H17).
-        _ticket_pk_raw = POST.get(f"{pfx}ticket_pk", "").strip()
-        _ticket_pk = int(_ticket_pk_raw) if _ticket_pk_raw.isdigit() else None
+        # breakdown ticket resolution -- H10 Paso 4-bis (revisado S007),
+        # sustituye el desplegable manual ticket_pk de H17.
+        # Resolución de ticket de avería -- H10 Paso 4-bis (revisado
+        # S007), sustituye el desplegable manual ticket_pk de H17.
+        _ticket_action = POST.get(f"{pfx}ticket_action", "").strip()
+        _ticket_reopen_raw = POST.get(f"{pfx}ticket_reopen", "").strip()
+        _ticket_reopen = (
+            _ticket_reopen_raw == "1" if _ticket_reopen_raw in ("0", "1")
+            else None
+        )
+        _ticket_chosen_raw = POST.get(f"{pfx}ticket_chosen_pk", "").strip()
+        _ticket_create_new = (_ticket_chosen_raw == "new")
+        _ticket_chosen_pk = (
+            int(_ticket_chosen_raw)
+            if _ticket_chosen_raw.isdigit()
+            else None
+        )
         _ticket_closed = POST.get(f"{pfx}ticket_closed", "") == "1"
 
         # EMPRESA_* block — detect and resolve subtype label.
@@ -740,7 +753,10 @@ def _parse_entry_lines_from_post (POST ,company ):
         "is_personal":_is_personal_block ,
         "is_on_site":_is_on_site ,
         "is_empresa":_is_empresa_block ,
-        "ticket_pk":_ticket_pk ,
+        "ticket_action":_ticket_action ,
+        "ticket_reopen":_ticket_reopen ,
+        "ticket_create_new":_ticket_create_new ,
+        "ticket_chosen_pk":_ticket_chosen_pk ,
         "ticket_closed":_ticket_closed ,
         })
 
@@ -2014,22 +2030,21 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
     def _get_context_base (self ,request ):
         """
         Returns the base template context with company and navigation data.
-        Provides the list of active MachineAsset records for autocomplete and
-        the list of repair orders (BreakdownTicket with status IN_PROGRESS or
-        PAUSED) available to the authenticated operator.
-        Repair orders without assigned_to are available to all operators.
-        Repair orders assigned to this operator are included with priority.
+        Provides the list of active MachineAsset records for autocomplete.
+        Ticket-per-machine resolution (H10 Paso 4-bis) is no longer
+        preloaded here as a static list -- it is resolved on demand per
+        block via TaskTicketResolutionView (HTMX), once the mechanic
+        picks a machine, replacing the old H17 free-choice dropdown.
         ---
         Devuelve el contexto base con empresa y datos de navegación.
-        Proporciona la lista de MachineAsset activos para autocompletado y
-        la lista de órdenes de reparación (BreakdownTicket con status
-        IN_PROGRESS o PAUSED) disponibles para el operario.
-        Las OTs sin assigned_to están disponibles para cualquier operario.
-        Las OTs asignadas a este operario se incluyen con prioridad.
+        Proporciona la lista de MachineAsset activos para autocompletado.
+        La resolución de ticket por máquina (H10 Paso 4-bis) ya no se
+        precarga aquí como lista estática -- se resuelve bajo demanda
+        por bloque vía TaskTicketResolutionView (HTMX), en cuanto el
+        mecánico elige una máquina, sustituyendo al antiguo desplegable
+        de elección libre de H17.
         """
         from fleet .models import MachineAsset 
-        from chat .models import BreakdownTicket 
-        from django .db .models import Q as _Q 
         cu =self ._get_company_user (request )
         company =cu .company 
         assets =list (
@@ -2039,46 +2054,18 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
         )
 
 
-        repair_orders =list (
-        BreakdownTicket .objects 
-        .filter (
-        company =company ,
-        status__in =[
-            BreakdownTicket .STATUS_IN_PROGRESS ,
-            BreakdownTicket .STATUS_PAUSED ,
-        ],
-        )
-        .filter (
-        _Q (assigned_to__isnull =True )|_Q (assigned_to =cu )
-        )
-        .select_related ("machine","section")
-        .order_by ("-urgency","created_at")
-        )
-        import json as _json_ctx 
-        from ivr_config .models import AbsenceCategory as _AbsCatCtx 
+        import json as _json_ctx
+        from ivr_config .models import AbsenceCategory as _AbsCatCtx
         _absence_cats_ctx =list (
             _AbsCatCtx .objects .filter (company =company ,is_active =True )
             .order_by ("order","label")
             .values ("id","label","requires_note")
         )
-        # Serialise repair_orders for JS EB_CONFIG injection.
-        # Serializar repair_orders para inyección en EB_CONFIG de JS.
-        _repair_orders_json = _json_ctx.dumps([
-            {
-                "pk":         ot.pk,
-                "code":       ot.ticket_date_code or "",
-                "machine_raw": ot.machine_raw or "",
-                "fault_summary": ot.fault_summary or "",
-            }
-            for ot in repair_orders
-        ])
         return {
         "company":company ,
         "company_user":cu ,
         "active_nav":"operator_dashboard",
         "assets":assets ,
-        "repair_orders":repair_orders ,
-        "repair_orders_json": _repair_orders_json,
         "absence_categories":_json_ctx .dumps (_absence_cats_ctx ),
         "absence_categories_list":_absence_cats_ctx ,
         }
@@ -3861,17 +3848,55 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                     created_lines [ld ["line_number"]]=line 
                     created_line_pks .append (line .pk )
 
-                    # Link breakdown ticket if operator selected one (H17).
-                    # Vincular ticket de avería si el operario seleccionó uno (H17).
-                    _t_pk = ld.get("ticket_pk")
+                    # Resolver el ticket de avería -- H10 Paso 4-bis
+                    # (revisado S007), sustituye la elección manual de
+                    # ticket_pk de H17. Solo aplica a bloques con una
+                    # máquina real (nunca PERSONAL/EMPRESA_*, esos
+                    # nunca llegan con ticket_action informado porque
+                    # el JS no carga la resolución para ellos).
+                    _ticket_action = ld.get("ticket_action")
                     _t_close = ld.get("ticket_closed", False)
-                    if _t_pk:
+                    if _ticket_action and ld["machine_asset"] is not None:
                         from chat.models import BreakdownTicket as _BT
+                        from chat.services import get_or_create_ticket_for_machine
+                        _bt = None
                         try:
-                            _bt = _BT.objects.get(
-                                pk=_t_pk,
-                                company=company,
+                            if _ticket_action == "create":
+                                _bt = get_or_create_ticket_for_machine(
+                                    ld["machine_asset"], cu,
+                                )
+                            elif _ticket_action == "ask_reopen":
+                                _bt = get_or_create_ticket_for_machine(
+                                    ld["machine_asset"], cu,
+                                    reopen=ld.get("ticket_reopen"),
+                                )
+                            elif _ticket_action == "choose":
+                                if ld.get("ticket_create_new"):
+                                    _bt = get_or_create_ticket_for_machine(
+                                        ld["machine_asset"], cu,
+                                        create_new=True,
+                                    )
+                                else:
+                                    _bt = get_or_create_ticket_for_machine(
+                                        ld["machine_asset"], cu,
+                                        chosen_ticket_pk=ld.get("ticket_chosen_pk"),
+                                    )
+                        except ValueError as _tk_exc:
+                            # Estado de UI obsoleto (p.ej. otro operario
+                            # resolvió/cerró el ticket entre la carga del
+                            # fragmento y el guardado del parte) -- no se
+                            # bloquea el guardado completo del parte por
+                            # esto, se omite el vínculo de ticket de esta
+                            # línea y se registra para revisión manual.
+                            logger.warning(
+                                "# [FormView] Resolución de ticket "
+                                "obsoleta para línea pk=%s (bloque "
+                                "%s): %s -- vínculo omitido, revisar "
+                                "manualmente.",
+                                line.pk, ld["line_number"], _tk_exc,
                             )
+
+                        if _bt is not None:
                             line.breakdown_ticket = _bt
                             line.ticket_closed    = _t_close
                             line.save(update_fields=[
@@ -3892,15 +3917,9 @@ class WorkOrderEntryFormView (WorkshopRequiredMixin ,View ):
                             else:
                                 logger.info(
                                     "# [FormView] Línea pk=%s vinculada"
-                                    " a ticket pk=%s.",
-                                    line.pk, _bt.pk,
+                                    " a ticket pk=%s (resolución: %s).",
+                                    line.pk, _bt.pk, _ticket_action,
                                 )
-                        except _BT.DoesNotExist:
-                            logger.warning(
-                                "# [FormView] ticket_pk=%s no encontrado"
-                                " para empresa pk=%s — vínculo omitido.",
-                                _t_pk, company.pk,
-                            )
 
                 for spd in spare_parts_data :
 
