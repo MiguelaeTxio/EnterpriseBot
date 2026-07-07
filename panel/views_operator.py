@@ -4188,19 +4188,34 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         )
 
         from django .urls import reverse as _reverse_co
+        from spare_parts .models import SparePartEntry as _SPE_review
 
-        # H10 Paso 4-bis (bloque B): si alguna tarea guardada quedo
-        # vinculada a un ticket de averia, desviar a la revision de
-        # repuestos pre-asignados antes de ir al historial -- el
-        # mecanico confirma cuales se han colocado de verdad. Solo
+        # H10 Paso 4-bis (bloque B, ampliado 2026-07-07 a peticion de
+        # Miguel Angel): desviar a la revision de repuestos si alguna
+        # tarea guardada quedo (a) vinculada a un ticket de averia, o
+        # (b) con una maquina que YA tenia repuestos PRE_ASSIGNED
+        # pendientes sin ticket (p.ej. material recibido por albaran
+        # antes de que existiera ningun ticket para esa maquina). Solo
         # ahora existe entry_line.pk real, por eso no puede hacerse
         # antes de guardar (mismo hallazgo que motivo el pivote de
         # S006).
-        _lines_with_ticket = [
+        _machine_ids_saved = [
+            _l .machine_asset_id for _l in created_lines .values ()
+            if _l .machine_asset_id is not None
+        ]
+        _machine_ids_pending = set (
+            _SPE_review .objects .filter (
+            status =_SPE_review .STATUS_PRE_ASSIGNED ,
+            breakdown_ticket__isnull =True ,
+            machine_id__in =_machine_ids_saved ,
+            ).values_list ("machine_id",flat =True )
+        )
+        _lines_needing_review = [
             _l .pk for _l in created_lines .values ()
             if _l .breakdown_ticket_id is not None
+            or _l .machine_asset_id in _machine_ids_pending
         ]
-        if _lines_with_ticket :
+        if _lines_needing_review :
             return redirect (
             _reverse_co ("panel:operator_parts_review",kwargs ={"entry_pk":entry .pk }),
             )
@@ -4212,12 +4227,22 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
 
 class WorkOrderEntryPartsReviewView(WorkshopRequiredMixin, View):
     """
-    H10 Paso 4-bis (bloque B). Post-save screen shown only when at
-    least one WorkOrderEntryLine just created/edited carries a
-    breakdown_ticket -- reuses the consumption widget already built in
-    S006 (workorder_spare_parts._consumption_widget.html, Caso B
-    autoloaded via SparePartPreAssignedListView) per line, scoped to
-    each line's own ticket.
+    H10 Paso 4-bis (bloque B). Post-save screen shown when at least
+    one WorkOrderEntryLine just created/edited either (a) carries a
+    breakdown_ticket, or (b) has a machine_asset with pending
+    PRE_ASSIGNED spare parts anchored only to the machine (no ticket
+    yet -- e.g. material recibido por albarán antes de que exista
+    ningún ticket para esa máquina, ver confirm_delivery_note()).
+    Reuses the consumption widget already built in S006
+    (workorder_spare_parts._consumption_widget.html, Caso B autoloaded
+    via SparePartPreAssignedListView, que YA sabe resolver ambos casos
+    -- ticket o machine-only -- sin cambios ahí) per line.
+
+    Corrección (2026-07-07, a petición de Miguel Ángel -- repuestos ya
+    pre-asignados a una máquina, p. ej. B34, no aparecían en ningún
+    sitio del formulario): la primera versión de esta vista solo
+    miraba breakdown_ticket, dejando fuera el caso machine-only del
+    limbo -- gap real, no solo el ticket.
 
     Confirmed by Miguel Ángel (2026-07-07): el mecánico que trabajó la
     máquina es quien da conformidad a qué repuestos pre-asignados se
@@ -4233,11 +4258,22 @@ class WorkOrderEntryPartsReviewView(WorkshopRequiredMixin, View):
     ---
 
     H10 Paso 4-bis (bloque B). Pantalla posterior al guardado, mostrada
-    solo cuando alguna WorkOrderEntryLine recién creada/editada lleva
-    un breakdown_ticket -- reutiliza el widget de consumo ya construido
-    en S006 (workorder_spare_parts._consumption_widget.html, Caso B
-    autocargado vía SparePartPreAssignedListView) por línea, acotado al
-    ticket propio de cada línea.
+    cuando alguna WorkOrderEntryLine recién creada/editada (a) lleva
+    un breakdown_ticket, o (b) tiene un machine_asset con repuestos
+    PRE_ASSIGNED pendientes anclados solo a la máquina (sin ticket
+    todavía -- p. ej. material recibido por albarán antes de que
+    exista ningún ticket para esa máquina, ver
+    confirm_delivery_note()). Reutiliza el widget de consumo ya
+    construido en S006 (workorder_spare_parts._consumption_widget.html,
+    Caso B autocargado vía SparePartPreAssignedListView, que YA sabe
+    resolver ambos casos -- ticket o solo-máquina -- sin cambios ahí)
+    por línea.
+
+    Corrección (2026-07-07, a petición de Miguel Ángel -- repuestos ya
+    pre-asignados a una máquina, p. ej. B34, no aparecían en ningún
+    sitio del formulario): la primera versión de esta vista solo
+    miraba breakdown_ticket, dejando fuera el caso solo-máquina del
+    limbo -- hueco real, no solo el del ticket.
 
     Confirmado por Miguel Ángel (2026-07-07): el mecánico que trabajó
     la máquina es quien da conformidad a qué repuestos pre-asignados se
@@ -4255,6 +4291,7 @@ class WorkOrderEntryPartsReviewView(WorkshopRequiredMixin, View):
 
     def get(self, request, entry_pk):
         from work_order_processor.models import WorkOrderEntry
+        from spare_parts.models import SparePartEntry
 
         cu = request.user.company_user
         entry = get_object_or_404(
@@ -4262,12 +4299,28 @@ class WorkOrderEntryPartsReviewView(WorkshopRequiredMixin, View):
             pk=entry_pk,
             work_order__company=cu.company,
         )
-        lines_with_ticket = list(
+        all_lines = list(
             entry.lines
-            .filter(breakdown_ticket__isnull=False)
             .select_related("breakdown_ticket", "machine_asset")
             .order_by("line_number")
         )
+        # Máquinas (sin ticket) de este parte con algún repuesto
+        # PRE_ASSIGNED pendiente -- caso (b) del docstring.
+        machine_ids_with_pending_parts = set(
+            SparePartEntry.objects.filter(
+                status=SparePartEntry.STATUS_PRE_ASSIGNED,
+                breakdown_ticket__isnull=True,
+                machine_id__in=[
+                    l.machine_asset_id for l in all_lines
+                    if l.machine_asset_id is not None
+                ],
+            ).values_list("machine_id", flat=True)
+        )
+        lines_with_ticket = [
+            line for line in all_lines
+            if line.breakdown_ticket_id is not None
+            or line.machine_asset_id in machine_ids_with_pending_parts
+        ]
         if not lines_with_ticket:
             # Estado de URL obsoleto (p. ej. se quitó el ticket de
             # todas las líneas tras un reintento) -- no hay nada que

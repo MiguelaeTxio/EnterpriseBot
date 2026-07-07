@@ -1,9 +1,10 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/parts_review.html #}
-{# H10 Paso 4-bis (bloque B). Pantalla posterior al guardado del parte -- solo se visita  #}
-{# cuando alguna tarea guardada quedo vinculada a un ticket de averia. Reutiliza el widget #}
-{# de consumo ya construido en S006 (workorder_spare_parts._consumption_widget.html), una  #}
-{# vez por cada tarea con ticket -- el mecanico confirma que repuestos pre-asignados se    #}
-{# han colocado de verdad. No es un paso bloqueante, se puede continuar sin confirmar nada.#}
+{# H10 Paso 4-bis (bloque B). Pantalla posterior al guardado del parte -- se visita cuando   #}
+{# alguna tarea guardada quedo vinculada a un ticket de averia, O cuando su maquina (sin      #}
+{# ticket) ya tenia repuestos pre-asignados pendientes. Reutiliza el widget de consumo ya     #}
+{# construido en S006 (workorder_spare_parts._consumption_widget.html), una vez por cada      #}
+{# tarea -- el mecanico confirma que repuestos pre-asignados se han colocado de verdad. No es #}
+{# un paso bloqueante, se puede continuar sin confirmar nada.                                 #}
 {% extends "panel/base.html" %}
 
 {% block title %}Confirmar repuestos — EnterpriseBot{% endblock %}
@@ -25,10 +26,16 @@
                 Tarea {{ line.line_number }} —
                 {{ line.machine_asset.code|default:line.machine_raw|default:"Sin máquina" }}
             </span>
+            {% if line.breakdown_ticket %}
             <span class="badge bg-warning text-dark">
                 Ticket {{ line.breakdown_ticket.ticket_date_code|default:line.breakdown_ticket.pk }}
                 — {{ line.breakdown_ticket.get_status_display }}
             </span>
+            {% else %}
+            <span class="badge bg-secondary">
+                Sin ticket — repuestos pre-asignados a la máquina
+            </span>
+            {% endif %}
         </div>
         <div class="card-body">
             {% include "workorder_spare_parts/_consumption_widget.html" with entry_line=line %}
