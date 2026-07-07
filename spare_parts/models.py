@@ -190,6 +190,41 @@ class DeliveryNote(models.Model):
             'requiere revisión manual en ese caso.'
         ),
     )
+    # ------------------------------------------------------------------
+    # Anotación general de máquina/centro de gasto (S007-H10). Confirmado
+    # por Miguel Ángel (2026-07-07): además de la anotación #CODIGO# junto
+    # a cada línea, un albarán puede llevar una única anotación #CODIGO#
+    # general (fuera de cualquier línea concreta, p. ej. en la cabecera o
+    # el margen del documento) indicando que el albarán ENTERO es para esa
+    # máquina/centro de gasto. Actúa como fallback: solo se usa para
+    # resolver las líneas que no tengan su propia anotación individual --
+    # ver resolve_line_assignment() y confirm_delivery_note() en
+    # services.py. Campo libre, mismo formato bruto que
+    # DeliveryNoteLine.machine_code_raw (sin normalizar).
+    # ------------------------------------------------------------------
+    # General machine/cost-centre annotation (S007-H10). Confirmed by
+    # Miguel Ángel (2026-07-07): besides the #CODE# annotation next to
+    # each line, a delivery note can carry a single general #CODE#
+    # annotation (outside any specific line, e.g. in the header or
+    # document margin) indicating the WHOLE delivery note is for that
+    # machine/cost centre. Acts as a fallback: only used to resolve
+    # lines that don't have their own individual annotation -- see
+    # resolve_line_assignment() and confirm_delivery_note() in
+    # services.py. Free field, same raw format as
+    # DeliveryNoteLine.machine_code_raw (unnormalised).
+    # ------------------------------------------------------------------
+    general_machine_code_raw = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='Código general del albarán',
+        help_text=(
+            'Anotación #CODIGO# general del albarán completo (fuera de '
+            'cualquier línea concreta), tal como se extrajo o se '
+            'corrigió a mano. Se usa solo como respaldo para las '
+            'líneas sin anotación propia. Vacío si el albarán no lleva '
+            'una anotación general.'
+        ),
+    )
     source_type = models.CharField(
         max_length=10,
         choices=SOURCE_TYPE_CHOICES,

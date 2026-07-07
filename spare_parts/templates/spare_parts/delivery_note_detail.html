@@ -105,6 +105,33 @@
                     </div>
                 </div>
                 <div class="card shadow-sm mb-4">
+                    <div class="card-header fw-semibold">
+                        Código general del albarán (opcional)
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label">
+                                    Anotación #CÓDIGO# general (fuera de línea)
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       name="general_machine_code_raw"
+                                       value="{{ delivery_note.general_machine_code_raw }}"
+                                       placeholder="Ej. B14, ALMACEN, TALLER MECANICO..."
+                                       {% if delivery_note.status == 'ASSIGNED' %}disabled{% endif %}>
+                                <div class="form-text">
+                                    Rellena esto solo si el albarán ENTERO va destinado a una
+                                    única máquina/centro de gasto (anotado una sola vez, fuera
+                                    de cualquier línea concreta) en vez de anotarse línea a
+                                    línea. Se usa como respaldo únicamente para las líneas que
+                                    no tengan su propia anotación.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card shadow-sm mb-4">
                     <div class="card-header fw-semibold">Líneas de artículo</div>
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">

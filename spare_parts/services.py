@@ -144,6 +144,19 @@ class DeliveryNoteExtraction(BaseModel):
         description='Fecha del albarán en formato YYYY-MM-DD. Null '
                      'si no es legible o no figura.',
     )
+    general_machine_code_raw: Optional[str] = Field(
+        default=None,
+        description='Anotación #CODIGO# GENERAL del albarán completo '
+                     '-- solo si aparece UNA vez, fuera de cualquier '
+                     'línea de artículo concreta (p. ej. junto al '
+                     'número de albarán, en la cabecera, o en un '
+                     'margen del documento), indicando que TODO el '
+                     'albarán es para una única máquina o centro de '
+                     'gasto. Null si no hay tal anotación general, o '
+                     'si las anotaciones que ves están cada una junto '
+                     'a su propia línea (en ese caso van en el campo '
+                     'machine_code_raw de cada línea, no aquí).',
+    )
     lines: list[DeliveryNoteLineExtraction] = Field(
         default_factory=list,
         description='Líneas de artículo extraídas del albarán, en '
@@ -183,8 +196,20 @@ tal cual (ej. "TALLER MECANICO", "ALMACEN HUELVA", "LOGISTICA", \
 "DEPENDENCIAS", "TALLER ELEVACION", "ALMACEN ELEVACION", \
 "ALMACEN MECANICO", "ALMACEN DEPENDENCIAS"). \
 Transcribe la anotación tal cual está escrita en el campo \
-machine_code_raw, sin normalizar ni corregir. Si no hay anotación, \
-deja ese campo en null.
+machine_code_raw de esa línea, sin normalizar ni corregir. Si esa \
+línea no tiene anotación propia, deja machine_code_raw en null.
+6. Además, comprueba si existe una anotación #CODIGO# GENERAL para \
+TODO el albarán -- es decir, una única anotación entre almohadillas \
+que NO está pegada a ninguna línea de artículo concreta, sino \
+aparte (por ejemplo junto al número de albarán, en la cabecera, o \
+escrita una sola vez en un margen del documento), indicando que \
+todo el material del albarán va destinado a la misma máquina o \
+centro de gasto. Si la ves, transcríbela en el campo \
+general_machine_code_raw (mismo formato que machine_code_raw, sin \
+las almohadillas). No confundas esto con el caso normal en que cada \
+línea lleva su propia anotación pegada a ella -- en ese caso, cada \
+anotación va en el machine_code_raw de su línea, y \
+general_machine_code_raw debe quedar en null.
 
 No inventes datos que no sean legibles en el documento -- usa null \
 en los campos opcionales cuando no puedas leerlos con certeza. Los \

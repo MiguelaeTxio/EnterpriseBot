@@ -155,14 +155,26 @@ class DeliveryNoteUploadView(CompanyUserRequiredMixin, View):
                 )
             except ValueError:
                 delivery_note.delivery_date = None
+        delivery_note.general_machine_code_raw = (
+            extraction.general_machine_code_raw or ''
+        )
         delivery_note.extraction_raw = extraction.model_dump()
         delivery_note.status = 'PROCESSED'
         delivery_note.processed_by = company_user
         delivery_note.save()
 
         for line_data in extraction.lines:
+            # Anotación por línea si existe; si no, respaldo a la
+            # anotación general del albarán (S007-H10, confirmado por
+            # Miguel Ángel: un albarán entero puede ir anotado a una
+            # sola máquina/centro de gasto en vez de línea a línea).
+            effective_raw_code = (
+                line_data.machine_code_raw
+                or delivery_note.general_machine_code_raw
+                or None
+            )
             assignment_type, machine = resolve_line_assignment(
-                line_data.machine_code_raw, company,
+                effective_raw_code, company,
             )
             DeliveryNoteLine.objects.create(
                 delivery_note=delivery_note,
@@ -193,8 +205,11 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
 
     GET: renders all header and line fields as editable.
     POST: saves corrections. If a line's machine_code_raw changed,
-    re-runs resolve_line_assignment on it. Does not execute the
-    assignment circuit -- that is DeliveryNoteConfirmView's job.
+    re-runs resolve_line_assignment on it. Lines without their own
+    code that rely on delivery_note.general_machine_code_raw as a
+    fallback (S007-H10) are also re-resolved when the general code
+    itself changes. Does not execute the assignment circuit -- that
+    is DeliveryNoteConfirmView's job.
 
     ---
 
@@ -205,7 +220,10 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
     editables.
     POST: guarda las correcciones. Si el machine_code_raw de una
     línea cambió, vuelve a ejecutar resolve_line_assignment sobre
-    ella. No ejecuta el circuito de asignación -- esa es tarea de
+    ella. Las líneas sin código propio que dependen de
+    delivery_note.general_machine_code_raw como respaldo (S007-H10)
+    también se recalculan cuando cambia el propio código general. No
+    ejecuta el circuito de asignación -- esa es tarea de
     DeliveryNoteConfirmView.
     """
 
@@ -267,6 +285,11 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
                 )
             except ValueError:
                 pass
+        old_general_code = delivery_note.general_machine_code_raw or ''
+        new_general_code = request.POST.get(
+            'general_machine_code_raw', '',
+        ).strip()
+        delivery_note.general_machine_code_raw = new_general_code
         delivery_note.save()
 
         for line in delivery_note.lines.all():
@@ -274,7 +297,12 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             new_raw_code = request.POST.get(
                 f'{prefix}machine_code_raw', '',
             ).strip()
-            code_changed = new_raw_code != (line.machine_code_raw or '')
+            # Se recalcula si cambió el código propio de la línea O el
+            # código general del albarán -- una línea sin código propio
+            # depende del general como respaldo (S007-H10).
+            old_effective = (line.machine_code_raw or '') or old_general_code
+            new_effective = new_raw_code or new_general_code
+            code_changed = new_effective != old_effective
 
             line.reference = request.POST.get(
                 f'{prefix}reference', '',
@@ -296,7 +324,7 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             manual_assignment = request.POST.get(f'{prefix}assignment_type')
             if code_changed or not manual_assignment:
                 assignment_type, machine = resolve_line_assignment(
-                    new_raw_code, company,
+                    new_effective or None, company,
                 )
                 line.assignment_type = assignment_type
                 line.machine = machine
