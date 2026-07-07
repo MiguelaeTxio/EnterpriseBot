@@ -217,45 +217,47 @@ desde el formulario de edición de sección.
 | S_H07_06 | 2026-07-02 | **Fix H07 PASO 0 — pausa de comida y checkbox no persisten en modo edición (wo_pk).** Causa raíz confirmada en `panel/views_operator.py`: la rama de edición `wo_pk is not None` (WorkOrder DIGITAL/GENERATED, reviewed=False) construía `lunch_break_start`/`lunch_break_end` exclusivamente desde `_schedule_edit` (fallback WorkdaySchedule), ignorando `first_entry.lunch_break_start/end`; el fix de S_H07_02 solo se había aplicado a la rama paralela `in_progress` (`_ip_first_entry`), nunca a esta. Solo se manifestaba en jornada partida porque es la única rama donde el fallback de horario realmente rellena algo (en intensiva ese bloque nunca setea `_lunch_start_edit`/`_lunch_end_edit`). Fix: mismo patrón de prioridad que la rama in_progress — `lunch_break_start`/`lunch_break_end` priorizan el valor real guardado (`first_entry.lunch_break_start/end`), con fallback al horario base solo si no hay valor guardado. Añadido también `no_lunch_break` al contexto de esta rama (ausente hasta ahora). Segundo hallazgo relacionado, mismo bloque: `_schedule_fields_fragment.html` renderizaba los checkboxes `id_no_lunch_toggle`/`id_had_lunch_toggle` sin atributo `checked` condicional — arrancaban desmarcados siempre, en ambas ramas de edición, ignorando el contexto Django. Fix: `id_no_lunch_toggle` con `{% if no_lunch_break %}checked{% endif %}`; `id_had_lunch_toggle` con `{% if lunch_break_start %}checked{% endif %}` (checked solo si hay pausa real guardada, ya que el fallback de horario nunca rellena `lunch_break_start` en intensiva). Eliminada `EB_CONFIG.noLunchBreak` en `form_entry.html` — hardcodeada a `false`, confirmado por grep que no se lee en ningún punto de `form_entry_assets.js` (código muerto). Archivos: `panel/views_operator.py`, `panel/templates/panel/operator/_schedule_fields_fragment.html`, `panel/templates/panel/operator/form_entry.html`. `form_entry_assets.js` solo se leyó, no se modificó. Verificado `py_compile`/`djlint` sin errores nuevos, `install_files` OK, reload `200 {"status":"OK"}`. Pendiente de confirmación funcional por Pablo Cañamero en producción — anotar resultado cuando llegue. Sesión con dos desvíos previos a H16 (ver anexo H16): fix `ProtectedError` en `InsurerCopyTariffView` (borrado+recreación de `VehicleType` sustituido por merge-por-nombre con desactivación — nunca se borra ninguna fila, ninguna relación PROTECT puede volver a bloquear la operación; mismo criterio aplicado a `VehicleTypeDeleteView`, que pasó de `.delete()` real a `is_active=False`) y fix 405 al borrar aseguradora tras búsqueda HTMX en el listado (listener `show.bs.modal` movido de `DOMContentLoaded`/fragmento recargado por HTMX a delegación sobre `document.body` en `insurer_list.html`). Ambos fixes de H16 confirmados en real por Miguel Ángel. PCH ejecutado al cierre: H07 → H10 (Albaranes de Proveedores y Almacén de Repuestos). |
 | S_H07_07 | 2026-07-07 | **NOTA DE DESVÍO desde H10 (EN PROGRESO) — incidente `TemplateDoesNotExist` en `/panel/work-orders/digital/`, SIN RESOLVER AL CIERRE.** Miguel Ángel reportó el error en producción durante una sesión de H10. Investigación con `git log --diff-filter`/`git show`/`git diff` sobre `panel/templates/panel/work_orders/digital_list.html`: el archivo nació en S026 (`67b8335`) y fue borrado en `S_H07_04` (`357b29f`, 2026-06-23) — **el propio registro de esa sesión (punto [10] de su fila en esta tabla) documenta que el borrado fue una decisión deliberada** ("copia corrupta generada al reconstruir el template truncado"), no un accidente puro como se asumió al principio de esta sesión. `DigitalWorkOrderListView` (`panel/views_workorders.py`) siguió referenciando el `template_name` borrado sin que nadie lo notara durante dos semanas. **Dos intentos de restauración, ninguno satisfactorio:** (1) reconstrucción desde cero (commit `2c78090`) — simplificada, sin la exportación Excel de 3 modos ni otras piezas históricas; sustituida al descubrir el historial real. (2) restauración fiel desde el último commit bueno anterior al borrado (`379fc76`, commit `df17e35`, con fix de icono en `b6a3a98`), reparando la misma truncación ya diagnosticada por `S_H07_04` en su punto [3] (verificado con `git diff 934d78a 379fc76` — el diff exacto que introdujo la truncación no toca la sección de exportación Excel, que permanece idéntica en ambos commits). **Pese a esto, Miguel Ángel confirma en producción que la pestaña Revisados sigue sin exportación (ni por selección ni individual), y describe además cómputo total de horas, indicador de dieta, y un dropdown de "Acciones" con tres opciones por fila — ninguna de estas tres últimas cosas aparece en NINGUNA versión de `digital_list.html` recuperable por Git** (verificado con `grep` en los tres snapshots disponibles: `934d78a` S050, `379fc76` S_H07_03, y el propio archivo restaurado — cero resultados para `total_hours`/`dieta`/`has_diet` en los tres). También verificado que `total_hours` sí existe en `views_workorders.py`, pero pertenece a `WorkOrderEntrySaveDateView` (editor de un parte, `edit.html`), no a `DigitalWorkOrderListView`. **Hipótesis principal para retomar, sin verificar todavía:** lo que Miguel Ángel recuerda pertenece a `admin_history.html`/`WorkOrderAdminHistoryView` (114 KB, vista de historial mucho más rica, con pestaña Períodos) y no a `digital_list.html` — comparar ambas plantillas línea a línea antes de tocar nada más. Sesión cerrada por Miguel Ángel con este incidente expresamente sin resolver, indicando que lo retomará otra sesión. Sin cambio de hito EN PROGRESO — H10 permanece `← EN PROGRESO` en el enrutador; este desvío no afectó a ningún paso de H10. Archivos tocados en este desvío: `panel/templates/panel/work_orders/digital_list.html` (creado y reescrito 3 veces), `panel/templates/panel/_nav_items.html` (nuevo ítem "Partes Digitales", este sí correcto y sin cuestionar). |
 
+| S_H07_08 | 2026-07-07 | **RESOLUCIÓN del incidente `digital_list.html` (ver `S_H07_07` arriba) — causa raíz confirmada: no era un problema de la plantilla, sino que Miguel Ángel recordaba funcionalidad real de `admin_history.html`.** Miguel Ángel confirmó explícitamente: "es en el listado de PDF's históricos donde se exporta el Excel" — la hipótesis principal de `S_H07_07` era correcta. Verificado con `grep` que `WorkOrderAdminHistoryView` filtra **exclusivamente** `source IN (DIGITAL, GENERATED)` — es decir, "Historial" ya es en la práctica la vista de gestión rica para partes digitales; `digital_list.html`/`DigitalWorkOrderListView` es una vista paralela más simple, sin decisión de unificarlas (no solicitado). **Replicado en `digital_list.html`, no en Historial:** (1) columnas `horas_totales`/`horas_extra` + fila de totales en Pendiente y Revisados, mismo criterio de cómputo que `WorkOrderAdminHistoryView._enrich_work_orders()` (suma de `delta_hours` por entry, extra = max(0, total−8)), anotado como atributo directo sobre cada instancia `WorkOrder` en `DigitalWorkOrderListView.get()` con `prefetch_related('entries__lines')` para evitar N+1. (2) Modal de exportación antiguo (3 modos: digital_full/multi_sheet/single_sheet, restaurado en `S_H07_07` desde el histórico de Git de mayo) **sustituido por completo** por el modal "Exportar por plantilla" — mismo HTML/JS que `admin_history.html`, adaptado a los checkboxes `.chk-wo` propios de esta plantilla; mismo backend genérico `work_order_export_by_template`/`export_template_list`, sin cambios de vista de exportación (ya soportaba cualquier `WorkOrder` pk de la empresa independientemente del source). Explica por qué Miguel Ángel no reconocía el modal restaurado en `S_H07_07`: no estaba obsoleto por accidente, era una versión anterior ya reemplazada en el resto de la app por el sistema de plantillas (H19). **Dietas:** Miguel Ángel pidió explícitamente sumar el número de dietas por operario y periodo, y celdas de precio de hora ordinaria/extra en el Excel. Implementado en `work_order_processor/services.py`, `build_export_from_template()`: nueva columna `dietas` en `COLUMN_DEFS` (1 si `WorkOrderEntry.has_diet`, 0 si no — métrica de entry, se acumula una vez por entry igual que `horas_extra`) añadida a `NUMERIC_KEYS`; nuevo `_write_price_cells()` con dos celdas de entrada `PRECIO HORA EXTRA`/`COSTE HORA ORDINARIA` antes de la cabecera de columnas (cabecera desplazada a fila 3, datos desde fila 4), mismo patrón visual que `generate_work_order_excel` (C2/C3) — sin fórmulas de salario por fila, fuera de alcance de lo pedido, solo las celdas de entrada. `dietas` añadida también a las dos listas `column_choices` (`WorkOrderAdminHistoryView.get()` y `ExportTemplateListView.get()`) como columna seleccionable al crear/editar una plantilla, y a `dietas` en pantalla (columna + total) en `digital_list.html`, igual patrón que horas. **Filtro multi-operario:** a petición de Miguel Ángel ("filtrar por periodo y sacar la suma de horas extras según los operarios filtrados... sin exportar el Excel"), `operator_pk` (int único) sustituido por `operator_pks` (lista, `GET.getlist`) en `DigitalWorkOrderListView.get()`, filtro `uploaded_by__pk__in`; en la plantilla, el `<select>` único de operario pasa a un dropdown de checkboxes multi-selección con botón "Filtrar" explícito (los checkboxes no auto-submiten, evita un submit por cada clic al marcar varios). La fila de totales (ya existente) refleja automáticamente el subconjunto de operarios + periodo elegido, sin necesidad de exportar nada. Tres commits de código (`6045cc7`, `5481238`, `9b2ac14`). Archivos: `panel/templates/panel/work_orders/digital_list.html`, `panel/templates/panel/work_orders/admin_history.html` (solo `COLUMN_LABELS` del JS del modal compartido), `panel/views_workorders.py`, `work_order_processor/services.py`. Sin cambios de modelo (`has_diet` ya existía desde antes), sin migración, sin estáticos. Incidente `S_H07_07` cerrado y resuelto. Sin cambio de hito EN PROGRESO — H10 permanece `← EN PROGRESO`; este bloque fue íntegramente un desvío de sesión, sin afectar a ningún paso de H10 (ver nota de desvío añadida en el anexo H10, fila `S008`). |
+
 ---
 
 ## 8. Hoja de Ruta para la Siguiente Sesion
 
-**PRIORITARIO — retomar primero:** incidente `digital_list.html` sin
-resolver (ver fila `S_H07_07` arriba para el detalle completo de la
-investigación). Empezar comparando `admin_history.html`
-(`WorkOrderAdminHistoryView`) contra lo que Miguel Ángel describe
-(exportación Excel individual por fila, cómputo de horas, indicador de
-dieta, dropdown de "Acciones" con tres opciones) — es la hipótesis
-principal sin verificar todavía de dónde viene realmente lo que
-recuerda, dado que ninguna versión de `digital_list.html` recuperable
-por Git contiene esas tres últimas cosas. No volver a tocar
-`digital_list.html` a ciegas sin antes hacer esa comparación.
+Sin incidentes urgentes pendientes — el de `digital_list.html`
+(`S_H07_07`) quedó resuelto en `S_H07_08` (ver fila arriba).
 
-Sin pasos comprometidos pendientes más allá de lo anterior. PASO 0
-(pausa de comida no persiste en jornada partida) resuelto en S_H07_06 —
-pendiente únicamente de confirmación funcional de Pablo Cañamero en
-producción (probará el fix en el uso real y reportará el resultado). Si
-reporta algún fallo, retomar empezando por `panel/views_operator.py`
-líneas ~2198-2219 (rama `wo_pk is not None`) y
-`panel/templates/panel/operator/_schedule_fields_fragment.html` (checkboxes
-`id_no_lunch_toggle`/`id_had_lunch_toggle`).
+Sin pasos comprometidos pendientes. PASO 0 (pausa de comida no
+persiste en jornada partida) resuelto en S_H07_06 — pendiente
+únicamente de confirmación funcional de Pablo Cañamero en producción
+(probará el fix en el uso real y reportará el resultado). Si reporta
+algún fallo, retomar empezando por `panel/views_operator.py` líneas
+~2198-2219 (rama `wo_pk is not None`) y
+`panel/templates/panel/operator/_schedule_fields_fragment.html`
+(checkboxes `id_no_lunch_toggle`/`id_had_lunch_toggle`).
 
-Trabajo futuro sugerido (no comprometido, sin cambios respecto a sesiones
-anteriores):
+Trabajo futuro sugerido (no comprometido, sin cambios respecto a
+sesiones anteriores):
 
 - **Validación EMPRESA_*** — añadir al Gate 1 de
-  `_parse_entry_lines_from_post` una comprobación de que `empresa_subtype`
-  no llegue vacío cuando la máquina tiene prefijo `EMPRESA_`. Explicado a
-  Miguel Ángel en S_H07_06 y pospuesto por decisión suya — no hay
-  incidencia real reportada en pruebas, no urgente. Retomar cuando
-  convenga o cuando se detecte el fallo en producción.
-- **Exportación Excel** — columnas `is_on_site`, `has_diet` y
-  `empresa_subtype` disponibles en el motor de plantillas (H19). Añadirlas
-  a `COLUMN_DEFS` en `work_order_processor/services.py` cuando se retome
-  H19.
-- **Analítica** — `is_on_site` y `has_diet` son candidatas a dimensiones
-  en el Laboratorio de Análisis (H20).
+  `_parse_entry_lines_from_post` una comprobación de que
+  `empresa_subtype` no llegue vacío cuando la máquina tiene prefijo
+  `EMPRESA_`. Explicado a Miguel Ángel en S_H07_06 y pospuesto por
+  decisión suya — no hay incidencia real reportada en pruebas, no
+  urgente. Retomar cuando convenga o cuando se detecte el fallo en
+  producción.
+- **Exportación Excel** — columna `is_on_site` todavía sin añadir a
+  `COLUMN_DEFS`/`column_choices` (`dietas`/`has_diet` ya se añadió en
+  `S_H07_08`). `empresa_subtype` sigue pendiente también.
+- **Analítica** — `is_on_site` sigue siendo candidata a dimensión en
+  el Laboratorio de Análisis (H20). `has_diet` ya tiene una primera
+  aplicación real (columna Dietas + suma en `digital_list.html` y en
+  el export por plantilla, `S_H07_08`) — evaluar si conviene también
+  como dimensión propia en H20 más adelante.
+- **Salario por fórmula en el export por plantilla** — las celdas de
+  precio (`PRECIO HORA EXTRA`/`COSTE HORA ORDINARIA`) añadidas en
+  `S_H07_08` son solo de entrada, sin fórmulas de salario por fila
+  conectadas (a diferencia de `generate_work_order_excel`, que sí las
+  tiene). Si Miguel Ángel lo pide, es la continuación natural.
 
 ---
 

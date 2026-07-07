@@ -467,21 +467,27 @@ decide el destino.
   `SparePartEntry` real, no descuenta stock ni genera `StockMovement`
   todavía (integración distinta y mayor, no solicitada esta vez).
 
-### DESVÍO A H07 EN S008 -- VER ANEXO H07 PARA EL DETALLE COMPLETO
+### DESVÍO A H07 EN S008 -- RESUELTO EL MISMO DÍA, VER ANEXO H07 PARA EL DETALLE COMPLETO
 
 Incidente de producción (`TemplateDoesNotExist` en
-`/panel/work-orders/digital/`) atendido por desvío durante S008,
-**sin resolver satisfactoriamente al cierre** -- Miguel Ángel confirma
-en producción que siguen faltando funcionalidades reales
-(exportación Excel individual por fila, cómputo de horas, indicador de
-dieta, un dropdown de "tres cosas" en Acciones) pese a dos intentos de
-restauración vía Git. Ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`,
-sección de notas de desvío, para el detalle técnico completo, la
-investigación de control de versiones realizada, y la hipótesis
-principal para la siguiente sesión (`admin_history.html` como fuente
-real de las funcionalidades que se están buscando, sin comparar
-todavía). H10 permaneció EN PROGRESO durante todo este desvío --
-ningún paso de H10 quedó bloqueado ni retrasado por él.
+`/panel/work-orders/digital/`) atendido por desvío durante S008.
+Quedó sin resolver satisfactoriamente en el primer bloque de la
+sesión, pero se retomó y **se resolvió por completo en un bloque
+posterior de la misma sesión** (H10 no recibió ningún commit
+adicional en ese bloque -- íntegramente desvío a H07). Causa raíz
+confirmada por Miguel Ángel: la exportación Excel, el cómputo de
+horas y el indicador de dieta que recordaba pertenecían realmente a
+`admin_history.html` (`WorkOrderAdminHistoryView`), no a
+`digital_list.html` -- la hipótesis principal dejada pendiente sí era
+la correcta. Replicado en `digital_list.html`: columnas horas/dietas +
+fila de totales, modal de exportación por plantilla (sustituyendo el
+de 3 modos restaurado por error desde el histórico de Git), celdas de
+precio ordinaria/extra en el Excel, y un nuevo filtro multi-operario
+para ver la suma de horas extra/dietas de un subconjunto de operarios
+sin exportar nada. Ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`,
+fila `S_H07_08`, para el detalle técnico completo. H10 permaneció EN
+PROGRESO durante todo este desvío -- ningún paso de H10 quedó
+bloqueado ni retrasado por él.
 
 ### PRÓXIMA SESIÓN -- ORDEN DE TRABAJO
 
@@ -494,12 +500,6 @@ ningún paso de H10 quedó bloqueado ni retrasado por él.
    implementar.
 3. Paso 8 (M365) sigue bloqueado -- revisar solo si hay novedades de
    Miguel Ángel con el administrador de Grupo Álvarez.
-4. **Fuera de H10, prioritario:** retomar el incidente de
-   `digital_list.html` desde el anexo H07 -- empezar comparando
-   `admin_history.html` (`WorkOrderAdminHistoryView`) contra lo que
-   Miguel Ángel describe (exportación individual, horas, dieta,
-   dropdown de tres acciones) antes de tocar nada más del archivo ya
-   restaurado dos veces sin éxito.
 
 ---
 
@@ -507,7 +507,7 @@ ningún paso de H10 quedó bloqueado ni retrasado por él.
 
 | Sesion | Fecha | Pasos trabajados | Resumen |
 |--------|-------|-----------------|---------|
-| S008 | 2026-07-07 | Paso 7 completo; niveles en castellano; Supplier por CIF; alta rápida + emparejamiento por descripción; modal de material en el parte (Vía A); desvío sin resolver a H07 | Ver detalle completo en "ESTADO AL CIERRE DE S008" arriba. Ocho commits de código a H10 + desvío de varios commits a H07 (ver anexo H07). Sesión cerrada a petición de Miguel Ángel con el incidente de `digital_list.html` sin resolver -- ver nota de desvío en el anexo H07 para el estado exacto y la hipótesis pendiente de verificar. |
+| S008 | 2026-07-07 | Paso 7 completo; niveles en castellano; Supplier por CIF; alta rápida + emparejamiento por descripción; modal de material en el parte (Vía A); desvío a H07 (resuelto en bloque posterior el mismo día) | Ver detalle completo en "ESTADO AL CIERRE DE S008" arriba. Ocho commits de código a H10 + desvío de varios commits a H07 (ver anexo H07). Sesión cerrada a petición de Miguel Ángel con el incidente de `digital_list.html` sin resolver -- resuelto ese mismo día en un bloque posterior de la sesión (H10 no recibió ningún commit adicional en ese bloque, íntegramente desvío a H07): causa raíz real era que la exportación/horas/dieta que Miguel Ángel recordaba pertenecía a `admin_history.html`, no a `digital_list.html` -- replicado allí junto con un nuevo filtro multi-operario. Ver anexo H07, fila `S_H07_08`, para el detalle técnico completo. |
 | S001 | 2026-06-30 | Paso 1 completo, Paso 2 parcial | App `spare_parts` creada: modelos `DeliveryNote`/`DeliveryNoteLine`/`SparePartEntry`/`StockMovement` con limbo de pre-asignación (status WAREHOUSE/PRE_ASSIGNED/CONSUMED), procedencia dual (origin_type SUPPLIER/SALVAGED para canibalización interna), relación con `work_order_processor.SparePartLine` (FK `spare_part_entry` nueva). Migración cruzada aplicada, admin registrado, reload OK. `GeminiVisionExtractionService` construido con `gemini-3.5-flash` (no 2.5, deuda técnica documentada en doc-master-enterprisebot 4.1.1). App compartida `ai_services` creada por principio DRY — `work_order_processor.services` migrado al mismo helper. Desvío completo a H18 por incidencia crítica de regresión del planificador de ruta (autocompletado roto): diagnosticado y resuelto sustituyendo `PlaceAutocompleteElement` por implementación propia — ver anexo H18 S018 para el detalle técnico completo. Paso 2 de H10 queda pendiente de integrar `GeminiVisionExtractionService.extract()` en `DeliveryNoteUploadView` (Paso 3) y testar con albaranes reales. |
 
 ### CORRECCIÓN CATÁLOGO/ALMACÉN (S007, a petición de Miguel Ángel)
