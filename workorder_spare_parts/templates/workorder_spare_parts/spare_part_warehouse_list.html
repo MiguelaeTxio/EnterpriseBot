@@ -1,0 +1,137 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/spare_part_warehouse_list.html #}
+{# Almacen para Mecanicos -- H10 Paso 5/6, corregido 2026-07-07: entidad distinta del catalogo #}
+{# de Administracion (spare_part_entry_list.html). Sin proveedor ni precio; con limbo, avisos  #}
+{# de antiguedad y ajuste de stock directo por los propios mecanicos.                           #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Almacén{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <h5 class="mb-0 fw-semibold">Almacén</h5>
+    <p class="text-muted small mb-0">
+        Stock disponible y repuestos pre-asignados a una máquina o ticket (limbo).
+        El catálogo general con proveedores y precios de compra lo gestiona Administración.
+    </p>
+</div>
+
+<div class="d-flex gap-2 mb-3 small">
+    <span class="text-muted">Antigüedad en el limbo:</span>
+    <span class="badge bg-success">&lt; 2 semanas</span>
+    <span class="badge bg-info text-dark">1 mes</span>
+    <span class="badge bg-warning text-dark">3 meses</span>
+    <span class="badge bg-danger">6 meses o más</span>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <select name="status" class="form-select form-select-sm">
+            <option value="">Todos los estados</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if value == selected_status %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="machine" class="form-select form-select-sm">
+            <option value="">Todas las máquinas</option>
+            {% for m in machines %}
+            <option value="{{ m.pk }}" {% if selected_machine == m.pk|stringformat:"s" %}selected{% endif %}>{{ m.code }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary btn-sm">Filtrar</button>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Ref. interna</th>
+                    <th>Descripción</th>
+                    <th>Cantidad / Nivel</th>
+                    <th>Estado</th>
+                    <th>Máquina / Ticket</th>
+                    <th>Antigüedad (limbo)</th>
+                    <th class="text-end">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr {% if row.age_class %}class="table-{{ row.age_class }} bg-opacity-25"{% endif %}>
+                    <td><code>{{ row.entry.internal_reference|default:"—" }}</code></td>
+                    <td>{{ row.entry.description }}</td>
+                    <td>
+                        {% if row.entry.status == 'WAREHOUSE' %}
+                            <form method="post"
+                                  action="{% url 'workorder_spare_parts:stock_adjust' row.entry.pk %}"
+                                  class="d-flex align-items-center gap-1">
+                                {% csrf_token %}
+                                {% if row.entry.is_uncountable %}
+                                    <select name="stock_level" class="form-select form-select-sm" style="width:auto;">
+                                        {% for lvl in level_choices %}
+                                        <option value="{{ lvl }}" {% if lvl == row.entry.stock_level %}selected{% endif %}>{{ lvl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}
+                                    <input type="number" step="0.01" name="stock_quantity"
+                                           value="{{ row.entry.stock_quantity }}"
+                                           class="form-control form-control-sm" style="width:6rem;">
+                                {% endif %}
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Ajustar stock">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            </form>
+                        {% elif row.entry.is_uncountable %}
+                            Nivel: {{ row.entry.stock_level|default:"—" }}
+                        {% else %}
+                            {{ row.entry.stock_quantity }}
+                        {% endif %}
+                    </td>
+                    <td><span class="badge bg-secondary">{{ row.entry.get_status_display }}</span></td>
+                    <td>
+                        {% if row.entry.breakdown_ticket %}
+                            Ticket {{ row.entry.breakdown_ticket.ticket_date_code|default:row.entry.breakdown_ticket.pk }}
+                        {% elif row.entry.machine %}
+                            {{ row.entry.machine.code }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.age_class %}
+                            <span class="badge bg-{{ row.age_class }} {% if row.age_class == 'info' or row.age_class == 'warning' %}text-dark{% endif %}">
+                                {{ row.age_days }} día{{ row.age_days|pluralize }}
+                            </span>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if row.entry.status == 'PRE_ASSIGNED' %}
+                            <form method="post"
+                                  action="{% url 'workorder_spare_parts:return_to_warehouse' row.entry.pk %}"
+                                  onsubmit="return confirm('¿Devolver este repuesto al almacén general? Se quitará la pre-asignación.');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-arrow-return-left me-1"></i>Devolver a almacén
+                                </button>
+                            </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-4">
+                        No hay repuestos en el almacén todavía.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

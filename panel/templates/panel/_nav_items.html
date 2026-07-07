@@ -37,7 +37,8 @@
 {#   "suppliers"          → Proveedores (incl. reciclado interno) (ADMIN, SUPERVISOR) #}
 {#   "machine_history"    → Historial de Máquina             (WORKSHOP, ADMIN)      #}
 {#   "workorder_history" → Mis partes                        (WORKSHOP, WORKSHOPBOSS, ADMIN) #}
-{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (Administración) / Almacén (Mecánicos) -- misma vista (ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS -- lectura para taller, edición solo ADMIN/SUPERVISOR) (Hito 10 Paso 4, reorganizado 2026-07-07) #}
+{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (Administración, ADMIN/SUPERVISOR -- proveedor y precio de compra) #}
+{#   "workorder_spare_parts_warehouse" → Almacén (Mecánicos, ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS -- stock, limbo y avisos de antigüedad) -- entidad DISTINTA del catálogo (Hito 10 Paso 5/6, corregido 2026-07-07) #}
 {# ================================================================================ #}
 <ul class="nav flex-column mt-2" id="sidebar-accordion">
     {# ------------------------------------------------------------------ #}
@@ -243,20 +244,28 @@
                             <i class="bi bi-shop"></i>Proveedores
                         </a>
                     </li>
-                    {# Catálogo de repuestos — movido aquí desde Mecánicos (2026-07-07,   #}
-                    {# a petición de Miguel Ángel): es gestión/CRUD del catálogo, tarea    #}
-                    {# administrativa. Mecánicos conserva su propio acceso de consulta    #}
-                    {# bajo "Almacén", mismo destino, ver sección Mecánicos abajo.         #}
-                    {# Spare parts catalog — moved here from Mechanics (2026-07-07, at    #}
-                    {# Miguel Ángel's request): it's catalog management/CRUD, an          #}
-                    {# administrative task. Mechanics keep their own read-only access     #}
-                    {# under "Almacén", same destination, see Mechanics section below.    #}
+                    {# Catálogo de repuestos — registro maestro con proveedor y precio de  #}
+                    {# compra (2026-07-07, corregido a petición de Miguel Ángel: entidad   #}
+                    {# DISTINTA del "Almacén" de Mecánicos -- ver spare_part_entry_list y  #}
+                    {# spare_part_warehouse_list). Restringido a ADMIN/SUPERVISOR --       #}
+                    {# WORKSHOPBOSS ve esta sección de Administración por otras cosas      #}
+                    {# (horarios, categorías de ausencia) pero no tiene por qué ver         #}
+                    {# proveedores ni precios de compra.                                   #}
+                    {# Spare parts catalog — master registry with supplier and purchase   #}
+                    {# price (2026-07-07, fixed at Miguel Ángel's request: a DISTINCT      #}
+                    {# entity from the mechanics' "Almacén" -- see spare_part_entry_list   #}
+                    {# and spare_part_warehouse_list). Restricted to ADMIN/SUPERVISOR --   #}
+                    {# WORKSHOPBOSS sees this Administración section for other things     #}
+                    {# (schedules, absence categories) but has no reason to see supplier   #}
+                    {# data or purchase prices.                                            #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
                            href="{% url 'workorder_spare_parts:catalog_list' %}">
                             <i class="bi bi-boxes"></i>Catálogo de repuestos
                         </a>
                     </li>
+                    {% endif %}
                     {# Configuración empresa — solo ADMIN / Company settings — ADMIN only #}
                     {% if company_user.role == 'ADMIN' %}
                         <li class="nav-item">
@@ -374,28 +383,22 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Almacén — antes "Catálogo de repuestos" aquí mismo, renombrado y      #}
-                    {# reorganizado 2026-07-07 a petición de Miguel Ángel: el CRUD/gestión    #}
-                    {# vive en Administración (mismo destino); aquí es la consulta de         #}
-                    {# almacén que usan los mecánicos día a día. Misma vista, mismo permiso   #}
-                    {# de lectura ya abierto a WORKSHOP/WORKSHOPBOSS desde el commit 2bb5c81.  #}
-                    {# H10 Paso 5 (2026-07-07): la vista ya incluye filtro por máquina y       #}
-                    {# nivel de stock destacado, con acceso de un clic al limbo de             #}
-                    {# pre-asignación ("Ver limbo de pre-asignación") -- no hace falta un      #}
-                    {# enlace de sidebar aparte para el limbo.                                 #}
-                    {# Almacén (Warehouse) — previously "Catálogo de repuestos" here,         #}
-                    {# renamed and reorganised 2026-07-07 at Miguel Ángel's request: CRUD/     #}
-                    {# management now lives in Administración (same destination); this is     #}
-                    {# the day-to-day warehouse lookup mechanics use. Same view, same read     #}
-                    {# permission already open to WORKSHOP/WORKSHOPBOSS since commit 2bb5c81.  #}
-                    {# H10 Paso 5 (2026-07-07): the view now includes a machine filter and     #}
-                    {# highlighted stock levels, with one-click access to the pre-assignment   #}
-                    {# limbo ("Ver limbo de pre-asignación") -- no separate sidebar entry      #}
-                    {# needed for the limbo.                                                   #}
+                    {# Almacén — entidad DISTINTA del catálogo de Administración (corregido    #}
+                    {# 2026-07-07 a petición de Miguel Ángel): stock físico, limbo de           #}
+                    {# pre-asignación con avisos de antigüedad, y ajuste de stock por los       #}
+                    {# propios mecánicos -- sin proveedor ni precio de compra, eso es cosa      #}
+                    {# del catálogo de Administración. Vista y URL propias                      #}
+                    {# (SparePartWarehouseListView, warehouse_list).                            #}
+                    {# Almacén (Warehouse) — a DISTINCT entity from the Administración          #}
+                    {# catalog (fixed 2026-07-07 at Miguel Ángel's request): physical stock,    #}
+                    {# pre-assignment limbo with age warnings, and stock adjustment by the      #}
+                    {# mechanics themselves -- no supplier or purchase price, that belongs to   #}
+                    {# the Administración catalog. Its own view and URL                         #}
+                    {# (SparePartWarehouseListView, warehouse_list).                            #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
-                               href="{% url 'workorder_spare_parts:catalog_list' %}">
+                            <a class="nav-link {% if active_nav == 'workorder_spare_parts_warehouse' %}active{% endif %}"
+                               href="{% url 'workorder_spare_parts:warehouse_list' %}">
                                 <i class="bi bi-archive-fill"></i>Almacén
                             </a>
                         </li>
@@ -583,7 +586,8 @@
         'machine_history':          'acc-operarios',
         'workorder_history':        'acc-operarios',
         'work_order_admin_history': 'acc-operarios',
-        'workorder_spare_parts_catalog': 'acc-operarios',
+        'workorder_spare_parts_catalog': 'acc-administracion',
+        'workorder_spare_parts_warehouse': 'acc-operarios',
         'breakdown_ticket_list':    'acc-tickets',
         'budgets_wizard':           'acc-asistencia',
         'budgets_history':          'acc-asistencia',

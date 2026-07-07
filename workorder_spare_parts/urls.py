@@ -31,16 +31,22 @@ urlpatterns = [
         views.SparePartEntryDeleteView.as_view(),
         name='catalog_delete',
     ),
-    # --- H10 Paso 5: limbo de pre-asignacion (anexo, seccion 3.2) ---
+    # --- H10 Paso 5/6 (corregido 2026-07-07): Almacen para Mecanicos, ---
+    # --- entidad distinta del catalogo de Administracion ---
     path(
-        'limbo/',
-        views.SparePartPreAssignedLimboListView.as_view(),
-        name='limbo_list',
+        'almacen/',
+        views.SparePartWarehouseListView.as_view(),
+        name='warehouse_list',
     ),
     path(
-        'limbo/<int:pk>/devolver/',
+        'almacen/<int:pk>/devolver/',
         views.SparePartReturnToWarehouseView.as_view(),
         name='return_to_warehouse',
+    ),
+    path(
+        'almacen/<int:pk>/ajustar/',
+        views.SparePartStockAdjustView.as_view(),
+        name='stock_adjust',
     ),
     # --- Caso A: consumo desde almacen (H10 Paso 4, bloque 2/4) ---
     path(

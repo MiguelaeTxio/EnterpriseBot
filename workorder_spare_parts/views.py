@@ -33,7 +33,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
-from django.db.models import Q
+from django.db.models import Q, Case, When
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
@@ -97,15 +97,29 @@ class CatalogReadAccessMixin(CompanyUserRequiredMixin):
         return response
 
 
-class SparePartEntryListView(CatalogReadAccessMixin, ListView):
+class SparePartEntryListView(SupervisorAccessMixin, ListView):
     """
-    Lists the SparePartEntry catalog for the current company, with
-    optional filtering by status, machine and free-text search over
-    reference/description (H10 Paso 5, 2026-07-07).
+    Registro maestro del catálogo de repuestos, para Administración --
+    referencia, descripción, proveedor y precio de compra. Corregido
+    2026-07-07 a petición de Miguel Ángel: esto y el "Almacén" de
+    Mecánicos (SparePartWarehouseListView) son DOS entidades
+    distintas, no la misma vista con dos etiquetas. Este catálogo es
+    el registro general (quién lo vende, a qué precio) -- sin limbo,
+    sin avisos de antigüedad, sin gestión de stock físico, eso es
+    responsabilidad de los mecánicos en su propia vista de Almacén.
+    Acceso restringido a ADMIN/SUPERVISOR -- los mecánicos no tienen
+    por qué ver precios de compra ni datos de proveedor.
     ---
-    Lista el catálogo de SparePartEntry de la empresa actual, con
-    filtro opcional por estado, máquina y búsqueda libre sobre
-    referencia/descripción (H10 Paso 5, 2026-07-07).
+    Master catalog registry of spare parts, for Administración --
+    reference, description, supplier and purchase price. Fixed
+    2026-07-07 at Miguel Ángel's request: this and the mechanics'
+    "Almacén" (SparePartWarehouseListView) are TWO distinct entities,
+    not the same view with two labels. This catalog is the general
+    registry (who sells it, at what price) -- no limbo, no age
+    warnings, no physical stock management, that is the mechanics'
+    responsibility in their own Almacén view. Access restricted to
+    ADMIN/SUPERVISOR -- mechanics have no reason to see purchase
+    prices or supplier data.
     """
 
     model = SparePartEntry
@@ -115,7 +129,9 @@ class SparePartEntryListView(CatalogReadAccessMixin, ListView):
 
     def get_queryset(self):
         company = self.request.user.company_user.company
-        qs = SparePartEntry.objects.filter(company=company).select_related('machine')
+        qs = SparePartEntry.objects.filter(company=company).select_related(
+            'machine', 'supplier',
+        )
         status = self.request.GET.get('status', '').strip()
         if status:
             qs = qs.filter(status=status)
@@ -145,9 +161,10 @@ class SparePartEntryListView(CatalogReadAccessMixin, ListView):
             MachineAsset.objects.filter(company=company, is_active=True)
             .order_by('code')
         )
-        ctx['can_edit'] = company_user.role in {
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
-        }
+        # SupervisorAccessMixin ya garantiza ADMIN/SUPERVISOR -- can_edit
+        # siempre True aquí, se mantiene la variable en la plantilla por
+        # si en el futuro se abre a otro rol de solo lectura.
+        ctx['can_edit'] = True
         return ctx
 
 
@@ -317,128 +334,164 @@ class SparePartEntryDeleteView(SupervisorAccessMixin, View):
 
 
 # =============================================================================
-# Limbo de pre-asignación -- H10 Paso 5 (anexo, sección 3.2)
+# Almacén (Mecánicos) -- H10 Paso 5/6, corregido 2026-07-07
 # =============================================================================
 
-class SparePartPreAssignedLimboListView(CatalogReadAccessMixin, View):
+class SparePartWarehouseListView(CatalogReadAccessMixin, View):
     """
-    Dedicated view for the pre-assignment limbo (annex H10, section
-    3.2): SparePartEntry records with status=PRE_ASSIGNED, ordered by
-    pre_assigned_at ascending, with an age-based colour code (green
-    <2 weeks, yellow 1 month, orange 3 months, red 6+ months) so a
-    part reserved for a machine that will never actually use it (e.g.
-    the machine had a total loss) stands out and can be manually
-    returned to the general warehouse.
+    Vista operativa del almacén para Mecánicos -- entidad distinta del
+    catálogo de Administración (corregido 2026-07-07 a petición de
+    Miguel Ángel, que señaló que había quedado la misma vista con dos
+    etiquetas cuando en realidad son dos cosas diferentes: aquí NO hay
+    proveedor ni precio de compra, y SÍ hay gestión de stock físico y
+    del limbo de pre-asignación, porque son los mecánicos quienes
+    saben si un repuesto reservado para una máquina se va a colocar o
+    ya está descartado). Un único listado con filtro por estado/
+    máquina: las filas PRE_ASSIGNED muestran el aviso de antigüedad
+    del limbo (anexo H10, sección 3.2 -- verde &lt;2 semanas, azul-info
+    1 mes, naranja 3 meses, rojo 6+ meses) y el botón "Devolver a
+    almacén"; las filas WAREHOUSE permiten ajustar la cantidad/nivel
+    directamente (SparePartStockAdjustView).
 
-    Read access same as the catalog (CatalogReadAccessMixin) -- the
-    "Devolver a almacén" action itself is a separate POST-only view
-    (SparePartReturnToWarehouseView), gated to ADMIN/SUPERVISOR like
-    the rest of catalog write actions.
+    Acceso: ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS (mismo permiso
+    de lectura ya abierto en 2bb5c81 -- son los mecánicos quienes
+    usan esta pantalla día a día).
 
-    GET /panel/repuestos/limbo/
+    GET /panel/repuestos/almacen/
 
     ---
 
-    Vista dedicada al limbo de pre-asignación (anexo H10, sección
-    3.2): registros SparePartEntry con status=PRE_ASSIGNED, ordenados
-    por pre_assigned_at ascendente, con un código de color por
-    antigüedad (verde <2 semanas, amarillo 1 mes, naranja 3 meses,
-    rojo 6 meses o más) para que un repuesto reservado para una
-    máquina que ya nunca lo va a usar (p. ej. la máquina tuvo un
-    siniestro) destaque y pueda devolverse manualmente al almacén
-    general.
+    Operational warehouse view for Mechanics -- a distinct entity from
+    the Administración catalog (fixed 2026-07-07 at Miguel Ángel's
+    request, who pointed out it had ended up as the same view with two
+    labels when they are actually two different things: no supplier or
+    purchase price here, and yes physical stock and pre-assignment
+    limbo management, because mechanics are the ones who know whether
+    a part reserved for a machine will actually be fitted or is
+    already discarded). A single list with status/machine filter:
+    PRE_ASSIGNED rows show the limbo age warning (annex H10, section
+    3.2 -- green &lt;2 weeks, info-blue 1 month, orange 3 months, red
+    6+ months) and the "Devolver a almacén" button; WAREHOUSE rows
+    allow adjusting quantity/level directly
+    (SparePartStockAdjustView).
 
-    Mismo acceso de lectura que el catálogo (CatalogReadAccessMixin)
-    -- la acción "Devolver a almacén" en sí es una vista aparte, solo
-    POST (SparePartReturnToWarehouseView), restringida a ADMIN/
-    SUPERVISOR igual que el resto de acciones de escritura del
-    catálogo.
+    Access: ADMIN, SUPERVISOR, WORKSHOP, WORKSHOPBOSS (same read
+    permission already opened in 2bb5c81 -- mechanics are the ones
+    using this screen day to day).
 
-    GET /panel/repuestos/limbo/
+    GET /panel/repuestos/almacen/
     """
 
-    template_name = 'workorder_spare_parts/spare_part_limbo_list.html'
+    template_name = 'workorder_spare_parts/spare_part_warehouse_list.html'
 
-    # Umbrales de antigüedad -- anexo H10 sección 3.2, literal.
-    # Age thresholds -- annex H10 section 3.2, literal.
+    # Umbrales de antigüedad del limbo -- anexo H10 sección 3.2, literal.
+    # Limbo age thresholds -- annex H10 section 3.2, literal.
     _AGE_YELLOW_DAYS = 14   # >= 2 semanas
     _AGE_ORANGE_DAYS = 30   # >= 1 mes
     _AGE_RED_DAYS = 90      # >= 3 meses
     # NOTA: el anexo tambien menciona "rojo (6 meses o mas)" como un
     # cuarto escalon, pero solo describe 4 colores para 3 umbrales
     # explicitos (2 semanas/1 mes/3 meses) -- interpretado como que
-    # "rojo" cubre todo lo que supere los 3 meses (incluido 6+),
-    # sin un quinto color propio para 6 meses. Asuncion no
-    # bloqueante, a confirmar con Miguel Angel si se querian 4
-    # umbrales reales en vez de 3.
+    # "rojo" cubre todo lo que supere los 3 meses (incluido 6+), sin
+    # un quinto color propio para 6 meses. Asuncion no bloqueante, a
+    # confirmar con Miguel Angel si se querian 4 umbrales reales.
     # NOTE: the annex also mentions "red (6 months or more)" as a
     # fourth step, but only describes 4 colours for 3 explicit
     # thresholds (2 weeks/1 month/3 months) -- interpreted as "red"
     # covering everything past 3 months (including 6+), without a
-    # fifth colour of its own for 6 months. Non-blocking assumption,
-    # to confirm with Miguel Ángel if 4 real thresholds were wanted
-    # instead of 3.
+    # fifth colour of its own. Non-blocking assumption, to confirm
+    # with Miguel Ángel if 4 real thresholds were wanted.
 
     def get(self, request):
         from django.utils.timezone import now as _tz_now
 
         company = request.user.company_user.company
-        entries = list(
-            SparePartEntry.objects.filter(
-                company=company,
-                status=SparePartEntry.STATUS_PRE_ASSIGNED,
-            )
+        qs = (
+            SparePartEntry.objects.filter(company=company)
             .select_related('machine', 'breakdown_ticket')
-            .order_by('pre_assigned_at')
         )
+        status = request.GET.get('status', '').strip()
+        if status:
+            qs = qs.filter(status=status)
+        machine_pk = request.GET.get('machine', '').strip()
+        if machine_pk:
+            qs = qs.filter(machine_id=machine_pk)
+        # Pre-asignados primero (por antigüedad, los más viejos arriba
+        # para que salten a la vista), el resto por pk descendente.
+        # Pre-assigned first (by age, oldest on top so they stand
+        # out), the rest by descending pk.
+        entries = list(qs.order_by(
+            Case(
+                When(status=SparePartEntry.STATUS_PRE_ASSIGNED, then=0),
+                default=1,
+            ),
+            'pre_assigned_at', '-pk',
+        ))
 
         _now = _tz_now()
         rows = []
         for entry in entries:
-            age_days = (
-                (_now - entry.pre_assigned_at).days
-                if entry.pre_assigned_at else 0
-            )
-            if age_days >= self._AGE_RED_DAYS:
-                age_class = 'danger'
-            elif age_days >= self._AGE_ORANGE_DAYS:
-                age_class = 'warning'
-            elif age_days >= self._AGE_YELLOW_DAYS:
-                age_class = 'info'
-            else:
-                age_class = 'success'
-            rows.append({'entry': entry, 'age_days': age_days, 'age_class': age_class})
+            age_days = None
+            age_class = None
+            if (
+                entry.status == SparePartEntry.STATUS_PRE_ASSIGNED
+                and entry.pre_assigned_at
+            ):
+                age_days = (_now - entry.pre_assigned_at).days
+                if age_days >= self._AGE_RED_DAYS:
+                    age_class = 'danger'
+                elif age_days >= self._AGE_ORANGE_DAYS:
+                    age_class = 'warning'
+                elif age_days >= self._AGE_YELLOW_DAYS:
+                    age_class = 'info'
+                else:
+                    age_class = 'success'
+            rows.append({
+                'entry': entry, 'age_days': age_days, 'age_class': age_class,
+            })
 
-        company_user = request.user.company_user
+        machines = (
+            MachineAsset.objects.filter(company=company, is_active=True)
+            .order_by('code')
+        )
+
         return render(request, self.template_name, {
-            'company_user': company_user,
-            'active_nav': 'workorder_spare_parts_catalog',
+            'company_user': request.user.company_user,
+            'active_nav': 'workorder_spare_parts_warehouse',
             'rows': rows,
-            'can_edit': company_user.role in {
-                CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
-            },
+            'machines': machines,
+            'status_choices': SparePartEntry.STATUS_CHOICES,
+            'selected_status': status,
+            'selected_machine': machine_pk,
+            'level_choices': StockAssignmentService.LEVEL_CHOICES,
         })
 
 
-class SparePartReturnToWarehouseView(SupervisorAccessMixin, View):
+class SparePartReturnToWarehouseView(CatalogReadAccessMixin, View):
     """
-    Executes the "Devolver a almacén" transition described in annex
-    H10, section 3.2: status -> WAREHOUSE, clears machine /
-    breakdown_ticket / pre_assigned_at, records StockMovement
-    RETURN_TO_WAREHOUSE. POST only, ADMIN/SUPERVISOR (same access as
-    the rest of catalog write actions).
+    Ejecuta la transición "Devolver a almacén" del anexo H10, sección
+    3.2: status -> WAREHOUSE, limpia machine/breakdown_ticket/
+    pre_assigned_at, registra StockMovement RETURN_TO_WAREHOUSE.
+    Corregido 2026-07-07: acceso ampliado de ADMIN/SUPERVISOR a
+    CatalogReadAccessMixin (incluye WORKSHOP/WORKSHOPBOSS) -- son los
+    mecánicos quienes saben si un repuesto en el limbo se va a colocar
+    o ya está descartado, y deben poder devolverlo ellos mismos, sin
+    depender de un ADMIN.
 
-    URL: POST /panel/repuestos/limbo/<pk>/devolver/
+    URL: POST /panel/repuestos/almacen/<pk>/devolver/
 
     ---
 
-    Ejecuta la transición "Devolver a almacén" descrita en el anexo
-    H10, sección 3.2: status -> WAREHOUSE, limpia machine /
-    breakdown_ticket / pre_assigned_at, registra StockMovement
-    RETURN_TO_WAREHOUSE. Solo POST, ADMIN/SUPERVISOR (mismo acceso
-    que el resto de acciones de escritura del catálogo).
+    Executes the "Devolver a almacén" transition from annex H10,
+    section 3.2: status -> WAREHOUSE, clears machine/breakdown_ticket/
+    pre_assigned_at, records StockMovement RETURN_TO_WAREHOUSE. Fixed
+    2026-07-07: access widened from ADMIN/SUPERVISOR to
+    CatalogReadAccessMixin (includes WORKSHOP/WORKSHOPBOSS) --
+    mechanics are the ones who know whether a part in limbo will
+    actually be fitted or is already discarded, and should be able to
+    return it themselves, without depending on an ADMIN.
 
-    URL: POST /panel/repuestos/limbo/<pk>/devolver/
+    URL: POST /panel/repuestos/almacen/<pk>/devolver/
     """
 
     def post(self, request, pk):
@@ -472,7 +525,86 @@ class SparePartReturnToWarehouseView(SupervisorAccessMixin, View):
             request,
             f"'{entry.description}' devuelto a almacén correctamente.",
         )
-        return redirect('workorder_spare_parts:limbo_list')
+        return redirect('workorder_spare_parts:warehouse_list')
+
+
+class SparePartStockAdjustView(CatalogReadAccessMixin, View):
+    """
+    Ajuste directo de stock (cantidad o nivel) para una SparePartEntry
+    en status=WAREHOUSE, ejecutado por los propios mecánicos -- a
+    petición de Miguel Ángel (2026-07-07): "el inventario lo van a
+    gestionar los propios mecánicos". Genera un StockMovement ADJUST
+    para trazabilidad, mismo patrón que el ajuste ya existente al
+    editar el catálogo desde Administración (SparePartEntryUpdateView),
+    pero accesible aquí sin pasar por el formulario completo de
+    catálogo (que incluye referencia/proveedor/precio, campos que los
+    mecánicos no tocan).
+
+    URL: POST /panel/repuestos/almacen/<pk>/ajustar/
+
+    ---
+
+    Direct stock adjustment (quantity or level) for a SparePartEntry
+    in status=WAREHOUSE, executed by the mechanics themselves -- at
+    Miguel Ángel's request (2026-07-07): "the mechanics themselves
+    will manage the inventory". Records a StockMovement ADJUST for
+    traceability, same pattern as the adjustment already made when
+    editing the catalog from Administración
+    (SparePartEntryUpdateView), but reachable here without going
+    through the full catalog form (which includes
+    reference/supplier/price, fields mechanics don't touch).
+
+    URL: POST /panel/repuestos/almacen/<pk>/ajustar/
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        entry = get_object_or_404(
+            SparePartEntry,
+            pk=pk,
+            company=company,
+            status=SparePartEntry.STATUS_WAREHOUSE,
+        )
+
+        if entry.is_uncountable:
+            new_level = request.POST.get('stock_level', '').strip().upper()
+            if new_level not in StockAssignmentService.LEVEL_CHOICES:
+                messages.error(request, 'Nivel de stock no válido.')
+                return redirect('workorder_spare_parts:warehouse_list')
+            entry.stock_level = new_level
+            entry.save(update_fields=['stock_level'])
+            StockMovement.objects.create(
+                spare_part_entry=entry,
+                movement_type=StockMovement.MOVEMENT_ADJUST,
+                quantity=0,
+                level_after=new_level,
+                machine=entry.machine,
+                created_by=request.user.company_user,
+                notes='Ajuste de nivel de stock desde el almacén (mecánico).',
+            )
+        else:
+            raw_qty = request.POST.get('stock_quantity', '').strip()
+            try:
+                new_qty = Decimal(raw_qty)
+            except (InvalidOperation, ValueError):
+                messages.error(request, 'Cantidad no válida.')
+                return redirect('workorder_spare_parts:warehouse_list')
+            delta = new_qty - (entry.stock_quantity or Decimal('0'))
+            entry.stock_quantity = new_qty
+            entry.save(update_fields=['stock_quantity'])
+            StockMovement.objects.create(
+                spare_part_entry=entry,
+                movement_type=StockMovement.MOVEMENT_ADJUST,
+                quantity=delta,
+                machine=entry.machine,
+                created_by=request.user.company_user,
+                notes='Ajuste de cantidad de stock desde el almacén (mecánico).',
+            )
+
+        messages.success(
+            request, f"Stock de '{entry.description}' actualizado.",
+        )
+        return redirect('workorder_spare_parts:warehouse_list')
 
 
 class SparePartWarehouseSearchView(CatalogReadAccessMixin, View):
