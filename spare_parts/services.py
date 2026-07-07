@@ -419,6 +419,69 @@ def resolve_recipient_company_code(raw_tax_id: Optional[str]) -> str:
     )
 
 
+def resolve_or_create_supplier(company, raw_tax_id: Optional[str], name: str = ''):
+    """
+    Resuelve un Supplier de tipo EXTERNAL para `company` a partir del
+    CIF del albarán -- confirmado por Miguel Ángel (2026-07-07):
+    siempre por CIF, nunca por nombre, mismo principio ya aplicado en
+    resolve_recipient_company_code() para la empresa destinataria.
+    Si no hay ningún Supplier con ese CIF (normalizado, sin espacios/
+    guiones -- ver _normalise_tax_id) para la empresa, se crea uno
+    nuevo automáticamente.
+
+    Sin CIF (raw_tax_id vacío o no extraído) no se resuelve ni se
+    crea nada -- devuelve None, y la línea/entrada queda con
+    supplier=None, igual que hasta ahora (los campos de texto libre
+    supplier_name/supplier_tax_id siguen siendo el único rastro en
+    ese caso). Evita crear proveedores duplicados o mal identificados
+    a partir de una coincidencia de nombre poco fiable.
+
+    No aplicado retroactivamente a SparePartEntry ya existentes --
+    confirmado por Miguel Ángel: no hace falta, los datos de prueba
+    actuales se borrarán al final de las pruebas.
+
+    ---
+
+    Resolves an EXTERNAL-type Supplier for `company` from the
+    delivery note's tax ID -- confirmed by Miguel Ángel (2026-07-07):
+    always by tax ID, never by name, same principle already applied
+    in resolve_recipient_company_code() for the recipient company. If
+    no Supplier with that tax ID (normalised, no spaces/dashes -- see
+    _normalise_tax_id) exists for the company, a new one is created
+    automatically.
+
+    Without a tax ID (raw_tax_id empty or not extracted) nothing is
+    resolved or created -- returns None, and the line/entry stays
+    with supplier=None, same as before (the supplier_name/
+    supplier_tax_id free-text fields remain the only trace in that
+    case). Avoids creating duplicate or misidentified suppliers from
+    an unreliable name match.
+
+    Not applied retroactively to existing SparePartEntry records --
+    confirmed by Miguel Ángel: not needed, current test data will be
+    deleted at the end of testing.
+    """
+    from .models import Supplier
+
+    normalised = _normalise_tax_id(raw_tax_id)
+    if not normalised:
+        return None
+
+    for candidate in Supplier.objects.filter(
+        company=company,
+        supplier_type=Supplier.TYPE_EXTERNAL,
+    ).exclude(tax_id=''):
+        if _normalise_tax_id(candidate.tax_id) == normalised:
+            return candidate
+
+    return Supplier.objects.create(
+        company=company,
+        supplier_type=Supplier.TYPE_EXTERNAL,
+        name=(name or raw_tax_id or 'Proveedor sin nombre').strip(),
+        tax_id=(raw_tax_id or '').strip(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # General cost-centre resolution / Resolución de centro de gasto general
 # (Annex H10, TAREA INMEDIATA punto 2, S004)
@@ -614,6 +677,14 @@ def confirm_delivery_note(delivery_note, company_user):
     is open or directly to the machine otherwise, and records a
     StockMovement IN.
 
+    Resolves (or creates, if none matches) a real Supplier record for
+    the whole delivery note via resolve_or_create_supplier(), always
+    by tax ID (2026-07-07, confirmed by Miguel Ángel) -- assigns it to
+    every SparePartEntry.supplier created/updated here, alongside the
+    existing supplier_name/supplier_tax_id free-text fields (kept
+    untouched for historical trace). Not applied retroactively to
+    entries from earlier sessions.
+
     All entries created here are countable (is_uncountable=False) —
     supplier delivery notes always state a quantity; uncountable
     stock levels are only set manually by mechanics at consumption
@@ -641,6 +712,14 @@ def confirm_delivery_note(delivery_note, company_user):
     abierto o directamente a la máquina en caso contrario, y
     registra un StockMovement IN.
 
+    Resuelve (o crea, si no coincide ninguno) un registro Supplier
+    real para todo el albarán vía resolve_or_create_supplier(),
+    siempre por CIF (2026-07-07, confirmado por Miguel Ángel) --
+    lo asigna a cada SparePartEntry.supplier creado/actualizado aquí,
+    junto a los campos de texto libre supplier_name/supplier_tax_id
+    ya existentes (intactos, para rastro histórico). No se aplica
+    retroactivamente a entradas de sesiones anteriores.
+
     Todas las entradas creadas aquí son contables
     (is_uncountable=False) — los albaranes de proveedor siempre
     indican una cantidad; los niveles incontables solo los establece
@@ -658,6 +737,15 @@ def confirm_delivery_note(delivery_note, company_user):
 
     company = delivery_note.company
     counts = {'warehouse': 0, 'pre_assigned': 0, 'unassigned': 0}
+
+    # Resolucion/alta del Supplier real, siempre por CIF -- confirmado
+    # por Miguel Angel (2026-07-07). Una sola vez por albaran, no por
+    # linea (el proveedor es el mismo para todas las lineas del mismo
+    # albaran). None si no hay CIF extraido -- las lineas quedan solo
+    # con los campos de texto libre, igual que hasta ahora.
+    resolved_supplier = resolve_or_create_supplier(
+        company, delivery_note.supplier_tax_id, delivery_note.supplier_name,
+    )
 
     for line in delivery_note.lines.all():
         quantity = line.quantity or Decimal('0')
@@ -679,6 +767,7 @@ def confirm_delivery_note(delivery_note, company_user):
                     is_uncountable=False,
                     status=SparePartEntry.STATUS_WAREHOUSE,
                     origin_type=SparePartEntry.ORIGIN_SUPPLIER,
+                    supplier=resolved_supplier,
                     supplier_name=delivery_note.supplier_name,
                     supplier_tax_id=delivery_note.supplier_tax_id,
                     purchase_unit_price=line.unit_price,
@@ -688,6 +777,7 @@ def confirm_delivery_note(delivery_note, company_user):
             entry.stock_quantity = (
                 entry.stock_quantity or Decimal('0')
             ) + quantity
+            entry.supplier = resolved_supplier
             entry.purchase_unit_price = line.unit_price
             entry.purchase_total_price = line.total_price
             entry.save()
@@ -725,6 +815,7 @@ def confirm_delivery_note(delivery_note, company_user):
                 breakdown_ticket=ticket,
                 pre_assigned_at=now(),
                 origin_type=SparePartEntry.ORIGIN_SUPPLIER,
+                supplier=resolved_supplier,
                 supplier_name=delivery_note.supplier_name,
                 supplier_tax_id=delivery_note.supplier_tax_id,
                 purchase_unit_price=line.unit_price,
