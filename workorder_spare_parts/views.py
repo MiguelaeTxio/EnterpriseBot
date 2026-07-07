@@ -100,12 +100,12 @@ class CatalogReadAccessMixin(CompanyUserRequiredMixin):
 class SparePartEntryListView(CatalogReadAccessMixin, ListView):
     """
     Lists the SparePartEntry catalog for the current company, with
-    optional filtering by status and free-text search over
-    reference/description.
+    optional filtering by status, machine and free-text search over
+    reference/description (H10 Paso 5, 2026-07-07).
     ---
     Lista el catálogo de SparePartEntry de la empresa actual, con
-    filtro opcional por estado y búsqueda libre sobre
-    referencia/descripción.
+    filtro opcional por estado, máquina y búsqueda libre sobre
+    referencia/descripción (H10 Paso 5, 2026-07-07).
     """
 
     model = SparePartEntry
@@ -119,6 +119,9 @@ class SparePartEntryListView(CatalogReadAccessMixin, ListView):
         status = self.request.GET.get('status', '').strip()
         if status:
             qs = qs.filter(status=status)
+        machine_pk = self.request.GET.get('machine', '').strip()
+        if machine_pk:
+            qs = qs.filter(machine_id=machine_pk)
         q = self.request.GET.get('q', '').strip()
         if q:
             qs = qs.filter(
@@ -126,16 +129,22 @@ class SparePartEntryListView(CatalogReadAccessMixin, ListView):
                 | Q(reference__icontains=q)
                 | Q(description__icontains=q)
             )
-        return qs
+        return qs.order_by('-pk')
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         company_user = self.request.user.company_user
+        company = company_user.company
         ctx['company_user'] = company_user
         ctx['active_nav'] = 'workorder_spare_parts_catalog'
         ctx['status_choices'] = SparePartEntry.STATUS_CHOICES
         ctx['selected_status'] = self.request.GET.get('status', '')
         ctx['selected_q'] = self.request.GET.get('q', '')
+        ctx['selected_machine'] = self.request.GET.get('machine', '')
+        ctx['machines'] = (
+            MachineAsset.objects.filter(company=company, is_active=True)
+            .order_by('code')
+        )
         ctx['can_edit'] = company_user.role in {
             CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
         }
@@ -305,6 +314,165 @@ class SparePartEntryDeleteView(SupervisorAccessMixin, View):
         entry.delete()
         messages.success(request, f"Repuesto '{description}' eliminado correctamente.")
         return redirect('workorder_spare_parts:catalog_list')
+
+
+# =============================================================================
+# Limbo de pre-asignación -- H10 Paso 5 (anexo, sección 3.2)
+# =============================================================================
+
+class SparePartPreAssignedLimboListView(CatalogReadAccessMixin, View):
+    """
+    Dedicated view for the pre-assignment limbo (annex H10, section
+    3.2): SparePartEntry records with status=PRE_ASSIGNED, ordered by
+    pre_assigned_at ascending, with an age-based colour code (green
+    <2 weeks, yellow 1 month, orange 3 months, red 6+ months) so a
+    part reserved for a machine that will never actually use it (e.g.
+    the machine had a total loss) stands out and can be manually
+    returned to the general warehouse.
+
+    Read access same as the catalog (CatalogReadAccessMixin) -- the
+    "Devolver a almacén" action itself is a separate POST-only view
+    (SparePartReturnToWarehouseView), gated to ADMIN/SUPERVISOR like
+    the rest of catalog write actions.
+
+    GET /panel/repuestos/limbo/
+
+    ---
+
+    Vista dedicada al limbo de pre-asignación (anexo H10, sección
+    3.2): registros SparePartEntry con status=PRE_ASSIGNED, ordenados
+    por pre_assigned_at ascendente, con un código de color por
+    antigüedad (verde <2 semanas, amarillo 1 mes, naranja 3 meses,
+    rojo 6 meses o más) para que un repuesto reservado para una
+    máquina que ya nunca lo va a usar (p. ej. la máquina tuvo un
+    siniestro) destaque y pueda devolverse manualmente al almacén
+    general.
+
+    Mismo acceso de lectura que el catálogo (CatalogReadAccessMixin)
+    -- la acción "Devolver a almacén" en sí es una vista aparte, solo
+    POST (SparePartReturnToWarehouseView), restringida a ADMIN/
+    SUPERVISOR igual que el resto de acciones de escritura del
+    catálogo.
+
+    GET /panel/repuestos/limbo/
+    """
+
+    template_name = 'workorder_spare_parts/spare_part_limbo_list.html'
+
+    # Umbrales de antigüedad -- anexo H10 sección 3.2, literal.
+    # Age thresholds -- annex H10 section 3.2, literal.
+    _AGE_YELLOW_DAYS = 14   # >= 2 semanas
+    _AGE_ORANGE_DAYS = 30   # >= 1 mes
+    _AGE_RED_DAYS = 90      # >= 3 meses
+    # NOTA: el anexo tambien menciona "rojo (6 meses o mas)" como un
+    # cuarto escalon, pero solo describe 4 colores para 3 umbrales
+    # explicitos (2 semanas/1 mes/3 meses) -- interpretado como que
+    # "rojo" cubre todo lo que supere los 3 meses (incluido 6+),
+    # sin un quinto color propio para 6 meses. Asuncion no
+    # bloqueante, a confirmar con Miguel Angel si se querian 4
+    # umbrales reales en vez de 3.
+    # NOTE: the annex also mentions "red (6 months or more)" as a
+    # fourth step, but only describes 4 colours for 3 explicit
+    # thresholds (2 weeks/1 month/3 months) -- interpreted as "red"
+    # covering everything past 3 months (including 6+), without a
+    # fifth colour of its own for 6 months. Non-blocking assumption,
+    # to confirm with Miguel Ángel if 4 real thresholds were wanted
+    # instead of 3.
+
+    def get(self, request):
+        from django.utils.timezone import now as _tz_now
+
+        company = request.user.company_user.company
+        entries = list(
+            SparePartEntry.objects.filter(
+                company=company,
+                status=SparePartEntry.STATUS_PRE_ASSIGNED,
+            )
+            .select_related('machine', 'breakdown_ticket')
+            .order_by('pre_assigned_at')
+        )
+
+        _now = _tz_now()
+        rows = []
+        for entry in entries:
+            age_days = (
+                (_now - entry.pre_assigned_at).days
+                if entry.pre_assigned_at else 0
+            )
+            if age_days >= self._AGE_RED_DAYS:
+                age_class = 'danger'
+            elif age_days >= self._AGE_ORANGE_DAYS:
+                age_class = 'warning'
+            elif age_days >= self._AGE_YELLOW_DAYS:
+                age_class = 'info'
+            else:
+                age_class = 'success'
+            rows.append({'entry': entry, 'age_days': age_days, 'age_class': age_class})
+
+        company_user = request.user.company_user
+        return render(request, self.template_name, {
+            'company_user': company_user,
+            'active_nav': 'workorder_spare_parts_catalog',
+            'rows': rows,
+            'can_edit': company_user.role in {
+                CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+            },
+        })
+
+
+class SparePartReturnToWarehouseView(SupervisorAccessMixin, View):
+    """
+    Executes the "Devolver a almacén" transition described in annex
+    H10, section 3.2: status -> WAREHOUSE, clears machine /
+    breakdown_ticket / pre_assigned_at, records StockMovement
+    RETURN_TO_WAREHOUSE. POST only, ADMIN/SUPERVISOR (same access as
+    the rest of catalog write actions).
+
+    URL: POST /panel/repuestos/limbo/<pk>/devolver/
+
+    ---
+
+    Ejecuta la transición "Devolver a almacén" descrita en el anexo
+    H10, sección 3.2: status -> WAREHOUSE, limpia machine /
+    breakdown_ticket / pre_assigned_at, registra StockMovement
+    RETURN_TO_WAREHOUSE. Solo POST, ADMIN/SUPERVISOR (mismo acceso
+    que el resto de acciones de escritura del catálogo).
+
+    URL: POST /panel/repuestos/limbo/<pk>/devolver/
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        entry = get_object_or_404(
+            SparePartEntry,
+            pk=pk,
+            company=company,
+            status=SparePartEntry.STATUS_PRE_ASSIGNED,
+        )
+
+        entry.status = SparePartEntry.STATUS_WAREHOUSE
+        entry.machine = None
+        entry.breakdown_ticket = None
+        entry.pre_assigned_at = None
+        entry.save(update_fields=[
+            'status', 'machine', 'breakdown_ticket', 'pre_assigned_at',
+        ])
+
+        StockMovement.objects.create(
+            spare_part_entry=entry,
+            movement_type=StockMovement.MOVEMENT_RETURN_TO_WAREHOUSE,
+            quantity=(
+                entry.stock_quantity if not entry.is_uncountable else 0
+            ),
+            created_by=request.user.company_user,
+            notes='Devuelto a almacén desde el limbo de pre-asignación.',
+        )
+
+        messages.success(
+            request,
+            f"'{entry.description}' devuelto a almacén correctamente.",
+        )
+        return redirect('workorder_spare_parts:limbo_list')
 
 
 class SparePartWarehouseSearchView(CatalogReadAccessMixin, View):

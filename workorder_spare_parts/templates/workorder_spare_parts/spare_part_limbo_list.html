@@ -1,0 +1,94 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/workorder_spare_parts/templates/workorder_spare_parts/spare_part_limbo_list.html #}
+{# Limbo de pre-asignacion (SparePartEntry status=PRE_ASSIGNED) -- H10 Paso 5, anexo seccion 3.2. #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Limbo de pre-asignación{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+        <h5 class="mb-0 fw-semibold">Limbo de pre-asignación</h5>
+        <p class="text-muted small mb-0">
+            Repuestos reservados para una máquina o ticket concreto que todavía no se
+            han consumido en ningún parte. Si la máquina destino ya no lo va a usar
+            (p. ej. un siniestro), puedes devolverlo al almacén general.
+        </p>
+    </div>
+    <a href="{% url 'workorder_spare_parts:catalog_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-boxes me-1"></i>Ver catálogo completo
+    </a>
+</div>
+
+<div class="d-flex gap-2 mb-3 small">
+    <span class="badge bg-success">&lt; 2 semanas</span>
+    <span class="badge bg-info text-dark">1 mes</span>
+    <span class="badge bg-warning text-dark">3 meses</span>
+    <span class="badge bg-danger">6 meses o más</span>
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Ref. interna</th>
+                    <th>Descripción</th>
+                    <th>Cantidad / Nivel</th>
+                    <th>Máquina / Ticket</th>
+                    <th>Reservado desde</th>
+                    <th>Antigüedad</th>
+                    {% if can_edit %}<th class="text-end">Acciones</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr class="table-{{ row.age_class }} bg-opacity-25">
+                    <td><code>{{ row.entry.internal_reference|default:"—" }}</code></td>
+                    <td>{{ row.entry.description }}</td>
+                    <td>
+                        {% if row.entry.is_uncountable %}
+                            Nivel: {{ row.entry.stock_level|default:"—" }}
+                        {% else %}
+                            {{ row.entry.stock_quantity }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.entry.breakdown_ticket %}
+                            Ticket {{ row.entry.breakdown_ticket.ticket_date_code|default:row.entry.breakdown_ticket.pk }}
+                        {% elif row.entry.machine %}
+                            {{ row.entry.machine.code }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>{{ row.entry.pre_assigned_at|date:"d/m/Y" }}</td>
+                    <td>
+                        <span class="badge bg-{{ row.age_class }} {% if row.age_class == 'info' or row.age_class == 'warning' %}text-dark{% endif %}">
+                            {{ row.age_days }} día{{ row.age_days|pluralize }}
+                        </span>
+                    </td>
+                    {% if can_edit %}
+                    <td class="text-end">
+                        <form method="post"
+                              action="{% url 'workorder_spare_parts:return_to_warehouse' row.entry.pk %}"
+                              onsubmit="return confirm('¿Devolver este repuesto al almacén general? Se quitará la pre-asignación.');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-return-left me-1"></i>Devolver a almacén
+                            </button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-4">
+                        No hay repuestos pre-asignados pendientes de consumir.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

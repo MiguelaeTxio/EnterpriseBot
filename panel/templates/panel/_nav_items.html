@@ -379,17 +379,19 @@
                     {# vive en Administración (mismo destino); aquí es la consulta de         #}
                     {# almacén que usan los mecánicos día a día. Misma vista, mismo permiso   #}
                     {# de lectura ya abierto a WORKSHOP/WORKSHOPBOSS desde el commit 2bb5c81.  #}
-                    {# NOTA: cuando se construya el Paso 5 de H10 (vista de almacén y         #}
-                    {# movimientos, limbo de pre-asignación) este enlace debería apuntar ahí   #}
-                    {# en vez de al catálogo -- pendiente, hoja de ruta H10 Paso 5.            #}
+                    {# H10 Paso 5 (2026-07-07): la vista ya incluye filtro por máquina y       #}
+                    {# nivel de stock destacado, con acceso de un clic al limbo de             #}
+                    {# pre-asignación ("Ver limbo de pre-asignación") -- no hace falta un      #}
+                    {# enlace de sidebar aparte para el limbo.                                 #}
                     {# Almacén (Warehouse) — previously "Catálogo de repuestos" here,         #}
                     {# renamed and reorganised 2026-07-07 at Miguel Ángel's request: CRUD/     #}
                     {# management now lives in Administración (same destination); this is     #}
                     {# the day-to-day warehouse lookup mechanics use. Same view, same read     #}
                     {# permission already open to WORKSHOP/WORKSHOPBOSS since commit 2bb5c81.  #}
-                    {# NOTE: once H10 Paso 5 (warehouse/stock-movements view, pre-assignment   #}
-                    {# limbo) is built, this link should point there instead -- pending, H10   #}
-                    {# roadmap Paso 5.                                                         #}
+                    {# H10 Paso 5 (2026-07-07): the view now includes a machine filter and     #}
+                    {# highlighted stock levels, with one-click access to the pre-assignment   #}
+                    {# limbo ("Ver limbo de pre-asignación") -- no separate sidebar entry      #}
+                    {# needed for the limbo.                                                   #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"

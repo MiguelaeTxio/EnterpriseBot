@@ -7,11 +7,16 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
     <h5 class="mb-0 fw-semibold">Catálogo de Repuestos</h5>
-    {% if can_edit %}
-    <a href="{% url 'workorder_spare_parts:catalog_create' %}" class="btn btn-primary btn-sm">
-        <i class="bi bi-plus-lg me-1"></i>Nuevo repuesto
-    </a>
-    {% endif %}
+    <div class="d-flex gap-2">
+        <a href="{% url 'workorder_spare_parts:limbo_list' %}" class="btn btn-outline-warning btn-sm">
+            <i class="bi bi-hourglass-split me-1"></i>Ver limbo de pre-asignación
+        </a>
+        {% if can_edit %}
+        <a href="{% url 'workorder_spare_parts:catalog_create' %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg me-1"></i>Nuevo repuesto
+        </a>
+        {% endif %}
+    </div>
 </div>
 
 <form method="get" class="row g-2 mb-3">
@@ -24,6 +29,14 @@
             <option value="">Todos los estados</option>
             {% for value, label in status_choices %}
             <option value="{{ value }}" {% if value == selected_status %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="machine" class="form-select form-select-sm">
+            <option value="">Todas las máquinas</option>
+            {% for m in machines %}
+            <option value="{{ m.pk }}" {% if selected_machine == m.pk|stringformat:"s" %}selected{% endif %}>{{ m.code }}</option>
             {% endfor %}
         </select>
     </div>
@@ -55,9 +68,19 @@
                     </td>
                     <td>
                         {% if entry.is_uncountable %}
-                            {{ entry.stock_level|default:"—" }}
+                            {% if entry.stock_level == 'EMPTY' %}
+                                <span class="badge bg-danger">Agotado</span>
+                            {% elif entry.stock_level == 'LOW' %}
+                                <span class="badge bg-warning text-dark">{{ entry.stock_level }}</span>
+                            {% else %}
+                                {{ entry.stock_level|default:"—" }}
+                            {% endif %}
                         {% else %}
-                            {{ entry.stock_quantity }}
+                            {% if entry.stock_quantity <= 0 and entry.status == 'WAREHOUSE' %}
+                                <span class="badge bg-danger">Agotado</span>
+                            {% else %}
+                                {{ entry.stock_quantity }}
+                            {% endif %}
                         {% endif %}
                     </td>
                     <td><span class="badge bg-secondary">{{ entry.get_status_display }}</span></td>

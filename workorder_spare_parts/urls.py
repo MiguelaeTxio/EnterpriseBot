@@ -31,6 +31,17 @@ urlpatterns = [
         views.SparePartEntryDeleteView.as_view(),
         name='catalog_delete',
     ),
+    # --- H10 Paso 5: limbo de pre-asignacion (anexo, seccion 3.2) ---
+    path(
+        'limbo/',
+        views.SparePartPreAssignedLimboListView.as_view(),
+        name='limbo_list',
+    ),
+    path(
+        'limbo/<int:pk>/devolver/',
+        views.SparePartReturnToWarehouseView.as_view(),
+        name='return_to_warehouse',
+    ),
     # --- Caso A: consumo desde almacen (H10 Paso 4, bloque 2/4) ---
     path(
         'lineas/<int:entry_line_pk>/buscar-almacen/',
