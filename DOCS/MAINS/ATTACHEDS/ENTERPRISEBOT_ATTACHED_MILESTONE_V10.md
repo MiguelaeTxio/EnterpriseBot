@@ -393,93 +393,122 @@ decide el destino.
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
-### ESTADO AL CIERRE DE S007 (2026-07-07)
+### ESTADO AL CIERRE DE S008 (2026-07-07)
 
-- **Paso 1 — COMPLETADO** (sin cambios desde S001).
-- **Paso 2 — COMPLETADO** (sin cambios desde S003).
-- **Paso 3 — COMPLETADO**, validado end-to-end en producción desde S004.
-- **Paso 4 — COMPLETADO.** App `workorder_spare_parts` (CRUD de
-  catálogo, `internal_reference`, modelo `Supplier`), endpoints HTMX
-  de los 3 casos de consumo (S006), y en S007 la integración real en
-  el formulario de parte (bloques A y B, ver Paso 4-bis abajo).
-- **Paso 4-bis — puntos 1, 2 y 11 COMPLETADOS e INTEGRADOS EN
-  PRODUCCIÓN (S007).** Diseño cerrado en S006 (12 puntos), de los
-  cuales esta sesión implementó y conectó:
-  - **Puntos 1-2 (resolución de ticket + mutex):**
-    `chat/ticket_resolution.py` (módulo propio, ver más abajo) --
-    `resolve_ticket_for_machine()` (solo lectura) y
-    `get_or_create_ticket_for_machine()` (atómico,
-    `select_for_update()` sobre `MachineAsset`). Revisado sobre la
-    marcha a petición de Miguel Ángel: `PAUSED` cuenta como candidato
-    abierto (no solo `OPEN`/`IN_PROGRESS`), y con 1+ candidatos
-    **siempre** hay que confirmar con el mecánico (ya no hay enganche
-    silencioso con un único candidato) -- acción unificada `CHOOSE`.
-  - **Bloque A (integración en el formulario):** sustituye el
-    desplegable manual `ticket_pk` de H17 por resolución automática al
-    fijar la máquina de la tarea. Nuevo endpoint HTMX
-    `TaskTicketResolutionView` (`workorder_spare_parts`), nuevo
-    fragmento `_ticket_resolution.html`. **Bug real encontrado y
-    corregido durante la propia sesión:** el "Tarea 1" de un parte
-    nuevo desde cero se renderiza desde un fragmento aparte
-    (`_schedule_fields_fragment.html`), no desde el bucle de
-    `form_entry.html` -- había que añadir el bloque en los dos sitios.
-  - **Bloque B (confirmación de repuestos al guardar):** nueva
-    `WorkOrderEntryPartsReviewView` -- pantalla posterior al guardado
-    que reutiliza el widget de consumo ya construido en S006 (Caso B),
-    ampliada para cubrir también repuestos pre-asignados solo a
-    máquina (sin ticket).
-  - **Ampliación en directo, a petición de Miguel Ángel:** además de
-    la pregunta del ticket, el mismo formulario de parte muestra ahora
-    una tabla con checkbox por cada repuesto ya pre-asignado a esa
-    máquina, para marcar cuáles se consumen de verdad en la tarea
-    (`entrada_{idx}_consume_part_{pk}`, procesado al guardar vía
-    `StockAssignmentService.consume_pre_assigned()`).
-  - **Punto 12 (bis) — REVERTIDO deliberadamente.** Se implementó y
-    luego se deshizo en la misma sesión: `confirm_delivery_note()`
-    vuelve al planteamiento diferido de S001-S005 (pre-asignación
-    directa a la máquina si no hay ticket, nunca crea uno nuevo al
-    confirmar el albarán) -- Miguel Ángel confirmó que generar un
-    ticket ya al recibir material (antes de que exista ninguna avería
-    real) crea riesgo de tickets huérfanos.
-  - **Puntos 3-10 (sin implementar todavía):** `tipo_tarea` con
-    clasificación libre para lo que no sea avería; transición de
-    estado completa al grabar/editar la tarea (el checkbox
-    `ticket_closed` de H17 ya cubre el cierre, falta el matiz de
-    reapertura); el bug cruzado de "revisar/editar" que bloqueaba la
-    reapertura **ya se diagnosticó y se corrigió en esta sesión** (ver
-    más abajo), así que el punto 9 ya no tiene nada por delante.
-- **Paso 5 — COMPLETADO (S007).** Vista de almacén
-  (`SparePartWarehouseListView`) con filtro por máquina/estado y limbo
-  de pre-asignación integrado (código de color por antigüedad --
-  verde &lt;2 semanas, azul-info 1 mes, naranja 3 meses, rojo 6+ meses;
-  asunción declarada en el propio código: el anexo describe 4 colores
-  para 3 umbrales explícitos, interpretado como que "rojo" cubre todo
-  lo que pase de 3 meses, a confirmar si Miguel Ángel quería un cuarto
-  umbral real), con acción "Devolver a almacén"
-  (`SparePartReturnToWarehouseView`, transición literal de la sección
-  3.2). `StockMovementCreateView` no se construyó como vista aparte --
-  ya cubierto por el ajuste automático de `SparePartEntryUpdateView`.
-  **Corrección importante en la misma sesión:** el Catálogo
-  (Administración) y el Almacén (Mecánicos) se habían dejado como la
-  misma vista con dos etiquetas -- Miguel Ángel señaló que son dos
-  entidades distintas y se separaron por completo (ver "Corrección
-  Catálogo/Almacén" más abajo).
-- **Paso 6 (sidebar y permisos) — COMPLETADO**, resultado directo de
-  la corrección Catálogo/Almacén de esta misma sesión.
-- **Paso 7 — Alta de repuestos por canibalización. SIN EMPEZAR.**
-  Siguiente paso natural para la próxima sesión -- modal de alta
-  manual con `origin_type=SALVAGED`, selector de máquina donante y de
-  parte de origen (opcional, búsqueda libre de partes recientes de esa
-  máquina), destino igual que el resto del circuito (WAREHOUSE o
-  PRE_ASSIGNED con máquina/ticket receptor), genera `StockMovement
-  SALVAGE`. Sin disparo automático desde `form_entry.html` -- el parte
-  de trabajo nunca crea `SparePartEntry` por canibalización
-  automáticamente, solo documenta la tarea en texto libre (principio
-  rector de separación, sección 3.6, sin cambios).
+- **Pasos 1-6 — COMPLETADOS**, sin cambios desde S007.
+- **Paso 7 — Alta de repuestos por canibalización. COMPLETADO
+  (S008).** Página dedicada `SparePartSalvageCreateView`
+  (`workorder_spare_parts`), accesible desde el botón "Alta por
+  canibalización" en Almacén: descripción, contable/incontable +
+  cantidad o nivel, máquina donante, parte de origen opcional
+  (búsqueda libre HTMX entre partes recientes de esa máquina,
+  `SparePartSalvageOriginLinesView`), destino (Almacén general, o
+  directo a otra máquina con resolución automática de ticket abierto,
+  igual que en los albaranes). Servicio
+  `register_salvaged_entry()` en `spare_parts/services.py`. Sin
+  migraciones -- el modelo ya soportaba `origin_type=SALVAGED` desde
+  S001. **Asunción declarada, no bloqueante:** el anexo describía esto
+  como "modal", implementado como página dedicada siguiendo el patrón
+  del resto del módulo -- cambio solo de plantilla si Miguel Ángel
+  prefiere un modal real.
 - **Paso 8 — Persistencia real en la nube M365. BLOQUEADO**, sin
-  cambios desde S006 -- pendiente de que Miguel Ángel resuelva el
-  acceso (SharePoint, permiso `Sites.Selected`) con el administrador
-  de M365 de Grupo Álvarez.
+  cambios desde S006.
+- **Niveles de stock incontable en castellano (S008, señalado por
+  Miguel Ángel con captura de pantalla).** Nuevo filtro de plantilla
+  `workorder_spare_parts/templatetags/spare_parts_extras.py`
+  (`level_label`: FULL→Lleno, MEDIUM→Medio, LOW→Bajo, EMPTY→Vacío).
+  Los códigos internos (valor de `<option>`, valor almacenado en
+  `SparePartEntry.stock_level`, `StockAssignmentService.LEVEL_CHOICES`)
+  se mantienen sin cambios -- solo la etiqueta visible. Aplicado en
+  los 7 sitios donde aparecía el nivel (catálogo, almacén, alta
+  rápida, canibalización, y los 3 fragmentos HTMX de consumo).
+- **Resolución/alta automática de `Supplier` real por CIF (S008,
+  confirmado por Miguel Ángel).** Nueva
+  `resolve_or_create_supplier(company, raw_tax_id, name)` en
+  `spare_parts/services.py` -- mismo principio que
+  `resolve_recipient_company_code()`: siempre por CIF normalizado
+  (`_normalise_tax_id`), nunca por nombre. Si no hay CIF extraído no
+  resuelve ni crea nada (`supplier=None`, igual que antes). Si hay CIF
+  y no coincide ningún `Supplier` existente, crea uno nuevo tipo
+  `EXTERNAL` automáticamente. `confirm_delivery_note()` la invoca una
+  vez por albarán y asigna el proveedor resuelto/creado en los 3
+  puntos donde se crea/actualiza una `SparePartEntry`. Sin aplicación
+  retroactiva a entradas ya existentes (confirmado por Miguel Ángel --
+  los datos de prueba actuales se borrarán al final de las pruebas).
+- **Alta rápida en almacén sin proveedor conocido + emparejamiento por
+  descripción (S008, gap señalado por Miguel Ángel).** Nueva
+  `register_uninventoried_warehouse_stock()`: alta directa en
+  `status=WAREHOUSE`, `origin_type=SUPPLIER`, `supplier=None`,
+  `reference=''`, para repuestos que un mecánico coge del almacén
+  físico sin inventariar. Botón "Alta rápida" en Almacén
+  (`SparePartQuickIntakeCreateView`). `confirm_delivery_note()` (rama
+  WAREHOUSE) hace un segundo intento de emparejamiento por descripción
+  normalizada a minúsculas (`_normalise_description`) cuando no hay
+  coincidencia por referencia, buscando solo entre entradas sin
+  referencia ni proveedor -- si empareja, aprende la referencia real
+  del proveedor y le asigna el `Supplier` resuelto.
+- **Modal de selección/alta rápida de repuesto en el propio parte de
+  trabajo, Vía A (S008, gap señalado por Miguel Ángel).** En el bloque
+  "Repuestos utilizados" de `form_entry.html`, cada campo Material
+  tiene un botón que abre un modal único (autocompletado con
+  debounce, búsqueda en `status=WAREHOUSE`, alta rápida inline sin
+  salir del modal ni guardar la tarea) -- nuevo
+  `panel/static/panel/js/material_picker.js`, dos endpoints JSON
+  nuevos (`SparePartMaterialSearchView`,
+  `SparePartMaterialQuickCreateView`, este formulario usa `fetch()`
+  vanilla, no HTMX). `panel/views_operator.py`:
+  `_parse_spare_parts_from_post()` resuelve
+  `repuesto_N_spare_part_entry_pk` a un `SparePartEntry` real (None si
+  se escribió a mano, compatibilidad retroactiva total); los dos
+  `SparePartLine.objects.create()` (confirmación y creación directa)
+  reciben `spare_part_entry`. **Alcance declarado, no bloqueante:**
+  (1) solo Vía A -- STT/Upload confirm quedan fuera; (2) elegir un
+  repuesto del almacén por esta vía solo vincula la línea al
+  `SparePartEntry` real, no descuenta stock ni genera `StockMovement`
+  todavía (integración distinta y mayor, no solicitada esta vez).
+
+### DESVÍO A H07 EN S008 -- VER ANEXO H07 PARA EL DETALLE COMPLETO
+
+Incidente de producción (`TemplateDoesNotExist` en
+`/panel/work-orders/digital/`) atendido por desvío durante S008,
+**sin resolver satisfactoriamente al cierre** -- Miguel Ángel confirma
+en producción que siguen faltando funcionalidades reales
+(exportación Excel individual por fila, cómputo de horas, indicador de
+dieta, un dropdown de "tres cosas" en Acciones) pese a dos intentos de
+restauración vía Git. Ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`,
+sección de notas de desvío, para el detalle técnico completo, la
+investigación de control de versiones realizada, y la hipótesis
+principal para la siguiente sesión (`admin_history.html` como fuente
+real de las funcionalidades que se están buscando, sin comparar
+todavía). H10 permaneció EN PROGRESO durante todo este desvío --
+ningún paso de H10 quedó bloqueado ni retrasado por él.
+
+### PRÓXIMA SESIÓN -- ORDEN DE TRABAJO
+
+1. **Pendiente sin resolver de S007, todavía sin confirmación:**
+   alcance de `WORKSHOPBOSS` en "Editar/Revisar" (ver sección de
+   bugs S007 más abajo).
+2. Si Miguel Ángel lo pide: puntos 3-10 del diseño de Paso 4-bis
+   (`tipo_tarea`, transición de estado completa al grabar/editar la
+   tarea) -- sin cambios de estado desde S007, siguen sin
+   implementar.
+3. Paso 8 (M365) sigue bloqueado -- revisar solo si hay novedades de
+   Miguel Ángel con el administrador de Grupo Álvarez.
+4. **Fuera de H10, prioritario:** retomar el incidente de
+   `digital_list.html` desde el anexo H07 -- empezar comparando
+   `admin_history.html` (`WorkOrderAdminHistoryView`) contra lo que
+   Miguel Ángel describe (exportación individual, horas, dieta,
+   dropdown de tres acciones) antes de tocar nada más del archivo ya
+   restaurado dos veces sin éxito.
+
+---
+
+
+
+| Sesion | Fecha | Pasos trabajados | Resumen |
+|--------|-------|-----------------|---------|
+| S008 | 2026-07-07 | Paso 7 completo; niveles en castellano; Supplier por CIF; alta rápida + emparejamiento por descripción; modal de material en el parte (Vía A); desvío sin resolver a H07 | Ver detalle completo en "ESTADO AL CIERRE DE S008" arriba. Ocho commits de código a H10 + desvío de varios commits a H07 (ver anexo H07). Sesión cerrada a petición de Miguel Ángel con el incidente de `digital_list.html` sin resolver -- ver nota de desvío en el anexo H07 para el estado exacto y la hipótesis pendiente de verificar. |
+| S001 | 2026-06-30 | Paso 1 completo, Paso 2 parcial | App `spare_parts` creada: modelos `DeliveryNote`/`DeliveryNoteLine`/`SparePartEntry`/`StockMovement` con limbo de pre-asignación (status WAREHOUSE/PRE_ASSIGNED/CONSUMED), procedencia dual (origin_type SUPPLIER/SALVAGED para canibalización interna), relación con `work_order_processor.SparePartLine` (FK `spare_part_entry` nueva). Migración cruzada aplicada, admin registrado, reload OK. `GeminiVisionExtractionService` construido con `gemini-3.5-flash` (no 2.5, deuda técnica documentada en doc-master-enterprisebot 4.1.1). App compartida `ai_services` creada por principio DRY — `work_order_processor.services` migrado al mismo helper. Desvío completo a H18 por incidencia crítica de regresión del planificador de ruta (autocompletado roto): diagnosticado y resuelto sustituyendo `PlaceAutocompleteElement` por implementación propia — ver anexo H18 S018 para el detalle técnico completo. Paso 2 de H10 queda pendiente de integrar `GeminiVisionExtractionService.extract()` en `DeliveryNoteUploadView` (Paso 3) y testar con albaranes reales. |
 
 ### CORRECCIÓN CATÁLOGO/ALMACÉN (S007, a petición de Miguel Ángel)
 
@@ -564,21 +593,8 @@ almacén el de Mecánicos (antes ambos abrían Mecánicos por error).
   Ángel no lo confirmó explícitamente. Si un jefe de taller también
   necesita editar partes de otros operarios, ampliar
   `_resolve_editable_work_order()` igual que se hizo para
-  `SUPERVISOR`.
-
-### PRÓXIMA SESIÓN — ORDEN DE TRABAJO
-
-1. **Paso 7 de H10** (alta de repuestos por canibalización) --
-   siguiente paso natural del roadmap, confirmado por Miguel Ángel al
-   cierre de S007.
-2. Si hay tiempo/energía: puntos 3-10 del diseño de Paso 4-bis
-   (`tipo_tarea`, transición de estado completa al grabar/editar la
-   tarea) -- el bug que bloqueaba el punto 9 ya está resuelto.
-3. Pendiente sin resolver de S007: confirmar el alcance de
-   `WORKSHOPBOSS` en "Editar/Revisar" (ver arriba).
-4. Paso 8 (M365) sigue bloqueado hasta que Miguel Ángel resuelva el
-   acceso con el administrador de Grupo Álvarez -- no es una tarea de
-   sesión de código, revisar solo si hay novedades por su parte.
+  `SUPERVISOR`. **Sigue sin confirmar al cierre de S008 -- no se tocó
+  esta sesión.**
 
 ---
 
