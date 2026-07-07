@@ -588,9 +588,10 @@ class SparePartRegisterNewAndConsumeView(CatalogReadAccessMixin, View):
 # =============================================================================
 
 # Solo para mostrar el numero en el fragmento sin importar la constante
-# interna de chat.services en cada peticion -- valor identico, duplicado
-# deliberado y minimo para no acoplar la vista al modulo de chat mas de
-# lo necesario (ya se importa resolve_ticket_for_machine bajo demanda).
+# interna de chat.ticket_resolution en cada peticion -- valor identico,
+# duplicado deliberado y minimo para no acoplar la vista al modulo de
+# chat mas de lo necesario (ya se importa resolve_ticket_for_machine
+# bajo demanda).
 _REOPEN_WINDOW_HOURS_DISPLAY = 72
 
 
@@ -601,7 +602,7 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
     -- there is no WorkOrderEntryLine yet at this point (Vía A,
     creación directa), only a machine code the mechanic just picked
     from the asset autocomplete. Uses
-    chat.services.resolve_ticket_for_machine() (read-only preview,
+    chat.ticket_resolution.resolve_ticket_for_machine() (read-only preview,
     Paso 4-bis punto 1, revisado en S007: PAUSED cuenta como abierto,
     con 1+ candidatos siempre hay que confirmar) -- never creates or
     touches any ticket here, that only happens at save time inside
@@ -635,7 +636,7 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
     ANTES de guardarse -- todavía no existe ningún
     WorkOrderEntryLine (Vía A, creación directa), solo un código de
     máquina que el mecánico acaba de elegir del autocompletado de
-    activos. Usa chat.services.resolve_ticket_for_machine() (vista
+    activos. Usa chat.ticket_resolution.resolve_ticket_for_machine() (vista
     previa de solo lectura, Paso 4-bis punto 1, revisado en S007:
     PAUSED cuenta como abierto, con 1+ candidatos siempre hay que
     confirmar) -- nunca crea ni toca ningún ticket aquí, eso solo
@@ -670,7 +671,7 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
     template_name = 'workorder_spare_parts/_ticket_resolution.html'
 
     def get(self, request):
-        from chat.services import resolve_ticket_for_machine
+        from chat.ticket_resolution import resolve_ticket_for_machine
         from work_order_processor.management.commands.seed_personal_asset import (
             PERSONAL_ASSET_CODE,
         )

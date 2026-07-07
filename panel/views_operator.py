@@ -3900,7 +3900,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     _t_close = ld.get("ticket_closed", False)
                     if _ticket_action and ld["machine_asset"] is not None:
                         from chat.models import BreakdownTicket as _BT
-                        from chat.services import get_or_create_ticket_for_machine
+                        from chat.ticket_resolution import get_or_create_ticket_for_machine
                         _bt = None
                         try:
                             if _ticket_action == "create":
