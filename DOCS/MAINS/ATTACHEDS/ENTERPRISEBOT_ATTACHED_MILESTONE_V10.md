@@ -549,58 +549,198 @@ compartida (`_materialize_consumption()`, sección 3.4) hacia
 `SparePartLine` (FK `spare_part_entry` ya existía y ya migrada,
 `work_order_processor/migrations/0027_...`) + `StockMovement OUT`.
 
-**Dos notas de interpretación sin confirmar, documentadas en el
-docstring de la clase — revisar antes de dar el backend por
-cerrado del todo:**
-1. Contradicción entre 3.4pto4 y 3.5CasoA sobre si una entrada de
-   almacén con stock restante pasa a `CONSUMED` o se queda en
-   `WAREHOUSE` tras un uso parcial — implementado como "se queda en
-   WAREHOUSE mientras tenga stock, solo pasa a CONSUMED al llegar a
-   cero".
-2. `origin_type` del Caso C (alta ad-hoc sin albarán ni máquina
-   donante) fijado a `SUPPLIER` con campos de proveedor vacíos, a
-   falta de una categoría mejor en el modelo actual.
+**Bloques 1/4, 2/4 y 3/4 — COMPLETADOS en S006.** Nueva app Django
+independiente `workorder_spare_parts` (confirmado por Miguel Ángel:
+modularización real, no un archivo más dentro de `panel`):
 
-**UI — SIN EMPEZAR, decisión de planteamiento pendiente antes de
-tocar código.** Hallazgo clave de S005: el mecanismo actual de
-repuestos en `WorkOrderEntryFormView`/`WorkOrderEntryConfirmView`
-(`panel/views_operator.py`, ~2.200 y ~1.000 líneas respectivamente)
-es **completamente independiente** del almacén digital — hoy el
-mecánico escribe referencia/material/unidades/origen a mano, sin
-tocar `SparePartEntry` ni `StockMovement`. Integrar los 3 casos aquí
-no es "añadir un selector", es cambiar cómo un formulario en
-producción documenta sus repuestos.
+- **Bloque 1/4:** CRUD del catálogo `SparePartEntry` fuera del
+  circuito de albaranes (condición sine qua non). Lectura para
+  ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS (`CatalogReadAccessMixin`,
+  local a `workorder_spare_parts/views.py`), edición solo ADMIN/
+  SUPERVISOR (`SupervisorAccessMixin`).
+- **Bloque 2/4:** endpoints HTMX del Caso A (`SparePartWarehouseSearchView`,
+  `SparePartConsumeFromWarehouseView`) — `machine`/`breakdown_ticket`
+  resueltos siempre desde la `WorkOrderEntryLine` real, nunca desde el
+  cliente.
+- **Bloque 3/4:** endpoints HTMX de los Casos B (`SparePartPreAssignedListView`,
+  `SparePartConsumePreAssignedView`) y C (`SparePartRegisterNewAndConsumeView`).
+  Widget compartido `_consumption_widget.html` con los 3 casos
+  integrados (Caso B autocargado, Caso A con buscador, Caso C bajo
+  desplegable) — sigue siendo el mismo include pensado para
+  `WorkOrderEntryFormView`/`WorkOrderEntryConfirmView`, arquitectura
+  confirmada por Miguel Ángel: vistas separadas con la lógica, una
+  única plantilla compartida para la presentación.
 
-Miguel Ángel plantea, a decidir/concretar al empezar la sesión:
-- Los archivos ya son demasiado grandes para seguir ampliándolos
-  dentro — evaluar un archivo aparte, o directamente una app Django
-  independiente que hable con `spare_parts` en vez de mezclar la
-  lógica dentro de `views_operator.py`.
-- Antes de tocar el formulario del parte, hace falta el **CRUD de
-  artículos de repuesto** (dar de alta/editar el catálogo de
-  `SparePartEntry` fuera del circuito de albaranes) — sin esto no
-  hay nada que buscar en el Caso A.
-- Decisión pendiente: ¿los 3 casos **sustituyen** la entrada de texto
-  libre actual, o **conviven** como opción adicional mientras se
-  completa la digitalización orgánica del almacén?
+Estos tres bloques **siguen siendo válidos tal cual** bajo el nuevo
+diseño de anclaje a ticket (ver más abajo) — los endpoints y el widget
+no cambian, lo que cambia es **cuándo y contra qué se les permite
+actuar** (ver Paso 4-bis).
 
-**No bloquea nada más** — es un bloque independiente, se puede
-abordar en cualquier orden respecto al resto de pasos y respecto al
-Hito 21 (ver nota cruzada abajo).
+**Referencia interna estable (S006, aditivo, fuera del alcance
+original del Paso 4 pero directamente relacionado):** confirmado por
+Miguel Ángel — la referencia de catálogo debe ser propia de la
+empresa, nunca la del proveedor (que puede cambiar si se cambia de
+proveedor para la misma pieza física). `SparePartEntry.internal_reference`
+(nuevo campo, formato `REP-000001`, generado por
+`generate_internal_reference()`) es ahora el identificador principal
+en catálogo, búsqueda de almacén y widget de consumo. El campo
+`reference` existente queda como "referencia proveedor", informativo,
+sin tocar. **Incidencia señalada, sin resolver:** `confirm_delivery_note()`
+sigue emparejando líneas WAREHOUSE con un `SparePartEntry` existente
+por `reference` (del proveedor) — si se cambia de proveedor para la
+misma pieza física, seguiría creando una entrada de catálogo duplicada
+en vez de sumar stock a la existente. Pendiente de decidir: matching
+manual asistido al confirmar el albarán, o fuera de alcance por ahora.
 
-### Nota cruzada — Hito 21 (split de panel/views.py), candidato paralelo
+**Modelo `Supplier` (S006, aditivo):** confirmado por Miguel Ángel —
+el reciclado interno se modela como otro `Supplier`
+(`supplier_type=SALVAGE`), no como un mecanismo aparte; la
+trazabilidad de un repuesto (proveedor externo vs. reciclado, CIF...)
+la da el `Supplier` al que referencia, no un flag `origin_type`
+aparte. CRUD completo (`spare_parts/views.py`: List/Create/Update/
+Deactivate/Reactivate/Delete guardado). `SparePartEntry.supplier` es
+un FK **nullable, aditivo** — `supplier_name`/`supplier_tax_id`/
+`supplier_address` (texto libre) siguen intactos. **Pendiente, sin
+resolver:** conectar `confirm_delivery_note()` y el alta por
+canibalización para que resuelvan/creen un `Supplier` real en vez de
+escribir texto libre — ambos son flujos ya validados en producción
+(S001-S005) y falta decidir la estrategia de resolución (¿por CIF
+exacto? ¿auto-creación si no existe?).
 
-Detectado en S005 al revisar el tamaño de `views_operator.py`
-(~4.900 líneas): H21 (refactorización, actualmente PAUSADO) tenía su
-propio registro desactualizado — Fases B y C (`views_operator.py`,
-`views_workorders.py`) **ya estaban completadas**, no "pendientes"
-como decía el anexo (reparado en S005, ver
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md`). Solo quedan Fases D
-(`views_fleet.py`), E (`views_ivr.py`), F (`views_auth.py`) y G
-(limpieza final). Es trabajo mecánico y de bajo riesgo, desacoplado
-del Paso 4 de H10 — no hace falta terminar uno para empezar el otro.
-Miguel Ángel decide el orden al empezar la próxima sesión según
-tiempo/energía disponible.
+### Paso 4-bis — PIVOTE DE DISEÑO (S006): repuestos anclados al ticket de avería, no a la línea del parte
+
+**Este paso sustituye por completo la decisión de UI que quedaba
+pendiente arriba ("¿archivo aparte o app independiente?", ya resuelta
+como app independiente) y el bloque 4/4 original ("meter el widget en
+`form_entry.html`/`confirm_entry.html` anclado a `entry_line_pk`").
+Ese bloque 4/4 tal como estaba planteado queda OBSOLETO — no
+retomarlo, se sustituye por lo de abajo.**
+
+**Hallazgo que motivó el pivote:** en `WorkOrderEntryFormView` (Vía A,
+creación directa), `SparePartLine.objects.create()` se ejecuta en el
+mismo POST que crea `WorkOrder`→`WorkOrderEntry`→`WorkOrderEntryLine`.
+Es decir, **la `WorkOrderEntryLine` no existe en BD mientras el
+mecánico rellena el formulario** — se crea todo junto al enviar. Los
+endpoints HTMX de los bloques 2/4 y 3/4 necesitan un `entry_line_pk`
+real ya guardado, así que no pueden funcionar durante la creación
+directa tal como estaba planteado.
+
+**Decisión de Miguel Ángel:** los repuestos no se anclan a la línea
+del parte — se anclan al **`BreakdownTicket`**, que existe de forma
+independiente (creado por IVR, WhatsApp o directamente desde el
+panel) **antes** de que exista ningún parte. Regla de negocio:
+**no se pueden añadir repuestos sin ticket asociado a la tarea** (un
+parte sí puede no llevar ningún repuesto, eso no cambia). Si al hacer
+la tarea el centro de gasto no tiene ticket, el sistema genera uno
+sobre la marcha — el ticket nunca debe "robar tiempo" al operario, se
+resuelve solo salvo que haga falta desambiguar (ver más abajo).
+
+**Diseño cerrado en S006 (discusión larga, 10 puntos + 6 refinamientos
+adicionales — dejar registrado íntegro porque es el punto de partida
+obligado de la siguiente sesión):**
+
+1. **Resolución de ticket por centro de gasto** (compartida entre "al
+   hacer el parte" y "al confirmar un albarán" — misma función, no dos
+   implementaciones):
+   - Filtrar solo tickets `OPEN`/`IN_PROGRESS`.
+   - 0 candidatos abiertos → mirar si hay alguno **cerrado en las
+     últimas 72 horas** para ese mismo CdG (ventana elegida para
+     cubrir el caso viernes→lunes de fin de semana/festivo). Si lo
+     hay, preguntar en texto plano al mecánico: *"Hay un ticket para
+     esta máquina cerrado hace [X] — ¿es la misma avería?"* Sí →
+     se reabre (ver punto 7). No → se genera uno nuevo.
+   - 0 candidatos abiertos y ninguno cerrado en 72h → se pregenera uno
+     nuevo directamente, sin preguntar nada.
+   - 1 candidato abierto → se engancha solo, sin preguntar.
+   - Más de 1 candidato abierto → lista corta al mecánico para que
+     elija (un toque, no un formulario) — nunca dejar que Gemini
+     adivine cuál es, mezclaría dos averías reales en una.
+2. Todo el paso 1 dentro de un `get_or_create` atómico con
+   `select_for_update()` sobre la fila de `MachineAsset` (mutex, ya
+   que el ticket todavía no existe cuando se resuelve) — cubre la
+   vía parte y la vía albarán como el mismo mecanismo compartido, sin
+   condiciones de carrera, y cubre el caso de "ayuda" (dos operarios,
+   mismo ticket, cada uno su propio parte).
+3. La pre-asignación de repuestos a máquina sigue exactamente como
+   hoy (Caso B, sin cambios) — el requisito de ticket entra solo en
+   el momento de la **materialización final** (cuando el mecánico
+   cierra la tarea y el repuesto pasa de "reservado" a "gastado",
+   sale del limbo).
+4. **Clasificación de tarea, no solo de avería.** Se unifica con la
+   llamada a Gemini que ya existía para familia/tipo de avería, pero
+   se amplía: nuevo campo `tipo_tarea` en `BreakdownTicket` (AVERÍA /
+   MEJORA / MANTENIMIENTO / FABRICACIÓN / ... — nomenclatura exacta a
+   definir en la sesión de implementación). Familia/subcategoría de
+   avería (ya existente) queda condicional a `tipo_tarea=AVERÍA`; para
+   el resto, una **categorización libre** (texto que da Gemini, sin
+   taxonomía rígida) — una mejora de dependencias o la fabricación de
+   una escalera de acceso no encajan en "familia de avería". Disparo
+   único, al grabar la tarea, **asíncrono (Celery)**, para no añadirle
+   latencia al guardado del operario.
+5. El modelo se sigue llamando `BreakdownTicket` — decidido no
+   renombrarlo (alto riesgo, poco beneficio) aunque ahora cubra más
+   que averías.
+6. Origen del ticket (IVR/WhatsApp/panel-manual/auto-generado) es
+   metadato informativo, nunca bloqueante — un ticket auto-generado a
+   mitad de un parte carece de "reportante" externo y eso está bien,
+   los campos quedan vacíos sin más.
+7. **Qué es un "ticket pregenerado".** Es una fila real desde el
+   primer instante (con operario ya asignado) — no hace falta un
+   estado intermedio nuevo. Se "formaliza" (clasificación completa vía
+   Gemini) al grabar la tarea concreta que lo originó, no al cerrar
+   todo el parte.
+8. **Transición de estado**, disparada al grabar/editar la tarea (no
+   el parte completo): casilla "finalizar avería" marcada → `CLOSED`;
+   desmarcada → `IN_PROGRESS`. Si la tarea no finaliza, el ticket
+   queda `IN_PROGRESS`, listo para que el mismo operario u otro la
+   retome (caso real: se deja una máquina por otra más urgente).
+9. **Reapertura por error de cierre — NO es una acción administrativa
+   aparte.** Es efecto natural de **editar la propia tarea**: si al
+   grabarla se marcó "finalizar avería" por error, quien tenga permiso
+   de edición sobre esa tarea (la vista única de edición/creación
+   pendiente, ver bug cruzado abajo) la edita, destoca la casilla, y
+   el ticket vuelve a `IN_PROGRESS` como consecuencia de esa edición —
+   sin rol especial, sin motivo obligatorio aparte del rastro
+   automático (quién editó, cuándo, qué tarea disparó la reapertura).
+   Distinto del punto 1 (reapertura tras aviso de "¿es la misma
+   avería?", que sí es una decisión nueva del mecánico sobre una tarea
+   nueva).
+10. **Trabajo nuevo sobre un ticket ya `CLOSED` fuera de la ventana de
+    72h** → siempre ticket nuevo, nunca se reutiliza el cerrado.
+11. Todo en una única transacción atómica por tarea — si el resto del
+    parte falla validación después de resolver/crear el ticket, no
+    debe quedar un ticket huérfano sin tarea asociada.
+12. `confirm_delivery_note()` cambia de comportamiento: la rama actual
+    "línea MACHINE sin ticket abierto → se asigna directo a la
+    máquina, sin ticket" **desaparece por completo** — toda línea
+    MACHINE pasa por la misma resolución `get_or_create` compartida
+    del punto 1/2. Es un cambio de comportamiento sobre un flujo ya
+    validado en producción (S001-S005), no una funcionalidad nueva en
+    paralelo.
+
+**Bug cruzado, todavía sin diagnosticar (mencionado por Miguel Ángel
+en S006, relevante ahora porque el punto 9 depende de él):** en el
+listado de partes de operario, "revisar/editar" no entra en modo
+edición real — devuelve a la vista tal cual. Confirmado por Miguel
+Ángel: quiere una única vista de edición/creación (el mismo formulario
+de los partes digitales) para ADMIN/SUPERVISOR/WORKSHOP, nunca dos
+vistas divergentes. Sin diagnosticar todavía — necesario antes o
+durante la implementación del punto 9 de arriba, porque el mecanismo
+de reapertura por edición depende de que exista una vista de edición
+real.
+
+**No bloquea nada más de H10** — es un bloque grande pero
+independiente del resto de pasos.
+
+### Nota cruzada — Hito 21 (split de panel/views.py)
+
+**COMPLETADO en S006 vía desvío de sesión** — Fases D (descartada:
+la flota ya vivía en su propia app `fleet/`), E (`views_ivr.py`), F
+(`views_auth.py`) y G (limpieza final, `panel/views.py` reducido a
+115 líneas de solo re-exports) completadas. Detalle técnico completo,
+incidencia de re-export de `fleet.views` perdido y su fix: ver
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md`. H21 queda pendiente solo de
+verificación E2E real en producción (fuera del alcance del modelo).
 
 ### Paso 5 — Vista de almacén y movimientos
 - `SparePartListView`: listado de repuestos con filtros por máquina,
@@ -658,6 +798,39 @@ AD necesario — a diferencia del caso de H15, aquí Django corre en
 PythonAnywhere, no en un PC con OneDrive sincronizado localmente, así
 que Graph API no es evitable como sí lo fue en H15).
 
+**Decisiones de arquitectura de acceso tomadas en S006 (fuera de
+código, preparación de la reunión con el administrador de M365 de
+Grupo Álvarez):**
+- Confirmado: es **SharePoint** (bibliotecas de documentos
+  estructuradas por máquina/empleado — Flota y Chóferes), no OneDrive
+  personal.
+- Permiso a solicitar: **`Sites.Selected`** (Microsoft Graph,
+  Application permission) — acota la app a un único sitio, nunca
+  `Sites.ReadWrite.All` sobre todo el tenant.
+- Roles a pedir para Miguel Ángel en el tenant de Grúas Álvarez:
+  **Application Administrator** (registro de la app) + **SharePoint
+  Administrator** (crear el sitio/bibliotecas). El consentimiento
+  final de `Sites.Selected` requiere **Global Administrator o
+  Privileged Role Administrator** — no lo puede dar Application
+  Administrator por sí solo (verificado en documentación de Microsoft,
+  2026); pedir que alguien con ese rol lo conceda puntualmente en la
+  propia reunión, sin que se lo den a Miguel Ángel de forma permanente.
+- **Pendiente sin resolver al cierre de S006:** el administrador de
+  M365 preguntó desde qué IP se conectaría la app. PythonAnywhere
+  **no tiene IP de salida fija por defecto** (verificado en su propia
+  documentación) — la opción es contratar **QuotaGuard Static**
+  (proxy de IP fija de salida, desde 19 $/mes) y dársela, o pedirle a
+  él si puede evitar la restricción por IP autenticando con
+  **certificado** en vez de Client Secret (pregunta que Miguel Ángel
+  iba a plantear literalmente así: *"¿Podemos autenticar con
+  certificado en vez de restricción por IP?"*). Respuesta de esa
+  pregunta pendiente para la siguiente sesión — determina si hace
+  falta contratar QuotaGuard Static o no.
+- Ngrok **no sirve** para esto (resuelve tráfico de entrada, exponer
+  un servidor local; el problema aquí es de salida — dar IP fija a
+  las llamadas de EnterpriseBot hacia Microsoft Graph). Anotado para
+  no reabrir la misma pregunta.
+
 **En base de datos nunca se guarda la foto — solo la referencia.**
 `DeliveryNote` (y cualquier modelo futuro con fotos, ver Pendiente
 cruzado abajo) debe tener un campo tipo `cloud_storage_path`
@@ -700,3 +873,5 @@ de decidir en qué hito se aborda (posible Caso C de
 | S002 | 2026-07-02 | NOTA DE DESVÍO — sin trabajo directo en H10 | H10 se mantuvo EN PROGRESO durante toda la sesión sin recibir ningún avance directo. Sesión desviada por completo a H16 (motor de presupuestos: importación de tarifas por PDF, modo manual del wizard, control de acceso granular, mapa de ruta en desglose — ver anexo H16 S055) y a H18 (bug de peajes ida/vuelta y tramos AP-7, fechas pasadas en planificación de ruta, fix drag-and-drop del planificador — ver anexo H18 S019). Al cierre de sesión se ejecutó PCH: `eb-annex-router` mueve `← EN PROGRESO` de H10 a H07 (incidencia de pausa de comida en jornada partida, partes digitales). La hoja de ruta de H10 (Sección 5) queda intacta, con el Paso 3 pendiente exactamente como estaba, para cuando `eb-annex-router` vuelva a marcar H10 EN PROGRESO. |
 | S003 | 2026-07-02 | Paso 2 completo, Paso 3 puntos 1-3 completos, punto 4 iniciado | Añadido campo `machine_code_raw` a `DeliveryNoteLine` (migración `0002_deliverynoteline_machine_code_raw`, aplicada OK). Añadidas a `spare_parts/services.py`: `resolve_line_assignment()` (detecta WAREHOUSE vía alias ALM/AL/ALMACEN/ALMACÉN/WAREHOUSE, o MACHINE reutilizando `_normalise_machine_code()`/`_resolve_machine_asset()` de `work_order_processor.services` por DRY) y `confirm_delivery_note()` (ejecuta el circuito completo de la sección 3.1: SparePartEntry WAREHOUSE con suma de stock, o PRE_ASSIGNED en el limbo con búsqueda de BreakdownTicket OPEN/IN_PROGRESS, y StockMovement IN en ambos casos). Creadas `DeliveryNoteUploadView`, `DeliveryNoteDetailView`, `DeliveryNoteConfirmView` (spare_parts/views.py, protegidas con `CompanyUserRequiredMixin`), `spare_parts/urls.py` (namespace `spare_parts`), y las plantillas `delivery_note_upload.html`/`delivery_note_detail.html` (extienden `panel/base.html`). Añadido include en `enterprise_core/urls.py` (`panel/spare-parts/`). Renombrada la sección del sidebar "Operarios" → "Mecánicos" (`panel/_nav_items.html`) y añadido el ítem "Subir albarán" (WORKSHOP/ADMIN). Reescrita `delivery_note_upload.html` con captura directa por cámara, adaptada del prototipo `PAIRS/delivery_note_processor/camera_capture.js` (getUserMedia + canvas.toBlob), pero inyectando el archivo capturado vía `DataTransfer` en el `<input>` existente y reutilizando el submit normal del formulario en vez del endpoint AJAX/JSON del original — cero cambios en la vista Python para esa parte. Todos los despliegues vía `com-install-files` y `put` directo, con reload 200 OK confirmado en cada bloque. Miguel Ángel ha probado la extracción con un albarán real de Grupo Álvarez ("Grúas Adolfo Álvarez, SL") en producción — la extracción Gemini Vision funciona bien — pero ha detectado dos carencias de modelo de datos (empresa del grupo destinataria del albarán, y centro de gasto por línea de repuesto anotado en el albarán físico) que impiden dar el punto 4 (test end-to-end) por completado. Ver Sección 5 para el detalle y el plan de la siguiente sesión. |
 | S004 | 2026-07-03 | H10 Paso 3 completado y validado E2E; envío por correo del albarán (pendiente de autenticación de dominio externa); tres fixes encadenados en H07 (botón "Guardar tareas"); fix bug alta WhatsApp; alta sección Guardas | Primera sesión del flujo directo contra GitHub (`nfs-enterprisebot-*`), con token de sesión. **H10:** Miguel Ángel trajo la especificación de los dos datos bloqueantes del Paso 3 punto 4 — empresa destinataria por CIF (GRA/TRA/GRG) y centro de gasto general por línea vía convención de almohadillas contra los 9 `MachineAsset` `EMPRESA_*`. Implementado en `spare_parts/{models,services,views}.py` y `delivery_note_detail.html`, con migración `0003`. Validado end-to-end en producción con un albarán real (BA/2604254): destinatario resuelto a GRA, tres líneas resueltas a S06/V02/S02, confirmado dato a dato por Miguel Ángel contra la foto física; registro de prueba borrado a petición suya tras la validación. **Envío por correo (S004, nuevo):** `spare_parts/tasks.py`, tarea Celery que adjunta el archivo y lo borra del servidor tras confirmar. Primer intento con `sendgrid-python` revertido tras verificación online y captura de Miguel Ángel: el producto correcto es la API nativa **Twilio Email** (`comms.twilio.com/v1/Emails`), reutiliza `TWILIO_API_KEY_SID`/`SECRET` ya existentes. Bloqueado al cierre por autenticación de dominio DNS de `gruasalvarez.com`, que Miguel Ángel no gestiona — delegado a un tercero vía "Forward instructions to a colleague" de Twilio (Manual setup), sin acción de código pendiente. **Fuera de la hoja de ruta de H10:** (1) bug de alta por WhatsApp — `OnboardingService._create_user()` ignoraba `Section.default_role`, corregido; (2) sección `Guardas` dada de alta (`id=15`, `default_role=WORKSHOP`, sin IVR), con desactivación del `CallFlow` auto-generado por la señal `auto_manage_section_call_flow`; (3) H07, botón "Guardar tareas" del formulario de partes — tres bugs encadenados confirmados empíricamente, dos de ellos verificando directamente en BD: botón sin listener de clic (nunca llegaba al servidor); fix aplicado por error a `static/panel/js/...` (que es `STATIC_ROOT`, no la fuente) en vez de `panel/static/panel/js/...` (la fuente real vía `AppDirectoriesFinder`); y dos gates de confirmación (`save_confirmed`, `meter_warnings`) más el gate de 8h de jornada en `WorkOrderEntryFormView.post()` sin la excepción `form_action != "save_blocks"` que sí tenía correctamente la vista hermana `WorkOrderEntryConfirmView` — bloqueaban en silencio (sin error visible) todo guardado parcial. Confirmado en real por Miguel Ángel: persiste, aparece "En curso" en Mis partes, y se recupera al pulsar "Nuevo parte". Ocho commits de código + un commit de cierre de documentación pusheados a GitHub. Nuevo tema para la próxima sesión, sin diagnosticar: familias/tipos de avería en inglés en el laboratorio de análisis (y posiblemente en más sitios). |
+| S005 | ¿? | Backend de `StockAssignmentService` completo (Paso 4); fix familias/tipos de avería a español; dominio Twilio resuelto | **Fila reparada a posteriori en S006, sin fecha ni detalle de commits recuperable** — esta sesión ocurrió (confirmado por Miguel Ángel al arrancar S006: family/subcategoría de avería en castellano y dominio Twilio resueltos, ambos vistos en producción) pero nunca se registró aquí en su momento. No se reconstruye el detalle de commits por no tener acceso a ese rango exacto de forma fiable — se deja esta fila mínima para no romper la numeración correlativa de sesiones. |
+| S006 | 2026-07-07 | H10 Paso 4 bloques 1/4-3/4 completados (app `workorder_spare_parts`, CRUD catálogo, Casos A/B/C); `internal_reference`; modelo y CRUD `Supplier`; diseño completo (sin implementar) de repuestos anclados a `BreakdownTicket`; desvío completo a H21 (Fases D/E/F/G); 3 fixes de producción fuera de hoja de ruta; preparación de acceso M365 | Sesión larga, 14 commits. **Desvío a H21 (al inicio):** Fases D (descartada — flota ya en app propia), E (`views_ivr.py`), F (`views_auth.py`) y G (limpieza final, `panel/views.py` de 4.033 a 115 líneas) completadas — detalle técnico completo y la incidencia de un re-export de `fleet.views` perdido en la extracción (y su fix) en `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md`. **H10 Paso 4:** nueva app `workorder_spare_parts` (bloques 1/4-3/4, ver Paso 4 arriba) — CRUD de catálogo con `internal_reference` estable frente a cambios de proveedor, endpoints HTMX de los 3 casos de consumo, modelo `Supplier` (reciclado interno = otro proveedor). El bloque 4/4 original (integrar el widget en `form_entry.html`/`confirm_entry.html` anclado a `entry_line_pk`) quedó **descartado a media sesión** al descubrir que la `WorkOrderEntryLine` no existe en BD durante la creación directa del parte (Vía A) — Miguel Ángel replanteó el anclaje a `BreakdownTicket` en su lugar (más natural: los tickets existen antes que cualquier parte, vía IVR/WhatsApp/panel). Se cerró un diseño completo de 12 puntos tras varias rondas de refinamiento (desambiguación con lista corta si hay >1 ticket candidato, `get_or_create` atómico con `select_for_update` sobre `MachineAsset` como mutex, ventana de 72h para ofrecer reapertura de un ticket cerrado por error, nuevo campo `tipo_tarea` con categorización libre para lo que no sea avería, reapertura por edición de la propia tarea en vez de acción administrativa aparte, cambio de comportamiento de `confirm_delivery_note()`) — **sin una sola línea de código todavía**, íntegro en la sección Paso 4-bis de este anexo para la siguiente sesión. **Fixes de producción fuera de la hoja de ruta de H10/H21** (diagnosticados vía `error.log`, no a ciegas): (1) `TypeError` en el export consolidado de partes (`date_key` mezclaba `datetime.date` y `str` en el `sort()`); (2) `IntegrityError` al insertar una línea de parte en medio de otras (`line_number` shift en bloque chocaba contra la constraint única bajo MySQL, corregido a shift descendente fila a fila); (3) `modal-backdrop` huérfano tras descargar Excel desde el modal de exportación (race entre `hide()` y `submit()`, corregido esperando `hidden.bs.modal`, reforzado con `getOrCreateInstance` y una limpieza defensiva tras persistir el síntoma en un segundo reporte). **Preparación M365 (sin código):** confirmado SharePoint (no OneDrive), permiso `Sites.Selected`, roles a pedir (Application Administrator + SharePoint Administrator, consentimiento final por alguien con Global/Privileged Role Administrator), y pendiente de resolver si hace falta IP fija (QuotaGuard Static, 19 $/mes) o si el administrador de Grúas Álvarez acepta autenticación por certificado en su lugar — pregunta pendiente de respuesta. Bug cruzado sin diagnosticar, ya mencionado en sesiones anteriores y ahora relevante para el punto 9 del diseño de tickets: "revisar/editar" en el listado de partes de operario no entra en modo edición real. |
