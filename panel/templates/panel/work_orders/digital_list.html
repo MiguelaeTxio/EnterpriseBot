@@ -134,6 +134,7 @@
                             <th class="text-sm fw-semibold">Fecha de carga</th>
                             <th class="text-sm fw-semibold text-end">Horas</th>
                             <th class="text-sm fw-semibold text-end">H. Extra</th>
+                            <th class="text-sm fw-semibold text-end">Dietas</th>
                             <th class="text-sm fw-semibold">Revisión</th>
                             <th class="text-sm fw-semibold">Acciones</th>
                         </tr>
@@ -158,6 +159,7 @@
                                 <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
                                 {% else %}—{% endif %}
                             </td>
+                            <td class="text-sm text-end">{{ wo.dietas|default:0 }}</td>
                             <td class="text-sm">
                                 {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
                             </td>
@@ -225,6 +227,7 @@
                             <th class="text-sm fw-semibold">Fecha de carga</th>
                             <th class="text-sm fw-semibold text-end">Horas</th>
                             <th class="text-sm fw-semibold text-end">H. Extra</th>
+                            <th class="text-sm fw-semibold text-end">Dietas</th>
                             <th class="text-sm fw-semibold">Revisión</th>
                             <th class="text-sm fw-semibold">Acciones</th>
                         </tr>
@@ -254,6 +257,7 @@
                                 <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
                                 {% else %}—{% endif %}
                             </td>
+                            <td class="text-sm text-end">{{ wo.dietas|default:0 }}</td>
                             <td class="text-sm">
                                 {% include "panel/work_orders/_review_badge_fragment.html" with wo=wo %}
                             </td>
@@ -287,6 +291,7 @@
                                 <span class="badge bg-success">+{{ reviewed_totals.horas_extra }}h</span>
                                 {% else %}—{% endif %}
                             </td>
+                            <td class="text-sm text-end">{{ reviewed_totals.dietas }}</td>
                             <td colspan="2"></td>
                         </tr>
                     </tfoot>
@@ -585,7 +590,8 @@
             "estado":      "Estado",
             "familia":     "Familia",
             "origen":      "Origen",
-            "horas_extra": "H. Extra"
+            "horas_extra": "H. Extra",
+            "dietas":      "Dietas"
         };
 
         var modalEl = document.getElementById("modalExportTemplate");

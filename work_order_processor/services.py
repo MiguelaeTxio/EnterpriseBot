@@ -2508,6 +2508,15 @@ def build_export_from_template(template, work_orders_qs):
       familia     — WorkOrderEntryLine.fault_category
       origen      — WorkOrder.source
       horas_extra — horas sobre jornada estándar de 8h (max(0, sum(delta_hours) - 8) por entry)
+      dietas      — 1 si el entry (día) tiene has_diet=True, 0 si no (por entry)
+
+    Cada hoja incluye, antes de la cabecera de columnas, dos celdas de
+    entrada para que Administración introduzca manualmente el precio de
+    la hora ordinaria y de la hora extra (mismo patrón que
+    generate_work_order_excel) -- 2026-07-07, solicitado por Miguel Ángel.
+    No se generan fórmulas de salario por fila (fuera de alcance de esta
+    petición); las celdas quedan como referencia de precio junto a las
+    horas/dietas totales de cada hoja.
 
     Returns an openpyxl.Workbook instance ready for streaming.
     ---
@@ -2572,6 +2581,14 @@ def build_export_from_template(template, work_orders_qs):
                                                     ) - Decimal("8")
                                                 ))
                                             )),
+        # Dietas — 1 si el entry (dia) tiene has_diet=True, 0 si no. Metrica
+        # de entry, no de linea -- igual que delta_horas/horas_extra, se
+        # acumula una sola vez por entry en la fila TOTAL (2026-07-07,
+        # solicitado por Miguel Angel: "sumar el numero de dietas por
+        # operario y periodo").
+        "dietas":      ("Dietas",            lambda wo, entry, line: (
+                                                1 if entry.has_diet else 0
+                                            )),
     }
 
     # Resolve active column definitions in template order.
@@ -2588,7 +2605,7 @@ def build_export_from_template(template, work_orders_qs):
     # Claves de columna numéricas — elegibles para la fila TOTAL al final
     # de cada bloque de datos. Solo se suman las que estén en active_cols.
     # ------------------------------------------------------------------
-    NUMERIC_KEYS = {"delta_horas", "horas_extra"}
+    NUMERIC_KEYS = {"delta_horas", "horas_extra", "dietas"}
 
     # ------------------------------------------------------------------
     # Styles / Estilos
@@ -2653,17 +2670,66 @@ def build_export_from_template(template, work_orders_qs):
     )
 
     # ------------------------------------------------------------------
+    # Row layout — dos filas de celdas de precio antes de la cabecera de
+    # columnas, mismo patron que generate_work_order_excel (2026-07-07,
+    # solicitado por Miguel Angel).
+    # Row layout — two price-input rows before the column header row,
+    # same pattern as generate_work_order_excel.
+    # ------------------------------------------------------------------
+    _PRICE_ROW_EXTRA     = 1
+    _PRICE_ROW_ORDINARY  = 2
+    _HEADER_ROW          = 3
+    _FIRST_DATA_ROW      = 4
+
+    # ------------------------------------------------------------------
+    # Helper: write the two price-input cells at the top of a sheet.
+    # Column C holds the editable value; columns A-B carry the label.
+    # Auxiliar: escribir las dos celdas de precio en la parte superior de
+    # una hoja. La columna C contiene el valor editable; A-B llevan la
+    # etiqueta.
+    # ------------------------------------------------------------------
+    def _write_price_cells(ws):
+        """
+        Writes 'PRECIO HORA EXTRA' (row 1) and 'COSTE HORA ORDINARIA'
+        (row 2) label + input cells, mirroring generate_work_order_excel's
+        C2/C3 mechanism.
+        ---
+        Escribe las celdas de etiqueta + entrada 'PRECIO HORA EXTRA'
+        (fila 1) y 'COSTE HORA ORDINARIA' (fila 2), replicando el
+        mecanismo C2/C3 de generate_work_order_excel.
+        """
+        ws.cell(row=_PRICE_ROW_EXTRA, column=1, value="PRECIO HORA EXTRA (euros/h):").fill = (
+            _make_fill(_CLR_CONFIG_LABEL)
+        )
+        ws.merge_cells(start_row=_PRICE_ROW_EXTRA, start_column=1, end_row=_PRICE_ROW_EXTRA, end_column=2)
+        price_extra_cell = ws.cell(row=_PRICE_ROW_EXTRA, column=3)
+        price_extra_cell.fill = _make_fill(_CLR_CONFIG_INPUT)
+        price_extra_cell.number_format = '#,##0.00 "€"'
+        price_extra_cell.alignment = center_align
+
+        ws.cell(row=_PRICE_ROW_ORDINARY, column=1, value="COSTE HORA ORDINARIA (euros/h):").fill = (
+            _make_fill(_CLR_CONFIG_LABEL)
+        )
+        ws.merge_cells(start_row=_PRICE_ROW_ORDINARY, start_column=1, end_row=_PRICE_ROW_ORDINARY, end_column=2)
+        price_ord_cell = ws.cell(row=_PRICE_ROW_ORDINARY, column=3)
+        price_ord_cell.fill = _make_fill(_CLR_CONFIG_INPUT)
+        price_ord_cell.number_format = '#,##0.00 "€"'
+        price_ord_cell.alignment = center_align
+
+    # ------------------------------------------------------------------
     # Helper: write a header row on a given worksheet.
     # Auxiliar: escribir la fila de cabecera en una hoja dada.
     # ------------------------------------------------------------------
     def _write_header(ws, col_defs):
         """
-        Writes the header row with the active column labels.
+        Writes the header row (row _HEADER_ROW, below the two price cells)
+        with the active column labels.
         ---
-        Escribe la fila de cabecera con las etiquetas de columna activas.
+        Escribe la fila de cabecera (fila _HEADER_ROW, debajo de las dos
+        celdas de precio) con las etiquetas de columna activas.
         """
         for col_idx, (key, (label, _extractor)) in enumerate(col_defs, start=1):
-            cell           = ws.cell(row=1, column=col_idx, value=label)
+            cell           = ws.cell(row=_HEADER_ROW, column=col_idx, value=label)
             cell.fill      = header_fill
             cell.font      = header_font
             cell.alignment = center_align
@@ -2699,9 +2765,10 @@ def build_export_from_template(template, work_orders_qs):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Partes digitales"
+        _write_price_cells(ws)
         _write_header(ws, active_cols)
 
-        current_row      = 2
+        current_row      = _FIRST_DATA_ROW
         current_operator = None
         # Accumulators for numeric columns (global, single sheet).
         # Acumuladores para columnas numéricas (global, hoja única).
@@ -2781,7 +2848,7 @@ def build_export_from_template(template, work_orders_qs):
 
     current_operator = None
     ws               = None
-    current_row      = 2
+    current_row      = _FIRST_DATA_ROW
     # Per-sheet accumulators reset when a new sheet opens.
     # Acumuladores por hoja, reiniciados al abrir cada hoja nueva.
     sheet_accumulators = {}
@@ -2808,11 +2875,12 @@ def build_export_from_template(template, work_orders_qs):
                 _write_totals_row(ws, current_row, active_cols, sheet_accumulators)
             current_operator   = op_name
             ws                 = wb.create_sheet(title=op_name[:31])
-            current_row        = 2
+            current_row        = _FIRST_DATA_ROW
             sheet_accumulators = {
                 key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS
             }
             seen_entry_pks_sheet = set()
+            _write_price_cells(ws)
             _write_header(ws, active_cols)
 
         is_first_line_of_entry = entry.pk not in seen_entry_pks_sheet

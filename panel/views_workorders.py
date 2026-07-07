@@ -384,11 +384,12 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         The default active tab is "pending" if wo_pending has results;
         otherwise "reviewed".
 
-        Annotates horas_totales/horas_extra on every WorkOrder in
+        Annotates horas_totales/horas_extra/dietas on every WorkOrder in
         wo_pending/wo_reviewed (2026-07-07, same criterion as
-        WorkOrderAdminHistoryView._enrich_work_orders) and provides
-        reviewed_totals with the summed values for wo_reviewed, for the
-        totals row in the Revisados tab.
+        WorkOrderAdminHistoryView._enrich_work_orders, dietas added at
+        Miguel Ángel's explicit request: número de dietas por operario y
+        periodo) and provides reviewed_totals with the summed values for
+        wo_reviewed, for the totals row in the Revisados tab.
 
         ---
 
@@ -398,11 +399,12 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         están presentes. La pestaña activa por defecto es "pending" si
         wo_pending tiene resultados; en caso contrario "reviewed".
 
-        Anota horas_totales/horas_extra en cada WorkOrder de
+        Anota horas_totales/horas_extra/dietas en cada WorkOrder de
         wo_pending/wo_reviewed (2026-07-07, mismo criterio que
-        WorkOrderAdminHistoryView._enrich_work_orders) y provee
-        reviewed_totals con los valores sumados para wo_reviewed, para la
-        fila de totales de la pestaña Revisados.
+        WorkOrderAdminHistoryView._enrich_work_orders, dietas añadido a
+        petición expresa de Miguel Ángel: número de dietas por operario y
+        periodo) y provee reviewed_totals con los valores sumados para
+        wo_reviewed, para la fila de totales de la pestaña Revisados.
         """
         from ivr_config .models import WorkPeriod 
         from decimal import Decimal 
@@ -479,6 +481,7 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
         # wo.pk/wo.uploaded_by/etc. as-is, without converting to a dict list.
         reviewed_hours_total =Decimal ("0")
         reviewed_extra_total =Decimal ("0")
+        reviewed_dietas_total =0
         for _wo_list in (wo_pending ,wo_reviewed ):
             for _wo in _wo_list :
                 _horas =sum (
@@ -488,14 +491,18 @@ class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
                 if line .delta_hours is not None ),
                 Decimal ("0"),
                 )
+                _dietas =sum (1 for entry in _wo .entries .all ()if entry .has_diet )
                 _wo .horas_totales =_horas 
                 _wo .horas_extra =max (Decimal ("0"),_horas -Decimal ("8"))
+                _wo .dietas =_dietas 
                 if _wo_list is wo_reviewed :
                     reviewed_hours_total +=_horas 
                     reviewed_extra_total +=_wo .horas_extra 
+                    reviewed_dietas_total +=_dietas 
         reviewed_totals ={
         "horas_totales":reviewed_hours_total ,
         "horas_extra":reviewed_extra_total ,
+        "dietas":reviewed_dietas_total ,
         }
 
 
@@ -4432,6 +4439,7 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         ("familia","Familia avería"),
         ("origen","Origen"),
         ("horas_extra","H. Extra"),
+        ("dietas","Dietas"),
         ],
         }
         return render (request ,self .template_name ,context )
@@ -5643,6 +5651,7 @@ class ExportTemplateListView (SupervisorAccessMixin ,View ):
                 ("familia", "Familia avería"),
                 ("origen", "Origen"),
                 ("horas_extra", "H. Extra"),
+                ("dietas", "Dietas"),
             ],
         }
         return render(request, self.template_name, context)
