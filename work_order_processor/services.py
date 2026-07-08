@@ -2370,8 +2370,11 @@ REGLAS OBLIGATORIAS:
 3. Si tipo_tarea=AVERIA, la subcategoría debe pertenecer a la categoría
    elegida (mismos prefijos). Si la información es insuficiente o no encaja,
    usa OTHER / OT_OTHER.
-4. Si la información es insuficiente para decidir tipo_tarea, usa AVERIA por
-   defecto (es el caso históricamente más común en este taller).
+4. Si la información es insuficiente para decidir tipo_tarea (descripciones
+   cortas o vagas del estilo "limpiar", "organizar", "lavar", "revisar",
+   sin ninguna mención de fallo, rotura o pieza dañada), usa MANTENIMIENTO
+   por defecto, no AVERIA. Reserva AVERIA para cuando el texto mencione
+   explícitamente un problema, avería, rotura o pieza a reparar/sustituir.
 
 Formato de respuesta exacto:
 {{
