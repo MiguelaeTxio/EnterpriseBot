@@ -2294,6 +2294,230 @@ _VALID_CATEGORIES    = {c.value for c in FaultCategory}
 _VALID_SUBCATEGORIES = {s.value for s in FaultSubcategory}
 
 
+# Response schema for classify_task — H10 Paso 4-bis, punto 4. Unifica en
+# una sola llamada Gemini la clasificación de tipo_tarea con, según el tipo,
+# fault_category/fault_subcategory (AVERIA) o task_category_free (el resto).
+# Los cuatro campos son obligatorios en el JSON aunque alguno quede vacío.
+#
+# Esquema de respuesta para classify_task — H10 Paso 4-bis, punto 4. Unifica
+# en una única llamada Gemini la clasificación de tipo_tarea con, según el
+# tipo, fault_category/fault_subcategory (AVERIA) o task_category_free (el
+# resto). Los cuatro campos son obligatorios en el JSON aunque alguno quede
+# vacío.
+_CLASSIFY_TASK_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tipo_tarea":         {"type": "string"},
+        "fault_category":     {"type": "string"},
+        "fault_subcategory":  {"type": "string"},
+        "task_category_free": {"type": "string"},
+    },
+    "required": [
+        "tipo_tarea", "fault_category", "fault_subcategory",
+        "task_category_free",
+    ],
+}
+
+_CLASSIFY_TASK_PROMPT = """Eres un sistema de clasificación automática de tareas de taller sobre
+maquinaria industrial pesada (grúas, carretillas elevadoras, equipos de obra, camiones).
+
+Se te proporciona la descripción de una tarea y las notas de reparación de un
+parte de trabajo de taller. Primero decide qué tipo de tarea es, y después
+clasifícala según ese tipo.
+
+TIPO_TAREA — elige exactamente uno:
+  AVERIA        — reparación de una avería o fallo de la máquina
+  MEJORA        — mejora o modificación que no responde a una avería
+  MANTENIMIENTO — mantenimiento preventivo o periódico
+  FABRICACION   — fabricación de una pieza, útil o estructura nueva
+
+SI tipo_tarea=AVERIA: clasifica fault_category y fault_subcategory con la
+taxonomía siguiente, y deja task_category_free en cadena vacía ("").
+
+TAXONOMÍA — Categorías principales (fault_category):
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible
+  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
+  ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
+  BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
+  TYRES_RUNNING_GEAR         — Neumáticos, ejes, cadenas y rodadura oruga
+  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, estabilizadores,
+                               mástil/horquillas, plataforma, quinta rueda, chasis semirremolque
+  BODYWORK_CHASSIS           — Carrocería, chasis estructural
+  OTHER                      — Cualquier avería que no encaje en los grupos anteriores
+
+TAXONOMÍA — Subcategorías (fault_subcategory):
+  ET_ENGINE | ET_TRANSMISSION | ET_PTO | ET_COOLING | ET_FUEL
+  HY_PUMP | HY_CYLINDERS | HY_VALVES | HY_OIL | HY_CENTRAL
+  EE_WIRING | EE_SENSORS | EE_CONTROLS | EE_LIGHTS | EE_BATTERY
+  BSS_BRAKES | BSS_STEERING | BSS_SUSPENSION
+  TRG_TYRES | TRG_AXLES | TRG_TRACKS
+  LS_BOOM | LS_HOOK_PULLEYS | LS_CABLE | LS_ROTATION | LS_STABILIZERS |
+  LS_MAST | LS_PLATFORM | LS_FIFTH_WHEEL | LS_CHASSIS_TRAILER
+  BC_BODYWORK | BC_CHASSIS
+  OT_OTHER
+
+SI tipo_tarea es MEJORA, MANTENIMIENTO o FABRICACION: deja fault_category y
+fault_subcategory en cadena vacía (""), y rellena task_category_free con una
+categorización breve en español, sin taxonomía rígida (pocas palabras, p.ej.
+"mejora hidráulica", "mantenimiento preventivo motor", "fabricación
+estructura metálica").
+
+REGLAS OBLIGATORIAS:
+1. Responde ÚNICAMENTE con un objeto JSON válido. Sin texto adicional, sin
+   bloques de código markdown, sin explicaciones.
+2. Los cuatro campos son obligatorios en el JSON, aunque alguno quede en
+   cadena vacía según las reglas de arriba.
+3. Si tipo_tarea=AVERIA, la subcategoría debe pertenecer a la categoría
+   elegida (mismos prefijos). Si la información es insuficiente o no encaja,
+   usa OTHER / OT_OTHER.
+4. Si la información es insuficiente para decidir tipo_tarea, usa AVERIA por
+   defecto (es el caso históricamente más común en este taller).
+
+Formato de respuesta exacto:
+{{
+  "tipo_tarea": "<TIPO_TAREA>",
+  "fault_category": "<CODIGO_CATEGORIA o cadena vacia>",
+  "fault_subcategory": "<CODIGO_SUBCATEGORIA o cadena vacia>",
+  "task_category_free": "<texto libre o cadena vacia>"
+}}
+
+Descripción de la tarea: {fault_description}
+Notas de reparación: {repair_notes}
+"""
+
+# Valid tipo_tarea codes — must mirror chat.models.BreakdownTicket.
+# TIPO_TAREA_CHOICES exactly. Hardcoded here (not imported at module level)
+# to avoid a cross-app import at import time; chat.models has no dependency
+# on work_order_processor, but keeping this file free of eager app-loading-
+# order assumptions matches the existing pattern in chat/ticket_resolution.py
+# (local imports inside functions).
+# ---
+# Códigos válidos de tipo_tarea — deben reflejar exactamente
+# chat.models.BreakdownTicket.TIPO_TAREA_CHOICES. Fijados aquí (sin import a
+# nivel de módulo) para evitar un import entre apps en tiempo de carga;
+# chat.models no depende de work_order_processor, pero mantener este archivo
+# libre de suposiciones sobre el orden de carga de apps sigue el mismo
+# patrón ya usado en chat/ticket_resolution.py (imports locales dentro de
+# funciones).
+_VALID_TIPO_TAREA = {"AVERIA", "MEJORA", "MANTENIMIENTO", "FABRICACION"}
+
+
+def classify_task(
+    fault_description: str,
+    repair_notes: str,
+) -> dict:
+    """
+    Sends fault_description and repair_notes to Gemini Flash (text-only,
+    Vertex AI) in a single call and returns a dict with tipo_tarea and,
+    depending on it, either fault_category/fault_subcategory (AVERIA) or
+    task_category_free (MEJORA/MANTENIMIENTO/FABRICACION) -- H10 Paso 4-bis,
+    punto 4 ("disparo único, al grabar la tarea, asíncrono").
+
+    Used exclusively for WorkOrderEntryLine rows linked to a
+    chat.models.BreakdownTicket (see work_order_processor.tasks.
+    classify_fault_line). Lines without a ticket keep using the original
+    classify_fault() (no tipo_tarea concept applies to them).
+
+    Returns {"tipo_tarea": "", "fault_category": "", "fault_subcategory": "",
+    "task_category_free": ""} on any error or invalid response -- same
+    best-effort fallback contract as classify_fault().
+
+    ---
+
+    Envía fault_description y repair_notes a Gemini Flash (solo texto,
+    Vertex AI) en una única llamada y devuelve un dict con tipo_tarea y,
+    según cuál sea, o bien fault_category/fault_subcategory (AVERIA) o bien
+    task_category_free (MEJORA/MANTENIMIENTO/FABRICACION) -- H10 Paso 4-bis,
+    punto 4 ("disparo único, al grabar la tarea, asíncrono").
+
+    Se usa exclusivamente para filas de WorkOrderEntryLine vinculadas a un
+    chat.models.BreakdownTicket (ver work_order_processor.tasks.
+    classify_fault_line). Las líneas sin ticket siguen usando el
+    classify_fault() original (el concepto de tipo_tarea no les aplica).
+
+    Devuelve {"tipo_tarea": "", "fault_category": "", "fault_subcategory": "",
+    "task_category_free": ""} ante cualquier error o respuesta inválida --
+    mismo contrato de fallback best-effort que classify_fault().
+    """
+    _empty = {
+        "tipo_tarea": "", "fault_category": "", "fault_subcategory": "",
+        "task_category_free": "",
+    }
+    prompt = _CLASSIFY_TASK_PROMPT.format(
+        fault_description=fault_description or "(sin descripción)",
+        repair_notes=repair_notes or "(sin notas)",
+    )
+
+    try:
+        client = _get_gemini_client()
+
+        response = client.models.generate_content(
+            model    = _GEMINI_MODEL,
+            contents = [prompt],
+            config   = GenerateContentConfig(
+                http_options       = HttpOptions(timeout=30_000),
+                response_mime_type = "application/json",
+                response_schema    = _CLASSIFY_TASK_RESPONSE_SCHEMA,
+                thinking_config    = ThinkingConfig(thinking_budget=0),
+                temperature        = 0.0,
+                max_output_tokens  = 128,
+            ),
+        )
+
+        raw    = response.text.strip()
+        parsed = json.loads(raw)
+
+        tipo_tarea = str(parsed.get("tipo_tarea", "")).strip()
+        category   = str(parsed.get("fault_category", "")).strip()
+        subcat     = str(parsed.get("fault_subcategory", "")).strip()
+        free_text  = str(parsed.get("task_category_free", "")).strip()
+
+        if tipo_tarea not in _VALID_TIPO_TAREA:
+            logger.warning(
+                "# [classify_task] tipo_tarea fuera de taxonomía devuelto "
+                "por Gemini: %r. Se usará fallback vacío.",
+                tipo_tarea,
+            )
+            return dict(_empty)
+
+        if tipo_tarea == "AVERIA":
+            if category not in _VALID_CATEGORIES or subcat not in _VALID_SUBCATEGORIES:
+                logger.warning(
+                    "# [classify_task] AVERIA con códigos fuera de "
+                    "taxonomía: category=%r subcategory=%r. Fallback vacío.",
+                    category, subcat,
+                )
+                return dict(_empty)
+            logger.info(
+                "# [classify_task] Clasificación completada: "
+                "tipo_tarea=AVERIA category=%s subcategory=%s.",
+                category, subcat,
+            )
+            return {
+                "tipo_tarea": tipo_tarea, "fault_category": category,
+                "fault_subcategory": subcat, "task_category_free": "",
+            }
+
+        # MEJORA / MANTENIMIENTO / FABRICACION.
+        logger.info(
+            "# [classify_task] Clasificación completada: tipo_tarea=%s "
+            "task_category_free=%r.",
+            tipo_tarea, free_text,
+        )
+        return {
+            "tipo_tarea": tipo_tarea, "fault_category": "",
+            "fault_subcategory": "", "task_category_free": free_text,
+        }
+
+    except Exception as exc:
+        logger.error(
+            "# [classify_task] Error en clasificación Gemini: %s",
+            exc,
+            exc_info=True,
+        )
+        return dict(_empty)
+
+
 def classify_fault(
     fault_description: str,
     repair_notes: str,

@@ -113,6 +113,60 @@ class BreakdownTicket(models.Model):
         (ORIGIN_AUTO,    "Auto-generado"),
     ]
 
+    # --- Tipo de tarea (H10 Paso 4-bis, punto 4) ---------------------------
+    # BreakdownTicket amplía su alcance para anclar no solo averías sino
+    # cualquier tarea (mejora, mantenimiento, fabricación...). fault_category/
+    # fault_subcategory (en WorkOrderEntryLine) solo aplican cuando
+    # tipo_tarea=AVERIA; para el resto, task_category_free recoge una
+    # categorización libre sin taxonomía rígida. Clasificado por Gemini,
+    # asíncrono (Celery), al grabar la tarea -- ver
+    # work_order_processor.tasks.classify_fault_line.
+    # ---
+    # BreakdownTicket widens its scope to anchor not just breakdowns but any
+    # task (improvement, maintenance, fabrication...). fault_category/
+    # fault_subcategory (on WorkOrderEntryLine) only apply when
+    # tipo_tarea=AVERIA; for everything else, task_category_free holds a
+    # free-form categorization with no rigid taxonomy. Classified by Gemini,
+    # asynchronously (Celery), when the task is saved -- see
+    # work_order_processor.tasks.classify_fault_line.
+    TIPO_TAREA_AVERIA        = "AVERIA"
+    TIPO_TAREA_MEJORA        = "MEJORA"
+    TIPO_TAREA_MANTENIMIENTO = "MANTENIMIENTO"
+    TIPO_TAREA_FABRICACION   = "FABRICACION"
+    TIPO_TAREA_CHOICES = [
+        (TIPO_TAREA_AVERIA,        "Avería"),
+        (TIPO_TAREA_MEJORA,        "Mejora"),
+        (TIPO_TAREA_MANTENIMIENTO, "Mantenimiento"),
+        (TIPO_TAREA_FABRICACION,   "Fabricación"),
+    ]
+    tipo_tarea = models.CharField(
+        max_length=15,
+        choices=TIPO_TAREA_CHOICES,
+        blank=True,
+        default="",
+        verbose_name="Tipo de tarea",
+        help_text=(
+            "Naturaleza de la tarea anclada a este ticket. Vacío hasta que "
+            "la tarea Celery classify_fault_line lo clasifica al grabar la "
+            "primera tarea del ticket. AVERIA usa fault_category/"
+            "fault_subcategory (en WorkOrderEntryLine); el resto usa "
+            "task_category_free."
+        ),
+    )
+    task_category_free = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Categoría de tarea (libre)",
+        help_text=(
+            "Categorización libre generada por Gemini para tareas con "
+            "tipo_tarea distinto de AVERIA (mejora, mantenimiento, "
+            "fabricación...), sin taxonomía rígida. Vacío cuando "
+            "tipo_tarea=AVERIA (se usa fault_category/fault_subcategory "
+            "en su lugar) o cuando el ticket todavía no se ha clasificado."
+        ),
+    )
+
     # --- ticket_date_code: YYYYMMDD-NN daily sequential per company. ------
     ticket_date_code = models.CharField(
         max_length=11,

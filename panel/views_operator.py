@@ -4007,6 +4007,31 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                                     " cerrar parte por CU pk=%s.",
                                     _bt.pk, cu.pk,
                                 )
+                            elif _bt.status != _BT.STATUS_IN_PROGRESS:
+                                # H10 Paso 4-bis, puntos 8-9 (2026-07-08):
+                                # casilla "finalizar" desmarcada -> el
+                                # ticket pasa a (o vuelve a) IN_PROGRESS.
+                                # Cubre dos casos con el mismo código:
+                                # (8) ticket recién creado/enganchado
+                                # (OPEN/PAUSED) que arranca su trabajo
+                                # activo; (9) reapertura por edición -- si
+                                # la tarea se graba de nuevo destocando una
+                                # casilla que antes estaba marcada, el
+                                # ticket vuelve de CLOSED a IN_PROGRESS
+                                # como efecto natural de editar la propia
+                                # tarea, sin acción administrativa aparte.
+                                _prev_status    = _bt.status
+                                _bt.status      = _BT.STATUS_IN_PROGRESS
+                                _bt.resolved_by = None
+                                _bt.resolved_at = None
+                                _bt.save(update_fields=[
+                                    "status", "resolved_by", "resolved_at",
+                                ])
+                                logger.info(
+                                    "# [FormView] Ticket pk=%s: %s ->"
+                                    " IN_PROGRESS (línea pk=%s, CU pk=%s).",
+                                    _bt.pk, _prev_status, line.pk, cu.pk,
+                                )
                             else:
                                 logger.info(
                                     "# [FormView] Línea pk=%s vinculada"
@@ -4180,6 +4205,28 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
         for _lpk in created_line_pks :
             _line_obj =WorkOrderEntryLine .objects .filter (pk =_lpk ).first ()
             if _line_obj is None :
+                continue 
+            # H10 Paso 4-bis, punto 4 (2026-07-08): el atajo de caché solo
+            # copia fault_category/fault_subcategory -- correcto para líneas
+            # sin ticket (comportamiento original), pero insuficiente para
+            # líneas CON ticket, que también necesitan clasificar
+            # ticket.tipo_tarea. Para esas, encolar siempre
+            # classify_fault_line, que ya es idempotente a nivel de ticket
+            # (ver classify_fault_line: si ticket.tipo_tarea ya está
+            # asignado, no hace nada -- encolar de más no tiene coste
+            # relevante frente al riesgo de dejar tipo_tarea vacío para
+            # siempre en un acierto de caché).
+            if _line_obj .breakdown_ticket_id is not None :
+                classify_fault_line .apply_async (
+                args =[_lpk ],
+                queue ="work_orders",
+                )
+                logger .info (
+                "# [FormView] classify_fault_line encolada (línea con "
+                "ticket, sin atajo de caché) para WorkOrderEntryLine "
+                "pk=%d.",
+                _lpk ,
+                )
                 continue 
             _cached =find_cached_classification (
             fault_description =_line_obj .fault_description ,
