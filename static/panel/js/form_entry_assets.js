@@ -5,6 +5,7 @@
 
     var ASSETS_URL       = (window.EB_CONFIG && window.EB_CONFIG.assetsUrl)     || "/panel/operator/assets/";
     var ASSET_DETAIL_URL = (window.EB_CONFIG && window.EB_CONFIG.assetDetailUrl) || "/panel/operator/asset-detail/";
+    var TICKET_RESOLUTION_URL = (window.EB_CONFIG && window.EB_CONFIG.ticketResolutionUrl) || "/panel/repuestos/resolucion-ticket/";
 
     /*
      * Reveals or hides meter-reading fields for the given block index.
@@ -99,6 +100,46 @@
     }
 
     /*
+     * Loads the ticket-resolution fragment for the given block (H10
+     * Paso 4-bis, punto 1 revisado) via HTMX GET, once a real machine
+     * has been resolved for that block. Replaces the old static H17
+     * dropdown -- the resolution itself decides whether to show a
+     * notice (CREATE), a Sí/No question (ASK_REOPEN), or a short-list
+     * + "avería nueva" choice (CHOOSE).
+     *
+     * Carga el fragmento de resolución de ticket para el bloque dado
+     * (H10 Paso 4-bis, punto 1 revisado) vía HTMX GET, una vez se ha
+     * resuelto una máquina real para ese bloque. Sustituye al antiguo
+     * desplegable estático de H17 -- la propia resolución decide si
+     * mostrar un aviso (CREATE), una pregunta Sí/No (ASK_REOPEN), o
+     * una lista corta + opción "avería nueva" (CHOOSE).
+     */
+    function _loadTicketResolution(blockIdx, code) {
+        var target = document.getElementById("ticket-resolution-" + blockIdx);
+        if (!target || !window.htmx) { return; }
+        var url = TICKET_RESOLUTION_URL
+            + "?code=" + encodeURIComponent(code)
+            + "&block_idx=" + encodeURIComponent(blockIdx);
+        htmx.ajax("GET", url, { target: target, swap: "innerHTML" });
+    }
+
+    /*
+     * Clears the ticket-resolution fragment for the given block (used
+     * when switching to PERSONAL/EMPRESA_* mode, which never carries a
+     * ticket) so a stale question from a previous machine selection
+     * doesn't linger and get submitted by mistake.
+     *
+     * Vacía el fragmento de resolución de ticket para el bloque dado
+     * (se usa al cambiar a modo PERSONAL/EMPRESA_*, que nunca lleva
+     * ticket) para que no quede una pregunta obsoleta de una selección
+     * de máquina anterior y se envíe por error.
+     */
+    function _clearTicketResolution(blockIdx) {
+        var target = document.getElementById("ticket-resolution-" + blockIdx);
+        if (target) { target.innerHTML = ""; }
+    }
+
+    /*
      * Debounce helper: delays execution until after 'wait' ms have elapsed
      * since the last call. Prevents excessive API requests while typing.
      *
@@ -190,6 +231,10 @@
                                                      asset.code.toUpperCase().indexOf("EMPRESA_") === 0;
                                     _toggleAbsenceMode(bIdx, isPersonal);
                                     _toggleEmpresaMode(bIdx, isEmpresa, asset.code);
+                                    document.querySelectorAll('.ticket-section[data-block-idx="' + bIdx + '"]')
+                                        .forEach(function (el) {
+                                            el.classList.toggle("d-none", isPersonal || isEmpresa);
+                                        });
                                     if (isPersonal) {
                                         // Focus the absence selector or fault description.
                                         // Centrar el foco en el selector de ausencia o descripción.
@@ -199,6 +244,7 @@
                                             if (catSel) { catSel.focus(); }
                                             else if (faultTa) { faultTa.focus(); }
                                         }, 50);
+                                        _clearTicketResolution(bIdx);
                                     } else if (isEmpresa) {
                                         // Focus the empresa subtype selector.
                                         // Centrar el foco en el selector de subtipo empresa.
@@ -206,6 +252,7 @@
                                             var esSel = document.getElementById("entrada_" + bIdx + "_empresa_subtype");
                                             if (esSel) { esSel.focus(); }
                                         }, 50);
+                                        _clearTicketResolution(bIdx);
                                     } else {
                                         // Reveal/hide meter fields for this block.
                                         // Revelar/ocultar campos de contadores del bloque.
@@ -215,6 +262,8 @@
                                             .catch(function () {
                                                 _applyMeterFields(bIdx, {has_odometer: false, has_engine_hours: false, has_crane_hours: false});
                                             });
+                                        // Resolver el ticket de averia para esta maquina (H10 Paso 4-bis).
+                                        _loadTicketResolution(bIdx, asset.code);
                                     }
                                 }
                             }
@@ -742,33 +791,13 @@
      * órdenes disponibles (EB_CONFIG.repairOrders está vacío).
      */
     function _buildTicketBlock(idx) {
-        var orders = (window.EB_CONFIG && window.EB_CONFIG.repairOrders) || [];
-        if (!orders.length) { return ''; }
-        var opts = '<option value="">\u2014 Sin ticket \u2014</option>';
-        orders.forEach(function (ot) {
-            var label = ot.code || ('Ticket #' + ot.pk);
-            if (ot.machine_raw) { label += ' \u2014 ' + ot.machine_raw; }
-            if (ot.fault_summary) {
-                var fs = ot.fault_summary.length > 40
-                    ? ot.fault_summary.slice(0, 40) + '\u2026'
-                    : ot.fault_summary;
-                label += ' | ' + fs;
-            }
-            opts += '<option value="' + ot.pk + '">' + label + '</option>';
-        });
         return (
-            '<div class="col-12 col-md-8">' +
-                '<label class="form-label fw-medium">' +
-                    '<i class="bi bi-exclamation-triangle me-1 text-warning"></i>' +
-                    ' Ticket de aver\u00eda vinculado' +
-                '</label>' +
-                '<select name="entrada_' + idx + '_ticket_pk" ' +
-                        'class="form-select form-select-sm ticket-select" ' +
-                        'data-block-idx="' + idx + '">' +
-                    opts +
-                '</select>' +
+            '<div class="col-12 col-md-8 ticket-section" data-block-idx="' + idx + '">' +
+                '<div id="ticket-resolution-' + idx + '" class="ticket-resolution-container" data-block-idx="' + idx + '">' +
+                    '<span class="text-muted small">Selecciona una m\u00e1quina para resolver el ticket de aver\u00eda.</span>' +
+                '</div>' +
             '</div>' +
-            '<div class="col-12 col-md-4 d-flex align-items-end">' +
+            '<div class="col-12 col-md-4 d-flex align-items-end ticket-section" data-block-idx="' + idx + '">' +
                 '<div class="form-check mb-2">' +
                     '<input class="form-check-input ticket-close-check" ' +
                            'type="checkbox" ' +
@@ -832,8 +861,16 @@
                 '</div>' +
                 '<div class="col-12 col-md-4">' +
                     '<label class="form-label fw-medium">Material <span class="text-danger">*</span></label>' +
-                    '<input type="text" name="repuesto_' + ridx + '_material" ' +
-                           'class="form-control" placeholder="Descripcion del material">' +
+                    '<input type="hidden" name="repuesto_' + ridx + '_spare_part_entry_pk" value="">' +
+                    '<div class="input-group">' +
+                        '<input type="text" name="repuesto_' + ridx + '_material" ' +
+                               'class="form-control" placeholder="Descripcion del material">' +
+                        '<button type="button" class="btn btn-outline-secondary btn-material-search" ' +
+                                'data-bs-toggle="modal" data-bs-target="#materialPickerModal" ' +
+                                'data-repuesto-idx="' + ridx + '" title="Buscar en almacén o dar de alta">' +
+                            '<i class="bi bi-search"></i>' +
+                        '</button>' +
+                    '</div>' +
                 '</div>' +
                 '<div class="col-6 col-md-2">' +
                     '<label class="form-label fw-medium">Unidades <span class="text-danger">*</span></label>' +
