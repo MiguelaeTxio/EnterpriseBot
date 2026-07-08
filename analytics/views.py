@@ -9,12 +9,14 @@ Contiene todas las vistas analiticas y de gestion del bot previamente
 alojadas en panel/views.py. Extraidas para reducir la complejidad de
 panel/views.py y dar a analytics su propio modulo manejable.
 """
+import difflib
 import io
 import json as _json
 import logging
 import re as _re
 from collections import defaultdict
-from datetime import datetime as _datetime
+from datetime import date, datetime as _datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -51,6 +53,7 @@ from panel.models import AnalyticsProfile
 from whatsapp.models import WhatsAppSession, WhatsAppTemplate
 from whatsapp.services import WhatsAppChatService
 from work_order_processor.models import (
+    OperatorMonthlyCost,
     WorkOrder,
     WorkOrderEntry,
     WorkOrderEntryLine,
@@ -82,6 +85,89 @@ def _get_own_presence(company_user):
         .order_by("-starts_at")
         .first()
     )
+
+
+def _excel_serial_to_date(serial):
+    """
+    Converts an Excel date serial number (days since 1900-01-01) into
+    a Python date, correcting for Excel's fictitious 1900 leap-year
+    bug (serials greater than 60 are shifted back by 2 days).
+    ---
+    Convierte un numero de serie de fecha de Excel (dias desde
+    1900-01-01) en un date de Python, corrigiendo el bug del año
+    bisiesto ficticio de 1900 (los seriales mayores que 60 se
+    desplazan 2 dias hacia atras).
+    """
+    serial = int(serial)
+    if serial > 60:
+        serial -= 2
+    return date(1900, 1, 1) + timedelta(days=serial - 1)
+
+
+def _parse_cost_date_cell(value):
+    """
+    Parses the FECHA cell of an OperatorMonthlyCost import row, which
+    may arrive as a native date/datetime (Excel date-formatted cell),
+    an Excel serial number, or a 'YYYY-MM-DD' string. Returns a
+    (year, month) tuple.
+    ---
+    Parsea la celda FECHA de una fila de importacion de
+    OperatorMonthlyCost, que puede llegar como date/datetime nativo
+    (celda con formato de fecha en Excel), numero de serie de Excel,
+    o cadena 'YYYY-MM-DD'. Devuelve una tupla (year, month).
+    """
+    if isinstance(value, _datetime):
+        return value.year, value.month
+    if isinstance(value, date):
+        return value.year, value.month
+    if isinstance(value, (int, float)):
+        parsed = _excel_serial_to_date(value)
+        return parsed.year, parsed.month
+    parsed = _datetime.strptime(str(value).strip(), "%Y-%m-%d")
+    return parsed.year, parsed.month
+
+
+def _fuzzy_match_worker(raw_name, candidates):
+    """
+    Matches a raw operator name against the worker_name values known
+    for a given company/month using difflib. Returns a 3-tuple of
+    (status, suggested_worker_name, scored_candidates). status is
+    'auto' when exactly one candidate scores >= 0.8, 'ambiguous' when
+    several candidates are plausible (or the single best one scores
+    below 0.8), and 'no_match' when nothing scores >= 0.5.
+    ---
+    Empareja un nombre de operario en bruto contra los valores
+    worker_name conocidos para una empresa/mes usando difflib.
+    Devuelve una tupla de 3 (status, suggested_worker_name,
+    scored_candidates). status es 'auto' cuando exactamente un
+    candidato puntua >= 0.8, 'ambiguous' cuando varios candidatos son
+    plausibles (o el mejor puntua por debajo de 0.8), y 'no_match'
+    cuando nada puntua >= 0.5.
+    """
+    scored = sorted(
+        (
+            (
+                candidate,
+                difflib.SequenceMatcher(
+                    None, raw_name.upper(), candidate.upper(),
+                ).ratio(),
+            )
+            for candidate in candidates
+        ),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+    top = [
+        {"worker_name": name, "score": round(score, 3)}
+        for name, score in scored[:3]
+        if score >= 0.5
+    ]
+    high = [item for item in top if item["score"] >= 0.8]
+    if len(high) == 1:
+        return "auto", high[0]["worker_name"], top
+    if top:
+        return "ambiguous", None, top
+    return "no_match", None, []
 
 
 # ---------------------------------------------------------------------------
@@ -2614,6 +2700,440 @@ class AnalyticsProfileCloneView(SupervisorAccessMixin, View):
             "id": clone.pk,
             "nombre": clone.nombre,
             "config": clone.config,
+        })
+
+
+# ---------------------------------------------------------------------------
+# OperatorMonthlyCostListView
+# ---------------------------------------------------------------------------
+
+class OperatorMonthlyCostListView(SupervisorAccessMixin, View):
+    """
+    Lists OperatorMonthlyCost records for the current company.
+    GET /panel/analytics/costs/
+    ---
+    Lista los registros OperatorMonthlyCost de la empresa actual.
+    GET /panel/analytics/costs/
+    """
+
+    def get(self, request):
+        """
+        Returns every cost record owned by the company, serialised
+        with monthly_cost as a string (Decimal is not JSON-native).
+        ---
+        Devuelve todos los registros de coste de la empresa,
+        serializados con monthly_cost como cadena (Decimal no es
+        nativo de JSON).
+        """
+        try:
+            company = request.user.company_user.company
+        except AttributeError:
+            return JsonResponse(
+                {"error": "Sin perfil de empresa asociado."},
+                status=403,
+            )
+
+        records = [
+            {
+                "id": record.pk,
+                "worker_name": record.worker_name,
+                "year": record.year,
+                "month": record.month,
+                "monthly_cost": str(record.monthly_cost),
+            }
+            for record in OperatorMonthlyCost.objects.filter(
+                company=company,
+            )
+        ]
+        return JsonResponse({"records": records})
+
+
+# ---------------------------------------------------------------------------
+# OperatorMonthlyCostCreateView
+# ---------------------------------------------------------------------------
+
+class OperatorMonthlyCostCreateView(SupervisorAccessMixin, View):
+    """
+    Creates or updates a single OperatorMonthlyCost record via manual
+    entry (upsert on the (company, worker_name, year, month) unique
+    constraint).
+    POST /panel/analytics/costs/create/
+    Body: {"worker_name": str, "year": int, "month": int,
+           "monthly_cost": number}
+    ---
+    Crea o actualiza un registro OperatorMonthlyCost mediante entrada
+    manual (upsert sobre la restriccion unica (company, worker_name,
+    year, month)).
+    POST /panel/analytics/costs/create/
+    Cuerpo: {"worker_name": str, "year": int, "month": int,
+             "monthly_cost": numero}
+    """
+
+    def post(self, request):
+        """
+        Validates the payload and performs an update_or_create against
+        OperatorMonthlyCost scoped to the current company.
+        ---
+        Valida el cuerpo de la peticion y ejecuta un update_or_create
+        sobre OperatorMonthlyCost acotado a la empresa actual.
+        """
+        try:
+            company = request.user.company_user.company
+        except AttributeError:
+            return JsonResponse(
+                {"error": "Sin perfil de empresa asociado."},
+                status=403,
+            )
+
+        try:
+            payload = _json.loads(request.body)
+        except (ValueError, TypeError):
+            return JsonResponse(
+                {"error": "Cuerpo JSON invalido."},
+                status=400,
+            )
+
+        worker_name = str(payload.get("worker_name", "")).strip()
+        if not worker_name:
+            return JsonResponse(
+                {"error": "El campo 'worker_name' es obligatorio."},
+                status=400,
+            )
+
+        try:
+            year = int(payload.get("year"))
+            month = int(payload.get("month"))
+            if not 1 <= month <= 12:
+                raise ValueError
+        except (TypeError, ValueError):
+            return JsonResponse(
+                {
+                    "error": (
+                        "'year' y 'month' deben ser enteros validos "
+                        "('month' entre 1 y 12)."
+                    ),
+                },
+                status=400,
+            )
+
+        try:
+            monthly_cost = Decimal(
+                str(payload.get("monthly_cost")).replace(",", "."),
+            )
+            if monthly_cost < 0:
+                raise InvalidOperation
+        except (InvalidOperation, TypeError, ValueError):
+            return JsonResponse(
+                {
+                    "error": (
+                        "'monthly_cost' debe ser un numero valido "
+                        "y no negativo."
+                    ),
+                },
+                status=400,
+            )
+
+        record, created = OperatorMonthlyCost.objects.update_or_create(
+            company=company,
+            worker_name=worker_name,
+            year=year,
+            month=month,
+            defaults={"monthly_cost": monthly_cost},
+        )
+        return JsonResponse({
+            "id": record.pk,
+            "worker_name": record.worker_name,
+            "year": record.year,
+            "month": record.month,
+            "monthly_cost": str(record.monthly_cost),
+            "created": created,
+        })
+
+
+# ---------------------------------------------------------------------------
+# OperatorMonthlyCostDeleteView
+# ---------------------------------------------------------------------------
+
+class OperatorMonthlyCostDeleteView(SupervisorAccessMixin, View):
+    """
+    Deletes a single OperatorMonthlyCost record owned by the current
+    company.
+    DELETE /panel/analytics/costs/<pk>/
+    ---
+    Elimina un registro OperatorMonthlyCost de la empresa actual.
+    DELETE /panel/analytics/costs/<pk>/
+    """
+
+    def delete(self, request, pk):
+        """
+        Deletes the record with the given pk if it belongs to the
+        current company. Returns HTTP 404 if not found.
+        ---
+        Elimina el registro con el pk dado si pertenece a la empresa
+        actual. Devuelve HTTP 404 si no se encuentra.
+        """
+        try:
+            company = request.user.company_user.company
+        except AttributeError:
+            return JsonResponse(
+                {"error": "Sin perfil de empresa asociado."},
+                status=403,
+            )
+
+        try:
+            record = OperatorMonthlyCost.objects.get(
+                pk=pk, company=company,
+            )
+        except OperatorMonthlyCost.DoesNotExist:
+            return JsonResponse(
+                {"error": "Registro no encontrado."},
+                status=404,
+            )
+
+        record.delete()
+        return JsonResponse({"deleted": pk})
+
+
+# ---------------------------------------------------------------------------
+# OperatorMonthlyCostImportView
+# ---------------------------------------------------------------------------
+
+class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
+    """
+    Two-phase Excel importer for OperatorMonthlyCost. Expects columns
+    MECANICO, FECHA and COSTE.
+
+    Phase 1 -- PREVIEW: multipart POST with a 'file' field. Parses the
+    workbook, resolves each row's (year, month) and attempts a fuzzy
+    match of MECANICO against the worker_name values recorded in
+    WorkOrderEntry for that company/month. Returns a preview payload;
+    nothing is persisted.
+
+    Phase 2 -- CONFIRM: JSON POST with a 'rows' array (each item
+    carrying the confirmed worker_name, year, month and monthly_cost).
+    Persists every row via update_or_create.
+
+    POST /panel/analytics/costs/import/
+    ---
+    Importador de Excel en dos fases para OperatorMonthlyCost. Espera
+    las columnas MECANICO, FECHA y COSTE.
+
+    Fase 1 -- PREVIEW: POST multipart con campo 'file'. Parsea el
+    libro, resuelve (year, month) de cada fila e intenta un
+    emparejamiento difuso de MECANICO contra los worker_name
+    registrados en WorkOrderEntry para esa empresa/mes. Devuelve un
+    payload de previsualizacion; no persiste nada.
+
+    Fase 2 -- CONFIRM: POST JSON con un array 'rows' (cada elemento
+    lleva worker_name, year, month y monthly_cost confirmados).
+    Persiste cada fila via update_or_create.
+
+    POST /panel/analytics/costs/import/
+    """
+
+    def post(self, request):
+        """
+        Dispatches to preview or confirm mode depending on whether the
+        request carries an uploaded file or a JSON 'rows' payload.
+        ---
+        Despacha a modo preview o confirm segun si la peticion trae un
+        fichero subido o un payload JSON 'rows'.
+        """
+        try:
+            company = request.user.company_user.company
+        except AttributeError:
+            return JsonResponse(
+                {"error": "Sin perfil de empresa asociado."},
+                status=403,
+            )
+
+        uploaded = request.FILES.get("file")
+        if uploaded:
+            return self._preview(uploaded, company)
+        return self._confirm(request, company)
+
+    def _preview(self, uploaded, company):
+        """
+        Parses the uploaded workbook and returns a per-row preview
+        with the fuzzy-match status, without persisting anything.
+        ---
+        Parsea el libro subido y devuelve una previsualizacion por
+        fila con el estado del emparejamiento difuso, sin persistir
+        nada.
+        """
+        try:
+            workbook = openpyxl.load_workbook(
+                uploaded, data_only=True, read_only=True,
+            )
+            sheet = workbook.active
+        except Exception:
+            return JsonResponse(
+                {"error": "No se pudo leer el fichero Excel."},
+                status=400,
+            )
+
+        rows_out = []
+        header = None
+        for row_index, row in enumerate(
+            sheet.iter_rows(values_only=True), start=1,
+        ):
+            if header is None:
+                header = [
+                    str(cell).strip().upper() if cell else ""
+                    for cell in row
+                ]
+                continue
+            if all(cell in (None, "") for cell in row):
+                continue
+
+            mapped = dict(zip(header, row))
+            mecanico_raw = mapped.get("MECANICO")
+            fecha_raw = mapped.get("FECHA")
+            coste_raw = mapped.get("COSTE")
+
+            entry = {
+                "row_index": row_index,
+                "mecanico_raw": mecanico_raw,
+                "fecha_raw": (
+                    str(fecha_raw) if fecha_raw is not None else None
+                ),
+                "coste_raw": coste_raw,
+            }
+
+            if (
+                not mecanico_raw
+                or fecha_raw is None
+                or coste_raw is None
+            ):
+                entry["status"] = "error"
+                entry["error"] = (
+                    "Faltan valores en MECANICO/FECHA/COSTE."
+                )
+                rows_out.append(entry)
+                continue
+
+            try:
+                year, month = _parse_cost_date_cell(fecha_raw)
+            except (ValueError, TypeError):
+                entry["status"] = "error"
+                entry["error"] = "FECHA con formato no reconocido."
+                rows_out.append(entry)
+                continue
+
+            try:
+                monthly_cost = Decimal(
+                    str(coste_raw).replace(",", "."),
+                )
+            except (InvalidOperation, TypeError, ValueError):
+                entry["status"] = "error"
+                entry["error"] = "COSTE no es un numero valido."
+                rows_out.append(entry)
+                continue
+
+            candidates = list(
+                WorkOrderEntry.objects
+                .filter(
+                    work_order__company=company,
+                    worker_name__gt="",
+                    work_date__year=year,
+                    work_date__month=month,
+                )
+                .values_list("worker_name", flat=True)
+                .distinct()
+            )
+            status, suggested, scored = _fuzzy_match_worker(
+                str(mecanico_raw).strip(), candidates,
+            )
+
+            entry.update({
+                "year": year,
+                "month": month,
+                "monthly_cost": str(monthly_cost),
+                "status": status,
+                "suggested_worker_name": suggested,
+                "candidates": scored,
+            })
+            rows_out.append(entry)
+
+        return JsonResponse({"rows": rows_out})
+
+    def _confirm(self, request, company):
+        """
+        Persists the confirmed rows via update_or_create, scoped to
+        the current company.
+        ---
+        Persiste las filas confirmadas via update_or_create, acotadas
+        a la empresa actual.
+        """
+        try:
+            payload = _json.loads(request.body)
+        except (ValueError, TypeError):
+            return JsonResponse(
+                {"error": "Cuerpo JSON invalido."},
+                status=400,
+            )
+
+        rows = payload.get("rows")
+        if not isinstance(rows, list) or not rows:
+            return JsonResponse(
+                {
+                    "error": (
+                        "El campo 'rows' debe ser una lista no vacia."
+                    ),
+                },
+                status=400,
+            )
+
+        created_count = 0
+        updated_count = 0
+        errors = []
+
+        for index, row in enumerate(rows):
+            worker_name = str(row.get("worker_name", "")).strip()
+
+            if not worker_name:
+                errors.append(
+                    {"row": index, "error": "worker_name vacio."},
+                )
+                continue
+            try:
+                year = int(row.get("year"))
+                month = int(row.get("month"))
+                if not 1 <= month <= 12:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(
+                    {"row": index, "error": "year/month invalidos."},
+                )
+                continue
+            try:
+                monthly_cost = Decimal(
+                    str(row.get("monthly_cost")).replace(",", "."),
+                )
+                if monthly_cost < 0:
+                    raise InvalidOperation
+            except (InvalidOperation, TypeError, ValueError):
+                errors.append(
+                    {"row": index, "error": "monthly_cost invalido."},
+                )
+                continue
+
+            _, created = OperatorMonthlyCost.objects.update_or_create(
+                company=company,
+                worker_name=worker_name,
+                year=year,
+                month=month,
+                defaults={"monthly_cost": monthly_cost},
+            )
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
+
+        return JsonResponse({
+            "created": created_count,
+            "updated": updated_count,
+            "errors": errors,
         })
 
 

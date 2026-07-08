@@ -18,6 +18,10 @@ from analytics.views import (
     AnalyticsProfileDeleteView,
     AnalyticsProfileUpdateView,
     AnalyticsProfileCloneView,
+    OperatorMonthlyCostListView,
+    OperatorMonthlyCostCreateView,
+    OperatorMonthlyCostDeleteView,
+    OperatorMonthlyCostImportView,
     BotManagementView,
 )
 
@@ -53,6 +57,26 @@ urlpatterns = [
         "profiles/<int:pk>/clone/",
         AnalyticsProfileCloneView.as_view(),
         name="analytics_profile_clone",
+    ),
+    path(
+        "costs/",
+        OperatorMonthlyCostListView.as_view(),
+        name="operator_monthly_cost_list",
+    ),
+    path(
+        "costs/create/",
+        OperatorMonthlyCostCreateView.as_view(),
+        name="operator_monthly_cost_create",
+    ),
+    path(
+        "costs/<int:pk>/",
+        OperatorMonthlyCostDeleteView.as_view(),
+        name="operator_monthly_cost_delete",
+    ),
+    path(
+        "costs/import/",
+        OperatorMonthlyCostImportView.as_view(),
+        name="operator_monthly_cost_import",
     ),
     path(
         "lab/",
