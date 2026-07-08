@@ -168,6 +168,41 @@ class FaultSubcategory(models.TextChoices):
     OT_OTHER       = "OT_OTHER",       _("Otra avería no clasificada")
 
 
+# ---------------------------------------------------------------------------
+# TipoTarea — mirrors chat.models.BreakdownTicket.TIPO_TAREA_CHOICES exactly.
+# Hardcoded here (not imported) for the same reason documented in
+# work_order_processor/services.py::_VALID_TIPO_TAREA: chat.models has no
+# dependency on work_order_processor, and this file stays free of
+# cross-app import-order assumptions at module level.
+# ---
+# TipoTarea — refleja exactamente chat.models.BreakdownTicket.TIPO_TAREA_CHOICES.
+# Fijado aquí (sin import) por la misma razon documentada en
+# work_order_processor/services.py::_VALID_TIPO_TAREA: chat.models no
+# depende de work_order_processor, y este archivo se mantiene libre de
+# suposiciones de orden de import entre apps a nivel de modulo.
+# ---------------------------------------------------------------------------
+
+class TipoTarea(models.TextChoices):
+    """
+    Nature of the work block: a real fault (AVERIA) or something else
+    (MEJORA/MANTENIMIENTO/FABRICACION). Stored on WorkOrderEntryLine.
+    tipo_tarea -- H10 Paso 4-bis. See TipoTarea usage note on the field
+    itself for why this is persisted at line level, not only on the
+    linked BreakdownTicket.
+    ---
+    Naturaleza del bloque de trabajo: una averia real (AVERIA) o algo
+    distinto (MEJORA/MANTENIMIENTO/FABRICACION). Se almacena en
+    WorkOrderEntryLine.tipo_tarea -- H10 Paso 4-bis. Ver la nota de uso
+    en el propio campo sobre por que se persiste a nivel de linea y no
+    solo en el BreakdownTicket vinculado.
+    """
+
+    AVERIA        = "AVERIA",        _("Avería")
+    MEJORA        = "MEJORA",        _("Mejora")
+    MANTENIMIENTO = "MANTENIMIENTO", _("Mantenimiento")
+    FABRICACION   = "FABRICACION",   _("Fabricación")
+
+
 class WorkOrder(models.Model):
     """
     Represents a work-order record in the platform. Tracks the full lifecycle:
@@ -997,6 +1032,57 @@ class WorkOrderEntryLine(models.Model):
             "Subgrupo detallado de avería asignado automáticamente por Gemini Flash "
             "tras el guardado del bloque. No lo rellena el operario. "
             "Vacío hasta que la tarea Celery classify_fault_line lo procese."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Task type -- H10 Paso 4-bis, persistencia también a nivel de línea
+    # Tipo de tarea -- H10 Paso 4-bis, persistencia también a nivel de línea
+    #
+    # tipo_tarea/task_category_free ya existían en chat.BreakdownTicket, pero
+    # ese campo solo se rellena cuando la línea tiene breakdown_ticket
+    # vinculado. Las líneas legacy (partes PDF anteriores a H14, o cualquier
+    # bloque sin ticket) nunca tenían dónde guardar esta clasificación --
+    # aquí se persiste siempre, en la propia línea, con independencia de si
+    # existe breakdown_ticket, para poder calcular volumen de mantenimiento/
+    # mejoras/fabricación directamente sobre WorkOrderEntryLine sin depender
+    # de un join a BreakdownTicket.
+    #
+    # tipo_tarea/task_category_free ya existian en chat.BreakdownTicket, pero
+    # ese campo solo se rellena cuando la linea tiene breakdown_ticket
+    # vinculado. Las lineas legacy (partes PDF anteriores a H14, o cualquier
+    # bloque sin ticket) nunca tenian donde guardar esta clasificacion --
+    # aqui se persiste siempre, en la propia linea, con independencia de si
+    # existe breakdown_ticket, para poder calcular volumen de mantenimiento/
+    # mejoras/fabricacion directamente sobre WorkOrderEntryLine sin depender
+    # de un join a BreakdownTicket.
+    # ------------------------------------------------------------------
+    tipo_tarea = models.CharField(
+        _("Tipo de tarea"),
+        max_length=15,
+        choices=TipoTarea.choices,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text=_(
+            "Naturaleza de este bloque de trabajo (avería, mejora, "
+            "mantenimiento, fabricación). Poblado automáticamente por "
+            "classify_fault_line junto con fault_category/fault_subcategory "
+            "(solo si AVERIA) o task_category_free (el resto). No lo "
+            "rellena el operario."
+        ),
+    )
+    task_category_free = models.CharField(
+        _("Categoría de tarea (libre)"),
+        max_length=200,
+        blank=True,
+        default="",
+        help_text=_(
+            "Categorización libre generada por Gemini para bloques con "
+            "tipo_tarea distinto de AVERIA (mejora, mantenimiento, "
+            "fabricación...), sin taxonomía rígida. Vacío cuando "
+            "tipo_tarea=AVERIA (se usa fault_category/fault_subcategory "
+            "en su lugar) o cuando el bloque todavía no se ha clasificado."
         ),
     )
 

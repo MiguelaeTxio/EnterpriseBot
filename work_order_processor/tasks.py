@@ -8,9 +8,12 @@ Defines two background tasks:
     page, WorkOrderEntry + WorkOrderEntryLine persistence, machine catalogue
     resolution and final Excel report generation.
   - classify_fault_line(): receives a WorkOrderEntryLine pk, calls
-    classify_fault() from services.py and persists the returned
-    (fault_category, fault_subcategory) pair. Enqueued automatically after
-    every WorkOrderEntryLine INSERT (Hito 7 / S023).
+    classify_task() from services.py and persists tipo_tarea/
+    task_category_free on the line always, plus fault_category/
+    fault_subcategory when tipo_tarea=AVERIA. Mirrors the same result
+    onto the linked BreakdownTicket when present. Enqueued
+    automatically after every WorkOrderEntryLine INSERT (Hito 7 / S023,
+    unified 2026-07-08).
 
 ---
 
@@ -22,9 +25,11 @@ Define dos tareas de fondo:
     WorkOrderEntryLine, resolución del catálogo de maquinaria y generación
     final del informe Excel.
   - classify_fault_line(): recibe el pk de una WorkOrderEntryLine, llama a
-    classify_fault() de services.py y persiste el par devuelto
-    (fault_category, fault_subcategory). Se encola automáticamente tras cada
-    INSERT de WorkOrderEntryLine (Hito 7 / S023).
+    classify_task() de services.py y persiste tipo_tarea/task_category_free
+    en la línea siempre, más fault_category/fault_subcategory cuando
+    tipo_tarea=AVERIA. Refleja el mismo resultado en el BreakdownTicket
+    vinculado si existe. Se encola automáticamente tras cada INSERT de
+    WorkOrderEntryLine (Hito 7 / S023, unificada 2026-07-08).
 """
 
 import logging
@@ -47,7 +52,6 @@ from .services import (
     _parse_time,
     _resolve_machine_asset,
     _worker_name_from_pdf_path,
-    classify_fault,
     classify_task,
     extract_work_order_page,
     generate_work_order_excel,
@@ -783,74 +787,64 @@ def process_work_order_pdf(self, work_order_id: int) -> None:
 )
 def classify_fault_line(self, entry_line_pk: int) -> None:
     """
-    Celery task: classifies a WorkOrderEntryLine. Branches on whether the
-    line is linked to a chat.models.BreakdownTicket (H10 Paso 4-bis, punto 4,
-    added 2026-07-08):
+    Celery task: classifies a WorkOrderEntryLine via a single Gemini
+    Flash call (classify_task()), regardless of whether the line is
+    linked to a chat.models.BreakdownTicket. Rewritten 2026-07-08 to
+    persist tipo_tarea/task_category_free directly on the LINE in every
+    case -- legacy/ticketless lines (PDF history, or any block without
+    a ticket) previously had nowhere to store this classification,
+    which made it impossible to compute maintenance/improvement volume
+    without joining through BreakdownTicket.
 
-      - Line WITH breakdown_ticket: classifies the TICKET (tipo_tarea +,
-        depending on it, fault_category/fault_subcategory on this same line
-        for AVERIA, or task_category_free on the ticket for MEJORA/
-        MANTENIMIENTO/FABRICACION), via classify_task(). Idempotent at the
-        ticket level (skipped if ticket.tipo_tarea is already set) -- a
-        ticket is classified once, when the task that formalizes it is
-        first saved (Paso 4-bis punto 7), not re-classified on every
-        subsequent task linked to the same ticket.
-      - Line WITHOUT breakdown_ticket (non-machine blocks: PERSONAL/
-        EMPRESA_*, or legacy data): original behaviour unchanged --
-        classifies fault_category/fault_subcategory directly on the line
-        via classify_fault(). The tipo_tarea concept does not apply to
-        these blocks.
+    Branches:
+      1. Line already classified (line.tipo_tarea set): no-op.
+      2. Line WITH breakdown_ticket whose ticket is ALREADY classified
+         (shared by an earlier line on the same ticket): mirrors the
+         ticket's tipo_tarea/fault_category/task_category_free onto
+         this line without a new Gemini call. fault_subcategory is left
+         empty in this case -- the ticket model does not store it, only
+         the line that triggered the original classification has it.
+      3. Otherwise: calls classify_task() once. Persists tipo_tarea and
+         task_category_free on the line always; fault_category/
+         fault_subcategory only when tipo_tarea=AVERIA. If a ticket is
+         linked, mirrors the same result onto it (tipo_tarea,
+         fault_category, task_category_free -- same fields the ticket
+         has always stored).
 
-    Flow (both branches):
-      1. Load WorkOrderEntryLine by pk. Abort silently if it no longer
-         exists (the record may have been deleted between enqueue and
-         execution).
-      2. Skip if already classified (idempotency guard — safe for backfill
-         retries).
-      3. Call the appropriate classify_*() function -- a single Gemini
-         Flash inference.
-      4. Persist the result via update_fields (minimal write).
-      5. On Vertex AI 429 (ResourceExhausted): wait 60 s and retry up to
-         max_retries times (Key Learning — server-side contention pattern).
-      6. On any other unrecoverable exception: log and do not retry (fault
-         classification is best-effort; a failed classification must never
-         block or re-queue indefinitely).
+    On Vertex AI 429 (ResourceExhausted): wait 60 s and retry up to
+    max_retries times. On any other unrecoverable exception: log and do
+    not retry (best-effort; must never block or re-queue indefinitely).
 
     ---
 
-    Tarea Celery: clasifica una WorkOrderEntryLine. Bifurca según si la
-    línea está vinculada a un chat.models.BreakdownTicket (H10 Paso 4-bis,
-    punto 4, añadido 2026-07-08):
+    Tarea Celery: clasifica una WorkOrderEntryLine con una única llamada
+    a Gemini Flash (classify_task()), tenga o no la línea un
+    chat.models.BreakdownTicket vinculado. Reescrita el 2026-07-08 para
+    persistir tipo_tarea/task_category_free directamente en la LÍNEA en
+    todos los casos -- las líneas legacy/sin ticket (histórico PDF, o
+    cualquier bloque sin ticket) antes no tenían dónde guardar esta
+    clasificación, lo que impedía calcular volumen de mantenimiento/
+    mejoras sin pasar por un join a BreakdownTicket.
 
-      - Línea CON breakdown_ticket: clasifica el TICKET (tipo_tarea y, según
-        cuál sea, fault_category/fault_subcategory en esta misma línea para
-        AVERIA, o task_category_free en el ticket para MEJORA/
-        MANTENIMIENTO/FABRICACION), vía classify_task(). Idempotente a nivel
-        de ticket (se omite si ticket.tipo_tarea ya está asignado) -- un
-        ticket se clasifica una vez, al grabar por primera vez la tarea que
-        lo formaliza (Paso 4-bis punto 7), no se reclasifica en cada tarea
-        posterior vinculada al mismo ticket.
-      - Línea SIN breakdown_ticket (bloques sin máquina: PERSONAL/EMPRESA_*,
-        o datos legacy): comportamiento original sin cambios -- clasifica
-        fault_category/fault_subcategory directamente en la línea vía
-        classify_fault(). El concepto de tipo_tarea no aplica a estos
-        bloques.
+    Ramas:
+      1. Línea ya clasificada (line.tipo_tarea informado): no hace nada.
+      2. Línea CON breakdown_ticket cuyo ticket YA está clasificado
+         (compartido por una línea anterior del mismo ticket): refleja
+         tipo_tarea/fault_category/task_category_free del ticket en esta
+         línea sin nueva llamada a Gemini. fault_subcategory queda vacío
+         en este caso -- el modelo de ticket no lo guarda, solo lo tiene
+         la línea que disparó la clasificación original.
+      3. En cualquier otro caso: llama a classify_task() una vez.
+         Persiste tipo_tarea y task_category_free en la línea siempre;
+         fault_category/fault_subcategory solo cuando tipo_tarea=AVERIA.
+         Si hay ticket vinculado, refleja el mismo resultado en él
+         (tipo_tarea, fault_category, task_category_free -- los mismos
+         campos que el ticket ya almacenaba).
 
-    Flujo (ambas ramas):
-      1. Cargar WorkOrderEntryLine por pk. Abortar silenciosamente si ya no
-         existe (el registro puede haber sido eliminado entre el encolado y
-         la ejecución).
-      2. Omitir si ya está clasificada (guardia de idempotencia — segura
-         para reintentos de backfill).
-      3. Llamar a la función classify_*() correspondiente -- una única
-         inferencia de Gemini Flash.
-      4. Persistir el resultado vía update_fields (escritura mínima).
-      5. Ante 429 de Vertex AI (ResourceExhausted): esperar 60 s y
-         reintentar hasta max_retries veces (Key Learning — patrón de
-         contención en servidor).
-      6. Ante cualquier otra excepción irrecuperable: registrar y no
-         reintentar (la clasificación es best-effort; un fallo no debe
-         bloquear ni encolar indefinidamente).
+    Ante 429 de Vertex AI (ResourceExhausted): espera 60 s y reintenta
+    hasta max_retries veces. Ante cualquier otra excepción irrecuperable:
+    registra y no reintenta (best-effort; nunca debe bloquear ni
+    encolar indefinidamente).
     """
     logger.info(
         "# [classify_fault_line] Iniciada para WorkOrderEntryLine pk=%d.",
@@ -872,110 +866,78 @@ def classify_fault_line(self, entry_line_pk: int) -> None:
         )
         return
 
-    ticket = line.breakdown_ticket
-
-    # --- Rama CON ticket: clasificación unificada tipo_tarea (H10 Paso 4-bis) ---
-    if ticket is not None:
-        if ticket.tipo_tarea:
-            logger.info(
-                "# [classify_fault_line] pk=%d: ticket pk=%d ya clasificado "
-                "(tipo_tarea=%s). Nada que hacer.",
-                entry_line_pk, ticket.pk, ticket.tipo_tarea,
-            )
-            return
-
-        try:
-            result = classify_task(
-                fault_description=line.fault_description or "",
-                repair_notes=line.repair_notes or "",
-            )
-
-            if not result["tipo_tarea"]:
-                logger.warning(
-                    "# [classify_fault_line] pk=%d: classify_task devolvió "
-                    "tipo_tarea vacío para ticket pk=%d. Nada se persiste.",
-                    entry_line_pk, ticket.pk,
-                )
-                return
-
-            ticket.tipo_tarea          = result["tipo_tarea"]
-            ticket.fault_category      = result["fault_category"]
-            ticket.task_category_free  = result["task_category_free"]
-            ticket.save(update_fields=[
-                "tipo_tarea", "fault_category", "task_category_free",
-            ])
-
-            if result["tipo_tarea"] == "AVERIA":
-                line.fault_category    = result["fault_category"]
-                line.fault_subcategory = result["fault_subcategory"]
-                line.save(update_fields=[
-                    "fault_category", "fault_subcategory",
-                ])
-
-            logger.info(
-                "# [classify_fault_line] pk=%d: ticket pk=%d clasificado "
-                "tipo_tarea=%s.",
-                entry_line_pk, ticket.pk, result["tipo_tarea"],
-            )
-            return
-
-        except Exception as exc:
-            exc_str = str(exc)
-            if "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str:
-                logger.warning(
-                    "# [classify_fault_line] pk=%d: Vertex AI 429 detectado "
-                    "(intento %d/%d). Reintentando en 60 s.",
-                    entry_line_pk, self.request.retries + 1, self.max_retries,
-                )
-                raise self.retry(exc=exc, countdown=60)
-            logger.error(
-                "# [classify_fault_line] pk=%d: error irrecuperable "
-                "clasificando ticket pk=%d: %s. Nada se persiste.",
-                entry_line_pk, ticket.pk, exc, exc_info=True,
-            )
-            return
-
-    # --- Rama SIN ticket: comportamiento original sin cambios ---
-
-    # Step 2 — Idempotency guard.
-    # Paso 2 — Guardia de idempotencia.
-    if line.fault_category and line.fault_subcategory:
+    # Step 2 — Idempotency guard at line level.
+    # Paso 2 — Guardia de idempotencia a nivel de línea.
+    if line.tipo_tarea:
         logger.info(
             "# [classify_fault_line] pk=%d ya clasificada "
-            "(category=%s subcategory=%s). Nada que hacer.",
-            entry_line_pk,
-            line.fault_category,
-            line.fault_subcategory,
+            "(tipo_tarea=%s). Nada que hacer.",
+            entry_line_pk, line.tipo_tarea,
         )
         return
 
+    ticket = line.breakdown_ticket
+
+    # Step 3 — Ticket already classified by an earlier sibling line:
+    # mirror onto this line without a new Gemini call.
+    # Paso 3 — Ticket ya clasificado por una línea hermana anterior:
+    # reflejar en esta línea sin nueva llamada a Gemini.
+    if ticket is not None and ticket.tipo_tarea:
+        line.tipo_tarea = ticket.tipo_tarea
+        line.task_category_free = ticket.task_category_free
+        update_fields = ["tipo_tarea", "task_category_free"]
+        if ticket.tipo_tarea == "AVERIA":
+            line.fault_category = ticket.fault_category
+            update_fields.append("fault_category")
+        line.save(update_fields=update_fields)
+        logger.info(
+            "# [classify_fault_line] pk=%d: reflejado desde ticket pk=%d "
+            "ya clasificado (tipo_tarea=%s).",
+            entry_line_pk, ticket.pk, ticket.tipo_tarea,
+        )
+        return
+
+    # Step 4 — Real classification via Gemini (single call, with or
+    # without a linked ticket).
+    # Paso 4 — Clasificación real vía Gemini (única llamada, con o sin
+    # ticket vinculado).
     try:
-        # Step 3 — Call classify_fault().
-        # Paso 3 — Llamar a classify_fault().
-        category, subcategory = classify_fault(
+        result = classify_task(
             fault_description=line.fault_description or "",
             repair_notes=line.repair_notes or "",
         )
 
-        # Step 4 — Persist if classification succeeded.
-        # Paso 4 — Persistir si la clasificación tuvo éxito.
-        if category:
-            line.fault_category    = category
-            line.fault_subcategory = subcategory
-            line.save(update_fields=["fault_category", "fault_subcategory"])
-            logger.info(
-                "# [classify_fault_line] pk=%d clasificada: "
-                "category=%s subcategory=%s.",
-                entry_line_pk,
-                category,
-                subcategory,
-            )
-        else:
+        if not result["tipo_tarea"]:
             logger.warning(
-                "# [classify_fault_line] pk=%d: classify_fault devolvió "
-                "categoría vacía. Los campos quedan sin rellenar.",
+                "# [classify_fault_line] pk=%d: classify_task devolvió "
+                "tipo_tarea vacío. Los campos quedan sin rellenar.",
                 entry_line_pk,
             )
+            return
+
+        line.tipo_tarea = result["tipo_tarea"]
+        line.task_category_free = result["task_category_free"]
+        update_fields = ["tipo_tarea", "task_category_free"]
+
+        if result["tipo_tarea"] == "AVERIA":
+            line.fault_category = result["fault_category"]
+            line.fault_subcategory = result["fault_subcategory"]
+            update_fields += ["fault_category", "fault_subcategory"]
+
+        line.save(update_fields=update_fields)
+
+        if ticket is not None:
+            ticket.tipo_tarea = result["tipo_tarea"]
+            ticket.fault_category = result["fault_category"]
+            ticket.task_category_free = result["task_category_free"]
+            ticket.save(update_fields=[
+                "tipo_tarea", "fault_category", "task_category_free",
+            ])
+
+        logger.info(
+            "# [classify_fault_line] pk=%d clasificada: tipo_tarea=%s.",
+            entry_line_pk, result["tipo_tarea"],
+        )
 
     except Exception as exc:
         exc_str = str(exc)
