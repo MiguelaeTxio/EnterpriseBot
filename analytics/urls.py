@@ -22,6 +22,7 @@ from analytics.views import (
     OperatorMonthlyCostCreateView,
     OperatorMonthlyCostDeleteView,
     OperatorMonthlyCostImportView,
+    AnalyticsCostsView,
     BotManagementView,
 )
 
@@ -77,6 +78,11 @@ urlpatterns = [
         "costs/import/",
         OperatorMonthlyCostImportView.as_view(),
         name="operator_monthly_cost_import",
+    ),
+    path(
+        "costs/manage/",
+        AnalyticsCostsView.as_view(),
+        name="analytics_costs",
     ),
     path(
         "lab/",

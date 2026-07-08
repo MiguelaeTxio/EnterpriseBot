@@ -3138,6 +3138,34 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
 
 
 # ---------------------------------------------------------------------------
+# AnalyticsCostsView
+# ---------------------------------------------------------------------------
+
+class AnalyticsCostsView(SupervisorAccessMixin, View):
+    """
+    Shell page for OperatorMonthlyCost management. Renders an empty
+    template that populates itself client-side via fetch() against
+    the OperatorMonthlyCost* JSON endpoints (list/create/delete/
+    import) -- same pattern as AnalyticsLabView.
+    GET /panel/analytics/costs/manage/
+    ---
+    Pagina contenedora para la gestion de OperatorMonthlyCost. Renderiza
+    una plantilla vacia que se rellena en el cliente via fetch() contra
+    los endpoints JSON de OperatorMonthlyCost* (list/create/delete/
+    import) -- mismo patron que AnalyticsLabView.
+    GET /panel/analytics/costs/manage/
+    """
+
+    def get(self, request):
+        """
+        Renders the costs management shell template.
+        ---
+        Renderiza la plantilla contenedora de gestion de costes.
+        """
+        return render(request, "panel/analytics_costs.html")
+
+
+# ---------------------------------------------------------------------------
 # BotManagementView
 # ---------------------------------------------------------------------------
 

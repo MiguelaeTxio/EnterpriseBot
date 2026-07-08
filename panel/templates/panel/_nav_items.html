@@ -282,6 +282,12 @@
                                 <i class="bi bi-pie-chart-fill"></i>Laboratorio de Análisis
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'analytics_costs' %}active{% endif %}"
+                               href="{% url 'analytics:analytics_costs' %}">
+                                <i class="bi bi-cash-coin"></i>Costes de operarios
+                            </a>
+                        </li>
                     {% endif %}
                     {# Configuración empresa — ELIMINADA 2026-07-08. Redundante        #}
                     {# (bases/horarios que mostraba ya viven en Asistencia/Horarios    #}

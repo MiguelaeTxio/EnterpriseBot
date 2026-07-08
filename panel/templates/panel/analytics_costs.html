@@ -1,0 +1,528 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/analytics_costs.html #}
+{#                                                                                       #}
+{# Operator monthly cost management page -- Hito 20, pendiente A/B.                    #}
+{#   Shell page: no server-side data, everything loaded client-side via fetch()        #}
+{#   against the OperatorMonthlyCost* JSON endpoints (analytics app).                  #}
+{#   Card 1: existing records table.                                                   #}
+{#   Card 2: manual entry form (upsert).                                               #}
+{#   Card 3: Excel import in two phases (preview + confirm), with fuzzy-match          #}
+{#   resolution for ambiguous/no-match rows.                                           #}
+{#                                                                                       #}
+{# Pagina de gestion de coste mensual de operarios -- Hito 20, pendiente A/B.           #}
+{#   Pagina contenedora: sin datos server-side, todo se carga en el cliente via         #}
+{#   fetch() contra los endpoints JSON de OperatorMonthlyCost* (app analytics).         #}
+{#   Tarjeta 1: tabla de registros existentes.                                         #}
+{#   Tarjeta 2: formulario de alta manual (upsert).                                    #}
+{#   Tarjeta 3: importacion Excel en dos fases (preview + confirm), con resolucion      #}
+{#   de emparejamiento difuso para filas ambiguas/sin coincidencia.                    #}
+{% extends "panel/base.html" %}
+
+{% block title %}Costes de operarios{% endblock %}
+
+{% block page_title %}Costes mensuales de operarios{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0 costs-container">
+
+    {# ------------------------------------------------------------------ #}
+    {# Existing records table                                              #}
+    {# Tabla de registros existentes                                       #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light border-bottom py-2 px-4 d-flex align-items-center justify-content-between">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-cash-coin me-2 text-muted"></i>Registros de coste mensual
+            </span>
+            <span class="badge bg-secondary" id="costs-count-badge">0</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="px-4 text-sm fw-semibold">Operario</th>
+                        <th class="text-sm fw-semibold">Año</th>
+                        <th class="text-sm fw-semibold">Mes</th>
+                        <th class="text-sm fw-semibold">Coste (EUR)</th>
+                        <th class="text-sm fw-semibold">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="costs-table-body">
+                    <tr id="costs-empty-row">
+                        <td colspan="5" class="px-4 py-4 text-center text-muted text-sm">
+                            Cargando registros...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Manual entry form                                                    #}
+    {# Formulario de entrada manual                                        #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light border-bottom py-2 px-4">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-plus-circle me-2 text-muted"></i>Alta / actualización manual
+            </span>
+        </div>
+        <div class="card-body px-4 py-4">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-4">
+                    <label class="form-label text-sm fw-semibold mb-1">
+                        Operario <span class="text-danger">*</span>
+                    </label>
+                    <input type="text" id="costs-manual-worker"
+                           class="form-control form-control-sm"
+                           placeholder="Ej: ANTONIO FONTALBA SERON">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">
+                        Año <span class="text-danger">*</span>
+                    </label>
+                    <input type="number" id="costs-manual-year"
+                           class="form-control form-control-sm"
+                           min="2020" max="2100">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">
+                        Mes <span class="text-danger">*</span>
+                    </label>
+                    <select id="costs-manual-month" class="form-select form-select-sm">
+                        <option value="1">Enero</option>
+                        <option value="2">Febrero</option>
+                        <option value="3">Marzo</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Mayo</option>
+                        <option value="6">Junio</option>
+                        <option value="7">Julio</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Septiembre</option>
+                        <option value="10">Octubre</option>
+                        <option value="11">Noviembre</option>
+                        <option value="12">Diciembre</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">
+                        Coste (EUR) <span class="text-danger">*</span>
+                    </label>
+                    <input type="number" id="costs-manual-cost"
+                           class="form-control form-control-sm"
+                           min="0" step="0.01" placeholder="0.00">
+                </div>
+                <div class="col-12 col-md-2">
+                    <button type="button" id="costs-manual-save-btn"
+                            class="btn btn-primary btn-sm w-100"
+                            onclick="costsSaveManual()">
+                        <i class="bi bi-check2 me-1"></i>Guardar
+                    </button>
+                </div>
+            </div>
+            <div id="costs-manual-feedback" class="text-sm mt-2"></div>
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Excel import -- two phases (preview + confirm)                      #}
+    {# Importacion Excel -- dos fases (preview + confirm)                  #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light border-bottom py-2 px-4">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-file-earmark-excel me-2 text-muted"></i>Importar desde Excel
+            </span>
+        </div>
+        <div class="card-body px-4 py-4">
+            <p class="text-sm text-muted mb-3">
+                El fichero debe tener las columnas <code>MECANICO</code>,
+                <code>FECHA</code> (fecha de Excel o formato AAAA-MM-DD) y
+                <code>COSTE</code>. Cada operario se emparejará
+                automáticamente con los nombres reales registrados en los
+                partes de trabajo de ese mes; las coincidencias dudosas se
+                muestran para que las confirmes antes de guardar nada.
+            </p>
+            <div class="row g-3 align-items-end mb-3">
+                <div class="col-12 col-md-6">
+                    <input type="file" id="costs-import-file"
+                           class="form-control form-control-sm"
+                           accept=".xlsx,.xls">
+                </div>
+                <div class="col-12 col-md-3">
+                    <button type="button" id="costs-preview-btn"
+                            class="btn btn-outline-primary btn-sm w-100"
+                            onclick="costsPreviewImport()">
+                        <i class="bi bi-eye me-1"></i>Previsualizar
+                    </button>
+                </div>
+            </div>
+            <div id="costs-import-feedback" class="text-sm mb-2"></div>
+
+            <div id="costs-import-preview-wrap" class="d-none">
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-sm fw-semibold">Fila</th>
+                                <th class="text-sm fw-semibold">Mecánico (Excel)</th>
+                                <th class="text-sm fw-semibold">Periodo</th>
+                                <th class="text-sm fw-semibold">Coste</th>
+                                <th class="text-sm fw-semibold">Operario asignado</th>
+                                <th class="text-sm fw-semibold">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="costs-preview-body"></tbody>
+                    </table>
+                </div>
+                <button type="button" id="costs-confirm-btn"
+                        class="btn btn-success btn-sm"
+                        onclick="costsConfirmImport()">
+                    <i class="bi bi-check2-circle me-1"></i>Confirmar importación
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{# Hidden CSRF token for POST/DELETE requests #}
+{# Token CSRF oculto para peticiones POST/DELETE #}
+<input type="hidden" id="costs-csrf" value="{{ csrf_token }}">
+
+<script>
+/* ================================================================
+   EnterpriseBot -- Gestion de costes mensuales de operarios (H20-B)
+   JS puro, sin dependencias adicionales.
+   ================================================================ */
+
+const COSTS_CSRF = document.getElementById('costs-csrf').value;
+
+const COSTS_MONTH_NAMES = {
+    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
+    5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
+    9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre',
+};
+
+// Last preview response, kept in memory to build the confirm payload.
+// Ultima respuesta de preview, guardada en memoria para construir el
+// payload de confirmacion.
+let costsLastPreview = [];
+
+document.addEventListener('DOMContentLoaded', function () {
+    costsLoadRecords();
+});
+
+// ----------------------------------------------------------------
+// Records table -- Tabla de registros
+// ----------------------------------------------------------------
+
+function costsLoadRecords() {
+    fetch('/panel/analytics/costs/', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        const body = document.getElementById('costs-table-body');
+        const badge = document.getElementById('costs-count-badge');
+        const records = data.records || [];
+        badge.textContent = records.length;
+        if (!records.length) {
+            body.innerHTML = (
+                '<tr id="costs-empty-row"><td colspan="5" ' +
+                'class="px-4 py-4 text-center text-muted text-sm">' +
+                'No hay registros de coste todavia.</td></tr>'
+            );
+            return;
+        }
+        body.innerHTML = records.map(function (rec) {
+            return (
+                '<tr>' +
+                '<td class="px-4 text-sm">' + costsEscape(rec.worker_name) + '</td>' +
+                '<td class="text-sm">' + rec.year + '</td>' +
+                '<td class="text-sm">' + (COSTS_MONTH_NAMES[rec.month] || rec.month) + '</td>' +
+                '<td class="text-sm">' + costsEscape(rec.monthly_cost) + '</td>' +
+                '<td class="text-sm">' +
+                '<button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" ' +
+                'onclick="costsDeleteRecord(' + rec.id + ')" title="Eliminar">' +
+                '<i class="bi bi-trash"></i></button>' +
+                '</td>' +
+                '</tr>'
+            );
+        }).join('');
+    })
+    .catch(function () {
+        document.getElementById('costs-table-body').innerHTML = (
+            '<tr><td colspan="5" class="px-4 py-4 text-center text-danger text-sm">' +
+            'No se pudieron cargar los registros.</td></tr>'
+        );
+    });
+}
+
+function costsDeleteRecord(pk) {
+    if (!window.confirm('¿Eliminar este registro de coste?')) { return; }
+    fetch('/panel/analytics/costs/' + pk + '/', {
+        method: 'DELETE',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': COSTS_CSRF,
+        },
+    })
+    .then(function () { costsLoadRecords(); })
+    .catch(function () { window.alert('No se pudo eliminar el registro.'); });
+}
+
+// ----------------------------------------------------------------
+// Manual entry -- Alta manual
+// ----------------------------------------------------------------
+
+function costsSaveManual() {
+    const worker = document.getElementById('costs-manual-worker').value.trim();
+    const year = document.getElementById('costs-manual-year').value;
+    const month = document.getElementById('costs-manual-month').value;
+    const cost = document.getElementById('costs-manual-cost').value;
+    const feedback = document.getElementById('costs-manual-feedback');
+
+    if (!worker || !year || !cost) {
+        feedback.innerHTML = (
+            '<span class="text-danger">Rellena operario, año y coste.</span>'
+        );
+        return;
+    }
+
+    fetch('/panel/analytics/costs/create/', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json',
+            'X-CSRFToken': COSTS_CSRF,
+        },
+        body: JSON.stringify({
+            worker_name: worker,
+            year: parseInt(year, 10),
+            month: parseInt(month, 10),
+            monthly_cost: cost,
+        }),
+    })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+        if (!res.ok) {
+            feedback.innerHTML = (
+                '<span class="text-danger">' + costsEscape(res.d.error || 'Error.') + '</span>'
+            );
+            return;
+        }
+        feedback.innerHTML = '<span class="text-success">Guardado correctamente.</span>';
+        document.getElementById('costs-manual-worker').value = '';
+        document.getElementById('costs-manual-cost').value = '';
+        costsLoadRecords();
+    })
+    .catch(function () {
+        feedback.innerHTML = '<span class="text-danger">Error de red al guardar.</span>';
+    });
+}
+
+// ----------------------------------------------------------------
+// Excel import -- preview phase -- Importacion Excel -- fase preview
+// ----------------------------------------------------------------
+
+function costsPreviewImport() {
+    const fileInput = document.getElementById('costs-import-file');
+    const feedback = document.getElementById('costs-import-feedback');
+    const wrap = document.getElementById('costs-import-preview-wrap');
+
+    if (!fileInput.files.length) {
+        feedback.innerHTML = '<span class="text-danger">Selecciona un fichero Excel.</span>';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    feedback.innerHTML = '<span class="text-muted">Procesando fichero...</span>';
+    wrap.classList.add('d-none');
+
+    fetch('/panel/analytics/costs/import/', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': COSTS_CSRF,
+        },
+        body: formData,
+    })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+        if (!res.ok) {
+            feedback.innerHTML = (
+                '<span class="text-danger">' + costsEscape(res.d.error || 'Error.') + '</span>'
+            );
+            return;
+        }
+        costsLastPreview = res.d.rows || [];
+        costsRenderPreview();
+        feedback.innerHTML = (
+            '<span class="text-muted">' + costsLastPreview.length +
+            ' fila(s) leidas. Revisa el emparejamiento antes de confirmar.</span>'
+        );
+        wrap.classList.remove('d-none');
+    })
+    .catch(function () {
+        feedback.innerHTML = '<span class="text-danger">Error de red al procesar el fichero.</span>';
+    });
+}
+
+function costsRenderPreview() {
+    const body = document.getElementById('costs-preview-body');
+    body.innerHTML = costsLastPreview.map(function (row, idx) {
+        if (row.status === 'error') {
+            return (
+                '<tr class="table-danger">' +
+                '<td class="text-sm">' + row.row_index + '</td>' +
+                '<td class="text-sm">' + costsEscape(row.mecanico_raw) + '</td>' +
+                '<td class="text-sm" colspan="3">' + costsEscape(row.error) + '</td>' +
+                '<td class="text-sm"><span class="badge bg-danger">Error</span></td>' +
+                '</tr>'
+            );
+        }
+
+        const period = COSTS_MONTH_NAMES[row.year && row.month ? row.month : 0]
+            ? (COSTS_MONTH_NAMES[row.month] + ' ' + row.year)
+            : (row.month + '/' + row.year);
+
+        let badge = '';
+        let rowClass = '';
+        if (row.status === 'auto') {
+            badge = '<span class="badge bg-success">Automático</span>';
+        } else if (row.status === 'ambiguous') {
+            badge = '<span class="badge bg-warning text-dark">Revisar</span>';
+            rowClass = 'table-warning';
+        } else {
+            badge = '<span class="badge bg-secondary">Sin coincidencia</span>';
+            rowClass = 'table-secondary';
+        }
+
+        const candidates = row.candidates || [];
+        let selectHtml = '<select class="form-select form-select-sm" ' +
+            'id="costs-preview-select-' + idx + '" ' +
+            'onchange="costsTogglePreviewManual(' + idx + ')">';
+        candidates.forEach(function (c) {
+            const selected = (c.worker_name === row.suggested_worker_name) ? ' selected' : '';
+            selectHtml += '<option value="' + costsEscape(c.worker_name) + '"' + selected + '>' +
+                costsEscape(c.worker_name) + ' (' + c.score + ')</option>';
+        });
+        const manualSelected = !candidates.length ? ' selected' : '';
+        selectHtml += '<option value="__manual__"' + manualSelected + '>' +
+            'Otro / escribir manualmente...</option>';
+        selectHtml += '</select>';
+
+        const manualValue = costsEscape((row.mecanico_raw || '').toString().toUpperCase());
+        const manualDisplay = candidates.length ? 'none' : 'block';
+        const manualInput = '<input type="text" class="form-control form-control-sm mt-1" ' +
+            'id="costs-preview-manual-' + idx + '" value="' + manualValue + '" ' +
+            'style="display:' + manualDisplay + '" ' +
+            'placeholder="Nombre del operario">';
+
+        return (
+            '<tr class="' + rowClass + '">' +
+            '<td class="text-sm">' + row.row_index + '</td>' +
+            '<td class="text-sm">' + costsEscape(row.mecanico_raw) + '</td>' +
+            '<td class="text-sm">' + period + '</td>' +
+            '<td class="text-sm">' + costsEscape(row.monthly_cost) + '</td>' +
+            '<td class="text-sm">' + selectHtml + manualInput + '</td>' +
+            '<td class="text-sm">' + badge + '</td>' +
+            '</tr>'
+        );
+    }).join('');
+}
+
+// Show/hide the manual text input depending on the selected option.
+// Muestra/oculta el input manual segun la opcion seleccionada.
+function costsTogglePreviewManual(idx) {
+    const select = document.getElementById('costs-preview-select-' + idx);
+    const manual = document.getElementById('costs-preview-manual-' + idx);
+    manual.style.display = (select.value === '__manual__') ? 'block' : 'none';
+}
+
+// ----------------------------------------------------------------
+// Excel import -- confirm phase -- Importacion Excel -- fase confirm
+// ----------------------------------------------------------------
+
+function costsConfirmImport() {
+    const feedback = document.getElementById('costs-import-feedback');
+    const rows = [];
+
+    costsLastPreview.forEach(function (row, idx) {
+        if (row.status === 'error') { return; }
+        const select = document.getElementById('costs-preview-select-' + idx);
+        let workerName = select.value;
+        if (workerName === '__manual__') {
+            const manual = document.getElementById('costs-preview-manual-' + idx);
+            workerName = manual.value.trim();
+        }
+        if (!workerName) { return; }
+        rows.push({
+            worker_name: workerName,
+            year: row.year,
+            month: row.month,
+            monthly_cost: row.monthly_cost,
+        });
+    });
+
+    if (!rows.length) {
+        feedback.innerHTML = '<span class="text-danger">No hay filas validas para confirmar.</span>';
+        return;
+    }
+
+    feedback.innerHTML = '<span class="text-muted">Guardando...</span>';
+
+    fetch('/panel/analytics/costs/import/', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json',
+            'X-CSRFToken': COSTS_CSRF,
+        },
+        body: JSON.stringify({ rows: rows }),
+    })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+        if (!res.ok) {
+            feedback.innerHTML = (
+                '<span class="text-danger">' + costsEscape(res.d.error || 'Error.') + '</span>'
+            );
+            return;
+        }
+        let msg = res.d.created + ' creado(s), ' + res.d.updated + ' actualizado(s).';
+        if (res.d.errors && res.d.errors.length) {
+            msg += ' ' + res.d.errors.length + ' fila(s) con error.';
+        }
+        feedback.innerHTML = '<span class="text-success">' + costsEscape(msg) + '</span>';
+        document.getElementById('costs-import-preview-wrap').classList.add('d-none');
+        document.getElementById('costs-import-file').value = '';
+        costsLastPreview = [];
+        costsLoadRecords();
+    })
+    .catch(function () {
+        feedback.innerHTML = '<span class="text-danger">Error de red al confirmar.</span>';
+    });
+}
+
+// ----------------------------------------------------------------
+// Helper -- escape text for safe innerHTML insertion
+// Helper -- escapa texto para insertarlo de forma segura en innerHTML
+// ----------------------------------------------------------------
+function costsEscape(value) {
+    const div = document.createElement('div');
+    div.textContent = (value === null || value === undefined) ? '' : String(value);
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Costs management container max-width
+       Anchura maxima del contenedor de gestion de costes */
+    .costs-container { max-width: 1100px; }
+</style>
+{% endblock %}
