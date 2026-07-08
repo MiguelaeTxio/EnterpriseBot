@@ -242,10 +242,30 @@ class DeliveryNote(models.Model):
         blank=True,
         verbose_name='PDF del albarán',
     )
+    supplier = models.ForeignKey(
+        Supplier,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery_notes',
+        verbose_name='Proveedor (resuelto)',
+        help_text=(
+            'Referencia real al Supplier resuelto por CIF en '
+            'confirm_delivery_note() (2026-07-08, gap señalado por '
+            'Miguel Ángel: dos albaranes del mismo proveedor pueden '
+            'traer el nombre impreso ligeramente distinto -- "ERC '
+            'CASADO" vs "ELECTRORECAMBIOS CASADO SL" -- y sin este FK '
+            'el listado mostraba cada uno con su propio texto en vez '
+            'del nombre canónico ya deduplicado por CIF). Null hasta '
+            'la confirmación (status=ASSIGNED) o si no hay CIF '
+            'extraído -- supplier_name/supplier_tax_id de abajo siguen '
+            'siendo el único rastro en ese caso, igual que antes.'
+        ),
+    )
     supplier_name = models.CharField(
         max_length=255,
         blank=True,
-        verbose_name='Proveedor',
+        verbose_name='Proveedor (texto libre de este albarán)',
     )
     supplier_tax_id = models.CharField(
         max_length=50,

@@ -42,6 +42,7 @@ desincronizaría esos registros del albarán en silencio. Por tanto:
     mayor, no solicitada todavía.
 """
 from django.contrib import messages
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
@@ -69,13 +70,16 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
         notes = (
             DeliveryNote.objects
             .filter(company=company)
-            .select_related('processed_by__user')
+            .select_related('processed_by__user', 'supplier')
             .prefetch_related('lines')
         )
         if status:
             notes = notes.filter(status=status)
         if supplier:
-            notes = notes.filter(supplier_name__icontains=supplier)
+            notes = notes.filter(
+                Q(supplier__name__icontains=supplier)
+                | Q(supplier_name__icontains=supplier)
+            )
         if recipient:
             notes = notes.filter(recipient_company_code=recipient)
 

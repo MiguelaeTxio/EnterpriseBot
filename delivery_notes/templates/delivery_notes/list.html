@@ -69,7 +69,7 @@
                 {% for note in notes %}
                 <tr>
                     <td>{{ note.delivery_date|date:"d/m/Y"|default:"—" }}</td>
-                    <td>{{ note.supplier_name|default:"—" }}</td>
+                    <td>{{ note.supplier.name|default:note.supplier_name|default:"—" }}</td>
                     <td>{{ note.delivery_number|default:"—" }}</td>
                     <td>{{ note.recipient_company_code|default:"—" }}</td>
                     <td>{{ note.lines.count }}</td>

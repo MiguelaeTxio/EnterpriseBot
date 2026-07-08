@@ -758,7 +758,8 @@ def confirm_delivery_note(delivery_note, company_user):
     stock levels are only set manually by mechanics at consumption
     time (annex H10, section 3.5, Caso C).
 
-    Sets delivery_note.status = 'ASSIGNED' on completion.
+    Sets delivery_note.status = 'ASSIGNED' and delivery_note.supplier
+    (2026-07-08, gap fix) on completion.
 
     Returns a dict with counts: warehouse, pre_assigned, unassigned.
 
@@ -796,7 +797,8 @@ def confirm_delivery_note(delivery_note, company_user):
     manualmente el mecánico en el momento del consumo (anexo H10,
     sección 3.5, Caso C).
 
-    Al finalizar establece delivery_note.status = 'ASSIGNED'.
+    Al finalizar establece delivery_note.status = 'ASSIGNED' y
+    delivery_note.supplier (2026-07-08, fix del gap).
 
     Devuelve un diccionario con los contadores: warehouse,
     pre_assigned, unassigned.
@@ -940,7 +942,8 @@ def confirm_delivery_note(delivery_note, company_user):
 
     delivery_note.status = 'ASSIGNED'
     delivery_note.processed_by = company_user
-    delivery_note.save(update_fields=['status', 'processed_by'])
+    delivery_note.supplier = resolved_supplier
+    delivery_note.save(update_fields=['status', 'processed_by', 'supplier'])
 
     return counts
 
