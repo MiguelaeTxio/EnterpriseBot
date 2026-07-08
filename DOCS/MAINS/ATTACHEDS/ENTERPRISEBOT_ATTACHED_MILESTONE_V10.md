@@ -391,22 +391,75 @@ decide el destino.
 
 ---
 
-## 4-bis. Diseño Pendiente — Paso 4-bis, puntos 3-10 (RECUPERADO 2026-07-08)
+## 4-bis. Diseño de Paso 4-bis — CERRADO COMPLETO EN S009 (2026-07-08)
 
-**Nota de recuperación:** este bloque se cerró íntegro en S006
-(2026-07-07) como "Diseño cerrado en S006 (10 puntos + 6
-refinamientos adicionales)", registrado explícitamente como el punto
-de partida obligado de la siguiente sesión. En algún punto entre el
-cierre de S006 y el estado actual del archivo se perdió de este
-anexo -- probablemente absorbido/sustituido al reescribir la sección
-3 con el flujo ya integrado, sin trasladar los puntos todavía
-pendientes de implementar. Detectado y recuperado en S009
-(2026-07-08) desde el historial de git (commit `29e08f6`, cierre de
-S006) antes de retomar el trabajo, para no perder la discusión
-original. Texto verbatim de los puntos 3-10 (los puntos 1-2 y una
-lectura de 11/12 ya se resolvieron/matizaron en S007, ver fila S007
-más abajo en la Sección 5 y el punto de estado al final de este
-bloque):
+**Estado final: los 12 puntos del diseño de S006 están resueltos.**
+Resumen de cómo se cerró cada uno (detalle de la discusión original más
+abajo, conservado por trazabilidad):
+
+- **Puntos 1-2** (resolución de ticket por CdG + mutex
+  `select_for_update`): implementados en S007
+  (`chat/ticket_resolution.py`), con el refinamiento de que PAUSED
+  cuenta como candidato abierto y la confirmación es obligatoria con
+  1+ candidatos.
+- **Punto 3** (pre-asignación de repuestos sin cambios, requisito de
+  ticket solo en materialización final): ya era así desde antes de
+  S006, sin código nuevo necesario.
+- **Punto 4** (`tipo_tarea` + clasificación unificada async): **cerrado
+  en S009.** `BreakdownTicket.tipo_tarea`/`task_category_free`
+  (migración `chat.0010`), `classify_task()` en
+  `work_order_processor/services.py` (una sola llamada Gemini decide
+  tipo_tarea y, según cuál sea, clasifica avería o rellena
+  categorización libre), `classify_fault_line` bifurca según si la
+  línea tiene `breakdown_ticket` asociado, idempotente a nivel de
+  ticket (no de línea).
+- **Punto 5** (el modelo sigue llamándose `BreakdownTicket`): decisión
+  sin código, vigente.
+- **Punto 6** (origen del ticket como metadato informativo, nunca
+  bloqueante): ya cierto desde `ORIGIN_AUTO` (S007), ninguna lógica
+  condiciona el flujo al origen.
+- **Punto 7** (ticket pregenerado es una fila real desde el primer
+  instante): ya cierto desde `get_or_create_ticket_for_machine()`
+  (S007) — crea el `BreakdownTicket` inmediatamente en rama CREATE.
+- **Puntos 8-9** (transición de estado al grabar/editar la tarea,
+  reapertura como efecto natural de editar): **cerrado en S009.** La
+  casilla "finalizar" (`ticket_closed`) y el cierre a `CLOSED` ya
+  existían desde S007, pero faltaba la rama contraria: cuando la
+  casilla no está marcada, el ticket pasa a (o vuelve a) `IN_PROGRESS`
+  -- cubre tanto un ticket recién creado (`OPEN`→`IN_PROGRESS`) como la
+  reapertura de uno `CLOSED` al editar la tarea y destocar la casilla,
+  sin acción administrativa aparte. El bloqueante que este punto tenía
+  pendiente ("revisar/editar" debe entrar en modo edición real para
+  cualquier rol autorizado) quedó resuelto para ADMIN/SUPERVISOR en
+  S007 y para WORKSHOPBOSS en esta misma sesión S009.
+- **Punto 10** (ticket `CLOSED` fuera de ventana 72h → siempre ticket
+  nuevo): ya cierto desde S007 (`REOPEN_WINDOW_HOURS = 72` en
+  `chat/ticket_resolution.py`).
+- **Punto 11** (transacción atómica única por tarea): verificado en
+  S009 -- el `with transaction.atomic()` de
+  `WorkOrderEntryFormView.post()` (líneas 3746-4104) cubre la creación
+  de líneas, la resolución/cierre de ticket y el consumo de repuestos
+  pre-asignados, todo en el mismo bloque.
+- **Punto 12** (`confirm_delivery_note()` deja de asignar directo a
+  máquina sin ticket): implementado y **revertido** en la misma
+  sesión S007 -- Miguel Ángel confirmó que generar el ticket ya al
+  confirmar el albarán crea riesgo de tickets huérfanos.
+  `confirm_delivery_note()` se queda con el planteamiento diferido de
+  S001-S005. Decisión vigente, no pendiente.
+
+**Alcance no cubierto, señalado para referencia futura:** la
+resolución de ticket (bloque A/puntos 1-2) y el gate de caché de
+clasificación (punto 4) solo están integrados en
+`WorkOrderEntryFormView` (Vía A, creación directa de parte). Vía B/C
+(STT/Upload confirm, `WorkOrderEntryConfirmView`) nunca vincula
+`breakdown_ticket` a sus líneas -- alcance declarado desde S007, no
+una limitación nueva de S009.
+
+---
+
+### Discusión original de S006 (conservada por trazabilidad — ver arriba el estado final de cada punto)
+
+
 
 3. La pre-asignación de repuestos a máquina sigue exactamente como
    hoy (Caso B, sin cambios) — el requisito de ticket entra solo en
@@ -572,17 +625,30 @@ fila `S_H07_08`, para el detalle técnico completo. H10 permaneció EN
 PROGRESO durante todo este desvío -- ningún paso de H10 quedó
 bloqueado ni retrasado por él.
 
-### PRÓXIMA SESIÓN -- ORDEN DE TRABAJO
+### ESTADO AL CIERRE DE S009 (2026-07-08)
 
-1. **Pendiente sin resolver de S007, todavía sin confirmación:**
-   alcance de `WORKSHOPBOSS` en "Editar/Revisar" (ver sección de
-   bugs S007 más abajo).
-2. Si Miguel Ángel lo pide: puntos 3-10 del diseño de Paso 4-bis
-   (`tipo_tarea`, transición de estado completa al grabar/editar la
-   tarea) -- sin cambios de estado desde S007, siguen sin
-   implementar.
+1. **WORKSHOPBOSS en "Editar/Revisar" — RESUELTO.** Mismo alcance que
+   SUPERVISOR/ADMIN, confirmado por Miguel Ángel e implementado
+   (`_resolve_editable_work_order()`, redirección post-guardado,
+   docstrings de `WorkOrderFormAccessMixin`).
+2. **Paso 4-bis — DISEÑO COMPLETO CERRADO (12/12 puntos).** Ver
+   Sección 4-bis arriba para el detalle de cada punto.
 3. Paso 8 (M365) sigue bloqueado -- revisar solo si hay novedades de
    Miguel Ángel con el administrador de Grupo Álvarez.
+
+**H10 no tiene más pasos pendientes de su hoja de ruta propia salvo
+Paso 8 (bloqueado, sin acción posible hasta respuesta externa).**
+Pendiente para la próxima sesión: decidir con Miguel Ángel si H10 se
+da por completado en la práctica (a falta solo de M365) y se abre
+otro hito, o si se mantiene EN PROGRESO a la espera de M365.
+
+### PRÓXIMA SESIÓN -- ORDEN DE TRABAJO
+
+1. Paso 8 (M365) sigue bloqueado -- revisar solo si hay novedades de
+   Miguel Ángel con el administrador de Grupo Álvarez.
+2. Si no hay novedades de M365: valorar con Miguel Ángel un PCH
+   (cambio de hito) a H11/H12/H13/H14 u otro, ya que el resto de la
+   hoja de ruta de H10 está completo.
 
 ---
 
@@ -667,17 +733,13 @@ almacén el de Mecánicos (antes ambos abrían Mecánicos por error).
   no estaba contemplado hasta ahora. Usado como respaldo solo para las
   líneas sin anotación propia.
 
-### PENDIENTE SIN RESOLVER, SEÑALADO A MIGUEL ÁNGEL EN S007
+### RESUELTO EN S009 (pendiente desde S007)
 
-- **`WORKSHOPBOSS` y el acceso "Editar/Revisar":** se dejó con el
-  mismo comportamiento restrictivo que `WORKSHOP` (solo sus propios
-  partes) al ampliar el acceso a `SUPERVISOR`, siguiendo literalmente
-  el docstring ya existente de `WorkOrderFormAccessMixin` -- Miguel
-  Ángel no lo confirmó explícitamente. Si un jefe de taller también
-  necesita editar partes de otros operarios, ampliar
-  `_resolve_editable_work_order()` igual que se hizo para
-  `SUPERVISOR`. **Sigue sin confirmar al cierre de S008 -- no se tocó
-  esta sesión.**
+- **`WORKSHOPBOSS` y el acceso "Editar/Revisar":** confirmado por
+  Miguel Ángel en S009 -- mismo alcance que `SUPERVISOR`, ya no
+  restringido a lo propio. `_resolve_editable_work_order()` ampliada,
+  igual que ya estaba para `SUPERVISOR`. Ver Sección 5,
+  "ESTADO AL CIERRE DE S009".
 
 ---
 
