@@ -4239,6 +4239,37 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         )
         reviewed_list =self ._enrich_work_orders (qs_reviewed ,active_fault_category =fault_category )
 
+        # Excluir de Revisados los partes cuya fecha cae dentro de un
+        # WorkPeriod liquidado (is_closed=True) de su propio operario --
+        # gap señalado por Miguel Ángel 2026-07-08: un parte liquidado ya
+        # no debe seguir apareciendo en Revisados, solo en Histórico (que
+        # sí muestra todos los periodos sin filtrar). Mismo patrón de rango
+        # de fechas que WorkPeriodLockView usa para detectar partes dentro
+        # de un periodo (ver arriba, comprobación de partes sin revisar).
+        # Excludes from Revisados any part whose date falls within a
+        # liquidated WorkPeriod (is_closed=True) of its own operator --
+        # gap flagged by Miguel Ángel 2026-07-08: a liquidated part should
+        # no longer show in Revisados, only in Histórico (which shows all
+        # periods unfiltered). Same date-range pattern WorkPeriodLockView
+        # already uses to detect parts within a period (see above, the
+        # unreviewed-parts check).
+        from ivr_config .models import WorkPeriod as _WP_closed 
+        _closed_ranges_by_operator ={}
+        for _op_pk ,_start ,_end in (
+        _WP_closed .objects 
+        .filter (company_user__company =company ,is_closed =True ,end_date__isnull =False )
+        .values_list ("company_user_id","start_date","end_date")
+        ):
+            _closed_ranges_by_operator .setdefault (_op_pk ,[]).append ((_start ,_end ))
+
+        def _falls_in_closed_period (wo_dict ):
+            _ranges =_closed_ranges_by_operator .get (wo_dict ["operator_pk"])
+            if not _ranges or wo_dict ["fecha"]is None :
+                return False 
+            return any (_s <=wo_dict ["fecha"]<=_e for _s ,_e in _ranges )
+
+        reviewed_list =[wo for wo in reviewed_list if not _falls_in_closed_period (wo )]
+
 
 
 
