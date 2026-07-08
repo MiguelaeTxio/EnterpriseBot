@@ -79,6 +79,29 @@ body {
     text-transform: uppercase;
     padding: 1.25rem 1.25rem 0.4rem;
 }
+/* Subgroup headers inside a merged accordion section (e.g. "Taller"/    */
+/* "Centro de gasto"/"Almacén"/"Mecánicos" inside "Taller Mecánico").    */
+/* Deliberately much higher contrast than .sidebar-section-label (0.3)   */
+/* -- Bootstrap's text-muted was used here first and was reported by     */
+/* Miguel Ángel as nearly illegible on the dark sidebar background       */
+/* (2026-07-08): text-muted is a dark gray meant for LIGHT backgrounds,  */
+/* not this dark navy sidebar (#1a1f2e).                                 */
+/* Encabezados de subgrupo dentro de una sección acordeón fusionada      */
+/* (p. ej. "Taller"/"Centro de gasto"/"Almacén"/"Mecánicos" dentro de     */
+/* "Taller Mecánico"). Contraste deliberadamente mucho más alto que      */
+/* .sidebar-section-label (0.3) -- se usó primero text-muted de          */
+/* Bootstrap aquí y Miguel Ángel lo señaló como prácticamente ilegible   */
+/* sobre el fondo oscuro del sidebar (2026-07-08): text-muted es un      */
+/* gris oscuro pensado para fondos CLAROS, no este sidebar oscuro        */
+/* (#1a1f2e).                                                            */
+.sidebar-subgroup-label {
+    color: rgba(255,255,255,0.6) !important;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    display: block;
+}
 .sidebar-nav-scroll {
     flex: 1;
     overflow-y: auto;

@@ -348,7 +348,7 @@
                     {# --- Subgrupo: Taller (gate: ADMIN/SUPERVISOR/WORKSHOPBOSS, sin cambios) --- #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item px-2 pt-1">
-                            <small class="text-muted text-uppercase fw-semibold sidebar-subgroup-label">Taller</small>
+                            <small class="sidebar-subgroup-label">Taller</small>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
@@ -373,7 +373,7 @@
                     {# --- Subgrupo: Centro de gasto (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 2 ítems, cada uno con su propio gate interior sin cambios) --- #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
                         <li class="nav-item px-2 pt-2">
-                            <small class="text-muted text-uppercase fw-semibold sidebar-subgroup-label">Centro de gasto</small>
+                            <small class="sidebar-subgroup-label">Centro de gasto</small>
                         </li>
                         {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
@@ -396,7 +396,7 @@
                     {# --- Subgrupo: Almacén (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 4 ítems, cada uno con su propio gate interior sin cambios) --- #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
                         <li class="nav-item px-2 pt-2">
-                            <small class="text-muted text-uppercase fw-semibold sidebar-subgroup-label">Almacén</small>
+                            <small class="sidebar-subgroup-label">Almacén</small>
                         </li>
                         {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
@@ -432,7 +432,7 @@
 
                     {# --- Subgrupo: Mecánicos (sin gate propio -- coincide con el exterior != ASSISTANCE, ya que "Nuevo parte" es visible a todos, DRIVER incluido) --- #}
                     <li class="nav-item px-2 pt-2">
-                        <small class="text-muted text-uppercase fw-semibold sidebar-subgroup-label">Mecánicos</small>
+                        <small class="sidebar-subgroup-label">Mecánicos</small>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
