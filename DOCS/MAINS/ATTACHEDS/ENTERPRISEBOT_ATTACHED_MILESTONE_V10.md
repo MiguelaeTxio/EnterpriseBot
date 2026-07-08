@@ -625,30 +625,118 @@ fila `S_H07_08`, para el detalle técnico completo. H10 permaneció EN
 PROGRESO durante todo este desvío -- ningún paso de H10 quedó
 bloqueado ni retrasado por él.
 
-### ESTADO AL CIERRE DE S009 (2026-07-08)
+### ESTADO AL CIERRE DE S009 (2026-07-08) — SESIÓN DE CIERRE DE H10
 
 1. **WORKSHOPBOSS en "Editar/Revisar" — RESUELTO.** Mismo alcance que
    SUPERVISOR/ADMIN, confirmado por Miguel Ángel e implementado
    (`_resolve_editable_work_order()`, redirección post-guardado,
    docstrings de `WorkOrderFormAccessMixin`).
-2. **Paso 4-bis — DISEÑO COMPLETO CERRADO (12/12 puntos).** Ver
-   Sección 4-bis arriba para el detalle de cada punto.
-3. Paso 8 (M365) sigue bloqueado -- revisar solo si hay novedades de
-   Miguel Ángel con el administrador de Grupo Álvarez.
+2. **Paso 4-bis — DISEÑO COMPLETO CERRADO (12/12 puntos).** Diseño de
+   S006 recuperado del historial de git tras detectarse que se había
+   perdido del anexo (ver Sección 4-bis arriba). Puntos 4/8/9
+   implementados en S009: `BreakdownTicket.tipo_tarea`/
+   `task_category_free` (migración `chat.0010`), `classify_task()`
+   unifica en una sola llamada Gemini la clasificación de tipo de
+   tarea con avería (categoría/subcategoría) o categorización libre;
+   `classify_fault_line` bifurca según si la línea tiene ticket
+   asociado; corregido el hueco de transición a `IN_PROGRESS` cuando
+   la casilla "finalizar" no está marcada (cubre tanto ticket
+   recién creado como reapertura por edición). Resto de puntos (1-3,
+   5-7, 10-11) verificados ya resueltos por S007 sin necesitar cambio
+   de código; punto 12 confirmado revertido por decisión.
+3. **Nueva app `delivery_notes`** — CRUD de administración de
+   albaranes (listado filtrable, detalle de solo lectura para
+   `ASSIGNED`, borrado seguro solo para no confirmados), visible en
+   `Administración → Albaranes` (ahora dentro de "Taller Mecánico" /
+   Almacén, ver punto 8) para ADMIN/SUPERVISOR/WORKSHOPBOSS. Sin
+   modelos propios, reutiliza `DeliveryNote`/`DeliveryNoteLine` de
+   `spare_parts`.
+4. **`DeliveryNote.supplier` (FK nuevo, migración `spare_parts.0007`)**
+   — gap señalado por Miguel Ángel: dos albaranes del mismo proveedor
+   real (mismo CIF) mostraban nombres distintos porque cada uno solo
+   guardaba el texto libre impreso en su propio documento.
+   `confirm_delivery_note()` ahora asigna también el `Supplier` ya
+   resuelto por CIF al propio `DeliveryNote`, no solo a cada
+   `SparePartEntry`. Backfill aplicado a los 2 albaranes reales ya
+   confirmados antes del fix.
+5. **Prompt de extracción de albaranes ampliado** — Gemini Vision
+   ahora busca el código de máquina/centro de gasto en tres fuentes
+   (anotación suelta tipo `#CÓDIGO#`, campo impreso "Observaciones",
+   línea-nota tipo "TEXTO" con precio 0 que algunos proveedores usan
+   en vez de anotar junto al artículo), en vez de solo la primera.
+   Decisión explícita de Miguel Ángel: no se puede anticipar la
+   convención de cada proveedor, así que se ensancha la red para los
+   patrones conocidos y se deja en blanco (revisión manual o alta
+   rápida) cuando no aparece en ninguna -- nunca se inventa un código.
+6. **Reestructuración completa de la sidebar** (`_nav_items.html`),
+   dos iteraciones a petición de Miguel Ángel:
+   - 1ª iteración: de 8 secciones acordeón a 5 grupos temáticos
+     (Administración / Taller / Centro de gasto / Almacén /
+     Mecánicos), sin tocar permisos por ítem.
+   - 2ª iteración ("simplificar al máximo"): Taller + Centro de
+     gasto + Almacén + Mecánicos fusionados en una única sección
+     "Taller Mecánico" con 4 subgrupos visuales internos (encabezados
+     sin colapsar). Sidebar final: Inicio, Mi perfil, Telefonía,
+     Administración, Taller Mecánico, Asistencia, Django Admin.
+   - Verificación automática en ambas iteraciones (comparación de
+     conjuntos de `active_nav` y de `{% url %}` contra el archivo
+     previo) de que ningún ítem cambió de rol efectivo, solo de
+     ubicación visual.
+   - Además: tabla de detalle de "Secciones activas" quitada del
+     dashboard de Inicio (se queda solo la tarjeta resumen);
+     "Configuración empresa" eliminada de la sidebar (vista/URL
+     siguen vivas, no se borraron) -- su único campo editable real
+     (franja horaria nocturna) se cubre ahora con `NightSchedule`
+     (`is_default=True`), que ya tenía prioridad sobre
+     `Company.night_start`/`night_end` en el motor de presupuestos
+     pero no tenía enlace en ningún sitio del panel -- ahora vive en
+     Asistencia como "Franja nocturna".
+   - Fix de contraste: las etiquetas de los 4 subgrupos usaban
+     `text-muted` de Bootstrap (gris para fondos claros), casi
+     ilegibles sobre el fondo oscuro del sidebar -- nueva clase
+     `.sidebar-subgroup-label` (`rgba(255,255,255,0.6)`) en
+     `panel.css`.
+7. **Desvíos a H07 resueltos el mismo día** (columna Dieta + total en
+   `admin_history.html`, y exclusión de partes de periodos liquidados
+   de la pestaña Revisados) -- ver nota de desvío más abajo y el
+   detalle técnico completo en `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`.
+8. **Base de datos de pruebas limpiada** (`delete_all_spare_parts_data
+   --apply`) a petición de Miguel Ángel para empezar a operar con
+   albaranes reales -- 1 `DeliveryNote` de prueba (`ASSIGNED`) + 3
+   `SparePartEntry` (limbo) borrados. `Supplier` y partes de trabajo
+   no se tocaron.
+9. Además, se detectó y corrigió una desincronización real entre
+   servidor y GitHub heredada de sesiones anteriores: 3 migraciones de
+   `spare_parts` (S004-S006) y 2 archivos JS (`form_entry_assets.js`,
+   H10; `wizard.js`, H18) que ya estaban aplicados/en producción en el
+   servidor pero nunca se habían commiteado. Persistidos desde el
+   propio servidor.
+10. Paso 8 (M365) sigue bloqueado -- sin novedades de Miguel Ángel con
+    el administrador de Grupo Álvarez en toda la sesión.
 
-**H10 no tiene más pasos pendientes de su hoja de ruta propia salvo
-Paso 8 (bloqueado, sin acción posible hasta respuesta externa).**
-Pendiente para la próxima sesión: decidir con Miguel Ángel si H10 se
-da por completado en la práctica (a falta solo de M365) y se abre
-otro hito, o si se mantiene EN PROGRESO a la espera de M365.
+### NOTA DE DESVÍO A H07 (S009)
 
-### PRÓXIMA SESIÓN -- ORDEN DE TRABAJO
+Dos incidencias de producción sobre `admin_history.html`/
+`WorkOrderAdminHistoryView` atendidas por desvío durante S009, sin
+bloquear ni retrasar H10: columna "Dieta" (por parte + total en la
+pestaña Revisados) y exclusión de partes de periodos ya liquidados de
+esa misma pestaña. Detalle técnico completo, commits y decisiones en
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`, filas S009 (registradas en
+este mismo cierre).
 
-1. Paso 8 (M365) sigue bloqueado -- revisar solo si hay novedades de
-   Miguel Ángel con el administrador de Grupo Álvarez.
-2. Si no hay novedades de M365: valorar con Miguel Ángel un PCH
-   (cambio de hito) a H11/H12/H13/H14 u otro, ya que el resto de la
-   hoja de ruta de H10 está completo.
+### CIERRE DE HITO — H10 PASA A PAUSADO (PCH EN S009)
+
+A petición explícita de Miguel Ángel, H10 se pausa al cierre de S009
+y H20 (Laboratorio de Análisis Unificado) pasa a EN PROGRESO -- ver
+`ENTERPRISEBOT_ANNEX_ROUTER.md`. Motivo: la hoja de ruta propia de
+H10 está completa salvo el Paso 8 (M365), bloqueado por un tercero
+externo sin fecha prevista.
+
+**Pendiente para cuando se retome H10:** únicamente el Paso 8
+(persistencia real en la nube M365) -- sin acción posible hasta que
+Miguel Ángel tenga novedades del administrador de Grupo Álvarez tras
+la reunión pendiente. Nada más queda abierto en la hoja de ruta de
+este hito.
 
 ---
 
@@ -656,6 +744,7 @@ otro hito, o si se mantiene EN PROGRESO a la espera de M365.
 
 | Sesion | Fecha | Pasos trabajados | Resumen |
 |--------|-------|-----------------|---------|
+| S009 | 2026-07-08 | WORKSHOPBOSS en Editar/Revisar; Paso 4-bis 12/12 cerrado; app delivery_notes; DeliveryNote.supplier; prompt de albaranes ampliado; sidebar reestructurada (2 iteraciones); desvíos a H07; limpieza BD; PCH a H20 | Sesión de cierre de H10. Ver detalle completo en "ESTADO AL CIERRE DE S009" arriba. H10 pasa a PAUSADO, H20 pasa a EN PROGRESO. |
 | S008 | 2026-07-07 | Paso 7 completo; niveles en castellano; Supplier por CIF; alta rápida + emparejamiento por descripción; modal de material en el parte (Vía A); desvío a H07 (resuelto en bloque posterior el mismo día) | Ver detalle completo en "ESTADO AL CIERRE DE S008" arriba. Ocho commits de código a H10 + desvío de varios commits a H07 (ver anexo H07). Sesión cerrada a petición de Miguel Ángel con el incidente de `digital_list.html` sin resolver -- resuelto ese mismo día en un bloque posterior de la sesión (H10 no recibió ningún commit adicional en ese bloque, íntegramente desvío a H07): causa raíz real era que la exportación/horas/dieta que Miguel Ángel recordaba pertenecía a `admin_history.html`, no a `digital_list.html` -- replicado allí junto con un nuevo filtro multi-operario. Ver anexo H07, fila `S_H07_08`, para el detalle técnico completo. |
 | S001 | 2026-06-30 | Paso 1 completo, Paso 2 parcial | App `spare_parts` creada: modelos `DeliveryNote`/`DeliveryNoteLine`/`SparePartEntry`/`StockMovement` con limbo de pre-asignación (status WAREHOUSE/PRE_ASSIGNED/CONSUMED), procedencia dual (origin_type SUPPLIER/SALVAGED para canibalización interna), relación con `work_order_processor.SparePartLine` (FK `spare_part_entry` nueva). Migración cruzada aplicada, admin registrado, reload OK. `GeminiVisionExtractionService` construido con `gemini-3.5-flash` (no 2.5, deuda técnica documentada en doc-master-enterprisebot 4.1.1). App compartida `ai_services` creada por principio DRY — `work_order_processor.services` migrado al mismo helper. Desvío completo a H18 por incidencia crítica de regresión del planificador de ruta (autocompletado roto): diagnosticado y resuelto sustituyendo `PlaceAutocompleteElement` por implementación propia — ver anexo H18 S018 para el detalle técnico completo. Paso 2 de H10 queda pendiente de integrar `GeminiVisionExtractionService.extract()` en `DeliveryNoteUploadView` (Paso 3) y testar con albaranes reales. |
 

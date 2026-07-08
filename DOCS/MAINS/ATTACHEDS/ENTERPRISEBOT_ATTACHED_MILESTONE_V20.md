@@ -255,16 +255,33 @@ S052 (2026-06-24):
 
 ### Hoja de Ruta para la Siguiente Sesion
 
+#### PCH EN S009 (2026-07-08) — H20 PASA A EN PROGRESO
+
+H10 se pausa y H20 (Laboratorio de Análisis Unificado) pasa a EN
+PROGRESO a petición explícita de Miguel Ángel al cierre de S009 ("nos
+podemos centrar en mejorar el laboratorio de análisis en la próxima
+sesión") -- ver `ENTERPRISEBOT_ANNEX_ROUTER.md`. Ninguna sesión
+trabajó H20 desde S052; releer esta hoja de ruta completa y el resto
+del anexo antes de tocar nada, no asumir de memoria de sesiones
+anteriores a este PCH.
+
 #### Estado actual
 
-El Pendiente 0 (depuracion y mejoras UX) esta COMPLETADO en S052.
-Los pendientes A/B/C quedan aparcados a la espera de feedback de
-Jeronimo (SUPERVISOR) sobre necesidades adicionales del laboratorio
-y posible mejora del CRUD de plantillas.
+El Pendiente 0 (depuracion y mejoras UX) esta COMPLETADO desde S052.
+Los pendientes A/B/C/D de abajo estaban aparcados "a la espera de
+feedback de Jeronimo (SUPERVISOR)" -- ese feedback todavía no ha
+llegado a fecha de este PCH, pero Miguel Ángel ha dado instrucción
+explícita de retomar el laboratorio igualmente, así que el gate "no
+arrancar sin instrucción explícita" queda LEVANTADO. La próxima
+sesión debe empezar preguntando a Miguel Ángel cuál de los pendientes
+A/B/C/D (o algo no listado aquí todavía) quiere abordar primero --
+esta hoja de ruta no fija un orden obligatorio, son las opciones ya
+diseñadas y ejecutables de forma autónoma en cuanto él elija.
 
 ---
 
-Pendiente en H20 (en espera -- no arrancar sin instruccion explicita):
+Pendiente en H20 (desbloqueado en S009, sin orden obligatorio --
+confirmar con Miguel Ángel cuál primero):
 
   A) Vistas de gestion de OperatorMonthlyCost:
      - OperatorMonthlyCostListView   GET  /panel/analytics/costs/

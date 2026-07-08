@@ -33,7 +33,7 @@ Cumple dos funciones inseparables:
 | H07 | Partes Diarios de Reparación Digital | `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md` |
 | H08 | Mejoras Procesador PDF→Excel + HTMX | `ENTERPRISEBOT_ATTACHED_MILESTONE_V08.md` |
 | H09 | Informes y Analítica Cruzada | `ENTERPRISEBOT_ATTACHED_MILESTONE_V09.md` |
-| **H10** | **Albaranes de Proveedores y Almacén de Repuestos** | **`ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`** ← EN PROGRESO |
+| H10 | Albaranes de Proveedores y Almacén de Repuestos | `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md` |
 | H11 | Albaranes a Clientes | `ENTERPRISEBOT_ATTACHED_MILESTONE_V11.md` |
 | H12 | Gestión Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V12.md` |
 | H13 | Salas de Chat IRC por Sección | `ENTERPRISEBOT_ATTACHED_MILESTONE_V13.md` |
@@ -43,7 +43,7 @@ Cumple dos funciones inseparables:
 | H17 | Unificación IVR + WhatsApp — Motor de Averías y Log de Conversaciones | `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md` |
 | H18 | Gestión de Mapas y Geolocalización | `ENTERPRISEBOT_ATTACHED_MILESTONE_V18.md` |
 | H19 | Mejoras WorkOrderAdminHistoryView | `ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md` |
-| H20 | Laboratorio de Análisis Unificado | `ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md` |
+| **H20** | **Laboratorio de Análisis Unificado** | **`ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md`** ← EN PROGRESO |
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
 
@@ -53,8 +53,8 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H10 — Albaranes de Proveedores y Gestión de
-Almacén de Repuestos → `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`
+**Hito EN PROGRESO:** H20 — Laboratorio de Análisis Unificado →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md`
 
 ---
 
