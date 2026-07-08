@@ -2182,7 +2182,7 @@ class NightScheduleListView(AdminRoleRequiredMixin, View):
         return _build_base_context(request, {
             "schedules": schedules,
             "form": form or NightScheduleForm(),
-            "active_nav": "budgets_insurers",
+            "active_nav": "night_schedules",
         })
 
     def get(self, request):

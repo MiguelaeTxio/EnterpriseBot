@@ -110,49 +110,4 @@
     </div>
 
 </div>
-
-<!-- Active sections table — Tabla de secciones activas -->
-{% if active_sections %}
-<div class="card border-0 shadow-sm">
-    <div class="card-header bg-white border-bottom py-3">
-        <h6 class="mb-0 fw-semibold">
-            <i class="bi bi-diagram-3 me-2 text-primary"></i>Secciones activas
-        </h6>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th class="ps-4">Nombre</th>
-                        <th>Descripción</th>
-                        <th class="text-center">Contactos</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for section in active_sections %}
-                    <tr>
-                        <td class="ps-4 fw-medium">{{ section.name }}</td>
-                        <td class="text-muted">
-                            {{ section.description|default:"—" }}
-                        </td>
-                        <td class="text-center">
-                            <span class="badge bg-light text-dark border">
-                                {{ section.contacts.count }}
-                            </span>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-{% else %}
-<div class="alert alert-light border text-muted">
-    <i class="bi bi-info-circle me-2"></i>
-    No hay secciones activas configuradas para tu empresa.
-</div>
-{% endif %}
-
 {% endblock %}

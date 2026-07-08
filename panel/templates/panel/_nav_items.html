@@ -50,7 +50,8 @@
 {#   "analytics_lab"      → Laboratorio de Análisis          (Administración, ADMIN) #}
 {#   "workday_schedule"   → Horarios de jornada              (Administración)      #}
 {#   "absence_categories" → Categorías de ausencia           (Administración)      #}
-{#   "company_settings"   → Configuración empresa            (Administración, ADMIN) #}
+{#   "company_settings"   → Configuración empresa (ELIMINADA de sidebar 2026-07-08, view/URL siguen vivas) #}
+{#   "night_schedules"    → Franja nocturna (NightSchedule)  (Asistencia, ADMIN) -- NUEVA 2026-07-08 #}
 {#   "suppliers"          → Proveedores (incl. reciclado interno) (Almacén, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
 {#   "delivery_notes_admin" → Albaranes                      (Almacén, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
 {#   "machine_history"    → Historial de Máquina             (Centro de gasto, WORKSHOP/ADMIN) #}
@@ -269,31 +270,26 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Configuración empresa — solo ADMIN / Company settings — ADMIN only #}
-                    {# PENDIENTE DE DECISIÓN (2026-07-08): Miguel Ángel propuso eliminar #}
-                    {# esta entrada por redundante con Asistencia (bases) y Horarios de  #}
-                    {# jornada -- comprobado: bases/horarios que muestra son solo        #}
-                    {# lectura, sí redundantes, PERO el formulario también guarda        #}
-                    {# night_start/night_end (franja nocturna de la empresa), que no     #}
-                    {# vive en ningún otro sitio y sí se usa (budgets, fallback nivel 3   #}
-                    {# tras NightSchedule específico). No eliminada todavía -- a la      #}
-                    {# espera de que Miguel Ángel decida dónde reubicar ese campo.        #}
-                    {# PENDING DECISION (2026-07-08): Miguel Ángel proposed removing     #}
-                    {# this entry as redundant with Asistencia (bases) and Workday       #}
-                    {# schedules -- checked: the bases/schedules it shows are read-only, #}
-                    {# genuinely redundant, BUT the form also saves night_start/         #}
-                    {# night_end (company night-shift window), which lives nowhere else  #}
-                    {# and is actually used (budgets, tier-3 fallback behind a specific  #}
-                    {# NightSchedule). Not removed yet -- pending Miguel Ángel's call on  #}
-                    {# where to relocate that field.                                     #}
-                    {% if company_user.role == 'ADMIN' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'company_settings' %}active{% endif %}"
-                               href="{% url 'panel:company_settings' %}">
-                                <i class="bi bi-gear"></i>Configuración empresa
-                            </a>
-                        </li>
-                    {% endif %}
+                    {# Configuración empresa — ELIMINADA 2026-07-08. Redundante        #}
+                    {# (bases/horarios que mostraba ya viven en Asistencia/Horarios    #}
+                    {# de jornada, solo lectura ahí). Su único campo editable real     #}
+                    {# (night_start/night_end, franja nocturna) ya queda cubierto por  #}
+                    {# NightSchedule con is_default=True -- ver "Franja nocturna" en   #}
+                    {# Asistencia, que tiene prioridad sobre Company.night_start/      #}
+                    {# night_end en la resolución del motor de presupuestos (tier 2    #}
+                    {# vs tier 3, ver NightSchedule.__doc__). La vista/URL             #}
+                    {# panel:company_settings NO se ha borrado, solo se desvinculó     #}
+                    {# de la sidebar -- accesible por URL directa si hiciera falta.    #}
+                    {# Company settings — REMOVED 2026-07-08. Redundant (bases/        #}
+                    {# schedules it showed already live in Asistencia/Workday          #}
+                    {# schedules, read-only there). Its one real editable field        #}
+                    {# (night_start/night_end, night-shift window) is now covered by   #}
+                    {# a NightSchedule with is_default=True -- see "Franja nocturna"   #}
+                    {# in Asistencia, which takes priority over Company.night_start/   #}
+                    {# night_end in the budgets engine resolution (tier 2 vs tier 3,   #}
+                    {# see NightSchedule.__doc__). The panel:company_settings view/URL #}
+                    {# was NOT deleted, only unlinked from the sidebar -- still         #}
+                    {# reachable by direct URL if ever needed.                          #}
                 </ul>
             </div>
         </li>
@@ -654,6 +650,20 @@
                                 <i class="bi bi-calendar3"></i>Calendarios laborales
                             </a>
                         </li>
+                        {# Franja nocturna — NightSchedule con is_default=True, movida  #}
+                        {# aquí 2026-07-08 desde "Configuración empresa" (eliminada de  #}
+                        {# la sidebar, ver arriba en Administración). Prioridad sobre   #}
+                        {# Company.night_start/night_end en el motor de presupuestos.   #}
+                        {# Night-shift window — NightSchedule with is_default=True,     #}
+                        {# moved here 2026-07-08 from "Company settings" (removed from  #}
+                        {# the sidebar, see above in Administración). Takes priority     #}
+                        {# over Company.night_start/night_end in the budgets engine.    #}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'night_schedules' %}active{% endif %}"
+                               href="{% url 'budgets:night_schedule_list' %}">
+                                <i class="bi bi-moon-stars"></i>Franja nocturna
+                            </a>
+                        </li>
                     {% endif %}
                     {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
                     {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
@@ -723,7 +733,6 @@
         'sections':                 'acc-administracion',
         'workday_schedule':         'acc-administracion',
         'absence_categories':       'acc-administracion',
-        'company_settings':         'acc-administracion',
         'analytics_lab':            'acc-administracion',
         'work_orders':              'acc-taller',
         'digital_list':             'acc-taller',
@@ -747,7 +756,8 @@
         'albaran_demo':             'acc-asistencia',
         'budgets_toll_segments':    'acc-asistencia',
         'budgets_concepts':         'acc-asistencia',
-        'budgets_calendars':        'acc-asistencia'
+        'budgets_calendars':        'acc-asistencia',
+        'night_schedules':          'acc-asistencia'
     };
 
     var STORAGE_PREFIX = 'sidebar_acc_';

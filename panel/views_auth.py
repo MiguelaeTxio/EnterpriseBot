@@ -1466,10 +1466,10 @@ class PanelDashboardView (CompanyUserRequiredMixin ,TemplateView ):
 
 
 
-        active_sections =Section .objects .filter (
-        company =company ,
-        is_active =True ,
-        )
+        active_sections_count = Section.objects.filter(
+        company=company,
+        is_active=True,
+        ).count()
 
 
 
@@ -1489,8 +1489,7 @@ class PanelDashboardView (CompanyUserRequiredMixin ,TemplateView ):
 
         context ["company"]=company 
         context ["company_user"]=company_user 
-        context ["active_sections"]=active_sections 
-        context ["active_sections_count"]=active_sections .count ()
+        context ["active_sections_count"]=active_sections_count 
         context ["total_contacts"]=total_contacts 
         context ["own_presence"]=own_presence 
         context ["active_nav"]="dashboard"
