@@ -146,16 +146,26 @@ class DeliveryNoteExtraction(BaseModel):
     )
     general_machine_code_raw: Optional[str] = Field(
         default=None,
-        description='Anotación #CODIGO# GENERAL del albarán completo '
-                     '-- solo si aparece UNA vez, fuera de cualquier '
-                     'línea de artículo concreta (p. ej. junto al '
-                     'número de albarán, en la cabecera, o en un '
-                     'margen del documento), indicando que TODO el '
-                     'albarán es para una única máquina o centro de '
-                     'gasto. Null si no hay tal anotación general, o '
-                     'si las anotaciones que ves están cada una junto '
-                     'a su propia línea (en ese caso van en el campo '
-                     'machine_code_raw de cada línea, no aquí).',
+        description='Anotación de código de máquina o centro de '
+                     'gasto que aplica a TODO el albarán (o a las '
+                     'líneas sin anotación propia), NO a una línea de '
+                     'artículo concreta. Puede venir de tres fuentes '
+                     '(en cualquiera de ellas, sin las almohadillas '
+                     'si las lleva): (a) una anotación #CODIGO# '
+                     'aparte de cualquier línea, p. ej. junto al '
+                     'número de albarán o en un margen; (b) un campo '
+                     'impreso "Observaciones"/"Notas" de la cabecera '
+                     'o el pie del documento, si contiene un código '
+                     'corto de máquina/centro de gasto (no un '
+                     'comentario largo no relacionado); (c) una línea '
+                     'que NO es un artículo real -- categoría/familia '
+                     'tipo "TEXTO"/"NOTA", precio cero, sin '
+                     'descripción de producto real -- cuyo contenido '
+                     'es en realidad la anotación del código. Null si '
+                     'ninguna de las tres fuentes contiene un código, '
+                     'o si las anotaciones van cada una junto a su '
+                     'propia línea (en ese caso van en machine_code_raw '
+                     'de cada línea, no aquí).',
     )
     lines: list[DeliveryNoteLineExtraction] = Field(
         default_factory=list,
@@ -181,12 +191,19 @@ figurar en un bloque "Cliente" / "Destino" / "Entregar a" / \
 "Facturar a"): razón social y NIF/CIF. Es una empresa distinta del \
 proveedor -- no confundir ambos bloques.
 3. Número de albarán y fecha (formato YYYY-MM-DD).
-4. Cada línea de artículo del albarán, en orden, con: número de \
+4. Cada línea de artículo REAL del albarán, en orden, con: número de \
 línea, referencia (si tiene), descripción, cantidad, precio \
-unitario, precio total.
-5. Para cada línea, busca una anotación manuscrita junto al \
-artículo indicando a qué máquina o centro de gasto va destinado. \
-Esta anotación puede venir encerrada entre almohadillas (ej. \
+unitario, precio total. IMPORTANTE: algunos proveedores insertan \
+líneas que NO son artículos reales -- p. ej. una fila con \
+categoría/familia "TEXTO", "NOTA" u similar, precio 0 y sin \
+descripción de producto -- para escribir una anotación (normalmente \
+un código de máquina o centro de gasto) en vez de vender algo. NO \
+incluyas esas filas en la lista de líneas de artículo -- su \
+contenido se extrae aparte, ver punto 6.
+5. Para cada línea de artículo REAL, busca una anotación manuscrita \
+junto al artículo indicando a qué máquina o centro de gasto va \
+destinado. Esta anotación puede venir encerrada entre almohadillas \
+(ej. \
 "#B14#", "#TALLER MECANICO#") -- si ves ese patrón, transcribe \
 únicamente el texto entre las almohadillas, sin ellas. Puede ser: \
   - Un código de máquina o matrícula (ej. "B14", "A-054", "G12"). \
@@ -198,21 +215,32 @@ tal cual (ej. "TALLER MECANICO", "ALMACEN HUELVA", "LOGISTICA", \
 Transcribe la anotación tal cual está escrita en el campo \
 machine_code_raw de esa línea, sin normalizar ni corregir. Si esa \
 línea no tiene anotación propia, deja machine_code_raw en null.
-6. Además, comprueba si existe una anotación #CODIGO# GENERAL para \
-TODO el albarán -- es decir, una única anotación entre almohadillas \
-que NO está pegada a ninguna línea de artículo concreta, sino \
-aparte (por ejemplo junto al número de albarán, en la cabecera, o \
-escrita una sola vez en un margen del documento), indicando que \
-todo el material del albarán va destinado a la misma máquina o \
-centro de gasto. Si la ves, transcríbela en el campo \
-general_machine_code_raw (mismo formato que machine_code_raw, sin \
-las almohadillas). No confundas esto con el caso normal en que cada \
-línea lleva su propia anotación pegada a ella -- en ese caso, cada \
-anotación va en el machine_code_raw de su línea, y \
-general_machine_code_raw debe quedar en null.
+6. Además, comprueba si existe un código de máquina o centro de \
+gasto que aplique a TODO el albarán (o a las líneas sin anotación \
+propia), buscando en estas tres fuentes, por este orden de prioridad: \
+  a) Una anotación #CODIGO# aparte de cualquier línea de artículo \
+concreta (p. ej. junto al número de albarán, en la cabecera, o \
+escrita una sola vez en un margen del documento). \
+  b) Un campo impreso "Observaciones" o "Notas" en la cabecera o el \
+pie del documento -- si su contenido es un código corto de máquina \
+o centro de gasto (mismo formato que el punto 5), transcríbelo. Si \
+el campo contiene un comentario largo no relacionado con una \
+máquina, déjalo fuera (no lo transcribas como código). \
+  c) El contenido de una línea-nota (ver punto 4 -- categoría \
+"TEXTO"/"NOTA", precio 0, sin descripción de producto real) cuya \
+referencia o texto parece un código corto de máquina o centro de \
+gasto. \
+Transcribe lo que encuentres en el campo general_machine_code_raw \
+(mismo formato que machine_code_raw, sin las almohadillas si las \
+lleva). No confundas esto con el caso normal en que cada línea lleva \
+su propia anotación pegada a ella -- en ese caso, cada anotación va \
+en el machine_code_raw de su línea, y general_machine_code_raw debe \
+quedar en null.
 
 No inventes datos que no sean legibles en el documento -- usa null \
-en los campos opcionales cuando no puedas leerlos con certeza. Los \
+en los campos opcionales cuando no puedas leerlos con certeza, \
+incluido general_machine_code_raw si ninguna de las tres fuentes del \
+punto 6 contiene un código reconocible. Los \
 precios y cantidades devuélvelos como texto numérico simple (sin \
 símbolo de moneda, usando punto como separador decimal).
 """
