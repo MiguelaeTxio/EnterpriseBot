@@ -3158,11 +3158,29 @@ class AnalyticsCostsView(SupervisorAccessMixin, View):
 
     def get(self, request):
         """
-        Renders the costs management shell template.
+        Renders the costs management shell template. Passes
+        company_user in context -- required by _nav_items.html
+        (included without 'with' in base.html, so it inherits
+        whatever context this view supplies) to gate sidebar
+        sections by role.
         ---
         Renderiza la plantilla contenedora de gestion de costes.
+        Pasa company_user en el contexto -- necesario porque
+        _nav_items.html se incluye sin 'with' en base.html, por lo
+        que hereda el contexto que le da esta vista, para gatear
+        las secciones de la sidebar por rol.
         """
-        return render(request, "panel/analytics_costs.html")
+        company_user = request.user.company_user
+        return render(
+            request,
+            "panel/analytics_costs.html",
+            {
+                "company_user": company_user,
+                "company": company_user.company,
+                "active_nav": "analytics_costs",
+                "own_presence": _get_own_presence(company_user),
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
