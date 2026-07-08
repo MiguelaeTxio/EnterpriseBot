@@ -391,6 +391,89 @@ decide el destino.
 
 ---
 
+## 4-bis. Diseño Pendiente — Paso 4-bis, puntos 3-10 (RECUPERADO 2026-07-08)
+
+**Nota de recuperación:** este bloque se cerró íntegro en S006
+(2026-07-07) como "Diseño cerrado en S006 (10 puntos + 6
+refinamientos adicionales)", registrado explícitamente como el punto
+de partida obligado de la siguiente sesión. En algún punto entre el
+cierre de S006 y el estado actual del archivo se perdió de este
+anexo -- probablemente absorbido/sustituido al reescribir la sección
+3 con el flujo ya integrado, sin trasladar los puntos todavía
+pendientes de implementar. Detectado y recuperado en S009
+(2026-07-08) desde el historial de git (commit `29e08f6`, cierre de
+S006) antes de retomar el trabajo, para no perder la discusión
+original. Texto verbatim de los puntos 3-10 (los puntos 1-2 y una
+lectura de 11/12 ya se resolvieron/matizaron en S007, ver fila S007
+más abajo en la Sección 5 y el punto de estado al final de este
+bloque):
+
+3. La pre-asignación de repuestos a máquina sigue exactamente como
+   hoy (Caso B, sin cambios) — el requisito de ticket entra solo en
+   el momento de la **materialización final** (cuando el mecánico
+   cierra la tarea y el repuesto pasa de "reservado" a "gastado",
+   sale del limbo).
+4. **Clasificación de tarea, no solo de avería.** Se unifica con la
+   llamada a Gemini que ya existía para familia/tipo de avería, pero
+   se amplía: nuevo campo `tipo_tarea` en `BreakdownTicket` (AVERÍA /
+   MEJORA / MANTENIMIENTO / FABRICACIÓN / ... — nomenclatura exacta a
+   definir en la sesión de implementación). Familia/subcategoría de
+   avería (ya existente) queda condicional a `tipo_tarea=AVERÍA`; para
+   el resto, una **categorización libre** (texto que da Gemini, sin
+   taxonomía rígida) — una mejora de dependencias o la fabricación de
+   una escalera de acceso no encajan en "familia de avería". Disparo
+   único, al grabar la tarea, **asíncrono (Celery)**, para no añadirle
+   latencia al guardado del operario.
+5. El modelo se sigue llamando `BreakdownTicket` — decidido no
+   renombrarlo (alto riesgo, poco beneficio) aunque ahora cubra más
+   que averías.
+6. Origen del ticket (IVR/WhatsApp/panel-manual/auto-generado) es
+   metadato informativo, nunca bloqueante — un ticket auto-generado a
+   mitad de un parte carece de "reportante" externo y eso está bien,
+   los campos quedan vacíos sin más.
+7. **Qué es un "ticket pregenerado".** Es una fila real desde el
+   primer instante (con operario ya asignado) — no hace falta un
+   estado intermedio nuevo. Se "formaliza" (clasificación completa vía
+   Gemini) al grabar la tarea concreta que lo originó, no al cerrar
+   todo el parte.
+8. **Transición de estado**, disparada al grabar/editar la tarea (no
+   el parte completo): casilla "finalizar avería" marcada → `CLOSED`;
+   desmarcada → `IN_PROGRESS`. Si la tarea no finaliza, el ticket
+   queda `IN_PROGRESS`, listo para que el mismo operario u otro la
+   retome (caso real: se deja una máquina por otra más urgente).
+9. **Reapertura por error de cierre — NO es una acción administrativa
+   aparte.** Es efecto natural de **editar la propia tarea**: si al
+   grabarla se marcó "finalizar avería" por error, quien tenga permiso
+   de edición sobre esa tarea la edita, destoca la casilla, y el
+   ticket vuelve a `IN_PROGRESS` como consecuencia de esa edición —
+   sin rol especial, sin motivo obligatorio aparte del rastro
+   automático (quién editó, cuándo, qué tarea disparó la reapertura).
+   Distinto del punto 1 (reapertura tras aviso de "¿es la misma
+   avería?", que sí es una decisión nueva del mecánico sobre una tarea
+   nueva). **Bloqueante original resuelto:** este punto dependía de
+   que "revisar/editar" entrara en modo edición real para cualquier
+   rol autorizado -- confirmado corregido para ADMIN/SUPERVISOR en
+   S007 y para WORKSHOPBOSS en S009 (ver Sección 5), así que este
+   punto ya no tiene bloqueante pendiente.
+10. **Trabajo nuevo sobre un ticket ya `CLOSED` fuera de la ventana de
+    72h** → siempre ticket nuevo, nunca se reutiliza el cerrado.
+
+**Estado de los puntos 1-2 y 11-12 (para contexto, ya resueltos):**
+puntos 1-2 integrados en producción en S007 (bloques A y B), con un
+refinamiento en vivo sobre el punto 1: PAUSED cuenta también como
+candidato abierto, y la confirmación al mecánico es obligatoria en
+cuanto hay 1 o más candidatos (ya no hay enganche silencioso con 1
+único candidato, a diferencia de como se cerró originalmente en
+S006). Punto 12 implementado y **revertido** en la misma sesión S007
+-- `confirm_delivery_note()` vuelve al planteamiento diferido de
+S001-S005, la rama MACHINE sin ticket abierto sigue sin generar
+ticket automáticamente. Punto 11 (transacción atómica única por
+tarea) sin confirmación explícita de que se haya verificado tal cual
+-- a comprobar cuando se implementen los puntos 4/8/9 (creación de
+tarea + tipo_tarea + transición de estado en la misma operación).
+
+---
+
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
 ### ESTADO AL CIERRE DE S008 (2026-07-07)
