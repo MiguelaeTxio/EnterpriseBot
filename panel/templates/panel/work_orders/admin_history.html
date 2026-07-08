@@ -675,6 +675,7 @@
                                         {% if sort_primary_col == 'horas_extra' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
+                                <th class="text-sm fw-semibold">Dieta</th>
                                 <th class="text-sm fw-semibold">
                                     <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
                                        sort-header-link" data-col="fault_category" data-tab="pending">
@@ -701,6 +702,13 @@
                                 <td class="text-sm">
                                     {% if wo.horas_extra > 0 %}
                                     <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-sm">
+                                    {% if wo.dieta %}
+                                    <span class="badge bg-info text-dark">Dieta</span>
                                     {% else %}
                                     <span class="text-muted">—</span>
                                     {% endif %}
@@ -827,6 +835,7 @@
                                 {% if sort_primary_col == 'horas_extra' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                             </a>
                         </th>
+                            <th class="text-sm fw-semibold">Dieta</th>
                             <th class="text-sm fw-semibold">
                                 <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
                                    sort-header-link" data-col="fault_category" data-tab="reviewed">
@@ -855,6 +864,13 @@
                             <td class="text-sm">
                                 {% if wo.horas_extra > 0 %}
                                 <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-sm">
+                                {% if wo.dieta %}
+                                <span class="badge bg-info text-dark">Dieta</span>
                                 {% else %}
                                 <span class="text-muted">—</span>
                                 {% endif %}
@@ -909,8 +925,8 @@
                             </td>
                         </tr>
                         {% endfor %}
-                        {# Fila de totales — suma de horas_totales y horas_extra del conjunto filtrado #}
-                        {# Totals row — sum of horas_totales and horas_extra for the filtered set      #}
+                        {# Fila de totales — suma de horas_totales, horas_extra y dietas del conjunto filtrado #}
+                        {# Totals row — sum of horas_totales, horas_extra and dietas for the filtered set      #}
                         {% if reviewed_list %}
                         <tr class="table-primary fw-semibold small">
                             <td class="px-3"></td>
@@ -919,6 +935,13 @@
                             <td class="text-sm">
                                 {% if reviewed_totals.horas_extra > 0 %}
                                 <span class="badge bg-success">+{{ reviewed_totals.horas_extra }}h</span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-sm">
+                                {% if reviewed_totals.dietas > 0 %}
+                                <span class="badge bg-info text-dark">{{ reviewed_totals.dietas }}</span>
                                 {% else %}
                                 <span class="text-muted">—</span>
                                 {% endif %}
@@ -997,6 +1020,7 @@
                                         {% if sort_primary_col == 'horas_extra' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                                     </a>
                                 </th>
+                                <th class="text-sm fw-semibold">Dieta</th>
                                 <th class="text-sm fw-semibold">
                                     <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
                                        sort-header-link" data-col="fault_category" data-tab="history">
@@ -1031,6 +1055,13 @@
                                 <td class="text-sm">
                                     {% if wo.horas_extra > 0 %}
                                     <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-sm">
+                                    {% if wo.dieta %}
+                                    <span class="badge bg-info text-dark">Dieta</span>
                                     {% else %}
                                     <span class="text-muted">—</span>
                                     {% endif %}

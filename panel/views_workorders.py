@@ -4000,7 +4000,9 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         """
         Converts a WorkOrder queryset into a list of enriched dicts suitable
         for template rendering. Each dict includes pk, fecha, operator name,
-        num_bloques, horas_totales and reviewed flag.
+        num_bloques, horas_totales, horas_extra, dieta (True if any entry of
+        the work order has has_diet=True -- 2026-07-08, gap señalado por
+        Miguel Ángel: la vista no exponía la dieta) and reviewed flag.
         When active_fault_category is provided (a FaultCategory internal value),
         the fault_category badge of every enriched dict is forced to the label
         of that category rather than being calculated from the dominant category
@@ -4010,13 +4012,16 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         ---
         Convierte un queryset de WorkOrder en una lista de dicts enriquecidos
         adecuados para renderizado en template. Cada dict incluye pk, fecha,
-        nombre del operario, num_bloques, horas_totales y flag reviewed.
-        Cuando active_fault_category contiene un valor interno de FaultCategory,
-        el badge fault_category de cada dict se fuerza al label de esa categoría
-        en lugar de calcularse como la dominante sobre todas las líneas. Esto
-        garantiza coherencia visual entre el filtro activo y el badge mostrado —
-        un parte devuelto por el filtro tiene garantizada al menos una línea con
-        esa categoría, por lo que forzar el label es semánticamente correcto.
+        nombre del operario, num_bloques, horas_totales, horas_extra, dieta
+        (True si algún entry del parte tiene has_diet=True -- 2026-07-08, gap
+        señalado por Miguel Ángel: la vista no exponía la dieta) y flag
+        reviewed. Cuando active_fault_category contiene un valor interno de
+        FaultCategory, el badge fault_category de cada dict se fuerza al
+        label de esa categoría en lugar de calcularse como la dominante sobre
+        todas las líneas. Esto garantiza coherencia visual entre el filtro
+        activo y el badge mostrado — un parte devuelto por el filtro tiene
+        garantizada al menos una línea con esa categoría, por lo que forzar
+        el label es semánticamente correcto.
         """
         from decimal import Decimal 
         result =[]
@@ -4044,6 +4049,7 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
             "num_bloques":num_bloques ,
             "horas_totales":horas_totales ,
             "horas_extra":max (Decimal ("0"),horas_totales -Decimal ("8")),
+            "dieta":any (entry .has_diet for entry in entries_list ),
             "reviewed":wo .reviewed ,
             "reviewed_by":(
             wo .reviewed_by .user .get_full_name ()or wo .reviewed_by .user .username 
@@ -4396,6 +4402,7 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
                  if wo["horas_extra"] is not None),
                 _Dec("0"),
             ),
+            "dietas": sum(1 for wo in reviewed_list if wo["dieta"]),
         }
 
         context ={
