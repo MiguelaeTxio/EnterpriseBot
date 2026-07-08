@@ -2023,7 +2023,7 @@ class WorkOrderEntryConfirmView (WorkshopRequiredMixin ,View ):
 
         from django .urls import reverse as _reverse 
         _cu =request .user .company_user 
-        if _cu .role in (CompanyUser .ROLE_ADMIN ,CompanyUser .ROLE_SUPERVISOR ):
+        if _cu .role in (CompanyUser .ROLE_ADMIN ,CompanyUser .ROLE_SUPERVISOR ,CompanyUser .ROLE_WORKSHOPBOSS ):
             return redirect (_reverse ("panel:work_order_admin_history"))
         return redirect (_reverse ("panel:operator_history"))
 
@@ -2044,17 +2044,16 @@ def _resolve_editable_work_order(pk, cu, company):
     estuviera revisado -- DoesNotExist, y la vista rebotaba al
     historial sin entrar en modo edición.
 
-    ADMIN y SUPERVISOR: acceso completo dentro de su empresa, cualquier
-    autor, revisado o no (confirmado por Miguel Ángel 2026-07-07: los
-    supervisores -- p. ej. Carolina -- son quienes hacen el cómputo de
-    horas y necesitan poder editar/revisar el parte de cualquier
-    operario). WORKSHOPBOSS se trata igual que WORKSHOP (restringido a
-    lo propio) -- lectura del propio docstring de WorkOrderFormAccessMixin
-    ("WORKSHOPBOSS -- igual que WORKSHOP"), no confirmado explícitamente
-    por Miguel Ángel en esta sesión; a revisar si hiciera falta ampliarlo.
-    Cualquier otro rol que llegue aquí (WORKSHOP, único otro permitido
-    por WorkOrderFormAccessMixin además de WORKSHOPBOSS): solo su
-    propio parte, sin revisar -- comportamiento sin cambios.
+    ADMIN, SUPERVISOR y WORKSHOPBOSS: acceso completo dentro de su
+    empresa, cualquier autor, revisado o no (confirmado por Miguel
+    Ángel 2026-07-07 para ADMIN/SUPERVISOR -- los supervisores -- p.
+    ej. Carolina -- son quienes hacen el cómputo de horas y necesitan
+    poder editar/revisar el parte de cualquier operario. Ampliado a
+    WORKSHOPBOSS el 2026-07-08 por confirmación explícita de Miguel
+    Ángel: mismo alcance que SUPERVISOR, ya no restringido a lo
+    propio). Cualquier otro rol que llegue aquí (WORKSHOP, único otro
+    permitido por WorkOrderFormAccessMixin): solo su propio parte, sin
+    revisar -- comportamiento sin cambios.
 
     Raises WorkOrder.DoesNotExist si no hay coincidencia -- el
     llamante decide qué hacer (mensaje + redirect en GET, None en
@@ -2065,18 +2064,16 @@ def _resolve_editable_work_order(pk, cu, company):
     Resuelve el WorkOrder digital señalado por wo_pk/edit_wo_pk para
     el modo edición de WorkOrderEntryFormView, con alcance según rol.
 
-    ADMIN y SUPERVISOR: acceso completo dentro de su empresa, cualquier
-    autor, revisado o no (confirmado por Miguel Ángel 2026-07-07: los
-    supervisores -- p. ej. Carolina -- son quienes hacen el cómputo de
-    horas y necesitan poder editar/revisar el parte de cualquier
-    operario). WORKSHOPBOSS se trata igual que WORKSHOP (restringido a
-    lo propio) -- lectura del propio docstring de
-    WorkOrderFormAccessMixin ("WORKSHOPBOSS -- igual que WORKSHOP"), no
-    confirmado explícitamente por Miguel Ángel en esta sesión; a
-    revisar si hiciera falta ampliarlo.
-    Cualquier otro rol que llegue aquí (WORKSHOP, único otro permitido
-    por WorkOrderFormAccessMixin además de WORKSHOPBOSS): solo su
-    propio parte, sin revisar -- comportamiento sin cambios.
+    ADMIN, SUPERVISOR y WORKSHOPBOSS: acceso completo dentro de su
+    empresa, cualquier autor, revisado o no (confirmado por Miguel
+    Ángel 2026-07-07 para ADMIN/SUPERVISOR -- los supervisores -- p.
+    ej. Carolina -- son quienes hacen el cómputo de horas y necesitan
+    poder editar/revisar el parte de cualquier operario. Ampliado a
+    WORKSHOPBOSS el 2026-07-08 por confirmación explícita de Miguel
+    Ángel: mismo alcance que SUPERVISOR, ya no restringido a lo
+    propio). Cualquier otro rol que llegue aquí (WORKSHOP, único otro
+    permitido por WorkOrderFormAccessMixin): solo su propio parte, sin
+    revisar -- comportamiento sin cambios.
 
     Lanza WorkOrder.DoesNotExist si no hay coincidencia -- quien llama
     decide qué hacer (mensaje + redirect en GET, None en POST).
@@ -2086,7 +2083,11 @@ def _resolve_editable_work_order(pk, cu, company):
         company=company,
         source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
     )
-    if cu.role in (CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR):
+    if cu.role in (
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_SUPERVISOR,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+    ):
         return WorkOrder.objects.get(**base_filter)
     return WorkOrder.objects.get(
         uploaded_by=cu, reviewed=False, **base_filter,

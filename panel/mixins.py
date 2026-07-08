@@ -369,7 +369,8 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
     Access matrix:
       ADMIN        — full access (create, edit any part).
       SUPERVISOR   — full access (edit any operator's part from history).
-      WORKSHOPBOSS — full access (same as WORKSHOP with elevated visibility).
+      WORKSHOPBOSS — full access (edit any operator's part from history,
+                     same scope as SUPERVISOR — confirmed 2026-07-08).
       WORKSHOP     — access to create and edit their own parts only
                      (enforced inside WorkOrderEntryFormView via _is_elevated).
       Any other role — redirect to dashboard with error message.
@@ -389,7 +390,9 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
     Matriz de acceso:
       ADMIN        — acceso completo (crear, editar cualquier parte).
       SUPERVISOR   — acceso completo (editar partes de cualquier operario).
-      WORKSHOPBOSS — acceso completo (igual que WORKSHOP con visibilidad ampliada).
+      WORKSHOPBOSS — acceso completo (editar partes de cualquier operario
+                     desde el historial, mismo alcance que SUPERVISOR —
+                     confirmado 2026-07-08).
       WORKSHOP     — acceso para crear y editar sus propios partes
                      (restriccion a propios aplicada en WorkOrderEntryFormView
                      mediante la variable _is_elevated).
