@@ -70,4 +70,10 @@ urlpatterns = [
         'panel/repuestos/',
         include('workorder_spare_parts.urls', namespace='workorder_spare_parts'),
     ),
+    # Admin CRUD for supplier delivery notes — CRUD de administración de
+    # albaranes de proveedor (Hito 10, gap 2026-07-08).
+    path(
+        'panel/albaranes/',
+        include('delivery_notes.urls', namespace='delivery_notes'),
+    ),
 ]

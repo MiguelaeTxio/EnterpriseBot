@@ -250,6 +250,20 @@
                             <i class="bi bi-shop"></i>Proveedores
                         </a>
                     </li>
+                    {# Albaranes de proveedor — CRUD de administración (2026-07-08,   #}
+                    {# gap señalado por Miguel Ángel). Visible a ADMIN/SUPERVISOR/    #}
+                    {# WORKSHOPBOSS -- mismo alcance de rol que el resto de esta      #}
+                    {# sección Administración, no restringido como el Catálogo.      #}
+                    {# Supplier delivery notes — admin CRUD (2026-07-08, gap flagged #}
+                    {# by Miguel Ángel). Visible to ADMIN/SUPERVISOR/WORKSHOPBOSS --  #}
+                    {# same role scope as the rest of this Administración section,   #}
+                    {# not restricted like Catálogo.                                 #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'delivery_notes_admin' %}active{% endif %}"
+                           href="{% url 'delivery_notes:list' %}">
+                            <i class="bi bi-receipt"></i>Albaranes
+                        </a>
+                    </li>
                     {# Catálogo de repuestos — registro maestro con proveedor y precio de  #}
                     {# compra (2026-07-07, corregido a petición de Miguel Ángel: entidad   #}
                     {# DISTINTA del "Almacén" de Mecánicos -- ver spare_part_entry_list y  #}

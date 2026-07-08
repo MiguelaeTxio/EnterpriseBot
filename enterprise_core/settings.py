@@ -86,6 +86,9 @@ INSTALLED_APPS = [
     'analytics',
     # Machine History Viewer — Visor de Historial de Maquinas (Hito 22).
     'history',
+    # Admin CRUD for supplier delivery notes — CRUD de administración
+    # de albaranes de proveedor (Hito 10, gap 2026-07-08).
+    'delivery_notes',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.

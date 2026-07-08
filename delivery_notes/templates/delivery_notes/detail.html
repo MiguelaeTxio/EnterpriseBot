@@ -1,0 +1,112 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/delivery_notes/templates/delivery_notes/detail.html #}
+{# Detalle de solo lectura de un albarán ya ASSIGNED (traza de auditoría). H10. #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Albarán {{ note.delivery_number|default:"s/n" }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <h5 class="mb-0 fw-semibold">
+        Albarán {{ note.delivery_number|default:"s/n" }}
+        <span class="badge bg-success ms-2">Asignado</span>
+    </h5>
+    <a href="{% url 'delivery_notes:list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Volver al listado
+    </a>
+</div>
+
+<div class="alert alert-info small">
+    <i class="bi bi-info-circle me-1"></i>
+    Este albarán ya está confirmado y ha generado movimientos de stock reales
+    (almacén o pre-asignación a máquina/ticket) -- se muestra en solo lectura
+    para no desincronizarlo. No se puede editar ni eliminar desde aquí.
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Proveedor</div>
+                <div class="fw-semibold">{{ note.supplier_name|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">NIF/CIF proveedor</div>
+                <div class="fw-semibold">{{ note.supplier_tax_id|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Fecha albarán</div>
+                <div class="fw-semibold">{{ note.delivery_date|date:"d/m/Y"|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Nº albarán</div>
+                <div class="fw-semibold">{{ note.delivery_number|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Empresa destinataria</div>
+                <div class="fw-semibold">{{ note.recipient_name|default:"—" }} ({{ note.recipient_company_code|default:"—" }})</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">NIF/CIF destinatario</div>
+                <div class="fw-semibold">{{ note.recipient_tax_id|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Código general (#CÓDIGO#)</div>
+                <div class="fw-semibold">{{ note.general_machine_code_raw|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Revisado por</div>
+                <div class="fw-semibold">
+                    {% if note.processed_by %}
+                        {{ note.processed_by.user.get_full_name|default:note.processed_by.user.username }}
+                    {% else %}—{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Referencia</th>
+                    <th>Descripción</th>
+                    <th>Cantidad</th>
+                    <th>Precio unitario</th>
+                    <th>Precio total</th>
+                    <th>Código máquina/almacén</th>
+                    <th>Asignación</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in lines %}
+                <tr>
+                    <td>{{ line.line_number }}</td>
+                    <td>{{ line.reference|default:"—" }}</td>
+                    <td>{{ line.description }}</td>
+                    <td>{{ line.quantity }}</td>
+                    <td>{{ line.unit_price|default:"—" }}</td>
+                    <td>{{ line.total_price|default:"—" }}</td>
+                    <td>{{ line.machine_code_raw|default:"—" }}</td>
+                    <td>
+                        {% if line.assignment_type == 'MACHINE' %}
+                            <span class="badge bg-primary">Máquina{% if line.machine %} — {{ line.machine.code }}{% endif %}</span>
+                        {% elif line.assignment_type == 'WAREHOUSE' %}
+                            <span class="badge bg-secondary">Almacén</span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark">Sin asignar</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">Sin líneas.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
