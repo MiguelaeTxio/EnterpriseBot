@@ -40,27 +40,40 @@
 {#   "whatsapp_templates" → Plantillas (WhatsApp)            (ADMIN)               #}
 {#   "whatsapp_sessions"  → Sesiones activas (WhatsApp)      (ADMIN)               #}
 {#   "bot_management"     → Gestión del bot (WhatsApp)        (ADMIN)               #}
-{#   "operator_dashboard" → Nuevo parte                      (Mecánicos, != ASSISTANCE) #}
-{#   "spare_parts_upload" → Subir albarán                    (Mecánicos, WORKSHOP/ADMIN) #}
-{#   "work_orders"        → PDFs                             (Taller)              #}
-{#   "digital_list"       → Partes Digitales                 (Taller)              #}
-{#   "fleet"              → Centros de gasto                 (Centro de gasto, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
-{#   "fleet_analytics"    → Analítica de centros de gasto   (Centro de gasto)     #}
+{#   "operator_dashboard" → Nuevo parte                      (Taller Mecánico / Mecánicos, != ASSISTANCE) #}
+{#   "spare_parts_upload" → Subir albarán                    (Taller Mecánico / Mecánicos, WORKSHOP/ADMIN) #}
+{#   "work_orders"        → PDFs                             (Taller Mecánico / Taller)    #}
+{#   "digital_list"       → Partes Digitales                 (Taller Mecánico / Taller)    #}
+{#   "fleet"              → Centros de gasto                 (Taller Mecánico / Centro de gasto, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{#   "fleet_analytics"    → Analítica de centros de gasto   (Taller Mecánico / Centro de gasto) #}
 {#   "users"              → Usuarios                         (Administración)      #}
 {#   "analytics_lab"      → Laboratorio de Análisis          (Administración, ADMIN) #}
 {#   "workday_schedule"   → Horarios de jornada              (Administración)      #}
 {#   "absence_categories" → Categorías de ausencia           (Administración)      #}
 {#   "company_settings"   → Configuración empresa (ELIMINADA de sidebar 2026-07-08, view/URL siguen vivas) #}
 {#   "night_schedules"    → Franja nocturna (NightSchedule)  (Asistencia, ADMIN) -- NUEVA 2026-07-08 #}
-{#   "suppliers"          → Proveedores (incl. reciclado interno) (Almacén, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
-{#   "delivery_notes_admin" → Albaranes                      (Almacén, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
-{#   "machine_history"    → Historial de Máquina             (Centro de gasto, WORKSHOP/ADMIN) #}
-{#   "workorder_history" → Mis partes                        (Mecánicos, WORKSHOP/WORKSHOPBOSS/ADMIN) #}
-{#   "operator_history"   → Historial (propio operario)       (Mecánicos, WORKSHOP/WORKSHOPBOSS) #}
-{#   "work_order_admin_history" → Historial (administración)  (Mecánicos, ADMIN/SUPERVISOR) #}
-{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (Almacén, ADMIN/SUPERVISOR -- proveedor y precio de compra) #}
-{#   "workorder_spare_parts_warehouse" → Almacén (stock)     (Almacén, ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS -- stock, limbo y avisos de antigüedad) -- entidad DISTINTA del catálogo (Hito 10 Paso 5/6, corregido 2026-07-07) #}
-{#   "breakdown_ticket_list" → Tickets de avería             (Taller, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{#   "suppliers"          → Proveedores (incl. reciclado interno) (Taller Mecánico / Almacén, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{#   "delivery_notes_admin" → Albaranes                      (Taller Mecánico / Almacén, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{#   "machine_history"    → Historial de Máquina             (Taller Mecánico / Centro de gasto, WORKSHOP/ADMIN) #}
+{#   "workorder_history" → Mis partes                        (Taller Mecánico / Mecánicos, WORKSHOP/WORKSHOPBOSS/ADMIN) #}
+{#   "operator_history"   → Historial (propio operario)       (Taller Mecánico / Mecánicos, WORKSHOP/WORKSHOPBOSS) #}
+{#   "work_order_admin_history" → Historial (administración)  (Taller Mecánico / Mecánicos, ADMIN/SUPERVISOR) #}
+{#   "workorder_spare_parts_catalog" → Catálogo de repuestos (Taller Mecánico / Almacén, ADMIN/SUPERVISOR -- proveedor y precio de compra) #}
+{#   "workorder_spare_parts_warehouse" → Almacén (stock)     (Taller Mecánico / Almacén, ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS -- stock, limbo y avisos de antigüedad) -- entidad DISTINTA del catálogo (Hito 10 Paso 5/6, corregido 2026-07-07) #}
+{#   "breakdown_ticket_list" → Tickets de avería             (Taller Mecánico / Taller, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{# ================================================================================ #}
+{# NOTA 2026-07-08: Taller / Centro de gasto / Almacén / Mecánicos ya NO son        #}
+{# secciones acordeón independientes -- viven como 4 subgrupos visuales (solo       #}
+{# encabezados <small>, sin colapsar) dentro de una única sección "Taller           #}
+{# Mecánico", a petición de Miguel Ángel para reducir el número de secciones de     #}
+{# primer nivel en la sidebar (de 8 a 5: Mi perfil, Telefonía, Administración,      #}
+{# Taller Mecánico, Asistencia).                                                    #}
+{# NOTE 2026-07-08: Taller / Centro de gasto / Almacén / Mecánicos are no longer    #}
+{# independent accordion sections -- they live as 4 visual subgroups (plain         #}
+{# <small> headers, non-collapsible) inside a single "Taller Mecánico" section,     #}
+{# at Miguel Ángel's request to reduce the number of top-level sidebar sections     #}
+{# (from 8 down to 5: Mi perfil, Telefonía, Administración, Taller Mecánico,        #}
+{# Asistencia).                                                                     #}
 {# ================================================================================ #}
 <ul class="nav flex-column mt-2" id="sidebar-accordion">
     {# ------------------------------------------------------------------ #}
@@ -295,244 +308,132 @@
         </li>
     {% endif %}
     {# ------------------------------------------------------------------ #}
-    {# Sección: Taller — ADMIN, SUPERVISOR y WORKSHOPBOSS                  #}
-    {# NUEVA 2026-07-08: agrupa PDFs y Partes Digitales (antes en          #}
-    {# Administración) y Tickets de avería (antes su propia sección       #}
-    {# acordeón). Mismo gate exterior que tenían los tres antes de        #}
-    {# moverse -- ADMIN/SUPERVISOR/WORKSHOPBOSS -- así que ningún ítem    #}
-    {# necesita gate interior propio.                                     #}
-    {# Section: Workshop — ADMIN, SUPERVISOR and WORKSHOPBOSS              #}
-    {# NEW 2026-07-08: groups PDFs and Digital work orders (previously in  #}
-    {# Administración) and Breakdown tickets (previously its own          #}
-    {# standalone accordion section). Same outer gate all three already   #}
-    {# had before moving -- ADMIN/SUPERVISOR/WORKSHOPBOSS -- so no item   #}
-    {# needs its own inner gate.                                          #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-        <li class="nav-item sidebar-accordion-section">
-            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                    type="button"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#acc-taller"
-                    aria-expanded="false"
-                    aria-controls="acc-taller"
-                    data-acc-id="acc-taller">
-                <i class="bi bi-wrench-adjustable"></i>
-                <span>Taller</span>
-                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-            </button>
-            <div class="collapse sidebar-accordion-body" id="acc-taller">
-                <ul class="nav flex-column ps-3">
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
-                           href="{% url 'panel:work_order_list' %}">
-                            <i class="bi bi-file-earmark-pdf"></i>PDFs
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'digital_list' %}active{% endif %}"
-                           href="{% url 'panel:digital_work_order_list' %}">
-                            <i class="bi bi-tablet"></i>Partes Digitales
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
-                           href="{% url 'panel:breakdown_ticket_list' %}">
-                            <i class="bi bi-exclamation-triangle"></i>Tickets de avería
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </li>
-    {% endif %}
-    {# ------------------------------------------------------------------ #}
-    {# Sección: Centro de gasto — NUEVA 2026-07-08                        #}
-    {# Agrupa Centros de gasto (antes en Administración, gate             #}
-    {# ADMIN/SUPERVISOR/WORKSHOPBOSS) e Historial de Máquina (antes en    #}
-    {# Mecánicos, gate WORKSHOP/ADMIN). El gate exterior es la UNIÓN de   #}
-    {# ambos (ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP); cada ítem reafirma  #}
-    {# su propio gate interior, más estrecho que la unión, para no        #}
-    {# ampliar la visibilidad de ninguno de los dos respecto a como       #}
-    {# estaba antes de moverse.                                           #}
-    {# Section: Cost centre — NEW 2026-07-08                              #}
-    {# Groups Cost centres (previously in Administración, gate            #}
-    {# ADMIN/SUPERVISOR/WORKSHOPBOSS) and Machine history (previously in   #}
-    {# Mecánicos, gate WORKSHOP/ADMIN). The outer gate is the UNION of    #}
-    {# both (ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP); each item re-asserts #}
-    {# its own inner gate, narrower than the union, so neither item's     #}
-    {# visibility widens relative to before it moved.                     #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
-        <li class="nav-item sidebar-accordion-section">
-            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                    type="button"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#acc-centro-gasto"
-                    aria-expanded="false"
-                    aria-controls="acc-centro-gasto"
-                    data-acc-id="acc-centro-gasto">
-                <i class="bi bi-truck"></i>
-                <span>Centro de gasto</span>
-                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-            </button>
-            <div class="collapse sidebar-accordion-body" id="acc-centro-gasto">
-                <ul class="nav flex-column ps-3">
-                    {# Gate interior propio: ADMIN/SUPERVISOR/WORKSHOPBOSS (excluye #}
-                    {# WORKSHOP, que solo entra a esta sección por Historial de     #}
-                    {# Máquina) -- mismo alcance que tenía en Administración.       #}
-                    {# Own inner gate: ADMIN/SUPERVISOR/WORKSHOPBOSS (excludes      #}
-                    {# WORKSHOP, who only reaches this section via Machine history) #}
-                    {# -- same scope it had in Administración.                     #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'fleet' %}active{% endif %}"
-                               href="{% url 'panel:fleet_list' %}">
-                                <i class="bi bi-truck"></i>Centros de gasto
-                            </a>
-                        </li>
-                    {% endif %}
-                    {# Historial de maquina — WORKSHOP y ADMIN (Hito 22), gate sin cambios #}
-                    {# Machine history viewer — WORKSHOP and ADMIN (Hito 22), gate unchanged #}
-                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'machine_history' %}active{% endif %}"
-                               href="{% url 'history:machine_history' %}">
-                                <i class="bi bi-truck"></i>Historial de Máquina
-                            </a>
-                        </li>
-                    {% endif %}
-                </ul>
-            </div>
-        </li>
-    {% endif %}
-    {# ------------------------------------------------------------------ #}
-    {# Sección: Almacén — NUEVA 2026-07-08                                 #}
-    {# Agrupa Proveedores y Albaranes (antes en Administración, gate       #}
-    {# ADMIN/SUPERVISOR/WORKSHOPBOSS), Catálogo de repuestos (antes en     #}
-    {# Administración, gate ADMIN/SUPERVISOR) y Almacén -- stock -- (antes #}
-    {# en Mecánicos, gate ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS, es       #}
-    {# decir, todos salvo ASSISTANCE). El gate exterior es la UNIÓN de     #}
-    {# los cuatro (ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP); cada ítem      #}
-    {# reafirma su propio gate interior, más estrecho que la unión.       #}
-    {# Section: Warehouse — NEW 2026-07-08                                 #}
-    {# Groups Suppliers and Delivery notes (previously in Administración,  #}
-    {# gate ADMIN/SUPERVISOR/WORKSHOPBOSS), Spare parts catalog            #}
-    {# (previously in Administración, gate ADMIN/SUPERVISOR) and Warehouse #}
-    {# -- stock -- (previously in Mecánicos, gate                          #}
-    {# ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS, i.e. everyone except        #}
-    {# ASSISTANCE). The outer gate is the UNION of all four                #}
-    {# (ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP); each item re-asserts its  #}
-    {# own inner gate, narrower than the union.                            #}
-    {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
-        <li class="nav-item sidebar-accordion-section">
-            <button class="nav-link sidebar-accordion-toggle w-100 text-start"
-                    type="button"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#acc-almacen"
-                    aria-expanded="false"
-                    aria-controls="acc-almacen"
-                    data-acc-id="acc-almacen">
-                <i class="bi bi-archive-fill"></i>
-                <span>Almacén</span>
-                <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
-            </button>
-            <div class="collapse sidebar-accordion-body" id="acc-almacen">
-                <ul class="nav flex-column ps-3">
-                    {# Proveedores — incluye reciclado interno como Supplier (2026-07-06). #}
-                    {# Gate interior propio: ADMIN/SUPERVISOR/WORKSHOPBOSS (excluye        #}
-                    {# WORKSHOP) -- mismo alcance que tenía en Administración.             #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'suppliers' %}active{% endif %}"
-                           href="{% url 'spare_parts:supplier_list' %}">
-                            <i class="bi bi-shop"></i>Proveedores
-                        </a>
-                    </li>
-                    {% endif %}
-                    {# Albaranes de proveedor — CRUD de administración (2026-07-08,   #}
-                    {# gap señalado por Miguel Ángel). Gate interior propio:          #}
-                    {# ADMIN/SUPERVISOR/WORKSHOPBOSS (excluye WORKSHOP) -- mismo      #}
-                    {# alcance que tenía en Administración.                           #}
-                    {# Supplier delivery notes — admin CRUD (2026-07-08, gap flagged #}
-                    {# by Miguel Ángel). Own inner gate: ADMIN/SUPERVISOR/WORKSHOPBOSS #}
-                    {# (excludes WORKSHOP) -- same scope it had in Administración.    #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'delivery_notes_admin' %}active{% endif %}"
-                           href="{% url 'delivery_notes:list' %}">
-                            <i class="bi bi-receipt"></i>Albaranes
-                        </a>
-                    </li>
-                    {% endif %}
-                    {# Catálogo de repuestos — registro maestro con proveedor y precio de  #}
-                    {# compra (2026-07-07, corregido a petición de Miguel Ángel: entidad   #}
-                    {# DISTINTA del "Almacén" -- ver spare_part_entry_list y                #}
-                    {# spare_part_warehouse_list). Gate interior propio: ADMIN/SUPERVISOR  #}
-                    {# (excluye WORKSHOPBOSS y WORKSHOP) -- mismo alcance que tenía.        #}
-                    {# Spare parts catalog — master registry with supplier and purchase   #}
-                    {# price (2026-07-07, fixed at Miguel Ángel's request: a DISTINCT      #}
-                    {# entity from "Almacén" -- see spare_part_entry_list and              #}
-                    {# spare_part_warehouse_list). Own inner gate: ADMIN/SUPERVISOR        #}
-                    {# (excludes WORKSHOPBOSS and WORKSHOP) -- same scope it had.          #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
-                           href="{% url 'workorder_spare_parts:catalog_list' %}">
-                            <i class="bi bi-boxes"></i>Catálogo de repuestos
-                        </a>
-                    </li>
-                    {% endif %}
-                    {# Almacén (stock) — antes en Mecánicos (Hito 10 Paso 5/6, corregido    #}
-                    {# 2026-07-07): stock físico, limbo de pre-asignación con avisos de     #}
-                    {# antigüedad, y ajuste de stock por los propios mecánicos -- sin       #}
-                    {# proveedor ni precio de compra, eso es el catálogo de arriba. Gate    #}
-                    {# interior coincide exactamente con el exterior de esta sección        #}
-                    {# (ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS) -- se reafirma igualmente   #}
-                    {# por claridad y para no depender implícitamente del exterior.         #}
-                    {# Warehouse (stock) — previously in Mecánicos (Hito 10 Paso 5/6, fixed #}
-                    {# 2026-07-07): physical stock, pre-assignment limbo with age warnings, #}
-                    {# and stock adjustment by mechanics themselves -- no supplier or       #}
-                    {# purchase price, that's the catalog above. Inner gate matches this    #}
-                    {# section's outer gate exactly (ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS) #}
-                    {# -- re-asserted anyway for clarity and to not implicitly rely on the   #}
-                    {# outer gate.                                                           #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'workorder_spare_parts_warehouse' %}active{% endif %}"
-                               href="{% url 'workorder_spare_parts:warehouse_list' %}">
-                                <i class="bi bi-archive-fill"></i>Almacén
-                            </a>
-                        </li>
-                    {% endif %}
-                </ul>
-            </div>
-        </li>
-    {% endif %}
-    {# ------------------------------------------------------------------ #}
-    {# Sección: Mecánicos — todos los roles excepto ASSISTANCE             #}
-    {# Reestructurada 2026-07-08: Historial de Máquina y Almacén se        #}
-    {# movieron a Centro de gasto / Almacén respectivamente (ver arriba).  #}
-    {# Incluye: Nuevo parte, Subir albarán, Historial (x2), Mis partes     #}
-    {# Section: Mechanics — all roles except ASSISTANCE                    #}
-    {# Restructured 2026-07-08: Machine history and Warehouse moved to    #}
-    {# Centro de gasto / Almacén respectively (see above).                #}
+    {# Sección: Taller Mecánico — FUSIONADA 2026-07-08 a petición de       #}
+    {# Miguel Ángel ("simplificar al máximo la sidebar"). Une en un solo   #}
+    {# acordeón lo que hasta ahora eran 4 secciones separadas (Taller,     #}
+    {# Centro de gasto, Almacén, Mecánicos), con 4 subgrupos visuales      #}
+    {# internos (encabezados sin colapsar, solo separadores). El gate      #}
+    {# exterior es la UNIÓN de las 4 secciones originales (!= ASSISTANCE,  #}
+    {# porque Mecánicos ya incluía DRIVER además de ADMIN/SUPERVISOR/      #}
+    {# WORKSHOPBOSS/WORKSHOP); cada <li> y cada encabezado de subgrupo     #}
+    {# reafirma su propio gate interior exactamente igual que antes de     #}
+    {# fusionarse -- ningún ítem cambia de visibilidad, solo de sitio.     #}
+    {# Section: Workshop Mechanics — MERGED 2026-07-08 at Miguel Ángel's   #}
+    {# request ("simplify the sidebar as much as possible"). Merges what   #}
+    {# used to be 4 separate sections (Taller, Centro de gasto, Almacén,   #}
+    {# Mecánicos) into one accordion, with 4 internal visual subgroups     #}
+    {# (non-collapsible headers, just separators). The outer gate is the   #}
+    {# UNION of the 4 original sections (!= ASSISTANCE, since Mecánicos    #}
+    {# already included DRIVER besides ADMIN/SUPERVISOR/WORKSHOPBOSS/      #}
+    {# WORKSHOP); every <li> and every subgroup header re-asserts its own  #}
+    {# inner gate exactly as it was before merging -- no item changes      #}
+    {# visibility, only location.                                         #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role != 'ASSISTANCE' %}
         <li class="nav-item sidebar-accordion-section">
             <button class="nav-link sidebar-accordion-toggle w-100 text-start"
                     type="button"
                     data-bs-toggle="collapse"
-                    data-bs-target="#acc-operarios"
+                    data-bs-target="#acc-taller-mecanico"
                     aria-expanded="false"
-                    aria-controls="acc-operarios"
-                    data-acc-id="acc-operarios">
-                <i class="bi bi-tools"></i>
-                <span>Mecánicos</span>
+                    aria-controls="acc-taller-mecanico"
+                    data-acc-id="acc-taller-mecanico">
+                <i class="bi bi-wrench-adjustable"></i>
+                <span>Taller Mecánico</span>
                 <i class="bi bi-chevron-down sidebar-chevron ms-auto"></i>
             </button>
-            <div class="collapse sidebar-accordion-body" id="acc-operarios">
+            <div class="collapse sidebar-accordion-body" id="acc-taller-mecanico">
                 <ul class="nav flex-column ps-3">
+
+                    {# --- Subgrupo: Taller (gate: ADMIN/SUPERVISOR/WORKSHOPBOSS, sin cambios) --- #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        <li class="nav-item px-2 pt-1">
+                            <small class="text-muted text-uppercase fw-semibold sidebar-subgroup-label">Taller</small>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
+                               href="{% url 'panel:work_order_list' %}">
+                                <i class="bi bi-file-earmark-pdf"></i>PDFs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'digital_list' %}active{% endif %}"
+                               href="{% url 'panel:digital_work_order_list' %}">
+                                <i class="bi bi-tablet"></i>Partes Digitales
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
+                               href="{% url 'panel:breakdown_ticket_list' %}">
+                                <i class="bi bi-exclamation-triangle"></i>Tickets de avería
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    {# --- Subgrupo: Centro de gasto (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 2 ítems, cada uno con su propio gate interior sin cambios) --- #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
+                        <li class="nav-item px-2 pt-2">
+                            <small class="text-muted text-uppercase fw-semibold sidebar-subgroup-label">Centro de gasto</small>
+                        </li>
+                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'fleet' %}active{% endif %}"
+                                   href="{% url 'panel:fleet_list' %}">
+                                    <i class="bi bi-truck"></i>Centros de gasto
+                                </a>
+                            </li>
+                        {% endif %}
+                        {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'machine_history' %}active{% endif %}"
+                                   href="{% url 'history:machine_history' %}">
+                                    <i class="bi bi-truck"></i>Historial de Máquina
+                                </a>
+                            </li>
+                        {% endif %}
+                    {% endif %}
+
+                    {# --- Subgrupo: Almacén (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 4 ítems, cada uno con su propio gate interior sin cambios) --- #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
+                        <li class="nav-item px-2 pt-2">
+                            <small class="text-muted text-uppercase fw-semibold sidebar-subgroup-label">Almacén</small>
+                        </li>
+                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'suppliers' %}active{% endif %}"
+                                   href="{% url 'spare_parts:supplier_list' %}">
+                                    <i class="bi bi-shop"></i>Proveedores
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'delivery_notes_admin' %}active{% endif %}"
+                                   href="{% url 'delivery_notes:list' %}">
+                                    <i class="bi bi-receipt"></i>Albaranes
+                                </a>
+                            </li>
+                        {% endif %}
+                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
+                                   href="{% url 'workorder_spare_parts:catalog_list' %}">
+                                    <i class="bi bi-boxes"></i>Catálogo de repuestos
+                                </a>
+                            </li>
+                        {% endif %}
+                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'workorder_spare_parts_warehouse' %}active{% endif %}"
+                                   href="{% url 'workorder_spare_parts:warehouse_list' %}">
+                                    <i class="bi bi-archive-fill"></i>Almacén
+                                </a>
+                            </li>
+                        {% endif %}
+                    {% endif %}
+
+                    {# --- Subgrupo: Mecánicos (sin gate propio -- coincide con el exterior != ASSISTANCE, ya que "Nuevo parte" es visible a todos, DRIVER incluido) --- #}
+                    <li class="nav-item px-2 pt-2">
+                        <small class="text-muted text-uppercase fw-semibold sidebar-subgroup-label">Mecánicos</small>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
                            href="{% url 'panel:operator_dashboard' %}">
@@ -734,21 +635,21 @@
         'workday_schedule':         'acc-administracion',
         'absence_categories':       'acc-administracion',
         'analytics_lab':            'acc-administracion',
-        'work_orders':              'acc-taller',
-        'digital_list':             'acc-taller',
-        'breakdown_ticket_list':    'acc-taller',
-        'fleet':                    'acc-centro-gasto',
-        'fleet_analytics':          'acc-centro-gasto',
-        'machine_history':          'acc-centro-gasto',
-        'suppliers':                'acc-almacen',
-        'delivery_notes_admin':     'acc-almacen',
-        'workorder_spare_parts_catalog':   'acc-almacen',
-        'workorder_spare_parts_warehouse': 'acc-almacen',
-        'operator_dashboard':       'acc-operarios',
-        'spare_parts_upload':       'acc-operarios',
-        'operator_history':         'acc-operarios',
-        'workorder_history':        'acc-operarios',
-        'work_order_admin_history': 'acc-operarios',
+        'work_orders':              'acc-taller-mecanico',
+        'digital_list':             'acc-taller-mecanico',
+        'breakdown_ticket_list':    'acc-taller-mecanico',
+        'fleet':                    'acc-taller-mecanico',
+        'fleet_analytics':          'acc-taller-mecanico',
+        'machine_history':          'acc-taller-mecanico',
+        'suppliers':                'acc-taller-mecanico',
+        'delivery_notes_admin':     'acc-taller-mecanico',
+        'workorder_spare_parts_catalog':   'acc-taller-mecanico',
+        'workorder_spare_parts_warehouse': 'acc-taller-mecanico',
+        'operator_dashboard':       'acc-taller-mecanico',
+        'spare_parts_upload':       'acc-taller-mecanico',
+        'operator_history':         'acc-taller-mecanico',
+        'workorder_history':        'acc-taller-mecanico',
+        'work_order_admin_history': 'acc-taller-mecanico',
         'budgets_wizard':           'acc-asistencia',
         'budgets_history':          'acc-asistencia',
         'budgets_insurers':         'acc-asistencia',
