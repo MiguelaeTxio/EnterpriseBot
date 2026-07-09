@@ -176,15 +176,17 @@ SILENCE_THRESHOLD_RMS = 300
 # Number of consecutive silent frames required to close an activity window.
 # At Twilio's 8kHz mu-law encoding, each media event carries ~20ms of audio,
 # so 30 frames ≈ 600ms of silence before activity_end is sent.
-# Increased from 20 to 30 on 2026-04-06 to give the caller more inter-phrase
-# margin and avoid premature activity_end during natural speech pauses.
+# H17 FIX (2026-07-09): bajado de 50 (~1000ms) a 30 (~600ms) a petición de
+# Miguel Ángel tras detectar que un segundo completo de silencio antes de
+# avisar a Gemini era la causa principal del retardo percibido en las
+# llamadas de avería. El comentario anterior ("aumentado de 20 a 30 el
+# 2026-04-06") ya no coincidía con el valor real (50) — desincronización
+# de comentario/código detectada y corregida en esta misma sesión.
 # Número de frames silenciosos consecutivos requeridos para cerrar una ventana
 # de actividad. Con la codificación mu-law a 8kHz de Twilio, cada evento media
 # lleva ~20ms de audio, por lo que 30 frames ≈ 600ms de silencio antes de que
 # se envíe activity_end.
-# Aumentado de 20 a 30 el 2026-04-06 para dar más margen al llamante entre
-# frases y evitar activity_end prematuro durante pausas naturales del habla.
-SILENCE_FRAMES_TO_END_ACTIVITY = 50
+SILENCE_FRAMES_TO_END_ACTIVITY = 30
 
 # Number of consecutive speech frames required to open an activity window.
 # Increased from 3 to 10 on 2026-04-06 (~200ms) to filter out acoustic echo
