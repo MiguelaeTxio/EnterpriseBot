@@ -368,15 +368,36 @@ confirmar con Miguel Ángel cuál primero):
      operario en ese periodo (fórmula ya reflejada en el diseño de C)
      de arriba). Es decir: el "precio/hora" resultante es un precio
      medio ya mezclado (nómina + extra), no dos tarifas distintas.
-  4. Pendiente de confirmar con Jerónimo antes de implementar (aparcado,
-     Miguel Ángel retomará esta conversación): si "horas totales del
-     operario en el periodo" son solo horas imputadas a máquina, o si
-     deben incluir también tareas sin máquina (tipo_tarea MANTENIMIENTO/
-     MEJORA/FABRICACION sin breakdown_ticket de máquina, ver H10→S010
-     backfill de tipo_tarea) -- afecta directamente al denominador de la
-     fórmula de reparto. Y qué hacer cuando un operario no tiene
-     WorkPeriod de coste informado (excluir por defecto, salvo que se
-     diga lo contrario).
+  4. RESUELTO en conversación con Jerónimo (S010, 2026-07-09): "horas
+     totales del operario en el periodo" (denominador del reparto)
+     incluye TODAS las horas del operario en TODOS los centros de
+     gasto del periodo -- máquinas reales Y centros de gasto internos
+     (PERSONAL, EMPRESA_ALMACEN_MECANICO, EMPRESA_ALMACEN_ELEVACION,
+     EMPRESA_ALMACEN_HUELVA, EMPRESA_ALMACEN_DEPENDENCIAS -- ver
+     work_order_processor/management/commands/seed_empresa_assets.py y
+     seed_personal_asset.py). Sin excepciones ni caso especial: D6
+     trata cada machine_asset/centro de gasto exactamente igual, sea
+     máquina real o interno. Los centros de gasto internos NO se
+     excluyen del resultado -- reciben su propio coste_en_maquina
+     imputado igual que cualquier máquina real, y aparecen como una
+     fila más en la tabla/gráfico de D6. Motivo explícito de Miguel
+     Ángel: permite comparar cuánto cuesta el tiempo interno (limpieza
+     de taller, almacén, ausencias de personal) frente al coste de
+     reparar una máquina concreta -- ese contraste tiene que verse en
+     el laboratorio, no quedar oculto o diluido sin más.
+     "Sin ticket" NO equivale a "sin máquina": breakdown_ticket es
+     exclusivo de tareas AVERIA (formaliza una reparación);
+     MANTENIMIENTO/MEJORA/FABRICACION llevan machine_asset/centro de
+     gasto igualmente, solo que sin ticket vinculado -- en digital,
+     todo bloque de trabajo resuelve a un centro de gasto sí o sí, real
+     o interno. Con esto el diseño de D6 queda cerrado en lo referente
+     al denominador y al tratamiento de centros de gasto internos.
+  5. Sigue SIN RESOLVER (no se ha hablado con Jerónimo de esto todavía):
+     qué hacer cuando un operario no tiene WorkPeriod de coste
+     informado para el periodo en cuestión. El diseño original preveía
+     "excluir por defecto, configurable" -- se mantiene como
+     comportamiento por defecto salvo que Miguel Ángel diga lo
+     contrario antes de implementar C).
 
 
 
