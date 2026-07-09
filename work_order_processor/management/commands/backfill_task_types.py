@@ -233,89 +233,120 @@ class Command(BaseCommand):
         # ------------------------------------------------------------------
         for line in base_qs.iterator(chunk_size=batch_size):
             count_processed += 1
-            ticket = line.breakdown_ticket
+            try:
+                ticket = line.breakdown_ticket
 
-            # --- Case A: ticket already classified -- mirror only. ---
-            # --- Caso A: ticket ya clasificado -- solo reflejar. ---
-            if ticket is not None and ticket.tipo_tarea:
-                tipo = ticket.tipo_tarea
-                fault_category = (
-                    ticket.fault_category if tipo == "AVERIA" else ""
-                )
+                # --- Case A: ticket already classified -- mirror only. ---
+                # --- Caso A: ticket ya clasificado -- solo reflejar. ---
+                if ticket is not None and ticket.tipo_tarea:
+                    tipo = ticket.tipo_tarea
+                    fault_category = (
+                        ticket.fault_category if tipo == "AVERIA" else ""
+                    )
+                    if dry_run:
+                        self.stdout.write(
+                            f"# [backfill_task_types] pk={line.pk} "
+                            f"[DRY-RUN] reflejaría desde ticket "
+                            f"pk={ticket.pk} tipo_tarea={tipo}. "
+                            f"Sin persistir."
+                        )
+                    else:
+                        WorkOrderEntryLine.objects.filter(
+                            pk=line.pk
+                        ).update(
+                            tipo_tarea=tipo,
+                            task_category_free=ticket.task_category_free,
+                            fault_category=fault_category,
+                        )
+                        self.stdout.write(
+                            f"# [backfill_task_types] pk={line.pk} "
+                            f"reflejado desde ticket pk={ticket.pk} "
+                            f"tipo_tarea={tipo}. Persistido."
+                        )
+                    count_mirrored += 1
+                    if tipo in by_tipo:
+                        by_tipo[tipo] += 1
+                    _print_progress(self, count_processed, total_pending)
+                    continue
+
+                # --- Case B: fresh classification via Gemini. ---
+                # --- Caso B: clasificación nueva vía Gemini. ---
                 if dry_run:
                     self.stdout.write(
                         f"# [backfill_task_types] pk={line.pk} "
-                        f"[DRY-RUN] reflejaría desde ticket pk={ticket.pk} "
-                        f"tipo_tarea={tipo}. Sin persistir."
+                        f"[DRY-RUN] requeriría llamada a "
+                        f"classify_task(). Omitida."
                     )
-                else:
-                    WorkOrderEntryLine.objects.filter(pk=line.pk).update(
-                        tipo_tarea=tipo,
-                        task_category_free=ticket.task_category_free,
-                        fault_category=fault_category,
-                    )
+                    _print_progress(self, count_processed, total_pending)
+                    continue
+
+                result = _classify_with_retry(
+                    self,
+                    line.pk,
+                    line.fault_description or "",
+                    line.repair_notes or "",
+                )
+
+                if result is None:
+                    count_errors += 1
+                    _print_progress(self, count_processed, total_pending)
+                    continue
+
+                if not result["tipo_tarea"]:
                     self.stdout.write(
                         f"# [backfill_task_types] pk={line.pk} "
-                        f"reflejado desde ticket pk={ticket.pk} "
-                        f"tipo_tarea={tipo}. Persistido."
+                        f"classify_task() devolvió tipo_tarea vacío. "
+                        f"Omitida."
                     )
-                count_mirrored += 1
-                if tipo in by_tipo:
-                    by_tipo[tipo] += 1
-                _print_progress(self, count_processed, total_pending)
-                continue
+                    count_empty += 1
+                    _print_progress(self, count_processed, total_pending)
+                    continue
 
-            # --- Case B: fresh classification via Gemini. ---
-            # --- Caso B: clasificación nueva vía Gemini. ---
-            if dry_run:
-                self.stdout.write(
-                    f"# [backfill_task_types] pk={line.pk} "
-                    f"[DRY-RUN] requeriría llamada a classify_task(). "
-                    f"Omitida."
+                WorkOrderEntryLine.objects.filter(pk=line.pk).update(
+                    tipo_tarea=result["tipo_tarea"],
+                    task_category_free=result["task_category_free"],
+                    fault_category=result["fault_category"],
+                    fault_subcategory=result["fault_subcategory"],
                 )
+
+                if ticket is not None:
+                    ticket.tipo_tarea = result["tipo_tarea"]
+                    ticket.fault_category = result["fault_category"]
+                    ticket.task_category_free = (
+                        result["task_category_free"]
+                    )
+                    ticket.save(update_fields=[
+                        "tipo_tarea", "fault_category",
+                        "task_category_free",
+                    ])
+
+                self.stdout.write(
+                    f"# [backfill_task_types] pk={line.pk} clasificada: "
+                    f"tipo_tarea={result['tipo_tarea']}. Persistido."
+                )
+                count_gemini += 1
+                if result["tipo_tarea"] in by_tipo:
+                    by_tipo[result["tipo_tarea"]] += 1
+
                 _print_progress(self, count_processed, total_pending)
-                continue
 
-            result = _classify_with_retry(self, line.pk)
-
-            if result is None:
+            except Exception as exc:
+                # Defensa en profundidad: una fila problemática (borrada
+                # en producción durante el backfill, fallo de red al
+                # guardar, etc.) no debe tumbar el resto del proceso.
+                # ---
+                # Defence in depth: one problematic row (deleted in
+                # production during the backfill, network failure while
+                # saving, etc.) must never bring down the rest of the
+                # run.
                 count_errors += 1
-                _print_progress(self, count_processed, total_pending)
-                continue
-
-            if not result["tipo_tarea"]:
                 self.stdout.write(
-                    f"# [backfill_task_types] pk={line.pk} "
-                    f"classify_task() devolvió tipo_tarea vacío. Omitida."
+                    f"# [backfill_task_types] pk={line.pk}: error "
+                    f"inesperado — {exc}. Línea omitida, continúa el "
+                    f"resto."
                 )
-                count_empty += 1
                 _print_progress(self, count_processed, total_pending)
                 continue
-
-            WorkOrderEntryLine.objects.filter(pk=line.pk).update(
-                tipo_tarea=result["tipo_tarea"],
-                task_category_free=result["task_category_free"],
-                fault_category=result["fault_category"],
-                fault_subcategory=result["fault_subcategory"],
-            )
-
-            if ticket is not None:
-                ticket.tipo_tarea = result["tipo_tarea"]
-                ticket.fault_category = result["fault_category"]
-                ticket.task_category_free = result["task_category_free"]
-                ticket.save(update_fields=[
-                    "tipo_tarea", "fault_category", "task_category_free",
-                ])
-
-            self.stdout.write(
-                f"# [backfill_task_types] pk={line.pk} clasificada: "
-                f"tipo_tarea={result['tipo_tarea']}. Persistido."
-            )
-            count_gemini += 1
-            if result["tipo_tarea"] in by_tipo:
-                by_tipo[result["tipo_tarea"]] += 1
-
-            _print_progress(self, count_processed, total_pending)
 
         # ------------------------------------------------------------------
         # Final summary / Resumen final
@@ -342,27 +373,34 @@ class Command(BaseCommand):
 # Module-level helpers / Funciones auxiliares de módulo
 # ---------------------------------------------------------------------------
 
-def _classify_with_retry(command_instance, line_pk, max_retries=3):
+def _classify_with_retry(
+    command_instance, line_pk, fault_description, repair_notes,
+    max_retries=3,
+):
     """
-    Calls classify_task() for the given line, re-loading fault_description
-    and repair_notes fresh from the DB. Retries up to max_retries times on
-    Vertex AI 429 (ResourceExhausted), waiting 60 s between attempts --
-    same contract as tasks.classify_fault_line. Returns the result dict,
-    or None if an unrecoverable error occurred.
+    Calls classify_task() with the given fault_description/repair_notes
+    (already loaded by the caller from the outer queryset -- no re-fetch
+    by pk here, precisely to avoid a DoesNotExist race if the row is
+    edited/deleted concurrently in production during a long-running
+    backfill). Retries up to max_retries times on Vertex AI 429
+    (ResourceExhausted), waiting 60 s between attempts -- same contract
+    as tasks.classify_fault_line. Returns the result dict, or None if an
+    unrecoverable error occurred.
     ---
-    Llama a classify_task() para la línea dada, recargando
-    fault_description y repair_notes frescos desde la BD. Reintenta hasta
-    max_retries veces ante 429 de Vertex AI (ResourceExhausted), esperando
-    60 s entre intentos -- mismo contrato que tasks.classify_fault_line.
-    Devuelve el dict resultado, o None si hubo un error irrecuperable.
+    Llama a classify_task() con el fault_description/repair_notes ya
+    cargados por quien llama, desde el queryset externo -- sin volver a
+    consultar por pk aquí, precisamente para evitar una condición de
+    carrera DoesNotExist si la fila se edita/borra en producción durante
+    un backfill largo. Reintenta hasta max_retries veces ante 429 de
+    Vertex AI (ResourceExhausted), esperando 60 s entre intentos --
+    mismo contrato que tasks.classify_fault_line. Devuelve el dict
+    resultado, o None si hubo un error irrecuperable.
     """
-    line = WorkOrderEntryLine.objects.get(pk=line_pk)
-
     for attempt in range(1, max_retries + 1):
         try:
             return classify_task(
-                fault_description=line.fault_description or "",
-                repair_notes=line.repair_notes or "",
+                fault_description=fault_description,
+                repair_notes=repair_notes,
             )
         except Exception as exc:
             exc_str = str(exc)
