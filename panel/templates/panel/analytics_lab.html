@@ -498,6 +498,7 @@
                             {% if has_d16 %}<option value="machine_company">Empresa máquina</option>{% endif %}
                             <option value="ordinary_hours">Horas ordinarias</option>
                             <option value="extra_hours">Horas extra</option>
+                            <option value="cost">Coste (EUR)</option>
                             <option value="period">Periodo temporal</option>
                         </select>
                         <select class="form-select form-select-sm lab-field-value lab-field-value-select">
@@ -574,6 +575,10 @@
                 <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
                     <i class="bi bi-calculator me-1"></i>
                     Media: <span id="summary-avg">—</span> h/intervención
+                </span>
+                <span id="summary-cost-badge" class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1" style="display:none">
+                    <i class="bi bi-cash-coin me-1"></i>
+                    <span id="summary-cost">—</span> EUR
                 </span>
             </div>
         </div>
@@ -831,7 +836,7 @@ function labProfilePreview(config) {
         has_diet: 'Dieta', is_on_site: 'In situ', has_ticket: 'Ticket averia',
         reviewed: 'Revisado', no_lunch_break: 'Pausa comida',
         machine_company: 'Empresa maquina', ordinary_hours: 'H. ordinarias',
-        extra_hours: 'H. extra', period: 'Periodo',
+        extra_hours: 'H. extra', cost: 'Coste (EUR)', period: 'Periodo',
     };
     return fields.map(function (f) {
         return _LABELS[f.type] || f.type;
@@ -1246,6 +1251,7 @@ function labAddField() {
         LAB_MACH_COMPANIES.length  ? '<option value="machine_company">Empresa m\u00e1quina</option>'         : '',
         '<option value="ordinary_hours">Horas ordinarias</option>',
         '<option value="extra_hours">Horas extra</option>',
+        '<option value="cost">Coste (EUR)</option>',
         '<option value="period">Periodo temporal</option>',
     ].join('');
     typeSelect.addEventListener('change', function () { labFieldTypeChanged(typeSelect); });
@@ -1432,7 +1438,11 @@ function labFieldTypeChanged(typeSelect) {
             valSelect.appendChild(opt);
         });
         valSelect.classList.remove('lab-field-value-select');
-    } else if (fieldType === 'ordinary_hours' || fieldType === 'extra_hours') {
+    } else if (
+        fieldType === 'ordinary_hours' ||
+        fieldType === 'extra_hours' ||
+        fieldType === 'cost'
+    ) {
         // Metric activators — no entity selector needed
         // Activadores de metrica — sin selector de entidad
         valSelect.classList.add('lab-field-value-select');
@@ -1849,6 +1859,13 @@ function labRenderSummary(summary) {
     document.getElementById('summary-hours').textContent = s.total_hours     != null ? s.total_hours     : '—';
     document.getElementById('summary-parts').textContent = s.total_parts     != null ? s.total_parts     : '—';
     document.getElementById('summary-avg').textContent   = s.avg_hours_per_part != null ? s.avg_hours_per_part : '—';
+    const costBadge = document.getElementById('summary-cost-badge');
+    if (s.total_cost != null) {
+        document.getElementById('summary-cost').textContent = s.total_cost;
+        costBadge.style.display = 'inline-block';
+    } else {
+        costBadge.style.display = 'none';
+    }
     document.getElementById('lab-summary').style.display = 'flex';
 }
 

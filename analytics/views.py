@@ -22,7 +22,7 @@ import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from django.contrib import messages as django_messages
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import (
     HttpResponse,
     HttpResponseBadRequest,
@@ -712,7 +712,8 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         "d15": "pie",
         "d16": "pie",
         "d18": "bar",  # ordinary_hours
-        "d19": "bar",
+        "d19": "bar",  # extra_hours
+        "d20": "bar",  # cost
     }
 
     _FAULT_CAT_LABELS = {
@@ -1796,6 +1797,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         "machine_company":   "d16",
         "ordinary_hours":    "d18",
         "extra_hours":       "d19",
+        "cost":              "d20",
     }
 
     def get(self, request):
@@ -2059,8 +2061,10 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                 )
             elif ftype == "machine_company":
                 qs_filter["machine_asset__company_code__iexact"] = fval
-            # ordinary_hours y extra_hours son metricas, no dimensiones de agrupacion
-            # ordinary_hours and extra_hours are metrics, not grouping dimensions
+            # ordinary_hours, extra_hours y cost son metricas, no
+            # dimensiones de agrupacion
+            # ordinary_hours, extra_hours and cost are metrics, not
+            # grouping dimensions
 
         # Determine group-by dimensions -- Determinar dimensiones de agrupacion
         group_by_worker         = "worker"            in type_set
@@ -2077,8 +2081,9 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         group_by_reviewed       = "reviewed"          in type_set
         group_by_no_lunch       = "no_lunch_break"    in type_set
         group_by_mach_company   = "machine_company"   in type_set
-        show_ordinary_hours     = "ordinary_hours"    in type_set  # metric col only
-        show_extra_hours        = "extra_hours"       in type_set  # metric col only
+        show_ordinary_hours = "ordinary_hours" in type_set  # metric col only
+        show_extra_hours    = "extra_hours"    in type_set  # metric col only
+        show_cost           = "cost"           in type_set  # metric col only
         group_by_period         = "period"            in type_set
 
         lines_qs = (
@@ -2096,8 +2101,139 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                 line.entry.work_date,
             )] += float(line.delta_hours or 0)
 
+        # ------------------------------------------------------------------
+        # Cost metric lookups (H20 pendiente C, S010 2026-07-09) -- built
+        # only when the 'cost' field is active, to avoid unnecessary
+        # queries otherwise.
+        #
+        # Resolution chain per line: entry.worker_name (free text) -> exact
+        # match against a real CompanyUser's full name -> WorkPeriod
+        # covering entry.work_date -> OperatorMonthlyCost.total_cost for
+        # that period -> proportional share = (line's hours in that
+        # worker+period / TOTAL hours that worker logged in that period,
+        # across every machine_asset/centro de gasto, not just the ones
+        # visible in this crosstab's filters) x total_cost. Per the H20
+        # design note, internal cost centres (PERSONAL, EMPRESA_ALMACEN_*)
+        # are included in that total-hours denominator exactly like real
+        # machines -- no special-casing. Lines whose worker/period/cost
+        # cannot be resolved contribute 0 to cost and are silently
+        # excluded (default behaviour agreed with Miguel Ángel).
+        #
+        # Exact-name matching (not fuzzy) is used here for performance --
+        # this runs per-line over potentially thousands of rows. It relies
+        # on entry.worker_name matching the operator's real full name,
+        # which holds for the digital pipeline (worker_name is populated
+        # from the logged-in CompanyUser) but may miss some PDF-era
+        # historical spellings; those lines simply get 0 cost.
+        # ------------------------------------------------------------------
+        # Lookups de la metrica de coste (H20 pendiente C, S010
+        # 2026-07-09) -- se construyen solo cuando el campo 'cost' esta
+        # activo, para no lanzar consultas de mas en el resto de casos.
+        #
+        # Cadena de resolucion por linea: entry.worker_name (texto libre)
+        # -> emparejamiento exacto contra el nombre completo de un
+        # CompanyUser real -> WorkPeriod que cubre entry.work_date ->
+        # OperatorMonthlyCost.total_cost de ese periodo -> reparto
+        # proporcional = (horas de esa linea en ese operario+periodo /
+        # horas TOTALES que ese operario registro en ese periodo, en
+        # todos los machine_asset/centros de gasto, no solo los visibles
+        # en los filtros de este cruce) x total_cost. Segun la nota de
+        # diseño de H20, los centros de gasto internos (PERSONAL,
+        # EMPRESA_ALMACEN_*) entran en ese denominador de horas totales
+        # exactamente igual que las maquinas reales -- sin caso especial.
+        # Las lineas cuyo operario/periodo/coste no se puedan resolver
+        # aportan 0 al coste y se excluyen en silencio (comportamiento por
+        # defecto acordado con Miguel Ángel).
+        #
+        # El emparejamiento es por nombre EXACTO (no difuso) por
+        # rendimiento -- esto corre por linea sobre potencialmente miles
+        # de filas. Depende de que entry.worker_name coincida con el
+        # nombre completo real del operario, lo cual se cumple en el
+        # pipeline digital (worker_name se rellena desde el CompanyUser
+        # con sesion iniciada) pero puede fallar en alguna grafia del
+        # histórico PDF; esas lineas simplemente se quedan con coste 0.
+        company_user_by_name = {}
+        periods_by_user_pk = {}
+        total_cost_by_period_pk = {}
+        total_hours_cache = {}
+        if show_cost:
+            for cu in (
+                CompanyUser.objects
+                .filter(company=company, is_active=True)
+                .select_related("user")
+            ):
+                company_user_by_name[cu.user.get_full_name()] = cu
+            for cost_record in OperatorMonthlyCost.objects.filter(
+                work_period__company_user__company=company,
+            ):
+                total_cost_by_period_pk[cost_record.work_period_id] = (
+                    float(cost_record.total_cost)
+                )
+
+        def _line_cost(line):
+            """
+            Returns the proportional cost share of a single line, or 0.0
+            if the operator/period/cost cannot be resolved.
+            ---
+            Devuelve la parte proporcional de coste de una linea, o 0.0
+            si no se puede resolver operario/periodo/coste.
+            """
+            company_user = company_user_by_name.get(
+                line.entry.worker_name or "",
+            )
+            if company_user is None:
+                return 0.0
+
+            if company_user.pk not in periods_by_user_pk:
+                periods_by_user_pk[company_user.pk] = list(
+                    WorkPeriod.objects.filter(company_user=company_user)
+                )
+            period = None
+            for candidate in periods_by_user_pk[company_user.pk]:
+                if candidate.start_date > line.entry.work_date:
+                    continue
+                if (
+                    candidate.end_date is not None
+                    and candidate.end_date < line.entry.work_date
+                ):
+                    continue
+                period = candidate
+                break
+            if period is None:
+                return 0.0
+
+            total_cost = total_cost_by_period_pk.get(period.pk)
+            if total_cost is None:
+                return 0.0
+
+            cache_key = (company_user.pk, period.pk)
+            if cache_key not in total_hours_cache:
+                period_end = period.end_date or date.max
+                total_hours_cache[cache_key] = float(
+                    WorkOrderEntryLine.objects
+                    .filter(
+                        entry__work_order__company=company,
+                        entry__worker_name=line.entry.worker_name,
+                        entry__work_date__gte=period.start_date,
+                        entry__work_date__lte=period_end,
+                        delta_hours__isnull=False,
+                    )
+                    .aggregate(total=Sum("delta_hours"))["total"] or 0.0
+                )
+            total_hours_for_period = total_hours_cache[cache_key]
+            if total_hours_for_period <= 0:
+                return 0.0
+
+            line_hours = float(line.delta_hours or 0)
+            return (line_hours / total_hours_for_period) * total_cost
+
         # Aggregate -- Agregar
-        agg = defaultdict(lambda: {"hours": 0.0, "count": 0, "extra": 0.0, "ordinary": 0.0})
+        agg = defaultdict(
+            lambda: {
+                "hours": 0.0, "count": 0,
+                "extra": 0.0, "ordinary": 0.0, "cost": 0.0,
+            }
+        )
 
         # Helper: extract grouping value for a field type from a line
         # Helper: extraer valor de agrupacion para un tipo de campo desde una linea
@@ -2161,11 +2297,13 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                 )
             if ftype == "period":
                 return self._bucket(line.entry.work_date, granularity)
-            return None  # metric fields (ordinary_hours, extra_hours) — no key part
+            # metric fields (ordinary_hours, extra_hours, cost) -- no
+            # key part
+            return None
 
         # Ordered field types that produce grouping keys (metrics excluded)
         # Tipos de campo ordenados que producen claves de agrupacion (metricas excluidas)
-        _METRIC_TYPES = frozenset(("ordinary_hours", "extra_hours"))
+        _METRIC_TYPES = frozenset(("ordinary_hours", "extra_hours", "cost"))
         ordered_dim_types = [
             f["type"] for f in fields
             if f["type"] not in _METRIC_TYPES
@@ -2188,6 +2326,8 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                     agg[key]["ordinary"] += prop * 8.0
                 else:
                     agg[key]["ordinary"] += line_hours
+            if show_cost:
+                agg[key]["cost"] += _line_cost(line)
 
         # Build column headers in field order -- Cabeceras en orden de campos
         _DIM_LABELS = {
@@ -2213,6 +2353,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         col_labels += ["Horas trabajadas", "Intervenciones"]
         if show_ordinary_hours: col_labels.append("Horas ordinarias")
         if show_extra_hours:    col_labels.append("Horas extra")
+        if show_cost:           col_labels.append("Coste (EUR)")
 
         # Sort keys -- Ordenar claves
         sorted_keys = sorted(agg.keys())
@@ -2228,10 +2369,13 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                 row.append(round(agg[key]["ordinary"], 2))
             if show_extra_hours:
                 row.append(round(agg[key]["extra"], 2))
+            if show_cost:
+                row.append(round(agg[key]["cost"], 2))
             table_rows.append(row)
 
         total_hours = sum(v["hours"] for v in agg.values())
         total_parts = sum(v["count"] for v in agg.values())
+        total_cost_sum = sum(v["cost"] for v in agg.values())
 
         # Build chart series -- Construir series de grafico
         # Group by first dimension key, x-axis = second dimension
@@ -2315,7 +2459,19 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         ]
         if show_ordinary_hours: dim_names.append("Horas ordinarias")
         if show_extra_hours:    dim_names.append("Horas extra")
+        if show_cost:           dim_names.append("Coste (EUR)")
         title = " x ".join(dim_names) + f" ({date_from} / {date_to})"
+
+        summary = {
+            "total_hours": round(total_hours, 2),
+            "total_parts": total_parts,
+            "avg_hours_per_part": (
+                round(total_hours / total_parts, 2)
+                if total_parts else 0.0
+            ),
+        }
+        if show_cost:
+            summary["total_cost"] = round(total_cost_sum, 2)
 
         return {
             "ok": True,
@@ -2336,14 +2492,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                 "columns": col_labels,
                 "rows": table_rows,
             },
-            "summary": {
-                "total_hours": round(total_hours, 2),
-                "total_parts": total_parts,
-                "avg_hours_per_part": (
-                    round(total_hours / total_parts, 2)
-                    if total_parts else 0.0
-                ),
-            },
+            "summary": summary,
         }
 
 
