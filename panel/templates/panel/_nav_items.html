@@ -274,8 +274,10 @@
                     {# Laboratorio de Análisis — movido aquí desde la sección propia #}
                     {# "Analítica" (2026-07-08). Solo ADMIN, gate sin cambios.       #}
                     {# Analytics Lab — moved here from its own standalone            #}
-                    {# "Analítica" section (2026-07-08). ADMIN only, gate unchanged. #}
-                    {% if company_user.role == 'ADMIN' %}
+                    {# "Analítica" section (2026-07-08). Opened to SUPERVISOR/       #}
+                    {# WORKSHOPBOSS alongside ADMIN (2026-07-09), together with the  #}
+                    {# Costes de operarios page below.                              #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'analytics_lab' %}active{% endif %}"
                                href="{% url 'analytics:analytics_lab' %}">

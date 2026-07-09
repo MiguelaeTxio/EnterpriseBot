@@ -45,7 +45,6 @@ from ivr_config.models import (
     WorkshopFamilyMapping,
 )
 from panel.mixins import (
-    AdminRoleRequiredMixin,
     CompanyUserRequiredMixin,
     SupervisorAccessMixin,
 )
@@ -313,7 +312,7 @@ class AnalyticsDataView(SupervisorAccessMixin, View):
 # AnalyticsLabView
 # ---------------------------------------------------------------------------
 
-class AnalyticsLabView(AdminRoleRequiredMixin, View):
+class AnalyticsLabView(SupervisorAccessMixin, View):
     """
     Renders the Unified Analytics Laboratory shell. Passes selector data
     (operators, machines, fault categories, default date range) to the
@@ -626,7 +625,7 @@ class AnalyticsLabView(AdminRoleRequiredMixin, View):
 # AnalyticsLabDataView
 # ---------------------------------------------------------------------------
 
-class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
+class AnalyticsLabDataView(SupervisorAccessMixin, View):
     """
     JSON endpoint for the Unified Analytics Laboratory.
     GET /panel/analytics/lab/data/
@@ -2307,7 +2306,7 @@ class AnalyticsLabDataView(AdminRoleRequiredMixin, View):
 # AnalyticsLabExportView
 # ---------------------------------------------------------------------------
 
-class AnalyticsLabExportView(AdminRoleRequiredMixin, View):
+class AnalyticsLabExportView(SupervisorAccessMixin, View):
     """
     Generates and streams an Excel file from the Analytics Laboratory
     table data. POST body must contain JSON-encoded 'columns' and 'rows'.
