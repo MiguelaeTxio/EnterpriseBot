@@ -2162,7 +2162,18 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                 .filter(company=company, is_active=True)
                 .select_related("user")
             ):
-                company_user_by_name[cu.user.get_full_name()] = cu
+                # entry.worker_name is stored uppercase (digital entries
+                # come from the operator's login name rendered in caps);
+                # get_full_name() is not guaranteed to be uppercase, so
+                # normalise both sides of this lookup the same way.
+                # entry.worker_name se guarda en mayusculas (las entradas
+                # digitales vienen del nombre de login del operario
+                # renderizado en mayusculas); get_full_name() no
+                # garantiza estar en mayusculas, asi que se normalizan
+                # ambos lados de este lookup igual.
+                company_user_by_name[
+                    cu.user.get_full_name().strip().upper()
+                ] = cu
             for cost_record in OperatorMonthlyCost.objects.filter(
                 work_period__company_user__company=company,
             ):
@@ -2179,7 +2190,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
             si no se puede resolver operario/periodo/coste.
             """
             company_user = company_user_by_name.get(
-                line.entry.worker_name or "",
+                (line.entry.worker_name or "").strip().upper(),
             )
             if company_user is None:
                 return 0.0
