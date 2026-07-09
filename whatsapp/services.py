@@ -376,14 +376,36 @@ class WhatsAppChatService:
         Reconstructs the Gemini chat history from all WhatsAppMessage records
         belonging to the given session, ordered chronologically. Returns a list
         of genai_types.Content objects compatible with client.chats.create(history=...).
+
+        Excludes the current inbound turn when it is the most recent message
+        in the session: every caller of this method persists the incoming
+        WhatsAppMessage BEFORE building the history, and then sends that same
+        turn again explicitly via chat.send_message(user_message). Without
+        this exclusion, Gemini would receive the current user turn twice in a
+        row (once from history, once from send_message) — bug detected in
+        production on 2026-07-09 (S010, H17): Gemini reported the user's DNI
+        as "written twice" during onboarding, when it had only been sent once.
         ---
         Reconstruye el historial de chat de Gemini desde todos los registros
         WhatsAppMessage pertenecientes a la sesión dada, ordenados cronológicamente.
         Devuelve una lista de objetos genai_types.Content compatible con
         client.chats.create(history=...).
+
+        Excluye el turno entrante actual cuando es el mensaje más reciente de
+        la sesión: todo llamador de este método persiste el WhatsAppMessage
+        entrante ANTES de construir el historial, y luego reenvía ese mismo
+        turno explícitamente vía chat.send_message(user_message). Sin esta
+        exclusión, Gemini recibiría el turno actual del usuario dos veces
+        seguidas (una desde el historial, otra desde send_message) — bug
+        detectado en producción el 2026-07-09 (S010, H17): Gemini informó de
+        que el DNI del usuario estaba "escrito dos veces" durante el
+        onboarding, cuando en realidad solo se había enviado una vez.
         """
         history = []
-        messages = session.messages.order_by("timestamp")
+        messages = list(session.messages.order_by("timestamp"))
+
+        if messages and messages[-1].direction == WhatsAppMessage.DIRECTION_IN:
+            messages = messages[:-1]
 
         for msg in messages:
             # Map WhatsApp direction to Gemini role.
