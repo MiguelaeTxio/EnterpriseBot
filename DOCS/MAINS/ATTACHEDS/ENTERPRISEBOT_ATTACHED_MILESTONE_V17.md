@@ -162,10 +162,62 @@ define la personalidad experta con el flujo numerado 1→6 y tres reglas crític
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
-Hito completado en S059. Todos los pasos ejecutados y validados en
-producción. No hay trabajo pendiente en H17.
+#### PCH EN S010 (2026-07-09) — H17 REABIERTO, PASA A EN PROGRESO
 
-Incidencias menores registradas para futura atención:
+H20 (Laboratorio de Análisis Unificado) se pausa -- pendientes A/B/C
+completados en S010, ver anexo V20 -- y H17 se reabre a petición
+explícita de Miguel Ángel al detectar una incidencia real en
+producción durante el cierre de S010. El hito se había dado por
+completado en S059; esta reapertura es exclusivamente para la
+incidencia de abajo, no implica reabrir ningún paso ya cerrado de la
+Hoja de Ruta original (sección 3).
+
+#### INCIDENCIA PRIORITARIA — mensaje duplicado en el onboarding por WhatsApp
+
+Reportada por Miguel Ángel: cuando un contacto desconocido escribe al
+WhatsApp del bot diciendo que trabaja en Grúas Álvarez (arranca el
+flujo `OnboardingService`, ver S055 en el Registro de Sesiones de este
+mismo anexo -- Rama C/D de `IncomingWhatsAppView`, alta de
+`DjangoUser`+`CompanyUser`+`Contact`+`SectionContact`), el remitente
+recibe el mensaje del bot **duplicado** (dos veces).
+
+Nada investigado todavía en esta sesión -- la sesión terminó al
+detectarse la incidencia, sin tiempo de indagar. Punto de partida para
+la próxima sesión, en orden:
+
+1. Revisar los logs de Twilio (consola Twilio, o los logs propios del
+   proyecto si el envío pasa por `WhatsAppChatService` o equivalente
+   en `whatsapp/services.py`) para el número de teléfono y la fecha/
+   hora exactos del caso reportado -- confirmar si Twilio recibió y
+   procesó el webhook entrante DOS veces (reintento de Twilio por
+   timeout de respuesta, causa mas probable en integraciones webhook)
+   o si el codigo del proyecto envía la respuesta duplicada desde una
+   única recepción de webhook (bug de lógica interna).
+2. Si es reintento de Twilio: revisar el tiempo de respuesta de
+   `IncomingWhatsAppView` (Twilio reintenta si no responde 200 dentro
+   de un timeout corto) -- posible causa: la llamada a Gemini dentro
+   de `OnboardingService` bloqueando la respuesta HTTP más de lo que
+   Twilio tolera antes de reintentar. Solución típica: idempotencia
+   por `MessageSid` de Twilio (guardar los SID ya procesados y
+   descartar duplicados), o mover el procesamiento a una tarea Celery
+   asíncrona y responder 200 inmediatamente al webhook.
+3. Si es bug de lógica interna: revisar si `OnboardingService` o
+   `IncomingWhatsAppView` invocan el envío de la plantilla/mensaje de
+   respuesta más de una vez por mensaje entrante (p.ej. doble llamada
+   accidental, o una rama A/B/C/D de la bifurcación solapándose con
+   otra).
+4. No hay commit ni cambio de código todavía sobre esta incidencia --
+   empezar por el diagnóstico empírico (logs) antes de tocar nada,
+   igual que el resto del proyecto.
+
+---
+
+Hito completado en S059 salvo la incidencia de arriba. Todos los pasos
+de la Hoja de Ruta original (sección 3) ejecutados y validados en
+producción -- no reabrir ninguno sin instrucción explícita.
+
+Incidencias menores registradas para futura atención (sin prioridad
+sobre la de arriba, no iniciar sin instrucción explícita):
 - **views_workorders.py línea 1747**: IntegrityError duplicate entry
   en /panel/work-orders/92/lines/insert/ — bug preexistente sin resolver.
 - **SWAP en .gitignore del repo sistema** — pendiente fix.
