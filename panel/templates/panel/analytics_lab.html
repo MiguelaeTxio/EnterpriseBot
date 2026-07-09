@@ -354,6 +354,13 @@
         font-size: 0.8rem;
     }
 }
+
+/* Totals row -- Fila de totales (H20, S010) */
+.lab-totals-row td {
+    font-weight: 600;
+    border-top: 2px solid #adb5bd;
+    background-color: #f8f9fa;
+}
 </style>
 
 <div id="lab-wrapper">
@@ -1864,6 +1871,43 @@ function labApplyColFilter() {
     labDrawTable();
 }
 
+// Columns considered summable for the totals row (H20, S010
+// 2026-07-09) -- matched by exact label, since col_labels are built
+// server-side from a fixed, known set of metric names.
+// Columnas consideradas sumables para la fila de totales (H20, S010
+// 2026-07-09) -- se emparejan por etiqueta exacta, ya que col_labels
+// se construye en el servidor a partir de un conjunto fijo y conocido
+// de nombres de metrica.
+const LAB_SUMMABLE_COLS = [
+    'Horas trabajadas', 'Intervenciones',
+    'Horas ordinarias', 'Horas extra', 'Coste (EUR)',
+];
+
+// Builds a totals row for the given columns/rows: sums every summable
+// column, leaves the rest blank except the first cell ('TOTAL' label).
+// Returns null if none of the given columns is summable.
+// Construye una fila de totales para las columns/rows dadas: suma cada
+// columna sumable, deja el resto en blanco salvo la primera celda
+// (etiqueta 'TOTAL'). Devuelve null si ninguna de las columnas dadas es
+// sumable.
+function labComputeTotalsRow(columns, rows) {
+    const summableIdx = columns
+        .map(function (col, idx) { return LAB_SUMMABLE_COLS.indexOf(col) >= 0 ? idx : -1; })
+        .filter(function (idx) { return idx >= 0; });
+    if (!summableIdx.length) { return null; }
+
+    return columns.map(function (col, idx) {
+        if (idx === 0) { return 'TOTAL'; }
+        if (summableIdx.indexOf(idx) < 0) { return null; }
+        let sum = 0;
+        rows.forEach(function (row) {
+            const v = row[idx];
+            if (typeof v === 'number') { sum += v; }
+        });
+        return Math.round(sum * 100) / 100;
+    });
+}
+
 function labDrawTable() {
     const thead = document.getElementById('lab-thead');
     const tbody = document.getElementById('lab-tbody');
@@ -1917,6 +1961,21 @@ function labDrawTable() {
         });
         tbody.appendChild(tr);
     });
+
+    // Totals row -- Fila de totales
+    const totalsRow = labComputeTotalsRow(labCurrentColumns, labCurrentRows);
+    if (totalsRow) {
+        const tr = document.createElement('tr');
+        tr.className = 'lab-totals-row';
+        totalsRow.forEach(function (cell, idx) {
+            const td       = document.createElement('td');
+            const isNum    = typeof cell === 'number';
+            td.textContent = cell !== null && cell !== undefined ? cell : '';
+            td.className   = isNum ? 'text-end' : '';
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    }
 
     document.getElementById('lab-table-wrap').classList.remove('lab-table-wrap-hidden');
     document.getElementById('lab-empty-report').style.display = 'none';
@@ -1980,7 +2039,15 @@ function labExport() {
     addField('date_from',  labCurrentFrom);
     addField('date_to',    labCurrentTo);
     addField('columns',    JSON.stringify(labCurrentColumns));
-    addField('rows',       JSON.stringify(labCurrentRows));
+
+    // Append the totals row to the exported rows too, same rule as the
+    // on-screen table.
+    // Anade la fila de totales tambien a las filas exportadas, misma
+    // regla que la tabla en pantalla.
+    const exportRows = labCurrentRows.slice();
+    const totalsRow   = labComputeTotalsRow(labCurrentColumns, labCurrentRows);
+    if (totalsRow) { exportRows.push(totalsRow); }
+    addField('rows', JSON.stringify(exportRows));
 
     document.body.appendChild(form);
     form.submit();
