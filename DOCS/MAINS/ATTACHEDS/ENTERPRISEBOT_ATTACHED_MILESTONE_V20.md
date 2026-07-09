@@ -63,6 +63,15 @@ Metricas: presupuestos por aseguradora, importes medios, distribucion de
 servicios, evolucion temporal. Solo disponible si existen registros en budgets.
 
 #### D6 - Coste de Mano de Obra (OperatorMonthlyCost) -- PENDIENTE DE IMPLEMENTAR
+
+[NOTA S010, 2026-07-09: el diseño de esta sección quedó SUSTITUIDO por
+la nota de diseño en el bloque "Pendiente en H20" más abajo en este
+mismo documento -- cambia de granularidad mensual a WorkPeriod y de
+coste desglosado a coste total del periodo (nómina + horas extra) sin
+distinguir hora ordinaria/extraordinaria. Lo que sigue en este bloque
+es el diseño ORIGINAL, ya no vigente, se deja solo como contexto
+histórico de por qué se llegó al nuevo criterio.]
+
 Metricas: coste total por maquina en un periodo, coste por familia de averia,
 coste por operario, reparto proporcional del coste mensual del operario segun
 horas trabajadas en cada maquina.
@@ -283,7 +292,8 @@ diseñadas y ejecutables de forma autónoma en cuanto él elija.
 Pendiente en H20 (desbloqueado en S009, sin orden obligatorio --
 confirmar con Miguel Ángel cuál primero):
 
-  A) Vistas de gestion de OperatorMonthlyCost:
+  A) [IMPLEMENTADO EN S010, PENDIENTE DE REWORK -- ver nota de diseño
+     abajo] Vistas de gestion de OperatorMonthlyCost:
      - OperatorMonthlyCostListView   GET  /panel/analytics/costs/
      - OperatorMonthlyCostCreateView POST /panel/analytics/costs/create/
      - OperatorMonthlyCostDeleteView DELETE /panel/analytics/costs/<pk>/
@@ -296,27 +306,79 @@ confirmar con Miguel Ángel cuál primero):
        1900-01-01 (ajuste leap year bug: restar 2 si valor > 60).
      Todas las vistas van en analytics/views.py. Rutas en analytics/urls.py
      bajo costs/. Mixin: SupervisorAccessMixin.
+     Implementado tal cual el 2026-07-08/09 (S010), clave (company,
+     worker_name, year, month). Requiere rework -- ver nota de diseño.
 
-  B) Template de gestion de costes:
+  B) [IMPLEMENTADO EN S010, PENDIENTE DE REWORK -- ver nota de diseño
+     abajo] Template de gestion de costes:
      panel/templates/panel/analytics_costs.html
      - Tabla de registros existentes (operario, mes/anyo, coste).
      - Formulario de entrada manual (select operario del mes, anyo, mes, coste).
      - Formulario de importacion Excel con preview de matching antes de confirmar.
-     - Acceso desde sidebar bajo seccion Analisis.
+     - Acceso desde sidebar bajo Administracion (abierto a SUPERVISOR/
+       WORKSHOPBOSS ademas de ADMIN desde S010, junto con Laboratorio de
+       Analisis).
+     Implementado tal cual el 2026-07-08/09 (S010). Requiere rework --
+     ver nota de diseño.
 
-  C) Dimension D6 en el laboratorio:
+  C) [SIN EMPEZAR] Dimension D6 en el laboratorio -- diseño corregido en
+     S010 (ver nota de diseño), sustituye el diseño original de mas
+     arriba en este documento (seccion "D6 - Coste de Mano de Obra"):
      - Nueva opcion 'cost' en el selector de tipo de campo de analytics_lab.html.
      - Handler _handle_cost() en AnalyticsLabDataView:
        * Cruzar WorkOrderEntryLine.delta_hours con OperatorMonthlyCost por
-         (worker_name, year, month, company).
-       * Si no hay registro de coste para un operario/mes: excluir o marcar
-         como sin datos (configurable, por defecto excluir).
-       * Calcular coste_en_maquina = (horas_en_maquina / horas_totales_mes)
-         x monthly_cost para cada combinacion (operario, maquina, mes).
+         (worker_name, WorkPeriod, company) -- NO por (year, month).
+       * Si no hay registro de coste para un operario/periodo: excluir o
+         marcar como sin datos (configurable, por defecto excluir).
+       * Calcular coste_en_maquina = (horas_en_maquina / horas_totales_periodo)
+         x coste_total_periodo para cada combinacion (operario, maquina,
+         periodo). Coste total unico por periodo (nomina + horas extra ya
+         incluidas), sin desglosar hora ordinaria vs hora extraordinaria --
+         ver nota de diseño.
        * Devolver series y tabla con columnas:
          Operario, Maquina/CdG, Periodo, Horas, Coste (EUR).
      - Actualizar col_labels en _handle_cross() para incluir coste cuando
        el campo 'cost' este activo.
+
+  ---
+
+  NOTA DE DISEÑO -- S010 (2026-07-09), criterio corregido tras conversación
+  de Miguel Ángel con Jerónimo (SUPERVISOR, contable/nóminas):
+
+  1. Granularidad: OperatorMonthlyCost pasa de clave (company,
+     worker_name, year, month) a clave (company, worker_name,
+     WorkPeriod) -- FK a ivr_config.models.WorkPeriod (periodo de
+     empleo/contrato del CompanyUser, activo o liquidado -- ver
+     ivr_config/models.py). Motivo: el taller factura/liquida por
+     periodo, no por mes natural; meses no reflejan la unidad real de
+     coste. Implica migración: sustituir los campos year/month del
+     modelo OperatorMonthlyCost por un FK a WorkPeriod (o añadirlo y
+     retirar year/month), y rehacer A) y B) en consecuencia -- el
+     formulario manual pasa de año+mes a selector de WorkPeriod del
+     operario, y el importador Excel deja de derivar year/month de la
+     columna FECHA para en su lugar resolver a qué WorkPeriod del
+     operario cae cada fecha.
+  2. Contenido del coste: el importe que se introduce (manual o Excel)
+     es el COSTE TOTAL del trabajador en ese periodo -- nómina completa
+     MÁS horas extraordinarias ya incluidas. Un único número, sin
+     desglose.
+  3. D6 NO calcula ni muestra valor de hora ordinaria ni valor de hora
+     extraordinaria por separado. El reparto es siempre sobre el coste
+     total del periodo entre el total de horas trabajadas por el
+     operario en ese periodo (fórmula ya reflejada en el diseño de C)
+     de arriba). Es decir: el "precio/hora" resultante es un precio
+     medio ya mezclado (nómina + extra), no dos tarifas distintas.
+  4. Pendiente de confirmar con Jerónimo antes de implementar (aparcado,
+     Miguel Ángel retomará esta conversación): si "horas totales del
+     operario en el periodo" son solo horas imputadas a máquina, o si
+     deben incluir también tareas sin máquina (tipo_tarea MANTENIMIENTO/
+     MEJORA/FABRICACION sin breakdown_ticket de máquina, ver H10→S010
+     backfill de tipo_tarea) -- afecta directamente al denominador de la
+     fórmula de reparto. Y qué hacer cuando un operario no tiene
+     WorkPeriod de coste informado (excluir por defecto, salvo que se
+     diga lo contrario).
+
+
 
   D) NOTA — Posible dimension D7 (coste de manipulacion de almacen),
      surgida durante el diseno del Hito 10 (S001-H10, no iniciado a
