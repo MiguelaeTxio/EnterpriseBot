@@ -47,7 +47,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from fleet.models import MachineAsset
-from ivr_config.models import Company, CompanyUser
+from ivr_config.models import Company, CompanyUser, WorkPeriod
 
 
 # ---------------------------------------------------------------------------
@@ -1783,54 +1783,91 @@ class ExportTemplate(models.Model):
 
 class OperatorMonthlyCost(models.Model):
     """
-    Stores the total monthly labour cost for a single operator within a
-    company. Used by the Analytics Laboratory to distribute operator cost
-    across machines proportionally to hours worked.
+    Stores the total labour cost for a single operator over a single
+    WorkPeriod (contract/liquidation period, ivr_config.models.WorkPeriod
+    -- not a calendar month; see Key Learning below). Used by the
+    Analytics Laboratory (H20, dimension D6) to distribute operator cost
+    across every machine_asset/centro de gasto (real machines AND
+    internal cost centres like PERSONAL, EMPRESA_ALMACEN_*) proportionally
+    to hours worked, with no special-casing between the two.
 
-    The cost figure represents the full employer cost for the month:
-    gross salary + social security + any other employer-side charges.
+    The cost figure represents the operator's TOTAL cost for the period:
+    full payroll (nómina) plus any overtime (horas extraordinarias)
+    already included as a single blended amount -- this model does not
+    distinguish an ordinary-hour rate from an overtime-hour rate.
 
-    Uniqueness is enforced at (company, worker_name, year, month) so that
-    only one cost record exists per operator per calendar month.
+    company and worker identity are NOT stored redundantly here -- both
+    are derived through work_period.company_user (company_user.company,
+    company_user.user.get_full_name()). One cost record can exist per
+    WorkPeriod (OneToOneField), which is a stronger guarantee than the
+    previous (company, worker_name, year, month) unique_together and
+    removes the risk of two records disagreeing about which operator/
+    period they represent.
+
+    Key Learning (H20, S010, 2026-07-09): redesigned from a
+    (company, worker_name, year, month) key to WorkPeriod after a
+    conversation between Miguel Ángel and Jerónimo (SUPERVISOR,
+    accounting/payroll). Calendar months don't match how the workshop
+    actually liquidates labour cost -- WorkPeriod (contract/liquidation
+    periods, open or closed) is the real unit. See the H20 annex, section
+    "NOTA DE DISEÑO -- S010", for the full design discussion.
     ---
-    Almacena el coste laboral mensual total de un operario en una empresa.
-    Usado por el Laboratorio de Analisis para repartir el coste del operario
-    entre maquinas proporcionalmente a las horas trabajadas.
+    Almacena el coste laboral total de un operario para un único
+    WorkPeriod (periodo de contrato/liquidación,
+    ivr_config.models.WorkPeriod -- no un mes natural; ver Key Learning
+    más abajo). Usado por el Laboratorio de Análisis (H20, dimensión D6)
+    para repartir el coste del operario entre todos los machine_asset/
+    centros de gasto (máquinas reales Y centros de gasto internos como
+    PERSONAL, EMPRESA_ALMACEN_*) proporcionalmente a las horas
+    trabajadas, sin distinción especial entre ambos.
 
-    El importe representa el coste total para el empresario en el mes:
-    salario bruto + seguridad social + cualquier otro cargo del empleador.
+    El importe representa el coste TOTAL del operario para el periodo:
+    nómina completa más horas extraordinarias ya incluidas como un único
+    importe mezclado -- este modelo no distingue tarifa de hora ordinaria
+    de tarifa de hora extraordinaria.
 
-    La unicidad se aplica a (company, worker_name, year, month) para que
-    solo exista un registro de coste por operario por mes.
+    La identidad de empresa y operario NO se guardan de forma redundante
+    aquí -- ambas se derivan a través de work_period.company_user
+    (company_user.company, company_user.user.get_full_name()). Solo puede
+    existir un registro de coste por WorkPeriod (OneToOneField), una
+    garantía más fuerte que el anterior unique_together (company,
+    worker_name, year, month), y elimina el riesgo de que dos registros
+    discrepen sobre a qué operario/periodo representan.
+
+    Key Learning (H20, S010, 2026-07-09): rediseñado de una clave
+    (company, worker_name, year, month) a WorkPeriod tras una
+    conversación de Miguel Ángel con Jerónimo (SUPERVISOR,
+    contabilidad/nóminas). Los meses naturales no reflejan cómo el
+    taller liquida realmente el coste laboral -- WorkPeriod (periodos de
+    contrato/liquidación, abiertos o cerrados) es la unidad real. Ver el
+    anexo de H20, sección "NOTA DE DISEÑO -- S010", para la discusión
+    completa de diseño.
     """
 
-    company = models.ForeignKey(
-        Company,
+    work_period = models.OneToOneField(
+        WorkPeriod,
         on_delete=models.CASCADE,
-        related_name='operator_monthly_costs',
-        verbose_name='empresa',
+        related_name='operator_cost',
+        verbose_name='periodo de trabajo',
+        help_text=(
+            'Periodo de contrato/liquidación (ivr_config.WorkPeriod) al '
+            'que corresponde este coste. Un único registro de coste por '
+            'periodo -- la empresa y el operario se derivan de '
+            'work_period.company_user.'
+        ),
     )
 
-    # Matches WorkOrderEntry.worker_name -- same raw string used in parts.
-    # Coincide con WorkOrderEntry.worker_name -- misma cadena usada en partes.
-    worker_name = models.CharField(
-        max_length=200,
-        verbose_name='nombre del operario',
-    )
-
-    year = models.PositiveSmallIntegerField(
-        verbose_name='año',
-    )
-
-    month = models.PositiveSmallIntegerField(
-        verbose_name='mes',
-    )
-
-    # Full employer monthly cost in EUR / Coste mensual total del empresario en EUR.
-    monthly_cost = models.DecimalField(
+    # Full operator cost for the period in EUR: nómina + horas extra,
+    # sin desglosar. Coste total del operario para el periodo en EUR:
+    # nómina + horas extra, sin desglosar.
+    total_cost = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        verbose_name='coste mensual (EUR)',
+        verbose_name='coste total del periodo (EUR)',
+        help_text=(
+            'Coste total del operario para este periodo: nómina completa '
+            'más horas extraordinarias ya incluidas en un único importe.'
+        ),
     )
 
     # Audit timestamps / Marcas de tiempo de auditoria.
@@ -1844,10 +1881,9 @@ class OperatorMonthlyCost(models.Model):
     )
 
     class Meta:
-        unique_together = [('company', 'worker_name', 'year', 'month')]
-        ordering = ['-year', '-month', 'worker_name']
-        verbose_name = 'Coste mensual de operario'
-        verbose_name_plural = 'Costes mensuales de operarios'
+        ordering = ['-work_period__start_date']
+        verbose_name = 'Coste de operario por periodo'
+        verbose_name_plural = 'Costes de operarios por periodo'
 
     def __str__(self):
         """
@@ -1855,10 +1891,11 @@ class OperatorMonthlyCost(models.Model):
         ---
         Devuelve una representacion legible del registro de coste.
         """
+        company_user = self.work_period.company_user
         return (
-            f'{self.worker_name} '
-            f'({self.year}-{self.month:02d}): '
-            f'{self.monthly_cost} EUR'
+            f'{company_user.user.get_full_name()} '
+            f'({self.work_period}): '
+            f'{self.total_cost} EUR'
         )
 
 

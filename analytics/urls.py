@@ -19,6 +19,7 @@ from analytics.views import (
     AnalyticsProfileUpdateView,
     AnalyticsProfileCloneView,
     OperatorMonthlyCostListView,
+    OperatorMonthlyCostFormOptionsView,
     OperatorMonthlyCostCreateView,
     OperatorMonthlyCostDeleteView,
     OperatorMonthlyCostImportView,
@@ -63,6 +64,11 @@ urlpatterns = [
         "costs/",
         OperatorMonthlyCostListView.as_view(),
         name="operator_monthly_cost_list",
+    ),
+    path(
+        "costs/form-options/",
+        OperatorMonthlyCostFormOptionsView.as_view(),
+        name="operator_monthly_cost_form_options",
     ),
     path(
         "costs/create/",

@@ -42,6 +42,7 @@ from ivr_config.models import (
     PresenceStatus,
     Section,
     SectionContact,
+    WorkPeriod,
     WorkshopFamilyMapping,
 )
 from panel.mixins import (
@@ -107,23 +108,24 @@ def _parse_cost_date_cell(value):
     """
     Parses the FECHA cell of an OperatorMonthlyCost import row, which
     may arrive as a native date/datetime (Excel date-formatted cell),
-    an Excel serial number, or a 'YYYY-MM-DD' string. Returns a
-    (year, month) tuple.
+    an Excel serial number, or a 'YYYY-MM-DD' string. Returns a full
+    date object (day precision -- required to resolve which WorkPeriod
+    a row falls into, not just year/month).
     ---
     Parsea la celda FECHA de una fila de importacion de
     OperatorMonthlyCost, que puede llegar como date/datetime nativo
     (celda con formato de fecha en Excel), numero de serie de Excel,
-    o cadena 'YYYY-MM-DD'. Devuelve una tupla (year, month).
+    o cadena 'YYYY-MM-DD'. Devuelve un date completo (precision de dia
+    -- necesaria para resolver a que WorkPeriod cae la fila, no solo
+    year/month).
     """
     if isinstance(value, _datetime):
-        return value.year, value.month
+        return value.date()
     if isinstance(value, date):
-        return value.year, value.month
+        return value
     if isinstance(value, (int, float)):
-        parsed = _excel_serial_to_date(value)
-        return parsed.year, parsed.month
-    parsed = _datetime.strptime(str(value).strip(), "%Y-%m-%d")
-    return parsed.year, parsed.month
+        return _excel_serial_to_date(value)
+    return _datetime.strptime(str(value).strip(), "%Y-%m-%d").date()
 
 
 def _fuzzy_match_worker(raw_name, candidates):
@@ -167,6 +169,49 @@ def _fuzzy_match_worker(raw_name, candidates):
     if top:
         return "ambiguous", None, top
     return "no_match", None, []
+
+
+def _resolve_work_period(company_user, target_date):
+    """
+    Finds the WorkPeriod belonging to the given CompanyUser whose date
+    range covers target_date. A period with no end_date is treated as
+    open-ended (still covers any date on/after its start_date). Returns
+    the matching WorkPeriod, or None if zero or more than one period
+    covers the date (ambiguous/no coverage are both treated as
+    "not resolved" by the caller).
+    ---
+    Busca el WorkPeriod del CompanyUser dado cuyo rango de fechas cubre
+    target_date. Un periodo sin end_date se trata como abierto (cubre
+    cualquier fecha posterior o igual a su start_date). Devuelve el
+    WorkPeriod encontrado, o None si no hay ninguno o hay más de uno que
+    cubra la fecha (tanto la ambigüedad como la falta de cobertura se
+    tratan como "no resuelto" por quien llama).
+    """
+    matches = list(
+        WorkPeriod.objects.filter(
+            company_user=company_user,
+            start_date__lte=target_date,
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=target_date)
+        )
+    )
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _period_label(work_period):
+    """
+    Builds a human-readable label for a WorkPeriod: its own label if
+    set, otherwise a date-range fallback.
+    ---
+    Construye una etiqueta legible para un WorkPeriod: su propia
+    etiqueta si tiene, o un rango de fechas como alternativa.
+    """
+    if work_period.label:
+        return work_period.label
+    end = work_period.end_date.isoformat() if work_period.end_date else "abierto"
+    return f"{work_period.start_date.isoformat()} — {end}"
 
 
 # ---------------------------------------------------------------------------
@@ -2717,12 +2762,15 @@ class OperatorMonthlyCostListView(SupervisorAccessMixin, View):
 
     def get(self, request):
         """
-        Returns every cost record owned by the company, serialised
-        with monthly_cost as a string (Decimal is not JSON-native).
+        Returns every cost record owned by the company (via
+        work_period.company_user.company), serialised with operator
+        name and period label resolved, and total_cost as a string
+        (Decimal is not JSON-native).
         ---
-        Devuelve todos los registros de coste de la empresa,
-        serializados con monthly_cost como cadena (Decimal no es
-        nativo de JSON).
+        Devuelve todos los registros de coste de la empresa (vía
+        work_period.company_user.company), serializados con el nombre
+        del operario y la etiqueta del periodo resueltos, y total_cost
+        como cadena (Decimal no es nativo de JSON).
         """
         try:
             company = request.user.company_user.company
@@ -2735,16 +2783,91 @@ class OperatorMonthlyCostListView(SupervisorAccessMixin, View):
         records = [
             {
                 "id": record.pk,
-                "worker_name": record.worker_name,
-                "year": record.year,
-                "month": record.month,
-                "monthly_cost": str(record.monthly_cost),
+                "company_user_id": record.work_period.company_user_id,
+                "worker_name": (
+                    record.work_period.company_user.user.get_full_name()
+                ),
+                "work_period_id": record.work_period_id,
+                "period_label": _period_label(record.work_period),
+                "is_closed": record.work_period.is_closed,
+                "total_cost": str(record.total_cost),
             }
             for record in OperatorMonthlyCost.objects.filter(
-                company=company,
-            )
+                work_period__company_user__company=company,
+            ).select_related("work_period__company_user__user")
         ]
         return JsonResponse({"records": records})
+
+
+# ---------------------------------------------------------------------------
+# OperatorMonthlyCostFormOptionsView
+# ---------------------------------------------------------------------------
+
+class OperatorMonthlyCostFormOptionsView(SupervisorAccessMixin, View):
+    """
+    Returns every operator (CompanyUser) of the current company together
+    with their WorkPeriod list, so the manual-entry form can build the
+    cascading operator -> period selectors without further round trips.
+    GET /panel/analytics/costs/form-options/
+    ---
+    Devuelve cada operario (CompanyUser) de la empresa actual junto con
+    su lista de WorkPeriod, para que el formulario de entrada manual
+    pueda construir los selectores en cascada operario -> periodo sin
+    peticiones adicionales.
+    GET /panel/analytics/costs/form-options/
+    """
+
+    def get(self, request):
+        """
+        Builds the operators+periods payload for the current company.
+        ---
+        Construye el payload de operarios+periodos de la empresa actual.
+        """
+        try:
+            company = request.user.company_user.company
+        except AttributeError:
+            return JsonResponse(
+                {"error": "Sin perfil de empresa asociado."},
+                status=403,
+            )
+
+        operators = []
+        company_users = (
+            CompanyUser.objects
+            .filter(company=company, is_active=True)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name")
+        )
+        for company_user in company_users:
+            periods = list(
+                WorkPeriod.objects
+                .filter(company_user=company_user)
+                .order_by("-start_date")
+            )
+            if not periods:
+                continue
+            operators.append({
+                "company_user_id": company_user.pk,
+                "name": company_user.user.get_full_name(),
+                "periods": [
+                    {
+                        "work_period_id": period.pk,
+                        "label": _period_label(period),
+                        "start_date": period.start_date.isoformat(),
+                        "end_date": (
+                            period.end_date.isoformat()
+                            if period.end_date else None
+                        ),
+                        "is_closed": period.is_closed,
+                        "has_cost": OperatorMonthlyCost.objects.filter(
+                            work_period=period,
+                        ).exists(),
+                    }
+                    for period in periods
+                ],
+            })
+
+        return JsonResponse({"operators": operators})
 
 
 # ---------------------------------------------------------------------------
@@ -2754,27 +2877,25 @@ class OperatorMonthlyCostListView(SupervisorAccessMixin, View):
 class OperatorMonthlyCostCreateView(SupervisorAccessMixin, View):
     """
     Creates or updates a single OperatorMonthlyCost record via manual
-    entry (upsert on the (company, worker_name, year, month) unique
-    constraint).
+    entry (upsert on the work_period OneToOne relation).
     POST /panel/analytics/costs/create/
-    Body: {"worker_name": str, "year": int, "month": int,
-           "monthly_cost": number}
+    Body: {"work_period_id": int, "total_cost": number}
     ---
     Crea o actualiza un registro OperatorMonthlyCost mediante entrada
-    manual (upsert sobre la restriccion unica (company, worker_name,
-    year, month)).
+    manual (upsert sobre la relación OneToOne work_period).
     POST /panel/analytics/costs/create/
-    Cuerpo: {"worker_name": str, "year": int, "month": int,
-             "monthly_cost": numero}
+    Cuerpo: {"work_period_id": int, "total_cost": numero}
     """
 
     def post(self, request):
         """
-        Validates the payload and performs an update_or_create against
-        OperatorMonthlyCost scoped to the current company.
+        Validates the payload, checks the WorkPeriod belongs to the
+        current company, and performs an update_or_create against
+        OperatorMonthlyCost.
         ---
-        Valida el cuerpo de la peticion y ejecuta un update_or_create
-        sobre OperatorMonthlyCost acotado a la empresa actual.
+        Valida el cuerpo de la petición, comprueba que el WorkPeriod
+        pertenece a la empresa actual, y ejecuta un update_or_create
+        sobre OperatorMonthlyCost.
         """
         try:
             company = request.user.company_user.company
@@ -2792,40 +2913,30 @@ class OperatorMonthlyCostCreateView(SupervisorAccessMixin, View):
                 status=400,
             )
 
-        worker_name = str(payload.get("worker_name", "")).strip()
-        if not worker_name:
+        try:
+            work_period = WorkPeriod.objects.select_related(
+                "company_user__user",
+            ).get(
+                pk=payload.get("work_period_id"),
+                company_user__company=company,
+            )
+        except (WorkPeriod.DoesNotExist, ValueError, TypeError):
             return JsonResponse(
-                {"error": "El campo 'worker_name' es obligatorio."},
-                status=400,
+                {"error": "Periodo de trabajo no encontrado."},
+                status=404,
             )
 
         try:
-            year = int(payload.get("year"))
-            month = int(payload.get("month"))
-            if not 1 <= month <= 12:
-                raise ValueError
-        except (TypeError, ValueError):
-            return JsonResponse(
-                {
-                    "error": (
-                        "'year' y 'month' deben ser enteros validos "
-                        "('month' entre 1 y 12)."
-                    ),
-                },
-                status=400,
+            total_cost = Decimal(
+                str(payload.get("total_cost")).replace(",", "."),
             )
-
-        try:
-            monthly_cost = Decimal(
-                str(payload.get("monthly_cost")).replace(",", "."),
-            )
-            if monthly_cost < 0:
+            if total_cost < 0:
                 raise InvalidOperation
         except (InvalidOperation, TypeError, ValueError):
             return JsonResponse(
                 {
                     "error": (
-                        "'monthly_cost' debe ser un numero valido "
+                        "'total_cost' debe ser un numero valido "
                         "y no negativo."
                     ),
                 },
@@ -2833,18 +2944,15 @@ class OperatorMonthlyCostCreateView(SupervisorAccessMixin, View):
             )
 
         record, created = OperatorMonthlyCost.objects.update_or_create(
-            company=company,
-            worker_name=worker_name,
-            year=year,
-            month=month,
-            defaults={"monthly_cost": monthly_cost},
+            work_period=work_period,
+            defaults={"total_cost": total_cost},
         )
         return JsonResponse({
             "id": record.pk,
-            "worker_name": record.worker_name,
-            "year": record.year,
-            "month": record.month,
-            "monthly_cost": str(record.monthly_cost),
+            "work_period_id": work_period.pk,
+            "worker_name": work_period.company_user.user.get_full_name(),
+            "period_label": _period_label(work_period),
+            "total_cost": str(record.total_cost),
             "created": created,
         })
 
@@ -2865,11 +2973,11 @@ class OperatorMonthlyCostDeleteView(SupervisorAccessMixin, View):
 
     def delete(self, request, pk):
         """
-        Deletes the record with the given pk if it belongs to the
-        current company. Returns HTTP 404 if not found.
+        Deletes the record with the given pk if its work_period belongs
+        to the current company. Returns HTTP 404 if not found.
         ---
-        Elimina el registro con el pk dado si pertenece a la empresa
-        actual. Devuelve HTTP 404 si no se encuentra.
+        Elimina el registro con el pk dado si su work_period pertenece
+        a la empresa actual. Devuelve HTTP 404 si no se encuentra.
         """
         try:
             company = request.user.company_user.company
@@ -2881,7 +2989,7 @@ class OperatorMonthlyCostDeleteView(SupervisorAccessMixin, View):
 
         try:
             record = OperatorMonthlyCost.objects.get(
-                pk=pk, company=company,
+                pk=pk, work_period__company_user__company=company,
             )
         except OperatorMonthlyCost.DoesNotExist:
             return JsonResponse(
@@ -2903,14 +3011,16 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
     MECANICO, FECHA and COSTE.
 
     Phase 1 -- PREVIEW: multipart POST with a 'file' field. Parses the
-    workbook, resolves each row's (year, month) and attempts a fuzzy
-    match of MECANICO against the worker_name values recorded in
-    WorkOrderEntry for that company/month. Returns a preview payload;
-    nothing is persisted.
+    workbook and, per row: fuzzy-matches MECANICO against the real
+    CompanyUser names of the company (not free-text WorkOrderEntry
+    names -- a cleaner, bounded source now that costs are tied to real
+    operator accounts via WorkPeriod), then, for the matched operator,
+    resolves which WorkPeriod covers the row's FECHA. Returns a preview
+    payload; nothing is persisted.
 
     Phase 2 -- CONFIRM: JSON POST with a 'rows' array (each item
-    carrying the confirmed worker_name, year, month and monthly_cost).
-    Persists every row via update_or_create.
+    carrying the confirmed work_period_id and total_cost). Persists
+    every row via update_or_create.
 
     POST /panel/analytics/costs/import/
     ---
@@ -2918,14 +3028,17 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
     las columnas MECANICO, FECHA y COSTE.
 
     Fase 1 -- PREVIEW: POST multipart con campo 'file'. Parsea el
-    libro, resuelve (year, month) de cada fila e intenta un
-    emparejamiento difuso de MECANICO contra los worker_name
-    registrados en WorkOrderEntry para esa empresa/mes. Devuelve un
-    payload de previsualizacion; no persiste nada.
+    libro y, por fila: empareja MECANICO de forma difusa contra los
+    nombres reales de CompanyUser de la empresa (no contra nombres en
+    texto libre de WorkOrderEntry -- una fuente más limpia y acotada
+    ahora que los costes se atan a cuentas de operario reales vía
+    WorkPeriod), y luego, para el operario emparejado, resuelve qué
+    WorkPeriod cubre la FECHA de la fila. Devuelve un payload de
+    previsualización; no persiste nada.
 
     Fase 2 -- CONFIRM: POST JSON con un array 'rows' (cada elemento
-    lleva worker_name, year, month y monthly_cost confirmados).
-    Persiste cada fila via update_or_create.
+    lleva work_period_id y total_cost confirmados). Persiste cada fila
+    vía update_or_create.
 
     POST /panel/analytics/costs/import/
     """
@@ -2953,12 +3066,13 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
 
     def _preview(self, uploaded, company):
         """
-        Parses the uploaded workbook and returns a per-row preview
-        with the fuzzy-match status, without persisting anything.
+        Parses the uploaded workbook and returns a per-row preview with
+        the fuzzy-match and period-resolution status, without
+        persisting anything.
         ---
-        Parsea el libro subido y devuelve una previsualizacion por
-        fila con el estado del emparejamiento difuso, sin persistir
-        nada.
+        Parsea el libro subido y devuelve una previsualización por fila
+        con el estado del emparejamiento difuso y de la resolución de
+        periodo, sin persistir nada.
         """
         try:
             workbook = openpyxl.load_workbook(
@@ -2970,6 +3084,20 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
                 {"error": "No se pudo leer el fichero Excel."},
                 status=400,
             )
+
+        company_users = list(
+            CompanyUser.objects
+            .filter(company=company, is_active=True)
+            .select_related("user")
+        )
+        names_by_user = {
+            cu.pk: cu.user.get_full_name() for cu in company_users
+        }
+        users_by_pk = {cu.pk: cu for cu in company_users}
+        candidate_names = list(names_by_user.values())
+        user_by_name = {
+            name: pk for pk, name in names_by_user.items()
+        }
 
         rows_out = []
         header = None
@@ -3012,7 +3140,7 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
                 continue
 
             try:
-                year, month = _parse_cost_date_cell(fecha_raw)
+                row_date = _parse_cost_date_cell(fecha_raw)
             except (ValueError, TypeError):
                 entry["status"] = "error"
                 entry["error"] = "FECHA con formato no reconocido."
@@ -3020,7 +3148,7 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
                 continue
 
             try:
-                monthly_cost = Decimal(
+                total_cost = Decimal(
                     str(coste_raw).replace(",", "."),
                 )
             except (InvalidOperation, TypeError, ValueError):
@@ -3029,28 +3157,62 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
                 rows_out.append(entry)
                 continue
 
-            candidates = list(
-                WorkOrderEntry.objects
-                .filter(
-                    work_order__company=company,
-                    worker_name__gt="",
-                    work_date__year=year,
-                    work_date__month=month,
-                )
-                .values_list("worker_name", flat=True)
-                .distinct()
-            )
-            status, suggested, scored = _fuzzy_match_worker(
-                str(mecanico_raw).strip(), candidates,
+            status, suggested_name, scored = _fuzzy_match_worker(
+                str(mecanico_raw).strip(), candidate_names,
             )
 
+            # Build candidate list with each candidate's periods, so the
+            # frontend can offer a period picker without another call.
+            # Construir la lista de candidatos con los periodos de cada
+            # uno, para que el frontend ofrezca un selector de periodo
+            # sin otra llamada.
+            candidates_out = []
+            for item in scored:
+                cu_pk = user_by_name.get(item["worker_name"])
+                if cu_pk is None:
+                    continue
+                periods = list(
+                    WorkPeriod.objects
+                    .filter(company_user_id=cu_pk)
+                    .order_by("-start_date")
+                )
+                candidates_out.append({
+                    "company_user_id": cu_pk,
+                    "name": item["worker_name"],
+                    "score": item["score"],
+                    "periods": [
+                        {
+                            "work_period_id": p.pk,
+                            "label": _period_label(p),
+                        }
+                        for p in periods
+                    ],
+                })
+
+            resolved_period = None
+            if status == "auto":
+                cu_pk = user_by_name.get(suggested_name)
+                company_user = users_by_pk.get(cu_pk)
+                if company_user is not None:
+                    period = _resolve_work_period(company_user, row_date)
+                    if period is not None:
+                        resolved_period = {
+                            "work_period_id": period.pk,
+                            "label": _period_label(period),
+                        }
+                    else:
+                        status = "no_period"
+
             entry.update({
-                "year": year,
-                "month": month,
-                "monthly_cost": str(monthly_cost),
+                "row_date": row_date.isoformat(),
+                "total_cost": str(total_cost),
                 "status": status,
-                "suggested_worker_name": suggested,
-                "candidates": scored,
+                "suggested_company_user_id": user_by_name.get(
+                    suggested_name,
+                ),
+                "suggested_worker_name": suggested_name,
+                "candidates": candidates_out,
+                "resolved_work_period": resolved_period,
             })
             rows_out.append(entry)
 
@@ -3058,11 +3220,11 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
 
     def _confirm(self, request, company):
         """
-        Persists the confirmed rows via update_or_create, scoped to
-        the current company.
+        Persists the confirmed rows via update_or_create, checking each
+        WorkPeriod belongs to the current company.
         ---
-        Persiste las filas confirmadas via update_or_create, acotadas
-        a la empresa actual.
+        Persiste las filas confirmadas vía update_or_create,
+        comprobando que cada WorkPeriod pertenece a la empresa actual.
         """
         try:
             payload = _json.loads(request.body)
@@ -3088,41 +3250,31 @@ class OperatorMonthlyCostImportView(SupervisorAccessMixin, View):
         errors = []
 
         for index, row in enumerate(rows):
-            worker_name = str(row.get("worker_name", "")).strip()
-
-            if not worker_name:
+            try:
+                work_period = WorkPeriod.objects.get(
+                    pk=row.get("work_period_id"),
+                    company_user__company=company,
+                )
+            except (WorkPeriod.DoesNotExist, ValueError, TypeError):
                 errors.append(
-                    {"row": index, "error": "worker_name vacio."},
+                    {"row": index, "error": "work_period_id invalido."},
                 )
                 continue
             try:
-                year = int(row.get("year"))
-                month = int(row.get("month"))
-                if not 1 <= month <= 12:
-                    raise ValueError
-            except (TypeError, ValueError):
-                errors.append(
-                    {"row": index, "error": "year/month invalidos."},
+                total_cost = Decimal(
+                    str(row.get("total_cost")).replace(",", "."),
                 )
-                continue
-            try:
-                monthly_cost = Decimal(
-                    str(row.get("monthly_cost")).replace(",", "."),
-                )
-                if monthly_cost < 0:
+                if total_cost < 0:
                     raise InvalidOperation
             except (InvalidOperation, TypeError, ValueError):
                 errors.append(
-                    {"row": index, "error": "monthly_cost invalido."},
+                    {"row": index, "error": "total_cost invalido."},
                 )
                 continue
 
             _, created = OperatorMonthlyCost.objects.update_or_create(
-                company=company,
-                worker_name=worker_name,
-                year=year,
-                month=month,
-                defaults={"monthly_cost": monthly_cost},
+                work_period=work_period,
+                defaults={"total_cost": total_cost},
             )
             if created:
                 created_count += 1

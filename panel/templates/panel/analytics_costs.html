@@ -1,25 +1,31 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/analytics_costs.html #}
 {#                                                                                       #}
-{# Operator monthly cost management page -- Hito 20, pendiente A/B.                    #}
+{# Operator cost management page -- Hito 20, pendiente A/B, reworked S010 (2026-07-09)  #}
+{# to key costs by WorkPeriod instead of (year, month) -- see H20 annex, "NOTA DE       #}
+{# DISEÑO -- S010".                                                                     #}
 {#   Shell page: no server-side data, everything loaded client-side via fetch()        #}
 {#   against the OperatorMonthlyCost* JSON endpoints (analytics app).                  #}
-{#   Card 1: existing records table.                                                   #}
-{#   Card 2: manual entry form (upsert).                                               #}
-{#   Card 3: Excel import in two phases (preview + confirm), with fuzzy-match          #}
-{#   resolution for ambiguous/no-match rows.                                           #}
+{#   Card 1: existing records table (operario, periodo, coste).                        #}
+{#   Card 2: manual entry form -- cascading operario -> periodo selectors (upsert).    #}
+{#   Card 3: Excel import in two phases (preview + confirm), fuzzy-matching MECANICO   #}
+{#   against real CompanyUser names and resolving FECHA to a WorkPeriod.               #}
 {#                                                                                       #}
-{# Pagina de gestion de coste mensual de operarios -- Hito 20, pendiente A/B.           #}
+{# Pagina de gestion de coste de operarios -- Hito 20, pendiente A/B, rehecha en S010   #}
+{# (2026-07-09) para usar WorkPeriod en vez de (year, month) -- ver anexo H20, "NOTA    #}
+{# DE DISEÑO -- S010".                                                                  #}
 {#   Pagina contenedora: sin datos server-side, todo se carga en el cliente via         #}
 {#   fetch() contra los endpoints JSON de OperatorMonthlyCost* (app analytics).         #}
-{#   Tarjeta 1: tabla de registros existentes.                                         #}
-{#   Tarjeta 2: formulario de alta manual (upsert).                                    #}
-{#   Tarjeta 3: importacion Excel en dos fases (preview + confirm), con resolucion      #}
-{#   de emparejamiento difuso para filas ambiguas/sin coincidencia.                    #}
+{#   Tarjeta 1: tabla de registros existentes (operario, periodo, coste).              #}
+{#   Tarjeta 2: formulario de alta manual -- selectores en cascada operario -> periodo  #}
+{#   (upsert).                                                                          #}
+{#   Tarjeta 3: importacion Excel en dos fases (preview + confirm), emparejando         #}
+{#   MECANICO de forma difusa contra nombres reales de CompanyUser y resolviendo        #}
+{#   FECHA a un WorkPeriod.                                                             #}
 {% extends "panel/base.html" %}
 
 {% block title %}Costes de operarios{% endblock %}
 
-{% block page_title %}Costes mensuales de operarios{% endblock %}
+{% block page_title %}Costes de operarios por periodo{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-0 costs-container">
@@ -31,7 +37,7 @@
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-light border-bottom py-2 px-4 d-flex align-items-center justify-content-between">
             <span class="fw-semibold text-sm">
-                <i class="bi bi-cash-coin me-2 text-muted"></i>Registros de coste mensual
+                <i class="bi bi-cash-coin me-2 text-muted"></i>Registros de coste por periodo
             </span>
             <span class="badge bg-secondary" id="costs-count-badge">0</span>
         </div>
@@ -40,9 +46,9 @@
                 <thead class="table-light">
                     <tr>
                         <th class="px-4 text-sm fw-semibold">Operario</th>
-                        <th class="text-sm fw-semibold">Año</th>
-                        <th class="text-sm fw-semibold">Mes</th>
-                        <th class="text-sm fw-semibold">Coste (EUR)</th>
+                        <th class="text-sm fw-semibold">Periodo</th>
+                        <th class="text-sm fw-semibold">Estado</th>
+                        <th class="text-sm fw-semibold">Coste total (EUR)</th>
                         <th class="text-sm fw-semibold">Acciones</th>
                     </tr>
                 </thead>
@@ -58,8 +64,8 @@
     </div>
 
     {# ------------------------------------------------------------------ #}
-    {# Manual entry form                                                    #}
-    {# Formulario de entrada manual                                        #}
+    {# Manual entry form -- cascading operario -> periodo                  #}
+    {# Formulario de entrada manual -- cascada operario -> periodo         #}
     {# ------------------------------------------------------------------ #}
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-light border-bottom py-2 px-4">
@@ -73,40 +79,24 @@
                     <label class="form-label text-sm fw-semibold mb-1">
                         Operario <span class="text-danger">*</span>
                     </label>
-                    <input type="text" id="costs-manual-worker"
-                           class="form-control form-control-sm"
-                           placeholder="Ej: ANTONIO FONTALBA SERON">
+                    <select id="costs-manual-operator"
+                            class="form-select form-select-sm"
+                            onchange="costsOnOperatorChange()">
+                        <option value="">-- Selecciona operario --</option>
+                    </select>
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-12 col-md-4">
                     <label class="form-label text-sm fw-semibold mb-1">
-                        Año <span class="text-danger">*</span>
+                        Periodo <span class="text-danger">*</span>
                     </label>
-                    <input type="number" id="costs-manual-year"
-                           class="form-control form-control-sm"
-                           min="2020" max="2100">
-                </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">
-                        Mes <span class="text-danger">*</span>
-                    </label>
-                    <select id="costs-manual-month" class="form-select form-select-sm">
-                        <option value="1">Enero</option>
-                        <option value="2">Febrero</option>
-                        <option value="3">Marzo</option>
-                        <option value="4">Abril</option>
-                        <option value="5">Mayo</option>
-                        <option value="6">Junio</option>
-                        <option value="7">Julio</option>
-                        <option value="8">Agosto</option>
-                        <option value="9">Septiembre</option>
-                        <option value="10">Octubre</option>
-                        <option value="11">Noviembre</option>
-                        <option value="12">Diciembre</option>
+                    <select id="costs-manual-period"
+                            class="form-select form-select-sm" disabled>
+                        <option value="">-- Elige un operario primero --</option>
                     </select>
                 </div>
                 <div class="col-6 col-md-2">
                     <label class="form-label text-sm fw-semibold mb-1">
-                        Coste (EUR) <span class="text-danger">*</span>
+                        Coste total (EUR) <span class="text-danger">*</span>
                     </label>
                     <input type="number" id="costs-manual-cost"
                            class="form-control form-control-sm"
@@ -120,6 +110,11 @@
                     </button>
                 </div>
             </div>
+            <p class="text-sm text-muted mt-2 mb-0">
+                El coste total incluye nómina completa más horas
+                extraordinarias ya sumadas -- un único importe, sin
+                desglose de hora ordinaria/extraordinaria.
+            </p>
             <div id="costs-manual-feedback" class="text-sm mt-2"></div>
         </div>
     </div>
@@ -138,10 +133,11 @@
             <p class="text-sm text-muted mb-3">
                 El fichero debe tener las columnas <code>MECANICO</code>,
                 <code>FECHA</code> (fecha de Excel o formato AAAA-MM-DD) y
-                <code>COSTE</code>. Cada operario se emparejará
-                automáticamente con los nombres reales registrados en los
-                partes de trabajo de ese mes; las coincidencias dudosas se
-                muestran para que las confirmes antes de guardar nada.
+                <code>COSTE</code>. Cada operario se empareja de forma
+                automática contra los operarios reales de la empresa, y la
+                fecha se resuelve contra sus periodos de trabajo; las
+                coincidencias dudosas o sin periodo se muestran para que
+                las confirmes antes de guardar nada.
             </p>
             <div class="row g-3 align-items-end mb-3">
                 <div class="col-12 col-md-6">
@@ -166,9 +162,10 @@
                             <tr>
                                 <th class="text-sm fw-semibold">Fila</th>
                                 <th class="text-sm fw-semibold">Mecánico (Excel)</th>
-                                <th class="text-sm fw-semibold">Periodo</th>
+                                <th class="text-sm fw-semibold">Fecha</th>
                                 <th class="text-sm fw-semibold">Coste</th>
                                 <th class="text-sm fw-semibold">Operario asignado</th>
+                                <th class="text-sm fw-semibold">Periodo asignado</th>
                                 <th class="text-sm fw-semibold">Estado</th>
                             </tr>
                         </thead>
@@ -192,17 +189,19 @@
 
 <script>
 /* ================================================================
-   EnterpriseBot -- Gestion de costes mensuales de operarios (H20-B)
+   EnterpriseBot -- Gestion de costes de operarios por periodo (H20-B,
+   rehecha S010 2026-07-09 -- clave WorkPeriod en vez de year/month).
    JS puro, sin dependencias adicionales.
    ================================================================ */
 
 const COSTS_CSRF = document.getElementById('costs-csrf').value;
 
-const COSTS_MONTH_NAMES = {
-    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
-    5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
-    9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre',
-};
+// Operators + their periods, loaded once on page load, shared by both
+// the manual form and the import preview's per-row selectors.
+// Operarios + sus periodos, cargados una vez al iniciar la pagina,
+// compartidos por el formulario manual y los selectores por fila del
+// preview de importacion.
+let costsOperators = [];
 
 // Last preview response, kept in memory to build the confirm payload.
 // Ultima respuesta de preview, guardada en memoria para construir el
@@ -211,6 +210,7 @@ let costsLastPreview = [];
 
 document.addEventListener('DOMContentLoaded', function () {
     costsLoadRecords();
+    costsLoadFormOptions();
 });
 
 // ----------------------------------------------------------------
@@ -236,12 +236,15 @@ function costsLoadRecords() {
             return;
         }
         body.innerHTML = records.map(function (rec) {
+            const stateBadge = rec.is_closed
+                ? '<span class="badge bg-secondary">Liquidado</span>'
+                : '<span class="badge bg-success">Activo</span>';
             return (
                 '<tr>' +
                 '<td class="px-4 text-sm">' + costsEscape(rec.worker_name) + '</td>' +
-                '<td class="text-sm">' + rec.year + '</td>' +
-                '<td class="text-sm">' + (COSTS_MONTH_NAMES[rec.month] || rec.month) + '</td>' +
-                '<td class="text-sm">' + costsEscape(rec.monthly_cost) + '</td>' +
+                '<td class="text-sm">' + costsEscape(rec.period_label) + '</td>' +
+                '<td class="text-sm">' + stateBadge + '</td>' +
+                '<td class="text-sm">' + costsEscape(rec.total_cost) + '</td>' +
                 '<td class="text-sm">' +
                 '<button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" ' +
                 'onclick="costsDeleteRecord(' + rec.id + ')" title="Eliminar">' +
@@ -273,19 +276,72 @@ function costsDeleteRecord(pk) {
 }
 
 // ----------------------------------------------------------------
+// Form options -- operators + periods, and the manual form cascade
+// Opciones de formulario -- operarios + periodos, y la cascada del
+// formulario manual
+// ----------------------------------------------------------------
+
+function costsLoadFormOptions() {
+    fetch('/panel/analytics/costs/form-options/', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        costsOperators = data.operators || [];
+        const select = document.getElementById('costs-manual-operator');
+        select.innerHTML = '<option value="">-- Selecciona operario --</option>' +
+            costsOperators.map(function (op) {
+                return '<option value="' + op.company_user_id + '">' +
+                    costsEscape(op.name) + '</option>';
+            }).join('');
+    })
+    .catch(function () {
+        // Silent -- el formulario manual queda vacio pero la pagina
+        // sigue usable para el resto de funciones.
+    });
+}
+
+function costsOnOperatorChange() {
+    const operatorId = document.getElementById('costs-manual-operator').value;
+    const periodSelect = document.getElementById('costs-manual-period');
+
+    if (!operatorId) {
+        periodSelect.innerHTML = '<option value="">-- Elige un operario primero --</option>';
+        periodSelect.disabled = true;
+        return;
+    }
+
+    const operator = costsOperators.find(function (op) {
+        return String(op.company_user_id) === String(operatorId);
+    });
+    const periods = operator ? operator.periods : [];
+
+    if (!periods.length) {
+        periodSelect.innerHTML = '<option value="">-- Sin periodos para este operario --</option>';
+        periodSelect.disabled = true;
+        return;
+    }
+
+    periodSelect.innerHTML = periods.map(function (p) {
+        const suffix = p.has_cost ? ' (ya tiene coste)' : '';
+        return '<option value="' + p.work_period_id + '">' +
+            costsEscape(p.label) + suffix + '</option>';
+    }).join('');
+    periodSelect.disabled = false;
+}
+
+// ----------------------------------------------------------------
 // Manual entry -- Alta manual
 // ----------------------------------------------------------------
 
 function costsSaveManual() {
-    const worker = document.getElementById('costs-manual-worker').value.trim();
-    const year = document.getElementById('costs-manual-year').value;
-    const month = document.getElementById('costs-manual-month').value;
+    const workPeriodId = document.getElementById('costs-manual-period').value;
     const cost = document.getElementById('costs-manual-cost').value;
     const feedback = document.getElementById('costs-manual-feedback');
 
-    if (!worker || !year || !cost) {
+    if (!workPeriodId || !cost) {
         feedback.innerHTML = (
-            '<span class="text-danger">Rellena operario, año y coste.</span>'
+            '<span class="text-danger">Elige operario, periodo e importe.</span>'
         );
         return;
     }
@@ -298,10 +354,8 @@ function costsSaveManual() {
             'X-CSRFToken': COSTS_CSRF,
         },
         body: JSON.stringify({
-            worker_name: worker,
-            year: parseInt(year, 10),
-            month: parseInt(month, 10),
-            monthly_cost: cost,
+            work_period_id: parseInt(workPeriodId, 10),
+            total_cost: cost,
         }),
     })
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
@@ -313,9 +367,9 @@ function costsSaveManual() {
             return;
         }
         feedback.innerHTML = '<span class="text-success">Guardado correctamente.</span>';
-        document.getElementById('costs-manual-worker').value = '';
         document.getElementById('costs-manual-cost').value = '';
         costsLoadRecords();
+        costsLoadFormOptions();
     })
     .catch(function () {
         feedback.innerHTML = '<span class="text-danger">Error de red al guardar.</span>';
@@ -379,22 +433,21 @@ function costsRenderPreview() {
                 '<tr class="table-danger">' +
                 '<td class="text-sm">' + row.row_index + '</td>' +
                 '<td class="text-sm">' + costsEscape(row.mecanico_raw) + '</td>' +
-                '<td class="text-sm" colspan="3">' + costsEscape(row.error) + '</td>' +
+                '<td class="text-sm" colspan="4">' + costsEscape(row.error) + '</td>' +
                 '<td class="text-sm"><span class="badge bg-danger">Error</span></td>' +
                 '</tr>'
             );
         }
-
-        const period = COSTS_MONTH_NAMES[row.year && row.month ? row.month : 0]
-            ? (COSTS_MONTH_NAMES[row.month] + ' ' + row.year)
-            : (row.month + '/' + row.year);
 
         let badge = '';
         let rowClass = '';
         if (row.status === 'auto') {
             badge = '<span class="badge bg-success">Automático</span>';
         } else if (row.status === 'ambiguous') {
-            badge = '<span class="badge bg-warning text-dark">Revisar</span>';
+            badge = '<span class="badge bg-warning text-dark">Revisar operario</span>';
+            rowClass = 'table-warning';
+        } else if (row.status === 'no_period') {
+            badge = '<span class="badge bg-warning text-dark">Sin periodo</span>';
             rowClass = 'table-warning';
         } else {
             badge = '<span class="badge bg-secondary">Sin coincidencia</span>';
@@ -402,45 +455,73 @@ function costsRenderPreview() {
         }
 
         const candidates = row.candidates || [];
-        let selectHtml = '<select class="form-select form-select-sm" ' +
-            'id="costs-preview-select-' + idx + '" ' +
-            'onchange="costsTogglePreviewManual(' + idx + ')">';
+        let operatorSelectHtml = '<select class="form-select form-select-sm" ' +
+            'id="costs-preview-operator-' + idx + '" ' +
+            'onchange="costsOnPreviewOperatorChange(' + idx + ')">';
+        operatorSelectHtml += '<option value="">-- Elige operario --</option>';
         candidates.forEach(function (c) {
-            const selected = (c.worker_name === row.suggested_worker_name) ? ' selected' : '';
-            selectHtml += '<option value="' + costsEscape(c.worker_name) + '"' + selected + '>' +
-                costsEscape(c.worker_name) + ' (' + c.score + ')</option>';
+            const selected = (c.company_user_id === row.suggested_company_user_id) ? ' selected' : '';
+            operatorSelectHtml += '<option value="' + c.company_user_id + '"' + selected + '>' +
+                costsEscape(c.name) + ' (' + c.score + ')</option>';
         });
-        const manualSelected = !candidates.length ? ' selected' : '';
-        selectHtml += '<option value="__manual__"' + manualSelected + '>' +
-            'Otro / escribir manualmente...</option>';
-        selectHtml += '</select>';
+        operatorSelectHtml += '</select>';
 
-        const manualValue = costsEscape((row.mecanico_raw || '').toString().toUpperCase());
-        const manualDisplay = candidates.length ? 'none' : 'block';
-        const manualInput = '<input type="text" class="form-control form-control-sm mt-1" ' +
-            'id="costs-preview-manual-' + idx + '" value="' + manualValue + '" ' +
-            'style="display:' + manualDisplay + '" ' +
-            'placeholder="Nombre del operario">';
+        let periodSelectHtml = '<select class="form-select form-select-sm mt-1" ' +
+            'id="costs-preview-period-' + idx + '">';
+        const initialOperator = candidates.find(function (c) {
+            return c.company_user_id === row.suggested_company_user_id;
+        });
+        const initialPeriods = initialOperator ? initialOperator.periods : [];
+        if (!initialPeriods.length) {
+            periodSelectHtml += '<option value="">-- Sin periodos --</option>';
+        } else {
+            periodSelectHtml += initialPeriods.map(function (p) {
+                const selected = (
+                    row.resolved_work_period &&
+                    p.work_period_id === row.resolved_work_period.work_period_id
+                ) ? ' selected' : '';
+                return '<option value="' + p.work_period_id + '"' + selected + '>' +
+                    costsEscape(p.label) + '</option>';
+            }).join('');
+        }
+        periodSelectHtml += '</select>';
 
         return (
-            '<tr class="' + rowClass + '">' +
+            '<tr class="' + rowClass + '" data-row-idx="' + idx + '">' +
             '<td class="text-sm">' + row.row_index + '</td>' +
             '<td class="text-sm">' + costsEscape(row.mecanico_raw) + '</td>' +
-            '<td class="text-sm">' + period + '</td>' +
-            '<td class="text-sm">' + costsEscape(row.monthly_cost) + '</td>' +
-            '<td class="text-sm">' + selectHtml + manualInput + '</td>' +
+            '<td class="text-sm">' + costsEscape(row.row_date) + '</td>' +
+            '<td class="text-sm">' + costsEscape(row.total_cost) + '</td>' +
+            '<td class="text-sm">' + operatorSelectHtml + '</td>' +
+            '<td class="text-sm">' + periodSelectHtml + '</td>' +
             '<td class="text-sm">' + badge + '</td>' +
             '</tr>'
         );
     }).join('');
 }
 
-// Show/hide the manual text input depending on the selected option.
-// Muestra/oculta el input manual segun la opcion seleccionada.
-function costsTogglePreviewManual(idx) {
-    const select = document.getElementById('costs-preview-select-' + idx);
-    const manual = document.getElementById('costs-preview-manual-' + idx);
-    manual.style.display = (select.value === '__manual__') ? 'block' : 'none';
+// When the operator select changes for a preview row, rebuild that
+// row's period select from the chosen candidate's own periods.
+// Cuando cambia el select de operario de una fila del preview,
+// reconstruye el select de periodo de esa fila con los periodos del
+// candidato elegido.
+function costsOnPreviewOperatorChange(idx) {
+    const row = costsLastPreview[idx];
+    const operatorId = document.getElementById('costs-preview-operator-' + idx).value;
+    const periodSelect = document.getElementById('costs-preview-period-' + idx);
+
+    const candidate = (row.candidates || []).find(function (c) {
+        return String(c.company_user_id) === String(operatorId);
+    });
+    const periods = candidate ? candidate.periods : [];
+
+    if (!periods.length) {
+        periodSelect.innerHTML = '<option value="">-- Sin periodos --</option>';
+        return;
+    }
+    periodSelect.innerHTML = periods.map(function (p) {
+        return '<option value="' + p.work_period_id + '">' + costsEscape(p.label) + '</option>';
+    }).join('');
 }
 
 // ----------------------------------------------------------------
@@ -453,18 +534,11 @@ function costsConfirmImport() {
 
     costsLastPreview.forEach(function (row, idx) {
         if (row.status === 'error') { return; }
-        const select = document.getElementById('costs-preview-select-' + idx);
-        let workerName = select.value;
-        if (workerName === '__manual__') {
-            const manual = document.getElementById('costs-preview-manual-' + idx);
-            workerName = manual.value.trim();
-        }
-        if (!workerName) { return; }
+        const periodSelect = document.getElementById('costs-preview-period-' + idx);
+        if (!periodSelect || !periodSelect.value) { return; }
         rows.push({
-            worker_name: workerName,
-            year: row.year,
-            month: row.month,
-            monthly_cost: row.monthly_cost,
+            work_period_id: parseInt(periodSelect.value, 10),
+            total_cost: row.total_cost,
         });
     });
 
@@ -501,6 +575,7 @@ function costsConfirmImport() {
         document.getElementById('costs-import-file').value = '';
         costsLastPreview = [];
         costsLoadRecords();
+        costsLoadFormOptions();
     })
     .catch(function () {
         feedback.innerHTML = '<span class="text-danger">Error de red al confirmar.</span>';
@@ -523,6 +598,6 @@ function costsEscape(value) {
 <style>
     /* Costs management container max-width
        Anchura maxima del contenedor de gestion de costes */
-    .costs-container { max-width: 1100px; }
+    .costs-container { max-width: 1200px; }
 </style>
 {% endblock %}
