@@ -1535,22 +1535,21 @@ class VoiceOrchestrationService:
                                 # Responder a Gemini con el resultado de la tool para
                                 # que continúe la conversación con el nuevo contexto.
                                 try:
-                                    await session.send_client_content(
-                                        turns=types.Content(
-                                            role="tool",
-                                            parts=[
-                                                types.Part(
-                                                    function_response=types.FunctionResponse(
-                                                        name="route_to_section",
-                                                        response={
-                                                            "success": success,
-                                                            "section_id": section_id,
-                                                        },
-                                                    )
-                                                )
-                                            ],
-                                        ),
-                                        turn_complete=True,
+                                    # H17 FIX (2026-07-09): la Live API exige responder
+                                    # a un tool_call con session.send_tool_response() —
+                                    # send_client_content(role="tool") no es el metodo
+                                    # documentado y deja la sesion sin avanzar de turno.
+                                    # El id del function_call original es obligatorio
+                                    # para que Gemini correlacione la respuesta.
+                                    await session.send_tool_response(
+                                        function_responses=types.FunctionResponse(
+                                            id=fn_call.id,
+                                            name="route_to_section",
+                                            response={
+                                                "success": success,
+                                                "section_id": section_id,
+                                            },
+                                        )
                                     )
                                     logger.info(
                                         f"[ESTRATEGIA-B] tool_response route_to_section "
@@ -1650,22 +1649,16 @@ class VoiceOrchestrationService:
                                 # Respond to Gemini with tool_response.
                                 # Responder a Gemini con tool_response.
                                 try:
-                                    await session.send_client_content(
-                                        turns=types.Content(
-                                            role="tool",
-                                            parts=[
-                                                types.Part(
-                                                    function_response=types.FunctionResponse(
-                                                        name="submit_captured_data",
-                                                        response={
-                                                            "success": True,
-                                                            "section_id": _section_id_cap,
-                                                        },
-                                                    )
-                                                )
-                                            ],
-                                        ),
-                                        turn_complete=True,
+                                    # H17 FIX (2026-07-09): ver nota en route_to_section.
+                                    await session.send_tool_response(
+                                        function_responses=types.FunctionResponse(
+                                            id=fn_call.id,
+                                            name="submit_captured_data",
+                                            response={
+                                                "success": True,
+                                                "section_id": _section_id_cap,
+                                            },
+                                        )
                                     )
                                     logger.info(
                                         "[PASO-7] tool_response submit_captured_data "
@@ -1966,23 +1959,20 @@ class VoiceOrchestrationService:
                                 # Respond to Gemini with tool_response including ticket code.
                                 # Responder a Gemini con tool_response incluyendo el código del ticket.
                                 try:
-                                    await session.send_client_content(
-                                        turns=types.Content(
-                                            role="tool",
-                                            parts=[
-                                                types.Part(
-                                                    function_response=types.FunctionResponse(
-                                                        name="report_breakdown",
-                                                        response={
-                                                            "success": _breakdown_ticket_code is not None,
-                                                            "ticket_code": _breakdown_ticket_code or "",
-                                                            "location_needed": not _at_base,
-                                                        },
-                                                    )
-                                                )
-                                            ],
-                                        ),
-                                        turn_complete=True,
+                                    # H17 FIX (2026-07-09): ver nota en route_to_section.
+                                    # Bug diagnosticado en S010 el 2026-07-09: sin este
+                                    # fix, la llamada quedaba muda tras crear el ticket
+                                    # hasta que Twilio cortaba por inactividad.
+                                    await session.send_tool_response(
+                                        function_responses=types.FunctionResponse(
+                                            id=fn_call.id,
+                                            name="report_breakdown",
+                                            response={
+                                                "success": _breakdown_ticket_code is not None,
+                                                "ticket_code": _breakdown_ticket_code or "",
+                                                "location_needed": not _at_base,
+                                            },
+                                        )
                                     )
                                     logger.info(
                                         f"[H03-BREAKDOWN] tool_response report_breakdown "
@@ -2060,19 +2050,13 @@ class VoiceOrchestrationService:
                                 # Respond to Gemini so it can proceed with farewell.
                                 # Responder a Gemini para que pueda continuar con la despedida.
                                 try:
-                                    await session.send_client_content(
-                                        turns=types.Content(
-                                            role="tool",
-                                            parts=[
-                                                types.Part(
-                                                    function_response=types.FunctionResponse(
-                                                        name="submit_call_summary",
-                                                        response={"success": True},
-                                                    )
-                                                )
-                                            ],
-                                        ),
-                                        turn_complete=True,
+                                    # H17 FIX (2026-07-09): ver nota en route_to_section.
+                                    await session.send_tool_response(
+                                        function_responses=types.FunctionResponse(
+                                            id=fn_call.id,
+                                            name="submit_call_summary",
+                                            response={"success": True},
+                                        )
                                     )
                                     logger.info("[H03-SUMMARY] tool_response submit_call_summary enviado.")
                                 except Exception as cs_tr_exc:
@@ -2109,22 +2093,16 @@ class VoiceOrchestrationService:
                                 # fija antes de llamar a _execute_transfer() que establece
                                 # session_active=False.
                                 try:
-                                    await session.send_client_content(
-                                        turns=types.Content(
-                                            role="tool",
-                                            parts=[
-                                                types.Part(
-                                                    function_response=types.FunctionResponse(
-                                                        name="transfer_to_section_contact",
-                                                        response={
-                                                            "success": True,
-                                                            "section_id": section_id,
-                                                        },
-                                                    )
-                                                )
-                                            ],
-                                        ),
-                                        turn_complete=True,
+                                    # H17 FIX (2026-07-09): ver nota en route_to_section.
+                                    await session.send_tool_response(
+                                        function_responses=types.FunctionResponse(
+                                            id=fn_call.id,
+                                            name="transfer_to_section_contact",
+                                            response={
+                                                "success": True,
+                                                "section_id": section_id,
+                                            },
+                                        )
                                     )
                                     logger.info(
                                         f"[PASO-39] tool_response transfer_to_section_contact "
