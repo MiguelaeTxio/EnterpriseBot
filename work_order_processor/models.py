@@ -1888,16 +1888,11 @@ class OperatorMonthlyCost(models.Model):
     def __str__(self):
         """
         Returns a human-readable representation of the cost record.
+        WorkPeriod.__str__ already embeds the operator's name, so it is
+        not repeated here to avoid duplication.
         ---
         Devuelve una representacion legible del registro de coste.
+        WorkPeriod.__str__ ya incluye el nombre del operario, por lo que
+        no se repite aquí para evitar duplicación.
         """
-        company_user = self.work_period.company_user
-        return (
-            f'{company_user.user.get_full_name()} '
-            f'({self.work_period}): '
-            f'{self.total_cost} EUR'
-        )
-
-
-
-
+        return f'{self.work_period}: {self.total_cost} EUR'
