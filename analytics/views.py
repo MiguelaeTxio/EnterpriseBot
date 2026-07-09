@@ -43,6 +43,7 @@ from ivr_config.models import (
     Section,
     SectionContact,
     WorkPeriod,
+    WorkPeriodGroup,
     WorkshopFamilyMapping,
 )
 from panel.mixins import (
@@ -632,6 +633,37 @@ class AnalyticsLabView(SupervisorAccessMixin, View):
                 .order_by("company_code")
             )
 
+        # WorkPeriodGroup list for the "Por periodo" date-range shortcut
+        # (H20, S010 2026-07-09). Company-wide periods, not per-operator
+        # WorkPeriod -- see H20 annex design note. Serialised via
+        # json.dumps (not the bare-list-repr convention used by the
+        # other selectors above) because it carries date and boolean
+        # values, which Python's repr() would render as invalid JS
+        # (datetime.date(...), True/False).
+        # ---
+        # Lista de WorkPeriodGroup de la empresa para el atajo "Por
+        # periodo" del rango de fechas (H20, S010 2026-07-09). Periodos
+        # de ámbito empresa, no WorkPeriod por operario -- ver nota de
+        # diseño del anexo H20. Serializada con json.dumps (no la
+        # convención de lista-a-secas usada arriba para los demás
+        # selectores) porque lleva fechas y booleanos, que el repr() de
+        # Python renderizaria como JS invalido (datetime.date(...),
+        # True/False).
+        period_groups = _json.dumps([
+            {
+                "id": g.pk,
+                "label": g.label,
+                "start_date": g.start_date.isoformat(),
+                "end_date": (
+                    g.end_date.isoformat() if g.end_date else None
+                ),
+                "is_closed": g.is_closed,
+            }
+            for g in WorkPeriodGroup.objects.filter(
+                company=company,
+            ).order_by("-start_date")
+        ])
+
         return render(request, self.template_name, {
             "company": company,
             "company_user": company_user,
@@ -663,6 +695,7 @@ class AnalyticsLabView(SupervisorAccessMixin, View):
             "wo_sources": wo_sources,
             "or_values": or_values,
             "machine_companies": machine_companies,
+            "period_groups": period_groups,
         })
 
 

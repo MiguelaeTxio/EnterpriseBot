@@ -532,22 +532,35 @@
             {# DATE RANGE + GRANULARITY + CHART TYPE                      #}
             {# ---------------------------------------------------------- #}
             <div class="row g-2 align-items-end mt-1">
-                <div class="col-6 col-sm-4 col-md-2">
-                    <label class="form-label form-label-sm mb-1 fw-semibold">Desde</label>
-                    <input type="date" id="lab-date-from" class="form-control form-control-sm"
-                           value="{{ date_from_default }}">
+                <div class="col-6 col-sm-4 col-md-2" id="lab-daterange-wrap">
+                    <div class="row g-1">
+                        <div class="col-6">
+                            <label class="form-label form-label-sm mb-1 fw-semibold">Desde</label>
+                            <input type="date" id="lab-date-from" class="form-control form-control-sm"
+                                   value="{{ date_from_default }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label form-label-sm mb-1 fw-semibold">Hasta</label>
+                            <input type="date" id="lab-date-to" class="form-control form-control-sm"
+                                   value="{{ date_to_default }}">
+                        </div>
+                    </div>
                 </div>
-                <div class="col-6 col-sm-4 col-md-2">
-                    <label class="form-label form-label-sm mb-1 fw-semibold">Hasta</label>
-                    <input type="date" id="lab-date-to" class="form-control form-control-sm"
-                           value="{{ date_to_default }}">
+                <div class="col-6 col-sm-4 col-md-2 d-none" id="lab-period-group-wrap">
+                    <label class="form-label form-label-sm mb-1 fw-semibold">Periodo</label>
+                    <select id="lab-period-group" class="form-select form-select-sm"
+                            onchange="labOnPeriodGroupChanged()">
+                        <option value="">-- elige periodo --</option>
+                    </select>
                 </div>
                 <div class="col-12 col-sm-4 col-md-2">
                     <label class="form-label form-label-sm mb-1 fw-semibold">Agrupación</label>
-                    <select id="lab-granularity" class="form-select form-select-sm">
+                    <select id="lab-granularity" class="form-select form-select-sm"
+                            onchange="labOnGranularityChanged()">
                         <option value="month" selected>Mensual</option>
                         <option value="week">Semanal</option>
                         <option value="day">Diaria</option>
+                        <option value="by_period_group">Por periodo</option>
                     </select>
                 </div>
                 <div class="col-12 col-sm-6 col-md-2">
@@ -683,6 +696,7 @@ const LAB_MACH_TYPES    = {{ machine_types|safe }};        // ["GRUA MOVIL...", 
 const LAB_WO_SOURCES    = {{ wo_sources|safe }};           // [{key, label}, ...]
 const LAB_OR_VALUES     = {{ or_values|safe }};            // ["OR-001", ...]
 const LAB_MACH_COMPANIES   = {{ machine_companies|safe }};    // [{company_code, company_name}, ...]
+const LAB_PERIOD_GROUPS    = {{ period_groups|safe }};        // [{id, label, start_date, end_date, is_closed}, ...]
 
 const LAB_CSRF = document.getElementById('lab-csrf').value;
 
@@ -718,7 +732,54 @@ document.addEventListener('DOMContentLoaded', function () {
     labInitChart();
     labInitDivider();
     labLoadProfiles();
+    labInitPeriodGroups();
 });
+
+// ----------------------------------------------------------------
+// Period group shortcut -- "Por periodo" en Agrupacion (H20, S010)
+// Atajo de grupo de periodo -- "Por periodo" en Agrupacion (H20, S010)
+// ----------------------------------------------------------------
+
+// Populate the period select once on load from LAB_PERIOD_GROUPS.
+// Rellena el select de periodo una vez al cargar, desde LAB_PERIOD_GROUPS.
+function labInitPeriodGroups() {
+    const sel = document.getElementById('lab-period-group');
+    LAB_PERIOD_GROUPS.forEach(function (g) {
+        const opt   = document.createElement('option');
+        opt.value   = g.id;
+        const endTxt = g.end_date || 'abierto';
+        const closedTxt = g.is_closed ? ' [LIQUIDADO]' : '';
+        opt.text    = g.label + ' (' + g.start_date + ' / ' + endTxt + ')' + closedTxt;
+        sel.appendChild(opt);
+    });
+}
+
+// Toggle between the Desde/Hasta inputs and the period selector
+// depending on the chosen Agrupacion option.
+// Alterna entre los inputs Desde/Hasta y el selector de periodo segun
+// la opcion de Agrupacion elegida.
+function labOnGranularityChanged() {
+    const isPeriod = document.getElementById('lab-granularity').value === 'by_period_group';
+    document.getElementById('lab-daterange-wrap').classList.toggle('d-none', isPeriod);
+    document.getElementById('lab-period-group-wrap').classList.toggle('d-none', !isPeriod);
+    if (isPeriod) { labOnPeriodGroupChanged(); }
+}
+
+// When a period group is chosen, fill Desde/Hasta from its date range
+// (still used internally when building the request).
+// Al elegir un grupo de periodo, rellena Desde/Hasta con su rango de
+// fechas (se siguen usando internamente al construir la peticion).
+function labOnPeriodGroupChanged() {
+    const groupId = document.getElementById('lab-period-group').value;
+    const group = LAB_PERIOD_GROUPS.find(function (g) {
+        return String(g.id) === String(groupId);
+    });
+    if (!group) { return; }
+    document.getElementById('lab-date-from').value = group.start_date;
+    document.getElementById('lab-date-to').value = (
+        group.end_date || new Date().toISOString().slice(0, 10)
+    );
+}
 
 // ----------------------------------------------------------------
 // Profile management -- Gestion de plantillas
@@ -792,8 +853,10 @@ function labLoadProfile(pk) {
         document.getElementById('lab-date-from').value = config.date_from;
     if (config.date_to)
         document.getElementById('lab-date-to').value = config.date_to;
-    if (config.granularity)
+    if (config.granularity) {
         document.getElementById('lab-granularity').value = config.granularity;
+        labOnGranularityChanged();
+    }
     if (config.chart_type)
         document.getElementById('lab-chart-type').value = config.chart_type;
 
@@ -976,8 +1039,10 @@ function labApplyConfig(config) {
         document.getElementById('lab-date-from').value = config.date_from;
     if (config.date_to)
         document.getElementById('lab-date-to').value = config.date_to;
-    if (config.granularity)
+    if (config.granularity) {
         document.getElementById('lab-granularity').value = config.granularity;
+        labOnGranularityChanged();
+    }
     if (config.chart_type)
         document.getElementById('lab-chart-type').value = config.chart_type;
     if (config.fields && config.fields.length) {
@@ -1526,7 +1591,13 @@ function labAnalyze() {
     const fields     = labCollectFields();
     const date_from  = document.getElementById('lab-date-from').value;
     const date_to    = document.getElementById('lab-date-to').value;
-    const granul     = document.getElementById('lab-granularity').value;
+    const granulRaw  = document.getElementById('lab-granularity').value;
+    // 'by_period_group' is a UI-only shortcut to prefill Desde/Hasta;
+    // the backend only understands day/week/month for bucketing.
+    // 'by_period_group' es un atajo solo de interfaz para prerellenar
+    // Desde/Hasta; el backend solo entiende day/week/month para el
+    // bucketing.
+    const granul     = granulRaw === 'by_period_group' ? 'month' : granulRaw;
     const chart_type = document.getElementById('lab-chart-type').value;
 
     // Store current params for export -- Guardar parametros para exportar
