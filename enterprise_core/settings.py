@@ -27,6 +27,28 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 # Clave de API para Google Gemini 2.0 Flash Live (Estándar de Abril de 2026)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
+# Token-gated update endpoint (mimoo_updates app). MIMOO_UPDATES_TOKEN
+# must be set in .env on the server -- if absent, the endpoint fails
+# closed (returns 404 for any token, see mimoo_updates/views.py).
+# Path defaults match the existing APK deploy location already used
+# by that app's own build workflow.
+# ---
+# Endpoint de actualizaciones protegido por token (app mimoo_updates).
+# MIMOO_UPDATES_TOKEN debe fijarse en .env en el servidor -- si falta,
+# el endpoint falla cerrado (devuelve 404 para cualquier token, ver
+# mimoo_updates/views.py). Las rutas por defecto coinciden con la
+# ubicacion de despliegue del APK que ya usa el propio workflow de
+# compilacion de esa app.
+MIMOO_UPDATES_TOKEN = os.getenv('MIMOO_UPDATES_TOKEN')
+MIMOO_APK_PATH = os.getenv(
+    'MIMOO_APK_PATH',
+    '/home/MiguelAeTxio/ANDROID/MiMoo/apk/MiMoo.apk',
+)
+MIMOO_MANIFEST_PATH = os.getenv(
+    'MIMOO_MANIFEST_PATH',
+    '/home/MiguelAeTxio/ANDROID/MiMoo/apk/manifest.json',
+)
+
 # ✅ APRIL 2026 SECURITY POLICY: Dynamic Ngrok TLD Resolution
 # Explicitly allowing .app, .dev, and .free.app for Ngrok v3 Agent compatibility.
 # POLÍTICA DE SEGURIDAD ABRIL 2026: Resolución dinámica de TLDs de Ngrok.
@@ -89,6 +111,12 @@ INSTALLED_APPS = [
     # Admin CRUD for supplier delivery notes — CRUD de administración
     # de albaranes de proveedor (Hito 10, gap 2026-07-08).
     'delivery_notes',
+    # Hidden token-gated endpoint serving a third-party mobile app's
+    # APK and version manifest for in-app update checks — endpoint
+    # oculto protegido por token que sirve el APK y el manifiesto de
+    # version de una app movil externa para su comprobacion de
+    # actualizaciones desde dentro de si misma.
+    'mimoo_updates',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
