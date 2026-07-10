@@ -13,6 +13,11 @@ app_name = 'spare_parts'
 
 urlpatterns = [
     path(
+        'delivery-notes/',
+        views.DeliveryNoteListView.as_view(),
+        name='delivery_note_list',
+    ),
+    path(
         'delivery-notes/upload/',
         views.DeliveryNoteUploadView.as_view(),
         name='delivery_note_upload',

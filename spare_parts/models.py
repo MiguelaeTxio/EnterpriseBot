@@ -312,6 +312,57 @@ class DeliveryNote(models.Model):
     def __str__(self):
         return f'{self.supplier_name} — {self.delivery_number or "s/n"}'
 
+    def assignment_progress(self):
+        """
+        Returns (state, assigned, total) describing how many of this
+        note's MACHINE-type lines have their resulting SparePartEntry
+        out of the pre-assignment limbo (status != PRE_ASSIGNED).
+        Only considers lines with assignment_type='MACHINE' that
+        already produced a SparePartEntry (i.e. the note has been
+        confirmed) -- WAREHOUSE/UNASSIGNED lines never enter the
+        limbo, so they are excluded from the count. state is one of
+        'LIMBO' (assigned == 0), 'PARTIAL' (0 < assigned < total),
+        'FULL' (assigned == total), or None if there is nothing to
+        count (unconfirmed note, or no MACHINE line at all).
+
+        Call after prefetch_related('lines__spare_part_entry') on the
+        queryset to avoid N+1 -- see DeliveryNoteListView.
+
+        ---
+
+        Devuelve (estado, asignadas, total) describiendo cuántas
+        líneas MACHINE de este albarán tienen su SparePartEntry
+        resultante ya fuera del limbo de pre-asignación (status !=
+        PRE_ASSIGNED). Solo cuenta líneas assignment_type='MACHINE'
+        que ya generaron una SparePartEntry (es decir, el albarán ya
+        se confirmó) -- las líneas WAREHOUSE/UNASSIGNED nunca entran
+        en el limbo, así que se excluyen del recuento. estado es uno
+        de 'LIMBO' (assigned == 0), 'PARTIAL' (0 < assigned < total),
+        'FULL' (assigned == total), o None si no hay nada que contar
+        (albarán sin confirmar, o ninguna línea MACHINE).
+
+        Llamar tras prefetch_related('lines__spare_part_entry') en el
+        queryset para evitar N+1 -- ver DeliveryNoteListView.
+        """
+        machine_lines = [
+            line for line in self.lines.all()
+            if line.assignment_type == 'MACHINE' and line.spare_part_entry_id
+        ]
+        total = len(machine_lines)
+        if total == 0:
+            return (None, 0, 0)
+        assigned = sum(
+            1 for line in machine_lines
+            if line.spare_part_entry.status != 'PRE_ASSIGNED'
+        )
+        if assigned == 0:
+            state = 'LIMBO'
+        elif assigned == total:
+            state = 'FULL'
+        else:
+            state = 'PARTIAL'
+        return (state, assigned, total)
+
 
 class DeliveryNoteLine(models.Model):
     """

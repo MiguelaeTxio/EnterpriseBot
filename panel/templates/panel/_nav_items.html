@@ -420,13 +420,17 @@
                                     <i class="bi bi-shop"></i>Proveedores
                                 </a>
                             </li>
-                            <li class="nav-item">
-                                <a class="nav-link {% if active_nav == 'delivery_notes_admin' %}active{% endif %}"
-                                   href="{% url 'delivery_notes:list' %}">
-                                    <i class="bi bi-receipt"></i>Albaranes
-                                </a>
-                            </li>
                         {% endif %}
+                        {# Albaranes -- CRUD sin restriccion de rol para consultar/    #}
+                        {# confirmar, confirmado por Miguel Angel (anexo H10, Bloque B #}
+                        {# punto 3, S013): WORKSHOP tambien entra, a diferencia de     #}
+                        {# Proveedores.                                               #}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'delivery_notes_admin' %}active{% endif %}"
+                               href="{% url 'spare_parts:delivery_note_list' %}">
+                                <i class="bi bi-receipt"></i>Albaranes
+                            </a>
+                        </li>
                         {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"

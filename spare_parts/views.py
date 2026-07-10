@@ -424,6 +424,98 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
         )
 
 
+class DeliveryNoteListView(CompanyUserRequiredMixin, View):
+    """
+    Lists every DeliveryNote of the current company: the CRUD listing
+    the annex asks for (H10, Bloque B punto 3). Accessible to every
+    role (ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP) -- confirmed by
+    Miguel Ángel: no role restriction to consult/confirm.
+
+    Two independent status axes are shown per row:
+      - document status (PENDING/PROCESSED/ASSIGNED) -- the existing
+        DeliveryNote.status field.
+      - assignment progress (LIMBO/PARTIAL/FULL), computed from
+        DeliveryNote.assignment_progress() -- only meaningful once
+        the note is ASSIGNED and only for its MACHINE-type lines.
+
+    Both are resolved here, not in the template (dumb templates
+    directive) -- see status_badge_class precedent in
+    panel/views_workorders.py (S012).
+
+    ---
+
+    Lista todos los DeliveryNote de la empresa actual: el listado CRUD
+    que pide el anexo (H10, Bloque B punto 3). Accesible a todos los
+    roles (ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP) -- confirmado
+    por Miguel Ángel: sin restricción de rol para consultar/confirmar.
+
+    Se muestran dos ejes de estado independientes por fila:
+      - estado del documento (PENDING/PROCESSED/ASSIGNED) -- el campo
+        DeliveryNote.status ya existente.
+      - progreso de asignación (LIMBO/PARTIAL/FULL), calculado con
+        DeliveryNote.assignment_progress() -- solo tiene sentido una
+        vez el albarán está ASSIGNED y solo para sus líneas MACHINE.
+
+    Ambos se resuelven aquí, no en la plantilla (directriz de
+    plantillas tontas) -- ver precedente status_badge_class en
+    panel/views_workorders.py (S012).
+    """
+
+    template_name = 'spare_parts/delivery_note_list.html'
+
+    _STATUS_BADGE = {
+        'PENDING': 'bg-secondary',
+        'PROCESSED': 'bg-warning text-dark',
+        'ASSIGNED': 'bg-success',
+    }
+    _PROGRESS_BADGE = {
+        'LIMBO': 'bg-danger',
+        'PARTIAL': 'bg-warning text-dark',
+        'FULL': 'bg-success',
+    }
+    _PROGRESS_LABEL = {
+        'LIMBO': 'En limbo',
+        'PARTIAL': 'Parcialmente asignado',
+        'FULL': 'Totalmente asignado',
+    }
+
+    def get(self, request):
+        company = request.user.company_user.company
+        status_filter = request.GET.get('status', '')
+
+        notes = (
+            DeliveryNote.objects
+            .filter(company=company)
+            .prefetch_related('lines__spare_part_entry')
+            .order_by('-created_at')
+        )
+        if status_filter in ('PENDING', 'PROCESSED', 'ASSIGNED'):
+            notes = notes.filter(status=status_filter)
+
+        rows = []
+        for note in notes:
+            state, assigned, total = note.assignment_progress()
+            rows.append({
+                'note': note,
+                'status_badge_class': self._STATUS_BADGE.get(
+                    note.status, 'bg-secondary',
+                ),
+                'status_display': note.get_status_display(),
+                'progress_state': state,
+                'progress_badge_class': self._PROGRESS_BADGE.get(state, ''),
+                'progress_label': self._PROGRESS_LABEL.get(state, ''),
+                'progress_assigned': assigned,
+                'progress_total': total,
+            })
+
+        return render(request, self.template_name, {
+            'company_user': request.user.company_user,
+            'active_nav': 'delivery_notes_admin',
+            'rows': rows,
+            'status_filter': status_filter,
+        })
+
+
 class SupplierListView(SupervisorAccessMixin, View):
     """
     Lists Supplier records for the current company, including
