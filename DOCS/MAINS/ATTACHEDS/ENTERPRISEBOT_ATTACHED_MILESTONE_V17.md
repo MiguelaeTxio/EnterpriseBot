@@ -157,67 +157,85 @@ define la personalidad experta con el flujo numerado 1→6 y tres reglas crític
 | S057 | 2026-06-25 | Incidencias IVR + periodos + mapa + PDF | **Prompt Alia (ivr_config/services.py STEP 4C)**: Reescritura completa del bloque alia_mechanic_context con dos fixes criticos: (1) razonamiento experto inmediato — ante fallo de senalizacion, Alia evalua riesgo sin preguntar lo que ya sabe y orienta al conductor; (2) numero WA != numero IVR — cuando conductor en ruta, texto exacto: "Le vamos a enviar un mensaje de WhatsApp al numero desde el que esta llamando." Hash en servidor: 44a4542815c4ccf398eca621c348e282. Auditado que el PUT anterior no habia persistido — verificacion por md5sum sistematizada. **Identificacion de logs**: LOG_VOICE_ORCHESTRATOR=/var/log/alwayson-log-234987.log, LOG_CELERY_WORKER=/var/log/alwayson-log-242133.log. bridge.log movido de SWAP a logs/bridge.log permanente en voice_orchestrator.py. Session variables actualizadas con LOG_BRIDGE y tabla completa de logs. **Liquidacion de periodos (WorkPeriodCloseView + WorkPeriodLockView)**: WorkPeriodCloseView: bloquea cierre si hay partes sin revisar (reviewed=False) y force_close!=1; lista operarios afectados en el error. WorkPeriodLockView: advertencia warning si periodo individual se cierra con partes sin revisar. work_period_list.html: checkbox "Liquidar igualmente" con force_close=1 en modal de cierre global. **Modal planificador rutas (_route_multileg_fragment.html)**: panel-summary movido dentro de panel-scroll; #routePlannerPanelBody como flex container; overflow-y:scroll + max-height:480px en panel-scroll — barra de desplazamiento siempre visible. **Añadir dia en partes PDF (WorkOrderEntryAddView)**: Nueva vista en views_workorders.py (POST /panel/work-orders/<wo_pk>/entries/add/) — crea WorkOrderEntry con work_date + WorkOrderEntryLine vacia (line_number=1), devuelve _entry_group_fragment.html. URL work_order_entry_add registrada en panel/urls.py. Re-export en panel/views.py. Boton "Anyadir dia" + modal fecha + JS fetch en edit.html (solo visible para is_digital=False). Borrado automatico de WorkOrderEntry en WorkOrderLineDeleteView: si entry.lines.exists()==False tras borrar linea, entry.delete(). |
 
 | S059 | 2026-06-26 | 5, 7, mejoras IVR/panel | **Paso 7 — Broadcast taller**: send_breakdown_broadcast() en WhatsAppChatService; filtra Contacts en secciones ivr_breakdown_enabled=True, excluye contact fuente; llamada desde BreakdownAgentService.get_or_create_ticket() y _create_breakdown() en vox_bridge. **Paso 5 — Geoloc post-IVR**: en _create_breakdown(), si not _at_base → envía breakdown_location_request al caller_number; en whatsapp/views.py Rama A: si is_location_msg y ticket abierto → persiste geo_lat/geo_lng en ticket y SYSTEM log. **intro.mp3**: recortada de 4,05s a 2,04s con ffmpeg; TwiML reemplazado por Pause length=1 sin Play. **Contact.first_name/last_name**: migración 0037 aplicada; fix is_internal=True en pk=17,18,28; diccionario de correcciones manuales aplicado a 16 internos; management command split_contact_names creado. **Prompt Alia**: fix _caller_display con first_name; activación desacoplada de breakdown_context (if caller_number); paso 6 con unmistakably según best practices Google; estructura de bloques restaurada (breakdown_context antes que alia_mechanic_context). **sort usuarios**: CompanyUserListView con sort server-side por username/fullname/role/status vía ?sort=&dir=. **Validación E2E**: flujo IVR completo con at_base=False validado en producción. |
+| S011 | 2026-07-09 | Incidencia duplicado WA + tool_response IVR + pulido UX + desvío H10 | **Incidencia duplicado WhatsApp — RESUELTA**: causa raíz confirmada cruzando server.log/access.log/CSV de mensajería Twilio: `WhatsAppChatService.build_history(session)` incluía el turno entrante actual (ya persistido en Paso 4 de `IncomingWhatsAppView.post()` antes de construir el historial), duplicándolo al reenviarse explícitamente vía `chat.send_message()`. Fix centralizado en `build_history()`: excluye el último mensaje de la sesión si es `IN`. Corrige las tres ramas que comparten el método (chatbot genérico, onboarding, Rama B avería sin ticket); Rama A (`BreakdownAgentService.build_history_from_log`) auditada y confirmada correcta, sin cambios. Commit `708ae59`. **Bloqueo de llamadas IVR tras `report_breakdown` — RESUELTA**: diagnosticado con `bridge.log` en crudo (ni un solo `GEMINI-RX`/`TWILIO-TX` tras el tool_call, hasta el `stop` de Twilio ~10s después). Verificado en línea contra documentación oficial de la Live API (`ai.google.dev/gemini-api/docs/live-api/tools`) y un issue idéntico en `googleapis/python-genai`/`livekit/agents#2174`: la Live API exige `session.send_tool_response(function_responses=...)` con el campo `id` del `function_call` original — el código usaba `send_client_content(role="tool")` sin `id`, método incorrecto y no documentado. Corregidos los 5 manejadores de tool_call de `vox_bridge/services.py` (route_to_section, submit_captured_data, report_breakdown, submit_call_summary, transfer_to_section_contact). Commit `013e536`. Primera llamada de avería completada de principio a fin en producción tras el fix. **Pulido UX post-validación E2E**: `SILENCE_FRAMES_TO_END_ACTIVITY` 50→30 (~1000ms→~600ms, restaurado al valor documentado en V01 — el comentario llevaba desincronizado del valor real desde hacía tiempo); prompt de Alia reforzado con REGLA INAMOVIBLE para mencionar "WhatsApp" explícitamente al pedir ubicación (el ejemplo negativo previo no bastaba, Gemini lo decía igualmente); instrucción para inferir `fault_location` de la descripción del fallo en vez de preguntarla siempre de forma redundante. Commit `de1b157`. **Desvío a H10**: modal de aviso de ticket sin cerrar en `form_entry.html` — ver nota de desvío en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`. Commit `2f9369f`. **Nueva REGLA ABSOLUTA en `com-standards`** (fuera del repo, skill de sistema): PDFs históricos vs. partes digitales nunca se mezclan — antipatrón ya localizado en `WorkOrderEditView`/`edit.html` (flag `_is_digital`), pendiente de separar en S012 (siguiente sesión). **Incidencia de sesión**: token de GitHub caducado a mitad de sesión (401 Bad credentials confirmado contra la API) — commit del modal quedó pendiente en local hasta recibir token nuevo, sin pérdida de trabajo. |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
-#### PCH EN S010 (2026-07-09) — H17 REABIERTO, PASA A EN PROGRESO
+#### CIERRE DE S011 (2026-07-09) — INCIDENCIAS DE LA REAPERTURA RESUELTAS
 
-H20 (Laboratorio de Análisis Unificado) se pausa -- pendientes A/B/C
-completados en S010, ver anexo V20 -- y H17 se reabre a petición
-explícita de Miguel Ángel al detectar una incidencia real en
-producción durante el cierre de S010. El hito se había dado por
-completado en S059; esta reapertura es exclusivamente para la
-incidencia de abajo, no implica reabrir ningún paso ya cerrado de la
-Hoja de Ruta original (sección 3).
+La reapertura de H17 en S010 (incidencia de duplicado en WhatsApp) y
+el bloqueo de llamadas IVR descubierto en la validación E2E de esa
+misma sesión quedan **resueltos y desplegados** en S011 — ver fila
+S011 en el Registro de Sesiones (sección 4) para el detalle técnico
+completo de ambos diagnósticos y fixes. El hito vuelve a quedar
+completo salvo lo que se abre a continuación, a petición explícita
+de Miguel Ángel al cierre de S011.
 
-#### INCIDENCIA PRIORITARIA — mensaje duplicado en el onboarding por WhatsApp
+#### PRÓXIMA SESIÓN (S012) — DEDICADA POR COMPLETO A TICKETS DE AVERÍA + PARTES DIGITALES + IVR
 
-Reportada por Miguel Ángel: cuando un contacto desconocido escribe al
-WhatsApp del bot diciendo que trabaja en Grúas Álvarez (arranca el
-flujo `OnboardingService`, ver S055 en el Registro de Sesiones de este
-mismo anexo -- Rama C/D de `IncomingWhatsAppView`, alta de
-`DjangoUser`+`CompanyUser`+`Contact`+`SectionContact`), el remitente
-recibe el mensaje del bot **duplicado** (dos veces).
+A petición explícita de Miguel Ángel: **toda la sesión S012 se dedica
+en exclusiva** a estos tres bloques, sin dispersión hacia otros
+hitos salvo incidencia crítica de producción. Orden sugerido —
+Miguel Ángel decide el orden real al empezar la sesión:
 
-Nada investigado todavía en esta sesión -- la sesión terminó al
-detectarse la incidencia, sin tiempo de indagar. Punto de partida para
-la próxima sesión, en orden:
+**Bloque 1 — Separación PDF históricos vs. partes digitales (REGLA
+ABSOLUTA nueva en `com-standards`, ver esa skill para el texto
+completo).** Incidencia recurrente (5ª/6ª vez que se reporta).
+Antipatrón ya localizado: `WorkOrderEditView.get()`
+(`panel/views_workorders.py`, línea ~1064) renderiza `edit.html` para
+PDFs históricos Y partes digitales a la vez, decidiéndolo con un flag
+calculado `_is_digital = work_order.source in (...)`. Objetivo de
+S012: separar por completo — `WorkOrderEditView`/`edit.html`
+exclusivos para PDFs históricos (ya terminado, solo visualización/
+edición con sus vistas propias); cualquier edición de un `WorkOrder`
+de origen digital debe usar siempre `form_entry.html` (Vía A), nunca
+`edit.html`. Revisar también `_schedule_fields_fragment.html` y
+`WorkOrderEntryAddView` por si comparten el mismo antipatrón.
+**Este bloque debe quedar totalmente resuelto en S012** — no aplazar
+más.
 
-1. Revisar los logs de Twilio (consola Twilio, o los logs propios del
-   proyecto si el envío pasa por `WhatsAppChatService` o equivalente
-   en `whatsapp/services.py`) para el número de teléfono y la fecha/
-   hora exactos del caso reportado -- confirmar si Twilio recibió y
-   procesó el webhook entrante DOS veces (reintento de Twilio por
-   timeout de respuesta, causa mas probable en integraciones webhook)
-   o si el codigo del proyecto envía la respuesta duplicada desde una
-   única recepción de webhook (bug de lógica interna).
-2. Si es reintento de Twilio: revisar el tiempo de respuesta de
-   `IncomingWhatsAppView` (Twilio reintenta si no responde 200 dentro
-   de un timeout corto) -- posible causa: la llamada a Gemini dentro
-   de `OnboardingService` bloqueando la respuesta HTTP más de lo que
-   Twilio tolera antes de reintentar. Solución típica: idempotencia
-   por `MessageSid` de Twilio (guardar los SID ya procesados y
-   descartar duplicados), o mover el procesamiento a una tarea Celery
-   asíncrona y responder 200 inmediatamente al webhook.
-3. Si es bug de lógica interna: revisar si `OnboardingService` o
-   `IncomingWhatsAppView` invocan el envío de la plantilla/mensaje de
-   respuesta más de una vez por mensaje entrante (p.ej. doble llamada
-   accidental, o una rama A/B/C/D de la bifurcación solapándose con
-   otra).
-4. No hay commit ni cambio de código todavía sobre esta incidencia --
-   empezar por el diagnóstico empírico (logs) antes de tocar nada,
-   igual que el resto del proyecto.
+**Bloque 2 — CRUD de tickets de avería, mejoras solicitadas por
+Miguel Ángel al cierre de S011:**
+1. **Responsivo para móvil.** Las vistas actuales
+   (`breakdown_ticket_list.html`, `breakdown_ticket_detail.html`,
+   `breakdown_ticket_form.html`, `breakdown_room_manage.html` en
+   `panel/templates/panel/chat/`) no se ven bien en móvil — revisar y
+   adaptar con el mismo criterio de `frontend-design` usado en el
+   resto del panel.
+2. **Color distinto para mecánicos ocupados.** Detectar "ocupado" =
+   el mecánico (`Contact` con rol WORKSHOP/WORKSHOPBOSS) está
+   asignado (`BreakdownTicket.assigned_to`) a un ticket cuyo `status`
+   no es `CLOSED`. Mostrarlo con color diferenciado en el listado/
+   vista donde corresponda (a decidir con Miguel Ángel: listado de
+   tickets, de usuarios, o ambos).
+3. **Acceso de mecánicos al CRUD de tickets desde el panel.**
+   Actualmente los mecánicos solo generan/gestionan tickets vía
+   WhatsApp o IVR — permitirles desde la propia plataforma:
+   autoasignarse un ticket, cerrarlo, y abrir uno nuevo directamente
+   desde el panel (no solo por los canales conversacionales). Revisar
+   `SupervisorAccessMixin` en `panel/chat/views_tickets.py` — el
+   acceso actual está pensado para SUPERVISOR/WORKSHOPBOSS, hay que
+   decidir con Miguel Ángel el alcance exacto de permisos para rol
+   WORKSHOP simple.
+
+**Bloque 3 — IVR para tickets de avería.** Continuar validando y
+puliendo el flujo de voz tras los fixes de S011 (tool_response,
+latencia VAD, inferencia de ubicación). Sin incidencias concretas
+reportadas todavía más allá de lo ya resuelto — a validar con nuevas
+llamadas de prueba al empezar S012, y decidir con Miguel Ángel si hay
+más ajustes de UX pendientes tras usarlo unos días en producción.
 
 ---
 
-Hito completado en S059 salvo la incidencia de arriba. Todos los pasos
-de la Hoja de Ruta original (sección 3) ejecutados y validados en
-producción -- no reabrir ninguno sin instrucción explícita.
+Todos los pasos de la Hoja de Ruta original (sección 3) siguen
+ejecutados y validados en producción -- no reabrir ninguno sin
+instrucción explícita.
 
 Incidencias menores registradas para futura atención (sin prioridad
-sobre la de arriba, no iniciar sin instrucción explícita):
+sobre los tres bloques de arriba, no iniciar sin instrucción
+explícita):
 - **views_workorders.py línea 1747**: IntegrityError duplicate entry
   en /panel/work-orders/92/lines/insert/ — bug preexistente sin resolver.
 - **SWAP en .gitignore del repo sistema** — pendiente fix.
@@ -226,3 +244,17 @@ sobre la de arriba, no iniciar sin instrucción explícita):
 - **Prompt Alia — directorio de conductores con alias**: inyectar lista
   de Contacts internos con first_name + alias en el system_instruction
   para resolución de motes en tickets — pendiente cuando haya alias en BD.
+- **`whatsapp/services.py` — Internal Server Error MySQL en
+  `OnboardingService._create_user()`** (detectado en S010, ver server.log
+  09:02:20 del 2026-07-09): fallo crudo de ejecución MySQL fuera del
+  único `try/except` de la función, probablemente conexión huérfana
+  tras reinicio de workers uWSGI. `_create_user()` carece de
+  `transaction.atomic()`. No confundir con la incidencia de duplicado
+  de S011 — son dos bugs distintos, el de MySQL sigue sin resolver.
+- **Crash recurrente "MuPDF C++ internal assert failure"** que
+  reinicia los 3 workers uWSGI cada 10-40 min (detectado en S010) —
+  inestabilidad de producción ajena a WhatsApp/IVR, sin diagnosticar
+  todavía la causa (probable pipeline PyMuPDF/fitz de H06/H08).
+- **`settings.py` sin `LOGGING` explícito** — los `logger.info()` de
+  la app (`[WHATSAPP]`/`[ONBOARDING]`) nunca llegan a `server.log`
+  (detectado en S010).

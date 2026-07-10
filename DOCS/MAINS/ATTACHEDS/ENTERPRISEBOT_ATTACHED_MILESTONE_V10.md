@@ -714,6 +714,21 @@ bloqueado ni retrasado por él.
 10. Paso 8 (M365) sigue bloqueado -- sin novedades de Miguel Ángel con
     el administrador de Grupo Álvarez en toda la sesión.
 
+### NOTA DE DESVÍO A H17 (S011)
+
+Durante S011 (2026-07-09), sesión centrada en H17, se atendió por
+desvío una petición puntual de Miguel Ángel sobre `form_entry.html`
+(Vía A, campo `WorkOrderEntryLine.ticket_closed` del Paso 4-bis de
+este mismo hito): modal de aviso cuando un bloque con ticket de
+avería asociado se guarda sin marcar «Avería resuelta — cerrar
+ticket». Detalle técnico completo, commit y decisiones en
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`, fila S011 del Registro de
+Sesiones de ese anexo. Archivos nuevos/tocados:
+`panel/templates/panel/_ticket_close_warning_modal.html` (nuevo),
+`panel/templates/panel/operator/form_entry.html`,
+`panel/static/panel/js/form_entry_modal.js`. No reabre la hoja de
+ruta de H10 — sigue íntegramente pendiente solo el Paso 8 (M365).
+
 ### NOTA DE DESVÍO A H07 (S009)
 
 Dos incidencias de producción sobre `admin_history.html`/
