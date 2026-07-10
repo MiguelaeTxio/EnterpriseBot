@@ -27,6 +27,15 @@
 {# <li> re-asserts its own inner gate when narrower than the union (see inline      #}
 {# comments).                                                                       #}
 {#                                                                                  #}
+{# REESTRUCTURACIÓN 2026-07-10 (Miguel Ángel): el subgrupo "Taller" (que tenía PDFs #}
+{# y Tickets de avería) se elimina. PDFs pasa a Administración. El antiguo          #}
+{# subgrupo "Mecánicos" se renombra a "Taller" y gana Tickets de avería. Bajo       #}
+{# "Taller Mecánico" quedan solo tres subgrupos: Centro de gasto, Almacén, Taller.  #}
+{# SIDEBAR RESTRUCTURE 2026-07-10 (Miguel Ángel): the "Taller" subgroup (which had  #}
+{# PDFs and Tickets de avería) is removed. PDFs moves to Administración. The old    #}
+{# "Mecánicos" subgroup is renamed to "Taller" and gains Tickets de avería. Under   #}
+{# "Taller Mecánico" only three subgroups remain: Centro de gasto, Almacén, Taller. #}
+{#                                                                                  #}
 {# Mapa de valores de active_nav (H12, actualizado 2026-07-08):                     #}
 {#   "dashboard"          → Inicio                           (ADMIN, SUPERVISOR, WORKSHOPBOSS) #}
 {#   "presence"           → Mi estado                        (ADMIN, SUPERVISOR, WORKSHOPBOSS) #}
@@ -42,7 +51,7 @@
 {#   "bot_management"     → Gestión del bot (WhatsApp)        (ADMIN)               #}
 {#   "operator_dashboard" → Nuevo parte                      (Taller Mecánico / Mecánicos, != ASSISTANCE) #}
 {#   "spare_parts_upload" → Subir albarán                    (Taller Mecánico / Mecánicos, WORKSHOP/ADMIN) #}
-{#   "work_orders"        → PDFs                             (Taller Mecánico / Taller)    #}
+{#   "work_orders"        → PDFs                             (Administración)      #}
 {#   "fleet"              → Centros de gasto                 (Taller Mecánico / Centro de gasto, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
 {#   "fleet_analytics"    → Analítica de centros de gasto   (Taller Mecánico / Centro de gasto) #}
 {#   "users"              → Usuarios                         (Administración)      #}
@@ -57,7 +66,7 @@
 {#   "work_order_admin_history" → Partes Digitales (vista única: sustituye a las antiguas Partes Digitales, Mis partes y Historial de operario -- eliminadas 2026-07-10) (Taller Mecánico / Mecánicos, ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP) #}
 {#   "workorder_spare_parts_catalog" → Catálogo de repuestos (Taller Mecánico / Almacén, ADMIN/SUPERVISOR -- proveedor y precio de compra) #}
 {#   "workorder_spare_parts_warehouse" → Almacén (stock)     (Taller Mecánico / Almacén, ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS -- stock, limbo y avisos de antigüedad) -- entidad DISTINTA del catálogo (Hito 10 Paso 5/6, corregido 2026-07-07) #}
-{#   "breakdown_ticket_list" → Tickets de avería             (Taller Mecánico / Taller, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{#   "breakdown_ticket_list" → Tickets de avería             (Taller Mecánico / Taller [ex-Mecánicos], ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
 {# ================================================================================ #}
 {# NOTA 2026-07-08: Taller / Centro de gasto / Almacén / Mecánicos ya NO son        #}
 {# secciones acordeón independientes -- viven como 4 subgrupos visuales (solo       #}
@@ -211,17 +220,21 @@
     {# Horarios de jornada, Categorías de ausencia, Configuración empresa  #}
     {# (solo ADMIN, pendiente de decisión sobre franja nocturna -- ver     #}
     {# nota de sesión) y Laboratorio de Análisis (solo ADMIN, movido aquí  #}
-    {# desde su propia sección "Analítica"). PDFs, Partes Digitales,       #}
+    {# desde su propia sección "Analítica"). Partes Digitales,             #}
     {# Centros de gasto, Proveedores, Albaranes y Catálogo de repuestos    #}
     {# se movieron a Taller / Centro de gasto / Almacén (ver más abajo).   #}
+    {# PDFs se trasladó aquí desde el antiguo subgrupo Taller (eliminado)  #}
+    {# 2026-07-10 a petición de Miguel Ángel.                              #}
     {# Section: Administration — ADMIN, SUPERVISOR and WORKSHOPBOSS        #}
     {# Restructured 2026-07-08: Users, Contacts, Sections, Workday         #}
     {# schedules, Absence categories, Company settings (ADMIN only,        #}
     {# pending a decision on the night-shift window -- see session note)   #}
     {# and Analytics Lab (ADMIN only, moved here from its own standalone   #}
-    {# "Analítica" section). PDFs, Digital work orders, Cost centres,      #}
+    {# "Analítica" section). Digital work orders, Cost centres,            #}
     {# Suppliers, Delivery notes and Spare parts catalog moved to Taller / #}
     {# Centro de gasto / Almacén (see below).                              #}
+    {# PDFs moved here from the old Taller subgroup (removed) 2026-07-10   #}
+    {# at Miguel Ángel's request.                                          #}
     {# ------------------------------------------------------------------ #}
     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
         <li class="nav-item sidebar-accordion-section">
@@ -238,6 +251,20 @@
             </button>
             <div class="collapse sidebar-accordion-body" id="acc-administracion">
                 <ul class="nav flex-column ps-3">
+                    {# PDFs — trasladado aquí desde el subgrupo Taller (Taller Mecánico),  #}
+                    {# eliminado 2026-07-10 a petición de Miguel Ángel. Mismo gate que      #}
+                    {# tenía allí (coincide con el de esta sección, ADMIN/SUPERVISOR/       #}
+                    {# WORKSHOPBOSS), así que no necesita guardia propia aquí dentro.       #}
+                    {# PDFs — moved here from the Taller subgroup (Taller Mecánico),        #}
+                    {# removed 2026-07-10 at Miguel Ángel's request. Same gate it had        #}
+                    {# there (matches this section's own gate, ADMIN/SUPERVISOR/            #}
+                    {# WORKSHOPBOSS), so it needs no guard of its own here.                  #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
+                           href="{% url 'panel:work_order_list' %}">
+                            <i class="bi bi-file-earmark-pdf"></i>PDFs
+                        </a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
                            href="{% url 'panel:user_list' %}">
@@ -350,24 +377,13 @@
             <div class="collapse sidebar-accordion-body" id="acc-taller-mecanico">
                 <ul class="nav flex-column ps-3">
 
-                    {# --- Subgrupo: Taller (gate: ADMIN/SUPERVISOR/WORKSHOPBOSS, sin cambios) --- #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-                        <li class="nav-item px-2 pt-1">
-                            <small class="sidebar-subgroup-label">Taller</small>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'work_orders' %}active{% endif %}"
-                               href="{% url 'panel:work_order_list' %}">
-                                <i class="bi bi-file-earmark-pdf"></i>PDFs
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
-                               href="{% url 'panel:breakdown_ticket_list' %}">
-                                <i class="bi bi-exclamation-triangle"></i>Tickets de avería
-                            </a>
-                        </li>
-                    {% endif %}
+                    {# --- Subgrupo Taller (PDFs + Tickets de avería) eliminado 2026-07-10   #}
+                    {# a petición de Miguel Ángel: PDFs pasa a Administración, Tickets de    #}
+                    {# avería pasa al subgrupo Mecánicos (renombrado a "Taller" más abajo).  #}
+                    {# --- Old "Taller" subgroup (PDFs + Tickets de avería) removed          #}
+                    {# 2026-07-10 at Miguel Ángel's request: PDFs moved to Administración,   #}
+                    {# Tickets de avería moved to the Mecánicos subgroup (renamed "Taller"    #}
+                    {# below).                                                                #}
 
                     {# --- Subgrupo: Centro de gasto (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 2 ítems, cada uno con su propio gate interior sin cambios) --- #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
@@ -429,9 +445,12 @@
                         {% endif %}
                     {% endif %}
 
-                    {# --- Subgrupo: Mecánicos (sin gate propio -- coincide con el exterior != ASSISTANCE, ya que "Nuevo parte" es visible a todos, DRIVER incluido) --- #}
+                    {# --- Subgrupo: Taller (renombrado desde "Mecánicos" 2026-07-10 a       #}
+                    {# petición de Miguel Ángel; sin gate propio en su cabecera -- coincide  #}
+                    {# con el exterior != ASSISTANCE, ya que "Nuevo parte" es visible a      #}
+                    {# todos, DRIVER incluido) --- #}
                     <li class="nav-item px-2 pt-2">
-                        <small class="sidebar-subgroup-label">Mecánicos</small>
+                        <small class="sidebar-subgroup-label">Taller</small>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'operator_dashboard' %}active{% endif %}"
@@ -465,8 +484,18 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Partes digitales eliminado del sidebar — accesible solo via URL directa si procede. #}
-                    {# Digital work orders removed from sidebar — accessible via direct URL if needed.    #}
+                    {# Tickets de avería — trasladado aquí desde el antiguo subgrupo Taller #}
+                    {# 2026-07-10 a petición de Miguel Ángel. Mismo gate que tenía allí.    #}
+                    {# Breakdown tickets — moved here from the old Taller subgroup          #}
+                    {# 2026-07-10 at Miguel Ángel's request. Same gate as before.           #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
+                               href="{% url 'panel:breakdown_ticket_list' %}">
+                                <i class="bi bi-exclamation-triangle"></i>Tickets de avería
+                            </a>
+                        </li>
+                    {% endif %}
                 </ul>
             </div>
         </li>
@@ -622,7 +651,7 @@
         'workday_schedule':         'acc-administracion',
         'absence_categories':       'acc-administracion',
         'analytics_lab':            'acc-administracion',
-        'work_orders':              'acc-taller-mecanico',
+        'work_orders':              'acc-administracion',
         'breakdown_ticket_list':    'acc-taller-mecanico',
         'fleet':                    'acc-taller-mecanico',
         'fleet_analytics':          'acc-taller-mecanico',
