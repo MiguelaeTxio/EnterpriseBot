@@ -34,14 +34,46 @@
     var zeroListEl        = document.getElementById("zero-meter-list");
     var btnZeroConfirm    = document.getElementById("btn-zero-meter-confirm");
     var btnSaveFinal      = document.getElementById("btn-confirm-save-final");
+    var ticketWarningListEl = document.getElementById("ticket-close-warning-list");
+    var btnTicketWarningContinue = document.getElementById("btn-ticket-close-warning-continue");
 
     var zeroMeterModal   = null;
     var confirmSaveModal = null;
+    var ticketWarningModal = null;
     var _pendingZeroData = {};
 
     if (typeof bootstrap !== "undefined") {
         zeroMeterModal   = new bootstrap.Modal(document.getElementById("zeroMeterModal"));
         confirmSaveModal = new bootstrap.Modal(document.getElementById("confirmSaveModal"));
+        var _ticketModalEl = document.getElementById("ticketCloseWarningModal");
+        if (_ticketModalEl) { ticketWarningModal = new bootstrap.Modal(_ticketModalEl); }
+    }
+
+    /*
+     * Detects work-order blocks that have a breakdown ticket resolved
+     * (a real fleet machine, .ticket-resolution-container got non-empty
+     * HTMX content) but whose "Avería resuelta — cerrar ticket" checkbox
+     * is left unchecked. Soft warning only — 2026-07-09, H10/H17, a
+     * petición de Miguel Ángel.
+     * Detecta bloques del parte que tienen un ticket de avería resuelto
+     * (máquina real de flota, .ticket-resolution-container recibió
+     * contenido HTMX no vacío) pero cuya casilla "Avería resuelta —
+     * cerrar ticket" está sin marcar. Solo aviso, no bloqueo.
+     */
+    function _detectOpenTickets() {
+        var open = [];
+        document.querySelectorAll(".ticket-resolution-container").forEach(function (container) {
+            if (!container.innerHTML.trim()) { return; }
+            var bIdx = container.dataset.blockIdx;
+            if (!bIdx) { return; }
+            var checkbox = document.getElementById("id_entrada_" + bIdx + "_ticket_closed");
+            if (checkbox && !checkbox.checked) {
+                var machineInput = form.querySelector('[name="entrada_' + bIdx + '_machine_raw"]');
+                var machineLabel = (machineInput && machineInput.value) ? machineInput.value : ("Bloque " + bIdx);
+                open.push({ blockIdx: bIdx, machine: machineLabel });
+            }
+        });
+        return open;
     }
 
     /*
@@ -98,6 +130,31 @@
      * Flujo principal: llamado cuando el operario pulsa "Guardar parte".
      */
     function _onSaveTrigger() {
+        var openTickets = _detectOpenTickets();
+        if (openTickets.length > 0) {
+            if (ticketWarningListEl) {
+                ticketWarningListEl.innerHTML = "";
+                openTickets.forEach(function (t) {
+                    var li = document.createElement("li");
+                    li.textContent = "Bloque " + t.blockIdx + " — " + t.machine;
+                    ticketWarningListEl.appendChild(li);
+                });
+            }
+            if (ticketWarningModal) {
+                ticketWarningModal.show();
+                return;
+            }
+        }
+        _afterTicketCheck();
+    }
+
+    /*
+     * Continues the save flow after the ticket-close warning has been
+     * shown (or skipped because there was nothing to warn about).
+     * Continúa el flujo de guardado tras mostrar (u omitir) el aviso
+     * de ticket sin cerrar.
+     */
+    function _afterTicketCheck() {
         var zeros = _detectZeroMeters();
         if (Object.keys(zeros).length > 0) {
             _pendingZeroData = zeros;
@@ -122,6 +179,13 @@
     function _showConfirmModal() {
         if (summaryEl) { summaryEl.innerHTML = _buildSummary(); }
         if (confirmSaveModal) { confirmSaveModal.show(); }
+    }
+
+    if (btnTicketWarningContinue) {
+        btnTicketWarningContinue.addEventListener("click", function () {
+            if (ticketWarningModal) { ticketWarningModal.hide(); }
+            _afterTicketCheck();
+        });
     }
 
     if (btnZeroConfirm) {

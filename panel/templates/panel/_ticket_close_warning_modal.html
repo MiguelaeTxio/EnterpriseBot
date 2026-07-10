@@ -1,0 +1,74 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_ticket_close_warning_modal.html #}
+{#                                                                                          #}
+{# Partial: warning modal shown when a work-order block has a breakdown ticket             #}
+{# associated (a real fleet machine that resolved to CREATE/ASK_REOPEN/CHOOSE in           #}
+{# workorder_spare_parts:task_ticket_resolution) but the "Avería resuelta — cerrar          #}
+{# ticket" checkbox is left unmarked. Added 2026-07-09 (H10/H17) at Miguel Ángel's         #}
+{# request, after noticing operators sometimes forget to check the box even when the       #}
+{# breakdown genuinely is fixed, leaving the ticket open indefinitely.                      #}
+{# Included via {% include %} from the operator entry templates, same pattern as           #}
+{# _zero_meter_modal.html.                                                                  #}
+{#                                                                                          #}
+{# Usage:                                                                                   #}
+{#   JS (form_entry_modal.js, _detectOpenTickets()) scans .ticket-resolution-container      #}
+{#   elements that got non-empty HTMX content (a real ticket action was resolved) and       #}
+{#   checks whether the matching entrada_{idx}_ticket_closed checkbox is unchecked. If      #}
+{#   any are found, this modal shows BEFORE the zero-meter/confirm-save chain. It is a      #}
+{#   soft warning, not a hard block — the operator can still save with the ticket left      #}
+{#   open, since not every breakdown is resolved in a single visit.                         #}
+{#                                                                                          #}
+{# Partial: modal de aviso mostrado cuando un bloque del parte tiene un ticket de           #}
+{# avería asociado pero la casilla "Avería resuelta — cerrar ticket" no está marcada.       #}
+<div class="modal fade"
+     id="ticketCloseWarningModal"
+     tabindex="-1"
+     aria-labelledby="ticketCloseWarningModalLabel"
+     aria-hidden="true"
+     data-bs-backdrop="static"
+     data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-semibold text-danger" id="ticketCloseWarningModalLabel">
+                    <i class="bi bi-tools me-2"></i>
+                    Ticket de avería sin marcar como cerrado
+                </h5>
+            </div>
+
+            <div class="modal-body pt-2">
+                <p class="mb-2">
+                    Los siguientes bloques tienen un ticket de avería asociado y la
+                    casilla <strong>«Avería resuelta — cerrar ticket»</strong> no está marcada:
+                </p>
+                {# List of block/machine pairs injected by JS before the modal opens. #}
+                {# Lista de bloque/máquina inyectada por JS antes de abrir el modal. #}
+                <ul id="ticket-close-warning-list" class="mb-3"></ul>
+
+                <div class="alert alert-warning d-flex align-items-start gap-2 mb-0 py-2">
+                    <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+                    <div class="small">
+                        Si la avería <strong>ya está resuelta</strong>, vuelve atrás y
+                        marca la casilla antes de guardar. Si <strong>todavía no lo
+                        está</strong>, puedes guardar así — el ticket seguirá abierto
+                        hasta que se cierre.
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-0 pt-0">
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
+                    <i class="bi bi-arrow-left me-1"></i>Revisar
+                </button>
+                <button type="button"
+                        id="btn-ticket-close-warning-continue"
+                        class="btn btn-danger px-4">
+                    <i class="bi bi-check-lg me-1"></i>Guardar sin cerrar el ticket
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
