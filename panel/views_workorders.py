@@ -4342,6 +4342,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
                 )
 
 
+        from work_order_processor.models import ExportTemplate as _ET
         _templates_propias = _ET.objects.filter(company_user=cu, is_global=False).order_by("-is_default", "name")
         _templates_globales = _ET.objects.filter(company=cu.company, is_global=True).order_by("name")
 
