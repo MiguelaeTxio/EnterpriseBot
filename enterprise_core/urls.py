@@ -76,9 +76,4 @@ urlpatterns = [
         'panel/albaranes/',
         include('delivery_notes.urls', namespace='delivery_notes'),
     ),
-    # Hidden token-gated APK/manifest endpoint — not linked from any
-    # menu or template, see mimoo_updates app.
-    # Endpoint oculto de APK/manifiesto protegido por token — no
-    # enlazado desde ningun menu ni plantilla, ver app mimoo_updates.
-    path('mimoo-updates/', include('mimoo_updates.urls', namespace='mimoo_updates')),
 ]
