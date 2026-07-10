@@ -158,74 +158,155 @@ define la personalidad experta con el flujo numerado 1→6 y tres reglas crític
 
 | S059 | 2026-06-26 | 5, 7, mejoras IVR/panel | **Paso 7 — Broadcast taller**: send_breakdown_broadcast() en WhatsAppChatService; filtra Contacts en secciones ivr_breakdown_enabled=True, excluye contact fuente; llamada desde BreakdownAgentService.get_or_create_ticket() y _create_breakdown() en vox_bridge. **Paso 5 — Geoloc post-IVR**: en _create_breakdown(), si not _at_base → envía breakdown_location_request al caller_number; en whatsapp/views.py Rama A: si is_location_msg y ticket abierto → persiste geo_lat/geo_lng en ticket y SYSTEM log. **intro.mp3**: recortada de 4,05s a 2,04s con ffmpeg; TwiML reemplazado por Pause length=1 sin Play. **Contact.first_name/last_name**: migración 0037 aplicada; fix is_internal=True en pk=17,18,28; diccionario de correcciones manuales aplicado a 16 internos; management command split_contact_names creado. **Prompt Alia**: fix _caller_display con first_name; activación desacoplada de breakdown_context (if caller_number); paso 6 con unmistakably según best practices Google; estructura de bloques restaurada (breakdown_context antes que alia_mechanic_context). **sort usuarios**: CompanyUserListView con sort server-side por username/fullname/role/status vía ?sort=&dir=. **Validación E2E**: flujo IVR completo con at_base=False validado en producción. |
 | S011 | 2026-07-09 | Incidencia duplicado WA + tool_response IVR + pulido UX + desvío H10 | **Incidencia duplicado WhatsApp — RESUELTA**: causa raíz confirmada cruzando server.log/access.log/CSV de mensajería Twilio: `WhatsAppChatService.build_history(session)` incluía el turno entrante actual (ya persistido en Paso 4 de `IncomingWhatsAppView.post()` antes de construir el historial), duplicándolo al reenviarse explícitamente vía `chat.send_message()`. Fix centralizado en `build_history()`: excluye el último mensaje de la sesión si es `IN`. Corrige las tres ramas que comparten el método (chatbot genérico, onboarding, Rama B avería sin ticket); Rama A (`BreakdownAgentService.build_history_from_log`) auditada y confirmada correcta, sin cambios. Commit `708ae59`. **Bloqueo de llamadas IVR tras `report_breakdown` — RESUELTA**: diagnosticado con `bridge.log` en crudo (ni un solo `GEMINI-RX`/`TWILIO-TX` tras el tool_call, hasta el `stop` de Twilio ~10s después). Verificado en línea contra documentación oficial de la Live API (`ai.google.dev/gemini-api/docs/live-api/tools`) y un issue idéntico en `googleapis/python-genai`/`livekit/agents#2174`: la Live API exige `session.send_tool_response(function_responses=...)` con el campo `id` del `function_call` original — el código usaba `send_client_content(role="tool")` sin `id`, método incorrecto y no documentado. Corregidos los 5 manejadores de tool_call de `vox_bridge/services.py` (route_to_section, submit_captured_data, report_breakdown, submit_call_summary, transfer_to_section_contact). Commit `013e536`. Primera llamada de avería completada de principio a fin en producción tras el fix. **Pulido UX post-validación E2E**: `SILENCE_FRAMES_TO_END_ACTIVITY` 50→30 (~1000ms→~600ms, restaurado al valor documentado en V01 — el comentario llevaba desincronizado del valor real desde hacía tiempo); prompt de Alia reforzado con REGLA INAMOVIBLE para mencionar "WhatsApp" explícitamente al pedir ubicación (el ejemplo negativo previo no bastaba, Gemini lo decía igualmente); instrucción para inferir `fault_location` de la descripción del fallo en vez de preguntarla siempre de forma redundante. Commit `de1b157`. **Desvío a H10**: modal de aviso de ticket sin cerrar en `form_entry.html` — ver nota de desvío en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`. Commit `2f9369f`. **Nueva REGLA ABSOLUTA en `com-standards`** (fuera del repo, skill de sistema): PDFs históricos vs. partes digitales nunca se mezclan — antipatrón ya localizado en `WorkOrderEditView`/`edit.html` (flag `_is_digital`), pendiente de separar en S012 (siguiente sesión). **Incidencia de sesión**: token de GitHub caducado a mitad de sesión (401 Bad credentials confirmado contra la API) — commit del modal quedó pendiente en local hasta recibir token nuevo, sin pérdida de trabajo. |
+| S012 | 2026-07-10 | Bloque 1 completo + ampliado, Bloque 2 punto 3, sidebar | **Bloque 1 — Separación PDF vs. digital (RESUELTA, commit `a513df7`)**: 3 enlaces corregidos (`digital_list.html` ×2, `operator/history.html` ×1) que enrutaban partes digitales a `work_order_edit`. Guardia dura añadida en `WorkOrderEditView.get()`/`post()`: cualquier `WorkOrder` DIGITAL/GENERATED se bloquea y redirige a `operator_form_edit`, sin excepción de rol ni de origen del enlace. Guardia idéntica extendida a los 7 endpoints HTMX que sostienen `edit.html` (`WorkOrderLineSaveView`, `WorkOrderEntrySaveDateView`, `WorkOrderLineInsertView`, `WorkOrderEntryAddView`, `WorkOrderLineReorderView`, `WorkOrderLineRestoreView`, `WorkOrderLineDeleteView`) — ninguno comprobaba `source`, permitiendo en teoría tocar un parte digital vía POST directo sin pasar por la vista principal. Código muerto eliminado: `SupervisorAccessMixin` ya excluía WORKSHOP desde antes de esta sesión, las ramas `_is_workshop` de `WorkOrderEditView` eran inalcanzables; eliminadas junto con el bloque `workday_gaps` en `edit.html` (exclusivo de digitales, vacío una vez blindada la vista). **Ampliación no prevista en el anexo, a petición de Miguel Ángel — unificación total de 4 vistas de historial (commit `c7b4a97`)**: `WorkOrderAdminHistoryView` ("Historial") pasa a ser la ÚNICA vista de partes digitales, renombrada "Partes Digitales"; se eliminan por completo (vista + plantilla + URL + entrada de menú, sin marcar ni ignorar) `DigitalWorkOrderListView` (antigua Partes Digitales), `history.WorkOrderHistoryListView`/`WorkOrderHistoryDetailView` (Mis partes) y `WorkOrderEntryHistoryView`/`panel:operator_history` (Historial de operario) — esta última detectada por el propio Miguel Ángel como vista fantasma sin usar en meses tras una insistencia explícita en no dejar nunca vistas "marcadas como eliminadas". Mixin cambiado a `WorkOrderFormAccessMixin` para admitir también WORKSHOP, con alcance acotado a sus propios partes (`_build_base_queryset(owner=...)`), sin selector de operario ni Marcar revisado/Eliminar, guardia de rol añadida en `post()` (el mixin ampliado dejaba sus acciones de gestión alcanzables sin ella). Filtro Estado añadido (recupera la vieja pestaña Error sin pestaña dedicada); resumen de horas extra del periodo activo trasplantado desde la vieja pestaña de `operator_history` para WORKSHOP. **Limpieza DRY/plantillas tontas a petición expresa de Miguel Ángel**: color de badge Estado movido de la plantilla a la vista (`status_badge_class`); rama muerta de dispatch PDF eliminada del enlace Editar (esta vista nunca contiene PDFs); las 3 tablas casi-idénticas de Pendientes/Revisados/Histórico extraídas a un único parcial parametrizado nuevo (`_wo_table.html`); `admin_history.html` de 2018 a ~940 líneas. **Hotfix (commit `1320a60`)**: la reescritura del bloque Períodos se dejó por el camino el import `ExportTemplate as _ET`, tumbando `/panel/work-orders/history/` en producción para cualquier rol — detectado por Miguel Ángel vía traceback de Django, corregido y verificado con `pyflakes` sobre el archivo completo. **Reorganización de sidebar (commit `f010621`)**: PDFs trasladado de Taller Mecánico a Administración; subgrupo "Mecánicos" renombrado a "Taller" y ampliado con Tickets de avería (trasladado desde el subgrupo Taller, ahora eliminado); Taller Mecánico queda con 3 subgrupos: Centro de gasto, Almacén, Taller. **Bloque 2, punto 3 — Acceso WORKSHOP a tickets de avería (commit `8c6e874`)**: guardias de rol de las 3 vistas de `chat/views_tickets.py` (lista, detalle, crear) ampliados a WORKSHOP; guardia interna de "assign" (reasignar a otro operario) dejada intacta, solo ADMIN/SUPERVISOR; botón autoasignarme ampliado a WORKSHOP en el detalle; panel de despacho por arrastre ocultado para WORKSHOP en el listado (dispara una acción que no pueden ejecutar); sidebar ampliado. **Puntos 1 y 2 del Bloque 2 (responsivo móvil, color de mecánicos ocupados) y Bloque 3 (IVR) — sin empezar**, pasan a S013 (ver hoja de ruta). |
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
-#### CIERRE DE S011 (2026-07-09) — INCIDENCIAS DE LA REAPERTURA RESUELTAS
+#### CIERRE DE S012 (2026-07-10)
 
-La reapertura de H17 en S010 (incidencia de duplicado en WhatsApp) y
-el bloqueo de llamadas IVR descubierto en la validación E2E de esa
-misma sesión quedan **resueltos y desplegados** en S011 — ver fila
-S011 en el Registro de Sesiones (sección 4) para el detalle técnico
-completo de ambos diagnósticos y fixes. El hito vuelve a quedar
-completo salvo lo que se abre a continuación, a petición explícita
-de Miguel Ángel al cierre de S011.
+Bloque 1 resuelto y ampliado muy por encima de lo previsto (ver fila
+S012 en el Registro de Sesiones, sección 4, para el detalle técnico
+completo). Del Bloque 2 solo se completó el punto 3 (acceso WORKSHOP).
+Bloque 2 puntos 1-2 y Bloque 3 completo pasan a S013, junto con
+trabajo nuevo pedido por Miguel Ángel al cierre de S012 (IVR + CRUD
+de albaranes).
 
-#### PRÓXIMA SESIÓN (S012) — DEDICADA POR COMPLETO A TICKETS DE AVERÍA + PARTES DIGITALES + IVR
+#### PRÓXIMA SESIÓN (S013)
 
-A petición explícita de Miguel Ángel: **toda la sesión S012 se dedica
-en exclusiva** a estos tres bloques, sin dispersión hacia otros
-hitos salvo incidencia crítica de producción. Orden sugerido —
-Miguel Ángel decide el orden real al empezar la sesión:
+**⚠️ Punto de partida distinto al de S012: NO hay una única prioridad
+exclusiva declarada. Miguel Ángel decide el orden real al empezar la
+sesión** entre los bloques siguientes.
 
-**Bloque 1 — Separación PDF históricos vs. partes digitales (REGLA
-ABSOLUTA nueva en `com-standards`, ver esa skill para el texto
-completo).** Incidencia recurrente (5ª/6ª vez que se reporta).
-Antipatrón ya localizado: `WorkOrderEditView.get()`
-(`panel/views_workorders.py`, línea ~1064) renderiza `edit.html` para
-PDFs históricos Y partes digitales a la vez, decidiéndolo con un flag
-calculado `_is_digital = work_order.source in (...)`. Objetivo de
-S012: separar por completo — `WorkOrderEditView`/`edit.html`
-exclusivos para PDFs históricos (ya terminado, solo visualización/
-edición con sus vistas propias); cualquier edición de un `WorkOrder`
-de origen digital debe usar siempre `form_entry.html` (Vía A), nunca
-`edit.html`. Revisar también `_schedule_fields_fragment.html` y
-`WorkOrderEntryAddView` por si comparten el mismo antipatrón.
-**Este bloque debe quedar totalmente resuelto en S012** — no aplazar
-más.
+---
 
-**Bloque 2 — CRUD de tickets de avería, mejoras solicitadas por
-Miguel Ángel al cierre de S011:**
-1. **Responsivo para móvil.** Las vistas actuales
-   (`breakdown_ticket_list.html`, `breakdown_ticket_detail.html`,
-   `breakdown_ticket_form.html`, `breakdown_room_manage.html` en
-   `panel/templates/panel/chat/`) no se ven bien en móvil — revisar y
-   adaptar con el mismo criterio de `frontend-design` usado en el
-   resto del panel.
-2. **Color distinto para mecánicos ocupados.** Detectar "ocupado" =
-   el mecánico (`Contact` con rol WORKSHOP/WORKSHOPBOSS) está
-   asignado (`BreakdownTicket.assigned_to`) a un ticket cuyo `status`
-   no es `CLOSED`. Mostrarlo con color diferenciado en el listado/
-   vista donde corresponda (a decidir con Miguel Ángel: listado de
-   tickets, de usuarios, o ambos).
-3. **Acceso de mecánicos al CRUD de tickets desde el panel.**
-   Actualmente los mecánicos solo generan/gestionan tickets vía
-   WhatsApp o IVR — permitirles desde la propia plataforma:
-   autoasignarse un ticket, cerrarlo, y abrir uno nuevo directamente
-   desde el panel (no solo por los canales conversacionales). Revisar
-   `SupervisorAccessMixin` en `panel/chat/views_tickets.py` — el
-   acceso actual está pensado para SUPERVISOR/WORKSHOPBOSS, hay que
-   decidir con Miguel Ángel el alcance exacto de permisos para rol
-   WORKSHOP simple.
+**Bloque A — IVR: fallo en la confirmación del ticket (incidencia
+nueva, reportada al cierre de S012).**
 
-**Bloque 3 — IVR para tickets de avería.** Continuar validando y
-puliendo el flujo de voz tras los fixes de S011 (tool_response,
-latencia VAD, inferencia de ubicación). Sin incidencias concretas
-reportadas todavía más allá de lo ya resuelto — a validar con nuevas
-llamadas de prueba al empezar S012, y decidir con Miguel Ángel si hay
-más ajustes de UX pendientes tras usarlo unos días en producción.
+Las pausas entre respuestas de Alia ya funcionan bien — confirmado
+explícitamente por Miguel Ángel. El fallo está localizado con
+precisión: justo cuando Alia pregunta algo del tipo "¿es correcto el
+ticket/la información?" y el conductor responde "sí", la llamada se
+queda esperando mucho tiempo sin respuesta. Miguel Ángel cree que
+coincide con el momento en que se genera/guarda el ticket. Empezar
+por `bridge.log` en crudo de una llamada de prueba reciente que
+reproduzca el fallo (mismo método que resolvió el bloqueo de S011:
+buscar el hueco entre el último `GEMINI-RX`/`TWILIO-TX` tras la
+confirmación y el siguiente evento) antes de tocar código — no asumir
+la causa. Sospechoso más probable a verificar, no a dar por bueno:
+alguna llamada bloqueante o lenta (creación de `BreakdownTicket`,
+notificación WhatsApp del ticket, broadcast a sección) ejecutada
+síncronamente dentro del manejador del tool_call que confirma el
+ticket, en `vox_bridge/services.py`.
+
+---
+
+**Bloque B — Albaranes de proveedores: async + salvaguardas + CRUD
+completo (H10 — Albaranes de Proveedores y Almacén de Repuestos,
+actualmente PAUSADO).**
+
+⚠️ **Este bloque es territorio de H10, no de H17.** Decidir con Miguel
+Ángel al empezar S013 si se reactiva H10 vía PCH (ver
+`nfs-enterprisebot-pch`) o si se atiende como desvío puntual sin mover
+el marcador `EN PROGRESO` — no se ha ejecutado ningún PCH en el cierre
+de S012 porque Miguel Ángel no lo invocó explícitamente.
+
+1. **Salvaguardas (empezar por aquí, a petición expresa de Miguel
+   Ángel):**
+   - **Formato de fecha siempre en español** (DD/MM/AAAA) en todo el
+     flujo de albaranes — sin excepción, sin importar cómo lo lea
+     Gemini del documento original.
+   - **Duplicidad de albaranes por número de albarán.** Incidencia
+     real detectada por Miguel Ángel: el mismo albarán físico se leyó
+     dos veces con fechas distintas y quedó registrado como dos
+     albaranes diferentes. El número de albarán debe ser la clave de
+     unicidad — no puede haber dos registros con el mismo número.
+     Decidir con Miguel Ángel qué hacer con los dos duplicados ya
+     existentes en producción antes de escribir la constraint.
+2. **Cambio de síncrono a asíncrono.** Flujo actual: el operario
+   envía la foto y espera a que Gemini termine de clasificar antes de
+   poder confirmar. Flujo nuevo: el operario hace la foto, la envía, y
+   ya está — Gemini la procesa en segundo plano (Celery, ya en uso en
+   el proyecto) y el albarán pasa a pendiente de confirmación cuando
+   termine.
+3. **CRUD completo de albaranes con ciclo de vida por estados.**
+   Acceso: **todos los roles** (WORKSHOP, WORKSHOPBOSS, SUPERVISOR,
+   ADMIN) pueden entrar al CRUD — sin restricción de rol para
+   consultar/confirmar. Estados del ciclo de vida, en orden:
+   1. Pendiente de que Gemini lo procese (recién subido).
+   2. Pendiente de confirmación humana (Gemini ya extrajo los datos,
+      falta que un operario/jefe de taller/supervisor/administrador
+      confirme que la extracción es correcta — da igual cuál de los
+      cuatro roles confirme).
+   3. En limbo (repuestos del albarán aún sin asignar a ningún centro
+      de gasto/máquina).
+   4. Parcialmente fuera de limbo (una parte de los repuestos del
+      albarán ya asignada, otra parte sigue en limbo) — debe
+      distinguirse visualmente en el listado.
+   5. Totalmente asignado (100% de los repuestos del albarán ya
+      asignados).
+   Revisar el modelo de datos actual de albaranes/repuestos (app
+   `delivery_notes` / `spare_parts` / `workorder_spare_parts` —
+   confirmar cuál exactamente al empezar, no asumir) para ver qué de
+   esto ya existe (el concepto de "limbo" ya aparece mencionado en
+   `com-standards`/memoria de sesiones anteriores para el almacén) y
+   qué hay que construir de cero.
+
+---
+
+**Bloque C — CRUD de tickets de avería: responsivo + color de
+mecánicos ocupados (Bloque 2, puntos 1 y 2 pendientes desde S012).**
+
+1. **Responsivo de verdad en móvil.** Confirmado por Miguel Ángel:
+   ahora mismo en móvil "se ve mal". Adaptar
+   `breakdown_ticket_list.html`, `breakdown_ticket_detail.html` y
+   `breakdown_ticket_form.html` (`panel/templates/panel/chat/`) con el
+   mismo criterio de `frontend-design` usado en el resto del panel,
+   para que funcione igual de bien en móvil, tablet y PC.
+2. **⚠️ REVERSIÓN NECESARIA — los operarios (WORKSHOP) deben ver la
+   MISMA vista que administrador/supervisor, panel de despacho
+   incluido.** Instrucción explícita y literal de Miguel Ángel al
+   cierre de S012: "que los operarios puedan ver la vista exactamente
+   igual que la de un administrador supervisor, con la parte de
+   arriba y la parte de abajo dividida en dos vistas, con los
+   operarios libres y los tickets de avería." Esto **contradice
+   directamente** lo hecho en S012 (commit `8c6e874`): el panel de
+   despacho por arrastre (`#tk-bottom`, con la lista de "Operarios" y
+   "Tickets asignables") se ocultó para WORKSHOP en
+   `breakdown_ticket_list.html` con el razonamiento de que la acción
+   "assign" que dispara sigue siendo exclusiva de ADMIN/SUPERVISOR.
+   Ese razonamiento pasa a quedar **anulado por esta nueva
+   instrucción** — S013 debe deshacer el `{% if %}` que oculta
+   `#tk-bottom` para WORKSHOP (y el guard `!divider || !operators ||
+   !bottom` en `tkInitDivider()` que se añadió como consecuencia).
+   Aclarar con Miguel Ángel al empezar S013 si además de VER el panel
+   de despacho, WORKSHOP debe poder EJECUTAR la acción "assign" que
+   dispara (reasignar tickets a otros operarios) — la instrucción dice
+   "ver la vista igual", no dice explícitamente que puedan reasignar;
+   si la respuesta es que solo deben verlo pero no poder ejecutar la
+   asignación, el guard de backend de "assign" (ADMIN/SUPERVISOR, sin
+   cambios desde S012) ya lo cubre — solo haría falta mostrar el panel
+   sin que el intento de arrastre-y-soltar de un WORKSHOP tenga
+   efecto (ahora mismo fallaría con 403 igualmente, solo hay que
+   decidir si vale con eso o si conviene deshabilitar visualmente el
+   drop para su rol).
+3. **Color distinto para mecánicos ocupados** (pendiente desde S012,
+   sin empezar): "ocupado" = el mecánico está asignado
+   (`BreakdownTicket.assigned_to`) a un ticket cuyo `status` no es
+   `CLOSED`. La tarjeta de operario en el panel de despacho ya
+   distingue "Libre"/"Ocupado" con badge (`op-busy`/`op-free`, ver
+   `breakdown_ticket_list.html`) — confirmar con Miguel Ángel si esto
+   ya cubre lo pedido o si busca un color adicional en algún otro
+   listado (usuarios, por ejemplo).
+
+---
+
+**Bloque D — IVR: validación general continuada (Bloque 3 original de
+S012, sin empezar).** Más allá del fallo puntual del Bloque A,
+continuar validando y puliendo el flujo de voz con nuevas llamadas de
+prueba, y decidir con Miguel Ángel si hay más ajustes de UX pendientes
+tras usarlo unos días en producción.
 
 ---
 
@@ -234,9 +315,14 @@ ejecutados y validados en producción -- no reabrir ninguno sin
 instrucción explícita.
 
 Incidencias menores registradas para futura atención (sin prioridad
-sobre los tres bloques de arriba, no iniciar sin instrucción
-explícita):
-- **views_workorders.py línea 1747**: IntegrityError duplicate entry
+sobre los bloques de arriba, no iniciar sin instrucción explícita):
+- **views_workorders.py — bug preexistente detectado por pyflakes en
+  S012 (sin relación con los cambios de esa sesión)**: en
+  `WorkOrderAdminExportView`, modo `export_mode="digital_full"`
+  (línea ~4887), `pk_list` y `operator_filter` se usan antes de estar
+  definidos. `NameError` en cuanto se ejercite esa ruta concreta.
+- **views_workorders.py línea 1747** (referencia previa a S012,
+  puede haber desplazado de línea): IntegrityError duplicate entry
   en /panel/work-orders/92/lines/insert/ — bug preexistente sin resolver.
 - **SWAP en .gitignore del repo sistema** — pendiente fix.
 - **Formulario Contact en panel**: first_name, last_name y alias
@@ -258,3 +344,9 @@ explícita):
 - **`settings.py` sin `LOGGING` explícito** — los `logger.info()` de
   la app (`[WHATSAPP]`/`[ONBOARDING]`) nunca llegan a `server.log`
   (detectado en S010).
+- **`digital_list.html` (eliminado en S012) tenía un desbalance
+  if/for aparente detectado por un verificador propio** — investigado
+  en S012 y confirmado como falso positivo (el verificador contaba
+  palabras dentro de un comentario Django `{# ... #}`, no código real).
+  Sin acción pendiente — nota dejada solo por si reaparece un
+  verificador similar en otro archivo.
