@@ -152,7 +152,7 @@
         <small class="text-muted fw-normal ms-2">{{ company_user.company.name }}</small>
       </span>
       <div class="d-flex align-items-center gap-1">
-        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
+        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" or company_user.role == "WORKSHOP" %}
         <a href="{% url 'panel:breakdown_ticket_create' %}" class="btn btn-sm btn-primary">
           <i class="bi bi-plus-lg me-1"></i>Nuevo ticket
         </a>
@@ -239,7 +239,18 @@
 
   {# ================================================================ #}
   {# BOTTOM — Operarios (izq.) + Divisor + Tickets asignables (dcha.) #}
+  {# Panel de despacho por arrastre — oculto para WORKSHOP: la acción  #}
+  {# "assign" que dispara sigue siendo exclusiva de ADMIN/SUPERVISOR,  #}
+  {# así que a un WORKSHOP no le sirve de nada verlo. Les basta la     #}
+  {# tabla de arriba + el detalle del ticket (autoasignar/pausar/      #}
+  {# cerrar, ya habilitado ahí para su rol).                          #}
+  {# Drag-and-drop dispatch panel — hidden for WORKSHOP: the "assign"  #}
+  {# action it triggers remains ADMIN/SUPERVISOR only, so it's of no   #}
+  {# use to a WORKSHOP user. The table above + the ticket detail page  #}
+  {# (self-assign/pause/close, already enabled there for their role)   #}
+  {# are enough for them.                                              #}
   {# ================================================================ #}
+  {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
   <div id="tk-bottom">
 
     {# ---- Operarios ---- #}
@@ -345,6 +356,7 @@
     </div>
 
   </div>{# /tk-bottom #}
+  {% endif %}
 </div>{# /tk-wrapper #}
 
 {# Modal confirmación asignación #}
@@ -390,6 +402,9 @@ function tkInitDivider() {
     var divider   = document.getElementById('tk-divider');
     var operators = document.getElementById('tk-operators');
     var bottom    = document.getElementById('tk-bottom');
+    // Panel de despacho oculto para WORKSHOP -- no hay nada que inicializar.
+    // Dispatch panel hidden for WORKSHOP -- nothing to initialize.
+    if (!divider || !operators || !bottom) return;
     var dragging  = false, startX = 0, startW = 0;
 
     divider.addEventListener('mousedown', function (e) {

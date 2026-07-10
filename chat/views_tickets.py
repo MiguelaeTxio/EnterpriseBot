@@ -11,7 +11,12 @@ BreakdownTicketDetailView — detail + actions (assign, self_assign, set_urgency
 BreakdownTicketCreateView — manual creation of BreakdownTicket from the panel.
 
 Access control: CompanyUserRequiredMixin on all views.
-ADMIN / SUPERVISOR / WORKSHOPBOSS: access to ticket management.
+ADMIN / SUPERVISOR / WORKSHOPBOSS / WORKSHOP: access to ticket
+management (WORKSHOP added 2026-07-10 at Miguel Angel's request --
+operators can create tickets, self-assign, pause and close them from
+the panel, in addition to closing them implicitly via work orders.
+Reassigning a ticket to another operator remains ADMIN/SUPERVISOR
+only, unchanged).
 ---
 Vistas de gestión de tickets del módulo de chat (Hito 14).
 Extraídas de chat/views.py para mantener el módulo enfocado y mantenible.
@@ -24,7 +29,12 @@ BreakdownTicketDetailView — detalle + acciones (asignar, autoasignar, urgencia
 BreakdownTicketCreateView — creación manual de BreakdownTicket desde el panel.
 
 Control de acceso: CompanyUserRequiredMixin en todas las vistas.
-ADMIN / SUPERVISOR / WORKSHOPBOSS: acceso a gestión de tickets.
+ADMIN / SUPERVISOR / WORKSHOPBOSS / WORKSHOP: acceso a gestión de
+tickets (WORKSHOP añadido 2026-07-10 a petición de Miguel Ángel --
+los operarios pueden crear tickets, autoasignarse, pausar y cerrarlos
+desde el panel, además de cerrarlos implícitamente vía partes de
+trabajo. Reasignar un ticket a otro operario sigue siendo exclusivo
+de ADMIN/SUPERVISOR, sin cambios).
 """
 
 import logging
@@ -42,13 +52,13 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
     """
     Lists all BreakdownTickets for the authenticated user's company,
     ordered by created_at descending. Supports optional filter: status.
-    Accessible to ADMIN, SUPERVISOR and WORKSHOPBOSS roles only.
+    Accessible to ADMIN, SUPERVISOR, WORKSHOPBOSS and WORKSHOP roles.
 
     URL: GET /panel/chat/breakdowns/tickets/
     ---
     Lista todos los BreakdownTickets de la empresa del usuario autenticado,
     ordenados por created_at descendente. Soporta filtro opcional: status.
-    Accesible solo para los roles ADMIN, SUPERVISOR y WORKSHOPBOSS.
+    Accesible para los roles ADMIN, SUPERVISOR, WORKSHOPBOSS y WORKSHOP.
 
     URL: GET /panel/chat/breakdowns/tickets/
     """
@@ -73,6 +83,7 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
+            company_user.ROLE_WORKSHOP,
         ):
             from django.http import HttpResponseForbidden
             return HttpResponseForbidden()
@@ -157,7 +168,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
       action=set_urgency    — updates urgency level.
       action=pause          — sets status=PAUSED, clears assigned_to, sets paused_at.
       action=close          — sets status=CLOSED, resolved_by, resolved_at.
-    Accessible to ADMIN, SUPERVISOR and WORKSHOPBOSS roles only.
+    Accessible to ADMIN, SUPERVISOR, WORKSHOPBOSS and WORKSHOP roles.
 
     URL: GET/POST /panel/chat/breakdowns/tickets/<pk>/
     ---
@@ -168,7 +179,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
       action=set_urgency    — actualiza el nivel de urgencia.
       action=pause          — pone PAUSED, limpia assigned_to, registra paused_at.
       action=close          — pone CLOSED, resolved_by, resolved_at.
-    Accesible solo para los roles ADMIN, SUPERVISOR y WORKSHOPBOSS.
+    Accesible para los roles ADMIN, SUPERVISOR, WORKSHOPBOSS y WORKSHOP.
 
     URL: GET/POST /panel/chat/breakdowns/tickets/<pk>/
     """
@@ -203,6 +214,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
+            company_user.ROLE_WORKSHOP,
         ):
             from django.http import HttpResponseForbidden
             return HttpResponseForbidden()
@@ -271,6 +283,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
+            company_user.ROLE_WORKSHOP,
         ):
             return HttpResponseForbidden()
 
@@ -398,8 +411,9 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
 
 class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
     """
-    Allows ADMIN, SUPERVISOR and WORKSHOPBOSS to manually create a
-    BreakdownTicket from the panel without requiring a WhatsApp interaction.
+    Allows ADMIN, SUPERVISOR, WORKSHOPBOSS and WORKSHOP to manually
+    create a BreakdownTicket from the panel without requiring a
+    WhatsApp interaction.
     The ticket is created with status=OPEN and linked directly to the company.
 
     GET  — renders the creation form.
@@ -407,8 +421,9 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
 
     URL: GET/POST /panel/chat/breakdowns/tickets/create/
     ---
-    Permite a ADMIN, SUPERVISOR y WORKSHOPBOSS crear manualmente un
-    BreakdownTicket desde el panel sin requerir interacción WhatsApp.
+    Permite a ADMIN, SUPERVISOR, WORKSHOPBOSS y WORKSHOP crear
+    manualmente un BreakdownTicket desde el panel sin requerir
+    interacción WhatsApp.
     El ticket se crea con status=OPEN vinculado directamente a la empresa.
 
     GET  — renderiza el formulario de creación.
@@ -476,6 +491,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
+            company_user.ROLE_WORKSHOP,
         ):
             from django.http import HttpResponseForbidden
             return HttpResponseForbidden()
@@ -505,6 +521,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
             company_user.ROLE_ADMIN,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
+            company_user.ROLE_WORKSHOP,
         ):
             return HttpResponseForbidden()
 

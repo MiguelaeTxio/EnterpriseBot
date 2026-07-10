@@ -122,8 +122,13 @@
       {# Acciones — solo si no está cerrado #}
       {% if ticket.status != "CLOSED" %}
 
-        {# Autoasignación — WORKSHOPBOSS #}
-        {% if company_user.role == "WORKSHOPBOSS" and ticket.assigned_to != company_user %}
+        {# Autoasignación — WORKSHOPBOSS y WORKSHOP (WORKSHOP añadido 2026-07-10 #}
+        {# a petición de Miguel Ángel: los operarios deben poder trabajar y     #}
+        {# cerrar sus propios tickets desde el panel). Anidado a propósito en   #}
+        {# vez de "A or B and C" en una sola línea, para no depender de cómo   #}
+        {# resuelva el motor de plantillas la precedencia or/and.              #}
+        {% if company_user.role == "WORKSHOPBOSS" or company_user.role == "WORKSHOP" %}
+        {% if ticket.assigned_to != company_user %}
         <div class="card border-0 shadow-sm mt-3">
           <div class="card-body">
             <form method="post">
@@ -135,6 +140,7 @@
             </form>
           </div>
         </div>
+        {% endif %}
         {% endif %}
 
         {# Asignación a operario — ADMIN y SUPERVISOR #}

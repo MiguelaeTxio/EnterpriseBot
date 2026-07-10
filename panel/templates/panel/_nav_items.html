@@ -66,7 +66,7 @@
 {#   "work_order_admin_history" → Partes Digitales (vista única: sustituye a las antiguas Partes Digitales, Mis partes y Historial de operario -- eliminadas 2026-07-10) (Taller Mecánico / Mecánicos, ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP) #}
 {#   "workorder_spare_parts_catalog" → Catálogo de repuestos (Taller Mecánico / Almacén, ADMIN/SUPERVISOR -- proveedor y precio de compra) #}
 {#   "workorder_spare_parts_warehouse" → Almacén (stock)     (Taller Mecánico / Almacén, ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS -- stock, limbo y avisos de antigüedad) -- entidad DISTINTA del catálogo (Hito 10 Paso 5/6, corregido 2026-07-07) #}
-{#   "breakdown_ticket_list" → Tickets de avería             (Taller Mecánico / Taller [ex-Mecánicos], ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
+{#   "breakdown_ticket_list" → Tickets de avería             (Taller Mecánico / Taller [ex-Mecánicos], ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP) #}
 {# ================================================================================ #}
 {# NOTA 2026-07-08: Taller / Centro de gasto / Almacén / Mecánicos ya NO son        #}
 {# secciones acordeón independientes -- viven como 4 subgrupos visuales (solo       #}
@@ -485,10 +485,14 @@
                         </li>
                     {% endif %}
                     {# Tickets de avería — trasladado aquí desde el antiguo subgrupo Taller #}
-                    {# 2026-07-10 a petición de Miguel Ángel. Mismo gate que tenía allí.    #}
+                    {# 2026-07-10 a petición de Miguel Ángel. Ampliado a WORKSHOP el mismo  #}
+                    {# día (misma petición): los operarios deben poder crear tickets y      #}
+                    {# cerrar los suyos desde el panel, además de por partes de trabajo.    #}
                     {# Breakdown tickets — moved here from the old Taller subgroup          #}
-                    {# 2026-07-10 at Miguel Ángel's request. Same gate as before.           #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                    {# 2026-07-10 at Miguel Ángel's request. Opened to WORKSHOP the same     #}
+                    {# day (same request): operators must be able to create tickets and      #}
+                    {# close their own from the panel, in addition to via work orders.       #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
                                href="{% url 'panel:breakdown_ticket_list' %}">
