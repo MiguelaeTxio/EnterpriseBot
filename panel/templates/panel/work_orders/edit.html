@@ -32,7 +32,7 @@
 {# ==================================================================================== #}
 {% extends "panel/base.html" %}
 
-{% block page_title %}{% if is_digital %}Editar parte #{{ work_order.pk }}{% else %}Editar PDF #{{ work_order.pk }}{% endif %}{% endblock %}
+{% block page_title %}Editar PDF #{{ work_order.pk }}{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -513,14 +513,10 @@ er hx-trigger="change".
         </a>
         <div>
             <h5 class="mb-0 fw-semibold">
-                {% if is_digital %}Editar parte{% else %}Editar PDF{% endif %} #{{ work_order.pk }}
+                Editar PDF #{{ work_order.pk }}
             </h5>
             <small class="text-muted">
-                {% if is_digital %}
-                    {{ work_order.worker_name|default:work_order.source_pdf.name|truncatechars:60 }}
-                {% else %}
-                    {{ work_order.source_pdf.name|truncatechars:60 }}
-                {% endif %}
+                {{ work_order.source_pdf.name|truncatechars:60 }}
             </small>
         </div>
     </div>
@@ -576,9 +572,7 @@ er hx-trigger="change".
 
 {# ------------------------------------------------------------------ #}
 {# Add day button — Botón para añadir un día nuevo al parte PDF        #}
-{# Solo visible para partes PDF_UPLOAD (is_digital=False)              #}
 {# ------------------------------------------------------------------ #}
-{% if not is_digital %}
 <div class="mt-3 mb-2">
     <button type="button"
             class="btn btn-outline-primary btn-sm"
@@ -687,83 +681,6 @@ er hx-trigger="change".
     });
 }());
 </script>
-{% endif %}
-
-
-{# ------------------------------------------------------------------ #}
-{# Workday gap incidents — Incidencias de jornada (DIGITAL/GENERATED)  #}
-{# Visible only when the part has WorkdayGap records resolved by the   #}
-{# operator during Gate 4. Empty for PDF_UPLOAD parts.                 #}
-{# Solo visible cuando el parte tiene registros WorkdayGap resueltos   #}
-{# por el operario durante Gate 4. Vacío para partes PDF_UPLOAD.       #}
-{# ------------------------------------------------------------------ #}
-{% if workday_gaps %}
-<div class="card border-0 shadow-sm mt-4">
-    <div class="card-header bg-light border-bottom py-2 px-4 d-flex align-items-center gap-2">
-        <i class="bi bi-exclamation-circle text-warning"></i>
-        <span class="fw-semibold text-sm">Incidencias de jornada</span>
-        <span class="badge bg-warning text-dark ms-1">{{ workday_gaps|length }}</span>
-    </div>
-    <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th class="px-4 text-sm fw-semibold">Tipo</th>
-                    <th class="text-sm fw-semibold">Inicio</th>
-                    <th class="text-sm fw-semibold">Fin</th>
-                    <th class="text-sm fw-semibold">Duración</th>
-                    <th class="text-sm fw-semibold">Categoría</th>
-                    <th class="text-sm fw-semibold">Nota</th>
-                    <th class="text-sm fw-semibold">Estado</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for gap in workday_gaps %}
-                <tr>
-                    <td class="px-4 text-sm">
-                        {% if gap.gap_type == "GAP" %}
-                        <span class="badge bg-warning text-dark">
-                            <i class="bi bi-hourglass-split me-1"></i>Laguna
-                        </span>
-                        {% elif gap.gap_type == "LATE_START" %}
-                        <span class="badge bg-info text-dark">
-                            <i class="bi bi-clock me-1"></i>Inicio tardío
-                        </span>
-                        {% elif gap.gap_type == "EARLY_END" %}
-                        <span class="badge bg-secondary">
-                            <i class="bi bi-clock-history me-1"></i>Cierre anticipado
-                        </span>
-                        {% endif %}
-                    </td>
-                    <td class="text-sm">{{ gap.gap_start|time:"H:i" }}</td>
-                    <td class="text-sm">{{ gap.gap_end|time:"H:i" }}</td>
-                    <td class="text-sm text-muted">{{ gap.duration_minutes }} min</td>
-                    <td class="text-sm">
-                        {% if gap.absence_category %}
-                            <span class="{% if gap.absence_category.is_justified %}text-success{% else %}text-danger{% endif %}">
-                                {{ gap.absence_category.label }}
-                            </span>
-                        {% else %}
-                            <span class="text-muted">—</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-sm text-muted">
-                        {{ gap.note|default:"—"|truncatechars:60 }}
-                    </td>
-                    <td class="text-sm">
-                        {% if gap.resolved %}
-                        <span class="badge bg-success">Resuelto</span>
-                        {% else %}
-                        <span class="badge bg-danger">Pendiente</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
 
 {% endblock %}
 

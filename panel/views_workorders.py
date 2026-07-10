@@ -931,13 +931,15 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
       "regenerate"     : Re-enqueues the Excel generation task for this WorkOrder
                          (status reset to PENDING) and redirects to the appropriate list.
 
-    Access rules:
-      WORKSHOP  — can only access their own DIGITAL/GENERATED parts. Access to
-                   PDF parts or parts belonging to other operators is denied.
-                   After save/regenerate, redirects to panel:operator_history.
-      SUPERVISOR/ADMIN — full access to all parts of the company.
-                   After save/regenerate, redirects to panel:digital_work_order_list
-                   for DIGITAL/GENERATED parts or panel:work_order_list for PDF parts.
+    ⚠️ EXCLUSIVE TO PDF_UPLOAD PARTS. This view exists only to collate the
+    historical PDF-derived data against what Gemini extracted from the
+    original document — it has nothing in common with the digital-part
+    workflow beyond writing to the same database tables. DIGITAL/GENERATED
+    WorkOrders are hard-blocked in both get() and post(): they redirect to
+    operator_form_edit, the single view that may ever display or edit a
+    digital part, regardless of role. Access to this view itself is
+    restricted to SUPERVISOR/WORKSHOPBOSS/ADMIN by SupervisorAccessMixin —
+    WORKSHOP never reaches get()/post() here.
     Access is restricted to the authenticated company (multicompany guard).
 
     ---
@@ -954,13 +956,16 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
       "regenerate"     : Re-encola la tarea de generación de Excel para este WorkOrder
                          (estado reseteado a PENDING) y redirige a la lista apropiada.
 
-    Reglas de acceso:
-      WORKSHOP  — solo puede acceder a sus propios partes DIGITAL/GENERATED. El acceso
-                   a partes PDF o de otros operarios queda denegado.
-                   Tras guardar/regenerar redirige a panel:operator_history.
-      SUPERVISOR/ADMIN — acceso completo a todos los partes de la empresa.
-                   Tras guardar/regenerar redirige a panel:digital_work_order_list
-                   para partes DIGITAL/GENERATED o a panel:work_order_list para PDF.
+    ⚠️ EXCLUSIVA DE PARTES PDF_UPLOAD. Esta vista existe únicamente para
+    cotejar los datos históricos extraídos del PDF contra lo que leyó
+    Gemini del documento original — no tiene nada en común con el flujo de
+    partes digitales, salvo que ambos escriben sobre las mismas tablas de
+    base de datos. Los WorkOrder DIGITAL/GENERATED quedan bloqueados sin
+    excepción tanto en get() como en post(): se redirigen a
+    operator_form_edit, la única vista que puede mostrar o editar un parte
+    digital, sea cual sea el rol. El acceso a esta vista está restringido
+    a SUPERVISOR/WORKSHOPBOSS/ADMIN por SupervisorAccessMixin — el rol
+    WORKSHOP nunca llega a get()/post() aquí.
     El acceso está restringido a la empresa autenticada (guardia multiempresa).
     """
 
@@ -1065,28 +1070,33 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
     def get (self ,request ,pk ):
         """
         Renders the inline edit table for the given WorkOrder.
-        WORKSHOP role: access restricted to own DIGITAL/GENERATED parts only.
-        SUPERVISOR/ADMIN: full access to all parts of the company.
-        Passes is_digital to the template for conditional title rendering.
+        Hard-blocks DIGITAL/GENERATED WorkOrders — see class docstring.
         ---
         Renderiza la tabla de edición inline para el WorkOrder dado.
-        Rol WORKSHOP: acceso restringido a sus propios partes DIGITAL/GENERATED.
-        SUPERVISOR/ADMIN: acceso completo a todos los partes de la empresa.
-        Pasa is_digital al template para renderizado condicional del título.
+        Bloquea sin excepción los WorkOrder DIGITAL/GENERATED — ver
+        docstring de la clase.
         """
         from work_order_processor .models import WorkOrderEntry 
         from django .urls import reverse as _reverse_get 
         company_user =request .user .company_user 
         company =company_user .company 
-        _is_workshop =company_user .role =="WORKSHOP"
 
         try :
             work_order =self ._get_work_order (pk ,company )
         except WorkOrder .DoesNotExist :
             django_messages .error (request ,"Parte de trabajo no encontrado.")
-            if _is_workshop :
-                return redirect (_reverse_get ("panel:operator_history"))
             return redirect (_reverse_get ("panel:work_order_list"))
+
+        # Guardia absoluta: un parte DIGITAL/GENERATED jamás se ve ni se
+        # edita desde esta vista, sea cual sea el rol o el enlace de origen.
+        # Única vía permitida: operator_form_edit.
+        if work_order .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
+            django_messages .error (
+            request ,
+            "Los partes digitales se editan única y exclusivamente desde "
+            "su formulario de creación y edición."
+            )
+            return redirect (_reverse_get ("panel:operator_form_edit",kwargs ={"wo_pk":pk }))
 
         # Guard: block editing if work order belongs to a locked period.
         # Guardia: bloquear edición si el parte pertenece a un periodo liquidado.
@@ -1109,68 +1119,22 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
                 if _back_g :
                     from urllib.parse import unquote as _uq_g
                     return redirect (_uq_g (_back_g ))
-                if _is_workshop :
-                    return redirect (_reverse_get ("panel:operator_history"))
-                return redirect (_reverse_get ("panel:digital_work_order_list"))
-
-        _is_digital =work_order .source in (
-        WorkOrder .Source .DIGITAL ,
-        WorkOrder .Source .GENERATED ,
-        )
-        if _is_workshop :
-            if not _is_digital or work_order .uploaded_by !=company_user :
-                django_messages .error (
-                request ,
-                "No tienes permiso para editar este parte."
-                )
-                return redirect (_reverse_get ("panel:operator_history"))
+                return redirect (_reverse_get ("panel:work_order_list"))
 
         groups =self ._build_groups (work_order )
 
-
-
-
-
-
-
-
-        if _is_workshop :
-            back_url =_reverse_get ("panel:operator_history")
+        # Prefer explicit back= param (carries active filters).
+        # Si viene back= explícito (con filtros activos) usarlo directamente.
+        _back_param =request .GET .get ("back","").strip ()
+        if _back_param :
+            from urllib.parse import unquote as _unquote
+            back_url =_unquote (_back_param )
         else :
-            # Prefer explicit back= param (carries active filters).
-            # Si viene back= explícito (con filtros activos) usarlo directamente.
-            _back_param =request .GET .get ("back","").strip ()
-            if _back_param :
-                from urllib.parse import unquote as _unquote
-                back_url =_unquote (_back_param )
+            from_param =request .GET .get ("from","")
+            if from_param =="taller":
+                back_url =_reverse_get ("panel:work_order_admin_history")+"?tab=pending"
             else :
-                from_param =request .GET .get ("from","")
-                if from_param =="digital":
-                    back_url =_reverse_get ("panel:digital_work_order_list")
-                elif from_param =="taller":
-                    back_url =_reverse_get ("panel:work_order_admin_history")+"?tab=pending"
-                elif _is_digital :
-                    back_url =_reverse_get ("panel:digital_work_order_list")
-                else :
-                    back_url =_reverse_get ("panel:work_order_list")
-
-
-
-
-
-
-
-
-        from work_order_processor .models import WorkdayGap 
-        if _is_digital :
-            workday_gaps =list (
-            WorkdayGap .objects 
-            .filter (work_order =work_order )
-            .select_related ("absence_category")
-            .order_by ("gap_start")
-            )
-        else :
-            workday_gaps =[]
+                back_url =_reverse_get ("panel:work_order_list")
 
         return render (request ,self .template_name ,{
         "company":company ,
@@ -1180,25 +1144,16 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
         "work_order":work_order ,
         "groups":groups ,
         "back_url":back_url ,
-        "workday_gaps":workday_gaps ,
-        "is_digital":_is_digital ,
         })
 
     def post (self ,request ,pk ):
         """
         Dispatches POST actions: save_line or regenerate.
-        WORKSHOP role: access restricted to own DIGITAL/GENERATED parts.
-        Redirects after action respect the role:
-          WORKSHOP         — panel:operator_history.
-          SUPERVISOR/ADMIN — panel:digital_work_order_list (DIGITAL/GENERATED)
-                              or panel:work_order_list (PDF).
+        Hard-blocks DIGITAL/GENERATED WorkOrders — see class docstring.
         ---
         Despacha las acciones POST: save_line o regenerate.
-        Rol WORKSHOP: acceso restringido a sus propios partes DIGITAL/GENERATED.
-        Las redirecciones tras la acción respetan el rol:
-          WORKSHOP         — panel:operator_history.
-          SUPERVISOR/ADMIN — panel:digital_work_order_list (DIGITAL/GENERATED)
-                              o panel:work_order_list (PDF).
+        Bloquea sin excepción los WorkOrder DIGITAL/GENERATED — ver
+        docstring de la clase.
         """
         from work_order_processor .models import WorkOrderEntry ,WorkOrderEntryLine 
         from work_order_processor .services import (
@@ -1212,47 +1167,32 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
 
         company_user =request .user .company_user 
         company =company_user .company 
-        _is_workshop_post =company_user .role =="WORKSHOP"
 
         try :
             work_order =self ._get_work_order (pk ,company )
         except WorkOrder .DoesNotExist :
             django_messages .error (request ,"Parte de trabajo no encontrado.")
-            if _is_workshop_post :
-                return redirect (_reverse_post ("panel:operator_history"))
             return redirect (_reverse_post ("panel:work_order_list"))
 
+        # Guardia absoluta: un parte DIGITAL/GENERATED jamás se ve ni se
+        # edita desde esta vista, sea cual sea el rol o el enlace de origen.
+        # Única vía permitida: operator_form_edit.
+        if work_order .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
+            django_messages .error (
+            request ,
+            "Los partes digitales se editan única y exclusivamente desde "
+            "su formulario de creación y edición."
+            )
+            return redirect (_reverse_post ("panel:operator_form_edit",kwargs ={"wo_pk":pk }))
 
-
-
-
-        _is_digital_post =work_order .source in (
-        WorkOrder .Source .DIGITAL ,
-        WorkOrder .Source .GENERATED ,
-        )
-        if _is_workshop_post :
-            if not _is_digital_post or work_order .uploaded_by !=company_user :
-                django_messages .error (
-                request ,
-                "No tienes permiso para editar este parte."
-                )
-                return redirect (_reverse_post ("panel:operator_history"))
-
-
-
-        if _is_workshop_post :
-            _list_url =_reverse_post ("panel:operator_history")
+        # Use back_url hidden field if present (carries active filters).
+        # Usar el campo hidden back_url si viene (preserva filtros activos).
+        _back_hidden =request .POST .get ("back_url","").strip ()
+        if _back_hidden :
+            from urllib.parse import unquote as _unquote_post
+            _list_url =_unquote_post (_back_hidden )
         else :
-            # Use back_url hidden field if present (carries active filters).
-            # Usar el campo hidden back_url si viene (preserva filtros activos).
-            _back_hidden =request .POST .get ("back_url","").strip ()
-            if _back_hidden :
-                from urllib.parse import unquote as _unquote_post
-                _list_url =_unquote_post (_back_hidden )
-            elif _is_digital_post :
-                _list_url =_reverse_post ("panel:digital_work_order_list")
-            else :
-                _list_url =_reverse_post ("panel:work_order_list")
+            _list_url =_reverse_post ("panel:work_order_list")
 
         action =request .POST .get ("action","")
 
@@ -1465,6 +1405,12 @@ class WorkOrderLineSaveView (SupervisorAccessMixin ,View ):
 
         company =request .user .company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
+        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
+            from django .http import HttpResponseForbidden 
+            return HttpResponseForbidden (
+            "Los partes digitales se editan única y exclusivamente desde "
+            "su formulario de creación y edición."
+            )
 
 
 
@@ -1597,6 +1543,12 @@ class WorkOrderEntrySaveDateView (SupervisorAccessMixin ,View ):
 
         company =request .user .company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
+        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
+            from django .http import HttpResponseForbidden 
+            return HttpResponseForbidden (
+            "Los partes digitales se editan única y exclusivamente desde "
+            "su formulario de creación y edición."
+            )
         entry =get_object_or_404 (WorkOrderEntry ,pk =entry_pk ,work_order =wo )
 
         raw_date =request .POST .get ("work_date","").strip ()
@@ -1783,6 +1735,12 @@ class WorkOrderLineInsertView (SupervisorAccessMixin ,View ):
 
 
         wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
+        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
+            from django .http import HttpResponseForbidden 
+            return HttpResponseForbidden (
+            "Los partes digitales se editan única y exclusivamente desde "
+            "su formulario de creación y edición."
+            )
 
 
 
@@ -1911,6 +1869,12 @@ class WorkOrderEntryAddView (SupervisorAccessMixin ,View ):
 
         company = request.user.company_user.company
         wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        if wo.source in (WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED):
+            from django.http import HttpResponseForbidden
+            return HttpResponseForbidden(
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición."
+            )
 
         raw_date = request.POST.get("work_date", "").strip()
         if not raw_date:
@@ -2020,6 +1984,12 @@ class WorkOrderLineReorderView (SupervisorAccessMixin ,View ):
 
         company =request .user .company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
+        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
+            from django .http import HttpResponseForbidden 
+            return HttpResponseForbidden (
+            "Los partes digitales se editan única y exclusivamente desde "
+            "su formulario de creación y edición."
+            )
 
 
 
@@ -2120,6 +2090,12 @@ class WorkOrderLineRestoreView (SupervisorAccessMixin ,View ):
 
         company =request .user .company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
+        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
+            from django .http import HttpResponseForbidden 
+            return HttpResponseForbidden (
+            "Los partes digitales se editan única y exclusivamente desde "
+            "su formulario de creación y edición."
+            )
 
 
 
@@ -2250,6 +2226,12 @@ class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
 
         company =request .user .company_user .company 
         wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
+        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
+            from django .http import HttpResponseForbidden 
+            return HttpResponseForbidden (
+            "Los partes digitales se editan única y exclusivamente desde "
+            "su formulario de creación y edición."
+            )
         line =get_object_or_404 (
         WorkOrderEntryLine ,
         pk =line_pk ,

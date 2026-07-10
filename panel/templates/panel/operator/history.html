@@ -180,7 +180,7 @@
                                     {# when the part has time overlaps requiring correction.            #}
                                     {# Badge de aviso de solapamiento — se muestra junto al botón       #}
                                     {# editar cuando el parte tiene solapamientos que corregir.         #}
-                                    <a href="{% url 'panel:work_order_edit' wo.pk %}?back_url={% url 'panel:operator_history' %}%3Ftab%3Dcurrent_period"
+                                    <a href="{% url 'panel:operator_form_edit' wo_pk=wo.pk %}"
                                        class="btn btn-warning btn-sm py-0 px-2 d-inline-flex align-items-center gap-1"
                                        title="Este parte tiene horas solapadas con otro parte. Edítalo para corregirlas.">
                                         <i class="bi bi-exclamation-triangle-fill"></i>

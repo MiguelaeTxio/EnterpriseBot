@@ -201,7 +201,7 @@
                                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                         <li>
                                             <a class="dropdown-item text-sm"
-                                               href="{% url 'panel:work_order_edit' wo.pk %}?from=digital&back={{ request.get_full_path|urlencode }}">
+                                               href="{% url 'panel:operator_form_edit' wo_pk=wo.pk %}">
                                                 <i class="bi bi-pencil me-2"></i>Editar
                                             </a>
                                         </li>
@@ -299,7 +299,7 @@
                                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                         <li>
                                             <a class="dropdown-item text-sm"
-                                               href="{% url 'panel:work_order_edit' wo.pk %}?from=digital&back={{ request.get_full_path|urlencode }}">
+                                               href="{% url 'panel:operator_form_edit' wo_pk=wo.pk %}">
                                                 <i class="bi bi-pencil me-2"></i>Editar
                                             </a>
                                         </li>
