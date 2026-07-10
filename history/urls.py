@@ -8,11 +8,7 @@ Servida bajo /panel/history/ segun enterprise_core/urls.py.
 """
 from django.urls import path
 
-from history.views import (
-    MachineHistoryView,
-    WorkOrderHistoryListView,
-    WorkOrderHistoryDetailView,
-)
+from history.views import MachineHistoryView
 
 app_name = "history"
 
@@ -21,15 +17,5 @@ urlpatterns = [
         "machine/",
         MachineHistoryView.as_view(),
         name="machine_history",
-    ),
-    path(
-        "workorders/",
-        WorkOrderHistoryListView.as_view(),
-        name="workorder_history_list",
-    ),
-    path(
-        "workorders/<int:pk>/",
-        WorkOrderHistoryDetailView.as_view(),
-        name="workorder_history_detail",
     ),
 ]

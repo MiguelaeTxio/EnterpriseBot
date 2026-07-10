@@ -15,7 +15,6 @@ from panel.views_operator import (
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
     WorkOrderEntryPartsReviewView,
-    WorkOrderEntryHistoryView,
     WorkshopAssetDetailView,
     WorkOrderDescriptionAutocompleteView,
     WorkshopIntensiveToggleView,
@@ -24,7 +23,6 @@ from panel.views_operator import (
 # --- Re-exports Fase C: views_workorders ---
 from panel.views_workorders import (
     WorkOrderListView,
-    DigitalWorkOrderListView,
     WorkOrderUploadView,
     WorkOrderEditView,
     WorkOrderStatusFragmentView,

@@ -43,7 +43,6 @@
 {#   "operator_dashboard" → Nuevo parte                      (Taller Mecánico / Mecánicos, != ASSISTANCE) #}
 {#   "spare_parts_upload" → Subir albarán                    (Taller Mecánico / Mecánicos, WORKSHOP/ADMIN) #}
 {#   "work_orders"        → PDFs                             (Taller Mecánico / Taller)    #}
-{#   "digital_list"       → Partes Digitales                 (Taller Mecánico / Taller)    #}
 {#   "fleet"              → Centros de gasto                 (Taller Mecánico / Centro de gasto, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
 {#   "fleet_analytics"    → Analítica de centros de gasto   (Taller Mecánico / Centro de gasto) #}
 {#   "users"              → Usuarios                         (Administración)      #}
@@ -55,9 +54,7 @@
 {#   "suppliers"          → Proveedores (incl. reciclado interno) (Taller Mecánico / Almacén, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
 {#   "delivery_notes_admin" → Albaranes                      (Taller Mecánico / Almacén, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
 {#   "machine_history"    → Historial de Máquina             (Taller Mecánico / Centro de gasto, WORKSHOP/ADMIN) #}
-{#   "workorder_history" → Mis partes                        (Taller Mecánico / Mecánicos, WORKSHOP/WORKSHOPBOSS/ADMIN) #}
-{#   "operator_history"   → Historial (propio operario)       (Taller Mecánico / Mecánicos, WORKSHOP/WORKSHOPBOSS) #}
-{#   "work_order_admin_history" → Historial (administración)  (Taller Mecánico / Mecánicos, ADMIN/SUPERVISOR) #}
+{#   "work_order_admin_history" → Partes Digitales (vista única: sustituye a las antiguas Partes Digitales, Mis partes y Historial de operario -- eliminadas 2026-07-10) (Taller Mecánico / Mecánicos, ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP) #}
 {#   "workorder_spare_parts_catalog" → Catálogo de repuestos (Taller Mecánico / Almacén, ADMIN/SUPERVISOR -- proveedor y precio de compra) #}
 {#   "workorder_spare_parts_warehouse" → Almacén (stock)     (Taller Mecánico / Almacén, ADMIN/SUPERVISOR/WORKSHOP/WORKSHOPBOSS -- stock, limbo y avisos de antigüedad) -- entidad DISTINTA del catálogo (Hito 10 Paso 5/6, corregido 2026-07-07) #}
 {#   "breakdown_ticket_list" → Tickets de avería             (Taller Mecánico / Taller, ADMIN/SUPERVISOR/WORKSHOPBOSS) #}
@@ -365,12 +362,6 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'digital_list' %}active{% endif %}"
-                               href="{% url 'panel:digital_work_order_list' %}">
-                                <i class="bi bi-tablet"></i>Partes Digitales
-                            </a>
-                        </li>
-                        <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
                                href="{% url 'panel:breakdown_ticket_list' %}">
                                 <i class="bi bi-exclamation-triangle"></i>Tickets de avería
@@ -458,31 +449,19 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Historial de partes del operario — solo WORKSHOP y WORKSHOPBOSS.    #}
-                    {# Operator work-order history — WORKSHOP and WORKSHOPBOSS only.        #}
-                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'operator_history' %}active{% endif %}"
-                               href="{% url 'panel:operator_history' %}">
-                                <i class="bi bi-clock-history"></i>Historial
-                            </a>
-                        </li>
-                    {% endif %}
-                    {# Mis partes — WORKSHOP, WORKSHOPBOSS y ADMIN (Hito 22 / S056)        #}
-                    {# My work orders — WORKSHOP, WORKSHOPBOSS and ADMIN (Hito 22 / S056)  #}
-                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'ADMIN' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'workorder_history' %}active{% endif %}"
-                               href="{% url 'history:workorder_history_list' %}">
-                                <i class="bi bi-file-earmark-text"></i>Mis partes
-                            </a>
-                        </li>
-                    {% endif %}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+                    {# Partes Digitales — vista única (Hito 17 / S012): sustituye a las    #}
+                    {# antiguas Partes Digitales, Mis partes e Historial de operario,      #}
+                    {# eliminadas 2026-07-10 por decisión expresa de Miguel Ángel (no      #}
+                    {# quedaban restos: vista + plantilla + URL + entrada de menú fuera).  #}
+                    {# Digital work orders — single unified view (Hito 17 / S012):         #}
+                    {# replaces the old Partes Digitales, Mis partes and operator          #}
+                    {# Historial views, removed 2026-07-10 at Miguel Ángel's explicit      #}
+                    {# request (no leftovers: view + template + URL + nav entry gone).     #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
                                href="{% url 'panel:work_order_admin_history' %}">
-                                <i class="bi bi-clock-history"></i>Historial
+                                <i class="bi bi-tablet"></i>Partes Digitales
                             </a>
                         </li>
                     {% endif %}
@@ -644,7 +623,6 @@
         'absence_categories':       'acc-administracion',
         'analytics_lab':            'acc-administracion',
         'work_orders':              'acc-taller-mecanico',
-        'digital_list':             'acc-taller-mecanico',
         'breakdown_ticket_list':    'acc-taller-mecanico',
         'fleet':                    'acc-taller-mecanico',
         'fleet_analytics':          'acc-taller-mecanico',
@@ -655,8 +633,6 @@
         'workorder_spare_parts_warehouse': 'acc-taller-mecanico',
         'operator_dashboard':       'acc-taller-mecanico',
         'spare_parts_upload':       'acc-taller-mecanico',
-        'operator_history':         'acc-taller-mecanico',
-        'workorder_history':        'acc-taller-mecanico',
         'work_order_admin_history': 'acc-taller-mecanico',
         'budgets_wizard':           'acc-asistencia',
         'budgets_history':          'acc-asistencia',

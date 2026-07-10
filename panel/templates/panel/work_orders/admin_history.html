@@ -2,20 +2,19 @@
 
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/admin_history.html #}
 {#                                                                                                   #}
-{# Admin/Supervisor work-order history — four-tab management interface.                             #}
-{#   Tab 1 — Pendientes : unreviewed work orders, all operators.                                    #}
-{#   Tab 2 — Revisados  : reviewed work orders, Excel export available here only.                   #}
-{#   Tab 3 — Histórico  : all work orders, cross-filtered read-only view.                           #}
-{#   Tab 4 — Ausencias  : WorkerAbsence records, create/edit/delete/generate parts.                 #}
+{# Partes Digitales — vista única de historial de partes (H17 S012, 2026-07-10).                    #}
+{# Sustituye a las antiguas Partes Digitales, Mis partes e Historial de operario, eliminadas.        #}
+{#   Tab 1 — Pendientes : partes sin revisar. Propios para WORKSHOP, todos los operarios en el resto.#}
+{#   Tab 2 — Revisados  : partes revisados, Excel export disponible aquí, solo roles elevados.       #}
+{#   Tab 3 — Histórico  : todos los partes, vista de solo lectura con filtros cruzados.              #}
+{#   Tab 4 — Ausencias  : solo roles elevados ven todas + CRUD; WORKSHOP ve solo las suyas, lectura. #}
+{#   Tab 5 — Períodos   : gestión de WorkPeriod, solo roles elevados.                                #}
 {#                                                                                                   #}
-{# Vista de historial de gestión para ADMIN y SUPERVISOR — interfaz de cuatro pestañas.             #}
-{#   Pestaña 1 — Pendientes : partes sin revisar de todos los operarios.                            #}
-{#   Pestaña 2 — Revisados  : partes revisados, exportación Excel disponible SOLO AQUÍ.             #}
-{#   Pestaña 3 — Histórico  : todos los partes, vista de solo lectura con filtros cruzados.         #}
-{#   Pestaña 4 — Ausencias  : registros WorkerAbsence, alta/edición/baja/generación de partes.     #}
+{# Digital work orders — single unified history view (H17 S012, 2026-07-10).                        #}
+{# Replaces the old Partes Digitales, Mis partes and operator Historial views, now deleted.          #}
 {% extends "panel/base.html" %}
 
-{% block title %}Historial de partes — Gestión{% endblock %}
+{% block title %}Partes Digitales{% endblock %}
 
 {% load static %}
 
@@ -464,7 +463,7 @@
 </script>
 {% endblock %}
 
-{% block page_title %}Historial de partes{% endblock %}
+{% block page_title %}Partes Digitales{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-0">
@@ -492,6 +491,7 @@
                 <input type="hidden" name="sort_stack" id="hidden-sort-stack" value="{{ sort_stack_str }}">
                 {# fault_category y q son enviados por los inputs visibles del formulario — no se duplican aquí #}
 
+                {% if is_elevated %}
                 <div class="col-12 col-md-2">
                     <label class="form-label text-sm fw-semibold mb-1">Operario</label>
                     <select name="operator_pk" class="form-select form-select-sm">
@@ -504,6 +504,7 @@
                         {% endfor %}
                     </select>
                 </div>
+                {% endif %}
 
                 <div class="col-12 col-md-2">
                     <label class="form-label text-sm fw-semibold mb-1">Fecha desde</label>
@@ -544,6 +545,21 @@
                     </select>
                 </div>
 
+                {# Estado — status filter dropdown, traspasado de la antigua "Mis partes" #}
+                {# Recupera la vieja pestaña "Error" de Partes Digitales sin pestaña dedicada #}
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-sm fw-semibold mb-1">Estado</label>
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="">Todos los estados</option>
+                        {% for st_value, st_label in status_choices %}
+                        <option value="{{ st_value }}"
+                            {% if status == st_value %}selected{% endif %}>
+                            {{ st_label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
                 {# Búsqueda libre — free-text search over fault_description + repair_notes #}
                 <div class="col-12 col-md-2">
                     <label class="form-label text-sm fw-semibold mb-1">Búsqueda</label>
@@ -571,7 +587,7 @@
     <ul class="nav nav-tabs mb-0 border-bottom-0" id="adminHistoryTabs">
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'pending' %}active{% endif %} fw-semibold"
-               href="?tab=pending&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+               href="?tab=pending&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
                 <i class="bi bi-clock-history me-1"></i>Pendientes
                 {% if pending_list %}
                 <span class="badge bg-warning text-dark ms-1">{{ pending_list|length }}</span>
@@ -580,7 +596,7 @@
         </li>
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'reviewed' %}active{% endif %} fw-semibold"
-               href="?tab=reviewed&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+               href="?tab=reviewed&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
                 <i class="bi bi-check2-circle me-1"></i>Revisados
                 {% if reviewed_list %}
                 <span class="badge bg-success ms-1">{{ reviewed_list|length }}</span>
@@ -589,25 +605,27 @@
         </li>
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'history' %}active{% endif %} fw-semibold"
-               href="?tab=history&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+               href="?tab=history&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
                 <i class="bi bi-archive me-1"></i>Histórico
             </a>
         </li>
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'absences' %}active{% endif %} fw-semibold"
-               href="?tab=absences&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+               href="?tab=absences&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
                 <i class="bi bi-calendar-x me-1"></i>Ausencias
                 {% if absences_list %}
                 <span class="badge bg-secondary ms-1">{{ absences_list|length }}</span>
                 {% endif %}
             </a>
         </li>
+        {% if is_elevated %}
         <li class="nav-item">
             <a class="nav-link {% if active_tab == 'periods' %}active{% endif %} fw-semibold"
-               href="?tab=periods&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}">
+               href="?tab=periods&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}">
                 <i class="bi bi-calendar-range me-1"></i>Períodos
             </a>
         </li>
+        {% endif %}
     </ul>
 
     {# ------------------------------------------------------------------ #}
@@ -620,147 +638,18 @@
         {# ============================================================== #}
         {% if active_tab == 'pending' %}
         <div class="p-0">
-            {% if pending_list %}
-            <form method="post" id="form-bulk-pending" novalidate>
-                {% csrf_token %}
-                <input type="hidden" name="action" value="bulk_action">
-                <input type="hidden" name="active_tab" value="pending">
-                <div class="px-4 py-2 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
-                     id="bulk-bar-pending">
-                    <span class="text-sm text-muted" id="bulk-count-pending">0 seleccionados</span>
-                    <button type="submit" name="bulk_op" value="mark_reviewed"
-                            class="btn btn-success btn-sm py-0 px-3">
-                        <i class="bi bi-check2-all me-1"></i>Marcar revisados
-                    </button>
-                    <button type="submit" name="bulk_op" value="delete"
-                            class="btn btn-danger btn-sm py-0 px-3"
-                            onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
-                        <i class="bi bi-trash me-1"></i>Eliminar
-                    </button>
+            {% if not is_elevated and overtime_hours is not None %}
+            <div class="px-4 pt-3">
+                <div class="alert alert-{% if overtime_hours > 0 %}warning{% else %}light border{% endif %} py-2 px-3 mb-0 d-flex align-items-center gap-2">
+                    <i class="bi bi-stopwatch"></i>
+                    <span class="text-sm">
+                        Horas extra de tu periodo activo:
+                        <strong>{{ overtime_hours }}h</strong>
+                    </span>
                 </div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="px-3 bulk-check-col">
-                                    <input type="checkbox" class="form-check-input bulk-check-all"
-                                           data-target="pending" title="Seleccionar todos">
-                                </th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="operator_name" data-tab="pending">
-                                        Operario
-                                        {% if sort_primary_col == 'operator_name' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="fecha" data-tab="pending">
-                                        Fecha
-                                        {% if sort_primary_col == 'fecha' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">Bloques</th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="horas_totales" data-tab="pending">
-                                        Horas
-                                        {% if sort_primary_col == 'horas_totales' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="horas_extra" data-tab="pending">
-                                        H. Extra
-                                        {% if sort_primary_col == 'horas_extra' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">Dieta</th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="fault_category" data-tab="pending">
-                                        Familia
-                                        {% if sort_primary_col == 'fault_category' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for wo in pending_list %}
-                            <tr>
-                                <td class="px-3">
-                                    <input type="checkbox" name="selected_pks" value="{{ wo.pk }}"
-                                           class="form-check-input bulk-check-item" data-group="pending">
-                                </td>
-                                <td class="text-sm fw-semibold">{{ wo.operator_name }}</td>
-                                <td class="text-sm">
-                                    {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
-                                </td>
-                                <td class="text-sm">{{ wo.num_bloques }}</td>
-                                <td class="text-sm">{{ wo.horas_totales }}</td>
-                                <td class="text-sm">
-                                    {% if wo.horas_extra > 0 %}
-                                    <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
-                                    {% else %}
-                                    <span class="text-muted">—</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.dieta %}
-                                    <span class="badge bg-info text-dark">Dieta</span>
-                                    {% else %}
-                                    <span class="text-muted">—</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.fault_category %}
-                                    <span class="badge bg-light text-dark border badge-sm">{{ wo.fault_category }}</span>
-                                    {% else %}
-                                    <span class="text-muted">—</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-sm">
-                                    <div class="d-flex gap-2">
-                                        {% if wo.source == "DIGITAL" or wo.source == "GENERATED" %}
-                                        <a href="{% url 'panel:operator_form_edit' wo.pk %}?from=taller"
-                                           class="btn btn-outline-primary btn-sm py-0 px-2">
-                                            <i class="bi bi-pencil me-1"></i>Editar / Revisar
-                                        </a>
-                                        {% else %}
-                                        <a href="{% url 'panel:work_order_edit' wo.pk %}?from=taller"
-                                           class="btn btn-outline-primary btn-sm py-0 px-2">
-                                            <i class="bi bi-pencil me-1"></i>Editar / Revisar
-                                        </a>
-                                        {% endif %}
-                                        <button type="button"
-                                                class="btn btn-outline-success btn-sm py-0 px-2"
-                                                hx-post="{% url 'panel:work_order_review' wo.pk %}"
-                                                hx-swap="none"
-                                                hx-on::after-request="window.location.reload()">
-                                            <i class="bi bi-check2 me-1"></i>Marcar revisado
-                                        </button>
-                                        <button type="button"
-                                                class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-single"
-                                                data-pk="{{ wo.pk }}"
-                                                data-form="form-bulk-pending"
-                                                data-tab="pending">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </form>
-            {% else %}
-            <div class="px-4 py-5 text-center text-muted">
-                <i class="bi bi-check2-all fs-3 d-block mb-2 text-success"></i>
-                <span class="text-sm">No hay partes pendientes de revisión.</span>
             </div>
             {% endif %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=pending_list tab_key="pending" show_pipeline_status=True show_edit=True show_mark_reviewed_row=True bulk_mark_reviewed=True empty_icon="bi-check2-all text-success" empty_text="No hay partes pendientes de revisión." %}
         </div>
 
         {# ============================================================== #}
@@ -768,196 +657,7 @@
         {# ============================================================== #}
         {% elif active_tab == 'reviewed' %}
         <div class="p-0">
-
-            {# Bulk action bar — Barra de acciones en bloque (Revisados) #}
-            {% if reviewed_list %}
-            <form method="post" id="form-bulk-reviewed" novalidate>
-                {% csrf_token %}
-                <input type="hidden" name="action" value="bulk_action">
-                <input type="hidden" name="active_tab" value="reviewed">
-                <div class="px-4 py-2 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
-                     id="bulk-bar-reviewed">
-                    <span class="text-sm text-muted" id="bulk-count-reviewed">0 seleccionados</span>
-                    <button type="submit" name="bulk_op" value="unmark_reviewed"
-                            class="btn btn-warning btn-sm py-0 px-3">
-                        <i class="bi bi-x-circle me-1"></i>Desmarcar revisados
-                    </button>
-                    <button type="submit" name="bulk_op" value="mark_reviewed"
-                            class="btn btn-success btn-sm py-0 px-3">
-                        <i class="bi bi-check2-all me-1"></i>Marcar revisados
-                    </button>
-                    <button type="submit" name="bulk_op" value="delete"
-                            class="btn btn-danger btn-sm py-0 px-3"
-                            onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
-                        <i class="bi bi-trash me-1"></i>Eliminar
-                    </button>
-                    <button type="button" id="btn-export-template"
-                            class="btn btn-success btn-sm py-0 px-3 ms-auto"
-                            data-bs-toggle="modal"
-                            data-bs-target="#modalExportTemplate">
-                        <i class="bi bi-file-earmark-excel me-1"></i>Exportar
-                    </button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th class="px-3 bulk-check-col">
-                                <input type="checkbox" class="form-check-input bulk-check-all"
-                                       data-target="reviewed" title="Seleccionar todos">
-                            </th>
-                            <th class="text-sm fw-semibold">
-                                <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                   sort-header-link" data-col="operator_name" data-tab="reviewed">
-                                    Operario
-                                    {% if sort_primary_col == 'operator_name' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                </a>
-                            </th>
-                            <th class="text-sm fw-semibold">
-                                <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                   sort-header-link" data-col="fecha" data-tab="reviewed">
-                                    Fecha
-                                    {% if sort_primary_col == 'fecha' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                </a>
-                            </th>
-                            <th class="text-sm fw-semibold">Bloques</th>
-                            <th class="text-sm fw-semibold">
-                                <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                   sort-header-link" data-col="horas_totales" data-tab="reviewed">
-                                    Horas
-                                    {% if sort_primary_col == 'horas_totales' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                </a>
-                            </th>
-                            <th class="text-sm fw-semibold">
-                            <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                               sort-header-link" data-col="horas_extra" data-tab="reviewed">
-                                H. Extra
-                                {% if sort_primary_col == 'horas_extra' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                            </a>
-                        </th>
-                            <th class="text-sm fw-semibold">Dieta</th>
-                            <th class="text-sm fw-semibold">
-                                <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                   sort-header-link" data-col="fault_category" data-tab="reviewed">
-                                    Familia
-                                    {% if sort_primary_col == 'fault_category' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                </a>
-                            </th>
-                            <th class="text-sm fw-semibold">Revisado por</th>
-                            <th class="text-sm fw-semibold">Excel</th>
-                            <th class="text-sm fw-semibold">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for wo in reviewed_list %}
-                        <tr>
-                            <td class="px-3">
-                                <input type="checkbox" name="selected_pks" value="{{ wo.pk }}"
-                                       class="form-check-input bulk-check-item" data-group="reviewed">
-                            </td>
-                            <td class="text-sm fw-semibold">{{ wo.operator_name }}</td>
-                            <td class="text-sm">
-                                {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
-                            </td>
-                            <td class="text-sm">{{ wo.num_bloques }}</td>
-                            <td class="text-sm">{{ wo.horas_totales }}</td>
-                            <td class="text-sm">
-                                {% if wo.horas_extra > 0 %}
-                                <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
-                                {% else %}
-                                <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-sm">
-                                {% if wo.dieta %}
-                                <span class="badge bg-info text-dark">Dieta</span>
-                                {% else %}
-                                <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-sm">
-                                {% if wo.fault_category %}
-                                <span class="badge bg-light text-dark border badge-sm">{{ wo.fault_category }}</span>
-                                {% else %}
-                                <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-sm text-muted">
-                                {% if wo.reviewed_by %}
-                                    {{ wo.reviewed_by }}
-                                    {% if wo.reviewed_at %}
-                                    <br><small class="text-muted">{{ wo.reviewed_at|date:"d/m/Y H:i" }}</small>
-                                    {% endif %}
-                                {% else %}—{% endif %}
-                            </td>
-                            <td class="text-sm">
-                                {% if wo.excel_url %}
-                                <a href="{{ wo.excel_url }}"
-                                   class="btn btn-outline-success btn-sm py-0 px-2"
-                                   download>
-                                    <i class="bi bi-file-earmark-excel"></i>
-                                </a>
-                                {% else %}
-                                <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-sm">
-                                <div class="d-flex gap-1 flex-wrap">
-                                    {# Desmarcar individualmente via HTMX #}
-                                    <button
-                                        hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
-                                        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                                        hx-target="closest tr"
-                                        hx-swap="outerHTML"
-                                        class="btn btn-sm btn-outline-warning py-0 px-2"
-                                        title="Desmarcar revisión">
-                                        <i class="bi bi-x-circle"></i>
-                                    </button>
-                                    {# Eliminar individual #}
-                                    <button type="button"
-                                            class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-single"
-                                            data-pk="{{ wo.pk }}"
-                                            data-form="form-bulk-reviewed"
-                                            data-tab="reviewed">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {# Fila de totales — suma de horas_totales, horas_extra y dietas del conjunto filtrado #}
-                        {# Totals row — sum of horas_totales, horas_extra and dietas for the filtered set      #}
-                        {% if reviewed_list %}
-                        <tr class="table-primary fw-semibold small">
-                            <td class="px-3"></td>
-                            <td colspan="3" class="text-end pe-3">TOTAL</td>
-                            <td class="text-sm">{{ reviewed_totals.horas_totales }}</td>
-                            <td class="text-sm">
-                                {% if reviewed_totals.horas_extra > 0 %}
-                                <span class="badge bg-success">+{{ reviewed_totals.horas_extra }}h</span>
-                                {% else %}
-                                <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-sm">
-                                {% if reviewed_totals.dietas > 0 %}
-                                <span class="badge bg-info text-dark">{{ reviewed_totals.dietas }}</span>
-                                {% else %}
-                                <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td colspan="4"></td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="px-4 py-5 text-center text-muted">
-                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                <span class="text-sm">No hay partes revisados con los filtros aplicados.</span>
-            </div>
-            {% endif %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=reviewed_list tab_key="reviewed" show_reviewed_by=True show_excel=True show_unmark_reviewed_row=True bulk_mark_reviewed=True bulk_unmark_reviewed=True bulk_export=True show_totals=True totals=reviewed_totals empty_icon="bi-inbox" empty_text="No hay partes revisados con los filtros aplicados." %}
         </div>
 
         {# ============================================================== #}
@@ -965,151 +665,7 @@
         {# ============================================================== #}
         {% elif active_tab == 'history' %}
         <div class="p-0">
-            {% if history_list %}
-            <form method="post" id="form-bulk-history" novalidate>
-                {% csrf_token %}
-                <input type="hidden" name="action" value="bulk_action">
-                <input type="hidden" name="active_tab" value="history">
-                <div class="px-4 py-2 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
-                     id="bulk-bar-history">
-                    <span class="text-sm text-muted" id="bulk-count-history">0 seleccionados</span>
-                    <button type="submit" name="bulk_op" value="mark_reviewed"
-                            class="btn btn-success btn-sm py-0 px-3">
-                        <i class="bi bi-check2-all me-1"></i>Marcar revisados
-                    </button>
-                    <button type="submit" name="bulk_op" value="delete"
-                            class="btn btn-danger btn-sm py-0 px-3"
-                            onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
-                        <i class="bi bi-trash me-1"></i>Eliminar
-                    </button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="px-3 bulk-check-col">
-                                    <input type="checkbox" class="form-check-input bulk-check-all"
-                                           data-target="history" title="Seleccionar todos">
-                                </th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="operator_name" data-tab="history">
-                                        Operario
-                                        {% if sort_primary_col == 'operator_name' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="fecha" data-tab="history">
-                                        Fecha
-                                        {% if sort_primary_col == 'fecha' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">Bloques</th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="horas_totales" data-tab="history">
-                                        Horas
-                                        {% if sort_primary_col == 'horas_totales' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="horas_extra" data-tab="history">
-                                        H. Extra
-                                        {% if sort_primary_col == 'horas_extra' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">Dieta</th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="fault_category" data-tab="history">
-                                        Familia
-                                        {% if sort_primary_col == 'fault_category' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">
-                                    <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
-                                       sort-header-link" data-col="reviewed" data-tab="history">
-                                        Estado
-                                        {% if sort_primary_col == 'reviewed' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
-                                    </a>
-                                </th>
-                                <th class="text-sm fw-semibold">Origen</th>
-                                <th class="text-sm fw-semibold">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for wo in history_list %}
-                            <tr>
-                                <td class="px-3">
-                                    <input type="checkbox" name="selected_pks" value="{{ wo.pk }}"
-                                           class="form-check-input bulk-check-item" data-group="history">
-                                </td>
-                                <td class="text-sm fw-semibold">{{ wo.operator_name }}</td>
-                                <td class="text-sm">
-                                    {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
-                                </td>
-                                <td class="text-sm">{{ wo.num_bloques }}</td>
-                                <td class="text-sm">{{ wo.horas_totales }}</td>
-                                <td class="text-sm">
-                                    {% if wo.horas_extra > 0 %}
-                                    <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
-                                    {% else %}
-                                    <span class="text-muted">—</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.dieta %}
-                                    <span class="badge bg-info text-dark">Dieta</span>
-                                    {% else %}
-                                    <span class="text-muted">—</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.fault_category %}
-                                    <span class="badge bg-light text-dark border badge-sm">{{ wo.fault_category }}</span>
-                                    {% else %}
-                                    <span class="text-muted">—</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-sm">
-                                    {% if wo.reviewed %}
-                                    <span class="badge bg-success">Revisado</span>
-                                    {% else %}
-                                    <span class="badge bg-warning text-dark">Pendiente</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-sm text-muted">
-                                    {% if wo.generated_by %}
-                                    <span class="badge bg-info text-dark">
-                                        <i class="bi bi-robot me-1"></i>Generado
-                                    </span>
-                                    {% else %}
-                                    <span class="badge bg-light text-dark border">Manual</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-sm">
-                                    <button type="button"
-                                            class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-single"
-                                            data-pk="{{ wo.pk }}"
-                                            data-form="form-bulk-history"
-                                            data-tab="history">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </form>
-            {% else %}
-            <div class="px-4 py-5 text-center text-muted">
-                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                <span class="text-sm">No hay partes con los filtros aplicados.</span>
-            </div>
-            {% endif %}
+            {% include "panel/work_orders/_wo_table.html" with wo_list=history_list tab_key="history" show_reviewed_badge=True show_origen=True bulk_mark_reviewed=True empty_icon="bi-inbox" empty_text="No hay partes con los filtros aplicados." %}
         </div>
 
         {# ============================================================== #}
@@ -1121,12 +677,14 @@
             {# Action bar — Barra de acciones de ausencias #}
             <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center justify-content-between flex-wrap gap-2">
                 <span class="text-sm fw-semibold text-muted">
-                    <i class="bi bi-calendar-x me-1"></i>Gestión de ausencias
+                    <i class="bi bi-calendar-x me-1"></i>{% if is_elevated %}Gestión de ausencias{% else %}Mis ausencias{% endif %}
                 </span>
+                {% if is_elevated %}
                 <a href="#" class="btn btn-primary btn-sm px-3" data-bs-toggle="modal"
                    data-bs-target="#modalAbsenceCreate">
                     <i class="bi bi-plus-circle me-1"></i>Nueva ausencia
                 </a>
+                {% endif %}
             </div>
 
             {% if absences_list %}
@@ -1140,7 +698,9 @@
                             <th class="text-sm fw-semibold">Hasta</th>
                             <th class="text-sm fw-semibold">Notas</th>
                             <th class="text-sm fw-semibold">Registrado por</th>
+                            {% if is_elevated %}
                             <th class="text-sm fw-semibold">Acciones</th>
+                            {% endif %}
                         </tr>
                     </thead>
                     <tbody>
@@ -1162,6 +722,7 @@
                                     {{ absence.registered_by.user.get_full_name|default:absence.registered_by.user.username }}
                                 {% else %}—{% endif %}
                             </td>
+                            {% if is_elevated %}
                             <td class="text-sm">
                                 <div class="d-flex gap-1 flex-wrap">
                                     {# Generar partes — generate synthetic work orders for absence range #}
@@ -1203,6 +764,7 @@
                                     </form>
                                 </div>
                             </td>
+                            {% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>

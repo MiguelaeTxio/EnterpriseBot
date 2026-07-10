@@ -12,7 +12,7 @@ from django.forms import modelformset_factory
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-from panel.mixins import SupervisorAccessMixin, AdminRoleRequiredMixin
+from panel.mixins import SupervisorAccessMixin, AdminRoleRequiredMixin, WorkOrderFormAccessMixin
 from ivr_config.models import (
     CompanyUser,
     PresenceStatus,
@@ -328,237 +328,6 @@ class WorkOrderListView (SupervisorAccessMixin ,View ):
 
 
 
-
-
-class DigitalWorkOrderListView (SupervisorAccessMixin ,View ):
-    """
-    Lists WorkOrder records with source IN (DIGITAL, GENERATED) for the
-    authenticated user's company, split into three querysets for the
-    tabbed UI:
-      wo_pending  — status=DONE, reviewed=False (pending supervisor sign-off).
-      wo_reviewed — status=DONE, reviewed=True  (Excel download available).
-      wo_error    — status=ERROR.
-
-    Supports optional GET filters:
-      operator_pk — restrict to a specific CompanyUser (WORKSHOP role).
-      period_pk   — restrict to work orders whose entries fall within a
-                    specific WorkPeriod date range.
-
-    Accessible to SUPERVISOR and ADMIN roles (SupervisorAccessMixin).
-    ---
-    Lista los registros WorkOrder con source IN (DIGITAL, GENERATED) de la
-    empresa del usuario autenticado, divididos en tres querysets para la
-    UI de pestañas:
-      wo_pending  — status=DONE, reviewed=False (pendiente de validación).
-      wo_reviewed — status=DONE, reviewed=True  (descarga Excel disponible).
-      wo_error    — status=ERROR.
-
-    Soporta filtros GET opcionales:
-      operator_pk — restringir a un CompanyUser concreto (rol WORKSHOP).
-      period_pk   — restringir a partes cuyas entradas caen dentro del rango
-                    de fechas de un WorkPeriod concreto.
-
-    Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
-    """
-
-    template_name ="panel/work_orders/digital_list.html"
-
-    def _get_own_presence (self ,company_user ):
-        """
-        Returns the current active PresenceStatus for the authenticated user.
-        ---
-        Retorna el PresenceStatus activo actual del usuario autenticado.
-        """
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
-
-    def get (self ,request ,*args ,**kwargs ):
-        """
-        Builds the three querysets (pending / reviewed / error) scoped to
-        DIGITAL and GENERATED sources and renders digital_list.html.
-        Optional GET filters operator_pks (multi-value, 2026-07-07 --
-        upgraded from single operator_pk at Miguel Ángel's request: sum
-        horas extra/dietas for a chosen subset of operators directly in
-        the list, without exporting to Excel) and period_pk are applied
-        when present.
-        The default active tab is "pending" if wo_pending has results;
-        otherwise "reviewed".
-
-        Annotates horas_totales/horas_extra/dietas on every WorkOrder in
-        wo_pending/wo_reviewed (2026-07-07, same criterion as
-        WorkOrderAdminHistoryView._enrich_work_orders, dietas added at
-        Miguel Ángel's explicit request: número de dietas por operario y
-        periodo) and provides reviewed_totals with the summed values for
-        wo_reviewed, for the totals row in the Revisados tab.
-
-        ---
-
-        Construye los tres querysets (pendiente / revisados / error) acotados
-        a orígenes DIGITAL y GENERATED y renderiza digital_list.html.
-        Los filtros GET opcionales operator_pks (multivalor, 2026-07-07 --
-        ampliado desde operator_pk único a petición de Miguel Ángel: sumar
-        horas extra/dietas de un subconjunto de operarios elegido
-        directamente en el listado, sin exportar a Excel) y period_pk se
-        aplican cuando están presentes. La pestaña activa por defecto es
-        "pending" si wo_pending tiene resultados; en caso contrario
-        "reviewed".
-
-        Anota horas_totales/horas_extra/dietas en cada WorkOrder de
-        wo_pending/wo_reviewed (2026-07-07, mismo criterio que
-        WorkOrderAdminHistoryView._enrich_work_orders, dietas añadido a
-        petición expresa de Miguel Ángel: número de dietas por operario y
-        periodo) y provee reviewed_totals con los valores sumados para
-        wo_reviewed, para la fila de totales de la pestaña Revisados.
-        """
-        from ivr_config .models import WorkPeriod 
-        from decimal import Decimal 
-
-        cu =request .user .company_user 
-        company =cu .company 
-
-
-
-
-
-        operator_pks =[]
-        for _raw_pk in request .GET .getlist ("operator_pks"):
-            try :
-                operator_pks .append (int (_raw_pk ))
-            except (ValueError ,TypeError ):
-                continue 
-
-        try :
-            period_pk =int (request .GET .get ("period_pk",""))
-        except (ValueError ,TypeError ):
-            period_pk =None 
-
-
-
-        period_start =None 
-        period_end =None 
-        if period_pk :
-            try :
-                wp =WorkPeriod .objects .get (pk =period_pk ,company_user__company =company )
-                period_start =wp .start_date 
-                period_end =wp .end_date 
-            except WorkPeriod .DoesNotExist :
-                period_pk =None 
-
-
-
-        _digital_sources =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ]
-        _base =WorkOrder .objects .filter (
-        company =company ,
-        source__in =_digital_sources ,
-        )
-
-
-
-        if operator_pks :
-            _base =_base .filter (uploaded_by__pk__in =operator_pks )
-
-
-
-        if period_start :
-            _base =_base .filter (entries__work_date__gte =period_start ).distinct ()
-        if period_end :
-            _base =_base .filter (entries__work_date__lte =period_end ).distinct ()
-
-
-
-        wo_pending =_base .filter (status =WorkOrder .Status .DONE ,reviewed =False ).order_by ("-upload_date").prefetch_related ("entries__lines")
-        wo_reviewed =_base .filter (status =WorkOrder .Status .DONE ,reviewed =True ).select_related ("uploaded_by__user").prefetch_related ("entries__lines").order_by ("-upload_date")
-        wo_error =_base .filter (status =WorkOrder .Status .ERROR ).order_by ("-upload_date")
-
-        # Cómputo de horas_totales/horas_extra por parte -- mismo criterio que
-        # WorkOrderAdminHistoryView._enrich_work_orders() (2026-07-07, replicado
-        # a peticion de Miguel Angel: esta funcionalidad vivia solo en el
-        # listado "Historial", nunca en Partes Digitales). Se anota como
-        # atributo directo sobre cada instancia WorkOrder (no se persiste en
-        # BD) para poder seguir usando wo.pk/wo.uploaded_by/etc. tal cual en
-        # la plantilla, sin convertir a lista de dicts.
-        # ---
-        # horas_totales/horas_extra computation per work order -- same
-        # criterion as WorkOrderAdminHistoryView._enrich_work_orders()
-        # (2026-07-07, replicated at Miguel Angel's request: this
-        # functionality only lived in the "Historial" list, never in Partes
-        # Digitales). Annotated as a plain attribute on each WorkOrder
-        # instance (not persisted to the DB) so the template can keep using
-        # wo.pk/wo.uploaded_by/etc. as-is, without converting to a dict list.
-        reviewed_hours_total =Decimal ("0")
-        reviewed_extra_total =Decimal ("0")
-        reviewed_dietas_total =0
-        for _wo_list in (wo_pending ,wo_reviewed ):
-            for _wo in _wo_list :
-                _horas =sum (
-                (line .delta_hours 
-                for entry in _wo .entries .all ()
-                for line in entry .lines .all ()
-                if line .delta_hours is not None ),
-                Decimal ("0"),
-                )
-                _dietas =sum (1 for entry in _wo .entries .all ()if entry .has_diet )
-                _wo .horas_totales =_horas 
-                _wo .horas_extra =max (Decimal ("0"),_horas -Decimal ("8"))
-                _wo .dietas =_dietas 
-                if _wo_list is wo_reviewed :
-                    reviewed_hours_total +=_horas 
-                    reviewed_extra_total +=_wo .horas_extra 
-                    reviewed_dietas_total +=_dietas 
-        reviewed_totals ={
-        "horas_totales":reviewed_hours_total ,
-        "horas_extra":reviewed_extra_total ,
-        "dietas":reviewed_dietas_total ,
-        }
-
-
-
-        default_tab ="pending"if wo_pending .exists ()else "reviewed"
-        # Preserve active tab from GET param; fall back to computed default.
-        # Preservar la pestaña activa del GET; usar el default calculado como fallback.
-        active_tab =request .GET .get ("tab","").strip ()
-        if active_tab not in ("pending","reviewed","error"):
-            active_tab =default_tab
-
-
-
-        operators =(
-        CompanyUser .objects 
-        .filter (company =company ,is_active =True ,role =CompanyUser .ROLE_WORKSHOP )
-        .select_related ("user")
-        .order_by ("user__last_name","user__first_name")
-        )
-
-
-
-        periods =(
-        WorkPeriod .objects 
-        .filter (company_user__company =company ,end_date__isnull =False )
-        .order_by ("-end_date")
-        .distinct ()
-        )
-
-        context ={
-        "company":company ,
-        "company_user":cu ,
-        "own_presence":self ._get_own_presence (cu ),
-        "active_nav":"digital_list",
-        "wo_pending":wo_pending ,
-        "wo_reviewed":wo_reviewed ,
-        "wo_error":wo_error ,
-        "reviewed_totals":reviewed_totals ,
-        "default_tab":default_tab ,
-        "active_tab":active_tab ,
-        "operators":operators ,
-        "periods":periods ,
-        "operator_pks":operator_pks ,
-        "period_pk":period_pk ,
-        }
-        return render (request ,self .template_name ,context )
 
 
 class WorkOrderUploadView (SupervisorAccessMixin ,View ):
@@ -3801,66 +3570,141 @@ class AbsenceCategoryToggleView (SupervisorAccessMixin ,View ):
         return redirect (LIST_URL )
 
 
-class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
+class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
 
     """
-    Four-tab management history view for ADMIN and SUPERVISOR roles.
-    Provides a comprehensive interface for reviewing, exporting and managing
-    all operators' work orders, absences and work periods within the company.
+    SINGLE unified work-order history view for ALL roles with access to
+    digital parts (ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP).
+
+    Replaces, as of 2026-07-10 (H17 S012), three separate views that were
+    near-duplicates of this one: DigitalWorkOrderListView ("Partes
+    Digitales"), history.WorkOrderHistoryListView ("Mis partes") and
+    WorkOrderEntryHistoryView ("Historial" for WORKSHOP/WORKSHOPBOSS).
+    All three were deleted outright (view + template + URL + nav entry) at
+    Miguel Ángel's explicit request -- no dead code, no "marked as removed"
+    leftovers.
+
+    Role scope:
+      ADMIN/SUPERVISOR/WORKSHOPBOSS — see all company operators. Operator
+                        filter dropdown, "Marcar revisado" and "Eliminar"
+                        actions available. Ausencias/Períodos tabs visible
+                        (management tabs).
+      WORKSHOP        — see only their own work orders (uploaded_by=self).
+                        No operator filter, no "Marcar revisado", no
+                        "Eliminar" — only "Editar" (routes to
+                        operator_form_edit, the sole digital-part editor).
+                        Ausencias/Períodos tabs hidden (management-only,
+                        not part of what the old "Mis partes" offered).
+                        Ausencias tab, when visible via direct interaction,
+                        would be scoped to their own WorkerAbsence records
+                        read-only — see is_elevated in context.
+                        Pendientes tab shows an "horas extra" summary for
+                        their own active WorkPeriod (folded in from the
+                        deleted operator "Horas extra" tab).
 
     Tabs:
-      1 — Pendientes  : unreviewed work orders for all company operators.
-                        Filters: operator, date, machine.
-                        Actions: mark as reviewed, link to edit view.
-      2 — Revisados   : reviewed work orders. Excel export available HERE ONLY
-                        (single work order or date-range multi-export).
-                        Filters: operator, date range, machine.
-      3 — Histórico   : all work orders with cross-filters (operator, date
-                        range, machine, review status). Read-only.
-      4 — Ausencias   : WorkerAbsence records per operator with type/date
-                        filters. Actions: create, edit, delete absence.
-                        Action 'Generar partes del periodo': creates synthetic
-                        WorkOrder records (one per working day Mon–Fri) for the
-                        absence range, tagged with generated_by=current user.
+      1 — Pendientes  : unreviewed work orders (own, for WORKSHOP; all
+                        company operators otherwise).
+                        Filters: operator (elevated only), date, machine,
+                        status.
+                        Actions: mark as reviewed (elevated only), link to
+                        edit view.
+      2 — Revisados   : reviewed work orders. Excel export available HERE
+                        ONLY, elevated roles only (single work order or
+                        date-range multi-export).
+                        Filters: operator (elevated only), date range,
+                        machine, status.
+      3 — Histórico   : all work orders with cross-filters (operator,
+                        date range, machine, review status, status). Read-only.
+      4 — Ausencias   : elevated roles only — WorkerAbsence records per
+                        operator with type/date filters. Actions: create,
+                        edit, delete absence. Action 'Generar partes del
+                        periodo': creates synthetic WorkOrder records (one
+                        per working day Mon–Fri) for the absence range,
+                        tagged with generated_by=current user.
+      5 — Períodos    : elevated roles only — WorkPeriod management.
 
     GET /panel/work-orders/history/
         Optional GET params:
-          tab         (str)  — active tab: pending|reviewed|history|absences.
+          tab         (str)  — active tab: pending|reviewed|history|absences|periods.
                                Default: pending.
-          operator_pk (int)  — filter by CompanyUser pk (scoped to company).
+          operator_pk (int)  — filter by CompanyUser pk (scoped to company,
+                               ignored for WORKSHOP — always own).
           date_from   (str)  — ISO date YYYY-MM-DD start of range.
           date_to     (str)  — ISO date YYYY-MM-DD end of range.
           machine     (str)  — MachineAsset.code icontains filter.
+          status      (str)  — WorkOrder.Status code filter (folded in from
+                               the deleted "Mis partes" Estado filter —
+                               recovers the old "Error" tab of Partes
+                               Digitales without a dedicated tab).
 
     ---
 
-    Vista de historial de gestion de cuatro pestanas para roles ADMIN y SUPERVISOR.
-    Proporciona una interfaz completa para revisar, exportar y gestionar todos los
-    partes de trabajo, ausencias y periodos de trabajo de los operarios de la empresa.
+    ÚNICA vista unificada de historial de partes para TODOS los roles con
+    acceso a partes digitales (ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP).
 
-    Pestanas:
-      1 — Pendientes  : partes sin revisar de todos los operarios de la empresa.
-                        Filtros: operario, fecha, maquina.
-                        Acciones: marcar como revisado, enlace a vista de edicion.
-      2 — Revisados   : partes revisados. Exportacion Excel disponible SOLO AQUI
-                        (parte individual o multi-exportacion por rango de fechas).
-                        Filtros: operario, rango de fechas, maquina.
-      3 — Historico   : todos los partes con filtros cruzados (operario, rango de
-                        fechas, maquina, estado de revision). Solo lectura.
-      4 — Ausencias   : registros WorkerAbsence por operario con filtros de tipo y
-                        fecha. Acciones: alta, edicion, baja de ausencia.
-                        Accion 'Generar partes del periodo': crea registros WorkOrder
-                        sinteticos (uno por dia laborable lun–vie) para el rango de
-                        la ausencia, etiquetados con generated_by=usuario actual.
+    Sustituye, desde el 2026-07-10 (H17 S012), a tres vistas independientes
+    que eran casi-duplicados de esta: DigitalWorkOrderListView ("Partes
+    Digitales"), history.WorkOrderHistoryListView ("Mis partes") y
+    WorkOrderEntryHistoryView ("Historial" para WORKSHOP/WORKSHOPBOSS).
+    Las tres se eliminaron por completo (vista + plantilla + URL + entrada
+    de menú) a petición expresa de Miguel Ángel — sin código muerto, sin
+    restos "marcados como eliminados".
+
+    Alcance por rol:
+      ADMIN/SUPERVISOR/WORKSHOPBOSS — ven todos los operarios de la empresa.
+                        Selector de operario, acciones "Marcar revisado" y
+                        "Eliminar" disponibles. Pestañas Ausencias/Períodos
+                        visibles (gestión).
+      WORKSHOP        — ven solo sus propios partes (uploaded_by=self). Sin
+                        selector de operario, sin "Marcar revisado", sin
+                        "Eliminar" — solo "Editar" (enruta a
+                        operator_form_edit, único editor de partes digitales).
+                        Pestañas Ausencias/Períodos ocultas (son gestión, no
+                        algo que ofreciera la antigua "Mis partes").
+                        La pestaña Pendientes muestra un resumen de "horas
+                        extra" de su periodo activo (traspasado desde la
+                        pestaña "Horas extra" del operador, eliminada).
+
+    Pestañas:
+      1 — Pendientes  : partes sin revisar (propios para WORKSHOP; de toda
+                        la empresa en el resto).
+                        Filtros: operario (solo elevados), fecha, máquina,
+                        estado.
+                        Acciones: marcar como revisado (solo elevados),
+                        enlace a vista de edición.
+      2 — Revisados   : partes revisados. Exportación Excel disponible SOLO
+                        AQUÍ, solo roles elevados (parte individual o
+                        multi-exportación por rango de fechas).
+                        Filtros: operario (solo elevados), rango de fechas,
+                        máquina, estado.
+      3 — Histórico   : todos los partes con filtros cruzados (operario,
+                        rango de fechas, máquina, estado de revisión,
+                        estado). Solo lectura.
+      4 — Ausencias   : solo roles elevados — registros WorkerAbsence por
+                        operario con filtros de tipo y fecha. Acciones:
+                        alta, edición, baja de ausencia. Acción 'Generar
+                        partes del periodo': crea registros WorkOrder
+                        sintéticos (uno por día laborable lun–vie) para el
+                        rango de la ausencia, etiquetados con
+                        generated_by=usuario actual.
+      5 — Períodos    : solo roles elevados — gestión de WorkPeriod.
 
     GET /panel/work-orders/history/
-        Parametros GET opcionales:
-          tab         (str)  — pestana activa: pending|reviewed|history|absences.
+        Parámetros GET opcionales:
+          tab         (str)  — pestaña activa: pending|reviewed|history|absences|periods.
                                Por defecto: pending.
-          operator_pk (int)  — filtrar por pk de CompanyUser (acotado a empresa).
+          operator_pk (int)  — filtrar por pk de CompanyUser (acotado a
+                               empresa, ignorado para WORKSHOP — siempre
+                               el propio).
           date_from   (str)  — fecha ISO YYYY-MM-DD inicio del rango.
           date_to     (str)  — fecha ISO YYYY-MM-DD fin del rango.
           machine     (str)  — filtro icontains sobre MachineAsset.code.
+          status      (str)  — filtro por código de WorkOrder.Status
+                               (traspasado desde el filtro Estado de la
+                               antigua "Mis partes" — recupera la vieja
+                               pestaña "Error" de Partes Digitales sin
+                               necesidad de una pestaña dedicada).
     """
 
     template_name ="panel/work_orders/admin_history.html"
@@ -3902,19 +3746,25 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         except ValueError :
             return None 
 
-    def _build_base_queryset (self ,company ):
+    def _build_base_queryset (self ,company ,owner =None ):
         """
         Returns the base WorkOrder queryset scoped to the company, restricted
         to DIGITAL and GENERATED sources (operator-entered parts only).
         PDF_UPLOAD parts belong exclusively to WorkOrderListView.
+        When owner is provided (WORKSHOP role — always their own records,
+        never the operator_pk filter), the queryset is further scoped to
+        uploaded_by=owner.
         All required related data is prefetched for the admin history tabs.
         ---
         Devuelve el queryset base de WorkOrder acotado a la empresa, restringido
         a los origenes DIGITAL y GENERATED (partes introducidos por operarios).
         Los partes PDF_UPLOAD pertenecen exclusivamente a WorkOrderListView.
+        Cuando se proporciona owner (rol WORKSHOP — siempre sus propios
+        registros, nunca el filtro operator_pk), el queryset se acota además
+        a uploaded_by=owner.
         Todos los datos relacionados se prefetchean para las pestanas del historial.
         """
-        return (
+        qs =(
         WorkOrder .objects 
         .filter (
         company =company ,
@@ -3932,23 +3782,37 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         )
         .order_by ("-id")
         )
+        if owner is not None :
+            qs =qs .filter (uploaded_by =owner )
+        return qs 
 
     def _apply_filters (self ,qs ,operator_pk ,date_from ,date_to ,machine ,company ,
-    fault_category ="",q =""):
+    fault_category ="",q ="",status ="",is_elevated =True ):
         """
         Applies the optional GET filters to a WorkOrder queryset.
-        operator_pk filters by uploaded_by; date_from/date_to filter by the
-        first entry's work_date; machine filters by machine_asset__code.
+        operator_pk filters by uploaded_by (ignored when is_elevated is False
+        — WORKSHOP is already scoped to their own records by
+        _build_base_queryset, and must never be able to widen the query to
+        another operator via a crafted GET param); date_from/date_to filter
+        by the first entry's work_date; machine filters by machine_asset__code.
         fault_category filters by WorkOrderEntryLine.fault_category (exact).
         q performs a free-text OR search over fault_description and repair_notes.
+        status filters by WorkOrder.status (exact) — folded in from the
+        deleted "Mis partes" Estado filter.
         ---
         Aplica los filtros GET opcionales a un queryset de WorkOrder.
-        operator_pk filtra por uploaded_by; date_from/date_to filtran por
-        work_date del primer entry; machine filtra por machine_asset__code.
+        operator_pk filtra por uploaded_by (ignorado cuando is_elevated es
+        False — WORKSHOP ya está acotado a sus propios registros por
+        _build_base_queryset, y nunca debe poder ampliar la consulta a otro
+        operario mediante un parámetro GET manipulado); date_from/date_to
+        filtran por work_date del primer entry; machine filtra por
+        machine_asset__code.
         fault_category filtra por WorkOrderEntryLine.fault_category (exacto).
         q realiza una búsqueda libre OR sobre fault_description y repair_notes.
+        status filtra por WorkOrder.status (exacto) — traspasado desde el
+        filtro Estado de la antigua "Mis partes".
         """
-        if operator_pk :
+        if operator_pk and is_elevated :
             try :
                 cu_pk =int (operator_pk )
                 qs =qs .filter (uploaded_by__pk =cu_pk ,uploaded_by__company =company )
@@ -3962,6 +3826,8 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
             qs =qs .filter (
             entries__lines__machine_asset__code__icontains =machine 
             )
+        if status :
+            qs =qs .filter (status =status )
         if fault_category :
 
 
@@ -4053,6 +3919,20 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
             # de edición correcta: operator_form_edit para DIGITAL/GENERATED,
             # work_order_edit para partes PDF.
             "source":wo .source ,
+            # Pipeline status (PENDING/PROCESSING/DONE/ERROR/...), traspasado
+            # desde la antigua "Mis partes" para el filtro/badge Estado y
+            # para recuperar la vieja pestaña "Error" de Partes Digitales.
+            "status":wo .status ,
+            "status_display":wo .get_status_display (),
+            # Clase Bootstrap del badge de Estado, resuelta aquí y no en el
+            # template -- la plantilla solo debe renderizar, no decidir.
+            # Bootstrap badge class for the Estado badge, resolved here and
+            # not in the template -- templates only render, never decide.
+            "status_badge_class":(
+            "bg-danger"if wo .status =="ERROR"
+            else ""if wo .status =="DONE"
+            else "bg-secondary"
+            ),
             })
         return result 
 
@@ -4125,6 +4005,21 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         cu =request .user .company_user 
         company =cu .company 
 
+        # Alcance por rol -- pieza central de la vista unificada (H17 S012):
+        # ADMIN/SUPERVISOR/WORKSHOPBOSS ven todos los operarios; WORKSHOP
+        # solo los suyos, sin excepcion, sin importar que parametros GET
+        # lleguen (operator_pk se ignora para WORKSHOP en _apply_filters).
+        # ---
+        # Role scope -- central piece of the unified view (H17 S012):
+        # ADMIN/SUPERVISOR/WORKSHOPBOSS see all operators; WORKSHOP sees
+        # only their own, no exceptions, regardless of incoming GET params
+        # (operator_pk is ignored for WORKSHOP inside _apply_filters).
+        is_elevated =cu .role in (
+        CompanyUser .ROLE_ADMIN ,
+        CompanyUser .ROLE_SUPERVISOR ,
+        CompanyUser .ROLE_WORKSHOPBOSS ,
+        )
+        _owner =None if is_elevated else cu 
 
 
 
@@ -4135,6 +4030,7 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         machine =request .GET .get ("machine","").strip ()
         fault_category =request .GET .get ("fault_category","").strip ()
         q =request .GET .get ("q","").strip ()
+        status =request .GET .get ("status","").strip ()
 
 
 
@@ -4197,16 +4093,16 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         )
         .select_related ("user")
         .order_by ("user__last_name","user__first_name")
-        )
+        )if is_elevated else CompanyUser .objects .none ()
 
 
 
 
 
-        qs_pending =self ._build_base_queryset (company ).filter (reviewed =False )
+        qs_pending =self ._build_base_queryset (company ,owner =_owner ).filter (reviewed =False )
         qs_pending =self ._apply_filters (
         qs_pending ,operator_pk ,date_from ,date_to ,machine ,company ,
-        fault_category =fault_category ,q =q ,
+        fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
         )
         pending_list =self ._enrich_work_orders (qs_pending ,active_fault_category =fault_category )
 
@@ -4214,10 +4110,10 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
 
 
 
-        qs_reviewed =self ._build_base_queryset (company ).filter (reviewed =True )
+        qs_reviewed =self ._build_base_queryset (company ,owner =_owner ).filter (reviewed =True )
         qs_reviewed =self ._apply_filters (
         qs_reviewed ,operator_pk ,date_from ,date_to ,machine ,company ,
-        fault_category =fault_category ,q =q ,
+        fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
         )
         reviewed_list =self ._enrich_work_orders (qs_reviewed ,active_fault_category =fault_category )
 
@@ -4256,10 +4152,10 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
 
 
 
-        qs_history =self ._build_base_queryset (company ).filter (reviewed =True )
+        qs_history =self ._build_base_queryset (company ,owner =_owner ).filter (reviewed =True )
         qs_history =self ._apply_filters (
         qs_history ,operator_pk ,date_from ,date_to ,machine ,company ,
-        fault_category =fault_category ,q =q ,
+        fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
         )
         history_list =self ._enrich_work_orders (qs_history ,active_fault_category =fault_category )
 
@@ -4338,66 +4234,114 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         .order_by ("-start_date")
         )
 
-
-        if operator_pk :
-            try :
-                absence_qs =absence_qs .filter (company_user__pk =int (operator_pk ))
-            except (ValueError ,TypeError ):
-                pass 
+        if is_elevated :
+            if operator_pk :
+                try :
+                    absence_qs =absence_qs .filter (company_user__pk =int (operator_pk ))
+                except (ValueError ,TypeError ):
+                    pass 
+        else :
+            # WORKSHOP: siempre las propias, sin excepcion -- pestaña de
+            # solo lectura, traspasada desde la antigua operator_history.
+            # WORKSHOP: always their own, no exceptions -- read-only tab,
+            # folded in from the deleted operator_history.
+            absence_qs =absence_qs .filter (company_user =cu )
         absences_list =list (absence_qs )
 
 
 
 
 
-        from ivr_config .models import WorkPeriod 
-        from datetime import timedelta as _td 
-        last_closed =(
-        WorkPeriod .objects 
-        .filter (
-        company_user__company =company ,
-        end_date__isnull =False ,
-        )
-        .order_by ("-end_date")
-        .values_list ("end_date","start_date")
-        .first ()
-        )
-        if last_closed :
-            _last_end =last_closed [0 ]
-            _last_start =last_closed [1 ]
-            _period_len =_last_end -_last_start 
-            suggested_period_start =(_last_end +_td (days =1 )).strftime ("%Y-%m-%d")
-            suggested_period_end =(_last_end +_td (days =1 )+_period_len ).strftime ("%Y-%m-%d")
+        if is_elevated :
+            from ivr_config .models import WorkPeriod 
+            from datetime import timedelta as _td 
+            last_closed =(
+            WorkPeriod .objects 
+            .filter (
+            company_user__company =company ,
+            end_date__isnull =False ,
+            )
+            .order_by ("-end_date")
+            .values_list ("end_date","start_date")
+            .first ()
+            )
+            if last_closed :
+                _last_end =last_closed [0 ]
+                _last_start =last_closed [1 ]
+                _period_len =_last_end -_last_start 
+                suggested_period_start =(_last_end +_td (days =1 )).strftime ("%Y-%m-%d")
+                suggested_period_end =(_last_end +_td (days =1 )+_period_len ).strftime ("%Y-%m-%d")
+            else :
+                suggested_period_start =""
+                suggested_period_end =""
+
+            # Build period_groups for the Períodos tab (WorkPeriodGroup-based).
+            # Construir period_groups para la pestaña Períodos (basado en WorkPeriodGroup).
+            from ivr_config.models import WorkPeriodGroup as _WPG_H
+            _period_groups = list(
+                _WPG_H.objects
+                .filter(company=company)
+                .select_related("created_by__user")
+                .order_by("-start_date")
+            )
+            _total_operators = CompanyUser .objects .filter (
+                company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP
+            ).count()
+            period_groups = []
+            for _g in _period_groups:
+                _op_count = _g.operator_periods.count()
+                period_groups.append({
+                    "group":           _g,
+                    "operator_count":  _op_count,
+                    "total_operators": _total_operators,
+                })
+
+            # Legacy fallback: keep period_operator_groups for backward compat.
+            # Fallback legacy: mantener period_operator_groups por compatibilidad.
+            period_operator_groups = []
         else :
+            # WORKSHOP: la pestaña Períodos es gestión pura, no es parte de
+            # lo que ofrecía ninguna de las vistas sustituidas -- se oculta
+            # en el template, así que no hace falta calcular nada de esto.
+            # WORKSHOP: the Períodos tab is pure management, not part of
+            # what any of the replaced views offered -- hidden in the
+            # template, so none of this needs computing.
             suggested_period_start =""
             suggested_period_end =""
+            period_groups =[]
+            period_operator_groups =[]
 
-        # Build period_groups for the Períodos tab (WorkPeriodGroup-based).
-        # Construir period_groups para la pestaña Períodos (basado en WorkPeriodGroup).
-        from ivr_config.models import WorkPeriodGroup as _WPG_H
-        _period_groups = list(
-            _WPG_H.objects
-            .filter(company=company)
-            .select_related("created_by__user")
-            .order_by("-start_date")
-        )
-        _total_operators = CompanyUser .objects .filter (
-            company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP
-        ).count()
-        period_groups = []
-        for _g in _period_groups:
-            _op_count = _g.operator_periods.count()
-            period_groups.append({
-                "group":           _g,
-                "operator_count":  _op_count,
-                "total_operators": _total_operators,
-            })
+        # Resumen de horas extra del periodo activo -- traspasado desde la
+        # antigua pestaña "Horas extra" de operator_history (eliminada).
+        # Solo se calcula, y solo tiene sentido, para WORKSHOP.
+        # ---
+        # Active-period overtime summary -- folded in from the deleted
+        # operator_history "Horas extra" tab. Only computed, and only
+        # meaningful, for WORKSHOP.
+        overtime_hours =None 
+        if not is_elevated :
+            from datetime import date as _date_OT 
+            from ivr_config .models import WorkPeriod as _WP_OT 
+            from decimal import Decimal as _Dec_OT 
+            _active_period =(
+            _WP_OT .objects 
+            .filter (company_user =cu )
+            .filter (Q (end_date__isnull =True )|Q (end_date__gte =_date_OT .today ()))
+            .order_by ("-start_date")
+            .first ()
+            )
+            if _active_period :
+                overtime_hours =sum (
+                (wo ["horas_extra"]for wo in pending_list +reviewed_list 
+                if wo ["operator_pk"]==cu .pk 
+                and wo ["fecha"]is not None 
+                and _active_period .start_date <=wo ["fecha"]
+                and (_active_period .end_date is None or wo ["fecha"]<=_active_period .end_date )
+                ),
+                _Dec_OT ("0"),
+                )
 
-        # Legacy fallback: keep period_operator_groups for backward compat.
-        # Fallback legacy: mantener period_operator_groups por compatibilidad.
-        period_operator_groups = []
 
-        from work_order_processor.models import ExportTemplate as _ET
         _templates_propias = _ET.objects.filter(company_user=cu, is_global=False).order_by("-is_default", "name")
         _templates_globales = _ET.objects.filter(company=cu.company, is_global=True).order_by("name")
 
@@ -4424,6 +4368,12 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         "own_presence":self ._get_own_presence (cu ),
         "active_nav":"work_order_admin_history",
         "active_tab":active_tab ,
+        # Alcance por rol -- controla en el template el selector de operario,
+        # los botones Marcar revisado/Eliminar y las pestañas Ausencias/Períodos.
+        # Role scope -- controls the operator selector, the Marcar
+        # revisado/Eliminar buttons and the Ausencias/Períodos tabs in the
+        # template.
+        "is_elevated":is_elevated ,
         "operators":operators ,
         "operator_pk":operator_pk ,
         "date_from":request .GET .get ("date_from",""),
@@ -4431,6 +4381,11 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
         "machine":machine ,
         "fault_category":fault_category ,
         "q":q ,
+        "status":status ,
+        "status_choices":WorkOrder .Status .choices ,
+        # Resumen de horas extra del periodo activo -- solo WORKSHOP.
+        # Active-period overtime summary -- WORKSHOP only.
+        "overtime_hours":overtime_hours ,
 
 
         "fault_category_choices":[
@@ -4502,6 +4457,30 @@ class WorkOrderAdminHistoryView (SupervisorAccessMixin ,View ):
 
         cu =request .user .company_user 
         company =cu .company 
+
+        # Guardia de rol: todas las acciones de este post() son de gestion
+        # (eliminar, marcar revisado en bloque, generar partes de ausencia)
+        # -- WORKSHOP solo puede editar sus propios partes via
+        # operator_form_edit, nunca actuar aqui. El mixin de la clase ahora
+        # admite WORKSHOP (para el GET de solo lectura de su propio
+        # historial), asi que este guard es imprescindible, no redundante.
+        # ---
+        # Role guard: every action in this post() is a management action
+        # (delete, bulk mark-as-reviewed, generate absence parts) --
+        # WORKSHOP may only edit their own parts via operator_form_edit,
+        # never act here. The class mixin now admits WORKSHOP (for the
+        # read-only GET of their own history), so this guard is essential,
+        # not redundant.
+        if cu .role not in (
+        CompanyUser .ROLE_ADMIN ,
+        CompanyUser .ROLE_SUPERVISOR ,
+        CompanyUser .ROLE_WORKSHOPBOSS ,
+        ):
+            from django .http import HttpResponseForbidden 
+            return HttpResponseForbidden (
+            "Acción no disponible para tu rol."
+            )
+
         action =request .POST .get ("action","").strip ()
 
 

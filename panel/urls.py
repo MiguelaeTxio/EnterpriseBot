@@ -67,7 +67,6 @@ from panel.views import (
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
     WorkOrderEntryPartsReviewView,
-    WorkOrderEntryHistoryView,
     WorkOrderAdminHistoryView,
     WorkerAbsenceCreateView,
     MachineAssetListView,
@@ -89,7 +88,6 @@ from panel.views import (
     WorkPeriodGroupLockView,
     WorkPeriodLockView,
     WorkOrderMachineFilterView,
-    DigitalWorkOrderListView,
     WorkdayScheduleView,
     AbsenceCategoryListView,
     AbsenceCategoryCreateView,
@@ -134,7 +132,6 @@ urlpatterns = [
 
     # Operator history — Historial de partes del operario (rol WORKSHOP y ADMIN).
     # Cuarta Accion — Hito 7 (2026-05-07)
-    path("operator/history/", WorkOrderEntryHistoryView.as_view(), name="operator_history"),
 
     # Worker absence create — Alta de ausencia de operario desde admin history (rol SUPERVISOR y ADMIN).
     # Cuarta Accion — Hito 7 (2026-05-08)
@@ -239,7 +236,6 @@ urlpatterns = [
     path("work-orders/", WorkOrderListView.as_view(), name="work_order_list"),
     # Digital work-order list — Partes digitales (DIGITAL + GENERATED) para SUPERVISOR y ADMIN.
     # PRIMERA ACCION — Hito 7 Sesion 026 (2026-05-13)
-    path("work-orders/digital/", DigitalWorkOrderListView.as_view(), name="digital_work_order_list"),
     path("work-orders/upload/", WorkOrderUploadView.as_view(), name="work_order_upload"),
     path("work-orders/<int:pk>/edit/", WorkOrderEditView.as_view(), name="work_order_edit"),
 

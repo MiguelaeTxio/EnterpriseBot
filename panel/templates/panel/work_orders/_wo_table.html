@@ -1,0 +1,296 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_wo_table.html #}
+{#                                                                                                #}
+{# Tabla de partes reutilizable — sustituye a las tres tablas casi-idénticas que tenían           #}
+{# Pendientes/Revisados/Histórico (H17 S012, 2026-07-10, a petición de Miguel Ángel: DRY).        #}
+{# Reusable work-order table — replaces the three near-identical tables that Pendientes/          #}
+{# Revisados/Histórico used to have (H17 S012, 2026-07-10, at Miguel Ángel's request: DRY).        #}
+{#                                                                                                #}
+{# Parámetros esperados (todos via {% include ... with ... %}):                                   #}
+{#   wo_list                  — lista enriquecida (pending_list / reviewed_list / history_list)   #}
+{#   tab_key                  — "pending" | "reviewed" | "history"                                #}
+{#   show_pipeline_status     — bool, columna Estado (status_badge_class) — solo Pendientes        #}
+{#   show_reviewed_by         — bool, columna Revisado por — solo Revisados                        #}
+{#   show_excel                — bool, columna Excel — solo Revisados                              #}
+{#   show_reviewed_badge      — bool, columna Estado (Revisado/Pendiente) — solo Histórico          #}
+{#   show_origen              — bool, columna Origen (Manual/Generado) — solo Histórico             #}
+{#   show_edit                — bool, botón Editar / Revisar en Acciones — solo Pendientes          #}
+{#   show_mark_reviewed_row   — bool, botón Marcar revisado por fila — solo Pendientes              #}
+{#   show_unmark_reviewed_row — bool, botón Desmarcar por fila — solo Revisados                    #}
+{#   bulk_mark_reviewed        — bool, botón Marcar revisados en bloque                             #}
+{#   bulk_unmark_reviewed     — bool, botón Desmarcar revisados en bloque — solo Revisados          #}
+{#   bulk_export               — bool, botón Exportar en bloque — solo Revisados                    #}
+{#   show_totals               — bool, fila TOTAL al final — solo Revisados                         #}
+{#   totals                    — dict con horas_totales/horas_extra/dietas — solo si show_totals    #}
+{#   empty_icon                — clase bootstrap-icons para el estado vacío                         #}
+{#   empty_text                — texto del estado vacío                                             #}
+{#                                                                                                #}
+{# Toda decisión de negocio (colores de badge, alcance por rol, qué acciones existen) llega ya     #}
+{# resuelta desde la vista o desde los parámetros del include — este parcial solo renderiza.       #}
+{# All business decisions (badge colors, role scope, which actions exist) arrive already           #}
+{# resolved from the view or the include params — this partial only renders.                       #}
+
+{% if wo_list %}
+<form method="post" id="form-bulk-{{ tab_key }}" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="action" value="bulk_action">
+    <input type="hidden" name="active_tab" value="{{ tab_key }}">
+    {% if is_elevated %}
+    <div class="px-4 py-2 border-bottom bg-light d-flex align-items-center gap-2 flex-wrap bulk-action-bar"
+         id="bulk-bar-{{ tab_key }}">
+        <span class="text-sm text-muted" id="bulk-count-{{ tab_key }}">0 seleccionados</span>
+        {% if bulk_unmark_reviewed %}
+        <button type="submit" name="bulk_op" value="unmark_reviewed"
+                class="btn btn-warning btn-sm py-0 px-3">
+            <i class="bi bi-x-circle me-1"></i>Desmarcar revisados
+        </button>
+        {% endif %}
+        {% if bulk_mark_reviewed %}
+        <button type="submit" name="bulk_op" value="mark_reviewed"
+                class="btn btn-success btn-sm py-0 px-3">
+            <i class="bi bi-check2-all me-1"></i>Marcar revisados
+        </button>
+        {% endif %}
+        <button type="submit" name="bulk_op" value="delete"
+                class="btn btn-danger btn-sm py-0 px-3"
+                onclick="return confirm('¿Eliminar los partes seleccionados? Esta acción no se puede deshacer.')">
+            <i class="bi bi-trash me-1"></i>Eliminar
+        </button>
+        {% if bulk_export %}
+        <button type="button" id="btn-export-template"
+                class="btn btn-success btn-sm py-0 px-3 ms-auto"
+                data-bs-toggle="modal"
+                data-bs-target="#modalExportTemplate">
+            <i class="bi bi-file-earmark-excel me-1"></i>Exportar
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    {% if is_elevated %}
+                    <th class="px-3 bulk-check-col">
+                        <input type="checkbox" class="form-check-input bulk-check-all"
+                               data-target="{{ tab_key }}" title="Seleccionar todos">
+                    </th>
+                    {% endif %}
+                    <th class="text-sm fw-semibold">
+                        <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                           sort-header-link" data-col="operator_name" data-tab="{{ tab_key }}">
+                            Operario
+                            {% if sort_primary_col == 'operator_name' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                        </a>
+                    </th>
+                    <th class="text-sm fw-semibold">
+                        <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                           sort-header-link" data-col="fecha" data-tab="{{ tab_key }}">
+                            Fecha
+                            {% if sort_primary_col == 'fecha' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                        </a>
+                    </th>
+                    <th class="text-sm fw-semibold">Bloques</th>
+                    <th class="text-sm fw-semibold">
+                        <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                           sort-header-link" data-col="horas_totales" data-tab="{{ tab_key }}">
+                            Horas
+                            {% if sort_primary_col == 'horas_totales' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                        </a>
+                    </th>
+                    <th class="text-sm fw-semibold">
+                        <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                           sort-header-link" data-col="horas_extra" data-tab="{{ tab_key }}">
+                            H. Extra
+                            {% if sort_primary_col == 'horas_extra' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                        </a>
+                    </th>
+                    <th class="text-sm fw-semibold">Dieta</th>
+                    {% if show_pipeline_status or show_reviewed_badge %}
+                    <th class="text-sm fw-semibold">
+                        {% if show_reviewed_badge %}
+                        <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                           sort-header-link" data-col="reviewed" data-tab="{{ tab_key }}">
+                            Estado
+                            {% if sort_primary_col == 'reviewed' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                        </a>
+                        {% else %}
+                        Estado
+                        {% endif %}
+                    </th>
+                    {% endif %}
+                    <th class="text-sm fw-semibold">
+                        <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                           sort-header-link" data-col="fault_category" data-tab="{{ tab_key }}">
+                            Familia
+                            {% if sort_primary_col == 'fault_category' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                        </a>
+                    </th>
+                    {% if show_reviewed_by %}<th class="text-sm fw-semibold">Revisado por</th>{% endif %}
+                    {% if show_excel %}<th class="text-sm fw-semibold">Excel</th>{% endif %}
+                    {% if show_origen %}<th class="text-sm fw-semibold">Origen</th>{% endif %}
+                    <th class="text-sm fw-semibold">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for wo in wo_list %}
+                <tr>
+                    {% if is_elevated %}
+                    <td class="px-3">
+                        <input type="checkbox" name="selected_pks" value="{{ wo.pk }}"
+                               class="form-check-input bulk-check-item" data-group="{{ tab_key }}">
+                    </td>
+                    {% endif %}
+                    <td class="text-sm fw-semibold">{{ wo.operator_name }}</td>
+                    <td class="text-sm">
+                        {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
+                    </td>
+                    <td class="text-sm">{{ wo.num_bloques }}</td>
+                    <td class="text-sm">{{ wo.horas_totales }}</td>
+                    <td class="text-sm">
+                        {% if wo.horas_extra > 0 %}
+                        <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-sm">
+                        {% if wo.dieta %}
+                        <span class="badge bg-info text-dark">Dieta</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    {% if show_pipeline_status %}
+                    <td class="text-sm">
+                        {% if wo.status_badge_class %}
+                        <span class="badge {{ wo.status_badge_class }}">{{ wo.status_display }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    {% if show_reviewed_badge %}
+                    <td class="text-sm">
+                        {% if wo.reviewed %}
+                        <span class="badge bg-success">Revisado</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark">Pendiente</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    <td class="text-sm">
+                        {% if wo.fault_category %}
+                        <span class="badge bg-light text-dark border badge-sm">{{ wo.fault_category }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    {% if show_reviewed_by %}
+                    <td class="text-sm text-muted">
+                        {% if wo.reviewed_by %}
+                            {{ wo.reviewed_by }}
+                            {% if wo.reviewed_at %}
+                            <br><small class="text-muted">{{ wo.reviewed_at|date:"d/m/Y H:i" }}</small>
+                            {% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    {% endif %}
+                    {% if show_excel %}
+                    <td class="text-sm">
+                        {% if wo.excel_url %}
+                        <a href="{{ wo.excel_url }}"
+                           class="btn btn-outline-success btn-sm py-0 px-2"
+                           download>
+                            <i class="bi bi-file-earmark-excel"></i>
+                        </a>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    {% if show_origen %}
+                    <td class="text-sm text-muted">
+                        {% if wo.generated_by %}
+                        <span class="badge bg-info text-dark">
+                            <i class="bi bi-robot me-1"></i>Generado
+                        </span>
+                        {% else %}
+                        <span class="badge bg-light text-dark border">Manual</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    <td class="text-sm">
+                        <div class="d-flex gap-2 flex-wrap">
+                            {% if show_edit %}
+                            <a href="{% url 'panel:operator_form_edit' wo.pk %}?from=taller"
+                               class="btn btn-outline-primary btn-sm py-0 px-2">
+                                <i class="bi bi-pencil me-1"></i>Editar / Revisar
+                            </a>
+                            {% endif %}
+                            {% if is_elevated %}
+                                {% if show_mark_reviewed_row %}
+                                <button type="button"
+                                        class="btn btn-outline-success btn-sm py-0 px-2"
+                                        hx-post="{% url 'panel:work_order_review' wo.pk %}"
+                                        hx-swap="none"
+                                        hx-on::after-request="window.location.reload()">
+                                    <i class="bi bi-check2 me-1"></i>Marcar revisado
+                                </button>
+                                {% endif %}
+                                {% if show_unmark_reviewed_row %}
+                                <button
+                                    hx-post="{% url 'panel:work_order_review' pk=wo.pk %}"
+                                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                                    hx-target="closest tr"
+                                    hx-swap="outerHTML"
+                                    class="btn btn-sm btn-outline-warning py-0 px-2"
+                                    title="Desmarcar revisión">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                                {% endif %}
+                                <button type="button"
+                                        class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-single"
+                                        data-pk="{{ wo.pk }}"
+                                        data-form="form-bulk-{{ tab_key }}"
+                                        data-tab="{{ tab_key }}">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            {% elif not show_edit %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if show_totals %}
+                <tr class="table-primary fw-semibold small">
+                    {% if is_elevated %}<td class="px-3"></td>{% endif %}
+                    <td colspan="3" class="text-end pe-3">TOTAL</td>
+                    <td class="text-sm">{{ totals.horas_totales }}</td>
+                    <td class="text-sm">
+                        {% if totals.horas_extra > 0 %}
+                        <span class="badge bg-success">+{{ totals.horas_extra }}h</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-sm">
+                        {% if totals.dietas > 0 %}
+                        <span class="badge bg-info text-dark">{{ totals.dietas }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td colspan="4"></td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</form>
+{% else %}
+<div class="px-4 py-5 text-center text-muted">
+    <i class="bi {{ empty_icon }} fs-3 d-block mb-2"></i>
+    <span class="text-sm">{{ empty_text }}</span>
+</div>
+{% endif %}

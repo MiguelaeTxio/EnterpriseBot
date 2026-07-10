@@ -24,7 +24,7 @@
         {# Back link / Enlace de retorno                                       #}
         {# ------------------------------------------------------------------ #}
         <div class="mb-3">
-            <a href="{% if back_url %}{{ back_url }}{% elif company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}{% url 'panel:operator_history' %}{% else %}{% url 'panel:digital_work_order_list' %}{% endif %}"
+            <a href="{% if back_url %}{{ back_url }}{% else %}{% url 'panel:work_order_admin_history' %}{% endif %}"
                class="text-muted text-decoration-none">
                 <i class="bi bi-arrow-left me-1"></i>Volver al historial
             </a>
@@ -475,7 +475,7 @@
             <input type="hidden" id="meter-warnings-confirmed-input" name="meter_warnings_confirmed" value="">
 
             <div class="d-flex gap-2 justify-content-end mb-5">
-                <a href="{% if back_url %}{{ back_url }}{% elif company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}{% url 'panel:operator_history' %}{% else %}{% url 'panel:digital_work_order_list' %}{% endif %}"
+                <a href="{% if back_url %}{{ back_url }}{% else %}{% url 'panel:work_order_admin_history' %}{% endif %}"
                    class="btn btn-outline-secondary">
                     <i class="bi bi-x-lg me-1"></i>Cancelar
                 </a>
