@@ -26,7 +26,22 @@ jobs:
           ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
 
       - name: git pull + migrate + collectstatic en PythonAnywhere
+        # BUGFIX S014 (2026-07-13): "ssh ... | tee archivo" enmascaraba
+        # el código de salida real del ssh -- sin pipefail, el exit
+        # status de la tubería es el de `tee` (que casi siempre es 0),
+        # no el de `ssh`. Esto hizo que DOS despliegues seguidos
+        # (commits 9bb32ee y ea70dcd) se reportaran en verde en GitHub
+        # Actions mientras el `git pull` real fallaba en el servidor
+        # con "untracked working tree files would be overwritten by
+        # merge" -- el código nunca llegó a producción pese al "✅".
+        # `set -o pipefail` en el shell EXTERIOR de la Action (no basta
+        # con el `set -e` de dentro del script remoto de ssh, que solo
+        # afecta a la sesión ssh en sí) hace que el exit code de toda
+        # la tubería sea el del primer comando que falle -- ahora un
+        # fallo real del ssh sí tumba este step, y los steps
+        # siguientes sin `if: always()` se saltan automáticamente.
         run: |
+          set -o pipefail
           ssh -i ~/.ssh/pa_deploy_key MiguelAeTxio@ssh.pythonanywhere.com '
             set -e
             cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot
@@ -40,6 +55,12 @@ jobs:
           ' | tee /tmp/deploy_output.txt
 
       - name: Recargar la web app (API PythonAnywhere)
+        # Explícito tras el bugfix de arriba: si el paso anterior
+        # falla de verdad ahora (ya no se enmascara), este NUNCA debe
+        # ejecutarse con código a medio desplegar -- if: success() es
+        # el comportamiento por defecto de GitHub Actions, se deja
+        # explícito aquí para que quede claro que es intencional.
+        if: success()
         run: |
           curl -sf -X POST \
             "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/webapps/enterprisebot-miguelaetxio.pythonanywhere.com/reload/" \
