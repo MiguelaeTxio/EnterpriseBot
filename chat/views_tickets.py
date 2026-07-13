@@ -107,13 +107,21 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
-        # Operators panel: all WORKSHOPBOSS/WORKSHOP of the company with their active ticket.
-        # Panel de operarios: todos los WORKSHOPBOSS/WORKSHOP de la empresa con su ticket activo.
+        # Operators panel: solo WORKSHOP -- un WORKSHOPBOSS nunca entra en un
+        # BreakdownTicket como asignado. Confirmado por Miguel Angel (S015):
+        # role__in=[WORKSHOP, WORKSHOPBOSS] era un remanente del diseño
+        # inicial del H14 (commit 19666f0) nunca limpiado; sin tickets reales
+        # asignados a WORKSHOPBOSS en produccion.
+        # Operators panel: WORKSHOP only -- a WORKSHOPBOSS never enters a
+        # BreakdownTicket as assignee. Confirmed by Miguel Angel (S015):
+        # role__in=[WORKSHOP, WORKSHOPBOSS] was leftover from the original
+        # H14 design (commit 19666f0), never cleaned up; no real production
+        # tickets assigned to a WORKSHOPBOSS.
         operators_qs = (
             CU.objects
             .filter(
                 company=company,
-                role__in=[CU.ROLE_WORKSHOP, CU.ROLE_WORKSHOPBOSS],
+                role=CU.ROLE_WORKSHOP,
                 is_active=True,
             )
             .select_related("user")
@@ -163,23 +171,27 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
     """
     Displays a single BreakdownTicket with its photos.
     Provides POST actions:
-      action=assign         — assigns/unassigns a WORKSHOPBOSS; sets IN_PROGRESS.
+      action=assign         — assigns/unassigns a WORKSHOP operator; sets IN_PROGRESS.
       action=self_assign    — operator self-assigns; sets IN_PROGRESS.
       action=set_urgency    — updates urgency level.
       action=pause          — sets status=PAUSED, clears assigned_to, sets paused_at.
       action=close          — sets status=CLOSED, resolved_by, resolved_at.
     Accessible to ADMIN, SUPERVISOR, WORKSHOPBOSS and WORKSHOP roles.
+    action=assign executed by ADMIN/SUPERVISOR/WORKSHOPBOSS; target is
+    always WORKSHOP -- a WORKSHOPBOSS is never a valid assignee.
 
     URL: GET/POST /panel/chat/breakdowns/tickets/<pk>/
     ---
     Muestra un BreakdownTicket individual con sus fotos.
     Proporciona acciones POST:
-      action=assign         — asigna/desasigna un WORKSHOPBOSS; pone IN_PROGRESS.
+      action=assign         — asigna/desasigna un operario WORKSHOP; pone IN_PROGRESS.
       action=self_assign    — el operario se autoasigna; pone IN_PROGRESS.
       action=set_urgency    — actualiza el nivel de urgencia.
       action=pause          — pone PAUSED, limpia assigned_to, registra paused_at.
       action=close          — pone CLOSED, resolved_by, resolved_at.
     Accesible para los roles ADMIN, SUPERVISOR, WORKSHOPBOSS y WORKSHOP.
+    action=assign lo ejecuta ADMIN/SUPERVISOR/WORKSHOPBOSS; el destino
+    siempre es WORKSHOP -- un WORKSHOPBOSS nunca es un asignado válido.
 
     URL: GET/POST /panel/chat/breakdowns/tickets/<pk>/
     """
@@ -228,23 +240,29 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
-        # Destinos asignables desde el formulario "Asignar operario" — misma
-        # regla de negocio que el panel de despacho por arrastre (WORKSHOP y
-        # WORKSHOPBOSS), instrucción explícita de Miguel Ángel en S015:
-        # antes solo incluía WORKSHOPBOSS, asimetría corregida aquí.
-        # Assignable targets for the "Asignar operario" form — same business
-        # rule as the drag-and-drop dispatch panel (WORKSHOP and
-        # WORKSHOPBOSS), explicit instruction from Miguel Ángel in S015:
-        # previously only included WORKSHOPBOSS, asymmetry fixed here.
+        # Destinos asignables desde el formulario "Asignar operario" — solo
+        # WORKSHOP, misma regla de negocio que el panel de despacho por
+        # arrastre. Corregido en S015: incluir WORKSHOPBOSS como destino era
+        # un remanente del diseño inicial del H14 nunca limpiado, sin
+        # tickets reales asignados a WORKSHOPBOSS en producción (confirmado
+        # por Miguel Ángel) -- un WORKSHOPBOSS nunca entra en un
+        # BreakdownTicket como asignado.
+        # Assignable targets for the "Asignar operario" form — WORKSHOP
+        # only, same business rule as the drag-and-drop dispatch panel.
+        # Fixed in S015: including WORKSHOPBOSS as a target was leftover
+        # from the original H14 design, never cleaned up, with no real
+        # production tickets assigned to a WORKSHOPBOSS (confirmed by
+        # Miguel Ángel) -- a WORKSHOPBOSS never enters a BreakdownTicket as
+        # assignee.
         assignable_operators = (
             CU.objects
             .filter(
                 company=company_user.company,
-                role__in=[CU.ROLE_WORKSHOP, CU.ROLE_WORKSHOPBOSS],
+                role=CU.ROLE_WORKSHOP,
                 is_active=True,
             )
             .select_related("user")
-            .order_by("role", "user__username")
+            .order_by("user__username")
         )
 
         # fault_category se almacena con los mismos codigos internos que
@@ -312,7 +330,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
                     assignee = CU.objects.get(
                         pk=assignee_pk,
                         company=company,
-                        role__in=[CU.ROLE_WORKSHOP, CU.ROLE_WORKSHOPBOSS],
+                        role=CU.ROLE_WORKSHOP,
                         is_active=True,
                     )
                     # If assignee already has an IN_PROGRESS ticket, pause it.

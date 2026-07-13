@@ -143,17 +143,19 @@
         {% endif %}
         {% endif %}
 
-        {# Asignación a operario — ADMIN, SUPERVISOR y WORKSHOPBOSS pueden    #}
-        {# ejecutar esta acción (guard de backend ampliado a WORKSHOPBOSS en #}
-        {# S015, chat/views_tickets.py BreakdownTicketDetailView.post,       #}
+        {# Asignación a operario — quién EJECUTA: ADMIN, SUPERVISOR y         #}
+        {# WORKSHOPBOSS (guard de backend ampliado a WORKSHOPBOSS en S015,   #}
+        {# chat/views_tickets.py BreakdownTicketDetailView.post,             #}
         {# action=="assign" — instrucción explícita de Miguel Ángel).        #}
         {# Segunda vía de entrada a la misma acción "assign" que el panel de #}
-        {# despacho por arrastre. Destinos asignables — misma regla de       #}
-        {# negocio que el drag&drop: WORKSHOP y WORKSHOPBOSS (S015,          #}
-        {# assignable_operators, antes solo WORKSHOPBOSS bajo el nombre      #}
-        {# workshopboss_users — asimetría corregida). Un WORKSHOP no ve esta #}
-        {# tarjeta (no puede ejecutar assign) pero sí puede autoasignarse    #}
-        {# vía "Asignarme este ticket" arriba (action=self_assign).          #}
+        {# despacho por arrastre. A quién se puede asignar (destino) —       #}
+        {# exclusivamente WORKSHOP (assignable_operators). WORKSHOPBOSS      #}
+        {# nunca es un destino válido: incluirlo era un remanente del        #}
+        {# diseño inicial del H14 nunca limpiado, sin tickets reales         #}
+        {# asignados a un WORKSHOPBOSS en producción — corregido en S015,    #}
+        {# confirmado por Miguel Ángel. Un WORKSHOP no ve esta tarjeta (no   #}
+        {# puede ejecutar assign) pero sí puede autoasignarse vía            #}
+        {# "Asignarme este ticket" arriba (action=self_assign).              #}
         {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
         <div class="card border-0 shadow-sm mt-3">
           <div class="card-header fw-semibold border-bottom py-3">
@@ -168,7 +170,7 @@
                 {% for op in assignable_operators %}
                 <option value="{{ op.pk }}"
                   {% if ticket.assigned_to.pk == op.pk %}selected{% endif %}>
-                  {{ op.user.get_full_name|default:op.user.username }} ({{ op.get_role_display }})
+                  {{ op.user.get_full_name|default:op.user.username }}
                 </option>
                 {% endfor %}
               </select>

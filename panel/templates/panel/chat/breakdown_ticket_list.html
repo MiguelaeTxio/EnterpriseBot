@@ -333,6 +333,12 @@
   {# Miguel Ángel (opción "c" de las planteadas en la sesión) para     #}
   {# evitar el intento fallido con 403 en vez de dejarlo intentar y    #}
   {# fallar.                                                           #}
+  {# El panel "Operarios de taller" (izquierda, tarjetas arrastrables) #}
+  {# solo lista WORKSHOP desde S015 — un WORKSHOPBOSS nunca es un      #}
+  {# destino válido de assign (era un remanente del diseño inicial del #}
+  {# H14 nunca limpiado, confirmado por Miguel Ángel: sin tickets      #}
+  {# reales asignados a WORKSHOPBOSS en producción). Ver operators_qs  #}
+  {# en chat/views_tickets.py, BreakdownTicketListView.get().          #}
   {# Drag-and-drop dispatch panel — now also visible for WORKSHOP      #}
   {# since S015 (H17 Block C), explicit instruction from Miguel Ángel  #}
   {# at the close of S012: workshop operators must see the exact same  #}
@@ -347,6 +353,12 @@
   {# below) — Miguel Ángel's explicit choice ("option c" offered this  #}
   {# session) to avoid the failed 403 attempt rather than letting it   #}
   {# fail.                                                             #}
+  {# The "Operarios de taller" panel (left, draggable cards) only      #}
+  {# lists WORKSHOP since S015 — a WORKSHOPBOSS is never a valid       #}
+  {# assign target (leftover from the original H14 design, never      #}
+  {# cleaned up, confirmed by Miguel Ángel: no real production tickets #}
+  {# assigned to a WORKSHOPBOSS). See operators_qs in                  #}
+  {# chat/views_tickets.py, BreakdownTicketListView.get().             #}
   {# ================================================================ #}
   {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" or company_user.role == "WORKSHOP" %}
   <div id="tk-bottom">
