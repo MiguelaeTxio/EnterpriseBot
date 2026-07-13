@@ -162,6 +162,19 @@ define la personalidad experta con el flujo numerado 1→6 y tres reglas crític
 | S013 | 2026-07-13 | NOTA DE DESVÍO — sin trabajo directo en H17 | Sesión desviada por completo a H10 (Caso A, sin PCH invocado, marcador `EN PROGRESO` sin mover) para atender el Bloque B de la hoja de ruta de abajo (albaranes de proveedores) más una infraestructura de despliegue automático de plataforma pedida por Miguel Ángel a mitad de sesión, ninguna de las dos ligada a H17. Detalle técnico completo, commits y decisiones en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, fila S013 del Registro de Sesiones de ese anexo. Los Bloques A (fallo de confirmación de ticket IVR), C (CRUD de tickets responsivo + reversión del panel de despacho para WORKSHOP) y D (validación general IVR) de la hoja de ruta de abajo **siguen íntegramente pendientes, sin ningún avance** — la hoja de ruta de este hito no se reescribe (Caso A: "el hito no avanzó"). |
 | S014 | 2026-07-13 | NOTA DE DESVÍO — sin trabajo directo en H17 | Sesión desviada por completo a H10 (Caso A, sin PCH invocado, marcador `EN PROGRESO` sin mover), a petición expresa de Miguel Ángel ("terminar con el tema de los albaranes"): cierre completo del Bloque B (fecha ES, unicidad `delivery_number`, subida async), persistencia en Google Drive (sustituye el envío por correo), más un cambio mayor de infraestructura de plataforma (nuevo flujo de migraciones — el modelo escribe el archivo directamente en vez del ciclo manual `makemigrations`; fix crítico de un bug real de `deploy.yml` que reportaba despliegues fallidos como exitosos; reinicio condicional de las Always-on Tasks en el despliegue automático) — ninguna de las dos ligada a H17. Detalle técnico completo, commits y decisiones en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, fila S014 del Registro de Sesiones de ese anexo, y en las skills de sistema `com-migrations` (reescrita de raíz), `nfs-enterprisebot-edit`, `com-bash-commands`, `nfs-enterprisebot-pcs`. Los Bloques A (fallo de confirmación de ticket IVR), C (CRUD de tickets responsivo + reversión del panel de despacho para WORKSHOP) y D (validación general IVR) de la hoja de ruta de abajo **siguen íntegramente pendientes, sin ningún avance** — la hoja de ruta de este hito no se reescribe (Caso A: "el hito no avanzó"). |
 
+### CIERRE DE SESIÓN S014 (2026-07-13)
+
+Sesión larga y accidentada (fallo real de despliegue diagnosticado y
+corregido en vivo, ver anexo H10) pero cerrada con los tres estados
+(GitHub, workspace del modelo, servidor de producción) verificados
+sincronizados con datos reales, no solo con el status de la API.
+`working tree clean`, `HEAD` = `4d50217`, coincide con
+`origin/main`. Sin cambios de hito -- H17 sigue `EN PROGRESO`, sin
+avance directo esta sesión. Próxima sesión: Miguel Ángel decide entre
+retomar H17 (Bloques A/C/D, ver hoja de ruta arriba) o continuar en
+H10 con la nueva salvaguarda de validación de máquina por albarán
+(primer punto de la hoja de ruta de H10, ver ese anexo).
+
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
