@@ -53,13 +53,34 @@ from spare_parts.models import DeliveryNote
 class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
     """
     Lists all DeliveryNote records for the current company, filterable
-    by status, supplier name and recipient company code.
+    by status, supplier name and recipient company code. Each row also
+    carries its assignment progress (LIMBO/PARTIAL/FULL), computed via
+    DeliveryNote.assignment_progress() -- how much of the note's
+    MACHINE-type lines have left the pre-assignment limbo. Resolved
+    here, not in the template (dumb templates directive) -- see
+    status_badge_class precedent in panel/views_workorders.py (S012).
     ---
     Lista todos los DeliveryNote de la empresa actual, filtrable por
-    estado, nombre de proveedor y código de empresa destinataria.
+    estado, nombre de proveedor y código de empresa destinataria. Cada
+    fila lleva también su progreso de asignación (LIMBO/PARTIAL/FULL),
+    calculado con DeliveryNote.assignment_progress() -- cuánto de sus
+    líneas MACHINE ya salió del limbo de pre-asignación. Resuelto aquí,
+    no en la plantilla (directriz de plantillas tontas) -- ver
+    precedente status_badge_class en panel/views_workorders.py (S012).
     """
 
     template_name = 'delivery_notes/list.html'
+
+    _PROGRESS_BADGE = {
+        'LIMBO': 'bg-danger',
+        'PARTIAL': 'bg-warning text-dark',
+        'FULL': 'bg-success',
+    }
+    _PROGRESS_LABEL = {
+        'LIMBO': 'En limbo',
+        'PARTIAL': 'Parcialmente asignado',
+        'FULL': 'Totalmente asignado',
+    }
 
     def get(self, request):
         company = request.user.company_user.company
@@ -71,7 +92,7 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             DeliveryNote.objects
             .filter(company=company)
             .select_related('processed_by__user', 'supplier')
-            .prefetch_related('lines')
+            .prefetch_related('lines', 'lines__spare_part_entry')
         )
         if status:
             notes = notes.filter(status=status)
@@ -82,6 +103,17 @@ class DeliveryNoteAdminListView(SupervisorAccessMixin, View):
             )
         if recipient:
             notes = notes.filter(recipient_company_code=recipient)
+
+        # Progreso de asignación resuelto aquí (no en la plantilla) y
+        # anotado directamente sobre cada instancia -- son atributos
+        # calculados, no campos de BD, así que no chocan con nada.
+        for note in notes:
+            state, assigned, total = note.assignment_progress()
+            note.progress_state = state
+            note.progress_badge_class = self._PROGRESS_BADGE.get(state, '')
+            note.progress_label = self._PROGRESS_LABEL.get(state, '')
+            note.progress_assigned = assigned
+            note.progress_total = total
 
         recipient_codes = (
             DeliveryNote.objects

@@ -326,7 +326,8 @@ class DeliveryNote(models.Model):
         count (unconfirmed note, or no MACHINE line at all).
 
         Call after prefetch_related('lines__spare_part_entry') on the
-        queryset to avoid N+1 -- see DeliveryNoteListView.
+        queryset to avoid N+1 -- see DeliveryNoteAdminListView
+        (delivery_notes app).
 
         ---
 
@@ -342,7 +343,8 @@ class DeliveryNote(models.Model):
         (albarán sin confirmar, o ninguna línea MACHINE).
 
         Llamar tras prefetch_related('lines__spare_part_entry') en el
-        queryset para evitar N+1 -- ver DeliveryNoteListView.
+        queryset para evitar N+1 -- ver DeliveryNoteAdminListView (app
+        delivery_notes).
         """
         machine_lines = [
             line for line in self.lines.all()
