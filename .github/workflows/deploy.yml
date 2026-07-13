@@ -1,14 +1,16 @@
 name: Deploy EnterpriseBot to PythonAnywhere
 
-# Despliegue automatico completo (S013, confirmado por Miguel Angel:
-# "que si a todo, con migrate incluido, mantenme informado"). Se
-# dispara en cada push a main. Hace, en este orden: git pull en el
-# servidor via SSH, migrate --noinput, collectstatic --noinput
-# --clear, y reload de la web app via API de PythonAnywhere. Nunca
-# toca Celery/tareas always-on (mecanismo distinto, sin automatizar
-# todavia) ni corre makemigrations (los archivos de migracion se
-# generan y revisan siempre en el workspace de Claude antes de
-# pushear, nunca en el servidor).
+# Despliegue automatico completo (S013, ampliado en S014). Se dispara
+# en cada push a main. Hace, en este orden: git pull en el servidor
+# via SSH, migrate --noinput, collectstatic --noinput --clear, reload
+# de la web app via API de PythonAnywhere, y reinicio CONDICIONAL de
+# las Always-on Tasks de EnterpriseBot (bridge de voz id 234987,
+# worker Celery id 242133) solo cuando el diff del push toca archivos
+# relevantes para cada una -- ver el paso "Detectar archivos
+# cambiados" para el patron exacto. Nunca corre makemigrations (los
+# archivos de migracion se generan y revisan siempre en el workspace
+# de Claude antes de pushear, nunca en el servidor -- ver
+# com-migrations seccion 1).
 
 on:
   push:
@@ -40,18 +42,28 @@ jobs:
         # la tubería sea el del primer comando que falle -- ahora un
         # fallo real del ssh sí tumba este step, y los steps
         # siguientes sin `if: always()` se saltan automáticamente.
+        #
+        # S014 (ampliación): también captura OLD_HEAD/NEW_HEAD y
+        # vuelca la lista de archivos cambiados entre marcadores
+        # (CHANGED_FILES_START/END) -- el step siguiente la usa para
+        # decidir si reiniciar el bridge de voz y/o el worker Celery.
         run: |
           set -o pipefail
           ssh -i ~/.ssh/pa_deploy_key MiguelAeTxio@ssh.pythonanywhere.com '
             set -e
             cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot
+            OLD_HEAD=$(git rev-parse HEAD)
             echo "--- git pull ---"
             git pull origin main
+            NEW_HEAD=$(git rev-parse HEAD)
             source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv/bin/activate
             echo "--- migrate ---"
             python -m dotenv run python manage.py migrate --noinput
             echo "--- collectstatic ---"
             python -m dotenv run python manage.py collectstatic --noinput --clear
+            echo "--- CHANGED_FILES_START ---"
+            git diff --name-only "$OLD_HEAD" "$NEW_HEAD"
+            echo "--- CHANGED_FILES_END ---"
           ' | tee /tmp/deploy_output.txt
 
       - name: Recargar la web app (API PythonAnywhere)
@@ -66,6 +78,60 @@ jobs:
             "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/webapps/enterprisebot-miguelaetxio.pythonanywhere.com/reload/" \
             -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
           echo "--- Reload solicitado OK ---"
+
+      - name: Reiniciar Always-on Tasks si el push las afecta (S014)
+        # Reutiliza el mismo secret PA_API_TOKEN que ya usa el paso de
+        # reload de arriba -- un token de API de PythonAnywhere es a
+        # nivel de cuenta, no hace falta uno nuevo por endpoint.
+        #
+        # IDs reales de las Always-on Tasks de EnterpriseBot
+        # (confirmados vía API en S014 -- las otras dos tareas de la
+        # cuenta, 182748 y 209547, son de Campus Studio Online, nunca
+        # tocarlas desde aquí):
+        #   234987 -- Bridge de Voz Conversacional (voice_orchestrator.py)
+        #   242133 -- Worker Celery (procesamiento de partes de trabajo PDF)
+        #
+        # Patrones de disparo, decididos con Miguel Ángel en S014:
+        #   Bridge -- vox_bridge/**, voice_orchestrator.py,
+        #             voice_sidecar_bridge.py, ivr_config/services.py
+        #             (construye el system prompt que carga el bridge
+        #             en cada llamada, ver anexo H17 STEP 4C).
+        #   Celery -- cualquier tasks.py del proyecto, ai_services/**
+        #             (cliente Gemini compartido usado por las tareas),
+        #             enterprise_core/celery.py, start_celery_worker.sh.
+        #
+        # Deliberadamente NO se reinicia el bridge en cada push (corta
+        # llamadas IVR en curso, ~5 min de caída) -- solo cuando el
+        # diff real lo justifica.
+        if: success()
+        run: |
+          set -o pipefail
+          CHANGED=$(sed -n '/--- CHANGED_FILES_START ---/,/--- CHANGED_FILES_END ---/p' /tmp/deploy_output.txt | sed '1d;$d')
+          {
+            echo "Archivos cambiados en este despliegue:"
+            echo "$CHANGED"
+            echo ""
+
+            if echo "$CHANGED" | grep -qE '^(vox_bridge/|voice_orchestrator\.py|voice_sidecar_bridge\.py|ivr_config/services\.py)'; then
+              echo "--- Bridge de voz: cambios relevantes detectados, reiniciando (id 234987) ---"
+              curl -sf -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/234987/restart/" \
+                -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
+              echo ""
+              echo "Bridge de voz: reinicio solicitado OK."
+            else
+              echo "Bridge de voz: sin cambios relevantes, no se reinicia."
+            fi
+
+            if echo "$CHANGED" | grep -qE '(tasks\.py$|ai_services/|enterprise_core/celery\.py|start_celery_worker\.sh)'; then
+              echo "--- Worker Celery: cambios relevantes detectados, reiniciando (id 242133) ---"
+              curl -sf -X POST "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/always_on/242133/restart/" \
+                -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
+              echo ""
+              echo "Worker Celery: reinicio solicitado OK."
+            else
+              echo "Worker Celery: sin cambios relevantes, no se reinicia."
+            fi
+          } | tee /tmp/restart_output.txt
 
       - name: Resumen del despliegue (mantener informado a Miguel Angel)
         if: always()
@@ -87,6 +153,11 @@ jobs:
               echo ""
               echo "**Atencion: puede haberse aplicado una migracion nueva -- revisar la salida de arriba.**"
             fi
+            echo ""
+            echo "### Always-on Tasks (bridge de voz / worker Celery)"
+            echo '```'
+            cat /tmp/restart_output.txt 2>/dev/null || echo "(sin ejecutar -- revisar el paso anterior)"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Limpiar clave SSH
