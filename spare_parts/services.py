@@ -91,12 +91,17 @@ class DeliveryNoteLineExtraction(BaseModel):
         description='Precio total de la línea como texto numérico. '
                      'Null si no figura en el albarán.',
     )
-    machine_code_raw: Optional[str] = Field(
-        default=None,
-        description='Código de máquina o de almacén anotado a mano '
-                     'junto a esta línea, tal cual aparece escrito '
-                     '(sin normalizar). Null si no hay anotación.',
-    )
+    # Sin machine_code_raw por línea desde S015 (H10, primer punto de
+    # la hoja de ruta): confirmado por Miguel Ángel, la asignación es
+    # SIEMPRE completa por albarán -- un único centro de gasto para
+    # todas las líneas, nunca uno distinto por línea. Ver
+    # DeliveryNoteExtraction.document_machine_code_raw más abajo.
+    # ---
+    # No per-line machine_code_raw since S015 (H10, first roadmap
+    # point): confirmed by Miguel Ángel, assignment is ALWAYS whole-
+    # document -- a single cost centre for every line, never a
+    # different one per line. See
+    # DeliveryNoteExtraction.document_machine_code_raw below.
 
 
 class DeliveryNoteExtraction(BaseModel):
@@ -146,26 +151,34 @@ class DeliveryNoteExtraction(BaseModel):
     )
     general_machine_code_raw: Optional[str] = Field(
         default=None,
-        description='Anotación de código de máquina o centro de '
-                     'gasto que aplica a TODO el albarán (o a las '
-                     'líneas sin anotación propia), NO a una línea de '
-                     'artículo concreta. Puede venir de tres fuentes '
-                     '(en cualquiera de ellas, sin las almohadillas '
-                     'si las lleva): (a) una anotación #CODIGO# '
-                     'aparte de cualquier línea, p. ej. junto al '
-                     'número de albarán o en un margen; (b) un campo '
-                     'impreso "Observaciones"/"Notas" de la cabecera '
-                     'o el pie del documento, si contiene un código '
-                     'corto de máquina/centro de gasto (no un '
-                     'comentario largo no relacionado); (c) una línea '
-                     'que NO es un artículo real -- categoría/familia '
-                     'tipo "TEXTO"/"NOTA", precio cero, sin '
-                     'descripción de producto real -- cuyo contenido '
-                     'es en realidad la anotación del código. Null si '
-                     'ninguna de las tres fuentes contiene un código, '
-                     'o si las anotaciones van cada una junto a su '
-                     'propia línea (en ese caso van en machine_code_raw '
-                     'de cada línea, no aquí).',
+        description='Código de máquina o centro de gasto (o nombre '
+                     'de dependencia: "Almacén", "Taller Mecánico", '
+                     '"Administración", etc.) al que va destinado TODO '
+                     'el albarán, leído EXCLUSIVAMENTE del campo '
+                     'impreso "Observaciones" o "Notas" de la '
+                     'cabecera o el pie del documento. Debe venir '
+                     'impreso/escrito por el propio proveedor en ese '
+                     'campo -- nunca una anotación a mano (bolígrafo/'
+                     'lápiz) sobre la foto, y nunca deducido de otra '
+                     'parte del documento. Transcribe tal cual está '
+                     'escrito, sin normalizar ni corregir, sin las '
+                     'almohadillas si las lleva (ej. "#B14#" -> '
+                     '"B14"). Null si el campo Observaciones/Notas '
+                     'está vacío o no contiene un código reconocible.',
+    )
+    document_code_found_as_line_item: bool = Field(
+        default=False,
+        description='True si detectas un código de máquina/centro de '
+                     'gasto candidato (patrón #CODIGO#, o una fila '
+                     'con categoría/familia "TEXTO"/"NOTA", precio 0 '
+                     'y sin descripción de producto real) que NO está '
+                     'en el campo Observaciones/Notas sino insertado '
+                     'como si fuera una línea de artículo del '
+                     'albarán. En ese caso, general_machine_code_raw '
+                     'debe quedar en null (esa fuente ya no es '
+                     'válida) y este campo debe ir en true, para que '
+                     'el sistema rechace el albarán con un motivo '
+                     'preciso. False en cualquier otro caso.',
     )
     lines: list[DeliveryNoteLineExtraction] = Field(
         default_factory=list,
@@ -196,51 +209,41 @@ línea, referencia (si tiene), descripción, cantidad, precio \
 unitario, precio total. IMPORTANTE: algunos proveedores insertan \
 líneas que NO son artículos reales -- p. ej. una fila con \
 categoría/familia "TEXTO", "NOTA" u similar, precio 0 y sin \
-descripción de producto -- para escribir una anotación (normalmente \
-un código de máquina o centro de gasto) en vez de vender algo. NO \
-incluyas esas filas en la lista de líneas de artículo -- su \
-contenido se extrae aparte, ver punto 6.
-5. Para cada línea de artículo REAL, busca una anotación manuscrita \
-junto al artículo indicando a qué máquina o centro de gasto va \
-destinado. Esta anotación puede venir encerrada entre almohadillas \
-(ej. \
-"#B14#", "#TALLER MECANICO#") -- si ves ese patrón, transcribe \
-únicamente el texto entre las almohadillas, sin ellas. Puede ser: \
+descripción de producto -- para escribir una anotación en vez de \
+vender algo. NO incluyas esas filas en la lista de líneas de \
+artículo -- ver el punto 5 para qué hacer con su contenido.
+5. El código de máquina o centro de gasto/dependencia al que va \
+destinado TODO el albarán (norma vigente desde S015: un albarán \
+completo va SIEMPRE a un único destino, nunca uno distinto por \
+línea). Busca EXCLUSIVAMENTE en el campo impreso "Observaciones" o \
+"Notas" de la cabecera o el pie del documento. Puede ser: \
   - Un código de máquina o matrícula (ej. "B14", "A-054", "G12"). \
-  - Un alias de almacén general (ej. "ALM", "ALMACEN"). \
-  - El nombre de un centro de gasto general de la empresa, escrito \
-tal cual (ej. "TALLER MECANICO", "ALMACEN HUELVA", "LOGISTICA", \
-"DEPENDENCIAS", "TALLER ELEVACION", "ALMACEN ELEVACION", \
-"ALMACEN MECANICO", "ALMACEN DEPENDENCIAS"). \
-Transcribe la anotación tal cual está escrita en el campo \
-machine_code_raw de esa línea, sin normalizar ni corregir. Si esa \
-línea no tiene anotación propia, deja machine_code_raw en null.
-6. Además, comprueba si existe un código de máquina o centro de \
-gasto que aplique a TODO el albarán (o a las líneas sin anotación \
-propia), buscando en estas tres fuentes, por este orden de prioridad: \
-  a) Una anotación #CODIGO# aparte de cualquier línea de artículo \
-concreta (p. ej. junto al número de albarán, en la cabecera, o \
-escrita una sola vez en un margen del documento). \
-  b) Un campo impreso "Observaciones" o "Notas" en la cabecera o el \
-pie del documento -- si su contenido es un código corto de máquina \
-o centro de gasto (mismo formato que el punto 5), transcríbelo. Si \
-el campo contiene un comentario largo no relacionado con una \
-máquina, déjalo fuera (no lo transcribas como código). \
-  c) El contenido de una línea-nota (ver punto 4 -- categoría \
-"TEXTO"/"NOTA", precio 0, sin descripción de producto real) cuya \
-referencia o texto parece un código corto de máquina o centro de \
-gasto. \
-Transcribe lo que encuentres en el campo general_machine_code_raw \
-(mismo formato que machine_code_raw, sin las almohadillas si las \
-lleva). No confundas esto con el caso normal en que cada línea lleva \
-su propia anotación pegada a ella -- en ese caso, cada anotación va \
-en el machine_code_raw de su línea, y general_machine_code_raw debe \
-quedar en null.
+  - El nombre de una dependencia o centro de gasto general de la \
+empresa, escrito tal cual (ej. "ALMACEN", "TALLER MECANICO", \
+"ADMINISTRACION", "DEPENDENCIAS", "ALMACEN HUELVA", "LOGISTICA", \
+"TALLER ELEVACION", "ALMACEN ELEVACION"). \
+Puede venir encerrada entre almohadillas (ej. "#B14#", \
+"#TALLER MECANICO#") -- si ves ese patrón, transcribe únicamente el \
+texto entre las almohadillas, sin ellas. Transcribe la anotación tal \
+cual está escrita en el campo general_machine_code_raw, sin \
+normalizar ni corregir. Dos reglas estrictas, sin excepción: \
+  a) SOLO cuenta si está IMPRESO/ESCRITO POR EL PROVEEDOR en el \
+propio campo Observaciones/Notas del documento. Una anotación a mano \
+(bolígrafo/lápiz) sobre la foto, hecha por otra persona, NUNCA es \
+válida -- ignórala por completo, no la transcribas ni la uses. \
+  b) Si el único candidato a código que ves NO está en el campo \
+Observaciones/Notas sino que aparece como si fuera una línea de \
+artículo del albarán (ver el patrón "TEXTO"/"NOTA" del punto 4) o \
+suelto en cualquier otro sitio del documento, general_machine_code_raw \
+debe quedar en null y document_code_found_as_line_item debe ir en \
+true -- no lo aceptes como válido bajo ningún concepto, solo se \
+reporta para que el sistema explique el motivo del rechazo. \
+Si el campo Observaciones/Notas está vacío o no contiene ningún \
+código reconocible, deja general_machine_code_raw en null y \
+document_code_found_as_line_item en false.
 
 No inventes datos que no sean legibles en el documento -- usa null \
-en los campos opcionales cuando no puedas leerlos con certeza, \
-incluido general_machine_code_raw si ninguna de las tres fuentes del \
-punto 6 contiene un código reconocible. Los \
+en los campos opcionales cuando no puedas leerlos con certeza. Los \
 precios y cantidades devuélvelos como texto numérico simple (sin \
 símbolo de moneda, usando punto como separador decimal).
 """
@@ -677,6 +680,77 @@ def resolve_line_assignment(raw_code: Optional[str], company):
         return 'MACHINE', machine
 
     return 'UNASSIGNED', None
+
+
+def validate_document_assignment(delivery_note, company):
+    """
+    Validates the mandatory whole-document assignment rule (annex
+    H10, S015 roadmap point 1): every delivery note must carry
+    exactly one machine/cost-centre code, printed by the supplier in
+    the document's own "Observaciones"/"Notas" field, applying to
+    every line. No manual correction is allowed -- if the extraction
+    doesn't meet this rule, the operator must re-upload a clearer
+    photo instead of editing the data (confirmed by Miguel Ángel,
+    S015).
+
+    Returns a tuple (is_valid, reason, assignment_type, machine).
+    reason is a human-readable Spanish string explaining the specific
+    rejection cause, or None if is_valid is True. assignment_type/
+    machine are the resolved target when is_valid, else
+    ('UNASSIGNED', None).
+
+    ---
+
+    Valida la norma obligatoria de asignación completa por albarán
+    (anexo H10, primer punto de la hoja de ruta de S015): todo
+    albarán debe llevar exactamente un código de máquina/centro de
+    gasto, impreso por el proveedor en el propio campo
+    "Observaciones"/"Notas" del documento, aplicable a todas sus
+    líneas. No se admite corrección manual -- si la extracción no
+    cumple esta norma, el operario debe volver a subir una foto más
+    clara en vez de corregir el dato (confirmado por Miguel Ángel,
+    S015).
+
+    Devuelve una tupla (is_valid, reason, assignment_type, machine).
+    reason es un texto en castellano legible explicando el motivo
+    concreto de rechazo, o None si is_valid es True. assignment_type/
+    machine son el destino resuelto cuando is_valid, si no
+    ('UNASSIGNED', None).
+    """
+    extraction_raw = delivery_note.extraction_raw or {}
+
+    if extraction_raw.get('document_code_found_as_line_item'):
+        return (
+            False,
+            'El código de máquina/departamento aparece como si fuera '
+            'un artículo del albarán, no en el campo Observaciones. '
+            'El proveedor debe anotarlo correctamente en '
+            'Observaciones antes de volver a fotografiarlo.',
+            'UNASSIGNED', None,
+        )
+
+    raw_code = (delivery_note.general_machine_code_raw or '').strip()
+    if not raw_code:
+        return (
+            False,
+            'Falta el código de máquina o departamento en el campo '
+            'Observaciones del albarán. El proveedor debe anotarlo '
+            'antes de volver a fotografiarlo.',
+            'UNASSIGNED', None,
+        )
+
+    assignment_type, machine = resolve_line_assignment(raw_code, company)
+    if assignment_type == 'UNASSIGNED':
+        return (
+            False,
+            f'El código «{raw_code}» leído en Observaciones no se '
+            f'reconoce como ninguna máquina ni departamento de la '
+            f'empresa. Revisa que esté escrito correctamente en el '
+            f'albarán físico y vuelve a fotografiarlo.',
+            'UNASSIGNED', None,
+        )
+
+    return (True, None, assignment_type, machine)
 
 
 def generate_internal_reference(company):

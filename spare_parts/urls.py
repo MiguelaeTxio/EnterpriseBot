@@ -28,6 +28,11 @@ urlpatterns = [
         name='delivery_note_confirm',
     ),
     path(
+        'delivery-notes/<int:pk>/reject/',
+        views.DeliveryNoteRejectView.as_view(),
+        name='delivery_note_reject',
+    ),
+    path(
         'delivery-notes/<int:pk>/retry/',
         views.DeliveryNoteRetryExtractionView.as_view(),
         name='delivery_note_retry',

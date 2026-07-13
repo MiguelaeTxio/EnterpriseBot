@@ -205,38 +205,38 @@ class DeliveryNote(models.Model):
         ),
     )
     # ------------------------------------------------------------------
-    # Anotación general de máquina/centro de gasto (S007-H10). Confirmado
-    # por Miguel Ángel (2026-07-07): además de la anotación #CODIGO# junto
-    # a cada línea, un albarán puede llevar una única anotación #CODIGO#
-    # general (fuera de cualquier línea concreta, p. ej. en la cabecera o
-    # el margen del documento) indicando que el albarán ENTERO es para esa
-    # máquina/centro de gasto. Actúa como fallback: solo se usa para
-    # resolver las líneas que no tengan su propia anotación individual --
-    # ver resolve_line_assignment() y confirm_delivery_note() en
-    # services.py. Campo libre, mismo formato bruto que
-    # DeliveryNoteLine.machine_code_raw (sin normalizar).
+    # Código único y OBLIGATORIO de máquina/centro de gasto (S007-H10,
+    # reescrito en S015). Hasta S015 era opcional y actuaba solo como
+    # respaldo de las anotaciones por línea; desde S015 (primer punto de
+    # la hoja de ruta, confirmado por Miguel Ángel) es la ÚNICA fuente de
+    # asignación: un albarán completo va SIEMPRE a una única máquina o
+    # centro de gasto, anotado EXCLUSIVAMENTE por el proveedor en el
+    # campo impreso "Observaciones"/"Notas" del propio documento -- nunca
+    # a mano, nunca por línea. Sin este código el albarán se rechaza
+    # (ver services.validate_document_assignment()) y el operario debe
+    # volver a fotografiarlo, nunca corregirlo a mano en el formulario.
     # ------------------------------------------------------------------
-    # General machine/cost-centre annotation (S007-H10). Confirmed by
-    # Miguel Ángel (2026-07-07): besides the #CODE# annotation next to
-    # each line, a delivery note can carry a single general #CODE#
-    # annotation (outside any specific line, e.g. in the header or
-    # document margin) indicating the WHOLE delivery note is for that
-    # machine/cost centre. Acts as a fallback: only used to resolve
-    # lines that don't have their own individual annotation -- see
-    # resolve_line_assignment() and confirm_delivery_note() in
-    # services.py. Free field, same raw format as
-    # DeliveryNoteLine.machine_code_raw (unnormalised).
+    # Single, MANDATORY machine/cost-centre code (S007-H10, rewritten in
+    # S015). Until S015 it was optional and only acted as a fallback for
+    # per-line annotations; since S015 (first roadmap point, confirmed by
+    # Miguel Ángel) it is the ONLY assignment source: a whole delivery
+    # note always goes to a single machine or cost centre, annotated
+    # EXCLUSIVELY by the supplier in the document's own printed
+    # "Observaciones"/"Notas" field -- never by hand, never per line.
+    # Without this code the delivery note is rejected (see
+    # services.validate_document_assignment()) and the operator must
+    # re-photograph it, never correct it by hand in the form.
     # ------------------------------------------------------------------
     general_machine_code_raw = models.CharField(
         max_length=100,
         blank=True,
-        verbose_name='Código general del albarán',
+        verbose_name='Código de máquina/centro de gasto (obligatorio)',
         help_text=(
-            'Anotación #CODIGO# general del albarán completo (fuera de '
-            'cualquier línea concreta), tal como se extrajo o se '
-            'corrigió a mano. Se usa solo como respaldo para las '
-            'líneas sin anotación propia. Vacío si el albarán no lleva '
-            'una anotación general.'
+            'Código único de máquina o centro de gasto que aplica a '
+            'TODO el albarán, leído exclusivamente del campo impreso '
+            'Observaciones/Notas por Gemini Vision. Obligatorio desde '
+            'S015 -- vacío significa que el albarán se rechaza y debe '
+            'volver a fotografiarse, nunca corregirse a mano.'
         ),
     )
     source_type = models.CharField(
@@ -491,13 +491,18 @@ class DeliveryNoteLine(models.Model):
     machine_code_raw = models.CharField(
         max_length=100,
         blank=True,
-        verbose_name='Código máquina/almacén (bruto)',
+        verbose_name='Código máquina/almacén (bruto) — LEGACY',
         help_text=(
-            'Código de máquina o almacén anotado a mano en el albarán, tal '
-            'como lo transcribió Gemini Vision (sin normalizar). Editable '
-            'en la revisión antes de confirmar la asignación. Añadido en '
-            'S002-H10 para soportar el Paso 3 del anexo (revisión de '
-            'DeliveryNoteDetailView).'
+            'LEGACY desde S015 (H10, primer punto de la hoja de '
+            'ruta): la asignación por línea individual se eliminó a '
+            'favor de una asignación única por albarán completo '
+            '(ver DeliveryNote.general_machine_code_raw). Campo '
+            'conservado sin migración para no perder el rastro '
+            'histórico de los albaranes ya confirmados antes de este '
+            'cambio (y por si en el futuro se recupera la asignación '
+            'por línea) -- ya NO se rellena en extracciones nuevas ni '
+            'se usa en resolve_line_assignment()/'
+            'validate_document_assignment().'
         ),
     )
     assignment_type = models.CharField(

@@ -12,8 +12,6 @@ el flujo de ingesta de albaranes descrito en el anexo H10, sección
 3.1: subida -> extracción con Gemini Vision -> revisión manual ->
 confirmación del circuito de asignación.
 """
-from datetime import date
-
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
@@ -24,9 +22,7 @@ from .forms import SupplierForm
 from .models import DeliveryNote, Supplier
 from .services import (
     confirm_delivery_note,
-    parse_decimal,
-    resolve_line_assignment,
-    resolve_recipient_company_code,
+    validate_document_assignment,
 )
 from .tasks import extract_delivery_note_data, upload_delivery_note_photo_to_drive
 
@@ -140,31 +136,46 @@ class DeliveryNoteUploadView(CompanyUserRequiredMixin, View):
 
 class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
     """
-    Shows the extracted delivery note for manual review and
-    correction before confirming the assignment circuit.
+    Shows the extracted delivery note for confirmation. No manual
+    correction of any field (S015-H10, first roadmap point, explicit
+    decision by Miguel Ángel): the operator can only CONFIRM the
+    extracted data matches the physical document, or REJECT and
+    re-upload a clearer photo -- never edit a value by hand. This
+    forces good photo quality (readable, well lit) instead of relying
+    on manual fixes, and prevents any workaround of the machine/cost-
+    centre-in-Observaciones rule via the review screen.
 
-    GET: renders all header and line fields as editable.
-    POST: saves corrections. If a line's machine_code_raw changed,
-    re-runs resolve_line_assignment on it. Lines without their own
-    code that rely on delivery_note.general_machine_code_raw as a
-    fallback (S007-H10) are also re-resolved when the general code
-    itself changes. Does not execute the assignment circuit -- that
-    is DeliveryNoteConfirmView's job.
+    GET: renders all header and line fields read-only, plus the
+    result of validate_document_assignment() (services.py) -- if
+    invalid, shows the precise rejection reason and only the
+    "reject / re-upload" action is available; if valid, both
+    "Confirmar" and "reject / re-upload" are available.
+    POST: removed -- there is nothing left to save here. Confirming
+    goes through DeliveryNoteConfirmView, rejecting through
+    DeliveryNoteRejectView.
 
     ---
 
-    Muestra el albarán extraído para revisión y corrección manual
-    antes de confirmar el circuito de asignación.
+    Muestra el albarán extraído para su confirmación. Sin corrección
+    manual de ningún campo (S015-H10, primer punto de la hoja de
+    ruta, decisión explícita de Miguel Ángel): el operario solo puede
+    CONFIRMAR que los datos extraídos coinciden con el documento
+    físico, o RECHAZAR y volver a subir una foto más clara -- nunca
+    corregir un valor a mano. Esto obliga a una buena calidad de foto
+    (legible, bien iluminada) en vez de depender de arreglos
+    manuales, y evita cualquier forma de sortear la norma del código
+    de máquina/centro de gasto en Observaciones desde la propia
+    pantalla de revisión.
 
-    GET: renderiza todos los campos de cabecera y línea como
-    editables.
-    POST: guarda las correcciones. Si el machine_code_raw de una
-    línea cambió, vuelve a ejecutar resolve_line_assignment sobre
-    ella. Las líneas sin código propio que dependen de
-    delivery_note.general_machine_code_raw como respaldo (S007-H10)
-    también se recalculan cuando cambia el propio código general. No
-    ejecuta el circuito de asignación -- esa es tarea de
-    DeliveryNoteConfirmView.
+    GET: renderiza todos los campos de cabecera y línea en solo
+    lectura, más el resultado de validate_document_assignment()
+    (services.py) -- si no es válido, muestra el motivo preciso de
+    rechazo y solo está disponible la acción "rechazar/volver a
+    subir"; si es válido, están disponibles tanto "Confirmar" como
+    "rechazar/volver a subir".
+    POST: eliminado -- ya no hay nada que guardar aquí. Confirmar
+    pasa por DeliveryNoteConfirmView, rechazar por
+    DeliveryNoteRejectView.
     """
 
     template_name = 'spare_parts/delivery_note_detail.html'
@@ -174,138 +185,25 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
         delivery_note = get_object_or_404(
             DeliveryNote, pk=pk, company=company,
         )
+
+        is_valid, rejection_reason = True, None
+        resolved_type, resolved_machine = None, None
+        if delivery_note.status == 'PROCESSED':
+            is_valid, rejection_reason, resolved_type, resolved_machine = (
+                validate_document_assignment(delivery_note, company)
+            )
+
         return render(request, self.template_name, {
             'company_user': request.user.company_user,
             'active_nav': 'spare_parts_upload',
             'delivery_note': delivery_note,
             'lines': delivery_note.lines.all(),
             'recipient_resolved': bool(delivery_note.recipient_company_code),
+            'is_valid': is_valid,
+            'rejection_reason': rejection_reason,
+            'resolved_type': resolved_type,
+            'resolved_machine': resolved_machine,
         })
-
-    def post(self, request, pk):
-        company = request.user.company_user.company
-        delivery_note = get_object_or_404(
-            DeliveryNote, pk=pk, company=company,
-        )
-
-        if delivery_note.status == 'ASSIGNED':
-            messages.error(
-                request,
-                'Este albarán ya ha sido confirmado y asignado.',
-            )
-            return redirect(
-                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
-            )
-
-        # S014-H10, Bloque B punto 2: con la subida asíncrona, un
-        # albarán puede estar todavía PENDING (Gemini no ha terminado)
-        # o ERROR (falló) cuando se llega aquí -- no hay nada real que
-        # editar en esos dos casos (0 líneas, o solo las de un intento
-        # fallido). El template ya no muestra el formulario para
-        # PENDING/ERROR, pero esta guarda cubre también un POST
-        # directo fuera de la UI normal.
-        if delivery_note.status in ('PENDING', 'ERROR'):
-            messages.error(
-                request,
-                'Este albarán todavía no tiene datos extraídos '
-                '(en proceso o con error) -- nada que guardar todavía.',
-            )
-            return redirect(
-                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
-            )
-
-        delivery_note.supplier_name = request.POST.get(
-            'supplier_name', '',
-        ).strip()
-        delivery_note.supplier_tax_id = request.POST.get(
-            'supplier_tax_id', '',
-        ).strip()
-        delivery_note.recipient_name = request.POST.get(
-            'recipient_name', '',
-        ).strip()
-        new_recipient_tax_id = request.POST.get(
-            'recipient_tax_id', '',
-        ).strip()
-        if new_recipient_tax_id != (delivery_note.recipient_tax_id or ''):
-            delivery_note.recipient_company_code = (
-                resolve_recipient_company_code(new_recipient_tax_id)
-            )
-        delivery_note.recipient_tax_id = new_recipient_tax_id
-        delivery_note.delivery_number = request.POST.get(
-            'delivery_number', '',
-        ).strip()
-        delivery_date_raw = request.POST.get('delivery_date', '').strip()
-        if delivery_date_raw:
-            try:
-                delivery_note.delivery_date = date.fromisoformat(
-                    delivery_date_raw
-                )
-            except ValueError:
-                pass
-        old_general_code = delivery_note.general_machine_code_raw or ''
-        new_general_code = request.POST.get(
-            'general_machine_code_raw', '',
-        ).strip()
-        delivery_note.general_machine_code_raw = new_general_code
-        delivery_note.save()
-
-        for line in delivery_note.lines.all():
-            prefix = f'line_{line.pk}_'
-            new_raw_code = request.POST.get(
-                f'{prefix}machine_code_raw', '',
-            ).strip()
-            # Se recalcula si cambió el código propio de la línea O el
-            # código general del albarán -- una línea sin código propio
-            # depende del general como respaldo (S007-H10).
-            old_effective = (line.machine_code_raw or '') or old_general_code
-            new_effective = new_raw_code or new_general_code
-            code_changed = new_effective != old_effective
-
-            line.reference = request.POST.get(
-                f'{prefix}reference', '',
-            ).strip()
-            line.description = request.POST.get(
-                f'{prefix}description', line.description,
-            ).strip()
-            line.quantity = parse_decimal(
-                request.POST.get(f'{prefix}quantity')
-            ) or 0
-            line.unit_price = parse_decimal(
-                request.POST.get(f'{prefix}unit_price')
-            )
-            line.total_price = parse_decimal(
-                request.POST.get(f'{prefix}total_price')
-            )
-            line.machine_code_raw = new_raw_code
-
-            manual_assignment = request.POST.get(f'{prefix}assignment_type')
-            if code_changed or not manual_assignment:
-                assignment_type, machine = resolve_line_assignment(
-                    new_effective or None, company,
-                )
-                line.assignment_type = assignment_type
-                line.machine = machine
-            elif manual_assignment == 'WAREHOUSE':
-                line.assignment_type = 'WAREHOUSE'
-                line.machine = None
-            elif manual_assignment == 'UNASSIGNED':
-                line.assignment_type = 'UNASSIGNED'
-                line.machine = None
-            # 'MACHINE' manual value keeps the machine already
-            # resolved on the line -- no machine picker in this pass
-            # (deferred to a future session per Paso 5/6 of the
-            # roadmap).
-            # El valor manual 'MACHINE' conserva la máquina ya
-            # resuelta en la línea -- sin selector de máquina en este
-            # paso (diferido a una sesión futura según el Paso 5/6 de
-            # la hoja de ruta).
-
-            line.save()
-
-        messages.success(request, 'Revisión guardada correctamente.')
-        return redirect(
-            'spare_parts:delivery_note_detail', pk=delivery_note.pk,
-        )
 
 
 class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
@@ -356,6 +254,22 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
                 'spare_parts:delivery_note_detail', pk=delivery_note.pk,
             )
 
+        # S015-H10, primer punto de la hoja de ruta: no se puede
+        # confirmar un albarán sin el código único de máquina/centro
+        # de gasto obligatorio (leído exclusivamente de Observaciones
+        # por el prompt de extracción). Defensa en profundidad -- la
+        # plantilla ya oculta el botón "Confirmar" cuando esto falla,
+        # pero un POST directo (fuera de la UI normal) debe rechazarse
+        # igualmente aquí.
+        is_valid, rejection_reason, _, _ = validate_document_assignment(
+            delivery_note, company,
+        )
+        if not is_valid:
+            messages.error(request, rejection_reason)
+            return redirect(
+                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
+
         if not delivery_note.recipient_company_code:
             messages.warning(
                 request,
@@ -392,6 +306,65 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
         return redirect(
             'spare_parts:delivery_note_detail', pk=delivery_note.pk,
         )
+
+
+class DeliveryNoteRejectView(CompanyUserRequiredMixin, View):
+    """
+    Rejects a not-yet-confirmed delivery note (S015-H10, first
+    roadmap point): since no manual correction is allowed, the only
+    way to fix a wrong or incomplete extraction is to delete this
+    attempt and upload a clearer photo from scratch. POST only.
+    Deletes the DeliveryNote row (cascades to its DeliveryNoteLine
+    rows) and its source file (image or PDF -- FileField.delete()
+    removes it from storage; nothing has been created yet in
+    SparePartEntry/StockMovement at this point, since the assignment
+    circuit only runs on confirm). Never allowed for status=ASSIGNED
+    -- that data is already real stock, not reachable from here.
+
+    ---
+
+    Rechaza un albarán aún sin confirmar (S015-H10, primer punto de
+    la hoja de ruta): al no admitirse corrección manual, la única
+    forma de arreglar una extracción incorrecta o incompleta es
+    borrar este intento y subir una foto más clara desde cero. Solo
+    POST. Borra la fila DeliveryNote (en cascada sus filas
+    DeliveryNoteLine) y su archivo origen (imagen o PDF --
+    FileField.delete() lo elimina del almacenamiento; en este punto
+    todavía no se ha creado nada en SparePartEntry/StockMovement, ya
+    que el circuito de asignación solo se ejecuta al confirmar).
+    Nunca permitido para status=ASSIGNED -- esos datos ya son stock
+    real, no alcanzable desde aquí.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        delivery_note = get_object_or_404(
+            DeliveryNote, pk=pk, company=company,
+        )
+
+        if delivery_note.status == 'ASSIGNED':
+            messages.error(
+                request,
+                'Este albarán ya ha sido confirmado y asignado -- no '
+                'se puede rechazar.',
+            )
+            return redirect(
+                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
+
+        if delivery_note.image:
+            delivery_note.image.delete(save=False)
+        if delivery_note.pdf_file:
+            delivery_note.pdf_file.delete(save=False)
+        delivery_note.delete()
+
+        messages.warning(
+            request,
+            'Albarán rechazado. Vuelve a fotografiarlo asegurándote '
+            'de que se lea bien y de que el proveedor haya anotado el '
+            'centro de gasto o la máquina de destino en Observaciones.',
+        )
+        return redirect('spare_parts:delivery_note_upload')
 
 
 class DeliveryNoteRetryExtractionView(CompanyUserRequiredMixin, View):

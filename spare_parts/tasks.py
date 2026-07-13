@@ -160,15 +160,31 @@ def extract_delivery_note_data(self, delivery_note_id: int) -> None:
     # eliminan antes de recrearlas para no duplicar.
     delivery_note.lines.all().delete()
 
+    # S015-H10, primer punto de la hoja de ruta: asignación SIEMPRE
+    # completa por albarán -- se resuelve el código único del
+    # documento (general_machine_code_raw, leído exclusivamente de
+    # Observaciones/Notas por el prompt) UNA sola vez, y se aplica el
+    # mismo assignment_type/machine a TODAS las líneas. Ya no hay
+    # resolución por línea ni respaldo -- ver
+    # services.validate_document_assignment(), invocada en la
+    # pantalla de revisión (DeliveryNoteDetailView) y en la
+    # confirmación (DeliveryNoteConfirmView) para decidir si el
+    # albarán se puede confirmar o debe rechazarse.
+    # ---
+    # S015-H10, first roadmap point: assignment is ALWAYS whole-
+    # document -- the document's single code (general_machine_code_raw,
+    # read exclusively from Observaciones/Notas by the prompt) is
+    # resolved ONCE, and the same assignment_type/machine is applied
+    # to EVERY line. No more per-line resolution or fallback -- see
+    # services.validate_document_assignment(), used on the review
+    # screen (DeliveryNoteDetailView) and on confirmation
+    # (DeliveryNoteConfirmView) to decide whether the note can be
+    # confirmed or must be rejected.
+    assignment_type, machine = resolve_line_assignment(
+        delivery_note.general_machine_code_raw or None, company,
+    )
+
     for line_data in extraction.lines:
-        effective_raw_code = (
-            line_data.machine_code_raw
-            or delivery_note.general_machine_code_raw
-            or None
-        )
-        assignment_type, machine = resolve_line_assignment(
-            effective_raw_code, company,
-        )
         DeliveryNoteLine.objects.create(
             delivery_note=delivery_note,
             line_number=line_data.line_number,
@@ -177,7 +193,6 @@ def extract_delivery_note_data(self, delivery_note_id: int) -> None:
             quantity=parse_decimal(line_data.quantity) or 0,
             unit_price=parse_decimal(line_data.unit_price),
             total_price=parse_decimal(line_data.total_price),
-            machine_code_raw=line_data.machine_code_raw or '',
             assignment_type=assignment_type,
             machine=machine,
         )
