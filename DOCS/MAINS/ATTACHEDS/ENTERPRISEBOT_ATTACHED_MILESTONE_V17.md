@@ -168,11 +168,21 @@ Sesión larga y accidentada (fallo real de despliegue diagnosticado y
 corregido en vivo, ver anexo H10) pero cerrada con los tres estados
 (GitHub, workspace del modelo, servidor de producción) verificados
 sincronizados con datos reales, no solo con el status de la API.
-`working tree clean`, `HEAD` = `4d50217`, coincide con
-`origin/main`. Sin cambios de hito -- H17 sigue `EN PROGRESO`, sin
-avance directo esta sesión. Próxima sesión: Miguel Ángel decide entre
-retomar H17 (Bloques A/C/D, ver hoja de ruta arriba) o continuar en
-H10 con la nueva salvaguarda de validación de máquina por albarán
+**Corrección sobre la primera declaración de cierre (commit
+`008e13d`):** el propio commit de cierre reveló un SEGUNDO bug real de
+`deploy.yml` (interpolación insegura de `${{
+github.event.head_commit.message }}` -- rompe con mensajes de commit
+multilínea, ver `nfs-enterprisebot-edit` para el detalle completo),
+detectado por Miguel Ángel al ver el step "Resumen" en rojo -- el
+modelo había declarado la sesión cerrada sin haber verificado ese
+resultado, error señalado y corregido en el mismo tramo. Corregido en
+commit `0d1b0e9`, verificado con datos reales del servidor (`git log
+-1` = `0d1b0e912fdef77b32e4e4eea2e06786bcd0c98c`, coincide con GitHub)
+antes de esta segunda declaración de cierre, esta vez sí verificada.
+`working tree clean`. Sin cambios de hito -- H17 sigue `EN PROGRESO`,
+sin avance directo esta sesión. Próxima sesión: Miguel Ángel decide
+entre retomar H17 (Bloques A/C/D, ver hoja de ruta arriba) o continuar
+en H10 con la nueva salvaguarda de validación de máquina por albarán
 (primer punto de la hoja de ruta de H10, ver ese anexo).
 
 ---
