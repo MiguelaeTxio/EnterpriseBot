@@ -283,36 +283,48 @@ Antes de entregar o implementar cualquier código que involucre servicios
 externos o APIs, el modelo **DEBE** actualizarse en línea obligatoriamente
 para usar datos actuales de implementación en lugar de datos obsoletos.
 
-#### 4.5. DIRECTRIZ CRÍTICA — MIGRACIONES DJANGO
+#### 4.5. DIRECTRIZ CRÍTICA — MIGRACIONES DJANGO (REESCRITA EN S014, 2026-07-13)
 
-**[PROHIBICIÓN ABSOLUTA] EL MODELO JAMÁS GENERA MIGRACIONES MANUALMENTE**
+**Flujo vigente desde S014, decisión explícita y final de Miguel
+Ángel, sustituye por completo la directriz anterior ("el modelo jamás
+genera migraciones"):**
 
-Las migraciones de Django se generan **ÚNICA y EXCLUSIVAMENTE** mediante:
+1. El modelo modifica `models.py`.
+2. **El modelo genera también el archivo de migración
+   (`0XXX_*.py`)**, escrito directamente en el mismo commit que el
+   cambio de modelo -- replicando el formato real que Django genera
+   en este proyecto (ver migraciones ya existentes como referencia de
+   estilo: `verbose_name`/`help_text` conservados, mismo patrón de
+   `UniqueConstraint`/`condition` que las constraints ya aplicadas).
+3. El modelo hace `commit` + `push` de `models.py` y del archivo de
+   migración juntos. El push dispara el despliegue automático
+   (`.github/workflows/deploy.yml`): `git pull` + `migrate --noinput`
+   + `collectstatic` + reload, sin intervención de Miguel Ángel.
+4. Si el build/despliegue falla (visible en GitHub → Actions), el
+   modelo diagnostica sobre esa salida real y corrige con un commit
+   nuevo -- mismo principio empírico de siempre, nunca a ciegas.
 
-```bash
-python -m dotenv run python manage.py makemigrations
-```
+**Motivo del cambio:** Miguel Ángel valora más la velocidad y el
+ahorro de tokens de no ejecutar un ciclo manual de
+`makemigrations`/descarga/análisis en cada cambio de modelo, que la
+red de seguridad que ese ciclo aportaba. Decisión suya, informada,
+tomada en S014 tras planteársele el riesgo -- ver
+`com-migrations` sección 6.0 para el detalle completo y la fecha.
 
-**QUEDA TERMINANTEMENTE PROHIBIDO** escribir, crear, dictar o entregar
-archivos de migración (`0XXX_*.py`) en ninguna caja de código, bajo
-ninguna circunstancia, sin importar cuán obvia parezca la migración.
+**Sigue aplicando sin cambios**, porque es un límite técnico, no de
+política: el modelo no tiene ninguna ruta de red hacia PythonAnywhere
+ni hacia la BD MySQL real (verificado empíricamente en S014, ver
+`com-migrations`) -- por tanto nunca ejecuta él mismo
+`makemigrations`/`migrate`, solo escribe los archivos de código
+(modelo + migración) que luego GitHub Actions aplica por su cuenta.
 
-**Flujo estándar obligatorio e irrompible:**
-1. El modelo modifica `models.py` mediante NEW-EDIT.
-2. El usuario ejecuta `makemigrations` en su consola.
-3. Django genera el archivo de migración automáticamente.
-4. El usuario ejecuta `migrate` para aplicarla.
-
-**Únicas excepciones permitidas** (requieren autorización explícita de
-Miguel Ángel en el mismo prompt):
-- Reparación de historial de migraciones corrupto.
-- Uso de `--fake` o `--fake-initial`.
-- Squash de migraciones.
-- Cualquier otra operación excepcional sobre el historial de Django.
-
-**Penalización:** Generar una migración sin autorización explícita es un
-**ERROR CRÍTICO** de sesión. Sin excepciones. Sin urgencias que lo
-justifiquen. Sin ningún pretexto.
+**Únicas excepciones que siguen requiriendo intervención manual de
+Miguel Ángel en su propia consola** (reparación de historial de
+migraciones corrupto, `--fake`/`--fake-initial`, squash, o cualquier
+operación excepcional sobre el historial de Django): estos casos
+dependen de introspección real del estado de la BD/tabla
+`django_migrations` que el modelo no puede ver, y siguen el ciclo
+manual completo de `com-migrations` sección 3.
 
 #### 4.6. DIRECTRIZ CRÍTICA — Section.ivr_breakdown_enabled
 
