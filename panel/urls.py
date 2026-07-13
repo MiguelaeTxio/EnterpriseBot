@@ -18,6 +18,8 @@ from panel.views import (
     InboundCallLogDetailView,
     InboundCallLogDeleteView,
     PanelDashboardView,
+    GDriveAuthorizeView,
+    GDriveOAuthCallbackView,
     PresenceStatusUpdateView,
     CompanyUserListView,
     CompanyUserCreateView,
@@ -386,6 +388,11 @@ urlpatterns = [
     path("ivr/call-logs/", InboundCallLogListView.as_view(), name="inbound_call_log_list"),
     path("ivr/call-logs/<int:pk>/", InboundCallLogDetailView.as_view(), name="inbound_call_log_detail"),
     path("ivr/call-logs/<int:pk>/delete/", InboundCallLogDeleteView.as_view(), name="inbound_call_log_delete"),
+
+    # Google Drive one-time OAuth setup — Autorización de un solo uso
+    # para persistencia de fotos de albarán en Drive (Hito 10, S014).
+    path("gdrive/authorize/", GDriveAuthorizeView.as_view(), name="gdrive_authorize"),
+    path("gdrive/oauth-callback/", GDriveOAuthCallbackView.as_view(), name="gdrive_oauth_callback"),
 ]
 
 

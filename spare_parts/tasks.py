@@ -3,65 +3,32 @@
 """
 Celery tasks for the spare_parts application.
 
-Defines send_delivery_note_photo_email(): sends the original photo/PDF
-of a confirmed DeliveryNote as an email attachment via the Twilio
-Email API (native Twilio Console product, base URL
-https://comms.twilio.com/v1/Emails -- NOT the classic Twilio SendGrid
-product, and NOT the sendgrid-python package). Authenticates with the
-same TWILIO_API_KEY_SID/TWILIO_API_KEY_SECRET already used by the rest
-of the project for Voice/WhatsApp -- Twilio Email shares the account's
-API keys, no separate credential is required. After a successful send
-the file is deleted from the PythonAnywhere server -- the extracted
-data stays in BD permanently, only the source file is removed. This is
-a deliberate business rule (S004-H10): the file no longer needs to
-live on the server once administración has a copy by email, and it
-avoids accumulating photos/PDFs on PythonAnywhere while there is no
-OneDrive/SharePoint integration yet (see Hito 15).
-
-Sender domain (S005-H10 update): campustudionline.com, authenticated
-in the Twilio console -- domain owned by Miguel Ángel, used to avoid
-depending on a third party authenticating gruasalvarez.com, which
-remained blocked. The real administración recipient is unchanged and
-confirmed by Miguel Ángel: administracion@gruasalvarez.com, receiving
-via its own normal MX, unrelated to Twilio's sender-domain
-authentication.
+Defines extract_delivery_note_data() (Gemini Vision extraction, runs
+in the background after upload) and
+upload_delivery_note_photo_to_drive() (S014-H10: uploads the confirmed
+delivery note's source photo/PDF to Google Drive and deletes it from
+the server -- replaces the email-based persistence that existed up to
+S014, see spare_parts/gdrive_service.py for the full design rationale
+of the Drive integration).
 
 ---
 
 Tareas Celery para la aplicación spare_parts.
 
-Define send_delivery_note_photo_email(): envía la foto/PDF original de
-un DeliveryNote confirmado como adjunto de correo vía la API Twilio
-Email (producto nativo de la consola de Twilio, base URL
-https://comms.twilio.com/v1/Emails -- NO el producto Twilio SendGrid
-clásico, ni el paquete sendgrid-python). Se autentica con las mismas
-TWILIO_API_KEY_SID/TWILIO_API_KEY_SECRET que ya usa el resto del
-proyecto para Voz/WhatsApp -- Twilio Email comparte las claves API de
-la cuenta, no requiere credencial separada. Tras un envío con éxito el
-archivo se borra del servidor de PythonAnywhere -- los datos
-extraídos se quedan en BD permanentemente, solo se elimina el archivo
-origen. Es una regla de negocio deliberada (S004-H10): el archivo ya
-no necesita vivir en el servidor una vez que administración tiene una
-copia por correo, y evita acumular fotos/PDFs en PythonAnywhere
-mientras no exista integración con OneDrive/SharePoint (ver Hito 15).
-
-Dominio remitente (actualización S005-H10): campustudionline.com,
-autenticado en la consola de Twilio -- dominio propiedad de Miguel
-Ángel, usado para no depender de que un tercero autentique
-gruasalvarez.com, que seguía bloqueado. El destinatario real de
-administración no cambia y está confirmado por Miguel Ángel:
-administracion@gruasalvarez.com, que recibe por su propio MX normal,
-sin relación con la autenticación de dominio remitente de Twilio.
+Define extract_delivery_note_data() (extracción Gemini Vision, corre
+en segundo plano tras la subida) y upload_delivery_note_photo_to_drive()
+(S014-H10: sube la foto/PDF origen del albarán confirmado a Google
+Drive y la borra del servidor -- sustituye la persistencia por correo
+que existía hasta S014, ver spare_parts/gdrive_service.py para el
+razonamiento completo del diseño de la integración con Drive).
 """
-import base64
 import logging
-import os
 from datetime import date
 
-import requests
 from celery.contrib.django.task import DjangoTask
 from enterprise_core.celery import app
 
+from .gdrive_service import GDriveNotConfigured, upload_delivery_note_file
 from .models import DeliveryNote, DeliveryNoteLine
 from .services import (
     GeminiVisionExtractionService,
@@ -215,231 +182,97 @@ def extract_delivery_note_data(self, delivery_note_id: int) -> None:
         delivery_note_id, len(extraction.lines),
     )
 
-# Twilio Email API -- re-verified 2026-07-06 against
-# docs.twilio.com/email/api/reference/mail-send-resource: attachments
-# is a CHILD property of `content`, not a top-level sibling. The
-# original S004 implementation had it at the top level, which Twilio
-# rejected with "Invalid value 'attachments' provided for field
-# 'attachments'" (400) -- confirmed empirically in S005 against a real
-# send attempt (albarán #6). Async endpoint: a 202 response means
-# Twilio accepted the send request, not final delivery confirmation.
-# Full delivery tracking (SENT/DELIVERED/FAILED) would require polling
-# the returned operationLocation or a status webhook -- out of scope,
-# noted here for a future step.
-# ---
-# API Twilio Email -- re-verificada 2026-07-06 contra
-# docs.twilio.com/email/api/reference/mail-send-resource: attachments
-# es una propiedad HIJA de `content`, no un hermano de nivel raíz. La
-# implementación original de S004 lo tenía en la raíz, lo que Twilio
-# rechazaba con "Invalid value 'attachments' provided for field
-# 'attachments'" (400) -- confirmado empíricamente en S005 contra un
-# envío real (albarán #6). Endpoint asíncrono: una respuesta 202
-# significa que Twilio aceptó la solicitud de envío, no que la entrega
-# final esté confirmada. El seguimiento completo de entrega
-# (SENT/DELIVERED/FAILED) requeriría sondear el operationLocation
-# devuelto o un webhook de estado -- fuera de alcance, se deja
-# anotado aquí como posible paso futuro.
-_TWILIO_EMAIL_API_URL = 'https://comms.twilio.com/v1/Emails'
-
-# Remitente: dominio autenticado en Twilio (S005-H10, verificado en
-# consola Twilio: campustudionline.com, propiedad de Miguel Ángel --
-# evita depender de que un tercero autentique gruasalvarez.com).
-# no-reply@ no necesita existir como buzón real -- Twilio Email es solo
-# de envío, no gestiona ni requiere acceso a ninguna bandeja de entrada.
-# Destinatario: buzón real de administración, sin relación con la
-# autenticación de dominio de Twilio -- recibe por su propio MX normal.
-#
-# TEMPORAL (S005, 2026-07-06): destinatario cambiado a una dirección de
-# prueba fuera de Microsoft 365 -- gruasalvarez.com (Exchange Online)
-# está poniendo en cuarentena silenciosa los envíos desde el dominio
-# recién autenticado campustudionline.com (Twilio marca DELIVERED a
-# nivel SMTP -- confirmado, respuesta 250 de PROD.OUTLOOK.COM -- pero
-# el mensaje nunca llega a ninguna carpeta visible del buzón, ni
-# siquiera Correo no deseado -- confirmado por captura real de Outlook,
-# probablemente cuarentena de Microsoft 365 Defender, capa distinta a
-# la carpeta de spam del cliente). Este cambio permite validar el resto
-# del flujo (adjunto, plantilla, borrado de archivo) sin depender de
-# que se resuelva la cuarentena. Miguel Ángel tiene reunión esta misma
-# tarde con el responsable de Microsoft 365 de Grupo Álvarez para dar
-# de alta el remitente -- revertir a
-# _RECIPIENT_EMAIL = 'administracion@gruasalvarez.com' en cuanto se
-# confirme la resolución.
-# ---
-# Sender: domain authenticated in Twilio (S005-H10, verified in Twilio
-# console: campustudionline.com, owned by Miguel Ángel -- avoids
-# depending on a third party authenticating gruasalvarez.com). no-reply@
-# does not need to exist as a real mailbox -- Twilio Email is send-only,
-# it does not manage or require access to any inbox.
-# Recipient: real administración mailbox, unrelated to Twilio's domain
-# authentication -- receives via its own normal MX.
-#
-# TEMPORARY (S005, 2026-07-06): recipient switched to a test address
-# outside Microsoft 365 -- gruasalvarez.com (Exchange Online) is
-# silently quarantining sends from the newly authenticated domain
-# campustudionline.com (Twilio marks it DELIVERED at SMTP level --
-# confirmed, 250 response from PROD.OUTLOOK.COM -- but the message
-# never reaches any visible mailbox folder, not even Junk -- confirmed
-# via real Outlook screenshot, most likely Microsoft 365 Defender
-# quarantine, a layer distinct from the client's spam folder). This
-# switch lets the rest of the flow (attachment, template, file
-# deletion) be validated without depending on the quarantine being
-# resolved. Miguel Ángel has a meeting this afternoon with Grupo
-# Álvarez's Microsoft 365 admin to allow-list the sender -- revert to
-# _RECIPIENT_EMAIL = 'administracion@gruasalvarez.com' once resolved.
-_SENDER_EMAIL = 'no-reply@campustudionline.com'
-_SENDER_NAME = 'EnterpriseBot'
-_RECIPIENT_EMAIL = 'nummenor@gmail.com'  # TEMPORAL -- ver nota arriba, revertir a administracion@gruasalvarez.com
-_RECIPIENT_NAME = 'Prueba temporal S005'
-
-_MIME_TYPES = {
-    '.pdf': 'application/pdf',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.webp': 'image/webp',
-}
-
 
 @app.task(base=DjangoTask, bind=True, max_retries=3, default_retry_delay=60)
-def send_delivery_note_photo_email(self, delivery_note_id: int) -> None:
+def upload_delivery_note_photo_to_drive(self, delivery_note_id: int) -> None:
     """
-    Sends the confirmed delivery note's source file (photo or PDF) by
-    email to administración via the Twilio Email API and deletes the
-    file from disk only if Twilio accepts the send (202 Accepted).
+    Uploads the confirmed delivery note's source file (photo or PDF)
+    to Google Drive (spare_parts.gdrive_service, S014-H10) and deletes
+    the file from disk only after a successful upload + share.
+    Replaces send_delivery_note_photo_email(), removed in S014.
 
-    Never deletes the file if the send fails -- Celery retries up to
+    Never deletes the file if the upload fails -- Celery retries up to
     max_retries times before giving up, and the file stays on the
     server (safe default) if all retries are exhausted, logged as an
-    error for manual follow-up.
+    error for manual follow-up. GDriveNotConfigured (missing env vars,
+    i.e. the one-time authorization at /panel/gdrive/authorize/ hasn't
+    been done yet) is NOT retried -- retrying won't fix a missing
+    credential, it would just spam the log every 60s until someone
+    notices; logged once as an actionable error instead.
 
     ---
 
-    Envía por correo a administración, vía la API Twilio Email, el
-    archivo origen (foto o PDF) del albarán confirmado, y borra el
-    archivo del disco solo si Twilio acepta el envío (202 Accepted).
+    Sube la foto/PDF origen del albarán confirmado a Google Drive
+    (spare_parts.gdrive_service, S014-H10) y borra el archivo del
+    disco solo tras una subida + compartición con éxito. Sustituye a
+    send_delivery_note_photo_email(), eliminada en S014.
 
-    Nunca borra el archivo si el envío falla -- Celery reintenta hasta
+    Nunca borra el archivo si la subida falla -- Celery reintenta hasta
     max_retries veces antes de desistir, y si se agotan los reintentos
     el archivo se queda en el servidor (comportamiento seguro por
     defecto), registrado como error para seguimiento manual.
+    GDriveNotConfigured (faltan variables de entorno, es decir, la
+    autorización de un solo uso en /panel/gdrive/authorize/ todavía no
+    se ha hecho) NO se reintenta -- reintentar no arregla una
+    credencial que falta, solo llenaría el log cada 60s hasta que
+    alguien lo note; se registra una sola vez como error accionable.
     """
     try:
         delivery_note = DeliveryNote.objects.get(pk=delivery_note_id)
     except DeliveryNote.DoesNotExist:
         logger.error(
-            '# [Tarea] send_delivery_note_photo_email: DeliveryNote '
+            '# [Tarea] upload_delivery_note_photo_to_drive: DeliveryNote '
             '#%d no existe.',
             delivery_note_id,
         )
         return
 
-    file_field = delivery_note.image or delivery_note.pdf_file
-    if not file_field:
+    if not delivery_note.image and not delivery_note.pdf_file:
         logger.info(
             '# [Tarea] Albarán #%d sin archivo asociado -- nada que '
-            'enviar (probablemente ya procesado en una ejecución '
+            'subir (probablemente ya procesado en una ejecución '
             'anterior).',
             delivery_note_id,
         )
         return
 
-    file_path = file_field.path
-    file_name = os.path.basename(file_path)
-    extension = os.path.splitext(file_name)[1].lower()
-    mime_type = _MIME_TYPES.get(extension, 'application/octet-stream')
-
-    api_key_sid = os.getenv('TWILIO_API_KEY_SID')
-    api_key_secret = os.getenv('TWILIO_API_KEY_SECRET')
-    if not api_key_sid or not api_key_secret:
+    try:
+        result = upload_delivery_note_file(delivery_note)
+    except GDriveNotConfigured as exc:
         logger.error(
-            '# [Tarea] TWILIO_API_KEY_SID / TWILIO_API_KEY_SECRET no '
-            'configuradas en .env -- no se puede enviar el correo del '
-            'albarán #%d. El archivo NO se borra.',
-            delivery_note_id,
+            '# [Tarea] Google Drive no configurado todavía -- albarán '
+            '#%d NO subido, archivo NO borrado. %s',
+            delivery_note_id, exc,
         )
         return
-
-    subject = (
-        f'Albarán de proveedor {delivery_note.supplier_name or "s/n"} '
-        f'— {delivery_note.delivery_number or delivery_note.pk}'
-    )
-    html_body = (
-        f'<p>Albarán confirmado en EnterpriseBot.</p>'
-        f'<p>'
-        f'Proveedor: {delivery_note.supplier_name or "-"} '
-        f'({delivery_note.supplier_tax_id or "-"})<br>'
-        f'Destinatario: {delivery_note.recipient_name or "-"} '
-        f'({delivery_note.recipient_tax_id or "-"}) '
-        f'[{delivery_note.recipient_company_code or "sin resolver"}]<br>'
-        f'Número de albarán: {delivery_note.delivery_number or "-"}<br>'
-        # S014-H10, Bloque B punto 1 (salvaguarda pendiente desde
-        # S013): formato de fecha siempre en español (DD/MM/AAAA) en
-        # este correo, sin excepción -- str(date) por defecto en
-        # Python es ISO (AAAA-MM-DD) independientemente de cómo lo
-        # haya leído Gemini del documento original.
-        f'Fecha: '
-        f'{delivery_note.delivery_date.strftime("%d/%m/%Y") if delivery_note.delivery_date else "-"}'
-        f'</p>'
-    )
-
-    with open(file_path, 'rb') as f:
-        encoded = base64.b64encode(f.read()).decode()
-
-    payload = {
-        'from': {'address': _SENDER_EMAIL, 'name': _SENDER_NAME},
-        'to': [{'address': _RECIPIENT_EMAIL, 'name': _RECIPIENT_NAME}],
-        'content': {
-            'subject': subject,
-            'html': html_body,
-            'attachments': [{
-                'filename': file_name,
-                'contentType': mime_type,
-                'content': encoded,
-            }],
-        },
-    }
-
-    try:
-        response = requests.post(
-            _TWILIO_EMAIL_API_URL,
-            json=payload,
-            auth=(api_key_sid, api_key_secret),
-            timeout=30,
-        )
-    except requests.RequestException as exc:
+    except Exception as exc:
         logger.exception(
-            '# [Tarea] Fallo de red enviando por correo el albarán '
-            '#%d (intento %d/%d). El archivo NO se borra.',
+            '# [Tarea] Fallo subiendo a Drive el albarán #%d (intento '
+            '%d/%d). El archivo NO se borra.',
             delivery_note_id, self.request.retries + 1, self.max_retries,
         )
         raise self.retry(exc=exc)
 
-    if response.status_code != 202:
-        logger.error(
-            '# [Tarea] Twilio Email devolvió %d al enviar el albarán '
-            '#%d: %s. El archivo NO se borra.',
-            response.status_code, delivery_note_id, response.text,
-        )
-        raise self.retry(
-            exc=RuntimeError(f'Twilio Email status {response.status_code}')
-        )
-
-    operation_id = response.json().get('operationId', '')
-
-    # Success (202 Accepted): delete the file from disk and clear the
-    # model reference. Note this confirms Twilio accepted the request,
-    # not final delivery -- see module docstring.
-    # Éxito (202 Accepted): borrar el archivo del disco y limpiar la
-    # referencia del modelo. Esto confirma que Twilio aceptó la
-    # solicitud, no la entrega final -- ver docstring del módulo.
+    # Success: persist the Drive reference, then delete the local file
+    # and clear the model reference -- same order/safety principle the
+    # email flow had (never delete before confirming the destination
+    # succeeded).
+    # Éxito: persistir la referencia de Drive, después borrar el
+    # archivo local y limpiar la referencia del modelo -- mismo
+    # orden/principio de seguridad que tenía el flujo de correo (nunca
+    # borrar antes de confirmar que el destino tuvo éxito).
+    delivery_note.drive_file_id = result['file_id']
+    delivery_note.drive_web_link = result['web_link']
     if delivery_note.image:
         delivery_note.image.delete(save=False)
     if delivery_note.pdf_file:
         delivery_note.pdf_file.delete(save=False)
-    delivery_note.save(update_fields=['image', 'pdf_file'])
+    delivery_note.save(update_fields=[
+        'drive_file_id', 'drive_web_link', 'image', 'pdf_file',
+    ])
 
     logger.info(
-        '# [Tarea] Albarán #%d enviado por correo a %s '
-        '(operationId=%s) y archivo origen eliminado del servidor.',
-        delivery_note_id, _RECIPIENT_EMAIL, operation_id,
+        '# [Tarea] Albarán #%d subido a Google Drive (file_id=%s) y '
+        'archivo origen eliminado del servidor.',
+        delivery_note_id, result['file_id'],
     )

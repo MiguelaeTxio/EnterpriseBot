@@ -128,3 +128,9 @@ from fleet.views import (
     MachineAssetDeleteView,
     MachineAssetAnalyticsView,
 )
+
+# --- Google Drive one-time OAuth setup (S014-H10) ---
+from panel.views_gdrive_setup import (
+    GDriveAuthorizeView,
+    GDriveOAuthCallbackView,
+)

@@ -1,0 +1,43 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/gdrive_setup_result.html #}
+{# Resultado de la autorización de Google Drive de un solo uso -- Hito 10, S014. #}
+{% extends "panel/base.html" %}
+{% block page_title %}Autorización de Google Drive completada{% endblock %}
+{% block content %}
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8">
+            <div class="alert alert-success">
+                <i class="bi bi-check2-circle me-1"></i>
+                Autorización completada. Carpeta raíz "EnterpriseBot - Albaranes"
+                lista en Drive.
+            </div>
+            <div class="card shadow-sm mb-4">
+                <div class="card-header fw-semibold">
+                    Copia estos dos valores a tu .env del servidor ahora
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">
+                        Esta pantalla no vuelve a mostrar el refresh token si la
+                        recargas -- si la pierdes, repite la autorización desde
+                        <code>/panel/gdrive/authorize/</code> (generará un token
+                        nuevo, el anterior deja de usarse pero no hace falta
+                        revocarlo a mano).
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">GDRIVE_OAUTH_REFRESH_TOKEN</label>
+                        <textarea class="form-control font-monospace" rows="3" readonly onclick="this.select();">{{ refresh_token }}</textarea>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold">GDRIVE_ROOT_FOLDER_ID</label>
+                        <input type="text" class="form-control font-monospace" readonly onclick="this.select();" value="{{ root_folder_id }}">
+                    </div>
+                </div>
+            </div>
+            <div class="alert alert-info">
+                Tras añadir ambas líneas a <code>.env</code>, recarga la web app
+                (botón verde de PythonAnywhere) para que Celery/Django las
+                tomen. A partir de ese momento, confirmar un albarán lo sube a
+                Drive automáticamente.
+            </div>
+        </div>
+    </div>
+{% endblock %}

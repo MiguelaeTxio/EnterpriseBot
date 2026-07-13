@@ -43,6 +43,16 @@ psutil==7.2.2
 # Versión explícita para el SDK de Google GenAI (integración v1beta).
 google-genai==2.7.0
 
+# Cloud Storage -- Google Drive (S014-H10) / Almacenamiento en la nube --
+# Google Drive (S014-H10). Sustituye la persistencia por correo de las
+# fotos/PDF de albaranes de proveedor. Autenticación OAuth 2.0 delegada
+# al usuario (no Service Account -- ver spare_parts/gdrive_service.py
+# para el motivo: los Service Accounts no tienen cuota de
+# almacenamiento propia fuera de una Shared Drive de Google Workspace,
+# y esta cuenta de Google es personal, sin Workspace).
+google-api-python-client==2.198.0
+google-auth-oauthlib==1.4.0
+
 # Task Queue / Cola de Tareas Asíncronas
 # Required for background task processing and scheduled jobs (presence reminders, etc.).
 # La versión 5.6.3 incluye correcciones críticas de memory leaks en Python 3.10+ y

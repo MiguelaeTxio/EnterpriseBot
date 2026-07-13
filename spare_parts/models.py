@@ -256,6 +256,46 @@ class DeliveryNote(models.Model):
         blank=True,
         verbose_name='PDF del albarán',
     )
+    # ------------------------------------------------------------------
+    # Persistencia en la nube (S014-H10). Sustituye por completo al envío
+    # por correo (spare_parts/tasks.py, hasta S014). Tras confirmar el
+    # albarán, el archivo origen (image/pdf_file de arriba) se sube a
+    # Google Drive vía gdrive_service.upload_delivery_note_file() y se
+    # borra del servidor -- mismo criterio que tenía el flujo de correo,
+    # solo cambia el destino. drive_file_id es el identificador de Drive
+    # (necesario para cualquier operación futura sobre el archivo, p.ej.
+    # revocar acceso); drive_web_link es el enlace directo abrible por
+    # cualquiera con el link (mismo acceso que ya tiene cualquiera que
+    # vea el listado de albaranes, sin restricción adicional -- confirmado
+    # por Miguel Ángel en S014). Ambos vacíos hasta que la tarea de fondo
+    # confirme la subida; si la subida falla, quedan vacíos y el archivo
+    # original permanece en el servidor sin borrar (mismo principio de
+    # seguridad que el email: nunca borrar sin confirmar el destino).
+    # ------------------------------------------------------------------
+    # Cloud persistence (S014-H10). Fully replaces the email flow
+    # (spare_parts/tasks.py, up to S014). After confirming the note, the
+    # source file (image/pdf_file above) is uploaded to Google Drive via
+    # gdrive_service.upload_delivery_note_file() and deleted from the
+    # server -- same rule the email flow had, only the destination
+    # changes. drive_file_id is the Drive identifier (needed for any
+    # future operation on the file, e.g. revoking access); drive_web_link
+    # is the direct link, openable by anyone with the link (same access
+    # anyone already has who can see the delivery notes list, no extra
+    # restriction -- confirmed by Miguel Ángel in S014). Both stay empty
+    # until the background task confirms the upload; if the upload
+    # fails, they stay empty and the original file stays on the server
+    # undeleted (same safety principle the email flow had: never delete
+    # without confirming the destination).
+    drive_file_id = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='ID de archivo en Google Drive',
+    )
+    drive_web_link = models.URLField(
+        max_length=500,
+        blank=True,
+        verbose_name='Enlace de Google Drive',
+    )
     supplier = models.ForeignKey(
         Supplier,
         on_delete=models.SET_NULL,

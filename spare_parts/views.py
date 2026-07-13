@@ -28,7 +28,7 @@ from .services import (
     resolve_line_assignment,
     resolve_recipient_company_code,
 )
-from .tasks import extract_delivery_note_data, send_delivery_note_photo_email
+from .tasks import extract_delivery_note_data, upload_delivery_note_photo_to_drive
 
 
 # Accepted upload extensions and their DeliveryNote.source_type.
@@ -312,20 +312,19 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
     """
     Executes the assignment circuit (annex H10, section 3.1, step 5)
     for a reviewed delivery note. POST only. On success, enqueues
-    send_delivery_note_photo_email() (spare_parts/tasks.py, S004-H10):
-    the source photo/PDF is emailed to administración and then deleted
-    from the server -- extracted data stays in BD permanently, only
-    the file is removed.
+    upload_delivery_note_photo_to_drive() (spare_parts/tasks.py,
+    S014-H10): the source photo/PDF is uploaded to Google Drive and
+    then deleted from the server -- extracted data stays in BD
+    permanently, only the file is removed.
 
     ---
 
     Ejecuta el circuito de asignación (anexo H10, sección 3.1, paso
     5) para un albarán ya revisado. Solo POST. En caso de éxito,
-    encola send_delivery_note_photo_email() (spare_parts/tasks.py,
-    S004-H10): la foto/PDF origen se envía por correo a
-    administración y después se borra del servidor -- los datos
-    extraídos se quedan en BD permanentemente, solo se elimina el
-    archivo.
+    encola upload_delivery_note_photo_to_drive() (spare_parts/tasks.py,
+    S014-H10): la foto/PDF origen se sube a Google Drive y después se
+    borra del servidor -- los datos extraídos se quedan en BD
+    permanentemente, solo se elimina el archivo.
     """
 
     def post(self, request, pk):
@@ -368,12 +367,12 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
 
         counts = confirm_delivery_note(delivery_note, request.user.company_user)
 
-        # S004-H10: tras confirmar, el archivo origen (foto/PDF) se envía
-        # por correo a administración y se borra del servidor -- los
-        # datos extraídos ya están persistidos en BD, es lo único que
-        # cuenta a partir de aquí. Asíncrono para no bloquear la
-        # respuesta esperando a SendGrid.
-        send_delivery_note_photo_email.delay(delivery_note.pk)
+        # S014-H10: tras confirmar, el archivo origen (foto/PDF) se sube
+        # a Google Drive y se borra del servidor -- los datos extraídos
+        # ya están persistidos en BD, es lo único que cuenta a partir de
+        # aquí. Asíncrono para no bloquear la respuesta esperando a
+        # Google.
+        upload_delivery_note_photo_to_drive.delay(delivery_note.pk)
 
         summary = (
             f'Asignación confirmada: {counts["warehouse"]} línea(s) a '
