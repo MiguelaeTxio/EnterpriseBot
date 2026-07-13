@@ -1,0 +1,73 @@
+name: Deploy EnterpriseBot to PythonAnywhere
+
+# Despliegue automatico completo (S013, confirmado por Miguel Angel:
+# "que si a todo, con migrate incluido, mantenme informado"). Se
+# dispara en cada push a main. Hace, en este orden: git pull en el
+# servidor via SSH, migrate --noinput, collectstatic --noinput
+# --clear, y reload de la web app via API de PythonAnywhere. Nunca
+# toca Celery/tareas always-on (mecanismo distinto, sin automatizar
+# todavia) ni corre makemigrations (los archivos de migracion se
+# generan y revisan siempre en el workspace de Claude antes de
+# pushear, nunca en el servidor).
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preparar clave SSH dedicada
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PA_SSH_PRIVATE_KEY }}" > ~/.ssh/pa_deploy_key
+          chmod 600 ~/.ssh/pa_deploy_key
+          ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
+
+      - name: git pull + migrate + collectstatic en PythonAnywhere
+        run: |
+          ssh -i ~/.ssh/pa_deploy_key MiguelAeTxio@ssh.pythonanywhere.com '
+            set -e
+            cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot
+            echo "--- git pull ---"
+            git pull origin main
+            source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv/bin/activate
+            echo "--- migrate ---"
+            python -m dotenv run python manage.py migrate --noinput
+            echo "--- collectstatic ---"
+            python -m dotenv run python manage.py collectstatic --noinput --clear
+          ' | tee /tmp/deploy_output.txt
+
+      - name: Recargar la web app (API PythonAnywhere)
+        run: |
+          curl -sf -X POST \
+            "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/webapps/enterprisebot-miguelaetxio.pythonanywhere.com/reload/" \
+            -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
+          echo "--- Reload solicitado OK ---"
+
+      - name: Resumen del despliegue (mantener informado a Miguel Angel)
+        if: always()
+        run: |
+          {
+            echo "## Despliegue EnterpriseBot -- $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo ""
+            echo "**Commit:** \`${{ github.sha }}\`"
+            echo "**Mensaje:** ${{ github.event.head_commit.message }}"
+            echo ""
+            echo "### Salida del servidor"
+            echo '```'
+            cat /tmp/deploy_output.txt 2>/dev/null || echo "(sin salida capturada -- revisar el paso anterior)"
+            echo '```'
+            if grep -q "No migrations to apply" /tmp/deploy_output.txt 2>/dev/null; then
+              echo ""
+              echo "Sin migraciones nuevas aplicadas en este despliegue."
+            else
+              echo ""
+              echo "**Atencion: puede haberse aplicado una migracion nueva -- revisar la salida de arriba.**"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Limpiar clave SSH
+        if: always()
+        run: rm -f ~/.ssh/pa_deploy_key
