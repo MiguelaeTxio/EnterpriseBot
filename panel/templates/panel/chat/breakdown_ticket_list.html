@@ -322,23 +322,31 @@
   {# vista exactamente igual que la de un administrador supervisor,    #}
   {# con la parte de arriba y la parte de abajo dividida en dos        #}
   {# vistas". Anula el razonamiento de S012 que lo ocultaba para este  #}
-  {# rol. La acción "assign" que dispara el drop sigue siendo          #}
-  {# exclusiva de ADMIN/SUPERVISOR en el backend (sin cambios) — un    #}
-  {# WORKSHOP VE el panel pero no puede arrastrar (draggable=false +   #}
-  {# clase op-locked en la tarjeta de operario, ver más abajo):        #}
-  {# decisión explícita de Miguel Ángel (opción "c" de las planteadas  #}
-  {# en la sesión) para evitar el intento fallido con 403 en vez de    #}
-  {# dejarlo intentar y fallar.                                       #}
+  {# rol.                                                              #}
+  {# Quién puede EJECUTAR la acción "assign" que dispara el drop       #}
+  {# (backend, chat/views_tickets.py) — ADMIN, SUPERVISOR y            #}
+  {# WORKSHOPBOSS (ampliado a WORKSHOPBOSS en S015, instrucción        #}
+  {# explícita de Miguel Ángel: "los jefes de taller sí deben poder    #}
+  {# arrastrar y soltar a operarios"). WORKSHOP queda excluido: VE el  #}
+  {# panel pero no puede arrastrar (draggable=false + clase op-locked  #}
+  {# en la tarjeta de operario, ver más abajo) — decisión explícita de #}
+  {# Miguel Ángel (opción "c" de las planteadas en la sesión) para     #}
+  {# evitar el intento fallido con 403 en vez de dejarlo intentar y    #}
+  {# fallar.                                                           #}
   {# Drag-and-drop dispatch panel — now also visible for WORKSHOP      #}
   {# since S015 (H17 Block C), explicit instruction from Miguel Ángel  #}
   {# at the close of S012: workshop operators must see the exact same  #}
   {# view as an admin/supervisor. Overrides the S012 reasoning that    #}
-  {# hid it for this role. The "assign" action the drop triggers       #}
-  {# remains ADMIN/SUPERVISOR-only server-side (unchanged) — a         #}
-  {# WORKSHOP user SEES the panel but cannot drag (draggable=false +   #}
-  {# op-locked class on the operator card, see below): Miguel Ángel's  #}
-  {# explicit choice ("option c" offered this session) to avoid the    #}
-  {# failed 403 attempt rather than letting it fail.                   #}
+  {# hid it for this role.                                             #}
+  {# Who can EXECUTE the "assign" action the drop triggers (backend,   #}
+  {# chat/views_tickets.py) — ADMIN, SUPERVISOR and WORKSHOPBOSS        #}
+  {# (extended to WORKSHOPBOSS in S015, explicit instruction from      #}
+  {# Miguel Ángel: workshop bosses must be able to drag and drop       #}
+  {# operators). WORKSHOP is excluded: SEES the panel but cannot drag  #}
+  {# (draggable=false + op-locked class on the operator card, see      #}
+  {# below) — Miguel Ángel's explicit choice ("option c" offered this  #}
+  {# session) to avoid the failed 403 attempt rather than letting it   #}
+  {# fail.                                                             #}
   {# ================================================================ #}
   {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" or company_user.role == "WORKSHOP" %}
   <div id="tk-bottom">

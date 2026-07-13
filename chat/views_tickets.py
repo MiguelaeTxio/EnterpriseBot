@@ -294,6 +294,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             if company_user.role not in (
                 company_user.ROLE_ADMIN,
                 company_user.ROLE_SUPERVISOR,
+                company_user.ROLE_WORKSHOPBOSS,
             ):
                 return HttpResponseForbidden()
             from ivr_config.models import CompanyUser as CU
