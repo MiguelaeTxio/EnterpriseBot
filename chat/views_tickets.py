@@ -228,15 +228,23 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             Q(ends_at__isnull=True) | Q(ends_at__gt=now())
         ).order_by("-starts_at").first()
 
-        workshopboss_users = (
+        # Destinos asignables desde el formulario "Asignar operario" — misma
+        # regla de negocio que el panel de despacho por arrastre (WORKSHOP y
+        # WORKSHOPBOSS), instrucción explícita de Miguel Ángel en S015:
+        # antes solo incluía WORKSHOPBOSS, asimetría corregida aquí.
+        # Assignable targets for the "Asignar operario" form — same business
+        # rule as the drag-and-drop dispatch panel (WORKSHOP and
+        # WORKSHOPBOSS), explicit instruction from Miguel Ángel in S015:
+        # previously only included WORKSHOPBOSS, asymmetry fixed here.
+        assignable_operators = (
             CU.objects
             .filter(
                 company=company_user.company,
-                role=CU.ROLE_WORKSHOPBOSS,
+                role__in=[CU.ROLE_WORKSHOP, CU.ROLE_WORKSHOPBOSS],
                 is_active=True,
             )
             .select_related("user")
-            .order_by("user__username")
+            .order_by("role", "user__username")
         )
 
         # fault_category se almacena con los mismos codigos internos que
@@ -261,7 +269,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             "company_user":           company_user,
             "own_presence":           own_presence,
             "active_nav":             "breakdown_ticket_list",
-            "workshopboss_users":     workshopboss_users,
+            "assignable_operators":   assignable_operators,
             "URGENCY_CHOICES":        ticket.URGENCY_CHOICES,
             "fault_category_display": fault_category_display,
         })
