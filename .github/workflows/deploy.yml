@@ -134,13 +134,28 @@ jobs:
           } | tee /tmp/restart_output.txt
 
       - name: Resumen del despliegue (mantener informado a Miguel Angel)
+        # BUGFIX S014 (2026-07-13, segunda parte): interpolar
+        # ${{ github.event.head_commit.message }} directamente dentro
+        # del texto del script (echo "...${{ }}...") rompe en cuanto el
+        # mensaje del commit tiene varias líneas, comillas, paréntesis
+        # o la palabra EOF -- GitHub sustituye ${{ }} como texto plano
+        # ANTES de que bash lo ejecute, así que un mensaje de commit
+        # largo (como el propio commit de cierre de esta sesión) puede
+        # corromper el script generado y hacer fallar el step entero
+        # (visto en vivo: "line 100: ...: No such file or directory").
+        # Solución estándar: pasar el valor vía `env:` (el runner lo
+        # expone como variable de entorno normal, sin interpolación de
+        # texto) y referenciarlo como "$COMMIT_MESSAGE" dentro del
+        # script -- inmune al contenido, cite lo que cite.
         if: always()
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           {
             echo "## Despliegue EnterpriseBot -- $(date -u '+%Y-%m-%d %H:%M UTC')"
             echo ""
             echo "**Commit:** \`${{ github.sha }}\`"
-            echo "**Mensaje:** ${{ github.event.head_commit.message }}"
+            echo "**Mensaje (primera línea):** $(printf '%s' "$COMMIT_MESSAGE" | head -1)"
             echo ""
             echo "### Salida del servidor"
             echo '```'
