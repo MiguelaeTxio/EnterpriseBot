@@ -143,8 +143,12 @@
         {% endif %}
         {% endif %}
 
-        {# Asignación a operario — ADMIN y SUPERVISOR #}
-        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" %}
+        {# Asignación a operario — ADMIN, SUPERVISOR y WORKSHOPBOSS (guard    #}
+        {# de backend ampliado a WORKSHOPBOSS en S015, chat/views_tickets.py #}
+        {# BreakdownTicketDetailView.post, action=="assign" — instrucción    #}
+        {# explícita de Miguel Ángel). Segunda vía de entrada a la misma     #}
+        {# acción "assign" que el panel de despacho por arrastre.           #}
+        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
         <div class="card border-0 shadow-sm mt-3">
           <div class="card-header fw-semibold border-bottom py-3">
             <i class="bi bi-person-fill-gear me-2"></i>Asignar operario
