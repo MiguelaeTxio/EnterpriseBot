@@ -3,6 +3,12 @@
 """
 Celery tasks for the spare_parts application.
 
+Verificación S014 (2026-07-13): este comentario existe para disparar
+de verdad, en producción, el reinicio condicional del worker Celery
+(id 242133) del nuevo paso de deploy.yml -- confirmar en el resumen
+del Action y en la pestaña Tasks del dashboard de PythonAnywhere que
+el estado pasa por Starting/Restarting y vuelve a Running.
+
 Defines extract_delivery_note_data() (Gemini Vision extraction, runs
 in the background after upload) and
 upload_delivery_note_photo_to_drive() (S014-H10: uploads the confirmed
