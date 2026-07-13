@@ -161,6 +161,7 @@ define la personalidad experta con el flujo numerado 1→6 y tres reglas crític
 | S012 | 2026-07-10 | Bloque 1 completo + ampliado, Bloque 2 punto 3, sidebar | **Bloque 1 — Separación PDF vs. digital (RESUELTA, commit `a513df7`)**: 3 enlaces corregidos (`digital_list.html` ×2, `operator/history.html` ×1) que enrutaban partes digitales a `work_order_edit`. Guardia dura añadida en `WorkOrderEditView.get()`/`post()`: cualquier `WorkOrder` DIGITAL/GENERATED se bloquea y redirige a `operator_form_edit`, sin excepción de rol ni de origen del enlace. Guardia idéntica extendida a los 7 endpoints HTMX que sostienen `edit.html` (`WorkOrderLineSaveView`, `WorkOrderEntrySaveDateView`, `WorkOrderLineInsertView`, `WorkOrderEntryAddView`, `WorkOrderLineReorderView`, `WorkOrderLineRestoreView`, `WorkOrderLineDeleteView`) — ninguno comprobaba `source`, permitiendo en teoría tocar un parte digital vía POST directo sin pasar por la vista principal. Código muerto eliminado: `SupervisorAccessMixin` ya excluía WORKSHOP desde antes de esta sesión, las ramas `_is_workshop` de `WorkOrderEditView` eran inalcanzables; eliminadas junto con el bloque `workday_gaps` en `edit.html` (exclusivo de digitales, vacío una vez blindada la vista). **Ampliación no prevista en el anexo, a petición de Miguel Ángel — unificación total de 4 vistas de historial (commit `c7b4a97`)**: `WorkOrderAdminHistoryView` ("Historial") pasa a ser la ÚNICA vista de partes digitales, renombrada "Partes Digitales"; se eliminan por completo (vista + plantilla + URL + entrada de menú, sin marcar ni ignorar) `DigitalWorkOrderListView` (antigua Partes Digitales), `history.WorkOrderHistoryListView`/`WorkOrderHistoryDetailView` (Mis partes) y `WorkOrderEntryHistoryView`/`panel:operator_history` (Historial de operario) — esta última detectada por el propio Miguel Ángel como vista fantasma sin usar en meses tras una insistencia explícita en no dejar nunca vistas "marcadas como eliminadas". Mixin cambiado a `WorkOrderFormAccessMixin` para admitir también WORKSHOP, con alcance acotado a sus propios partes (`_build_base_queryset(owner=...)`), sin selector de operario ni Marcar revisado/Eliminar, guardia de rol añadida en `post()` (el mixin ampliado dejaba sus acciones de gestión alcanzables sin ella). Filtro Estado añadido (recupera la vieja pestaña Error sin pestaña dedicada); resumen de horas extra del periodo activo trasplantado desde la vieja pestaña de `operator_history` para WORKSHOP. **Limpieza DRY/plantillas tontas a petición expresa de Miguel Ángel**: color de badge Estado movido de la plantilla a la vista (`status_badge_class`); rama muerta de dispatch PDF eliminada del enlace Editar (esta vista nunca contiene PDFs); las 3 tablas casi-idénticas de Pendientes/Revisados/Histórico extraídas a un único parcial parametrizado nuevo (`_wo_table.html`); `admin_history.html` de 2018 a ~940 líneas. **Hotfix (commit `1320a60`)**: la reescritura del bloque Períodos se dejó por el camino el import `ExportTemplate as _ET`, tumbando `/panel/work-orders/history/` en producción para cualquier rol — detectado por Miguel Ángel vía traceback de Django, corregido y verificado con `pyflakes` sobre el archivo completo. **Reorganización de sidebar (commit `f010621`)**: PDFs trasladado de Taller Mecánico a Administración; subgrupo "Mecánicos" renombrado a "Taller" y ampliado con Tickets de avería (trasladado desde el subgrupo Taller, ahora eliminado); Taller Mecánico queda con 3 subgrupos: Centro de gasto, Almacén, Taller. **Bloque 2, punto 3 — Acceso WORKSHOP a tickets de avería (commit `8c6e874`)**: guardias de rol de las 3 vistas de `chat/views_tickets.py` (lista, detalle, crear) ampliados a WORKSHOP; guardia interna de "assign" (reasignar a otro operario) dejada intacta, solo ADMIN/SUPERVISOR; botón autoasignarme ampliado a WORKSHOP en el detalle; panel de despacho por arrastre ocultado para WORKSHOP en el listado (dispara una acción que no pueden ejecutar); sidebar ampliado. **Puntos 1 y 2 del Bloque 2 (responsivo móvil, color de mecánicos ocupados) y Bloque 3 (IVR) — sin empezar**, pasan a S013 (ver hoja de ruta). |
 | S013 | 2026-07-13 | NOTA DE DESVÍO — sin trabajo directo en H17 | Sesión desviada por completo a H10 (Caso A, sin PCH invocado, marcador `EN PROGRESO` sin mover) para atender el Bloque B de la hoja de ruta de abajo (albaranes de proveedores) más una infraestructura de despliegue automático de plataforma pedida por Miguel Ángel a mitad de sesión, ninguna de las dos ligada a H17. Detalle técnico completo, commits y decisiones en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, fila S013 del Registro de Sesiones de ese anexo. Los Bloques A (fallo de confirmación de ticket IVR), C (CRUD de tickets responsivo + reversión del panel de despacho para WORKSHOP) y D (validación general IVR) de la hoja de ruta de abajo **siguen íntegramente pendientes, sin ningún avance** — la hoja de ruta de este hito no se reescribe (Caso A: "el hito no avanzó"). |
 | S014 | 2026-07-13 | NOTA DE DESVÍO — sin trabajo directo en H17 | Sesión desviada por completo a H10 (Caso A, sin PCH invocado, marcador `EN PROGRESO` sin mover), a petición expresa de Miguel Ángel ("terminar con el tema de los albaranes"): cierre completo del Bloque B (fecha ES, unicidad `delivery_number`, subida async), persistencia en Google Drive (sustituye el envío por correo), más un cambio mayor de infraestructura de plataforma (nuevo flujo de migraciones — el modelo escribe el archivo directamente en vez del ciclo manual `makemigrations`; fix crítico de un bug real de `deploy.yml` que reportaba despliegues fallidos como exitosos; reinicio condicional de las Always-on Tasks en el despliegue automático) — ninguna de las dos ligada a H17. Detalle técnico completo, commits y decisiones en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, fila S014 del Registro de Sesiones de ese anexo, y en las skills de sistema `com-migrations` (reescrita de raíz), `nfs-enterprisebot-edit`, `com-bash-commands`, `nfs-enterprisebot-pcs`. Los Bloques A (fallo de confirmación de ticket IVR), C (CRUD de tickets responsivo + reversión del panel de despacho para WORKSHOP) y D (validación general IVR) de la hoja de ruta de abajo **siguen íntegramente pendientes, sin ningún avance** — la hoja de ruta de este hito no se reescribe (Caso A: "el hito no avanzó"). |
+| S015 | 2026-07-13 | Bloque C completo, luego desvío a H10 | **Bloque C — CRUD de tickets responsivo + reversión del panel de despacho, COMPLETADO**: (1) Responsivo real en móvil de `breakdown_ticket_list.html` (mismo criterio ya validado en `analytics_lab.html`: `#tk-bottom` apila verticalmente por debajo de 767.98px, divisor arrastrable oculto, tabla superior con `overflow-x:auto`) y padding responsivo (`px-3 px-md-4`) en `breakdown_ticket_detail.html`/`breakdown_ticket_form.html` — commits `650c0d7`, `049abc6`. (2) Panel de despacho por arrastre revertido para WORKSHOP: visible (instrucción literal de Miguel Ángel al cierre de S012) pero sin poder arrastrar (`draggable=false` + clase `op-locked`, decisión explícita "opción c" frente a dejar fallar el POST con 403) — commit `eef1f1c`. (3) WORKSHOPBOSS ampliado a poder EJECUTAR `assign` (guard de backend solo permitía ADMIN/SUPERVISOR pese a tener el panel visible y arrastrable desde siempre — bug real corregido, no pedido explícitamente pero detectado leyendo el código) en las dos vías de entrada (drag&drop y tarjeta "Asignar operario" del detalle) — commits `40a36d6`, `33b36ad`. (4) A petición explícita de Miguel Ángel, WORKSHOPBOSS eliminado por completo como DESTINO asignable (nunca ejecuta órdenes de trabajo, era un remanente del diseño original del H14 sin tickets reales afectados en producción): `operators_qs`, `assignable_operators` y la validación final de `assignee_pk` restringidos a WORKSHOP — commit `6717375`. (5) Asimetría del desplegable "Asignar operario" (solo permitía WORKSHOPBOSS como destino, más restrictivo que el propio guard de backend) detectada e igualada a la regla del drag&drop — commit `7ee733c`. Punto 3 del Bloque C (color de mecánico ocupado) confirmado por Miguel Ángel como ya cubierto por el badge `op-busy`/`op-free` existente, sin cambios de código. **Desvío a H10** en la segunda mitad de la sesión, a petición de Miguel Ángel ("vamos a continuar con las albaranes"): ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, fila S015, para el primer punto de la hoja de ruta (asignación única por albarán) más un bug real de OAuth y el backfill de 8 albaranes históricos. Los Bloques A (fallo de confirmación de ticket IVR) y D (validación general IVR) de la hoja de ruta de abajo **siguen pendientes, sin ningún avance esta sesión**. |
 
 ### CIERRE DE SESIÓN S014 (2026-07-13)
 
@@ -189,25 +190,22 @@ en H10 con la nueva salvaguarda de validación de máquina por albarán
 
 ## 5. Hoja de Ruta para la Siguiente Sesion
 
-#### CIERRE DE S012 (2026-07-10)
+#### CIERRE DE S015 (2026-07-13)
 
-Bloque 1 resuelto y ampliado muy por encima de lo previsto (ver fila
-S012 en el Registro de Sesiones, sección 4, para el detalle técnico
-completo). Del Bloque 2 solo se completó el punto 3 (acceso WORKSHOP).
-Bloque 2 puntos 1-2 y Bloque 3 completo pasan a S013, junto con
-trabajo nuevo pedido por Miguel Ángel al cierre de S012 (IVR + CRUD
-de albaranes).
+Bloque C completo (ver fila S015 en el Registro de Sesiones, sección
+4, para el detalle técnico completo de los 6 commits). Quedan
+íntegramente pendientes, sin ningún avance desde S012: Bloque A (fallo
+de confirmación de ticket IVR) y Bloque D (validación general IVR).
 
-#### PRÓXIMA SESIÓN (S013)
+#### PRÓXIMA SESIÓN
 
-**⚠️ Punto de partida distinto al de S012: NO hay una única prioridad
-exclusiva declarada. Miguel Ángel decide el orden real al empezar la
-sesión** entre los bloques siguientes.
+**Miguel Ángel decide el orden real al empezar la sesión** entre los
+dos bloques siguientes.
 
 ---
 
 **Bloque A — IVR: fallo en la confirmación del ticket (incidencia
-nueva, reportada al cierre de S012).**
+reportada al cierre de S012, sin ningún avance en S013/S014/S015).**
 
 Las pausas entre respuestas de Alia ya funcionan bien — confirmado
 explícitamente por Miguel Ángel. El fallo está localizado con
@@ -227,106 +225,6 @@ ticket, en `vox_bridge/services.py`.
 
 ---
 
-**Bloque B — Albaranes de proveedores: async + salvaguardas + CRUD
-completo (H10 — Albaranes de Proveedores y Almacén de Repuestos,
-actualmente PAUSADO).**
-
-⚠️ **Este bloque es territorio de H10, no de H17.** Decidir con Miguel
-Ángel al empezar S013 si se reactiva H10 vía PCH (ver
-`nfs-enterprisebot-pch`) o si se atiende como desvío puntual sin mover
-el marcador `EN PROGRESO` — no se ha ejecutado ningún PCH en el cierre
-de S012 porque Miguel Ángel no lo invocó explícitamente.
-
-1. **Salvaguardas (empezar por aquí, a petición expresa de Miguel
-   Ángel):**
-   - **Formato de fecha siempre en español** (DD/MM/AAAA) en todo el
-     flujo de albaranes — sin excepción, sin importar cómo lo lea
-     Gemini del documento original.
-   - **Duplicidad de albaranes por número de albarán.** Incidencia
-     real detectada por Miguel Ángel: el mismo albarán físico se leyó
-     dos veces con fechas distintas y quedó registrado como dos
-     albaranes diferentes. El número de albarán debe ser la clave de
-     unicidad — no puede haber dos registros con el mismo número.
-     Decidir con Miguel Ángel qué hacer con los dos duplicados ya
-     existentes en producción antes de escribir la constraint.
-2. **Cambio de síncrono a asíncrono.** Flujo actual: el operario
-   envía la foto y espera a que Gemini termine de clasificar antes de
-   poder confirmar. Flujo nuevo: el operario hace la foto, la envía, y
-   ya está — Gemini la procesa en segundo plano (Celery, ya en uso en
-   el proyecto) y el albarán pasa a pendiente de confirmación cuando
-   termine.
-3. **CRUD completo de albaranes con ciclo de vida por estados.**
-   Acceso: **todos los roles** (WORKSHOP, WORKSHOPBOSS, SUPERVISOR,
-   ADMIN) pueden entrar al CRUD — sin restricción de rol para
-   consultar/confirmar. Estados del ciclo de vida, en orden:
-   1. Pendiente de que Gemini lo procese (recién subido).
-   2. Pendiente de confirmación humana (Gemini ya extrajo los datos,
-      falta que un operario/jefe de taller/supervisor/administrador
-      confirme que la extracción es correcta — da igual cuál de los
-      cuatro roles confirme).
-   3. En limbo (repuestos del albarán aún sin asignar a ningún centro
-      de gasto/máquina).
-   4. Parcialmente fuera de limbo (una parte de los repuestos del
-      albarán ya asignada, otra parte sigue en limbo) — debe
-      distinguirse visualmente en el listado.
-   5. Totalmente asignado (100% de los repuestos del albarán ya
-      asignados).
-   Revisar el modelo de datos actual de albaranes/repuestos (app
-   `delivery_notes` / `spare_parts` / `workorder_spare_parts` —
-   confirmar cuál exactamente al empezar, no asumir) para ver qué de
-   esto ya existe (el concepto de "limbo" ya aparece mencionado en
-   `com-standards`/memoria de sesiones anteriores para el almacén) y
-   qué hay que construir de cero.
-
----
-
-**Bloque C — CRUD de tickets de avería: responsivo + color de
-mecánicos ocupados (Bloque 2, puntos 1 y 2 pendientes desde S012).**
-
-1. **Responsivo de verdad en móvil.** Confirmado por Miguel Ángel:
-   ahora mismo en móvil "se ve mal". Adaptar
-   `breakdown_ticket_list.html`, `breakdown_ticket_detail.html` y
-   `breakdown_ticket_form.html` (`panel/templates/panel/chat/`) con el
-   mismo criterio de `frontend-design` usado en el resto del panel,
-   para que funcione igual de bien en móvil, tablet y PC.
-2. **⚠️ REVERSIÓN NECESARIA — los operarios (WORKSHOP) deben ver la
-   MISMA vista que administrador/supervisor, panel de despacho
-   incluido.** Instrucción explícita y literal de Miguel Ángel al
-   cierre de S012: "que los operarios puedan ver la vista exactamente
-   igual que la de un administrador supervisor, con la parte de
-   arriba y la parte de abajo dividida en dos vistas, con los
-   operarios libres y los tickets de avería." Esto **contradice
-   directamente** lo hecho en S012 (commit `8c6e874`): el panel de
-   despacho por arrastre (`#tk-bottom`, con la lista de "Operarios" y
-   "Tickets asignables") se ocultó para WORKSHOP en
-   `breakdown_ticket_list.html` con el razonamiento de que la acción
-   "assign" que dispara sigue siendo exclusiva de ADMIN/SUPERVISOR.
-   Ese razonamiento pasa a quedar **anulado por esta nueva
-   instrucción** — S013 debe deshacer el `{% if %}` que oculta
-   `#tk-bottom` para WORKSHOP (y el guard `!divider || !operators ||
-   !bottom` en `tkInitDivider()` que se añadió como consecuencia).
-   Aclarar con Miguel Ángel al empezar S013 si además de VER el panel
-   de despacho, WORKSHOP debe poder EJECUTAR la acción "assign" que
-   dispara (reasignar tickets a otros operarios) — la instrucción dice
-   "ver la vista igual", no dice explícitamente que puedan reasignar;
-   si la respuesta es que solo deben verlo pero no poder ejecutar la
-   asignación, el guard de backend de "assign" (ADMIN/SUPERVISOR, sin
-   cambios desde S012) ya lo cubre — solo haría falta mostrar el panel
-   sin que el intento de arrastre-y-soltar de un WORKSHOP tenga
-   efecto (ahora mismo fallaría con 403 igualmente, solo hay que
-   decidir si vale con eso o si conviene deshabilitar visualmente el
-   drop para su rol).
-3. **Color distinto para mecánicos ocupados** (pendiente desde S012,
-   sin empezar): "ocupado" = el mecánico está asignado
-   (`BreakdownTicket.assigned_to`) a un ticket cuyo `status` no es
-   `CLOSED`. La tarjeta de operario en el panel de despacho ya
-   distingue "Libre"/"Ocupado" con badge (`op-busy`/`op-free`, ver
-   `breakdown_ticket_list.html`) — confirmar con Miguel Ángel si esto
-   ya cubre lo pedido o si busca un color adicional en algún otro
-   listado (usuarios, por ejemplo).
-
----
-
 **Bloque D — IVR: validación general continuada (Bloque 3 original de
 S012, sin empezar).** Más allá del fallo puntual del Bloque A,
 continuar validando y puliendo el flujo de voz con nuevas llamadas de
@@ -335,9 +233,9 @@ tras usarlo unos días en producción.
 
 ---
 
-Todos los pasos de la Hoja de Ruta original (sección 3) siguen
-ejecutados y validados en producción -- no reabrir ninguno sin
-instrucción explícita.
+Todos los pasos de la Hoja de Ruta original (sección 3) y el Bloque C
+completo en S015 siguen ejecutados y validados en producción -- no
+reabrir ninguno sin instrucción explícita.
 
 Incidencias menores registradas para futura atención (sin prioridad
 sobre los bloques de arriba, no iniciar sin instrucción explícita):
