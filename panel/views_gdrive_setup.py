@@ -66,8 +66,39 @@ def _build_flow() -> Flow:
             'redirect_uris': [REDIRECT_URI],
         }
     }
+    # autogenerate_code_verifier=False (S015, fix real de InvalidGrantError
+    # "Missing code verifier" en produccion) -- verificado en linea contra
+    # la documentacion actual de google-auth-oauthlib: Flow.from_client_config()
+    # activa PKCE por defecto desde una version reciente de la libreria
+    # (autogenerate_code_verifier=True), generando un code_verifier que solo
+    # vive en el objeto Flow de esa peticion HTTP concreta. GDriveAuthorizeView
+    # (paso 1, genera la URL) y GDriveOAuthCallbackView (paso 2, canjea el
+    # codigo) son dos peticiones HTTP independientes que llaman a
+    # _build_flow() por separado -- sin persistir el code_verifier en la
+    # sesion de Django entre ambas, el paso 2 nunca puede tenerlo. Esta app
+    # es un cliente confidencial "web" con client_secret propio: no necesita
+    # PKCE (pensado para clientes publicos que no pueden guardar un secreto),
+    # asi que la solucion correcta es desactivarlo explicitamente en vez de
+    # anadir persistencia de sesion para un flujo de un solo uso.
+    # ---
+    # autogenerate_code_verifier=False (S015, real fix for the production
+    # InvalidGrantError "Missing code verifier") -- verified online against
+    # current google-auth-oauthlib docs: Flow.from_client_config() enables
+    # PKCE by default as of a recent library version
+    # (autogenerate_code_verifier=True), generating a code_verifier that only
+    # lives on that specific HTTP request's Flow object.
+    # GDriveAuthorizeView (step 1, builds the URL) and
+    # GDriveOAuthCallbackView (step 2, exchanges the code) are two
+    # independent HTTP requests each calling _build_flow() separately --
+    # without persisting the code_verifier in the Django session between
+    # them, step 2 can never have it. This app is a confidential "web"
+    # client with its own client_secret: it doesn't need PKCE (meant for
+    # public clients that can't keep a secret), so the correct fix is
+    # disabling it explicitly rather than adding session persistence for a
+    # one-time flow.
     return Flow.from_client_config(
         client_config, scopes=SCOPES, redirect_uri=REDIRECT_URI,
+        autogenerate_code_verifier=False,
     )
 
 
