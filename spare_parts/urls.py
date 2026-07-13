@@ -27,6 +27,11 @@ urlpatterns = [
         views.DeliveryNoteConfirmView.as_view(),
         name='delivery_note_confirm',
     ),
+    path(
+        'delivery-notes/<int:pk>/retry/',
+        views.DeliveryNoteRetryExtractionView.as_view(),
+        name='delivery_note_retry',
+    ),
     path('suppliers/', views.SupplierListView.as_view(), name='supplier_list'),
     path('suppliers/create/', views.SupplierCreateView.as_view(), name='supplier_create'),
     path('suppliers/<int:pk>/edit/', views.SupplierUpdateView.as_view(), name='supplier_edit'),

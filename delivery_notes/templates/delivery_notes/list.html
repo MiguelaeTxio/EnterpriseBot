@@ -79,8 +79,10 @@
                             <span class="badge bg-success">Asignado</span>
                         {% elif note.status == 'PROCESSED' %}
                             <span class="badge bg-info text-dark">Procesado</span>
+                        {% elif note.status == 'ERROR' %}
+                            <span class="badge bg-danger">Error de extracción</span>
                         {% else %}
-                            <span class="badge bg-warning text-dark">Pendiente</span>
+                            <span class="badge bg-secondary">Procesando…</span>
                         {% endif %}
                     </td>
                     <td>

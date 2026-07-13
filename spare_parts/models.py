@@ -128,9 +128,23 @@ class DeliveryNote(models.Model):
     ]
 
     STATUS_CHOICES = [
-        ('PENDING', 'Pendiente'),
+        ('PENDING', 'Pendiente de procesar'),
         ('PROCESSED', 'Procesado'),
         ('ASSIGNED', 'Asignado'),
+        # Extracción Gemini fallida en segundo plano (S014-H10, ver
+        # extract_delivery_note_data() en tasks.py). El archivo NO se
+        # borra en este caso -- el operario puede reintentar desde
+        # DeliveryNoteDetailView. Distinto de PENDING: PENDING es
+        # "aún no se ha intentado / está en cola", ERROR es "se
+        # intentó y falló".
+        # ------------------------------------------------------------
+        # Gemini extraction failed in the background (S014-H10, see
+        # extract_delivery_note_data() in tasks.py). The file is NOT
+        # deleted in this case -- the operator can retry from
+        # DeliveryNoteDetailView. Distinct from PENDING: PENDING means
+        # "not attempted yet / queued", ERROR means "attempted and
+        # failed".
+        ('ERROR', 'Error de extracción'),
     ]
 
     company = models.ForeignKey(
@@ -308,6 +322,23 @@ class DeliveryNote(models.Model):
         verbose_name = 'Albarán de proveedor'
         verbose_name_plural = 'Albaranes de proveedor'
         ordering = ['-created_at']
+        constraints = [
+            # S014-H10, Bloque B punto 1 (salvaguarda pendiente desde
+            # S013): un mismo albarán físico no puede quedar
+            # registrado dos veces con el mismo número. Mismo patrón
+            # que Supplier.tax_id (unique_supplier_tax_id_per_company)
+            # -- condicional a delivery_number != '' porque Gemini
+            # puede no leer el número en algunos documentos, y varios
+            # albaranes sin número no deben chocar entre sí. BD ya
+            # verificada sin duplicados reales tras el borrado del
+            # incidente BA/2606201 (S013) -- migración limpia de
+            # aplicar.
+            models.UniqueConstraint(
+                fields=['company', 'delivery_number'],
+                condition=~models.Q(delivery_number=''),
+                name='unique_delivery_number_per_company',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.supplier_name} — {self.delivery_number or "s/n"}'

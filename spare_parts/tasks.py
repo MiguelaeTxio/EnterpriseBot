@@ -56,14 +56,164 @@ sin relación con la autenticación de dominio remitente de Twilio.
 import base64
 import logging
 import os
+from datetime import date
 
 import requests
 from celery.contrib.django.task import DjangoTask
 from enterprise_core.celery import app
 
-from .models import DeliveryNote
+from .models import DeliveryNote, DeliveryNoteLine
+from .services import (
+    GeminiVisionExtractionService,
+    parse_decimal,
+    resolve_line_assignment,
+    resolve_recipient_company_code,
+)
 
 logger = logging.getLogger(__name__)
+
+
+# S014-H10, Bloque B punto 2 (conversión síncrono -> asíncrono,
+# pendiente desde S013): la extracción Gemini Vision de un albarán se
+# ejecuta aquí, en segundo plano, en vez de bloquear la petición HTTP
+# del operario dentro de DeliveryNoteUploadView.post() como hasta
+# ahora. El operario hace la foto, la sube, y DeliveryNoteUploadView
+# solo guarda el archivo (status=PENDING, valor por defecto del
+# campo) y encola esta tarea -- el albarán pasa a PROCESSED cuando
+# Gemini termina, o a ERROR si falla (sin borrar el archivo, a
+# diferencia del comportamiento síncrono anterior que sí lo hacía --
+# en segundo plano no hay ninguna petición HTTP a la que devolver un
+# mensaje de error, así que el archivo se conserva para que el
+# operario pueda ver el fallo y reintentar desde
+# DeliveryNoteDetailView, ver DeliveryNoteRetryExtractionView en
+# views.py).
+# ---
+# S014-H10, Bloque B point 2 (sync -> async conversion, pending since
+# S013): the Gemini Vision extraction of a delivery note now runs
+# here, in the background, instead of blocking the operator's HTTP
+# request inside DeliveryNoteUploadView.post() as before. The operator
+# takes the photo, uploads it, and DeliveryNoteUploadView only saves
+# the file (status=PENDING, the field's default) and enqueues this
+# task -- the note becomes PROCESSED once Gemini finishes, or ERROR if
+# it fails (without deleting the file, unlike the previous synchronous
+# behaviour -- there is no HTTP request left to return an error
+# message to in the background, so the file is kept so the operator
+# can see the failure and retry from DeliveryNoteDetailView, see
+# DeliveryNoteRetryExtractionView in views.py).
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def extract_delivery_note_data(self, delivery_note_id: int) -> None:
+    """
+    Runs GeminiVisionExtractionService on a just-uploaded DeliveryNote
+    and creates its DeliveryNoteLine rows. Sets status=PROCESSED on
+    success, status=ERROR on failure (file kept for a manual retry).
+
+    max_retries=0: unlike send_delivery_note_photo_email (transient
+    network/API errors worth retrying automatically), an extraction
+    failure here is surfaced to the operator as status=ERROR for an
+    explicit, visible retry instead of silent background retries --
+    consistent with the previous synchronous behaviour, which also
+    never retried automatically and instead reported the failure
+    immediately.
+
+    ---
+
+    Ejecuta GeminiVisionExtractionService sobre un DeliveryNote recién
+    subido y crea sus filas DeliveryNoteLine. Marca status=PROCESSED
+    si tiene éxito, status=ERROR si falla (el archivo se conserva
+    para un reintento manual).
+
+    max_retries=0: a diferencia de send_delivery_note_photo_email
+    (errores transitorios de red/API que merece la pena reintentar
+    automáticamente), un fallo de extracción aquí se muestra al
+    operario como status=ERROR para un reintento explícito y visible
+    en vez de reintentos silenciosos en segundo plano -- coherente
+    con el comportamiento síncrono anterior, que tampoco reintentaba
+    automáticamente y reportaba el fallo de inmediato.
+    """
+    try:
+        delivery_note = DeliveryNote.objects.get(pk=delivery_note_id)
+    except DeliveryNote.DoesNotExist:
+        logger.error(
+            '# [Tarea] extract_delivery_note_data: DeliveryNote #%d '
+            'no existe.',
+            delivery_note_id,
+        )
+        return
+
+    company = delivery_note.company
+    file_path = (
+        delivery_note.pdf_file.path
+        if delivery_note.source_type == 'PDF'
+        else delivery_note.image.path
+    )
+
+    try:
+        extraction = GeminiVisionExtractionService().extract(file_path)
+    except Exception:
+        logger.exception(
+            '# [Tarea] Fallo en la extracción Gemini Vision del '
+            'albarán #%d. El archivo NO se borra -- status=ERROR '
+            'para reintento manual.',
+            delivery_note_id,
+        )
+        delivery_note.status = 'ERROR'
+        delivery_note.save(update_fields=['status'])
+        return
+
+    delivery_note.supplier_name = extraction.supplier_name or ''
+    delivery_note.supplier_tax_id = extraction.supplier_tax_id or ''
+    delivery_note.recipient_name = extraction.recipient_name or ''
+    delivery_note.recipient_tax_id = extraction.recipient_tax_id or ''
+    delivery_note.recipient_company_code = resolve_recipient_company_code(
+        extraction.recipient_tax_id
+    )
+    delivery_note.delivery_number = extraction.delivery_number or ''
+    if extraction.delivery_date:
+        try:
+            delivery_note.delivery_date = date.fromisoformat(
+                extraction.delivery_date
+            )
+        except ValueError:
+            delivery_note.delivery_date = None
+    delivery_note.general_machine_code_raw = (
+        extraction.general_machine_code_raw or ''
+    )
+    delivery_note.extraction_raw = extraction.model_dump()
+    delivery_note.status = 'PROCESSED'
+    delivery_note.save()
+
+    # Reintento (DeliveryNoteRetryExtractionView): si esta tarea ya
+    # había creado líneas en un intento anterior fallido a medias, se
+    # eliminan antes de recrearlas para no duplicar.
+    delivery_note.lines.all().delete()
+
+    for line_data in extraction.lines:
+        effective_raw_code = (
+            line_data.machine_code_raw
+            or delivery_note.general_machine_code_raw
+            or None
+        )
+        assignment_type, machine = resolve_line_assignment(
+            effective_raw_code, company,
+        )
+        DeliveryNoteLine.objects.create(
+            delivery_note=delivery_note,
+            line_number=line_data.line_number,
+            reference=line_data.reference or '',
+            description=line_data.description,
+            quantity=parse_decimal(line_data.quantity) or 0,
+            unit_price=parse_decimal(line_data.unit_price),
+            total_price=parse_decimal(line_data.total_price),
+            machine_code_raw=line_data.machine_code_raw or '',
+            assignment_type=assignment_type,
+            machine=machine,
+        )
+
+    logger.info(
+        '# [Tarea] Albarán #%d extraído correctamente en segundo '
+        'plano: %d línea(s).',
+        delivery_note_id, len(extraction.lines),
+    )
 
 # Twilio Email API -- re-verified 2026-07-06 against
 # docs.twilio.com/email/api/reference/mail-send-resource: attachments
@@ -222,7 +372,13 @@ def send_delivery_note_photo_email(self, delivery_note_id: int) -> None:
         f'({delivery_note.recipient_tax_id or "-"}) '
         f'[{delivery_note.recipient_company_code or "sin resolver"}]<br>'
         f'Número de albarán: {delivery_note.delivery_number or "-"}<br>'
-        f'Fecha: {delivery_note.delivery_date or "-"}'
+        # S014-H10, Bloque B punto 1 (salvaguarda pendiente desde
+        # S013): formato de fecha siempre en español (DD/MM/AAAA) en
+        # este correo, sin excepción -- str(date) por defecto en
+        # Python es ISO (AAAA-MM-DD) independientemente de cómo lo
+        # haya leído Gemini del documento original.
+        f'Fecha: '
+        f'{delivery_note.delivery_date.strftime("%d/%m/%Y") if delivery_note.delivery_date else "-"}'
         f'</p>'
     )
 

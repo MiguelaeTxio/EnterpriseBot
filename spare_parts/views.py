@@ -12,7 +12,6 @@ el flujo de ingesta de albaranes descrito en el anexo H10, sección
 3.1: subida -> extracción con Gemini Vision -> revisión manual ->
 confirmación del circuito de asignación.
 """
-import logging
 from datetime import date
 
 from django.contrib import messages
@@ -22,17 +21,15 @@ from django.views import View
 from panel.mixins import CompanyUserRequiredMixin, SupervisorAccessMixin
 
 from .forms import SupplierForm
-from .models import DeliveryNote, DeliveryNoteLine, Supplier
+from .models import DeliveryNote, Supplier
 from .services import (
-    GeminiVisionExtractionService,
     confirm_delivery_note,
     parse_decimal,
     resolve_line_assignment,
     resolve_recipient_company_code,
 )
-from .tasks import send_delivery_note_photo_email
+from .tasks import extract_delivery_note_data, send_delivery_note_photo_email
 
-logger = logging.getLogger(__name__)
 
 # Accepted upload extensions and their DeliveryNote.source_type.
 # Extensiones de subida aceptadas y su DeliveryNote.source_type.
@@ -50,23 +47,27 @@ class DeliveryNoteUploadView(CompanyUserRequiredMixin, View):
     Handles supplier delivery note ingestion via photo or PDF.
 
     GET: renders the upload form.
-    POST: saves the uploaded file as a new DeliveryNote, invokes
-    GeminiVisionExtractionService to extract structured data, creates
-    a DeliveryNoteLine per extracted line item with a first-pass
-    assignment suggestion (resolve_line_assignment), and redirects to
-    DeliveryNoteDetailView for review.
+    POST: saves the uploaded file as a new DeliveryNote (status=
+    PENDING, extraction not run yet) and enqueues
+    extract_delivery_note_data() (tasks.py, S014-H10) to run Gemini
+    Vision extraction in the background, then redirects immediately
+    to DeliveryNoteDetailView -- the operator does not wait for
+    Gemini. See DeliveryNoteDetailView for how the PENDING/ERROR
+    states are shown while/if the background task hasn't finished.
 
     ---
 
     Gestiona la ingesta de albaranes de proveedor vía foto o PDF.
 
     GET: renderiza el formulario de subida.
-    POST: guarda el archivo subido como un DeliveryNote nuevo, invoca
-    GeminiVisionExtractionService para extraer los datos
-    estructurados, crea una DeliveryNoteLine por cada línea extraída
-    con una sugerencia de asignación de primera pasada
-    (resolve_line_assignment), y redirige a DeliveryNoteDetailView
-    para su revisión.
+    POST: guarda el archivo subido como un DeliveryNote nuevo (status=
+    PENDING, extracción aún no ejecutada) y encola
+    extract_delivery_note_data() (tasks.py, S014-H10) para que la
+    extracción Gemini Vision corra en segundo plano, y redirige de
+    inmediato a DeliveryNoteDetailView -- el operario no espera a
+    Gemini. Ver DeliveryNoteDetailView para cómo se muestran los
+    estados PENDING/ERROR mientras la tarea en segundo plano no ha
+    terminado o si falla.
     """
 
     template_name = 'spare_parts/delivery_note_upload.html'
@@ -109,91 +110,30 @@ class DeliveryNoteUploadView(CompanyUserRequiredMixin, View):
                 'active_nav': 'spare_parts_upload',
             })
 
-        delivery_note = DeliveryNote(company=company, source_type=source_type)
+        # S014-H10, Bloque B punto 2: se guarda el archivo y se
+        # devuelve la respuesta de inmediato -- la extracción Gemini
+        # Vision (antes síncrona aquí mismo) se ejecuta en segundo
+        # plano vía Celery, ver extract_delivery_note_data() en
+        # tasks.py. status queda en 'PENDING' (valor por defecto del
+        # campo) hasta que la tarea termine.
+        delivery_note = DeliveryNote(
+            company=company,
+            source_type=source_type,
+            processed_by=company_user,
+        )
         if source_type == 'PDF':
             delivery_note.pdf_file = upload
         else:
             delivery_note.image = upload
         delivery_note.save()
 
-        file_path = (
-            delivery_note.pdf_file.path
-            if source_type == 'PDF' else delivery_note.image.path
-        )
-
-        try:
-            extraction = GeminiVisionExtractionService().extract(file_path)
-        except Exception:
-            logger.exception(
-                '# Fallo en la extracción Gemini Vision del albarán %s.',
-                delivery_note.pk,
-            )
-            delivery_note.delete()
-            messages.error(
-                request,
-                'No se ha podido extraer la información del albarán. '
-                'Comprueba que la foto/PDF sea legible e inténtalo de '
-                'nuevo.',
-            )
-            return render(request, self.template_name, {
-                'company_user': company_user,
-                'active_nav': 'spare_parts_upload',
-            })
-
-        delivery_note.supplier_name = extraction.supplier_name or ''
-        delivery_note.supplier_tax_id = extraction.supplier_tax_id or ''
-        delivery_note.recipient_name = extraction.recipient_name or ''
-        delivery_note.recipient_tax_id = extraction.recipient_tax_id or ''
-        delivery_note.recipient_company_code = resolve_recipient_company_code(
-            extraction.recipient_tax_id
-        )
-        delivery_note.delivery_number = extraction.delivery_number or ''
-        if extraction.delivery_date:
-            try:
-                delivery_note.delivery_date = date.fromisoformat(
-                    extraction.delivery_date
-                )
-            except ValueError:
-                delivery_note.delivery_date = None
-        delivery_note.general_machine_code_raw = (
-            extraction.general_machine_code_raw or ''
-        )
-        delivery_note.extraction_raw = extraction.model_dump()
-        delivery_note.status = 'PROCESSED'
-        delivery_note.processed_by = company_user
-        delivery_note.save()
-
-        for line_data in extraction.lines:
-            # Anotación por línea si existe; si no, respaldo a la
-            # anotación general del albarán (S007-H10, confirmado por
-            # Miguel Ángel: un albarán entero puede ir anotado a una
-            # sola máquina/centro de gasto en vez de línea a línea).
-            effective_raw_code = (
-                line_data.machine_code_raw
-                or delivery_note.general_machine_code_raw
-                or None
-            )
-            assignment_type, machine = resolve_line_assignment(
-                effective_raw_code, company,
-            )
-            DeliveryNoteLine.objects.create(
-                delivery_note=delivery_note,
-                line_number=line_data.line_number,
-                reference=line_data.reference or '',
-                description=line_data.description,
-                quantity=parse_decimal(line_data.quantity) or 0,
-                unit_price=parse_decimal(line_data.unit_price),
-                total_price=parse_decimal(line_data.total_price),
-                machine_code_raw=line_data.machine_code_raw or '',
-                assignment_type=assignment_type,
-                machine=machine,
-            )
+        extract_delivery_note_data.delay(delivery_note.pk)
 
         messages.success(
             request,
-            f'Albarán extraído correctamente: {len(extraction.lines)} '
-            f'línea(s). Revisa los datos antes de confirmar la '
-            f'asignación.',
+            'Albarán subido correctamente. Gemini lo está procesando '
+            'en segundo plano -- la página se actualiza sola cuando '
+            'termine.',
         )
         return redirect('spare_parts:delivery_note_detail', pk=delivery_note.pk)
 
@@ -252,6 +192,23 @@ class DeliveryNoteDetailView(CompanyUserRequiredMixin, View):
             messages.error(
                 request,
                 'Este albarán ya ha sido confirmado y asignado.',
+            )
+            return redirect(
+                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
+
+        # S014-H10, Bloque B punto 2: con la subida asíncrona, un
+        # albarán puede estar todavía PENDING (Gemini no ha terminado)
+        # o ERROR (falló) cuando se llega aquí -- no hay nada real que
+        # editar en esos dos casos (0 líneas, o solo las de un intento
+        # fallido). El template ya no muestra el formulario para
+        # PENDING/ERROR, pero esta guarda cubre también un POST
+        # directo fuera de la UI normal.
+        if delivery_note.status in ('PENDING', 'ERROR'):
+            messages.error(
+                request,
+                'Este albarán todavía no tiene datos extraídos '
+                '(en proceso o con error) -- nada que guardar todavía.',
             )
             return redirect(
                 'spare_parts:delivery_note_detail', pk=delivery_note.pk,
@@ -386,6 +343,20 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
                 'spare_parts:delivery_note_detail', pk=delivery_note.pk,
             )
 
+        # S014-H10, Bloque B punto 2: con la subida asíncrona no puede
+        # confirmarse un albarán que Gemini aún no ha procesado
+        # (PENDING) o cuya extracción falló (ERROR) -- no hay líneas
+        # reales que asignar.
+        if delivery_note.status in ('PENDING', 'ERROR'):
+            messages.error(
+                request,
+                'Este albarán todavía no tiene datos extraídos -- no '
+                'se puede confirmar.',
+            )
+            return redirect(
+                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
+
         if not delivery_note.recipient_company_code:
             messages.warning(
                 request,
@@ -419,6 +390,51 @@ class DeliveryNoteConfirmView(CompanyUserRequiredMixin, View):
         else:
             messages.success(request, summary)
 
+        return redirect(
+            'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+        )
+
+
+class DeliveryNoteRetryExtractionView(CompanyUserRequiredMixin, View):
+    """
+    Re-enqueues extract_delivery_note_data() for a DeliveryNote whose
+    background extraction failed (status=ERROR). POST only. Resets
+    status back to PENDING so the detail view shows the same
+    "processing" state as a fresh upload while the retry runs.
+
+    ---
+
+    Vuelve a encolar extract_delivery_note_data() para un DeliveryNote
+    cuya extracción en segundo plano falló (status=ERROR). Solo POST.
+    Restaura status a PENDING para que la vista de detalle muestre el
+    mismo estado "procesando" que una subida nueva mientras corre el
+    reintento.
+    """
+
+    def post(self, request, pk):
+        company = request.user.company_user.company
+        delivery_note = get_object_or_404(
+            DeliveryNote, pk=pk, company=company,
+        )
+
+        if delivery_note.status != 'ERROR':
+            messages.error(
+                request,
+                'Solo se puede reintentar un albarán con extracción '
+                'fallida.',
+            )
+            return redirect(
+                'spare_parts:delivery_note_detail', pk=delivery_note.pk,
+            )
+
+        delivery_note.status = 'PENDING'
+        delivery_note.save(update_fields=['status'])
+        extract_delivery_note_data.delay(delivery_note.pk)
+
+        messages.success(
+            request,
+            'Reintentando la extracción del albarán en segundo plano.',
+        )
         return redirect(
             'spare_parts:delivery_note_detail', pk=delivery_note.pk,
         )

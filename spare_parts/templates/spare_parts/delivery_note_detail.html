@@ -2,6 +2,17 @@
 {# Revisión y confirmación de albarán de proveedor -- Hito 10, Paso 3. #}
 {% extends "panel/base.html" %}
 {% block page_title %}Revisión de Albarán{% endblock %}
+{% block extra_head %}
+    {# S014-H10, Bloque B punto 2: mientras Gemini procesa el albarán
+       en segundo plano (status=PENDING) la página se refresca sola
+       cada 5s hasta que pase a PROCESSED/ERROR -- sin JS, sin polling
+       HTMX, el caso más simple que cubre la necesidad real (el
+       operario ya se ha ido a hacer otra cosa, no está mirando la
+       pantalla fijamente). #}
+    {% if delivery_note.status == 'PENDING' %}
+        <meta http-equiv="refresh" content="5">
+    {% endif %}
+{% endblock %}
 {% block content %}
     <div class="row justify-content-center">
         <div class="col-12 col-lg-10">
@@ -10,8 +21,12 @@
                     Albarán #{{ delivery_note.pk }}
                     {% if delivery_note.status == 'ASSIGNED' %}
                         <span class="badge bg-success ms-2">Asignado</span>
-                    {% else %}
+                    {% elif delivery_note.status == 'PROCESSED' %}
                         <span class="badge bg-warning text-dark ms-2">Pendiente de confirmar</span>
+                    {% elif delivery_note.status == 'ERROR' %}
+                        <span class="badge bg-danger ms-2">Error de extracción</span>
+                    {% else %}
+                        <span class="badge bg-secondary ms-2">Procesando…</span>
                     {% endif %}
                 </h5>
                 <a href="{% url 'spare_parts:delivery_note_upload' %}"
@@ -24,7 +39,35 @@
                     Este albarán ya ha sido confirmado. Los datos quedan
                     bloqueados para edición.
                 </div>
+            {% elif delivery_note.status == 'PENDING' %}
+                <div class="alert alert-secondary d-flex align-items-center gap-2">
+                    <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                    <span>
+                        Gemini está procesando este albarán en segundo plano.
+                        Esta página se actualiza sola -- no hace falta que
+                        esperes aquí, puedes volver más tarde desde el
+                        listado de Albaranes.
+                    </span>
+                </div>
+            {% elif delivery_note.status == 'ERROR' %}
+                <div class="alert alert-danger">
+                    <p class="mb-2">
+                        No se ha podido extraer la información de este
+                        albarán (foto/PDF ilegible, o fallo temporal del
+                        servicio de extracción). El archivo original no se
+                        ha borrado.
+                    </p>
+                    <form method="post"
+                          action="{% url 'spare_parts:delivery_note_retry' pk=delivery_note.pk %}"
+                          class="mb-0">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Reintentar extracción
+                        </button>
+                    </form>
+                </div>
             {% endif %}
+            {% if delivery_note.status == 'PROCESSED' or delivery_note.status == 'ASSIGNED' %}
             <form method="post"
                   action="{% url 'spare_parts:delivery_note_detail' pk=delivery_note.pk %}">
                 {% csrf_token %}
@@ -236,6 +279,7 @@
                         </button>
                     </div>
                 </form>
+            {% endif %}
             {% endif %}
         </div>
     </div>
