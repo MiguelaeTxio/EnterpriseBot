@@ -112,14 +112,33 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+google-api-core==2.31.0
+    # via google-api-python-client
+google-api-python-client==2.198.0
+    # via -r requirements.in
 google-auth[requests]==2.49.1
-    # via google-genai
+    # via
+    #   google-api-core
+    #   google-api-python-client
+    #   google-auth-httplib2
+    #   google-auth-oauthlib
+    #   google-genai
+google-auth-httplib2==0.4.0
+    # via google-api-python-client
+google-auth-oauthlib==1.4.0
+    # via -r requirements.in
 google-genai==2.7.0
     # via -r requirements.in
+googleapis-common-protos==1.75.0
+    # via google-api-core
 h11==0.16.0
     # via httpcore
 httpcore==1.0.9
     # via httpx
+httplib2==0.32.0
+    # via
+    #   google-api-python-client
+    #   google-auth-httplib2
 httpx==0.28.1
     # via google-genai
 idna==3.11
@@ -148,6 +167,8 @@ mysqlclient==2.2.8
     # via -r requirements.in
 narwhals==2.20.0
     # via plotly
+oauthlib==3.3.1
+    # via requests-oauthlib
 openpyxl==3.1.5
     # via -r requirements.in
 packaging==26.0
@@ -171,6 +192,13 @@ propcache==0.4.1
     # via
     #   aiohttp
     #   yarl
+proto-plus==1.28.1
+    # via google-api-core
+protobuf==7.35.1
+    # via
+    #   google-api-core
+    #   googleapis-common-protos
+    #   proto-plus
 psutil==7.2.2
     # via -r requirements.in
 pyasn1==0.6.3
@@ -189,6 +217,8 @@ pyjwt==2.12.1
     # via twilio
 pymupdf==1.27.2.2
     # via -r requirements.in
+pyparsing==3.3.2
+    # via httplib2
 pyphen==0.17.2
     # via weasyprint
 python-dateutil==2.9.0.post0
@@ -206,9 +236,13 @@ regex==2026.3.32
 requests==2.33.1
     # via
     #   -r requirements.in
+    #   google-api-core
     #   google-auth
     #   google-genai
+    #   requests-oauthlib
     #   twilio
+requests-oauthlib==2.0.0
+    # via google-auth-oauthlib
 six==1.17.0
     # via
     #   cssbeautifier
@@ -253,6 +287,8 @@ tzdata==2026.1
     # via kombu
 tzlocal==5.3.1
     # via celery
+uritemplate==4.2.0
+    # via google-api-python-client
 urllib3==2.6.3
     # via requests
 vine==5.1.0
