@@ -529,6 +529,63 @@ tarea + tipo_tarea + transición de estado en la misma operación).
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
+### ⚠️ PRIMER PUNTO OBLIGATORIO DE LA PRÓXIMA SESIÓN (S015) — Salvaguarda: un albarán = una máquina, código SIEMPRE en observaciones
+
+**Pedido por Miguel Ángel en S014 (2026-07-13), sin implementar
+todavía a petición suya explícita** ("dejarlo como primer punto del
+orden del día de la siguiente sesión"). Especificación completa, en
+sus propias palabras, sin resumir ni reinterpretar:
+
+1. **Un albarán solo puede llevar líneas de una única máquina.**
+   Queda prohibido un albarán con líneas para máquinas distintas — si
+   el proveedor trae en un mismo albarán repuestos para 3 máquinas
+   diferentes, tienen que ser 3 albaranes distintos (responsabilidad
+   del proveedor al emitirlo, el sistema debe detectarlo y
+   rechazarlo, no dividirlo automáticamente).
+2. **El código de máquina (o departamento genérico) es obligatorio**
+   en todo albarán — no puede faltar.
+3. **Tiene que venir impreso/escrito por el proveedor en el campo
+   "Observaciones" del propio albarán físico.** Se elimina por
+   completo la tolerancia a anotaciones a mano (bolígrafo/lápiz)
+   sobre la foto — ya no es un mecanismo válido de anotación.
+4. **Nunca como artículo/línea de producto.** Si el código de máquina
+   aparece extraído como si fuera un artículo (línea de la tabla de
+   repuestos) en vez de en observaciones, el albarán se **rechaza**
+   igualmente — no se acepta ni se reinterpreta.
+5. **Excepción tolerada, pero también obligatoria por escrito en
+   observaciones (nunca a mano):** cuando el repuesto es genérico y
+   no va a una máquina concreta, se permite que observaciones diga
+   "almacén", "almacén mecánico" o "taller mecánico" — pero tiene que
+   estar ahí escrito por el proveedor, igual que un código de
+   máquina real. Vacío no es válido bajo ningún concepto.
+6. **Detección automática + modal de rechazo.** Cuando el sistema
+   detecte un albarán que no cumple esta norma (código de máquina
+   ausente de observaciones, código solo presente como artículo, o
+   varias máquinas distintas entre las líneas de un mismo albarán),
+   debe saltar automáticamente un modal indicando que falta el código
+   de máquina/departamento del repuesto -- no se debe permitir
+   confirmar el albarán en ese estado.
+
+**Impacto técnico a valorar en S015 (no decidido todavía, ver punto
+de partida de la sesión):** esto es un cambio de modelo de negocio
+respecto al diseño actual, donde `DeliveryNote.general_machine_code_raw`
+es opcional y cada `DeliveryNoteLine.machine_code_raw` puede apuntar a
+una máquina distinta línea a línea. La nueva norma exige lo contrario:
+una única máquina (o departamento genérico) por albarán completo,
+obligatoria, leída específicamente del campo de observaciones del
+documento -- probablemente implica cambios en el prompt de extracción
+de `GeminiVisionExtractionService` (para que Gemini distinga
+observaciones de la tabla de artículos y devuelva explícitamente si
+encontró o no una anotación válida), en `resolve_line_assignment()`/
+`confirm_delivery_note()` (para rechazar en vez de resolver
+silenciosamente cuando no hay código o hay varios distintos), y en
+`DeliveryNoteDetailView`/su plantilla (modal de rechazo). Empezar
+S015 leyendo el prompt real de extracción actual y el flujo de
+resolución real antes de diseñar nada -- no asumir la implementación
+a partir de esta sola descripción.
+
+---
+
 ### ESTADO AL CIERRE DE S008 (2026-07-07)
 
 - **Pasos 1-6 — COMPLETADOS**, sin cambios desde S007.
