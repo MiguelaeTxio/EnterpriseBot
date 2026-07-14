@@ -121,11 +121,14 @@ de la tarea automática una vez exista), `created_by`, `date_start`,
   sin selector.
 - Código de colores por día (regla exacta cerrada en S018 — nivel de
   detalle: existencia de tarea real ese día, no proporción de horas):
-  - **Azul** — existe al menos una `WorkOrderEntryLine` de ese día con
-    centro de gasto distinto de `PERSONAL` (hay tarea real). Un gap
-    parcial de `PERSONAL` ese mismo día (p. ej. faltan 2-3 horas) NO
-    cambia el color — sigue siendo azul mientras haya algo de trabajo
-    real registrado.
+  - **Azul (normal)** — existe al menos una `WorkOrderEntryLine` de ese
+    día con centro de gasto distinto de `PERSONAL` (hay tarea real) Y NO
+    hay ningún `WorkdayGap` resuelto ese mismo día — jornada completa.
+  - **Azul celeste** — mismo caso anterior (hay tarea real) PERO además
+    existe un `WorkdayGap` resuelto ese día (ausencia parcial de
+    `PERSONAL`, p. ej. faltan 2-3 horas) — jornada incompleta, no llega
+    a las 8 horas. Añadido en S018 a petición de Miguel Ángel para
+    distinguir visualmente este caso del día completo.
   - **Verde** — día de vacaciones (derivado de `VacationPeriod`, sección 3.0).
   - **Naranja** — ese día NO hay ninguna tarea real (todas las líneas,
     si las hay, son `PERSONAL`) y sí hay una `AbsenceCategory` distinta
