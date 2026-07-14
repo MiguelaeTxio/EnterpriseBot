@@ -250,6 +250,34 @@
       </div>
       {% endif %}
 
+      {# Fotos de tarea (H7, S016) -- las adjuntadas desde el formulario   #}
+      {# de partes digitales al bloque de trabajo vinculado a este ticket. #}
+      {% if ticket.task_photos.all %}
+      <div class="card border-0 shadow-sm mt-3">
+        <div class="card-header fw-semibold border-bottom py-3">
+          <i class="bi bi-camera me-2"></i>Fotos de la tarea
+        </div>
+        <div class="card-body d-flex flex-wrap gap-2">
+          {% for photo in ticket.task_photos.all %}
+          {% if photo.drive_web_link %}
+          <a href="{{ photo.drive_web_link }}" target="_blank" rel="noopener">
+            <img src="https://drive.google.com/thumbnail?id={{ photo.drive_file_id }}"
+                 alt="{{ photo.caption|default:'Foto de tarea' }}"
+                 width="160" height="120"
+                 class="rounded object-fit-cover border">
+          </a>
+          {% elif photo.image %}
+          <img src="{{ photo.image.url }}"
+               alt="{{ photo.caption|default:'Foto de tarea (subiendo...)' }}"
+               title="Subiendo a Google Drive..."
+               width="160" height="120"
+               class="rounded object-fit-cover border">
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
     </div>
 
     {# ---- Columna derecha: log de conversación (H17) ---- #}
