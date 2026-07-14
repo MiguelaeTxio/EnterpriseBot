@@ -108,10 +108,17 @@ docstring de `_parse_entry_lines_from_post`) con los valores fijos:
 
 ## 4. Preguntas Abiertas — Resolver al Empezar la Sesión que Retome Este Hito
 
-1. **Dónde se registra el periodo de vacaciones** que dispara la tarea
-   automática — ¿formulario nuevo en `hr_calendar`, o reutilización de
-   algo ya existente (p. ej. el propio flujo de `AbsenceCategory`/gaps)?
-   No localizado en S018.
+1. ~~Dónde se registra el periodo de vacaciones~~ — **RESUELTO en S018**:
+   el propio modelo de calendario de `hr_calendar`, ligado al operario/
+   chófer (`CompanyUser`), es quien recoge los días. Modelo candidato
+   `VacationPeriod`: FK a `CompanyUser` (roles `WORKSHOP`/`DRIVER` —
+   confirmar si también `WORKSHOPBOSS`/`OPERATOR` deben poder tener
+   vacaciones registradas), `date_start`, `date_end`. La tarea automática
+   de la sección 3.1 se dispara al guardar un `VacationPeriod` nuevo,
+   calculando la última jornada laboral antes de `date_start`. Los días
+   verdes del calendario (sección 3.2) se derivan directamente del rango
+   `[date_start, date_end]` de los `VacationPeriod` del usuario — no hace
+   falta un registro día a día.
 2. **Campo exacto donde va el día de fin de vacaciones** en la tarea
    generada — confirmar si es `repair_notes`, un campo nuevo, o se
    aprovecha `WorkdayGap.note` (ver sección 2).

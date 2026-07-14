@@ -5,10 +5,51 @@
 
 ### 1. Visión General del Proyecto
 
-EnterpriseBot es una solución omnicanal de nivel empresarial orientada a la
-orquestación de inteligencia artificial conversacional en tiempo real. El
-objetivo es proporcionar una experiencia de usuario fluida, humana y de baja
-latencia a través de canales de voz y mensajería.
+EnterpriseBot es una plataforma de gestión empresarial para Grupo Álvarez
+(empresa de grúas/maquinaria pesada). Nació como una solución omnicanal de
+IA conversacional en tiempo real (voz IVR + WhatsApp) y ha crecido hasta
+cubrir el ciclo completo de operación de taller: partes de trabajo
+digitales, almacén de repuestos, albaranes de proveedor y cliente, gestión
+de flota/centros de gasto, presupuestos (sección ASISTENCIA), analítica
+cruzada de costes, documentación oficial de máquinas y (desde H24)
+vacaciones/calendario de personal. La capa de IA conversacional (voz +
+WhatsApp) sigue activa y en producción, pero ya es una parte más de la
+plataforma, no su totalidad — **corregido en esta sección el 2026-07-14
+(S018), a petición de Miguel Ángel, porque describía solo el alcance
+original y llevaba desactualizada varios hitos.**
+
+#### 1.1. Mapa de apps Django (INSTALLED_APPS real, `enterprise_core/settings.py`)
+
+Referencia rápida para no tener que indagar el árbol de código en cada
+sesión — actualizar esta lista cada vez que se instale o retire una app:
+
+| App | Qué hace |
+|---|---|
+| `ai_services` | Cliente Gemini compartido, transversal a otras apps (principio DRY, H10). |
+| `vox_bridge` | Puente de voz principal: Twilio Media Streams ↔ Gemini Live (transcodificación mu-law/A-law ↔ PCM). |
+| `ivr_config` | Motor de configuración IVR multiempresa: `Company`, `CompanyUser`, `Section`, `Contact`, `CallFlow`, `PhoneNumber`, `PresenceStatus`, `AbsenceCategory`, etc. Núcleo de datos multiempresa del que dependen casi todas las demás apps. |
+| `panel` | Panel de administración/operación (vistas, sin modelos propios salvo `AnalyticsProfile`). Tras el split de H21: `views_operator.py`, `views_workorders.py`, `views_fleet.py`, `views_ivr.py`, `views_auth.py`. |
+| `whatsapp` | Canal WhatsApp: `WhatsAppSession`, `WhatsAppMessage`, `WhatsAppTemplate` — chatbot conversacional y sistema de presencia (H4). |
+| `work_order_processor` | Pipeline completo de partes de trabajo: `WorkOrder`, `WorkOrderEntry`, `WorkdayGap` — extracción PDF→Excel (H6/H8), entrada digital Form/STT/Upload (H7), gates de integridad de jornada (Gate 1-4). |
+| `fleet` | Flota / centros de gasto: `MachineAsset` (entidad central de centro de gasto, H12), `MaintenanceLog`, `MaintenanceItem`. |
+| `spare_parts` | Almacén de repuestos y albaranes de proveedor vía Gemini Vision (H10), persistencia en Google Drive (`gdrive_service.py`, patrón reutilizado por H7/H23). |
+| `workorder_spare_parts` | Puente entre partes de trabajo digitales y almacén de repuestos (H10, Paso 4). |
+| `chat` | Salas de chat IRC por sección (H13) + sala especial BREAKDOWNS con agente Gemini y ciclo de vida de `BreakdownTicket` (H14). |
+| `budgets` | Motor de presupuestos de la sección ASISTENCIA: `Insurer`, `VehicleType`, `InsurerTariff`, `TariffLine`, `Budget`, `BudgetLine` (H16). |
+| `analytics` | Laboratorio de Análisis Unificado — sustituye a Gráficas/Analítica CdG/Informes, gráficas vía Apache ECharts (H20). |
+| `history` | Visor de Historial de Máquinas de solo lectura para rol WORKSHOP (H22), incluye galería de fotos (H7) y sección de documentación (H23). |
+| `delivery_notes` | CRUD de administración de albaranes de proveedor (gap detectado 2026-07-08). |
+| `machine_documents` | Documentación oficial de centros de gasto vía Gemini Vision + Drive (H23, en curso). |
+| `hr_calendar` | Vacaciones y calendario de operario/chófer — **app nueva, en construcción (H24, en curso, sin modelos todavía a fecha de esta edición).** |
+
+**Fuera de `INSTALLED_APPS`, scripts auxiliares independientes** (no Django
+apps, no se cargan en el proyecto): `file_organizer/organizer_probe.py`
+(evaluación de Power Automate, H15) y `web_scrapping/scrape_toll_pdfs.py`
+(scraping de PDFs de peajes para el cálculo de rutas, H18).
+
+`enterprise_core/` es el paquete de configuración raíz del proyecto Django
+(`settings.py`, `urls.py`, `asgi.py`/`wsgi.py`, `celery.py`) — no es una
+app de dominio.
 
 ---
 
@@ -16,8 +57,13 @@ latencia a través de canales de voz y mensajería.
 
 - **Entorno Virtual:** EnterpriseBot_venv (Python 3.10)
 - **Framework Base:** Django (Configurado para gestión de WebSockets y tareas asíncronas)
-- **Motor de IA (ESTÁNDAR OBLIGATORIO):** Gemini 3.1 Live
-  (`models/gemini-3.1-flash-live-preview`).
+- **Motor de IA (ESTÁNDAR OBLIGATORIO):** `gemini-live-2.5-flash-native-audio`
+  vía Vertex AI (Live API). Migrado desde `gemini-3.1-flash-live-preview`
+  el 2026-04-05 — GA en Vertex AI, sin degradación observada en la
+  generación de audio (ver `vox_bridge/services.py` para el detalle
+  técnico de la migración). Corregido en esta sección el 2026-07-14
+  (S018) para que sea coherente con la directriz 4.1, que ya reflejaba el
+  modelo correcto.
   - **Naturaleza:** Arquitectura Stateful (Estado persistente) para streaming
     A2A (Audio-to-Audio) nativo.
   - **Prohibición:** Queda terminantemente prohibido el uso de modelos de la
