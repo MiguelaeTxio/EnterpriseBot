@@ -250,7 +250,7 @@ class Command(BaseCommand):
             target_label = "Huelva" if is_huelva else "Maqueda"
             display_name = full_name.strip() or f"({username})"
 
-            if operator.base_id == getattr(target_base, "pk", None):
+            if target_base is not None and operator.base_id == target_base.pk:
                 already_correct += 1
                 continue
 
