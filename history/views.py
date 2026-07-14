@@ -17,6 +17,8 @@ from django.shortcuts import render
 from fleet.models import MachineAsset
 from panel.mixins import CompanyUserRequiredMixin
 from work_order_processor.models import (
+    FaultCategory,
+    FaultSubcategory,
     WorkOrderEntry,
     WorkOrderEntryLine,
 )
@@ -30,43 +32,52 @@ logger = logging.getLogger(__name__)
 # Mapas de visualizacion de categoria de averia — reutilizados de analytics
 # ---------------------------------------------------------------------------
 
-_FAULT_CAT_MAP = {
-    "MECHANICAL": "Mecánica",
-    "ELECTRICAL": "Eléctrica",
-    "HYDRAULIC": "Hidráulica",
-    "BODYWORK": "Carrocería",
-    "TIRES": "Neumáticos",
-    "MAINTENANCE": "Mantenimiento",
-    "OTHER": "Otra",
-    None: "—",
-    "": "—",
-}
+# ---------------------------------------------------------------------------
+# Fault category display maps -- built directly from the model's
+# TextChoices (work_order_processor.models.FaultCategory /
+# FaultSubcategory), NOT a hand-maintained duplicate dict.
+#
+# BUG FIXED 2026-07-14: this file used to keep its own hardcoded copy of
+# these maps, using an OLD taxonomy (MECHANICAL/ELECTRICAL/HYDRAULIC/
+# BODYWORK/TIRES/MAINTENANCE/OTHER, unprefixed subcategories) that never
+# got updated when the real taxonomy evolved to the current 8-category/
+# prefixed scheme (ENGINE_TRANSMISSION, HY_VALVES, BSS_STEERING, etc. --
+# see FaultCategory/FaultSubcategory in work_order_processor/models.py).
+# Miguel Ángel spotted raw codes like "ENGINE_TRANSMISSION" and "HY_VALVES"
+# showing untranslated in the Historial de Máquina table. analytics/views.py
+# had its own THIRD copy of this same taxonomy (already correct, but a
+# separate duplicate all the same) -- building the maps from the model's
+# TextChoices here removes this file's copy from the duplication entirely,
+# so it can never drift out of sync with the model again.
+# ---
+# Mapas de visualización de categoría de avería -- construidos
+# directamente desde los TextChoices del modelo
+# (work_order_processor.models.FaultCategory / FaultSubcategory), NO un
+# dict duplicado mantenido a mano.
+#
+# BUG CORREGIDO 2026-07-14: este archivo mantenía su propia copia
+# hardcodeada de estos mapas, con una taxonomía ANTIGUA (MECHANICAL/
+# ELECTRICAL/HYDRAULIC/BODYWORK/TIRES/MAINTENANCE/OTHER, subcategorías
+# sin prefijo) que nunca se actualizó cuando la taxonomía real evolucionó
+# al esquema actual de 8 categorías/subcategorías con prefijo
+# (ENGINE_TRANSMISSION, HY_VALVES, BSS_STEERING, etc. -- ver
+# FaultCategory/FaultSubcategory en work_order_processor/models.py).
+# Miguel Ángel detectó códigos en crudo como "ENGINE_TRANSMISSION" y
+# "HY_VALVES" sin traducir en la tabla de Historial de Máquina.
+# analytics/views.py tenía su propia TERCERA copia de esta misma
+# taxonomía (ya correcta, pero un duplicado más igualmente) --
+# construir los mapas aquí desde los TextChoices del modelo elimina la
+# copia de este archivo de la duplicación por completo, así que ya no
+# puede volver a desincronizarse del modelo.
+# ---------------------------------------------------------------------------
 
-_FAULT_SUBCAT_LABELS = {
-    "ENGINE": "Motor",
-    "TRANSMISSION": "Transmisión",
-    "BRAKES": "Frenos",
-    "SUSPENSION": "Suspensión",
-    "STEERING": "Dirección",
-    "ALTERNATOR": "Alternador",
-    "BATTERY": "Batería",
-    "WIRING": "Cableado",
-    "LIGHTS": "Alumbrado",
-    "PUMP": "Bomba",
-    "CYLINDER": "Cilindro",
-    "HOSES": "Mangueras",
-    "VALVES": "Válvulas",
-    "CABIN": "Cabina",
-    "CHASSIS": "Chasis",
-    "FRONT_TIRE": "Neumático delantero",
-    "REAR_TIRE": "Neumático trasero",
-    "OIL_CHANGE": "Cambio de aceite",
-    "FILTER": "Filtros",
-    "GENERAL": "Revisión general",
-    "OTHER": "Otro",
-    None: "—",
-    "": "—",
-}
+_FAULT_CAT_MAP = dict(FaultCategory.choices)
+_FAULT_CAT_MAP[None] = "—"
+_FAULT_CAT_MAP[""] = "—"
+
+_FAULT_SUBCAT_LABELS = dict(FaultSubcategory.choices)
+_FAULT_SUBCAT_LABELS[None] = "—"
+_FAULT_SUBCAT_LABELS[""] = "—"
 
 # ---------------------------------------------------------------------------
 # Default date range: last 365 days
