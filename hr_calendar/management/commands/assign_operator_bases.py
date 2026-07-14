@@ -48,20 +48,38 @@ from budgets.models import Base
 
 
 # ---------------------------------------------------------------------------
-# Huelva members — exact "First Last" full names, case-insensitive match.
-# Everyone else with role WORKSHOP/WORKSHOPBOSS/DRIVER gets Maqueda.
-# Miembros de Huelva — nombre completo exacto "Nombre Apellido", insensible
-# a mayúsculas. El resto con rol WORKSHOP/WORKSHOPBOSS/DRIVER recibe Maqueda.
+# Huelva members. Two matching keys supported per entry: "full_name"
+# (First Last, case/accent-insensitive) and/or "username" (exact).
 #
-# "Maria" confirmado sin apellido en el sistema (captura de panel, S018) --
-# el emparejamiento sigue siendo seguro porque se compara el nombre
-# completo concatenado (first_name + " " + last_name), no solo el nombre
-# de pila: si existiera otra "María" con apellido, no haría match falso.
+# Real full names confirmed from the S018 dry-run output (my first guess
+# at "Carlos Bas" / "David Marquez" was wrong -- actual surnames are
+# longer): "Carlos Bas Blanco", "David Contreras Marquez".
+#
+# "MARIA" has BOTH first_name and last_name blank in the system -- the
+# dry-run showed TWO blank-named SUPERVISOR entries, indistinguishable
+# by full name alone. Matched by username="MARIA" instead (confirmed
+# from Miguel Ángel's panel screenshot, where blank-name rows display
+# the username in bold).
+#
+# Miembros de Huelva. Dos claves de emparejamiento soportadas por
+# entrada: "full_name" (Nombre Apellido, insensible a mayúsculas/tildes)
+# y/o "username" (exacto).
+#
+# Nombres completos reales confirmados por la salida del dry-run de
+# S018 (mi primera aproximación "Carlos Bas" / "David Marquez" era
+# incorrecta -- los apellidos reales son más largos):
+# "Carlos Bas Blanco", "David Contreras Marquez".
+#
+# "MARIA" tiene nombre Y apellido vacíos en el sistema -- el dry-run
+# mostró DOS SUPERVISOR con nombre en blanco, indistinguibles por
+# nombre completo. Emparejada por username="MARIA" en su lugar
+# (confirmado por la captura de panel de Miguel Ángel, donde las filas
+# sin nombre muestran el username en negrita).
 # ---------------------------------------------------------------------------
 HUELVA_MEMBERS = [
-    "Maria",  # Supervisora -- sin apellido en el sistema, confirmado S018
-    "Carlos Bas",
-    "David Marquez",
+    {"username": "MARIA"},
+    {"full_name": "Carlos Bas Blanco"},
+    {"full_name": "David Contreras Marquez"},
 ]
 
 MAQUEDA_BASE_MUNICIPALITY = "Maqueda"
@@ -204,8 +222,13 @@ class Command(BaseCommand):
         # Step 2 — match and assign.
         # Paso 2 — emparejar y asignar.
         # ------------------------------------------------------------------
-        huelva_names_normalised = {
-            _strip_accents_lower(n) for n in HUELVA_MEMBERS
+        huelva_full_names = {
+            _strip_accents_lower(m["full_name"])
+            for m in HUELVA_MEMBERS if "full_name" in m
+        }
+        huelva_usernames = {
+            m["username"].strip().lower()
+            for m in HUELVA_MEMBERS if "username" in m
         }
 
         operators = CompanyUser.objects.filter(
@@ -218,9 +241,14 @@ class Command(BaseCommand):
 
         for operator in operators:
             full_name = f"{operator.user.first_name} {operator.user.last_name}"
-            is_huelva = _strip_accents_lower(full_name) in huelva_names_normalised
+            username = operator.user.username
+            is_huelva = (
+                _strip_accents_lower(full_name) in huelva_full_names
+                or username.strip().lower() in huelva_usernames
+            )
             target_base = huelva_base if is_huelva else maqueda_base
             target_label = "Huelva" if is_huelva else "Maqueda"
+            display_name = full_name.strip() or f"({username})"
 
             if operator.base_id == getattr(target_base, "pk", None):
                 already_correct += 1
@@ -230,11 +258,11 @@ class Command(BaseCommand):
                 operator.base = target_base
                 operator.save(update_fields=["base"])
                 self.stdout.write(
-                    f"  [ASIGNADO]  {full_name} ({operator.role}) -> {target_label}"
+                    f"  [ASIGNADO]  {display_name} ({operator.role}) -> {target_label}"
                 )
             else:
                 self.stdout.write(
-                    f"  [A ASIGNAR] {full_name} ({operator.role}) -> {target_label}"
+                    f"  [A ASIGNAR] {display_name} ({operator.role}) -> {target_label}"
                 )
 
             if is_huelva:
