@@ -14,12 +14,10 @@ not on free text -- SAFE_DEFAULT is --dry-run (no writes) so Miguel
 Ángel can review the exact match list before applying anything for
 real, same pattern as sync_base_calendars --dry-run.
 
-⛔ HUELVA_MEMBERS below has "María" without a surname -- the S018
-session only had a first name for the supervisor. Matching a bare
-first name against User.first_name would silently over-match if there
-is more than one "María" in the company. This command deliberately
-raises CommandError and refuses to run (even in --dry-run) until her
-surname is filled in, rather than guessing.
+"María" has no surname in the system (confirmed via panel screenshot,
+S018) -- matching stays safe because the comparison uses the full
+concatenated name, not the bare first name: another "María" with an
+actual surname would not false-match.
 
 ---
 
@@ -27,10 +25,10 @@ Comando de gestión: assign_operator_bases.
 
 Asegura que existan los registros Base "Maqueda" y "Huelva" para una
 empresa dada, y asigna CompanyUser.base a todos los usuarios activos
-WORKSHOP/WORKSHOPBOSS/DRIVER: los de HUELVA_MEMBERS (por nombre
-completo exacto "Nombre Apellido", insensible a mayúsculas) reciben la
-base Huelva, el resto recibe Maqueda -- según instrucción explícita de
-Miguel Ángel en S018 ("el resto son todos de Maqueda").
+WORKSHOP/WORKSHOPBOSS/SUPERVISOR/DRIVER: los de HUELVA_MEMBERS (por
+nombre completo exacto "Nombre Apellido", insensible a mayúsculas)
+reciben la base Huelva, el resto recibe Maqueda -- según instrucción
+explícita de Miguel Ángel en S018 ("el resto son todos de Maqueda").
 
 El emparejamiento se hace por nombre completo (User.first_name + " " +
 User.last_name), no por texto libre -- el valor por defecto es
@@ -38,12 +36,10 @@ User.last_name), no por texto libre -- el valor por defecto es
 exacta de coincidencias antes de aplicar nada de verdad, mismo patrón
 que sync_base_calendars --dry-run.
 
-⛔ HUELVA_MEMBERS de abajo tiene a "María" sin apellido -- en la sesión
-S018 solo se dio el nombre de pila de la supervisora. Emparejar solo
-por nombre de pila contra User.first_name podría empatar de más en
-silencio si hay más de una "María" en la empresa. Este comando
-deliberadamente lanza CommandError y se niega a ejecutar (incluso en
---dry-run) hasta que se rellene su apellido, en vez de adivinar.
+"María" está confirmada sin apellido en el sistema (captura de panel,
+S018) -- el emparejamiento sigue siendo seguro porque se compara el
+nombre completo concatenado, no el nombre de pila suelto: otra "María"
+con apellido real no haría match falso.
 """
 from django.core.management.base import BaseCommand, CommandError
 
@@ -57,12 +53,13 @@ from budgets.models import Base
 # Miembros de Huelva — nombre completo exacto "Nombre Apellido", insensible
 # a mayúsculas. El resto con rol WORKSHOP/WORKSHOPBOSS/DRIVER recibe Maqueda.
 #
-# TODO (S018): "María" needs a surname before this command can run for
-# real -- see module docstring. Fill in and remove the CommandError guard
-# in handle() once confirmed by Miguel Ángel.
+# "Maria" confirmado sin apellido en el sistema (captura de panel, S018) --
+# el emparejamiento sigue siendo seguro porque se compara el nombre
+# completo concatenado (first_name + " " + last_name), no solo el nombre
+# de pila: si existiera otra "María" con apellido, no haría match falso.
 # ---------------------------------------------------------------------------
 HUELVA_MEMBERS = [
-    "Maria APELLIDO_PENDIENTE_CONFIRMAR",  # Supervisora -- apellido sin confirmar (S018)
+    "Maria",  # Supervisora -- sin apellido en el sistema, confirmado S018
     "Carlos Bas",
     "David Marquez",
 ]
@@ -70,15 +67,21 @@ HUELVA_MEMBERS = [
 MAQUEDA_BASE_MUNICIPALITY = "Maqueda"
 HUELVA_BASE_MUNICIPALITY = "Huelva"
 
-# Roles that need a base assignment for the H24 calendar. ADMIN/SUPERVISOR
-# (administrative, not tied to a physical workshop) are left untouched.
+# Roles that need a base assignment for the H24 calendar. SUPERVISOR is
+# included because María (one of the three Huelva members) has that
+# exact role -- confirmed from Miguel Ángel's panel screenshot (S018).
+# ADMIN is left untouched (purely administrative, not tied to a
+# physical workshop).
 # Roles que necesitan asignación de base para el calendario H24.
-# ADMIN/SUPERVISOR (administrativos, no ligados a un taller físico) se
-# dejan sin tocar.
+# SUPERVISOR se incluye porque María (uno de los tres miembros de
+# Huelva) tiene exactamente ese rol -- confirmado por la captura de
+# panel de Miguel Ángel (S018). ADMIN se deja sin tocar (puramente
+# administrativo, no ligado a un taller físico).
 BASE_ASSIGNABLE_ROLES = [
     CompanyUser.ROLE_WORKSHOP,
     CompanyUser.ROLE_WORKSHOPBOSS,
     CompanyUser.ROLE_DRIVER,
+    CompanyUser.ROLE_SUPERVISOR,
 ]
 
 
@@ -142,24 +145,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """
-        Main entry point. Refuses to run while María's surname is
-        unconfirmed (see module docstring), otherwise ensures the two
-        Base records exist and reports/applies the assignment.
+        Main entry point. Ensures the two Base records exist and
+        reports/applies the assignment.
         ---
-        Punto de entrada principal. Se niega a ejecutar mientras el
-        apellido de María no esté confirmado (ver docstring del módulo);
-        en caso contrario asegura que existan las dos Base y
+        Punto de entrada principal. Asegura que existan las dos Base y
         informa/aplica la asignación.
         """
-        if "APELLIDO_PENDIENTE_CONFIRMAR" in " ".join(HUELVA_MEMBERS):
-            raise CommandError(
-                "# Falta confirmar el apellido de 'Maria' en "
-                "HUELVA_MEMBERS (hr_calendar/management/commands/"
-                "assign_operator_bases.py) antes de poder ejecutar este "
-                "comando, ni siquiera en --dry-run. Editar la constante "
-                "con el apellido real y volver a intentar."
-            )
-
         company_pk = options["company_pk"]
         apply_changes = options["apply"]
 
