@@ -412,6 +412,44 @@ class CompanyUser(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Base assignment — added in H24 (S018). Applies to ANY CompanyUser,
+    # not just WORKSHOPBOSS (unlike workshop_family above) -- fundamental
+    # for DRIVER (chóferes) and WORKSHOP operators, who previously had no
+    # field at all linking them to a physical base.
+    #
+    # String reference to "budgets.Base" (not a top-level import): budgets
+    # models.py already imports Company/CompanyUser from this same module,
+    # so a direct import here would create a circular import. Django
+    # resolves string FK references lazily via the app registry.
+    #
+    # Asignación de base — añadido en H24 (S018). Aplica a CUALQUIER
+    # CompanyUser, no solo a WORKSHOPBOSS (a diferencia de workshop_family
+    # arriba) -- fundamental para DRIVER (chóferes) y operarios WORKSHOP,
+    # que antes no tenían ningún campo que los vinculara a una base física.
+    #
+    # Referencia por string a "budgets.Base" (no import de nivel de
+    # módulo): budgets/models.py ya importa Company/CompanyUser de este
+    # mismo módulo, así que un import directo aquí crearía un import
+    # circular. Django resuelve referencias FK por string de forma
+    # perezosa vía el registro de apps.
+    # ------------------------------------------------------------------
+    base = models.ForeignKey(
+        "budgets.Base",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_users",
+        verbose_name="Base",
+        help_text=(
+            "Base física de referencia de este usuario. Determina qué "
+            "calendario laboral/festivos (Base.labor_calendar, ya "
+            "sincronizado vía sync_base_calendars) aplica a sus "
+            "vacaciones en el calendario de RRHH (H24). Nulo para roles "
+            "que no lo necesitan (p. ej. ADMIN)."
+        ),
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

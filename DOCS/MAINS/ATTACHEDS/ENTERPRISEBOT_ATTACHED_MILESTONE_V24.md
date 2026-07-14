@@ -162,14 +162,31 @@ especificó Miguel Ángel:
 3. **Catálogo de motivos de "baja"** (color naranja) — qué subconjunto
    exacto de `AbsenceCategory` cuenta como baja frente a otras ausencias
    personales.
-4. **Fuente de festivos** (color amarillo) — modelo nuevo por empresa/año
-   vs. integración externa.
+4. ~~Fuente de festivos~~ — **RESUELTO en S018**: se reutiliza
+   `budgets.models.Base.labor_calendar` (ya sincronizado desde
+   calendariosnacionales.com vía `sync_base_calendars`, H16/H18) — no
+   hace falta modelo `Holiday` nuevo. Requería cerrar un hueco real:
+   `CompanyUser` no tenía ningún campo de pertenencia a base aplicable a
+   `WORKSHOP`/`DRIVER` (solo `workshop_family`, exclusivo de
+   `WORKSHOPBOSS`). Construido en S018: `CompanyUser.base` (FK a
+   `budgets.Base`, referencia por string para evitar import circular) +
+   comando `hr_calendar.management.commands.assign_operator_bases`
+   (idempotente, `--dry-run` por defecto) que crea las bases Maqueda/
+   Huelva y asigna cada operario/chófer según la lista dada por Miguel
+   Ángel (dos mecánicos de Huelva + una supervisora: Carlos Bas y David
+   Márquez confirmados, María sin apellido confirmar — el comando se
+   niega a ejecutar hasta entonces, ver su docstring). El resto de
+   operarios/chóferes activos van a Maqueda por defecto.
 5. **Puntos de agregación de horas** a excluir para bloques PERSONAL/
    VACATION — inventariar `analytics/` y `work_order_processor` antes de
    tocar nada (principio DRY: puede que ya exista una exclusión genérica
    para PERSONAL que solo haya que confirmar, en vez de crear una nueva).
 6. ~~Cómo agrupar el calendario en periodos~~ — **RESUELTO en S018**, ver
    sección 3.3 (reutiliza `WorkPeriodGroup`).
+7. **Pendiente bloqueante para ejecutar `assign_operator_bases` de
+   verdad** (aunque no bloquea seguir construyendo código): apellido de
+   "María" (supervisora de Huelva) — confirmar con Miguel Ángel antes de
+   quitar el `CommandError` de guarda en el comando.
 
 ---
 
