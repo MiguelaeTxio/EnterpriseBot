@@ -183,10 +183,14 @@ especificó Miguel Ángel:
    para PERSONAL que solo haya que confirmar, en vez de crear una nueva).
 6. ~~Cómo agrupar el calendario en periodos~~ — **RESUELTO en S018**, ver
    sección 3.3 (reutiliza `WorkPeriodGroup`).
-7. **Pendiente bloqueante para ejecutar `assign_operator_bases` de
-   verdad** (aunque no bloquea seguir construyendo código): apellido de
-   "María" (supervisora de Huelva) — confirmar con Miguel Ángel antes de
-   quitar el `CommandError` de guarda en el comando.
+7. ~~Apellido de "María"~~ — **RESUELTO en S018**: confirmado por
+   captura de panel de Miguel Ángel que `MARIA` no tiene apellido en el
+   sistema y su rol real es `SUPERVISOR` (no `WORKSHOPBOSS`, como se
+   había asumido). `assign_operator_bases` corregido: `HUELVA_MEMBERS`
+   usa `"Maria"` (nombre de pila, emparejamiento seguro por nombre
+   completo concatenado) y `SUPERVISOR` añadido a
+   `BASE_ASSIGNABLE_ROLES`. Comando listo para ejecutar (primero sin
+   `--apply` para revisar, luego con `--apply`).
 
 ---
 
