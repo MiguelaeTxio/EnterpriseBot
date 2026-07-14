@@ -234,6 +234,84 @@
         </div>
         {% endif %}
 
+        {# ============================================================ #}
+        {# LIBRO DE REVISIONES — fichas de avería (H7/S016)              #}
+        {# Historial completo de tickets de la máquina, independiente    #}
+        {# del rango de fechas de arriba -- cada uno con su galería      #}
+        {# combinada de fotos (WhatsApp + fotos de tarea).               #}
+        {# ============================================================ #}
+        <h6 class="fw-semibold mt-4 mb-3">
+            <i class="bi bi-journal-text me-2 text-primary"></i>
+            Libro de revisiones — fichas de avería
+            <span class="badge bg-secondary ms-1">{{ tickets|length }}</span>
+        </h6>
+
+        {% if not tickets %}
+        <div class="card shadow-sm">
+            <div class="card-body text-muted text-center py-4">
+                Esta máquina no tiene ningún ticket de avería registrado todavía.
+            </div>
+        </div>
+        {% endif %}
+
+        {% for ticket in tickets %}
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                    <span class="fw-semibold">{{ ticket.ticket_date_code|default:"Sin código" }}</span>
+                    <span class="text-muted small ms-2">{{ ticket.created_at|date:"d/m/Y H:i" }}</span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge
+                        {% if ticket.status == 'OPEN' %}bg-danger
+                        {% elif ticket.status == 'IN_PROGRESS' %}bg-warning text-dark
+                        {% elif ticket.status == 'PAUSED' %}bg-secondary
+                        {% else %}bg-success{% endif %}">
+                        {{ ticket.get_status_display }}
+                    </span>
+                    <span class="badge bg-light text-dark border">{{ ticket.get_origin_display }}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="mb-2">{{ ticket.fault_summary|default:"Sin descripción registrada." }}</p>
+                <div class="row g-2 small text-muted mb-2">
+                    {% if ticket.fault_location %}
+                    <div class="col-12 col-md-4"><i class="bi bi-geo-alt me-1"></i>{{ ticket.fault_location }}</div>
+                    {% endif %}
+                    {% if ticket.urgency %}
+                    <div class="col-12 col-md-4"><i class="bi bi-exclamation-triangle me-1"></i>{{ ticket.get_urgency_display }}</div>
+                    {% endif %}
+                    {% if ticket.resolved_at %}
+                    <div class="col-12 col-md-4"><i class="bi bi-check-circle me-1"></i>Cerrado el {{ ticket.resolved_at|date:"d/m/Y H:i" }}</div>
+                    {% endif %}
+                </div>
+                {% if ticket.photos or ticket.task_photos.all %}
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    {% for photo_url in ticket.photos %}
+                    <a href="{{ photo_url }}" target="_blank">
+                        <img src="{{ photo_url }}" alt="Foto avería"
+                             width="90" height="90" class="rounded object-fit-cover border">
+                    </a>
+                    {% endfor %}
+                    {% for photo in ticket.task_photos.all %}
+                    {% if photo.drive_web_link %}
+                    <a href="{{ photo.drive_web_link }}" target="_blank" rel="noopener">
+                        <img src="https://drive.google.com/thumbnail?id={{ photo.drive_file_id }}"
+                             alt="{{ photo.caption|default:'Foto de tarea' }}"
+                             width="90" height="90" class="rounded object-fit-cover border">
+                    </a>
+                    {% elif photo.image %}
+                    <img src="{{ photo.image.url }}"
+                         alt="Foto de tarea (subiendo...)" title="Subiendo a Google Drive..."
+                         width="90" height="90" class="rounded object-fit-cover border">
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
     {% else %}
     {# Estado inicial — ninguna máquina seleccionada todavía #}
     {# Initial state — no machine selected yet               #}

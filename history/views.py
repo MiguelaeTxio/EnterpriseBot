@@ -15,7 +15,7 @@ from django.views.generic import View
 from django.shortcuts import render
 
 from fleet.models import MachineAsset
-from panel.mixins import WorkshopRequiredMixin
+from panel.mixins import CompanyUserRequiredMixin
 from work_order_processor.models import (
     WorkOrderEntry,
     WorkOrderEntryLine,
@@ -75,10 +75,14 @@ _FAULT_SUBCAT_LABELS = {
 
 _DEFAULT_DAYS = 365
 
-class MachineHistoryView(WorkshopRequiredMixin, View):
+class MachineHistoryView(CompanyUserRequiredMixin, View):
     """
-    Read-only view for WORKSHOP operators to consult the intervention
-    history of any active machine asset in their company.
+    Read-only view for consulting the intervention and breakdown-ticket
+    history of any active machine asset in the company. Originally
+    WORKSHOP-only (Hito 22); widened in H7/S016 (confirmed explicitly by
+    Miguel Ángel) to every role -- ADMIN, SUPERVISOR, WORKSHOPBOSS,
+    WORKSHOP and DRIVER -- since the page carries no mutable action of
+    any kind.
 
     GET parameters:
       machine_code — code of the MachineAsset to inspect (optional).
@@ -86,11 +90,17 @@ class MachineHistoryView(WorkshopRequiredMixin, View):
       date_to      — YYYY-MM-DD end of range (default: today).
 
     Returns a chronological (descending) list of WorkOrderEntryLine records
-    filtered by machine and date range, plus a summary header with totals.
+    filtered by machine and date range, plus a summary header with totals,
+    plus (H7/S016) the full BreakdownTicket history for the machine with
+    each ticket's combined photo gallery (WhatsApp photos + task photos).
     No cost data is ever exposed.
     ---
-    Vista de solo lectura para operarios WORKSHOP para consultar el
-    historial de intervenciones de cualquier maquina activa de su empresa.
+    Vista de solo lectura para consultar el historial de intervenciones y
+    de tickets de avería de cualquier máquina activa de la empresa.
+    Originalmente exclusiva de WORKSHOP (Hito 22); ampliada en H7/S016
+    (confirmado explícitamente por Miguel Ángel) a todos los roles --
+    ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP y DRIVER -- al no llevar
+    ninguna acción mutable.
 
     Parametros GET:
       machine_code — codigo del MachineAsset a inspeccionar (opcional).
@@ -99,7 +109,9 @@ class MachineHistoryView(WorkshopRequiredMixin, View):
 
     Devuelve una lista cronologica (descendente) de registros
     WorkOrderEntryLine filtrados por maquina y rango de fechas,
-    mas un resumen de cabecera con totales.
+    mas un resumen de cabecera con totales, mas (H7/S016) el historial
+    completo de BreakdownTicket de la maquina con la galeria de fotos
+    combinada de cada ticket (fotos de WhatsApp + fotos de tarea).
     Sin exposicion de datos de coste.
     """
 
@@ -239,6 +251,19 @@ class MachineHistoryView(WorkshopRequiredMixin, View):
             total_horas = agg["suma_horas"]
             ultima_intervencion = agg["ultima"]
 
+        # -- Ticket history (H7/S016) ----------------------------------
+        # Fichas de averia de la maquina, con su galeria combinada de
+        # fotos (photos JSONField de WhatsApp + task_photos de H7).
+        # Independiente del rango de fechas de arriba -- se muestra el
+        # historial completo de tickets, no solo el periodo consultado.
+        tickets = []
+        if selected_machine is not None:
+            tickets = (
+                selected_machine.breakdown_tickets
+                .prefetch_related("task_photos")
+                .order_by("-created_at")
+            )
+
         context = {
             "company": company,
             "company_user": company_user,
@@ -253,6 +278,7 @@ class MachineHistoryView(WorkshopRequiredMixin, View):
             # Results
             "lines": lines,
             "has_results": selected_machine is not None,
+            "tickets": tickets,
             # Summary
             "total_intervenciones": total_intervenciones,
             "total_horas": total_horas,

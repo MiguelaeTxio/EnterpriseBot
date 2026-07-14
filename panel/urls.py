@@ -85,7 +85,6 @@ from panel.views import (
     MachineAssetDeactivateView,
     MachineAssetReactivateView,
     MachineAssetDeleteView,
-    MachineHistoryView,
     WorkerAbsenceUpdateView,
     WorkerAbsenceDeleteView,
     WorkOrderAdminExportView,
@@ -354,7 +353,6 @@ urlpatterns = [
     path("fleet/<int:pk>/deactivate/", MachineAssetDeactivateView.as_view(), name="fleet_deactivate"),
     path("fleet/<int:pk>/reactivate/", MachineAssetReactivateView.as_view(), name="fleet_reactivate"),
     path("fleet/<int:pk>/delete/", MachineAssetDeleteView.as_view(), name="fleet_delete"),
-    path("fleet/<int:pk>/history/", MachineHistoryView.as_view(), name="fleet_history"),
     # Fleet analytics — Hito 12 Paso PRIORIDAD 2
     path("fleet/analytics/", MachineAssetAnalyticsView.as_view(), name="fleet_analytics"),
 

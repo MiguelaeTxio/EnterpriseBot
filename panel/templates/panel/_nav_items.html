@@ -385,8 +385,12 @@
                     {# Tickets de avería moved to the Mecánicos subgroup (renamed "Taller"    #}
                     {# below).                                                                #}
 
-                    {# --- Subgrupo: Centro de gasto (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 2 ítems, cada uno con su propio gate interior sin cambios) --- #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
+                    {# --- Subgrupo: Centro de gasto -- gate ampliado a != ASSISTANCE      #}
+                    {# (H7/S016, Miguel Ángel): Historial de Máquina es de solo lectura    #}
+                    {# y debe verla todo el mundo, DRIVER incluido. La unión del subgrupo   #}
+                    {# se amplía; "Centros de gasto" (gestión) conserva su propio gate      #}
+                    {# interior más estrecho, sin cambios. --- #}
+                    {% if company_user.role != 'ASSISTANCE' %}
                         <li class="nav-item px-2 pt-2">
                             <small class="sidebar-subgroup-label">Centro de gasto</small>
                         </li>
@@ -398,14 +402,12 @@
                                 </a>
                             </li>
                         {% endif %}
-                        {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
-                            <li class="nav-item">
-                                <a class="nav-link {% if active_nav == 'machine_history' %}active{% endif %}"
-                                   href="{% url 'history:machine_history' %}">
-                                    <i class="bi bi-truck"></i>Historial de Máquina
-                                </a>
-                            </li>
-                        {% endif %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'machine_history' %}active{% endif %}"
+                               href="{% url 'history:machine_history' %}">
+                                <i class="bi bi-truck"></i>Historial de Máquina
+                            </a>
+                        </li>
                     {% endif %}
 
                     {# --- Subgrupo: Almacén (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 4 ítems, cada uno con su propio gate interior sin cambios) --- #}
