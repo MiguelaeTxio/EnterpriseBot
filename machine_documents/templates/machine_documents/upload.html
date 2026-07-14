@@ -25,11 +25,14 @@
     <i class="bi bi-info-circle me-1"></i>
     Selecciona la máquina/centro de gasto y, después, la carpeta que
     contiene toda su documentación (ficha técnica, ITV, certificados,
-    seguro, etc.). Cada PDF se clasifica automáticamente por su
-    contenido -- el resultado puede tardar unos segundos por archivo.
-    Si algún PDF combina varios documentos, se detecta como
-    documento "maestro" y se compara con el resto para extraer
-    cualquier contenido que no esté ya cubierto por los demás.
+    seguro, etc.). Al pulsar "Procesar documentación" se te redirige
+    de inmediato a Historial de Máquina -- la clasificación de cada
+    PDF ocurre en segundo plano (puede tardar unos minutos según el
+    número de archivos) y los documentos aparecen como "Pendiente"
+    hasta que termina. Recarga esa página para ver el resultado. Si
+    algún PDF combina varios documentos, se detecta como documento
+    "maestro" y se compara con el resto para extraer cualquier
+    contenido que no esté ya cubierto por los demás.
 </div>
 
 <div class="card shadow-sm">
@@ -85,7 +88,7 @@
     var btn = document.getElementById('submit-btn');
     form.addEventListener('submit', function () {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Procesando documentación…';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Subiendo…';
     });
 }());
 </script>

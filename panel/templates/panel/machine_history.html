@@ -343,8 +343,10 @@
                 <table class="table table-sm align-middle mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th>Estado</th>
                             <th>Tipo de documento</th>
                             <th>Nombre</th>
+                            <th>Caducidad</th>
                             <th>Subido por</th>
                             <th>Fecha</th>
                             <th class="text-end">Drive</th>
@@ -353,14 +355,55 @@
                     <tbody>
                         {% for doc in documents %}
                         <tr>
-                            <td><span class="badge bg-secondary-subtle text-dark">{{ doc.document_type }}</span></td>
                             <td>
-                                {{ doc.display_name }}
+                                {% if doc.status == 'PENDING' %}
+                                <span class="badge bg-warning-subtle text-dark">
+                                    <span class="spinner-border spinner-border-sm" style="width:0.7rem;height:0.7rem;"></span>
+                                    Procesando
+                                </span>
+                                {% elif doc.status == 'ERROR' %}
+                                <span class="badge bg-danger-subtle text-danger" title="{{ doc.error_message }}">
+                                    <i class="bi bi-exclamation-triangle"></i>Error
+                                </span>
+                                {% else %}
+                                <span class="badge bg-success-subtle text-success">
+                                    <i class="bi bi-check-circle"></i>Clasificado
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if doc.document_type %}
+                                <span class="badge bg-secondary-subtle text-dark">{{ doc.document_type }}</span>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {{ doc.display_name|default:doc.original_filename }}
                                 {% if doc.source_master_hint %}
                                 <div class="text-muted small">
                                     <i class="bi bi-diagram-3"></i>
                                     extraído de: {{ doc.source_master_hint }}
                                 </div>
+                                {% endif %}
+                                {% if doc.document_number %}
+                                <div class="text-muted small">Nº {{ doc.document_number }}</div>
+                                {% endif %}
+                                {% if doc.issuing_entity %}
+                                <div class="text-muted small">{{ doc.issuing_entity }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="small text-nowrap">
+                                {% if doc.expiry_date %}
+                                {% if doc.expiry_date < today %}
+                                <span class="badge bg-danger-subtle text-danger">
+                                    Caducado {{ doc.expiry_date|date:"d/m/Y" }}
+                                </span>
+                                {% else %}
+                                {{ doc.expiry_date|date:"d/m/Y" }}
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
                             <td class="small">
@@ -375,7 +418,7 @@
                                     <i class="bi bi-box-arrow-up-right"></i>Abrir
                                 </a>
                                 {% else %}
-                                <span class="text-muted small">pendiente</span>
+                                <span class="text-muted small">—</span>
                                 {% endif %}
                             </td>
                         </tr>

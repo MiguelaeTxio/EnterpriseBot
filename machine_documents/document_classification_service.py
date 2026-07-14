@@ -72,6 +72,8 @@ hito ya resueltas con Miguel Ángel:
 """
 import json
 import logging
+import time
+from datetime import date, datetime
 
 import fitz  # PyMuPDF -- ya en requirements (ver cabecera del módulo)
 from google.genai.types import (
@@ -84,6 +86,95 @@ from google.genai.types import (
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# 429 retry helper / Helper de reintento ante 429
+# ---------------------------------------------------------------------------
+#
+# Added 2026-07-14 alongside the move to an async Celery task
+# (machine_documents.tasks.process_machine_document_batch): the real
+# incident log for this milestone showed a 429 RESOURCE_EXHAUSTED
+# immediately after a 504 DEADLINE_EXCEEDED retry storm. A blocking
+# time.sleep() here is safe now that these calls run inside a Celery
+# worker (Always-on Task), never on a PythonAnywhere webapp request
+# thread -- there is no 5-minute wall-clock limit to protect against
+# anymore for this specific wait.
+# ---
+# Añadido 2026-07-14 junto con el paso a tarea Celery asíncrona
+# (machine_documents.tasks.process_machine_document_batch): el log
+# real del incidente de este hito mostró un 429 RESOURCE_EXHAUSTED
+# justo después de una tormenta de reintentos por 504
+# DEADLINE_EXCEEDED. Un time.sleep() bloqueante aquí es seguro ahora
+# que estas llamadas se ejecutan dentro de un worker Celery (Always-on
+# Task), nunca en el hilo de una petición del webapp de PythonAnywhere
+# -- ya no hay límite de 5 minutos del que protegerse para esta espera
+# concreta.
+
+_MAX_GEMINI_ATTEMPTS = 3
+_RETRY_DELAY_SECONDS = 60
+
+
+def _generate_content_with_retry(client, **kwargs):
+    """
+    Calls client.models.generate_content(**kwargs), retrying up to
+    _MAX_GEMINI_ATTEMPTS times with a _RETRY_DELAY_SECONDS blocking
+    wait when the failure looks like a Vertex AI 429
+    (RESOURCE_EXHAUSTED). Any other exception propagates immediately
+    on the first attempt -- only quota/rate-limit errors are worth
+    waiting out.
+    ---
+    Llama a client.models.generate_content(**kwargs), reintentando
+    hasta _MAX_GEMINI_ATTEMPTS veces con una espera bloqueante de
+    _RETRY_DELAY_SECONDS cuando el fallo parece un 429 de Vertex AI
+    (RESOURCE_EXHAUSTED). Cualquier otra excepción se propaga de
+    inmediato en el primer intento -- solo merece la pena esperar
+    errores de cuota/límite de tasa.
+    """
+    last_exc = None
+    for attempt in range(1, _MAX_GEMINI_ATTEMPTS + 1):
+        try:
+            return client.models.generate_content(**kwargs)
+        except Exception as exc:
+            last_exc = exc
+            exc_str = str(exc)
+            is_quota_error = (
+                "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str
+            )
+            if not is_quota_error or attempt == _MAX_GEMINI_ATTEMPTS:
+                raise
+            logger.warning(
+                "# [_generate_content_with_retry] 429 de Vertex AI "
+                "(intento %d/%d). Reintentando en %ds.",
+                attempt, _MAX_GEMINI_ATTEMPTS, _RETRY_DELAY_SECONDS,
+            )
+            time.sleep(_RETRY_DELAY_SECONDS)
+    raise last_exc  # pragma: no cover -- inalcanzable, el bucle siempre retorna o lanza
+
+
+def _parse_iso_date(value: str) -> date | None:
+    """
+    Parses a 'YYYY-MM-DD' string into a date, returning None for
+    empty/missing/malformed values instead of raising -- Gemini output
+    for optional date fields is untrusted input, never assume it's
+    well-formed.
+    ---
+    Parsea una cadena 'YYYY-MM-DD' a date, devolviendo None para
+    valores vacíos/ausentes/mal formados en vez de lanzar excepción --
+    la salida de Gemini para campos de fecha opcionales es entrada no
+    confiable, nunca asumir que está bien formada.
+    """
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        logger.warning(
+            "# [_parse_iso_date] Valor de fecha no parseable "
+            "devuelto por Gemini: %r. Se descarta (None).",
+            value,
+        )
+        return None
 
 # ---------------------------------------------------------------------------
 # Filename heuristic classification (NEVER calls Gemini) / Clasificación
@@ -189,6 +280,10 @@ def classify_by_filename_heuristic(filename: str) -> dict | None:
                 "document_type": document_type,
                 "display_name": _clean_display_name(filename),
                 "is_possible_master": False,
+                "expiry_date": None,
+                "issue_date": None,
+                "document_number": "",
+                "issuing_entity": "",
             }
     return None
 
@@ -203,8 +298,15 @@ _CLASSIFY_RESPONSE_SCHEMA = {
         "document_type": {"type": "string"},
         "display_name": {"type": "string"},
         "is_possible_master": {"type": "boolean"},
+        "expiry_date": {"type": "string"},
+        "issue_date": {"type": "string"},
+        "document_number": {"type": "string"},
+        "issuing_entity": {"type": "string"},
     },
-    "required": ["document_type", "display_name", "is_possible_master"],
+    "required": [
+        "document_type", "display_name", "is_possible_master",
+        "expiry_date", "issue_date", "document_number", "issuing_entity",
+    ],
 }
 
 _CLASSIFY_PROMPT = """Eres un sistema de clasificación de documentación oficial de
@@ -231,15 +333,36 @@ determina:
    PDF único que agrupa ficha técnica + ITV + certificados + seguro,
    cada uno en un rango de páginas distinto); false si es un único
    documento de un solo tipo.
+4. expiry_date: fecha de fin de vigencia/caducidad del documento
+   (ITV, certificado OCA, póliza de seguro, etc.), en formato
+   "YYYY-MM-DD". Cadena vacía "" si el documento no tiene fecha de
+   caducidad (ej. una ficha técnica) o no aparece en el contenido.
+5. issue_date: fecha de emisión/expedición del documento, en formato
+   "YYYY-MM-DD". Cadena vacía "" si no aplica o no se identifica.
+6. document_number: número de expediente, póliza, certificado o
+   referencia equivalente, tal como aparece en el documento. Cadena
+   vacía "" si no tiene uno reconocible.
+7. issuing_entity: organismo o empresa que emite el documento (ej.
+   una aseguradora, un OCA concreto, la Junta de Andalucía). Cadena
+   vacía "" si no se identifica.
 
 Responde únicamente con el JSON solicitado."""
 
 
 def classify_document(pdf_bytes: bytes, filename: str) -> dict:
     """
-    Classifies a single PDF document via Gemini Vision, returning its
-    proposed type, a human-readable display name, and whether it
-    looks like a "master" document combining several others.
+    Classifies a single PDF document via Gemini Vision in a SINGLE
+    call, returning its proposed type, a human-readable display name,
+    whether it looks like a "master" document combining several
+    others, AND (added 2026-07-14, Miguel Ángel's decision) its
+    expiry_date/issue_date/document_number/issuing_entity when
+    present. All four metadata fields are extracted in this same call
+    rather than a follow-up one: an extra field in the same
+    response_schema costs a handful of output tokens, while a second
+    call per document would double the request count against
+    PythonAnywhere's 5-minute webapp timeout -- exactly the failure
+    mode from the 2026-07-14 incident these fields are being added
+    right after.
 
     Args:
         pdf_bytes: raw bytes of the PDF file.
@@ -248,16 +371,27 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
             content, never inferred from the filename, per this
             milestone's principle #1).
 
-    Returns a dict with document_type (str), display_name (str) and
-    is_possible_master (bool). On any error, returns an empty/False
-    fallback and logs the exception -- callers decide how to surface
-    the failure (never raises).
+    Returns a dict with document_type (str), display_name (str),
+    is_possible_master (bool), expiry_date (date | None), issue_date
+    (date | None), document_number (str) and issuing_entity (str). On
+    any error (including exhausting the 429 retry budget), returns an
+    empty/False/None fallback and logs the exception -- callers decide
+    how to surface the failure (never raises).
 
     ---
 
-    Clasifica un único documento PDF vía Gemini Vision, devolviendo
-    su tipo propuesto, un nombre legible y si parece un documento
-    "maestro" que combina varios otros.
+    Clasifica un único documento PDF vía Gemini Vision en UNA SOLA
+    llamada, devolviendo su tipo propuesto, un nombre legible, si
+    parece un documento "maestro" que combina varios otros, Y (añadido
+    2026-07-14, decisión de Miguel Ángel) su expiry_date/issue_date/
+    document_number/issuing_entity cuando están presentes. Los cuatro
+    campos de metadatos se extraen en esta misma llamada en vez de en
+    una llamada posterior: un campo extra en el mismo response_schema
+    cuesta un puñado de tokens de salida más, mientras que una segunda
+    llamada por documento duplicaría el número de peticiones contra el
+    timeout de 5 minutos del webapp de PythonAnywhere -- exactamente
+    el modo de fallo del incidente del 2026-07-14 justo después del
+    cual se añaden estos campos.
 
     Args:
         pdf_bytes: bytes crudos del archivo PDF.
@@ -266,20 +400,28 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
             siempre se basa en el contenido, nunca se infiere del
             nombre de archivo, según el principio #1 de este hito).
 
-    Devuelve un dict con document_type (str), display_name (str) e
-    is_possible_master (bool). Ante cualquier error, devuelve un
-    fallback vacío/False y registra la excepción -- quien llama
-    decide cómo mostrar el fallo (nunca lanza excepción).
+    Devuelve un dict con document_type (str), display_name (str),
+    is_possible_master (bool), expiry_date (date | None), issue_date
+    (date | None), document_number (str) e issuing_entity (str). Ante
+    cualquier error (incluido agotar el presupuesto de reintentos por
+    429), devuelve un fallback vacío/False/None y registra la
+    excepción -- quien llama decide cómo mostrar el fallo (nunca lanza
+    excepción).
     """
     _empty = {
         "document_type": "",
         "display_name": "",
         "is_possible_master": False,
+        "expiry_date": None,
+        "issue_date": None,
+        "document_number": "",
+        "issuing_entity": "",
     }
 
     try:
         client = get_gemini_client()
-        response = client.models.generate_content(
+        response = _generate_content_with_retry(
+            client,
             model=DEFAULT_MODEL,
             contents=[
                 Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
@@ -301,10 +443,20 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
             "is_possible_master": bool(
                 parsed.get("is_possible_master", False)
             ),
+            "expiry_date": _parse_iso_date(parsed.get("expiry_date", "")),
+            "issue_date": _parse_iso_date(parsed.get("issue_date", "")),
+            "document_number": str(
+                parsed.get("document_number", "")
+            ).strip(),
+            "issuing_entity": str(
+                parsed.get("issuing_entity", "")
+            ).strip(),
         }
         logger.info(
-            "# [classify_document] %s -> tipo=%r maestro_posible=%s",
-            filename, result["document_type"], result["is_possible_master"],
+            "# [classify_document] %s -> tipo=%r maestro_posible=%s "
+            "caducidad=%s",
+            filename, result["document_type"],
+            result["is_possible_master"], result["expiry_date"],
         )
         return result
 
@@ -447,7 +599,8 @@ def assess_master_coverage(
         )
 
         client = get_gemini_client()
-        response = client.models.generate_content(
+        response = _generate_content_with_retry(
+            client,
             model=DEFAULT_MODEL,
             contents=contents,
             config=GenerateContentConfig(

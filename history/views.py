@@ -299,6 +299,7 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
             "company_user": company_user,
             "own_presence": self._get_own_presence(request),
             "active_nav": "machine_history",
+            "today": today,
             # Selector data
             "selected_machine": selected_machine,
             "machine_code": machine_code_raw,

@@ -4,14 +4,14 @@ Views for the machine_documents app (Hito 23) -- cost-center
 documentation ingestion via the panel.
 
   MachineDocumentBatchUploadView   -- GET renders the folder-picker
-                                       upload form; POST runs the full
-                                       pipeline synchronously
-                                       (classify -> detect master ->
-                                       compare coverage -> extract
-                                       uncovered pages -> persist to
-                                       Drive + BD) and renders a
-                                       results report. DOCS_SUPERVISOR
-                                       / ADMIN only.
+                                       upload form; POST creates a
+                                       MachineDocument row per PDF
+                                       (status=PENDING) and enqueues
+                                       machine_documents.tasks.
+                                       process_machine_document_batch
+                                       to do the actual work in the
+                                       background. DOCS_SUPERVISOR /
+                                       ADMIN only.
 
 There is deliberately no cross-machine listing view here (removed
 2026-07-14, Miguel Ángel's decision): with hundreds of machines a
@@ -22,12 +22,16 @@ time) -- same precedent as the H7 task-photo gallery, merged into
 that same view instead of a standalone page. panel/fleet/list.html
 (fleet_list) links there per row as the entry point.
 
-The upload is synchronous (no Celery task), unlike TaskPhoto/
-DeliveryNote: a handful of PDFs classified one request at a time is a
-few seconds per file, acceptable for a blocking request/response,
-and it lets the panel show the full classification result (including
-Gemini's proposed document_type/display_name) immediately instead of
-needing an HTMX-polling widget for a first version of this flow.
+The upload is asynchronous (Celery task), same pattern as TaskPhoto/
+DeliveryNote. CHANGED 2026-07-14 (Miguel Ángel's explicit decision,
+"desde ya", no technical debt left for later): the first version of
+this view ran the whole classification pipeline synchronously inside
+the request, which caused a real PythonAnywhere 504 (5-minute webapp
+timeout) on the first end-to-end panel test with 9 real documents --
+see machine_documents.tasks.process_machine_document_batch docstring
+for the full incident writeup. POST now only saves each uploaded file
+to disk (fast, no Gemini/Drive calls) and enqueues the task, so
+request/response time no longer depends on batch size at all.
 
 ---
 
@@ -36,14 +40,13 @@ documentación de centros de gasto vía el panel.
 
   MachineDocumentBatchUploadView   -- GET renderiza el formulario de
                                        subida con selector de carpeta;
-                                       POST ejecuta el pipeline
-                                       completo de forma síncrona
-                                       (clasificar -> detectar maestro
-                                       -> comparar cobertura ->
-                                       extraer páginas no cubiertas ->
-                                       persistir en Drive + BD) y
-                                       renderiza un informe de
-                                       resultado. Solo
+                                       POST crea una fila
+                                       MachineDocument por PDF
+                                       (status=PENDING) y encola
+                                       machine_documents.tasks.
+                                       process_machine_document_batch
+                                       para hacer el trabajo real en
+                                       segundo plano. Solo
                                        DOCS_SUPERVISOR / ADMIN.
 
 Deliberadamente no hay aquí ninguna vista de listado cruzado entre
@@ -56,34 +59,31 @@ galería de fotos de tarea de H7, fusionada en esa misma vista en vez
 de una página independiente. panel/fleet/list.html (fleet_list)
 enlaza ahí por cada fila como punto de entrada.
 
-La subida es síncrona (sin tarea Celery), a diferencia de TaskPhoto/
-DeliveryNote: un puñado de PDFs clasificados uno a uno son unos
-segundos por archivo, aceptable para un ciclo request/response
-bloqueante, y permite mostrar el resultado completo de clasificación
-(incluyendo el document_type/display_name propuesto por Gemini) de
-inmediato, sin necesitar un widget de sondeo HTMX para una primera
-versión de este flujo.
+La subida es asíncrona (tarea Celery), mismo patrón que TaskPhoto/
+DeliveryNote. CAMBIADO 2026-07-14 (decisión explícita de Miguel Ángel,
+"desde ya", sin dejar deuda técnica para después): la primera versión
+de esta vista ejecutaba el pipeline de clasificación completo de
+forma síncrona dentro de la petición, lo que causó un 504 real de
+PythonAnywhere (timeout de 5 minutos del webapp) en la primera prueba
+end-to-end desde el panel con 9 documentos reales -- ver el docstring
+de machine_documents.tasks.process_machine_document_batch para el
+relato completo del incidente. POST ahora solo guarda cada archivo
+subido en disco (rápido, sin llamadas a Gemini/Drive) y encola la
+tarea, así que el tiempo de petición/respuesta ya no depende en
+absoluto del tamaño del lote.
 """
 import logging
 
-from django.core.files.base import ContentFile
-from django.shortcuts import render
+from django.contrib import messages
+from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views import View
 
 from fleet.models import MachineAsset
 from panel.mixins import DocsUploadAccessMixin
-from spare_parts.gdrive_service import (
-    GDriveNotConfigured,
-    upload_machine_document_file,
-)
 
-from .document_classification_service import (
-    assess_master_coverage,
-    classify_by_filename_heuristic,
-    classify_document,
-    extract_pages,
-)
 from .models import MachineDocument
+from .tasks import process_machine_document_batch
 
 logger = logging.getLogger(__name__)
 
@@ -91,17 +91,21 @@ logger = logging.getLogger(__name__)
 class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
     """
     GET renders the upload form (machine picker + folder/multi-file
-    picker). POST runs the full classification pipeline against every
-    uploaded PDF and persists the results.
+    picker). POST creates one MachineDocument (status=PENDING) per
+    uploaded PDF and enqueues a single Celery task to process the
+    whole batch in the background, then redirects to the
+    documentation section of the selected machine's Historial de
+    Máquina.
     ---
     GET renderiza el formulario de subida (selector de máquina +
-    selector de carpeta/multi-archivo). POST ejecuta el pipeline de
-    clasificación completo sobre cada PDF subido y persiste los
-    resultados.
+    selector de carpeta/multi-archivo). POST crea un MachineDocument
+    (status=PENDING) por cada PDF subido y encola una única tarea
+    Celery para procesar el lote completo en segundo plano, y después
+    redirige a la sección de documentación del Historial de Máquina
+    de la máquina seleccionada.
     """
 
     template_name = "machine_documents/upload.html"
-    result_template_name = "machine_documents/upload_result.html"
 
     def get(self, request):
         company = request.user.company_user.company
@@ -156,166 +160,45 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
             })
 
         # ------------------------------------------------------------
-        # Step 1 -- classify every uploaded file individually. Files
-        # matching a filename heuristic (currently: user manuals)
-        # NEVER reach Gemini -- see
-        # document_classification_service.classify_by_filename_heuristic
-        # docstring for why (2026-07-14 incident).
-        # Paso 1 -- clasificar cada archivo subido individualmente.
-        # Los archivos que coinciden con una heurística de nombre
-        # (actualmente: manuales de uso) NUNCA llegan a Gemini -- ver
-        # el docstring de
-        # document_classification_service.classify_by_filename_heuristic
-        # para el motivo (incidente 2026-07-14).
+        # Fast path -- just persist each file with status=PENDING.
+        # No Gemini/Drive calls here; that's all in the Celery task
+        # (2026-07-14, see module docstring for why).
+        # Vía rápida -- solo persistir cada archivo con
+        # status=PENDING. Ninguna llamada a Gemini/Drive aquí; todo
+        # eso vive en la tarea Celery (2026-07-14, ver el docstring
+        # del módulo para el motivo).
         # ------------------------------------------------------------
-        classified = []
+        document_pks = []
         for uploaded_file in uploaded_files:
-            file_bytes = uploaded_file.read()
-            heuristic_result = classify_by_filename_heuristic(
-                uploaded_file.name,
-            )
-            if heuristic_result is not None:
-                classified.append({
-                    "django_file": uploaded_file,
-                    "filename": uploaded_file.name,
-                    "bytes": file_bytes,
-                    "result": heuristic_result,
-                    "via_heuristic": True,
-                })
-                continue
-
-            result = classify_document(file_bytes, uploaded_file.name)
-            classified.append({
-                "django_file": uploaded_file,
-                "filename": uploaded_file.name,
-                "bytes": file_bytes,
-                "result": result,
-                "via_heuristic": False,
-            })
-
-        # ------------------------------------------------------------
-        # Step 2 -- for every candidate master, compare against the
-        # rest of the batch and extract any uncovered content as a
-        # new synthetic entry. Heuristic-classified files (manuals)
-        # are excluded from the comparison set -- sending their bytes
-        # to assess_master_coverage() would defeat the whole point of
-        # never sending them to Gemini.
-        # Paso 2 -- para cada candidato a maestro, comparar contra el
-        # resto del lote y extraer cualquier contenido no cubierto
-        # como una entrada sintética nueva. Los archivos clasificados
-        # por heurística (manuales) se excluyen del conjunto de
-        # comparación -- enviar sus bytes a assess_master_coverage()
-        # anularía el sentido de no enviarlos nunca a Gemini.
-        # ------------------------------------------------------------
-        extra_entries = []
-        for item in classified:
-            if item["via_heuristic"]:
-                continue
-            if not item["result"]["is_possible_master"]:
-                continue
-
-            individuals = [
-                (other["filename"], other["bytes"])
-                for other in classified
-                if other is not item and not other["via_heuristic"]
-            ]
-            if not individuals:
-                continue
-
-            coverage = assess_master_coverage(
-                item["bytes"], item["filename"], individuals,
-            )
-            item["coverage"] = coverage
-
-            if coverage["uncovered_pages"]:
-                extracted_bytes = extract_pages(
-                    item["bytes"], coverage["uncovered_pages"],
-                )
-                extracted_name = (
-                    f"{item['filename']} (páginas no cubiertas)"
-                )
-                extra_result = classify_document(
-                    extracted_bytes, extracted_name,
-                )
-                extra_entries.append({
-                    "filename": extracted_name,
-                    "bytes": extracted_bytes,
-                    "result": extra_result,
-                    "source_master_hint": item["filename"],
-                })
-
-        # ------------------------------------------------------------
-        # Step 3 -- persist every resulting document (originals +
-        # extracted-from-master) to the DB and to Google Drive.
-        # Paso 3 -- persistir cada documento resultante (originales +
-        # extraídos del maestro) en BD y en Google Drive.
-        # ------------------------------------------------------------
-        saved_documents = []
-        drive_error = None
-        all_entries = classified + [
-            {
-                "filename": e["filename"],
-                "bytes": e["bytes"],
-                "result": e["result"],
-                "source_master_hint": e["source_master_hint"],
-            }
-            for e in extra_entries
-        ]
-
-        for entry in all_entries:
-            result = entry["result"]
-            if not result["document_type"]:
-                # Classification failed for this file -- skip
-                # persistence, it will show up in the report as an
-                # error row.
-                # Clasificación fallida para este archivo -- se omite
-                # la persistencia, aparecerá en el informe como fila
-                # de error.
-                continue
-
             document = MachineDocument(
                 machine_asset=machine_asset,
                 company=company,
                 uploaded_by=company_user,
-                document_type=result["document_type"],
-                display_name=result["display_name"],
-                source_master_hint=entry.get("source_master_hint", ""),
+                original_filename=uploaded_file.name,
+                status=MachineDocument.Status.PENDING,
             )
             document.source_file.save(
-                entry["filename"],
-                ContentFile(entry["bytes"]),
-                save=False,
+                uploaded_file.name, uploaded_file, save=False,
             )
             document.save()
+            document_pks.append(document.pk)
 
-            try:
-                drive_result = upload_machine_document_file(document)
-                document.drive_file_id = drive_result["file_id"]
-                document.drive_web_link = drive_result["web_link"]
-                document.save(
-                    update_fields=["drive_file_id", "drive_web_link"],
-                )
-            except GDriveNotConfigured as exc:
-                drive_error = str(exc)
-                logger.warning(
-                    "# [MachineDocumentBatchUploadView] Drive no "
-                    "configurado, documento #%d guardado solo en BD: "
-                    "%s", document.pk, exc,
-                )
-            except Exception as exc:
-                logger.error(
-                    "# [MachineDocumentBatchUploadView] Error subiendo "
-                    "documento #%d a Drive: %s",
-                    document.pk, exc, exc_info=True,
-                )
+        process_machine_document_batch.delay(document_pks)
 
-            saved_documents.append(document)
+        logger.info(
+            "# [MachineDocumentBatchUploadView] %d documento(s) en "
+            "cola para %s (máquina %s), tarea encolada.",
+            len(document_pks), company, machine_asset.code,
+        )
 
-        return render(request, self.result_template_name, {
-            "active_nav": "machine_documents_upload",
-            "machine_asset": machine_asset,
-            "classified": classified,
-            "extra_entries": extra_entries,
-            "saved_documents": saved_documents,
-            "drive_error": drive_error,
-        })
+        messages.success(
+            request,
+            f"{len(document_pks)} documento(s) en cola de "
+            f"procesamiento para {machine_asset.code}. La "
+            f"clasificación puede tardar unos minutos -- recarga esta "
+            f"página para ver el resultado.",
+        )
+        return redirect(
+            reverse("history:machine_history")
+            + f"?machine_code={machine_asset.code}#documentacion"
+        )
