@@ -92,6 +92,9 @@ INSTALLED_APPS = [
     # Cost-center documentation ingestion and classification — ingesta
     # y clasificación de documentación de centros de gasto (Hito 23).
     'machine_documents',
+    # Vacation/absence calendar management — gestión del calendario de
+    # vacaciones/ausencias (Hito 24).
+    'hr_calendar',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.

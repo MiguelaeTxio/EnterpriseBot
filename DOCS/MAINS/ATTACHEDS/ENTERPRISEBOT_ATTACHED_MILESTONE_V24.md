@@ -67,16 +67,44 @@ docstring de `_parse_entry_lines_from_post`) con los valores fijos:
 
 ---
 
-## 3. Especificación funcional (tal como la dio Miguel Ángel al cierre de S017)
+## 3. Especificación funcional (tal como la dio Miguel Ángel al cierre de S017, refinada en S018)
+
+### 3.0. Decisión de diseño cerrada en S018 — `VacationPeriod` como fuente de verdad
+
+Tras discutirlo explícitamente con Miguel Ángel: **`VacationPeriod` (app
+`hr_calendar`) es un modelo propio**, no una fecha incrustada en la tarea
+automática. Motivos (ver docstring completo en
+`hr_calendar/models.py`):
+1. La tarea automática vive dentro de un `WorkOrder`, cuyo ciclo de vida
+   (`PENDING_GAPS`→`DONE`, correcciones) es ajeno al seguimiento de
+   vacaciones.
+2. Consultas directas (quién está de vacaciones, pintar el calendario,
+   futura alarma WhatsApp) necesitan un `VacationPeriod.objects.filter(...)`
+   plano, sin atravesar `WorkOrder`→`WorkOrderEntry`→`WorkOrderEntryLine`.
+3. `WorkOrderEntryLine.repair_notes` es texto libre — apoyar el cálculo del
+   calendario en parsear una fecha de ahí habría sido la misma fragilidad
+   que el proyecto evita deliberadamente en otros sitios (código de
+   máquina siempre impreso, nunca manuscrito).
+
+**Construido en S018:** modelo `VacationPeriod` (app nueva `hr_calendar`,
+registrada en `INSTALLED_APPS`) — `company`, `operator` (FK a
+`CompanyUser`, cualquier rol, sin restricción a nivel de modelo),
+`generated_entry_line` (FK opcional a `WorkOrderEntryLine`, trazabilidad
+de la tarea automática una vez exista), `created_by`, `date_start`,
+`date_end` (`CheckConstraint` que impone `date_end >= date_start`),
+`created_at`. Migración `0001_initial` escrita a mano (sin acceso a
+`makemigrations`, formato replicado de `machine_documents/0001_initial.py`).
 
 ### 3.1. Tarea automática de vacaciones
 - Centro de gasto `PERSONAL`, categoría `VACATION` (ambos ya existentes,
   ver sección 2).
-- Se añade en la última jornada de trabajo antes de las vacaciones
-  (generación automática, no manual).
+- Se dispara al guardar un `VacationPeriod` nuevo — se genera en la última
+  jornada de trabajo antes de `date_start` (generación automática, no
+  manual).
 - Duración automática: 1 hora.
-- En el campo de resolución/detalle va el día de fin de vacaciones —
-  campo exacto a confirmar (ver sección 2).
+- `repair_notes` de la tarea puede mencionar la fecha de fin en texto
+  legible para el operario/supervisor, pero **nada la parsea** — el dato
+  real vive en `VacationPeriod.date_end` (ver 3.0).
 - **No cuenta en el cómputo de horas** — excluir explícitamente de
   cualquier agregado de horas trabajadas/facturables (localizar todos los
   puntos de agregación en `analytics/` y en el propio `work_order_processor`
@@ -93,7 +121,7 @@ docstring de `_parse_entry_lines_from_post`) con los valores fijos:
   sin selector.
 - Código de colores por día:
   - **Azul** — día trabajado (con parte registrado).
-  - **Verde** — día de vacaciones.
+  - **Verde** — día de vacaciones (derivado de `VacationPeriod`, sección 3.0).
   - **Naranja** — día de baja (dentro de "personal" — confirmar catálogo
     exacto de motivos de baja con Miguel Ángel; candidatos en
     `AbsenceCategory`: `SICK_LEAVE`, `WORK_ACCIDENT` — a confirmar si
@@ -104,24 +132,33 @@ docstring de `_parse_entry_lines_from_post`) con los valores fijos:
     `Holiday`/calendario laboral por empresa, o integración externa?
     Pendiente de decidir con Miguel Ángel).
 
+### 3.3. Agrupación por periodos — decisión cerrada en S018
+
+El calendario **reutiliza `ivr_config.WorkPeriodGroup`** (periodo
+administrativo de empresa ya existente, creado a mano por el supervisor —
+no hay ningún ciclo "21 al 20" hardcodeado en el código, es una
+convención operativa que Miguel Ángel aplica al crear esos grupos) en vez
+de inventar un concepto de periodo nuevo. Regla de titulado, tal como la
+especificó Miguel Ángel:
+- El `WorkPeriodGroup` más reciente con `is_closed=False` → **"Periodo
+  activo: meses {mes inicio} y {mes fin}"**.
+- Cualquier `WorkPeriodGroup` con `is_closed=True` → **"Periodo
+  liquidado: meses {mes inicio} y {mes fin}"**.
+- Si no hay ningún `WorkPeriodGroup` cubriendo el rango consultado, cae a
+  mes natural (calendario estándar) — comportamiento por defecto, a
+  validar con Miguel Ángel si hace falta ajustarlo cuando se construya la
+  vista.
+
 ---
 
 ## 4. Preguntas Abiertas — Resolver al Empezar la Sesión que Retome Este Hito
 
-1. ~~Dónde se registra el periodo de vacaciones~~ — **RESUELTO en S018**:
-   el propio modelo de calendario de `hr_calendar`, ligado al operario/
-   chófer (`CompanyUser`), es quien recoge los días. Modelo candidato
-   `VacationPeriod`: FK a `CompanyUser` (roles `WORKSHOP`/`DRIVER` —
-   confirmar si también `WORKSHOPBOSS`/`OPERATOR` deben poder tener
-   vacaciones registradas), `date_start`, `date_end`. La tarea automática
-   de la sección 3.1 se dispara al guardar un `VacationPeriod` nuevo,
-   calculando la última jornada laboral antes de `date_start`. Los días
-   verdes del calendario (sección 3.2) se derivan directamente del rango
-   `[date_start, date_end]` de los `VacationPeriod` del usuario — no hace
-   falta un registro día a día.
-2. **Campo exacto donde va el día de fin de vacaciones** en la tarea
-   generada — confirmar si es `repair_notes`, un campo nuevo, o se
-   aprovecha `WorkdayGap.note` (ver sección 2).
+1. ~~Dónde se registra el periodo de vacaciones~~ — **RESUELTO en S018**,
+   ver sección 3.0. Modelo `VacationPeriod` ya construido.
+2. ~~Campo exacto donde va el día de fin de vacaciones~~ — **RESUELTO en
+   S018**: no hace falta ningún campo estructurado en la tarea —
+   `VacationPeriod.date_end` es la fuente de verdad (ver 3.0).
+   `repair_notes` de la tarea es solo texto legible, no se parsea.
 3. **Catálogo de motivos de "baja"** (color naranja) — qué subconjunto
    exacto de `AbsenceCategory` cuenta como baja frente a otras ausencias
    personales.
@@ -131,23 +168,27 @@ docstring de `_parse_entry_lines_from_post`) con los valores fijos:
    VACATION — inventariar `analytics/` y `work_order_processor` antes de
    tocar nada (principio DRY: puede que ya exista una exclusión genérica
    para PERSONAL que solo haya que confirmar, en vez de crear una nueva).
+6. ~~Cómo agrupar el calendario en periodos~~ — **RESUELTO en S018**, ver
+   sección 3.3 (reutiliza `WorkPeriodGroup`).
 
 ---
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
-1. Resolver las 5 preguntas abiertas de la sección 4 con Miguel Ángel
-   antes de escribir ningún modelo o migración.
-2. Diseñar el modelo de datos mínimo de `hr_calendar` (candidato:
-   `VacationPeriod` con FK a `CompanyUser`, fechas inicio/fin — validar si
-   hace falta modelo propio de festivos según respuesta a la pregunta 4).
-3. Implementar la generación automática de la tarea de vacaciones,
-   reutilizando el mecanismo `WorkdayGap`/bloque PERSONAL ya existente
-   (sección 2) — no crear un mecanismo de persistencia paralelo.
-4. Implementar la vista de calendario con el código de colores, con el
-   alcance de datos por rol descrito en 3.2.
-5. Verificar la exclusión de horas de bloques PERSONAL/VACATION en todos
+1. Resolver las preguntas 3, 4 y 5 de la sección 4 con Miguel Ángel.
+2. Implementar la generación automática de la tarea de vacaciones al
+   guardar un `VacationPeriod` (dispara `WorkdayGap`/bloque PERSONAL
+   sintético, ver sección 2) — no crear un mecanismo de persistencia
+   paralelo. Requiere localizar/decidir el punto de entrada (formulario
+   de alta de `VacationPeriod` en el panel — todavía no construido).
+3. Implementar la vista de calendario con el código de colores (3.2) y la
+   agrupación por `WorkPeriodGroup`/mes natural (3.3), con el alcance de
+   datos por rol descrito en 3.2.
+4. Verificar la exclusión de horas de bloques PERSONAL/VACATION en todos
    los puntos de agregación localizados en la pregunta 5.
+5. Formulario de alta/edición de `VacationPeriod` en el panel (rol a
+   confirmar — candidato natural ADMIN/SUPERVISOR, igual que el resto de
+   gestión de personal).
 
 ---
 
@@ -155,4 +196,4 @@ docstring de `_parse_entry_lines_from_post`) con los valores fijos:
 
 | Sesión | Fecha | Trabajo realizado |
 |---|---|---|
-| S018 | 2026-07-14 | Hito creado (desvío desde H23, a petición explícita de Miguel Ángel — confirmó que "cerrar la decisión" significaba implementar el calendario). App dedicada `hr_calendar` decidida. Sin código todavía. Hallazgo clave: la infraestructura de centro de gasto PERSONAL y catálogo AbsenceCategory (incluido el código VACATION) ya existe de H7/H10 — la pieza 1 del hito es automatización, no construcción desde cero. Ver sección 2 y sección 4 (preguntas abiertas) para el punto de partida de la siguiente sesión. |
+| S018 | 2026-07-14 | Hito creado (desvío desde H23, a petición explícita de Miguel Ángel). App dedicada `hr_calendar` registrada en INSTALLED_APPS. Hallazgo clave: infraestructura de centro de gasto PERSONAL y catálogo AbsenceCategory (incluido VACATION) ya existente de H7/H10. Decisión de diseño cerrada: `VacationPeriod` como modelo propio y fuente de verdad (no fecha incrustada en la tarea) — construido con migración `0001_initial` escrita a mano. Decisión de agrupación por periodos cerrada: reutilizar `WorkPeriodGroup` con titulado "Periodo activo"/"Periodo liquidado". Master document actualizado de paso (sección 1 desactualizada + corrección del modelo Live en sección 2). Pendiente para la siguiente sesión: preguntas 3-5 de la sección 4, generación automática de la tarea, vista de calendario, formulario de alta de `VacationPeriod`. |
