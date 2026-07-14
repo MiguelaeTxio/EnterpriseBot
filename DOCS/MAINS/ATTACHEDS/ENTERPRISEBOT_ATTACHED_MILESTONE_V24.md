@@ -119,18 +119,26 @@ de la tarea automática una vez exista), `created_by`, `date_start`,
   calendario de cualquiera.
 - `WORKSHOP` (mecánico) / `DRIVER` (chófer): solo su propio calendario,
   sin selector.
-- Código de colores por día:
-  - **Azul** — día trabajado (con parte registrado).
+- Código de colores por día (regla exacta cerrada en S018 — nivel de
+  detalle: existencia de tarea real ese día, no proporción de horas):
+  - **Azul** — existe al menos una `WorkOrderEntryLine` de ese día con
+    centro de gasto distinto de `PERSONAL` (hay tarea real). Un gap
+    parcial de `PERSONAL` ese mismo día (p. ej. faltan 2-3 horas) NO
+    cambia el color — sigue siendo azul mientras haya algo de trabajo
+    real registrado.
   - **Verde** — día de vacaciones (derivado de `VacationPeriod`, sección 3.0).
-  - **Naranja** — día de baja (dentro de "personal" — confirmar catálogo
-    exacto de motivos de baja con Miguel Ángel; candidatos en
-    `AbsenceCategory`: `SICK_LEAVE`, `WORK_ACCIDENT` — a confirmar si
-    "baja" es solo estos dos o un conjunto más amplio).
-  - **Rojo** — día laborable sin parte, sin vacaciones, sin festivo y sin
-    baja (ausencia no justificada / hueco a revisar).
-  - **Amarillo** — festivo (fuente de festivos a definir — ¿modelo nuevo
-    `Holiday`/calendario laboral por empresa, o integración externa?
-    Pendiente de decidir con Miguel Ángel).
+  - **Naranja** — ese día NO hay ninguna tarea real (todas las líneas,
+    si las hay, son `PERSONAL`) y sí hay una `AbsenceCategory` distinta
+    de `VACATION` cubriéndolo — el día completo es ausencia por motivo
+    personal (catálogo: el mismo `AbsenceCategory` ya usado al elegir
+    `PERSONAL` como centro de gasto en una `WorkOrderEntryLine` — "baja"
+    no es una sub-lista aparte, es cualquier categoría que no sea
+    `VACATION`).
+  - **Rojo** — día laborable (según `WorkdaySchedule` del operario) sin
+    ninguna de las anteriores: ni tarea real, ni ausencia, ni
+    vacaciones, ni festivo — laguna sin explicar.
+  - **Amarillo** — festivo (fuente: `Base.labor_calendar`, sección 3.3 —
+    ya no es una pregunta abierta, resuelta en Q4).
 
 ### 3.3. Agrupación por periodos — decisión cerrada en S018
 
@@ -159,9 +167,11 @@ especificó Miguel Ángel:
    S018**: no hace falta ningún campo estructurado en la tarea —
    `VacationPeriod.date_end` es la fuente de verdad (ver 3.0).
    `repair_notes` de la tarea es solo texto legible, no se parsea.
-3. **Catálogo de motivos de "baja"** (color naranja) — qué subconjunto
-   exacto de `AbsenceCategory` cuenta como baja frente a otras ausencias
-   personales.
+3. ~~Catálogo de motivos de "baja"~~ — **RESUELTO en S018**: no es una
+   sub-lista aparte, es el mismo catálogo `AbsenceCategory` ya usado al
+   elegir `PERSONAL` como centro de gasto (menú "Categorías de ausencia"
+   del panel) — cualquier categoría que no sea `VACATION` cuenta como
+   naranja, ver regla completa en sección 3.2.
 4. ~~Fuente de festivos~~ — **RESUELTO en S018**: se reutiliza
    `budgets.models.Base.labor_calendar` (ya sincronizado desde
    calendariosnacionales.com vía `sync_base_calendars`, H16/H18) — no
