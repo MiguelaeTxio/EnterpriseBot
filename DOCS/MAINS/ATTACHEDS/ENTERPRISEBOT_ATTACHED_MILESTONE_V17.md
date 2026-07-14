@@ -162,6 +162,7 @@ define la personalidad experta con el flujo numerado 1→6 y tres reglas crític
 | S013 | 2026-07-13 | NOTA DE DESVÍO — sin trabajo directo en H17 | Sesión desviada por completo a H10 (Caso A, sin PCH invocado, marcador `EN PROGRESO` sin mover) para atender el Bloque B de la hoja de ruta de abajo (albaranes de proveedores) más una infraestructura de despliegue automático de plataforma pedida por Miguel Ángel a mitad de sesión, ninguna de las dos ligada a H17. Detalle técnico completo, commits y decisiones en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, fila S013 del Registro de Sesiones de ese anexo. Los Bloques A (fallo de confirmación de ticket IVR), C (CRUD de tickets responsivo + reversión del panel de despacho para WORKSHOP) y D (validación general IVR) de la hoja de ruta de abajo **siguen íntegramente pendientes, sin ningún avance** — la hoja de ruta de este hito no se reescribe (Caso A: "el hito no avanzó"). |
 | S014 | 2026-07-13 | NOTA DE DESVÍO — sin trabajo directo en H17 | Sesión desviada por completo a H10 (Caso A, sin PCH invocado, marcador `EN PROGRESO` sin mover), a petición expresa de Miguel Ángel ("terminar con el tema de los albaranes"): cierre completo del Bloque B (fecha ES, unicidad `delivery_number`, subida async), persistencia en Google Drive (sustituye el envío por correo), más un cambio mayor de infraestructura de plataforma (nuevo flujo de migraciones — el modelo escribe el archivo directamente en vez del ciclo manual `makemigrations`; fix crítico de un bug real de `deploy.yml` que reportaba despliegues fallidos como exitosos; reinicio condicional de las Always-on Tasks en el despliegue automático) — ninguna de las dos ligada a H17. Detalle técnico completo, commits y decisiones en `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, fila S014 del Registro de Sesiones de ese anexo, y en las skills de sistema `com-migrations` (reescrita de raíz), `nfs-enterprisebot-edit`, `com-bash-commands`, `nfs-enterprisebot-pcs`. Los Bloques A (fallo de confirmación de ticket IVR), C (CRUD de tickets responsivo + reversión del panel de despacho para WORKSHOP) y D (validación general IVR) de la hoja de ruta de abajo **siguen íntegramente pendientes, sin ningún avance** — la hoja de ruta de este hito no se reescribe (Caso A: "el hito no avanzó"). |
 | S015 | 2026-07-13 | Bloque C completo, luego desvío a H10 | **Bloque C — CRUD de tickets responsivo + reversión del panel de despacho, COMPLETADO**: (1) Responsivo real en móvil de `breakdown_ticket_list.html` (mismo criterio ya validado en `analytics_lab.html`: `#tk-bottom` apila verticalmente por debajo de 767.98px, divisor arrastrable oculto, tabla superior con `overflow-x:auto`) y padding responsivo (`px-3 px-md-4`) en `breakdown_ticket_detail.html`/`breakdown_ticket_form.html` — commits `650c0d7`, `049abc6`. (2) Panel de despacho por arrastre revertido para WORKSHOP: visible (instrucción literal de Miguel Ángel al cierre de S012) pero sin poder arrastrar (`draggable=false` + clase `op-locked`, decisión explícita "opción c" frente a dejar fallar el POST con 403) — commit `eef1f1c`. (3) WORKSHOPBOSS ampliado a poder EJECUTAR `assign` (guard de backend solo permitía ADMIN/SUPERVISOR pese a tener el panel visible y arrastrable desde siempre — bug real corregido, no pedido explícitamente pero detectado leyendo el código) en las dos vías de entrada (drag&drop y tarjeta "Asignar operario" del detalle) — commits `40a36d6`, `33b36ad`. (4) A petición explícita de Miguel Ángel, WORKSHOPBOSS eliminado por completo como DESTINO asignable (nunca ejecuta órdenes de trabajo, era un remanente del diseño original del H14 sin tickets reales afectados en producción): `operators_qs`, `assignable_operators` y la validación final de `assignee_pk` restringidos a WORKSHOP — commit `6717375`. (5) Asimetría del desplegable "Asignar operario" (solo permitía WORKSHOPBOSS como destino, más restrictivo que el propio guard de backend) detectada e igualada a la regla del drag&drop — commit `7ee733c`. Punto 3 del Bloque C (color de mecánico ocupado) confirmado por Miguel Ángel como ya cubierto por el badge `op-busy`/`op-free` existente, sin cambios de código. **Desvío a H10** en la segunda mitad de la sesión, a petición de Miguel Ángel ("vamos a continuar con las albaranes"): ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V10.md`, fila S015, para el primer punto de la hoja de ruta (asignación única por albarán) más un bug real de OAuth y el backfill de 8 albaranes históricos. Los Bloques A (fallo de confirmación de ticket IVR) y D (validación general IVR) de la hoja de ruta de abajo **siguen pendientes, sin ningún avance esta sesión**. |
+| S016 | 2026-07-14 | Bloque A verificado (sin repro) + bug real WhatsApp corregido, luego desvío a H7/H22 + apertura H23 | **Bloque A — verificado empíricamente, sin bug reproducido**: descargado `bridge.log` completo de una llamada de prueba real (tool_call `report_breakdown` → `BreakdownTicket` creado → plantilla WA enviada → `tool_response` enviado, los cuatro eventos en menos de 2s, audio `GEMINI-TX` continuo sin huecos en los 19s completos de la llamada). No se reprodujo el bloqueo reportado al cierre de S012. Matización honesta registrada en el propio chat: no hay cambio de código en `vox_bridge/services.py` desde S012 que explique la mejora — pudo ser intermitente. **Bug real encontrado y corregido — agente WhatsApp Rama B nunca creaba el ticket**: `whatsapp/views.py`, Rama B (contacto interno SIN ticket abierto) pedía a Gemini confirmar verbalmente la apertura del ticket pero nunca le exigía el marcador `[TICKET_DATA:{...}]` que `BreakdownAgentService.get_or_create_ticket` usa como condición real de creación (`if "[TICKET_DATA:" in reply_text`) — el agente confirmaba al trabajador que el ticket estaba abierto sin que se creara ningún `BreakdownTicket`, confirmado empíricamente con una avería real de frenos bloqueados en G12 sin ticket resultante. Corregido replicando el marcador de la Rama A. Commit `4914fe3`. **Desvío a H7** (a petición de Miguel Ángel, "vamos a por el tema de partes digitales para incluir el guardado de fotos"): modelo `TaskPhoto`, persistencia en Drive, widget de subida, galería en ticket y ficha de máquina — ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V07.md`, fila S016, para el detalle técnico completo (incluye un error real cometido y corregido en la propia sesión: `MachineHistoryView` duplicada, fusionada con la vista real de H22 — ver también `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md`, fila S016). **Apertura de H23** (Documentación de Centros de Gasto) al cierre, a petición explícita de Miguel Ángel — ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`. Bloque D (validación general IVR) **sigue sin ningún avance**. |
 
 ### CIERRE DE SESIÓN S014 (2026-07-13)
 
@@ -188,7 +189,28 @@ en H10 con la nueva salvaguarda de validación de máquina por albarán
 
 ---
 
+### CIERRE DE SESIÓN S016 (2026-07-14) — PCH: H17 PAUSADO, H23 EN PROGRESO
+
+Sesión con avance real sobre H17 pese a no tocar directamente los
+Bloques A/D de la hoja de ruta: Bloque A verificado empíricamente sin
+bug reproducido (sin cambio de código, ver fila S016), y un bug real
+del canal WhatsApp corregido y desplegado (`4914fe3`). Desviada
+después a H7 (fotos de tarea, ver ese anexo) y a H23, hito nuevo
+abierto al cierre a petición explícita de Miguel Ángel para la
+funcionalidad de documentación de centros de gasto.
+
+**H17 pasa a PAUSADO** (marcador movido en `ENTERPRISEBOT_ANNEX_ROUTER.md`
+a H23) — decisión explícita de Miguel Ángel al cierre, no un desvío de
+sesión. Bloques A (sin bug reproducido, pero sin cambio de código que
+lo explique — vigilar) y D (validación general IVR) quedan pendientes,
+sin ningún avance de código esta sesión, para cuando se retome.
+
+---
+
 ## 5. Hoja de Ruta para la Siguiente Sesion
+
+**HITO PAUSADO — sin sesión asignada.** Retomar cuando Miguel Ángel lo
+decida (Caso D del enrutador de anexos). Al retomar:
 
 #### CIERRE DE S015 (2026-07-13)
 
@@ -197,7 +219,15 @@ Bloque C completo (ver fila S015 en el Registro de Sesiones, sección
 íntegramente pendientes, sin ningún avance desde S012: Bloque A (fallo
 de confirmación de ticket IVR) y Bloque D (validación general IVR).
 
-#### PRÓXIMA SESIÓN
+#### CIERRE DE S016 (2026-07-14)
+
+Bloque A verificado sin bug reproducido en una llamada de prueba real
+(ver fila S016) — sin cambio de código en `vox_bridge/services.py`, así
+que no se puede dar por cerrado con certeza; si el fallo reaparece,
+retomar el mismo método empírico (bridge.log crudo de una llamada real
+que lo reproduzca). Bloque D sigue sin ningún avance.
+
+#### PRÓXIMA SESIÓN DE H17 (cuando se retome)
 
 **Miguel Ángel decide el orden real al empezar la sesión** entre los
 dos bloques siguientes.

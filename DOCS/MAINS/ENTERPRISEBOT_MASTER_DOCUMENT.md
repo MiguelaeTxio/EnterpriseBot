@@ -193,6 +193,24 @@ latencia a través de canales de voz y mensajería.
   que generen averías periódicas en una parte concreta de una máquina.
 - Sin acceso a costes ni a partes individuales. Solo lectura, sin exportación.
 
+#### Hito 23: Documentación de Centros de Gasto
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`)
+- Ingesta de documentación de máquina/centro de gasto desde una carpeta
+  seleccionada por el usuario en la propia plataforma (subida web, no
+  script de servidor).
+- Clasificación automática de cada documento vía Gemini Vision, sin lista
+  cerrada de categorías previas.
+- Detección de documento maestro (combinado) frente a sus componentes
+  individuales, y reconciliación: si la suma de individuales cubre el
+  maestro, el maestro no se persiste; si falta algún documento presente en
+  el maestro, se extrae de él.
+- Persistencia exclusiva de los documentos individuales en Google Drive,
+  con registro en BD (nuevo modelo, ORM) vinculado al MachineAsset
+  correspondiente, con nombres coherentes tanto en BD como en Drive.
+- Nueva sección "Documentación Centros de Gasto" en Administración: listado
+  y recuperación rápida sin que el usuario necesite saber dónde está
+  guardado cada archivo.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes

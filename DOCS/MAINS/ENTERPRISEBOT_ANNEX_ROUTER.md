@@ -40,12 +40,13 @@ Cumple dos funciones inseparables:
 | H14 | Tickets de Avería y Órdenes de Reparación | `ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md` |
 | H15 | Gestor Árbol de Directorios Power Automate | `ENTERPRISEBOT_ATTACHED_MILESTONE_V15.md` |
 | H16 | Motor de Presupuestos ASISTENCIA | `ENTERPRISEBOT_ATTACHED_MILESTONE_V16.md` |
-| H17 | Unificación IVR + WhatsApp — Motor de Averías y Log de Conversaciones | `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md` ← EN PROGRESO |
+| H17 | Unificación IVR + WhatsApp — Motor de Averías y Log de Conversaciones | `ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md` |
 | H18 | Gestión de Mapas y Geolocalización | `ENTERPRISEBOT_ATTACHED_MILESTONE_V18.md` |
 | H19 | Mejoras WorkOrderAdminHistoryView | `ENTERPRISEBOT_ATTACHED_MILESTONE_V19.md` |
 | **H20** | **Laboratorio de Análisis Unificado** | **`ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md`** |
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
+| H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -53,9 +54,8 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H17 — Unificación IVR + WhatsApp — Motor de
-Averías y Log de Conversaciones →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V17.md`
+**Hito EN PROGRESO:** H23 — Documentación de Centros de Gasto →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`
 
 ---
 
