@@ -312,6 +312,80 @@
         </div>
         {% endfor %}
 
+        {# ============================================================ #}
+        {# DOCUMENTACIÓN DE CENTRO DE GASTO (H23)                        #}
+        {# Enlace a cada documento individual (nivel 3) — el nivel 2      #}
+        {# ("toda la documentación de esta máquina") es esta misma        #}
+        {# sección; el nivel 1 (listado de centros de gasto) es           #}
+        {# panel:fleet_list, que enlaza aquí por cada fila.               #}
+        {# ============================================================ #}
+        <h6 class="fw-semibold mt-4 mb-3" id="documentacion">
+            <i class="bi bi-file-earmark-text me-2 text-primary"></i>
+            Documentación de centro de gasto
+            <span class="badge bg-secondary ms-1">{{ documents|length }}</span>
+            {% if can_upload_documents %}
+                <a href="{% url 'machine_documents:upload' %}?machine={{ selected_machine.pk }}"
+                   class="btn btn-primary btn-sm float-end">
+                    <i class="bi bi-cloud-upload me-1"></i>Subir documentación
+                </a>
+            {% endif %}
+        </h6>
+
+        {% if not documents %}
+        <div class="card shadow-sm">
+            <div class="card-body text-muted text-center py-4">
+                Esta máquina no tiene ningún documento registrado todavía.
+            </div>
+        </div>
+        {% else %}
+        <div class="card shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Tipo de documento</th>
+                            <th>Nombre</th>
+                            <th>Subido por</th>
+                            <th>Fecha</th>
+                            <th class="text-end">Drive</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for doc in documents %}
+                        <tr>
+                            <td><span class="badge bg-secondary-subtle text-dark">{{ doc.document_type }}</span></td>
+                            <td>
+                                {{ doc.display_name }}
+                                {% if doc.source_master_hint %}
+                                <div class="text-muted small">
+                                    <i class="bi bi-diagram-3"></i>
+                                    extraído de: {{ doc.source_master_hint }}
+                                </div>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if doc.uploaded_by %}
+                                    {{ doc.uploaded_by.user.get_full_name|default:doc.uploaded_by.user.username }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="small text-nowrap">{{ doc.created_at|date:"d/m/Y H:i" }}</td>
+                            <td class="text-end">
+                                {% if doc.drive_web_link %}
+                                <a href="{{ doc.drive_web_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">
+                                    <i class="bi bi-box-arrow-up-right"></i>Abrir
+                                </a>
+                                {% else %}
+                                <span class="text-muted small">pendiente</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
     {% else %}
     {# Estado inicial — ninguna máquina seleccionada todavía #}
     {# Initial state — no machine selected yet               #}

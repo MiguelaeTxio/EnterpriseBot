@@ -10,19 +10,11 @@ enterprise_core/urls.py.
 """
 from django.urls import path
 
-from machine_documents.views import (
-    MachineDocumentBatchUploadView,
-    MachineDocumentListView,
-)
+from machine_documents.views import MachineDocumentBatchUploadView
 
 app_name = "machine_documents"
 
 urlpatterns = [
-    path(
-        "",
-        MachineDocumentListView.as_view(),
-        name="list",
-    ),
     path(
         "subir/",
         MachineDocumentBatchUploadView.as_view(),

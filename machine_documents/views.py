@@ -3,10 +3,6 @@
 Views for the machine_documents app (Hito 23) -- cost-center
 documentation ingestion via the panel.
 
-  MachineDocumentListView          -- GET, read-only listing, any
-                                       authenticated CompanyUser
-                                       (Miguel Ángel's decision:
-                                       "solo lectura todo quisqui").
   MachineDocumentBatchUploadView   -- GET renders the folder-picker
                                        upload form; POST runs the full
                                        pipeline synchronously
@@ -16,6 +12,15 @@ documentation ingestion via the panel.
                                        Drive + BD) and renders a
                                        results report. DOCS_SUPERVISOR
                                        / ADMIN only.
+
+There is deliberately no cross-machine listing view here (removed
+2026-07-14, Miguel Ángel's decision): with hundreds of machines a
+single listing crossing all of them would grow unmanageably large.
+Read access lives instead inside history.views.MachineHistoryView
+(the "#documentacion" section, scoped to one selected machine at a
+time) -- same precedent as the H7 task-photo gallery, merged into
+that same view instead of a standalone page. panel/fleet/list.html
+(fleet_list) links there per row as the entry point.
 
 The upload is synchronous (no Celery task), unlike TaskPhoto/
 DeliveryNote: a handful of PDFs classified one request at a time is a
@@ -29,11 +34,6 @@ needing an HTMX-polling widget for a first version of this flow.
 Vistas de la app machine_documents (Hito 23) -- ingesta de
 documentación de centros de gasto vía el panel.
 
-  MachineDocumentListView          -- GET, listado de solo lectura,
-                                       cualquier CompanyUser
-                                       autenticado (decisión de
-                                       Miguel Ángel: "solo lectura
-                                       todo quisqui").
   MachineDocumentBatchUploadView   -- GET renderiza el formulario de
                                        subida con selector de carpeta;
                                        POST ejecuta el pipeline
@@ -45,6 +45,16 @@ documentación de centros de gasto vía el panel.
                                        renderiza un informe de
                                        resultado. Solo
                                        DOCS_SUPERVISOR / ADMIN.
+
+Deliberadamente no hay aquí ninguna vista de listado cruzado entre
+máquinas (retirada 2026-07-14, decisión de Miguel Ángel): con
+cientos de máquinas un único listado cruzándolas todas crecería de
+forma inmanejable. El acceso de lectura vive en su lugar dentro de
+history.views.MachineHistoryView (la sección "#documentacion",
+acotada a una única máquina seleccionada) -- mismo precedente que la
+galería de fotos de tarea de H7, fusionada en esa misma vista en vez
+de una página independiente. panel/fleet/list.html (fleet_list)
+enlaza ahí por cada fila como punto de entrada.
 
 La subida es síncrona (sin tarea Celery), a diferencia de TaskPhoto/
 DeliveryNote: un puñado de PDFs clasificados uno a uno son unos
@@ -59,10 +69,9 @@ import logging
 from django.core.files.base import ContentFile
 from django.shortcuts import render
 from django.views import View
-from django.views.generic import ListView
 
 from fleet.models import MachineAsset
-from panel.mixins import CompanyUserRequiredMixin, DocsUploadAccessMixin
+from panel.mixins import DocsUploadAccessMixin
 from spare_parts.gdrive_service import (
     GDriveNotConfigured,
     upload_machine_document_file,
@@ -77,51 +86,6 @@ from .document_classification_service import (
 from .models import MachineDocument
 
 logger = logging.getLogger(__name__)
-
-
-class MachineDocumentListView(CompanyUserRequiredMixin, ListView):
-    """
-    Read-only listing of MachineDocument for the user's company,
-    optionally filtered by machine via ?machine=<pk>. Visible to any
-    authenticated CompanyUser, per Miguel Ángel's explicit decision
-    for this milestone (only the upload is role-restricted).
-    ---
-    Listado de solo lectura de MachineDocument de la empresa del
-    usuario, opcionalmente filtrado por máquina vía ?machine=<pk>.
-    Visible para cualquier CompanyUser autenticado, según decisión
-    explícita de Miguel Ángel para este hito (solo la subida está
-    restringida por rol).
-    """
-
-    model = MachineDocument
-    template_name = "machine_documents/list.html"
-    context_object_name = "documents"
-    paginate_by = 50
-
-    def get_queryset(self):
-        company = self.request.user.company_user.company
-        queryset = (
-            MachineDocument.objects
-            .filter(company=company)
-            .select_related("machine_asset")
-        )
-        machine_pk = self.request.GET.get("machine")
-        if machine_pk:
-            queryset = queryset.filter(machine_asset_id=machine_pk)
-        return queryset
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["active_nav"] = "machine_documents_list"
-        context["machines"] = MachineAsset.objects.filter(
-            company=self.request.user.company_user.company,
-        ).order_by("code")
-        context["selected_machine"] = self.request.GET.get("machine", "")
-        company_user = self.request.user.company_user
-        context["can_upload"] = company_user.role in {
-            company_user.ROLE_DOCS_SUPERVISOR, company_user.ROLE_ADMIN,
-        }
-        return context
 
 
 class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
@@ -144,9 +108,11 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
         machines = MachineAsset.objects.filter(
             company=company,
         ).order_by("code")
+        preselected_machine_pk = request.GET.get("machine", "")
         return render(request, self.template_name, {
             "active_nav": "machine_documents_upload",
             "machines": machines,
+            "preselected_machine_pk": preselected_machine_pk,
         })
 
     def post(self, request):
@@ -182,6 +148,7 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
             return render(request, self.template_name, {
                 "active_nav": "machine_documents_upload",
                 "machines": machines,
+                "preselected_machine_pk": machine_pk,
                 "error": (
                     "No se encontró ningún PDF en la carpeta "
                     "seleccionada."

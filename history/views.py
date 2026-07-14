@@ -264,6 +264,25 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
                 .order_by("-created_at")
             )
 
+        # -- Cost-center documentation (H23) --------------------------------
+        # Integrada aquí en vez de en un listado global cruzando las
+        # 400 máquinas de la empresa (decisión de Miguel Ángel,
+        # sesión H23: "por centro de gasto, no un listado gigante") --
+        # mismo precedente que la galería de fotos de tarea (H7) fusionada
+        # en esta misma vista en vez de crear una página separada.
+        # ---
+        # Integrated here instead of a global listing crossing the
+        # company's 400 machines (Miguel Ángel's decision, H23 session:
+        # "per cost centre, not one giant listing") -- same precedent as
+        # the task-photo gallery (H7) merged into this same view instead
+        # of a separate page.
+        documents = []
+        if selected_machine is not None:
+            documents = (
+                selected_machine.documents
+                .order_by("-created_at")
+            )
+
         context = {
             "company": company,
             "company_user": company_user,
@@ -279,6 +298,11 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
             "lines": lines,
             "has_results": selected_machine is not None,
             "tickets": tickets,
+            # Documentación de centro de gasto (H23)
+            "documents": documents,
+            "can_upload_documents": company_user.role in {
+                company_user.ROLE_DOCS_SUPERVISOR, company_user.ROLE_ADMIN,
+            },
             # Summary
             "total_intervenciones": total_intervenciones,
             "total_horas": total_horas,

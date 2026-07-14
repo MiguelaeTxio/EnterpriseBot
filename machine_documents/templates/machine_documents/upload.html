@@ -10,8 +10,8 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
     <h5 class="mb-0 fw-semibold">Subir Documentación de Centro de Gasto</h5>
-    <a href="{% url 'machine_documents:list' %}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left me-1"></i>Volver al listado
+    <a href="{% url 'panel:fleet_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Volver a Centros de Gasto
     </a>
 </div>
 
@@ -42,7 +42,7 @@
                 <select name="machine_asset" class="form-select" required>
                     <option value="">— Selecciona una máquina —</option>
                     {% for machine in machines %}
-                        <option value="{{ machine.pk }}">
+                        <option value="{{ machine.pk }}" {% if preselected_machine_pk == machine.pk|stringformat:"s" %}selected{% endif %}>
                             {{ machine.code }} — {{ machine.brand_model }}
                         </option>
                     {% endfor %}
