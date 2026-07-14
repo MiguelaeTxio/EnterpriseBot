@@ -224,33 +224,98 @@ especificó Miguel Ángel:
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
-0. ~~Onboarding WhatsApp debe preguntar la base~~ — **HECHO en S018**:
-   `whatsapp/services.py::OnboardingService` ahora pide la base (paso 5,
-   junto a nombre/apellidos/DNI/sección) y la asigna a
-   `CompanyUser.base` al crear el usuario — mismo patrón de resolución
-   que ya usaba para sección (coincidencia exacta → parcial).
-0.1. ~~Ejecutar `assign_operator_bases` de verdad~~ — **HECHO en S018**:
-   base `Maqueda` (pk=75, ya existía) y `Huelva` (pk=76, creada en esta
-   sesión) para Grupo Álvarez (pk=1). 14 operarios/chóferes asignados:
-   3 a Huelva (Carlos Bas Blanco, David Contreras Marquez, MARIA — sin
-   nombre/apellido en el sistema, emparejada por username), 11 a
-   Maqueda. Calendario laboral de Huelva sincronizado con
-   `sync_base_calendars --base-id 76` — 14 festivos obtenidos para 2026.
+### COMPLETADAS EN S018
 
-1. Resolver las preguntas 3, 4 y 5 de la sección 4 con Miguel Ángel.
-2. Implementar la generación automática de la tarea de vacaciones al
-   guardar un `VacationPeriod` (dispara `WorkdayGap`/bloque PERSONAL
+Sesión que abrió el hito (desvío desde H23, a petición explícita de
+Miguel Ángel — "cerrar la decisión" significaba implementar el
+calendario). Resumen narrativo completo en el mensaje del commit de
+cierre de esta sesión; aquí solo el registro estructurado para consulta
+rápida en sesiones futuras.
+
+**Decisiones de diseño cerradas:**
+- `VacationPeriod` (app nueva `hr_calendar`) como modelo propio y única
+  fuente de verdad del periodo de vacaciones — no una fecha incrustada
+  en la tarea automática (motivos completos en sección 3.0 y en el
+  docstring de `hr_calendar/models.py`).
+- `CompanyUser.base` (FK a `budgets.Base`, string reference) para cerrar
+  el hueco de pertenencia a base física, inexistente hasta ahora para
+  `WORKSHOP`/`DRIVER` (motivos en sección 3.0/pregunta 4).
+- Calendario reutiliza `ivr_config.WorkPeriodGroup` para los periodos
+  (titulado "Periodo activo"/"Periodo liquidado"), en vez de un ciclo
+  "21-20" hardcodeado que nunca existió como tal.
+- Regla completa de colores del calendario cerrada (sección 3.2):
+  azul/azul celeste/verde/naranja/rojo/amarillo, todos con criterio
+  exacto verificado contra el modelo de datos real.
+- Fuente de festivos: se reutiliza `budgets.models.Base.labor_calendar`
+  (ya sincronizado vía `sync_base_calendars`, H16/H18) — sin modelo
+  `Holiday` nuevo.
+- Catálogo de "baja" (naranja): el mismo `AbsenceCategory` ya usado al
+  elegir `PERSONAL` como centro de gasto — sin sub-lista aparte.
+- Agregación de horas: solo la hora fantasma de la tarea `VACATION`
+  queda excluida (tres puntos localizados por código real, sección 3.1/
+  pregunta 5); el resto de `PERSONAL` sigue contando como hoy, sin
+  cambios.
+- Deuda técnica nueva registrada en `ENTERPRISEBOT_MASTER_DOCUMENT.md`
+  sección 4.7: reparto futuro del coste de `PERSONAL` como sobrecoste
+  entre el resto de centros de gasto — anotada, explícitamente no
+  abordada por decisión de Miguel Ángel.
+
+**Construido:**
+- Modelo `VacationPeriod` con migración `0001_initial` escrita a mano.
+- Campo `CompanyUser.base` con migración `0042_companyuser_base`.
+- Comando `hr_calendar.management.commands.assign_operator_bases`
+  (idempotente, `--dry-run` por defecto).
+- `whatsapp/services.py::OnboardingService` ampliado para preguntar la
+  base al dar de alta un empleado nuevo.
+- Master document actualizado: sección 1 (visión general desactualizada)
+  reescrita con mapa de apps real, sección 2 (modelo Live IVR)
+  corregida para coincidir con la 4.1, sección 4.7 (deuda técnica)
+  añadida.
+
+**Ejecutado en producción (Grupo Álvarez, pk=1):** base `Maqueda`
+(pk=75, ya existía) y `Huelva` (pk=76, creada en esta sesión). 14
+operarios/chóferes asignados — 3 a Huelva (Carlos Bas Blanco, David
+Contreras Marquez, `MARIA` sin nombre/apellido en el sistema,
+emparejada por username), 11 a Maqueda. Calendario laboral de Huelva
+sincronizado — 14 festivos obtenidos para 2026.
+
+**Incidencias reales encontradas y resueltas, todas en el propio
+comando `assign_operator_bases` antes de aplicarlo:**
+- Primera versión de `HUELVA_MEMBERS` tenía nombres incompletos
+  ("Carlos Bas"/"David Marquez") — los apellidos reales son más largos
+  ("Bas Blanco"/"Contreras Marquez"), detectado por el propio dry-run
+  (0 coincidencias en el primer intento).
+- `MARIA` resultó tener nombre Y apellido vacíos en el sistema (no
+  vacía de apellido nada más, que era la asunción inicial) — dos
+  `SUPERVISOR` en blanco indistinguibles por nombre en el dry-run;
+  resuelto emparejando por `username="MARIA"` en vez de nombre, tras
+  confirmación por captura de panel de Miguel Ángel.
+- Rol real de `MARIA` es `SUPERVISOR`, no `WORKSHOPBOSS` como se había
+  asumido — `BASE_ASSIGNABLE_ROLES` corregido para incluirlo.
+- Bug propio en el comando: comparación `operator.base_id ==
+  getattr(target_base, "pk", None)` daba `None == None` → `True`
+  cuando la base destino todavía no existía (caso Huelva antes de
+  `--apply`), contando en silencio a los 3 miembros de Huelva como "ya
+  correctos" y ocultándolos del listado de dry-run. Detectado
+  comparando la salida real contra lo esperado, corregido antes de
+  aplicar nada.
+
+### Hoja de ruta — continuación de este hito
+
+1. Implementar la generación automática de la tarea de vacaciones al
+   guardar un `VacationPeriod` (dispara `WorkdayGap`/bloque `PERSONAL`
    sintético, ver sección 2) — no crear un mecanismo de persistencia
-   paralelo. Requiere localizar/decidir el punto de entrada (formulario
-   de alta de `VacationPeriod` en el panel — todavía no construido).
-3. Implementar la vista de calendario con el código de colores (3.2) y la
-   agrupación por `WorkPeriodGroup`/mes natural (3.3), con el alcance de
-   datos por rol descrito en 3.2.
-4. Verificar la exclusión de horas de bloques PERSONAL/VACATION en todos
-   los puntos de agregación localizados en la pregunta 5.
-5. Formulario de alta/edición de `VacationPeriod` en el panel (rol a
-   confirmar — candidato natural ADMIN/SUPERVISOR, igual que el resto de
-   gestión de personal).
+   paralelo. Incluye aplicar la exclusión de la hora fantasma en los
+   tres puntos localizados en la pregunta 5 de la sección 4.
+2. Formulario de alta/edición de `VacationPeriod` en el panel (rol a
+   confirmar — candidato natural ADMIN/SUPERVISOR).
+3. Vista de calendario con el código de colores completo (sección 3.2)
+   y la agrupación por `WorkPeriodGroup`/mes natural (sección 3.3), con
+   el alcance de datos por rol ya descrito.
+4. Una vez completado H24 (o cuando Miguel Ángel decida pausarlo), la
+   siguiente parada es **retomar H23** (Documentación de Centros de
+   Gasto, pausado desde S018 con su hoja de ruta intacta) — orden
+   indicado explícitamente por Miguel Ángel al cierre de esta sesión.
 
 ---
 
@@ -258,4 +323,4 @@ especificó Miguel Ángel:
 
 | Sesión | Fecha | Trabajo realizado |
 |---|---|---|
-| S018 | 2026-07-14 | Hito creado (desvío desde H23, a petición explícita de Miguel Ángel). App dedicada `hr_calendar` registrada en INSTALLED_APPS. Hallazgo clave: infraestructura de centro de gasto PERSONAL y catálogo AbsenceCategory (incluido VACATION) ya existente de H7/H10. Decisión de diseño cerrada: `VacationPeriod` como modelo propio y fuente de verdad (no fecha incrustada en la tarea) — construido con migración `0001_initial` escrita a mano. Decisión de agrupación por periodos cerrada: reutilizar `WorkPeriodGroup` con titulado "Periodo activo"/"Periodo liquidado". Master document actualizado de paso (sección 1 desactualizada + corrección del modelo Live en sección 2). Pendiente para la siguiente sesión: preguntas 3-5 de la sección 4, generación automática de la tarea, vista de calendario, formulario de alta de `VacationPeriod`. |
+| S018 | 2026-07-14 | Hito creado (desvío desde H23). App `hr_calendar`, modelo `VacationPeriod`, campo `CompanyUser.base`, comando `assign_operator_bases` ejecutado en producción (14 operarios/chóferes, bases Maqueda/Huelva), onboarding WhatsApp ampliado, y las 7 preguntas de la sección 4 resueltas. Ver "COMPLETADAS EN S018" arriba para el detalle completo. Siguiente sesión: construir la generación automática de la tarea, el formulario de alta y la vista de calendario (hoja de ruta arriba). |
