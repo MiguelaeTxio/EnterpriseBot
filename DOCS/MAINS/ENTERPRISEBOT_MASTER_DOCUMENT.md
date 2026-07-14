@@ -421,3 +421,47 @@ Contact.objects.filter(company=company, phone_number=caller_number).first()
 a que exista `breakdown_context`, a que `breakdown_section_pks` tenga
 elementos, o a que alguna sección tenga `ivr_breakdown_enabled=True`.
 Esas flags son irrelevantes para el flujo de averías internas.
+
+#### 4.7. DEUDA TÉCNICA — Reparto de gastos generales de PERSONAL entre centros de gasto
+
+**Origen:** detectado en S018 (2026-07-14), a raíz de una pregunta abierta
+de H24 (calendario de vacaciones) sobre si las horas de ausencia por
+`PERSONAL` deben excluirse de los cómputos de horas/coste. Miguel Ángel
+aclaró el criterio de negocio completo y pidió dejarlo anotado sin
+implementar por ahora.
+
+**Comportamiento actual, verificado en código (H20, `analytics/views.py`,
+nota de diseño S010 2026-07-09, ya acordada con Miguel Ángel):** el coste
+de un operario se reparte proporcionalmente entre todos los centros de
+gasto en los que registró horas ese periodo — `PERSONAL` y `EMPRESA_ALMACEN_*`
+entran en ese reparto exactamente igual que una máquina real, sin caso
+especial. Es decir, `PERSONAL` recibe su propia fracción de coste y
+aparece como su propia fila en el cruce de Analítica — **ese coste no se
+redistribuye después sobre el resto de centros de gasto.**
+
+**Comportamiento deseado (criterio de negocio de Miguel Ángel, S018):**
+el gasto laboral que cae en `PERSONAL` (vacaciones, bajas, etc. — el
+coste de pagar a un operario mientras no repara ninguna máquina) es en
+realidad un sobrecoste de estructura que debe **repercutirse entre
+todos los demás centros de gasto** (máquinas + `EMPRESA_ALMACEN_*`/
+dependencias), no quedarse aparcado en su propia fila. Es el mismo
+principio que aplicará el día que se reparta el gasto de administración
+general: un sobrecoste que no es imputable a ningún centro de gasto
+concreto se divide entre todos los demás.
+
+**Excepción explícita:** `PERSONAL` nunca se repercute a sí mismo — el
+reparto es entre el resto de centros de gasto, excluyendo `PERSONAL`.
+
+**Acción pendiente:** ninguna por ahora — **Miguel Ángel ha pedido
+explícitamente no entrar en esto todavía.** Cuando se aborde, requiere
+diseñar el mecanismo de reparto (¿proporcional a horas de cada centro de
+gasto en el periodo? ¿a partes iguales?) con Miguel Ángel antes de tocar
+`analytics/views.py`.
+
+**Relacionado, pero distinto — no confundir:** la hora fantasma de
+`VACATION` (1h, tarea automática de H24) no forma parte de esta deuda.
+Esa hora concreta nunca debe contabilizar en ningún sitio (ni siquiera
+como coste de `PERSONAL`) — ver `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`
+sección 3.1. Las horas reales de los días de vacaciones sí generan coste
+en `PERSONAL`, y ESE coste es el que algún día se repercutirá según esta
+deuda técnica.

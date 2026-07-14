@@ -190,10 +190,25 @@ especificó Miguel Ángel:
    Márquez confirmados, María sin apellido confirmar — el comando se
    niega a ejecutar hasta entonces, ver su docstring). El resto de
    operarios/chóferes activos van a Maqueda por defecto.
-5. **Puntos de agregación de horas** a excluir para bloques PERSONAL/
-   VACATION — inventariar `analytics/` y `work_order_processor` antes de
-   tocar nada (principio DRY: puede que ya exista una exclusión genérica
-   para PERSONAL que solo haya que confirmar, en vez de crear una nueva).
+5. ~~Puntos de agregación de horas a excluir~~ — **RESUELTO en S018**:
+   NO se excluye nada del resto de categorías `PERSONAL` (médico,
+   asuntos propios, etc.) — cuentan como horas trabajadas normales,
+   incluso a efectos de horas extra, comportamiento ya correcto y sin
+   tocar. **Únicamente la hora fantasma de la tarea automática
+   `VACATION`** (sección 3.1) debe quedar excluida en los tres puntos
+   localizados por código real: `work_order_processor/services.py`
+   ~L1534 (suma diaria para Excel), `work_order_processor/services.py`
+   ~L2737 (horas extra sobre 8h) y `analytics/views.py` ~L2245
+   (denominador de coste). Como la generación automática de la tarea
+   todavía no está construida (paso 2 de la hoja de ruta), no hay nada
+   que tocar en estos tres puntos ahora mismo — queda como requisito
+   obligatorio del paso 2, no como tarea independiente.
+   **Relacionado pero fuera de alcance de H24:** el reparto del coste
+   de las horas reales de vacaciones (y del resto de `PERSONAL`) como
+   sobrecoste entre el resto de centros de gasto queda registrado como
+   deuda técnica en `ENTERPRISEBOT_MASTER_DOCUMENT.md` sección 4.7 — no
+   se aborda en esta sesión ni en este hito, a petición explícita de
+   Miguel Ángel.
 6. ~~Cómo agrupar el calendario en periodos~~ — **RESUELTO en S018**, ver
    sección 3.3 (reutiliza `WorkPeriodGroup`).
 7. ~~Apellido de "María"~~ — **RESUELTO en S018**: confirmado por
