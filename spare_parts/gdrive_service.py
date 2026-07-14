@@ -109,6 +109,16 @@ ROOT_FOLDER_NAME = 'EnterpriseBot - Albaranes'
 # una variable de entorno nueva en PythonAnywhere por sí mismo).
 TASK_PHOTOS_ROOT_FOLDER_NAME = 'EnterpriseBot - Fotos de Tareas'
 
+# Root folder for cost-center documentation (Hito 23). Same rationale
+# as TASK_PHOTOS_ROOT_FOLDER_NAME: no dedicated env var, resolved/
+# created on demand via ensure_root_folder() on every upload.
+# ---
+# Carpeta raíz para documentación de centros de gasto (Hito 23). Misma
+# razón de ser que TASK_PHOTOS_ROOT_FOLDER_NAME: sin variable de
+# entorno dedicada, se resuelve/crea bajo demanda vía
+# ensure_root_folder() en cada subida.
+MACHINE_DOCUMENTS_ROOT_FOLDER_NAME = 'EnterpriseBot - Documentacion Centros de Gasto'
+
 _MIME_TYPES = {
     '.pdf': 'application/pdf',
     '.jpg': 'image/jpeg',
@@ -260,6 +270,116 @@ def _ensure_month_folder(drive_service, root_folder_id: str, year_month: str) ->
         fields='id',
     ).execute()
     return folder['id']
+
+
+def _ensure_machine_folder(drive_service, root_folder_id: str, machine_code: str) -> str:
+    """
+    Finds or creates the subfolder for a given machine code under the
+    root folder -- documentation is organised per cost centre
+    (machine), not per month, unlike delivery notes / task photos:
+    Miguel Ángel needs to browse straight to "all documents of machine
+    X", not "everything uploaded in March".
+    ---
+    Busca o crea la subcarpeta para un código de máquina dado bajo la
+    carpeta raíz -- la documentación se organiza por centro de gasto
+    (máquina), no por mes, a diferencia de albaranes / fotos de
+    tareas: Miguel Ángel necesita navegar directo a "todos los
+    documentos de la máquina X", no a "todo lo subido en marzo".
+    """
+    query = (
+        f"name='{machine_code}' and mimeType='{_FOLDER_MIME_TYPE}' "
+        f"and '{root_folder_id}' in parents and trashed=false"
+    )
+    results = drive_service.files().list(
+        q=query, spaces='drive', fields='files(id, name)',
+    ).execute()
+    matches = results.get('files', [])
+    if matches:
+        return matches[0]['id']
+
+    folder = drive_service.files().create(
+        body={
+            'name': machine_code,
+            'mimeType': _FOLDER_MIME_TYPE,
+            'parents': [root_folder_id],
+        },
+        fields='id',
+    ).execute()
+    return folder['id']
+
+
+def upload_machine_document_file(document) -> dict:
+    """
+    Uploads a machine_documents.MachineDocument's source_file to the
+    subfolder named after document.machine_asset.code under
+    MACHINE_DOCUMENTS_ROOT_FOLDER_NAME, shared as "anyone with the
+    link can view" (same access policy as upload_delivery_note_file /
+    upload_task_photo_file, S014, Miguel Ángel).
+
+    Does NOT delete the local file or touch the MachineDocument model
+    -- that's the caller's job, same separation of concerns as the
+    other two upload_* functions in this module.
+
+    Returns {'file_id': ..., 'web_link': ...}.
+
+    ---
+
+    Sube el source_file de un machine_documents.MachineDocument a la
+    subcarpeta con el nombre del código de máquina
+    (document.machine_asset.code) bajo
+    MACHINE_DOCUMENTS_ROOT_FOLDER_NAME, compartido como "cualquiera
+    con el enlace puede ver" (misma política de acceso que
+    upload_delivery_note_file / upload_task_photo_file, S014, Miguel
+    Ángel).
+
+    NO borra el archivo local ni toca el modelo MachineDocument -- eso
+    es responsabilidad de quien llama, misma separación de
+    responsabilidades que las otras dos funciones upload_* de este
+    módulo.
+
+    Devuelve {'file_id': ..., 'web_link': ...}.
+    """
+    if not document.source_file:
+        raise ValueError(
+            f'MachineDocument #{document.pk} sin archivo asociado -- '
+            f'nada que subir.'
+        )
+
+    file_path = document.source_file.path
+    file_name = os.path.basename(file_path)
+    extension = os.path.splitext(file_name)[1].lower()
+    mime_type = _MIME_TYPES.get(extension, 'application/octet-stream')
+
+    drive_service = get_drive_service()
+    root_folder_id = ensure_root_folder(
+        drive_service, folder_name=MACHINE_DOCUMENTS_ROOT_FOLDER_NAME,
+    )
+    machine_folder_id = _ensure_machine_folder(
+        drive_service, root_folder_id, document.machine_asset.code,
+    )
+
+    drive_file_name = f'{document.document_type} - {document.display_name}{extension}'
+    with open(file_path, 'rb') as f:
+        media = MediaIoBaseUpload(
+            io.BytesIO(f.read()), mimetype=mime_type, resumable=True,
+        )
+    uploaded = drive_service.files().create(
+        body={'name': drive_file_name, 'parents': [machine_folder_id]},
+        media_body=media,
+        fields='id, webViewLink',
+    ).execute()
+
+    drive_service.permissions().create(
+        fileId=uploaded['id'],
+        body={'type': 'anyone', 'role': 'reader'},
+    ).execute()
+
+    logger.info(
+        '# [gdrive_service] MachineDocument #%d subido a Drive '
+        '(file_id=%s, máquina %s).',
+        document.pk, uploaded['id'], document.machine_asset.code,
+    )
+    return {'file_id': uploaded['id'], 'web_link': uploaded['webViewLink']}
 
 
 def upload_delivery_note_file(delivery_note) -> dict:

@@ -137,6 +137,25 @@ class MachineDocument(models.Model):
         verbose_name="Enlace de Google Drive",
     )
 
+    # ------------------------------------------------------------------
+    # Local staging file / Archivo local de staging
+    # Same pattern as work_order_processor.TaskPhoto.image and
+    # spare_parts.DeliveryNote.pdf_file: kept permanently (not deleted
+    # after the Drive upload) so gdrive_service has a stable local path
+    # to read from and the panel has an immediate fallback to display
+    # before drive_web_link is set.
+    # ---
+    # Mismo patrón que work_order_processor.TaskPhoto.image y
+    # spare_parts.DeliveryNote.pdf_file: se conserva permanentemente (no
+    # se borra tras la subida a Drive) para que gdrive_service tenga una
+    # ruta local estable de la que leer y el panel tenga un fallback
+    # inmediato que mostrar antes de que drive_web_link esté disponible.
+    # ------------------------------------------------------------------
+    source_file = models.FileField(
+        upload_to="machine_documents/%Y/%m/",
+        verbose_name="Archivo",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

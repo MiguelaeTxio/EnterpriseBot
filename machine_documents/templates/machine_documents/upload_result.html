@@ -1,0 +1,160 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/machine_documents/templates/machine_documents/upload_result.html #}
+{# Informe de resultado del procesamiento por lote (H23). #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Resultado de la Subida{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <h5 class="mb-0 fw-semibold">
+        Resultado — {{ machine_asset.code }} ({{ machine_asset.brand_model }})
+    </h5>
+    <div class="d-flex gap-2">
+        <a href="{% url 'machine_documents:upload' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-repeat me-1"></i>Subir otra carpeta
+        </a>
+        <a href="{% url 'machine_documents:list' %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-list-ul me-1"></i>Ver listado completo
+        </a>
+    </div>
+</div>
+
+{% if drive_error %}
+    <div class="alert alert-warning small">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Los documentos se han guardado en la base de datos, pero no se
+        han podido subir a Google Drive: {{ drive_error }}
+    </div>
+{% endif %}
+
+<div class="alert alert-success small">
+    <i class="bi bi-check-circle me-1"></i>
+    {{ saved_documents|length }} documento(s) persistido(s) correctamente.
+</div>
+
+<h6 class="fw-semibold mt-4 mb-2">Archivos subidos originalmente</h6>
+<div class="card shadow-sm mb-4">
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Archivo</th>
+                    <th>Tipo detectado</th>
+                    <th>Nombre legible</th>
+                    <th>¿Posible maestro?</th>
+                    <th>Cobertura</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in classified %}
+                    <tr>
+                        <td>{{ item.filename }}</td>
+                        <td>
+                            {% if item.result.document_type %}
+                                <span class="badge bg-secondary-subtle text-dark">{{ item.result.document_type }}</span>
+                            {% else %}
+                                <span class="badge bg-danger-subtle text-danger">Error de clasificación</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.result.display_name|default:"—" }}</td>
+                        <td>
+                            {% if item.result.is_possible_master %}
+                                <span class="badge bg-info-subtle text-dark">Sí</span>
+                            {% else %}
+                                <span class="text-muted small">No</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.coverage %}
+                                {% if item.coverage.fully_covered %}
+                                    <span class="text-success small">
+                                        <i class="bi bi-check-circle"></i>Cubierto por los individuales
+                                    </span>
+                                {% else %}
+                                    <span class="text-warning small">
+                                        <i class="bi bi-exclamation-triangle"></i>
+                                        Páginas no cubiertas: {{ item.coverage.uncovered_pages }}
+                                    </span>
+                                {% endif %}
+                                <div class="text-muted small">{{ item.coverage.reasoning }}</div>
+                            {% else %}
+                                <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if extra_entries %}
+    <h6 class="fw-semibold mb-2">Documentos extraídos del maestro (contenido no cubierto)</h6>
+    <div class="card shadow-sm mb-4">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Origen</th>
+                        <th>Tipo detectado</th>
+                        <th>Nombre legible</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in extra_entries %}
+                        <tr>
+                            <td>{{ entry.source_master_hint }}</td>
+                            <td>
+                                {% if entry.result.document_type %}
+                                    <span class="badge bg-secondary-subtle text-dark">{{ entry.result.document_type }}</span>
+                                {% else %}
+                                    <span class="badge bg-danger-subtle text-danger">Error de clasificación</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ entry.result.display_name|default:"—" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endif %}
+
+<h6 class="fw-semibold mb-2">Documentos guardados</h6>
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Tipo</th>
+                    <th>Nombre</th>
+                    <th>Drive</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for doc in saved_documents %}
+                    <tr>
+                        <td><span class="badge bg-secondary-subtle text-dark">{{ doc.document_type }}</span></td>
+                        <td>{{ doc.display_name }}</td>
+                        <td>
+                            {% if doc.drive_web_link %}
+                                <a href="{{ doc.drive_web_link }}" target="_blank" rel="noopener noreferrer">
+                                    <i class="bi bi-box-arrow-up-right"></i>Abrir
+                                </a>
+                            {% else %}
+                                <span class="text-muted small">pendiente</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-3">
+                            No se ha guardado ningún documento.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

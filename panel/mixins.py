@@ -352,6 +352,56 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
         return response
 
 
+class DocsUploadAccessMixin(CompanyUserRequiredMixin):
+    """
+    Mixin that grants access to CompanyUsers with the DOCS_SUPERVISOR
+    or ADMIN role. Introduced in Hito 23 for the cost-center
+    documentation upload flow (MachineDocumentBatchUploadView). The
+    read-only listing view uses plain CompanyUserRequiredMixin instead
+    -- per Miguel Ángel's explicit decision, the listing is visible to
+    any authenticated panel user, only the upload is restricted.
+    ---
+    Mixin que concede acceso a CompanyUsers con rol DOCS_SUPERVISOR o
+    ADMIN. Introducido en el Hito 23 para el flujo de subida de
+    documentación de centros de gasto
+    (MachineDocumentBatchUploadView). La vista de listado de solo
+    lectura usa CompanyUserRequiredMixin directamente en su lugar --
+    por decisión explícita de Miguel Ángel, el listado es visible para
+    cualquier usuario autenticado del panel, solo la subida está
+    restringida.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Verify that the authenticated CompanyUser holds the
+        DOCS_SUPERVISOR or ADMIN role.
+        ---
+        Verifica que el CompanyUser autenticado posee el rol
+        DOCS_SUPERVISOR o ADMIN.
+        """
+        response = super().dispatch(request, *args, **kwargs)
+        if not request.user.is_authenticated:
+            return response
+
+        company_user = getattr(request.user, "company_user", None)
+        if company_user is None:
+            return response
+
+        allowed_roles = {
+            CompanyUser.ROLE_DOCS_SUPERVISOR,
+            CompanyUser.ROLE_ADMIN,
+        }
+        if company_user.role not in allowed_roles:
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Supervisor de Documentación o Administrador.",
+            )
+            return redirect("/panel/")
+
+        return response
+
+
 class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
     """
     Mixin that grants access to the work-order entry form

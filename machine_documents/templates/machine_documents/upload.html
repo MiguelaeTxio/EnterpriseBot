@@ -1,0 +1,92 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/machine_documents/templates/machine_documents/upload.html #}
+{# Formulario de subida por lote de documentación de centros de gasto (H23). #}
+{# Selector de carpeta vía input file con webkitdirectory -- el navegador   #}
+{# abre el explorador de archivos nativo para elegir una carpeta completa   #}
+{# y adjunta todos sus PDFs de golpe, sin selección archivo a archivo.      #}
+{% extends "panel/base.html" %}
+
+{% block page_title %}Subir Documentación{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <h5 class="mb-0 fw-semibold">Subir Documentación de Centro de Gasto</h5>
+    <a href="{% url 'machine_documents:list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Volver al listado
+    </a>
+</div>
+
+{% if error %}
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
+    </div>
+{% endif %}
+
+<div class="alert alert-info small">
+    <i class="bi bi-info-circle me-1"></i>
+    Selecciona la máquina/centro de gasto y, después, la carpeta que
+    contiene toda su documentación (ficha técnica, ITV, certificados,
+    seguro, etc.). Cada PDF se clasifica automáticamente por su
+    contenido -- el resultado puede tardar unos segundos por archivo.
+    Si algún PDF combina varios documentos, se detecta como
+    documento "maestro" y se compara con el resto para extraer
+    cualquier contenido que no esté ya cubierto por los demás.
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post" enctype="multipart/form-data" id="upload-form">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label class="form-label">Máquina / Centro de gasto</label>
+                <select name="machine_asset" class="form-select" required>
+                    <option value="">— Selecciona una máquina —</option>
+                    {% for machine in machines %}
+                        <option value="{{ machine.pk }}">
+                            {{ machine.code }} — {{ machine.brand_model }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Carpeta con la documentación</label>
+                <input
+                    type="file"
+                    name="folder"
+                    class="form-control"
+                    webkitdirectory
+                    directory
+                    mozdirectory
+                    multiple
+                    required
+                    accept="application/pdf"
+                >
+                <div class="form-text">
+                    Se procesarán únicamente los archivos .pdf de la
+                    carpeta seleccionada.
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="submit-btn">
+                <i class="bi bi-cloud-upload me-1"></i>Procesar documentación
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+    // Deshabilita el botón y muestra estado de progreso al enviar --
+    // el procesamiento es síncrono y puede tardar varios segundos por
+    // archivo (varias llamadas a Gemini Vision en el servidor).
+    var form = document.getElementById('upload-form');
+    var btn = document.getElementById('submit-btn');
+    form.addEventListener('submit', function () {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Procesando documentación…';
+    });
+}());
+</script>
+{% endblock %}

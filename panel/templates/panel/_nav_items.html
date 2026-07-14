@@ -408,6 +408,24 @@
                                 <i class="bi bi-truck"></i>Historial de Máquina
                             </a>
                         </li>
+                        {# Documentación Centros de Gasto -- H23. Listado visible a todo #}
+                        {# el subgrupo (mismo gate != ASSISTANCE que Historial de        #}
+                        {# Máquina, decisión de Miguel Ángel: "solo lectura todo         #}
+                        {# quisqui"). El enlace de subida solo aparece para              #}
+                        {# DOCS_SUPERVISOR y ADMIN -- la vista igualmente lo hace         #}
+                        {# cumplir server-side (DocsUploadAccessMixin).                  #}
+                        {# Cost-center documentation -- H23. Listing visible to the      #}
+                        {# whole subgroup (same != ASSISTANCE gate as Historial de       #}
+                        {# Máquina, Miguel Ángel's decision: "read-only, everyone").     #}
+                        {# The upload link only shows for DOCS_SUPERVISOR and ADMIN --   #}
+                        {# the view enforces this server-side regardless               #}
+                        {# (DocsUploadAccessMixin).                                      #}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'machine_documents_list' or active_nav == 'machine_documents_upload' %}active{% endif %}"
+                               href="{% url 'machine_documents:list' %}">
+                                <i class="bi bi-file-earmark-text"></i>Documentación Centros de Gasto
+                            </a>
+                        </li>
                     {% endif %}
 
                     {# --- Subgrupo: Almacén (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 4 ítems, cada uno con su propio gate interior sin cambios) --- #}
@@ -662,6 +680,8 @@
         'fleet':                    'acc-taller-mecanico',
         'fleet_analytics':          'acc-taller-mecanico',
         'machine_history':          'acc-taller-mecanico',
+        'machine_documents_list':   'acc-taller-mecanico',
+        'machine_documents_upload': 'acc-taller-mecanico',
         'suppliers':                'acc-taller-mecanico',
         'delivery_notes_admin':     'acc-taller-mecanico',
         'workorder_spare_parts_catalog':   'acc-taller-mecanico',

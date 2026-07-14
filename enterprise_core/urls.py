@@ -76,4 +76,11 @@ urlpatterns = [
         'panel/albaranes/',
         include('delivery_notes.urls', namespace='delivery_notes'),
     ),
+    # Cost-center documentation ingestion and classification —
+    # ingesta y clasificación de documentación de centros de gasto
+    # (Hito 23).
+    path(
+        'panel/documentacion-centros-gasto/',
+        include('machine_documents.urls', namespace='machine_documents'),
+    ),
 ]
