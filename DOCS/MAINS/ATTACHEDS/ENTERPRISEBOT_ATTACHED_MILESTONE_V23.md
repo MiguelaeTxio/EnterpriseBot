@@ -192,19 +192,147 @@ deshacer una migración ya aplicada):
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
-**Hito recién creado — sin trabajo de código todavía.** Primera sesión:
+### COMPLETADAS EN S017
 
-1. Resolver las 5 preguntas abiertas de la sección 4 con Miguel Ángel
-   antes de escribir una sola línea de modelo.
-2. Verificación online de la API de Gemini Vision para PDFs (directriz
-   4.4) — obligatoria antes de cualquier implementación.
-3. Modelo `MachineDocument` + migración (según la app decidida en la
-   pregunta 1).
-4. Servicio de clasificación (Gemini) — validar primero contra los 8
-   documentos reales de la máquina A-45 (ya persistidos a mano en S016)
-   como caso de prueba conocido, antes de generalizar.
-5. Generalización de `gdrive_service.py` (tercera raíz) + vista de
-   subida + vista de listado + entrada de sidebar.
+Primera sesión de trabajo real sobre el hito (S016 solo lo creó, sin
+código). Resumen narrativo completo en el mensaje del commit de
+cierre de esta sesión — aquí solo el registro estructurado para
+consulta rápida en sesiones futuras.
+
+**Decisiones resueltas con Miguel Ángel (las 5 preguntas abiertas de
+la sección 4):**
+1. App nueva dedicada `machine_documents` (no se amplía `fleet`).
+2. `document_type` libre — Gemini puede proponer categorías nuevas,
+   sin lista cerrada.
+3. Lectura: cualquier usuario autenticado (mismo gate `!= ASSISTANCE`
+   que Historial de Máquina — pendiente de que Miguel Ángel confirme
+   si quiere ampliarlo también a ASISTENCIA, preguntado dos veces en
+   la sesión, sin respuesta explícita todavía). Subida: rol nuevo
+   `DOCS_SUPERVISOR` + `ADMIN`.
+4. Comparación de cobertura maestro/individuales: por similitud de
+   contenido vía Gemini, nunca por número de páginas.
+5. Verificación online de la API de Gemini Vision para PDF hecha
+   (confirma procesamiento nativo hasta 1000 páginas/50MB, sin
+   rasterizar).
+
+**Construido:**
+- Modelo `MachineDocument` (app `machine_documents`) con migraciones
+  0001→0003: relación a `MachineAsset`/`Company`/`CompanyUser`,
+  clasificación (`document_type`, `display_name`,
+  `source_master_hint`, `original_filename`), metadatos extraídos
+  (`expiry_date`, `issue_date`, `document_number`, `issuing_entity`
+  — añadidos en la segunda mitad de la sesión), persistencia Drive
+  (`drive_file_id`/`drive_web_link`), archivo local de staging
+  (`source_file`, se borra tras éxito de subida a Drive, alineado con
+  TaskPhoto/DeliveryNote), y estado de procesamiento (`status`
+  PENDING/CLASSIFIED/ERROR + `error_message`).
+- Rol `DOCS_SUPERVISOR` en `ivr_config.CompanyUser`.
+- `machine_documents/document_classification_service.py`:
+  `classify_document()` (clasificación + metadatos en una sola
+  llamada Gemini), `assess_master_coverage()`, `extract_pages()`
+  (PyMuPDF, sin dependencia nueva), `classify_by_filename_heuristic()`
+  (manuales de uso, nunca tocan Gemini), reintento con espera
+  bloqueante de 60s ante 429 de Vertex AI.
+- `spare_parts/gdrive_service.py`: tercera raíz
+  (`MACHINE_DOCUMENTS_ROOT_FOLDER_NAME`), subcarpeta por código de
+  máquina, `upload_machine_document_file()`.
+- Integración en el panel: **no** se creó un listado global cruzado
+  (decisión de Miguel Ángel, con cientos de máquinas sería
+  inmanejable) — la documentación vive dentro de la sección
+  "#documentacion" de `history.MachineHistoryView` (mismo precedente
+  que la galería de fotos de H7), con enlace desde cada fila de
+  `fleet_list`. Vista de subida
+  `machine_documents.views.MachineDocumentBatchUploadView`.
+- `machine_documents/tasks.py`:
+  `process_machine_document_batch`, tarea Celery que ejecuta todo el
+  pipeline (clasificar → detectar/comparar maestro → extraer páginas
+  no cubiertas → subir a Drive), idempotente por documento.
+
+**Incidencias reales encontradas y resueltas:**
+- **504 de PythonAnywhere** en la primera prueba end-to-end real (9
+  documentos de la máquina A-45): un manual de uso incluido por error
+  provocó un timeout de 60s en Gemini + reintentos que agotaron
+  cuota (429), empujando la petición completa contra el límite duro
+  de 5 minutos del webapp. El servidor sí terminó de persistir todo
+  justo a tiempo (confirmado vía log de errores + consulta directa a
+  BD) pero el navegador recibió un 504. Resuelto en dos fases: (1)
+  heurística de nombre de archivo para excluir manuales de Gemini por
+  completo, (2) a petición explícita de Miguel Ángel ("desde ya, sin
+  deuda técnica"), migración completa del pipeline síncrono a
+  asíncrono vía Celery/Always-on Task — el límite de 5 minutos deja
+  de ser relevante sin importar el tamaño del lote.
+- **Bug de traducción de categorías de avería** (fuera de este hito,
+  detectado por Miguel Ángel en una captura de Historial de Máquina
+  durante la prueba de esta sesión): `history/views.py` mantenía su
+  propia copia hardcodeada de la taxonomía `FaultCategory`/
+  `FaultSubcategory`, desactualizada desde antes de este hito.
+  `analytics/views.py` tenía TRES copias más de la misma taxonomía
+  (correctas, pero duplicadas). A petición explícita de Miguel Ángel
+  ("no dejes deudas técnicas"), las cuatro copias se sustituyeron por
+  un único punto de verdad construido desde `FaultCategory.choices`/
+  `FaultSubcategory.choices` en ambos archivos.
+- Error propio detectado y corregido en el mismo turno: un
+  `str_replace` sobre `gdrive_service.py` dejó la firma
+  `def upload_delivery_note_file(...)` huérfana (docstring suelto a
+  nivel de módulo, sintácticamente válido pero con la función
+  inexistente) — detectado por verificación AST explícita tras la
+  edición, no solo `py_compile`, y reparado antes de continuar.
+
+### Hoja de ruta — continuación de este hito
+
+1. **Prevalencia de documentos vigentes** — cuando se sube una versión
+   nueva de un documento cuyo tipo ya existe para la misma máquina
+   (ej. un certificado OCA renovado), decidir el criterio de qué
+   documento es "el vigente" frente a versiones anteriores.
+2. **Archivado y borrado de documentos obsoletos** — política a
+   definir con Miguel Ángel: ¿se archivan (se mantienen pero se
+   marcan como no vigentes) o se borran directamente de BD/Drive?
+3. **Alarmas vía WhatsApp** para documentos próximos a caducar —
+   `expiry_date` ya se captura desde esta sesión precisamente para
+   esto. Requiere presentar plantillas nuevas para aprobación de Meta
+   antes de poder enviarlas (proceso externo, con plazo de aprobación
+   fuera del control del proyecto — contemplar en la planificación).
+
+### Funcionalidad nueva anotada por Miguel Ángel al cierre — evaluar si abre hito propio
+
+Miguel Ángel especificó al cierre de esta sesión una funcionalidad de
+**vacaciones y calendario**, de un dominio distinto (RRHH/planificación)
+al de este hito. Se registra aquí íntegra para no perder el detalle,
+pero la primera decisión de la siguiente sesión debe ser si esto abre
+un hito nuevo (`nfs-enterprisebot-pch` Caso C / `com-picp`) en vez de
+colgarlo de H23 — **no evaluado todavía, decidir con Miguel Ángel al
+empezar**.
+
+**Tarea automática de vacaciones:**
+- Al registrar vacaciones para un operario/chófer, se añade
+  automáticamente una tarea con centro de gasto `PERSONAL` (nuevo
+  valor a dar de alta donde corresponda — ubicación exacta del
+  catálogo de centros de gasto/motivos a confirmar).
+- Añadir `VACACIONES` al desplegable de motivos existente (identificar
+  en qué modelo/formulario vive ese desplegable al empezar la
+  sesión — no localizado todavía).
+- En el campo donde normalmente iría la resolución de la avería, para
+  esta tarea automática va el día de fin de vacaciones.
+- Se añade en la última jornada de trabajo antes de las vacaciones
+  (generación automática, no manual).
+- Duración automática: 1 hora.
+- **No cuenta en el cómputo de horas** (excluir explícitamente de
+  cualquier agregado de horas trabajadas/facturables).
+
+**Aplicación de calendario:**
+- Visible para todo el mundo (todos los roles autenticados).
+- Si el usuario es `ADMIN` o `SUPERVISOR`: filtro por
+  operario/chófer, puede ver el calendario de cualquiera.
+- Si el usuario es `WORKSHOP` (mecánico) o `DRIVER` (chófer): solo ve
+  su propio calendario, sin selector.
+- Código de colores por día:
+  - **Azul** — día trabajado (con parte registrado).
+  - **Verde** — día de vacaciones.
+  - **Naranja** — día de baja (opción dentro de "personal" —
+    confirmar catálogo exacto de motivos de baja con Miguel Ángel).
+  - **Rojo** — día laborable sin parte, sin vacaciones, sin festivo y
+    sin baja (ausencia no justificada / hueco a revisar).
+  - **Amarillo** — festivo.
 
 ---
 
@@ -213,3 +341,4 @@ deshacer una migración ya aplicada):
 | Sesión | Fecha | Trabajo realizado |
 |---|---|---|
 | — | — | Hito creado en S016 (desvío desde H17), a petición explícita de Miguel Ángel. Sin trabajo de código todavía — ver sección 4 (preguntas abiertas) y sección 5 (hoja de ruta) para el punto de partida de la siguiente sesión. |
+| S017 | 2026-07-14 | Primera sesión de código del hito. Modelo `MachineDocument` + app `machine_documents` + rol `DOCS_SUPERVISOR`, servicio de clasificación Gemini Vision (clasificación + metadatos en una sola llamada), integración en Historial de Máquina/Centros de gasto, pipeline migrado de síncrono a asíncrono (Celery) tras un 504 real de PythonAnywhere. Bug de traducción de categorías de avería corregido de paso (fuera de este hito). Ver COMPLETADAS EN S017 arriba para el detalle completo. |
