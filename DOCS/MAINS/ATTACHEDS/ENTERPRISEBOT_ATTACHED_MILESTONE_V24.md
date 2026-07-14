@@ -201,6 +201,13 @@ especificó Miguel Ángel:
    junto a nombre/apellidos/DNI/sección) y la asigna a
    `CompanyUser.base` al crear el usuario — mismo patrón de resolución
    que ya usaba para sección (coincidencia exacta → parcial).
+0.1. ~~Ejecutar `assign_operator_bases` de verdad~~ — **HECHO en S018**:
+   base `Maqueda` (pk=75, ya existía) y `Huelva` (pk=76, creada en esta
+   sesión) para Grupo Álvarez (pk=1). 14 operarios/chóferes asignados:
+   3 a Huelva (Carlos Bas Blanco, David Contreras Marquez, MARIA — sin
+   nombre/apellido en el sistema, emparejada por username), 11 a
+   Maqueda. Calendario laboral de Huelva sincronizado con
+   `sync_base_calendars --base-id 76` — 14 festivos obtenidos para 2026.
 
 1. Resolver las preguntas 3, 4 y 5 de la sección 4 con Miguel Ángel.
 2. Implementar la generación automática de la tarea de vacaciones al
