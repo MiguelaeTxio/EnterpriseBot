@@ -89,6 +89,9 @@ INSTALLED_APPS = [
     # Admin CRUD for supplier delivery notes — CRUD de administración
     # de albaranes de proveedor (Hito 10, gap 2026-07-08).
     'delivery_notes',
+    # Cost-center documentation ingestion and classification — ingesta
+    # y clasificación de documentación de centros de gasto (Hito 23).
+    'machine_documents',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.

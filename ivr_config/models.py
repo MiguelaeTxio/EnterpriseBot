@@ -217,6 +217,16 @@ class CompanyUser(models.Model):
     # budgets module. No access to IVR, WhatsApp, work orders or any
     # other panel section.
     ROLE_ASSISTANCE   = "ASSISTANCE"
+    # DOCS_SUPERVISOR: acceso a la subida de documentación de centros de
+    # gasto (Hito 23). El listado de "Documentación Centros de Gasto" es
+    # de solo lectura para cualquier usuario autenticado del panel — este
+    # rol (y ADMIN) son los únicos que además pueden subir documentación
+    # nueva.
+    # DOCS_SUPERVISOR: access to uploading cost-center documentation
+    # (Hito 23). The "Documentación Centros de Gasto" listing is
+    # read-only for any authenticated panel user — this role (and ADMIN)
+    # are the only ones that can additionally upload new documentation.
+    ROLE_DOCS_SUPERVISOR = "DOCS_SUPERVISOR"
     ROLE_CHOICES      = [
         (ROLE_ADMIN,         "Administrador"),
         (ROLE_OPERATOR,      "Operador"),
@@ -225,6 +235,7 @@ class CompanyUser(models.Model):
         (ROLE_SUPERVISOR,    "Supervisor"),
         (ROLE_DRIVER,        "Chófer"),
         (ROLE_ASSISTANCE,    "Operario de Asistencia"),
+        (ROLE_DOCS_SUPERVISOR, "Supervisor de Documentación"),
     ]
 
     company = models.ForeignKey(
@@ -254,7 +265,9 @@ class CompanyUser(models.Model):
             "más acceso equivalente a SUPERVISOR en Taller, Administración y jornada. "
             "SUPERVISOR: revisión y exportación de partes PDF. "
             "DRIVER: reservado. "
-            "ASSISTANCE: operario de Asistencia — solo modulo de presupuestos."
+            "ASSISTANCE: operario de Asistencia — solo modulo de presupuestos. "
+            "DOCS_SUPERVISOR: puede subir documentación de centros de gasto "
+            "(el listado es de solo lectura para cualquier usuario)."
         ),
     )
     is_active = models.BooleanField(
