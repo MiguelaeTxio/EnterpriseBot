@@ -387,7 +387,7 @@ def upload_task_photo_file(photo) -> dict:
     month_folder_id = _ensure_month_folder(drive_service, root_folder_id, year_month)
 
     machine_label = (
-        photo.machine_asset.company_code if photo.machine_asset_id else 'sin-maquina'
+        photo.machine_asset.code if photo.machine_asset_id else 'sin-maquina'
     )
     drive_file_name = f'{photo.pk}_{machine_label}_{file_name}'
     with open(file_path, 'rb') as f:

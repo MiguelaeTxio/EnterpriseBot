@@ -24,14 +24,14 @@ import datetime as dt
 from django.db.models import Count, FloatField, Q, Sum
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, Http404, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from django.utils.timezone import now
 from django.views import View
 
 from fleet.forms import MachineAssetForm
 from fleet.models import MachineAsset
 from ivr_config.models import PresenceStatus
-from panel.mixins import AdminRoleRequiredMixin, SupervisorAccessMixin
+from panel.mixins import AdminRoleRequiredMixin, CompanyUserRequiredMixin, SupervisorAccessMixin
 
 
 # ---------------------------------------------------------------------------
@@ -744,3 +744,56 @@ class MachineAssetAnalyticsView(SupervisorAccessMixin, View):
         }
         return render(request, self.template_name, ctx)
 
+
+class MachineHistoryView(CompanyUserRequiredMixin, View):
+    """
+    Read-only 'libro de revisiones' for a single MachineAsset (H7, S016):
+    full history of BreakdownTickets on this machine, each with its
+    photo galleries (WhatsApp photos on the ticket itself, plus H7 task
+    photos taken during repair). No mutation of any kind happens here --
+    pure read-only page.
+
+    Deliberately uses the bare CompanyUserRequiredMixin (no role
+    restriction) instead of SupervisorAccessMixin/WorkshopRequiredMixin
+    -- confirmed explicitly by Miguel Ángel (S016): every role (ADMIN,
+    SUPERVISOR, WORKSHOPBOSS, WORKSHOP, DRIVER) can view it, since it's
+    read-only and carries no sensitive action.
+
+    GET /panel/fleet/<pk>/history/
+
+    ---
+
+    'Libro de revisiones' de solo lectura para un MachineAsset (H7,
+    S016): historial completo de BreakdownTicket de esa máquina, cada
+    uno con sus galerías de fotos (fotos de WhatsApp en el propio
+    ticket, más las fotos de tarea de H7 tomadas durante la reparación).
+    No hay ninguna mutación aquí -- página puramente de lectura.
+
+    Usa deliberadamente el CompanyUserRequiredMixin desnudo (sin
+    restricción de rol) en vez de SupervisorAccessMixin/
+    WorkshopRequiredMixin -- confirmado explícitamente por Miguel Ángel
+    (S016): todos los roles (ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP,
+    DRIVER) pueden verla, al ser de solo lectura y no llevar ninguna
+    acción sensible.
+    """
+
+    template_name = "panel/fleet/machine_history.html"
+
+    def get(self, request, pk, *args, **kwargs):
+        company_user = request.user.company_user
+        company = company_user.company
+        asset = get_object_or_404(MachineAsset, pk=pk, company=company)
+
+        tickets = (
+            asset.breakdown_tickets
+            .select_related("contact", "assigned_to")
+            .prefetch_related("task_photos")
+            .order_by("-created_at")
+        )
+
+        return render(request, self.template_name, {
+            "company_user": company_user,
+            "asset": asset,
+            "tickets": tickets,
+            "active_nav": "fleet_list",
+        })

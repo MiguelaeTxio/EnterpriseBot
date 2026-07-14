@@ -240,6 +240,11 @@
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                             <li>
+                                <a class="dropdown-item" href="{% url 'panel:fleet_history' asset.pk %}">
+                                    <i class="bi bi-journal-text me-2"></i>Ver ficha / historial
+                                </a>
+                            </li>
+                            <li>
                                 <button class="dropdown-item"
                                         onclick="fleetOpenEditModal({{ asset.pk }})">
                                     <i class="bi bi-pencil me-2"></i>Editar
