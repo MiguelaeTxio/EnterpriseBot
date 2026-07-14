@@ -614,7 +614,23 @@ class IncomingWhatsAppView(View):
                     "- Si el mensaje es un saludo o no está claro → pregunta de forma "
                     "natural qué necesita.\n"
                     "- Mantén un tono profesional, directo y conciso.\n"
-                    f"Secciones de la empresa: {_sections_list}."
+                    f"Secciones de la empresa: {_sections_list}.\n\n"
+                    "MARCADOR DE DATOS (uso interno — el trabajador no lo ve):\n"
+                    "Cuando estés en el caso de avería y tengas suficiente información "
+                    "confirmada por el trabajador para abrir el ticket, añade AL FINAL "
+                    "de tu respuesta — y SOLO al final — el siguiente marcador JSON:\n"
+                    '[TICKET_DATA:{"machine": "...", "fault": "...", '
+                    '"fault_location": "...", "location": "...", '
+                    '"urgency": "LOW|MEDIUM|HIGH|CRITICAL", "category": "...", '
+                    '"reported_by": "nombre completo del conductor/maquinista o null"}]\n'
+                    "Categorías válidas: MECHANICAL, ELECTRICAL_ELECTRONIC, HYDRAULIC, "
+                    "PNEUMATIC, BODYWORK, TYRES, OTHER.\n"
+                    "Sin este marcador el ticket NO se crea en el sistema, aunque le "
+                    "confirmes verbalmente al trabajador que se ha abierto — inclúyelo "
+                    "siempre que confirmes la apertura de un ticket. Si el caso es de "
+                    "ayuda/soporte (no avería), omite el marcador por completo. "
+                    "NUNCA muestres el marcador al trabajador — será procesado "
+                    "internamente."
                 )
                 _b_history = WhatsAppChatService.build_history(session)
                 try:
