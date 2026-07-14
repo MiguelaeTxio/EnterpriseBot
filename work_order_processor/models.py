@@ -1896,3 +1896,163 @@ class OperatorMonthlyCost(models.Model):
         no se repite aquí para evitar duplicación.
         """
         return f'{self.work_period}: {self.total_cost} EUR'
+
+
+# ---------------------------------------------------------------------------
+# TaskPhoto — optional photo attached to a work block (H7, session S016)
+# TaskPhoto — foto opcional adjunta a un bloque de trabajo (H7, sesión S016)
+# ---------------------------------------------------------------------------
+
+class TaskPhoto(models.Model):
+    """
+    An optional photo attached to a WorkOrderEntryLine (a task/work block).
+    Never mandatory — the operator may attach zero or more photos to any
+    line regardless of tipo_tarea.
+
+    company, breakdown_ticket and machine_asset are denormalised from the
+    parent line at creation time (same rationale as
+    BreakdownTicket.section: fast filtering — "photos for this machine",
+    "photos for this ticket" — without a join through the line, and stable
+    traceability even if the line's own FKs change afterwards).
+    breakdown_ticket is null whenever the line has no ticket linked (most
+    tasks — ticket linkage is itself optional on WorkOrderEntryLine).
+
+    Persistence mirrors spare_parts.DeliveryNote (S014-H10): the photo is
+    saved locally on upload, then a Celery task
+    (work_order_processor.tasks.upload_task_photo_to_drive) pushes it to
+    Google Drive via spare_parts.gdrive_service and deletes the local file
+    once the upload is confirmed. drive_file_id/drive_web_link stay empty
+    until that confirmation.
+
+    ---
+
+    Foto opcional adjunta a un WorkOrderEntryLine (una tarea/bloque de
+    trabajo). Nunca obligatoria — el operario puede adjuntar cero o más
+    fotos a cualquier línea, sea cual sea su tipo_tarea.
+
+    company, breakdown_ticket y machine_asset están denormalizados desde
+    la línea padre en el momento de creación (mismo criterio que
+    BreakdownTicket.section: filtrado rápido -- "fotos de esta máquina",
+    "fotos de este ticket" -- sin join a través de la línea, y trazabilidad
+    estable aunque los FK propios de la línea cambien después).
+    breakdown_ticket queda nulo cuando la línea no tiene ticket vinculado
+    (la mayoría de tareas -- la vinculación a ticket es en sí misma
+    opcional en WorkOrderEntryLine).
+
+    La persistencia replica spare_parts.DeliveryNote (S014-H10): la foto
+    se guarda localmente al subirla, y una tarea Celery
+    (work_order_processor.tasks.upload_task_photo_to_drive) la sube a
+    Google Drive vía spare_parts.gdrive_service y borra el archivo local
+    una vez confirmada la subida. drive_file_id/drive_web_link quedan
+    vacíos hasta esa confirmación.
+    """
+
+    # ------------------------------------------------------------------
+    # Relation / Relación
+    # ------------------------------------------------------------------
+    line = models.ForeignKey(
+        WorkOrderEntryLine,
+        on_delete=models.CASCADE,
+        related_name="photos",
+        verbose_name=_("Bloque de trabajo"),
+        help_text=_(
+            "Bloque de trabajo (tarea) al que pertenece esta foto. "
+            "Un bloque puede tener cero o más fotos."
+        ),
+    )
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="task_photos",
+        verbose_name=_("Empresa"),
+        help_text=_(
+            "Empresa a la que pertenece esta foto, denormalizada desde "
+            "line.entry.work_order.company en el momento de creación."
+        ),
+    )
+    breakdown_ticket = models.ForeignKey(
+        "chat.BreakdownTicket",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="task_photos",
+        verbose_name=_("Ticket de avería"),
+        help_text=_(
+            "Ticket de avería vinculado a la línea en el momento de "
+            "creación de la foto (denormalizado desde line.breakdown_ticket). "
+            "Nulo cuando la línea no tiene ticket vinculado."
+        ),
+    )
+    machine_asset = models.ForeignKey(
+        MachineAsset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="task_photos",
+        verbose_name=_("Máquina / Centro de gasto"),
+        help_text=_(
+            "Máquina o centro de gasto vinculado a la línea en el momento "
+            "de creación de la foto (denormalizado desde line.machine_asset)."
+        ),
+    )
+    uploaded_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="task_photos_uploaded",
+        verbose_name=_("Subida por"),
+        help_text=_("Usuario del panel que adjuntó esta foto."),
+    )
+
+    # ------------------------------------------------------------------
+    # File / Archivo
+    # ------------------------------------------------------------------
+    image = models.ImageField(
+        _("Foto"),
+        upload_to="task_photos/",
+        help_text=_(
+            "Archivo original subido por el operario. Se sube a Google "
+            "Drive tras la confirmación y se borra del servidor -- mismo "
+            "criterio que spare_parts.DeliveryNote (S014-H10)."
+        ),
+    )
+    caption = models.CharField(
+        _("Descripción"),
+        max_length=200,
+        blank=True,
+        default="",
+        help_text=_("Descripción opcional de lo que muestra la foto."),
+    )
+
+    # ------------------------------------------------------------------
+    # Cloud persistence (S016-H07) — same fields/rationale as
+    # spare_parts.DeliveryNote.drive_file_id / drive_web_link.
+    # Persistencia en la nube (S016-H07) — mismos campos/razón de ser
+    # que spare_parts.DeliveryNote.drive_file_id / drive_web_link.
+    # ------------------------------------------------------------------
+    drive_file_id = models.CharField(
+        _("ID de archivo en Google Drive"),
+        max_length=100,
+        blank=True,
+        default="",
+    )
+    drive_web_link = models.URLField(
+        _("Enlace de Google Drive"),
+        max_length=500,
+        blank=True,
+        default="",
+    )
+
+    created_at = models.DateTimeField(
+        _("Fecha de creación"),
+        auto_now_add=True,
+    )
+
+    class Meta:
+        verbose_name = _("Foto de tarea")
+        verbose_name_plural = _("Fotos de tarea")
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Foto #{self.pk} — {self.line} ({self.machine_asset or 'sin máquina'})"
