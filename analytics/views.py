@@ -54,6 +54,8 @@ from panel.models import AnalyticsProfile
 from whatsapp.models import WhatsAppSession, WhatsAppTemplate
 from whatsapp.services import WhatsAppChatService
 from work_order_processor.models import (
+    FaultCategory,
+    FaultSubcategory,
     OperatorMonthlyCost,
     WorkOrder,
     WorkOrderEntry,
@@ -61,6 +63,40 @@ from work_order_processor.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Fault category display maps -- single source of truth, built from the
+# model's TextChoices (work_order_processor.models.FaultCategory /
+# FaultSubcategory). Fixed 2026-07-14: this file used to keep THREE
+# separate hardcoded copies of this same taxonomy across two classes
+# (AnalyticsLabView._FAULT_CAT_MAP, AnalyticsLabDataView._FAULT_CAT_LABELS,
+# AnalyticsLabDataView._FAULT_SUBCAT_LABELS), plus a local import building
+# a fourth ad-hoc copy inline (AnalyticsDataView.get, `_FSC.choices`) --
+# all correct and in sync with each other at the time, but exactly the
+# kind of duplication that let history/views.py drift out of sync with
+# an OLDER taxonomy undetected for a whole milestone. Built once here and
+# imported everywhere instead, so there is now exactly one place in the
+# whole codebase that could ever go stale.
+# ---
+# Mapas de visualización de categoría de avería -- fuente de verdad
+# única, construida desde los TextChoices del modelo
+# (work_order_processor.models.FaultCategory / FaultSubcategory).
+# Corregido 2026-07-14: este archivo mantenía TRES copias hardcodeadas
+# separadas de esta misma taxonomía repartidas en dos clases
+# (AnalyticsLabView._FAULT_CAT_MAP, AnalyticsLabDataView._FAULT_CAT_LABELS,
+# AnalyticsLabDataView._FAULT_SUBCAT_LABELS), más un import local que
+# construía una cuarta copia ad-hoc inline (AnalyticsDataView.get,
+# `_FSC.choices`) -- todas correctas y sincronizadas entre sí en su
+# momento, pero exactamente el tipo de duplicación que dejó a
+# history/views.py desincronizarse de una taxonomía ANTIGUA sin
+# detectarse durante todo un hito. Construidas aquí una sola vez e
+# importadas en todas partes, de forma que ahora solo hay un sitio en
+# todo el código que podría llegar a desactualizarse.
+# ---------------------------------------------------------------------------
+
+_FAULT_CAT_MAP = dict(FaultCategory.choices)
+_FAULT_SUBCAT_MAP = dict(FaultSubcategory.choices)
 
 
 # ---------------------------------------------------------------------------
@@ -371,16 +407,6 @@ class AnalyticsLabView(SupervisorAccessMixin, View):
 
     template_name = "panel/analytics_lab.html"
 
-    _FAULT_CAT_MAP = {
-        "TYRES_RUNNING_GEAR": "Neumaticos y rodadura",
-        "BRAKES_STEERING_SUSPENSION": "Frenos, direccion y suspension",
-        "HYDRAULIC": "Hidraulica",
-        "BODYWORK_CHASSIS": "Carroceria y chasis",
-        "ENGINE_TRANSMISSION": "Motor y transmision",
-        "LIFTING_STRUCTURE": "Estructura de elevacion",
-        "ELECTRICAL_ELECTRONIC": "Electrico y electronico",
-        "OTHER": "Otros",
-    }
 
     def get(self, request):
         """
@@ -560,13 +586,12 @@ class AnalyticsLabView(SupervisorAccessMixin, View):
                 .order_by("fault_category")
             )
             fault_categories = [
-                {"key": k, "label": self._FAULT_CAT_MAP.get(k, k)}
+                {"key": k, "label": _FAULT_CAT_MAP.get(k, k)}
                 for k in raw_keys
             ]
 
         fault_subcategories = []
         if has_d6:
-            from work_order_processor.models import FaultSubcategory as _FSC
             raw_keys6 = list(
                 WorkOrderEntryLine.objects
                 .filter(
@@ -577,9 +602,8 @@ class AnalyticsLabView(SupervisorAccessMixin, View):
                 .distinct()
                 .order_by("fault_subcategory")
             )
-            fsc_map = dict(_FSC.choices)
             fault_subcategories = [
-                {"key": k, "label": fsc_map.get(k, k)}
+                {"key": k, "label": _FAULT_SUBCAT_MAP.get(k, k)}
                 for k in raw_keys6
             ]
 
@@ -749,52 +773,8 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         "d20": "bar",  # cost
     }
 
-    _FAULT_CAT_LABELS = {
-        "TYRES_RUNNING_GEAR": "Neumaticos y rodadura",
-        "BRAKES_STEERING_SUSPENSION": "Frenos, direccion y suspension",
-        "HYDRAULIC": "Hidraulica",
-        "BODYWORK_CHASSIS": "Carroceria y chasis",
-        "ENGINE_TRANSMISSION": "Motor y transmision",
-        "LIFTING_STRUCTURE": "Estructura de elevacion",
-        "ELECTRICAL_ELECTRONIC": "Electrico y electronico",
-        "OTHER": "Otros",
-    }
-
-    _FAULT_SUBCAT_LABELS = {
-        "ET_ENGINE":          "Motor",
-        "ET_TRANSMISSION":    "Transmision",
-        "ET_PTO":             "Toma de fuerza (PTO)",
-        "ET_COOLING":         "Sistema de refrigeracion",
-        "ET_FUEL":            "Sistema de combustible",
-        "HY_PUMP":            "Bomba hidraulica",
-        "HY_CYLINDERS":       "Cilindros hidraulicos",
-        "HY_VALVES":          "Valvulas hidraulicas",
-        "HY_OIL":             "Aceite y circuito hidraulico",
-        "HY_CENTRAL":         "Central hidraulica",
-        "EE_WIRING":          "Cableado y conectores",
-        "EE_SENSORS":         "Sensores y sondas",
-        "EE_CONTROLS":        "Mandos y controles",
-        "EE_LIGHTS":          "Iluminacion",
-        "EE_BATTERY":         "Bateria y sistema de carga",
-        "BSS_BRAKES":         "Frenos",
-        "BSS_STEERING":       "Direccion",
-        "BSS_SUSPENSION":     "Suspension",
-        "TRG_TYRES":          "Neumaticos",
-        "TRG_AXLES":          "Ejes y transmision de rueda",
-        "TRG_TRACKS":         "Cadenas y rodadura oruga",
-        "LS_BOOM":            "Pluma y brazo",
-        "LS_HOOK_PULLEYS":    "Gancho y poleas",
-        "LS_CABLE":           "Cable de elevacion",
-        "LS_ROTATION":        "Sistema de rotacion",
-        "LS_STABILIZERS":     "Estabilizadores y apoyos",
-        "LS_MAST":            "Mastil y horquillas",
-        "LS_PLATFORM":        "Plataforma elevadora",
-        "LS_FIFTH_WHEEL":     "Quinta rueda",
-        "LS_CHASSIS_TRAILER": "Chasis de semirremolque",
-        "BC_BODYWORK":        "Carroceria",
-        "BC_CHASSIS":         "Chasis estructural",
-        "OT_OTHER":           "Otra averia no clasificada",
-    }
+    _FAULT_CAT_LABELS = _FAULT_CAT_MAP
+    _FAULT_SUBCAT_LABELS = _FAULT_SUBCAT_MAP
 
     def _translate_fault_cat(self, key):
         """
