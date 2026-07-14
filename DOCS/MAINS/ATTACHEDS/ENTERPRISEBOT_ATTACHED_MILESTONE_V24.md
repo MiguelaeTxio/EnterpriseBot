@@ -196,6 +196,12 @@ especificó Miguel Ángel:
 
 ## 5. Hoja de Ruta para la Siguiente Sesión
 
+0. ~~Onboarding WhatsApp debe preguntar la base~~ — **HECHO en S018**:
+   `whatsapp/services.py::OnboardingService` ahora pide la base (paso 5,
+   junto a nombre/apellidos/DNI/sección) y la asigna a
+   `CompanyUser.base` al crear el usuario — mismo patrón de resolución
+   que ya usaba para sección (coincidencia exacta → parcial).
+
 1. Resolver las preguntas 3, 4 y 5 de la sección 4 con Miguel Ángel.
 2. Implementar la generación automática de la tarea de vacaciones al
    guardar un `VacationPeriod` (dispara `WorkdayGap`/bloque PERSONAL

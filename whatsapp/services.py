@@ -1776,6 +1776,9 @@ class OnboardingService:
         sections = list(company.sections.all().order_by("name"))
         section_list = "\n".join(f"  - {s.name}" for s in sections)
 
+        bases = list(company.bases.all().order_by("name"))
+        base_list = "\n".join(f"  - {b.name}" for b in bases)
+
         return (
             f"Eres el asistente de registro de nuevos empleados de {company.name}. "
             "Tu objetivo es registrar al trabajador en la plataforma de forma "
@@ -1786,6 +1789,7 @@ class OnboardingService:
             "3. DNI completo con letra (p.ej. 12345678Z — acepta minúsculas, "
             "indícale que no importa)\n"
             f"4. Sección a la que pertenece. Secciones disponibles:\n{section_list}\n\n"
+            f"5. Base a la que pertenece. Bases disponibles:\n{base_list}\n\n"
             "INSTRUCCIONES:\n"
             "- Recoge los datos de forma natural, no como un formulario.\n"
             "- Después de recoger cada dato, confírmalo con el usuario "
@@ -1796,9 +1800,11 @@ class OnboardingService:
             "- Solo cuando el usuario confirme el resumen final, emite AL FINAL "
             "de tu respuesta — y SOLO al final, sin texto posterior — el marcador:\n"
             '[ONBOARDING_DATA:{"first_name":"...","last_name1":"...","last_name2":"...",'
-            '"dni":"...","section":"..."}]\n'
+            '"dni":"...","section":"...","base":"..."}]\n'
             "- El campo 'dni' debe estar en mayúsculas (tú lo conviertes).\n"
             "- El campo 'section' debe ser el nombre EXACTO de una de las secciones "
+            "listadas arriba.\n"
+            "- El campo 'base' debe ser el nombre EXACTO de una de las bases "
             "listadas arriba.\n"
             "- NUNCA muestres el marcador al usuario — será procesado internamente.\n"
             "- Si el usuario dice algo que no tiene que ver con el registro, "
@@ -1942,6 +1948,7 @@ class OnboardingService:
         last_name2  = (data.get("last_name2") or "").strip()
         dni         = (data.get("dni") or "").strip().upper()
         section_name = (data.get("section") or "").strip()
+        base_name    = (data.get("base") or "").strip()
 
         # Resolve section — exact match first, then partial.
         # Resolver seccion — coincidencia exacta primero, luego parcial.
@@ -1961,6 +1968,40 @@ class OnboardingService:
             )
             return (
                 "Ha ocurrido un error al identificar la sección. "
+                "Por favor, contacta con el administrador."
+            )
+
+        # Resolve base — same pattern as section (exact match first, then
+        # partial). Added S018 at Miguel Ángel's explicit request: the
+        # WhatsApp onboarding must ask for the base, same as it already
+        # asks for the section — see hr_calendar's CompanyUser.base
+        # (H24), which needs this to resolve which labor calendar
+        # (Base.labor_calendar) applies to each new employee.
+        # ---
+        # Resolver base — mismo patrón que sección (coincidencia exacta
+        # primero, luego parcial). Añadido en S018 a petición explícita
+        # de Miguel Ángel: el onboarding de WhatsApp debe preguntar la
+        # base, igual que ya pregunta la sección — ver
+        # CompanyUser.base de hr_calendar (H24), que necesita esto para
+        # resolver qué calendario laboral (Base.labor_calendar) aplica a
+        # cada empleado nuevo.
+        from budgets.models import Base as _Base
+        base = _Base.objects.filter(
+            company=company, name=base_name,
+        ).first()
+        if base is None:
+            base = _Base.objects.filter(
+                company=company,
+                name__icontains=base_name,
+            ).first()
+        if base is None:
+            cls.clear_state(session)
+            logger.error(
+                "# [ONBOARDING] Base '%s' no encontrada para empresa %s",
+                base_name, company.name,
+            )
+            return (
+                "Ha ocurrido un error al identificar la base. "
                 "Por favor, contacta con el administrador."
             )
 
@@ -2018,6 +2059,7 @@ class OnboardingService:
                 company=company,
                 user=django_user,
                 role=role,
+                base=base,
                 is_active=True,
                 must_change_password=False,
                 dni=dni,
@@ -2053,7 +2095,8 @@ class OnboardingService:
                 f"👤 Usuario: *{username}*\n"
                 f"🔑 Contraseña: *{password}*\n"
                 f"📋 Rol: {role_label}\n"
-                f"🏢 Sección: {section.name}\n\n"
+                f"🏢 Sección: {section.name}\n"
+                f"🏠 Base: {base.name}\n\n"
                 f"🔗 Accede al panel aquí: {panel_url}\n\n"
                 "Guarda estos datos. Si necesitas ayuda para acceder o "
                 "tienes cualquier problema con tu cuenta, escríbeme aquí mismo. "
