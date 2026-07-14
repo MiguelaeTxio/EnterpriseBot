@@ -1,0 +1,49 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/_task_photo_widget.html #}
+{# Widget HTMX de fotos opcionales de tarea (H7, S016). Se recarga entero #}
+{# tras cada subida/borrado -- misma estrategia simple que el resto del  #}
+{# formulario de partes digitales, sin JS adicional a mantener.          #}
+<div class="d-flex flex-wrap gap-2 mb-2">
+    {% for photo in photos %}
+    <div class="position-relative" style="width:72px;">
+        {% if photo.drive_web_link %}
+        <a href="{{ photo.drive_web_link }}" target="_blank" rel="noopener">
+            <img src="https://drive.google.com/thumbnail?id={{ photo.drive_file_id }}"
+                 class="rounded border" style="width:72px;height:72px;object-fit:cover;"
+                 alt="{{ photo.caption|default:'Foto de tarea' }}">
+        </a>
+        {% elif photo.image %}
+        <img src="{{ photo.image.url }}"
+             class="rounded border" style="width:72px;height:72px;object-fit:cover;"
+             alt="{{ photo.caption|default:'Foto de tarea (subiendo...)' }}"
+             title="Subiendo a Google Drive...">
+        {% else %}
+        <div class="rounded border d-flex align-items-center justify-content-center text-muted small text-center"
+             style="width:72px;height:72px;" title="Subiendo a Google Drive...">
+            <i class="bi bi-cloud-arrow-up"></i>
+        </div>
+        {% endif %}
+        <button type="button"
+                class="btn btn-sm btn-danger rounded-circle position-absolute top-0 end-0 p-0"
+                style="width:20px;height:20px;line-height:1;transform:translate(30%,-30%);"
+                title="Eliminar foto"
+                hx-post="{% url 'panel:task_photo_delete' line_pk=line.pk photo_pk=photo.pk %}"
+                hx-include="[name=csrfmiddlewaretoken]"
+                hx-target="closest .task-photo-widget"
+                hx-swap="innerHTML"
+                hx-confirm="¿Eliminar esta foto?">
+            <i class="bi bi-x" style="font-size:0.7rem;"></i>
+        </button>
+    </div>
+    {% endfor %}
+</div>
+<form hx-post="{% url 'panel:task_photo_upload' line_pk=line.pk %}"
+      hx-target="closest .task-photo-widget"
+      hx-swap="innerHTML"
+      hx-encoding="multipart/form-data"
+      class="d-flex align-items-center gap-2">
+    {% csrf_token %}
+    <input type="file" name="image" accept="image/*" capture="environment"
+           class="form-control form-control-sm" style="max-width:220px;"
+           onchange="this.form.requestSubmit()">
+    <span class="text-muted small">Foto opcional</span>
+</form>

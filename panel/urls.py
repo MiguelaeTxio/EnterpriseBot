@@ -10,6 +10,11 @@ Todas las rutas se sirven bajo el prefijo /panel/ definido en enterprise_core/ur
 
 from django.urls import path
 
+from panel.views_task_photos import (
+    TaskPhotoDeleteView,
+    TaskPhotoUploadView,
+    TaskPhotoWidgetView,
+)
 from panel.views import (
     PanelLoginView,
     PanelLogoutView,
@@ -268,6 +273,10 @@ urlpatterns = [
     # WorkOrder HTMX line delete — Eliminación de línea individual (rol ADMIN).
     # Bugfix E2E — Hito 8 (2026-04-28)
     path("work-orders/<int:wo_pk>/lines/<int:line_pk>/delete/", WorkOrderLineDeleteView.as_view(), name="work_order_line_delete"),
+    # --- H7, S016: fotos opcionales de tarea ---
+    path("work-orders/lines/<int:line_pk>/photos/", TaskPhotoWidgetView.as_view(), name="task_photo_widget"),
+    path("work-orders/lines/<int:line_pk>/photos/subir/", TaskPhotoUploadView.as_view(), name="task_photo_upload"),
+    path("work-orders/lines/<int:line_pk>/photos/<int:photo_pk>/eliminar/", TaskPhotoDeleteView.as_view(), name="task_photo_delete"),
 
     # WorkOrderEntry save date — Guardado de fecha de grupo via HTMX (incidencia S046).
     path("work-orders/<int:wo_pk>/entries/<int:entry_pk>/save-date/",

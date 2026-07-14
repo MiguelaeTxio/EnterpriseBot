@@ -17,7 +17,7 @@ resultados de extracción y el diagnóstico de errores.
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
-from .models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
+from .models import TaskPhoto, WorkOrder, WorkOrderEntry, WorkOrderEntryLine
 
 
 # ---------------------------------------------------------------------------
@@ -296,3 +296,49 @@ class WorkOrderEntryLineAdmin(admin.ModelAdmin):
         para visualización en la lista de WorkOrderEntryLine.
         """
         return obj.entry.get_extraction_confidence_display()
+
+
+@admin.register(TaskPhoto)
+class TaskPhotoAdmin(admin.ModelAdmin):
+    """
+    Admin configuration for TaskPhoto (H7, S016). Read-only view for
+    audit/support purposes -- photos are created exclusively from the
+    operator form widget (panel.views_task_photos), never from the admin.
+
+    ---
+
+    Configuración del admin para TaskPhoto (H7, S016). Vista de solo
+    lectura para auditoría/soporte -- las fotos se crean exclusivamente
+    desde el widget del formulario de operario (panel.views_task_photos),
+    nunca desde el admin.
+    """
+
+    list_display = (
+        "id",
+        "line",
+        "machine_asset",
+        "breakdown_ticket",
+        "uploaded_by",
+        "drive_web_link",
+        "created_at",
+    )
+    list_filter = ("company", "machine_asset__company_code")
+    search_fields = (
+        "line__machine_raw",
+        "machine_asset__company_code",
+        "breakdown_ticket__ticket_date_code",
+        "caption",
+    )
+    readonly_fields = (
+        "line",
+        "company",
+        "breakdown_ticket",
+        "machine_asset",
+        "uploaded_by",
+        "image",
+        "drive_file_id",
+        "drive_web_link",
+        "created_at",
+    )
+    raw_id_fields = ("line", "breakdown_ticket", "machine_asset", "uploaded_by")
+    ordering = ("-created_at",)

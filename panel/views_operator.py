@@ -2232,6 +2232,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 for line in entry .lines .order_by ("line_number"):
                     entradas_enriched .append ({
                     "idx":len (entradas_enriched )+1 ,
+                    "pk":line .pk ,
                     "machine_raw":line .machine_raw or "",
                     "machine_asset":line .machine_asset ,
                     "fault_description":line .fault_description or "",
@@ -2337,6 +2338,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 for _ip_line in _ip_entry .lines .order_by ("line_number"):
                     _ip_entradas .append ({
                     "idx":len (_ip_entradas )+1 ,
+                    "pk":_ip_line .pk ,
                     "machine_raw":_ip_line .machine_raw or "",
                     "machine_asset":_ip_line .machine_asset ,
                     "fault_description":_ip_line .fault_description or "",
