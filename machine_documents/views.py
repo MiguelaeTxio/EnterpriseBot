@@ -70,6 +70,7 @@ from spare_parts.gdrive_service import (
 
 from .document_classification_service import (
     assess_master_coverage,
+    classify_by_filename_heuristic,
     classify_document,
     extract_pages,
 )
@@ -188,37 +189,68 @@ class MachineDocumentBatchUploadView(DocsUploadAccessMixin, View):
             })
 
         # ------------------------------------------------------------
-        # Step 1 -- classify every uploaded file individually.
+        # Step 1 -- classify every uploaded file individually. Files
+        # matching a filename heuristic (currently: user manuals)
+        # NEVER reach Gemini -- see
+        # document_classification_service.classify_by_filename_heuristic
+        # docstring for why (2026-07-14 incident).
         # Paso 1 -- clasificar cada archivo subido individualmente.
+        # Los archivos que coinciden con una heurística de nombre
+        # (actualmente: manuales de uso) NUNCA llegan a Gemini -- ver
+        # el docstring de
+        # document_classification_service.classify_by_filename_heuristic
+        # para el motivo (incidente 2026-07-14).
         # ------------------------------------------------------------
         classified = []
         for uploaded_file in uploaded_files:
             file_bytes = uploaded_file.read()
+            heuristic_result = classify_by_filename_heuristic(
+                uploaded_file.name,
+            )
+            if heuristic_result is not None:
+                classified.append({
+                    "django_file": uploaded_file,
+                    "filename": uploaded_file.name,
+                    "bytes": file_bytes,
+                    "result": heuristic_result,
+                    "via_heuristic": True,
+                })
+                continue
+
             result = classify_document(file_bytes, uploaded_file.name)
             classified.append({
                 "django_file": uploaded_file,
                 "filename": uploaded_file.name,
                 "bytes": file_bytes,
                 "result": result,
+                "via_heuristic": False,
             })
 
         # ------------------------------------------------------------
         # Step 2 -- for every candidate master, compare against the
         # rest of the batch and extract any uncovered content as a
-        # new synthetic entry.
+        # new synthetic entry. Heuristic-classified files (manuals)
+        # are excluded from the comparison set -- sending their bytes
+        # to assess_master_coverage() would defeat the whole point of
+        # never sending them to Gemini.
         # Paso 2 -- para cada candidato a maestro, comparar contra el
         # resto del lote y extraer cualquier contenido no cubierto
-        # como una entrada sintética nueva.
+        # como una entrada sintética nueva. Los archivos clasificados
+        # por heurística (manuales) se excluyen del conjunto de
+        # comparación -- enviar sus bytes a assess_master_coverage()
+        # anularía el sentido de no enviarlos nunca a Gemini.
         # ------------------------------------------------------------
         extra_entries = []
         for item in classified:
+            if item["via_heuristic"]:
+                continue
             if not item["result"]["is_possible_master"]:
                 continue
 
             individuals = [
                 (other["filename"], other["bytes"])
                 for other in classified
-                if other is not item
+                if other is not item and not other["via_heuristic"]
             ]
             if not individuals:
                 continue

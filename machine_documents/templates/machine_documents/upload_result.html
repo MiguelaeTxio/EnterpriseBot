@@ -52,6 +52,11 @@
                         <td>
                             {% if item.result.document_type %}
                                 <span class="badge bg-secondary-subtle text-dark">{{ item.result.document_type }}</span>
+                                {% if item.via_heuristic %}
+                                    <span class="badge bg-light text-muted border" title="Clasificado por nombre de archivo, sin pasar por Gemini">
+                                        <i class="bi bi-filter-circle"></i>heurística
+                                    </span>
+                                {% endif %}
                             {% else %}
                                 <span class="badge bg-danger-subtle text-danger">Error de clasificación</span>
                             {% endif %}

@@ -86,6 +86,114 @@ from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Filename heuristic classification (NEVER calls Gemini) / Clasificación
+# heurística por nombre de archivo (NUNCA llama a Gemini)
+# ---------------------------------------------------------------------------
+#
+# Introduced after an incident (2026-07-14): a user manual PDF included by
+# mistake in a real test batch caused Gemini to time out (heavy/long
+# document, 60s DEADLINE_EXCEEDED) and burned enough retries to push the
+# whole request against PythonAnywhere's hard 5-minute webapp timeout
+# (confirmed via server error log -- 504 DEADLINE_EXCEEDED from Vertex AI,
+# then 429 RESOURCE_EXHAUSTED on retry). Miguel Ángel's explicit decision:
+# user manuals must NEVER be sent to Gemini at all -- classified by
+# filename heuristic and uploaded directly instead. Keeping the rule table
+# a list (not a single hardcoded check) so future filename-based
+# categories can be added the same way without touching the calling code.
+#
+# Introducido tras un incidente (2026-07-14): un manual de uso incluido
+# por error en un lote de prueba real provocó un timeout de Gemini
+# (documento pesado/largo, 60s DEADLINE_EXCEEDED) y consumió suficientes
+# reintentos como para empujar toda la petición contra el timeout duro de
+# 5 minutos de PythonAnywhere (confirmado vía log de errores del servidor
+# -- 504 DEADLINE_EXCEEDED de Vertex AI, después 429 RESOURCE_EXHAUSTED en
+# el reintento). Decisión explícita de Miguel Ángel: los manuales de uso
+# NUNCA deben enviarse a Gemini -- se clasifican por heurística de nombre
+# de archivo y se suben directamente. La tabla de reglas se mantiene como
+# lista (no un único check hardcodeado) para que futuras categorías
+# basadas en nombre de archivo puedan añadirse igual sin tocar el código
+# que llama.
+_FILENAME_HEURISTIC_RULES = [
+    # (palabra clave, MAYÚSCULAS, buscada como subcadena en el nombre de
+    # archivo en mayúsculas -> document_type asignado sin pasar por Gemini)
+    ("MANUAL", "Manual de uso"),
+]
+
+
+def _clean_display_name(filename: str) -> str:
+    """
+    Builds a human-readable display_name straight from a filename,
+    for heuristic classification (no Gemini call, so no
+    content-derived name is available). Strips the extension,
+    replaces '-'/'_' with spaces, and collapses repeated whitespace.
+    ---
+    Construye un display_name legible directamente a partir de un
+    nombre de archivo, para clasificación heurística (sin llamada a
+    Gemini, así que no hay nombre derivado del contenido disponible).
+    Quita la extensión, sustituye '-'/'_' por espacios, y colapsa
+    espacios repetidos.
+    """
+    stem = filename.rsplit(".", 1)[0]
+    cleaned = stem.replace("_", " ").replace("-", " ")
+    return " ".join(cleaned.split())
+
+
+def classify_by_filename_heuristic(filename: str) -> dict | None:
+    """
+    Classifies a document purely from its filename, WITHOUT calling
+    Gemini at all -- for document categories that must never be sent
+    to the API (currently: user manuals, per Miguel Ángel's decision
+    above). Returns a dict shaped exactly like classify_document()'s
+    return value (document_type, display_name, is_possible_master),
+    or None if no heuristic rule matches -- in which case the caller
+    must fall back to classify_document() (Gemini).
+
+    is_possible_master is always False for heuristic matches: user
+    manuals are never master documents combining others, and treating
+    them as individuals-to-compare-against in
+    assess_master_coverage() would defeat the whole point of this
+    heuristic (their bytes would end up sent to Gemini anyway via that
+    call) -- callers must exclude heuristic-classified entries from
+    the `individual_docs` list passed to assess_master_coverage().
+
+    ---
+
+    Clasifica un documento únicamente a partir de su nombre de
+    archivo, SIN llamar a Gemini en ningún momento -- para categorías
+    de documento que nunca deben enviarse a la API (actualmente:
+    manuales de uso, según la decisión de Miguel Ángel de arriba).
+    Devuelve un dict con la misma forma que el valor de retorno de
+    classify_document() (document_type, display_name,
+    is_possible_master), o None si ninguna regla heurística coincide
+    -- en cuyo caso quien llama debe recurrir a classify_document()
+    (Gemini).
+
+    is_possible_master es siempre False en coincidencias heurísticas:
+    los manuales de uso nunca son documentos maestros que combinan
+    otros, y tratarlos como individuales-contra-los-que-comparar en
+    assess_master_coverage() anularía el propósito de esta heurística
+    (sus bytes acabarían enviándose a Gemini igualmente por esa
+    llamada) -- quien llama debe excluir las entradas clasificadas por
+    heurística de la lista `individual_docs` que se pasa a
+    assess_master_coverage().
+    """
+    upper_name = filename.upper()
+    for keyword, document_type in _FILENAME_HEURISTIC_RULES:
+        if keyword in upper_name:
+            logger.info(
+                "# [classify_by_filename_heuristic] %s -> tipo=%r "
+                "(coincidencia %r, sin llamada a Gemini)",
+                filename, document_type, keyword,
+            )
+            return {
+                "document_type": document_type,
+                "display_name": _clean_display_name(filename),
+                "is_possible_master": False,
+            }
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Single-document classification / Clasificación de un único documento
 # ---------------------------------------------------------------------------
 

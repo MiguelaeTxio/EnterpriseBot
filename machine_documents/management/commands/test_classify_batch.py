@@ -51,6 +51,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from machine_documents.document_classification_service import (
     assess_master_coverage,
+    classify_by_filename_heuristic,
     classify_document,
     extract_pages,
 )
@@ -136,11 +137,22 @@ class Command(BaseCommand):
         classified = []
         for pdf_path in pdf_paths:
             pdf_bytes = pdf_path.read_bytes()
-            result = classify_document(pdf_bytes, pdf_path.name)
-            classified.append((pdf_path, pdf_bytes, result))
+            heuristic_result = classify_by_filename_heuristic(
+                pdf_path.name,
+            )
+            if heuristic_result is not None:
+                result = heuristic_result
+                via_heuristic = True
+            else:
+                result = classify_document(pdf_bytes, pdf_path.name)
+                via_heuristic = False
+            classified.append(
+                (pdf_path, pdf_bytes, result, via_heuristic),
+            )
 
             self.stdout.write(
-                f"# {pdf_path.name}\n"
+                f"# {pdf_path.name}"
+                f"{' [heurística, sin Gemini]' if via_heuristic else ''}\n"
                 f"    document_type      = {result['document_type']!r}\n"
                 f"    display_name       = {result['display_name']!r}\n"
                 f"    is_possible_master = "
@@ -149,14 +161,18 @@ class Command(BaseCommand):
 
         # ------------------------------------------------------------
         # Step 2 -- for every candidate master, compare against the
-        # rest of the batch and report uncovered pages.
+        # rest of the batch and report uncovered pages. Files
+        # classified via heuristic (manuals) are excluded from the
+        # comparison set -- never sent to Gemini.
         # Paso 2 -- para cada candidato a maestro, comparar contra el
-        # resto del lote e informar de páginas no cubiertas.
+        # resto del lote e informar de páginas no cubiertas. Los
+        # archivos clasificados por heurística (manuales) se excluyen
+        # del conjunto de comparación -- nunca se envían a Gemini.
         # ------------------------------------------------------------
         candidates = [
             (path, pdf_bytes)
-            for path, pdf_bytes, result in classified
-            if result["is_possible_master"]
+            for path, pdf_bytes, result, via_heuristic in classified
+            if result["is_possible_master"] and not via_heuristic
         ]
 
         if not candidates:
@@ -169,8 +185,8 @@ class Command(BaseCommand):
         for candidate_path, candidate_bytes in candidates:
             individuals = [
                 (path.name, pdf_bytes)
-                for path, pdf_bytes, _result in classified
-                if path != candidate_path
+                for path, pdf_bytes, _result, via_heuristic in classified
+                if path != candidate_path and not via_heuristic
             ]
 
             coverage = assess_master_coverage(
