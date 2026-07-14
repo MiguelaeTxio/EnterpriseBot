@@ -211,6 +211,18 @@ latencia a través de canales de voz y mensajería.
   y recuperación rápida sin que el usuario necesite saber dónde está
   guardado cada archivo.
 
+#### Hito 24: Vacaciones y Calendario
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`)
+- Generación automática de tarea de vacaciones (bloque de ausencia, centro
+  de gasto PERSONAL, categoría VACATION) en la última jornada laboral
+  antes del periodo vacacional del operario/chófer.
+- Reutiliza infraestructura ya existente de H7/H10: `MachineAsset` PERSONAL
+  y catálogo `AbsenceCategory` (código VACATION ya presente en el seed).
+- Aplicación de calendario con código de colores por día (trabajado,
+  vacaciones, baja, ausencia no justificada, festivo), visible para todos
+  los roles autenticados, con filtro por operario/chófer para
+  ADMIN/SUPERVISOR y vista propia sin selector para WORKSHOP/DRIVER.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes

@@ -46,7 +46,8 @@ Cumple dos funciones inseparables:
 | **H20** | **Laboratorio de Análisis Unificado** | **`ENTERPRISEBOT_ATTACHED_MILESTONE_V20.md`** |
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
-| H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` ← EN PROGRESO |
+| H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` |
+| H24 | Vacaciones y Calendario | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -54,8 +55,12 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H23 — Documentación de Centros de Gasto →
-`ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`
+**Hito EN PROGRESO:** H24 — Vacaciones y Calendario →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`
+
+**Hito PAUSADO en esta sesión (S018):** H23 — Documentación de Centros de
+Gasto → `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md`. Sin trabajo de código
+en S018; retomar por su hoja de ruta intacta (sección 5 del anexo).
 
 ---
 
