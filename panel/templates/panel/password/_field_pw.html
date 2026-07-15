@@ -1,5 +1,5 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/password/_field_pw.html #}
-{#
+{% comment %}
   Partial template — password input field with show/hide toggle.
   Expected context variable: `field` (a BoundField from PanelPasswordChangeForm).
   Renders the raw input inside a .password-wrapper div; the JS in change.html
@@ -9,7 +9,7 @@
   Variable de contexto esperada: `field` (un BoundField de PanelPasswordChangeForm).
   Renderiza el input dentro de un div .password-wrapper; el JS en change.html
   conecta el botón toggle mediante el array TOGGLE_IDS.
-#}
+{% endcomment %}
 <div class="password-wrapper">
     {{ field }}
 </div>

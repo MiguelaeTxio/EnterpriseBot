@@ -3,12 +3,7 @@
 {% extends "panel/base.html" %}
 {% block page_title %}Revisión de Albarán{% endblock %}
 {% block extra_head %}
-    {# S014-H10, Bloque B punto 2: mientras Gemini procesa el albarán
-       en segundo plano (status=PENDING) la página se refresca sola
-       cada 5s hasta que pase a PROCESSED/ERROR -- sin JS, sin polling
-       HTMX, el caso más simple que cubre la necesidad real (el
-       operario ya se ha ido a hacer otra cosa, no está mirando la
-       pantalla fijamente). #}
+    {# S014-H10, Bloque B punto 2: mientras Gemini procesa el albarán en segundo plano (status=PENDING) la página se refresca sola cada 5s hasta que pase a PROCESSED/ERROR -- sin JS, sin polling HTMX, el caso más simple que cubre la necesidad real (el operario ya se ha ido a hacer otra cosa, no está mirando la pantalla fijamente). #}
     {% if delivery_note.status == 'PENDING' %}
         <meta http-equiv="refresh" content="5">
     {% endif %}
