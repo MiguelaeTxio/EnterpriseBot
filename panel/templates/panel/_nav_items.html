@@ -121,24 +121,22 @@
             </button>
             <div class="collapse sidebar-accordion-body" id="acc-mi-perfil">
                 <ul class="nav flex-column ps-3">
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'own_profile' %}active{% endif %}"
-                           href="{% url 'panel:own_profile' %}">
-                            <i class="bi bi-person-circle"></i>Mi perfil
-                        </a>
-                    </li>
-                    {# Calendario -- H24. Visible a todo rol autenticado    #}
-                    {# (VacationCalendarView no restringe rol, solo         #}
-                    {# CompanyUserRequiredMixin) -- mismo gate que el resto #}
-                    {# de este acordeon (!= ASSISTANCE). ADMIN/SUPERVISOR   #}
-                    {# ven selector de operario dentro de la propia vista;  #}
-                    {# WORKSHOP/DRIVER ven solo el suyo.                    #}
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'vacation_calendar' %}active{% endif %}"
-                           href="{% url 'hr_calendar:calendar' %}">
-                            <i class="bi bi-calendar3"></i>Calendario
-                        </a>
-                    </li>
+                    {# Orden alfabético dentro de la sección (a petición de #}
+                    {# Miguel Ángel, 2026-07-15): Calendario, Mi estado,    #}
+                    {# Mi perfil.                                           #}
+                    {# Calendario -- H24. Aquí en Mi perfil SOLO para       #}
+                    {# WORKSHOP/DRIVER -- para ADMIN/SUPERVISOR/            #}
+                    {# WORKSHOPBOSS vive en Administración (mismo enlace,   #}
+                    {# mismo active_nav, sección distinta según rol; a      #}
+                    {# petición explícita de Miguel Ángel, 2026-07-15).     #}
+                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'DRIVER' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'vacation_calendar' %}active{% endif %}"
+                               href="{% url 'hr_calendar:calendar' %}">
+                                <i class="bi bi-calendar3"></i>Calendario
+                            </a>
+                        </li>
+                    {% endif %}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'presence' %}active{% endif %}"
@@ -147,6 +145,12 @@
                             </a>
                         </li>
                     {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'own_profile' %}active{% endif %}"
+                           href="{% url 'panel:own_profile' %}">
+                            <i class="bi bi-person-circle"></i>Mi perfil
+                        </a>
+                    </li>
                 </ul>
             </div>
         </li>
@@ -172,11 +176,30 @@
             </button>
             <div class="collapse sidebar-accordion-body" id="acc-telefonia">
                 <ul class="nav flex-column ps-3">
-                    {# IVR #}
+                    {# Orden alfabético dentro de la sección (a petición de #}
+                    {# Miguel Ángel, 2026-07-15).                           #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'blockedcallers' %}active{% endif %}"
+                           href="{% url 'panel:blockedcaller_list' %}">
+                            <i class="bi bi-slash-circle"></i>Bloqueados
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
+                           href="{% url 'panel:datacaptureset_list' %}">
+                            <i class="bi bi-ui-checks"></i>Conjuntos de captura
+                        </a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
                            href="{% url 'panel:callflow_list' %}">
                             <i class="bi bi-gear-wide-connected"></i>Flujos IVR
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'bot_management' %}active{% endif %}"
+                           href="{% url 'analytics:bot_management' %}">
+                            <i class="bi bi-robot"></i>Gestión del bot
                         </a>
                     </li>
                     <li class="nav-item">
@@ -192,19 +215,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'blockedcallers' %}active{% endif %}"
-                           href="{% url 'panel:blockedcaller_list' %}">
-                            <i class="bi bi-slash-circle"></i>Bloqueados
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'datacapturesets' %}active{% endif %}"
-                           href="{% url 'panel:datacaptureset_list' %}">
-                            <i class="bi bi-ui-checks"></i>Conjuntos de captura
-                        </a>
-                    </li>
-                    {# WhatsApp #}
-                    <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'whatsapp_templates' %}active{% endif %}"
                            href="{% url 'panel:whatsapp_template_list' %}">
                             <i class="bi bi-whatsapp"></i>Plantillas WA
@@ -214,12 +224,6 @@
                         <a class="nav-link {% if active_nav == 'whatsapp_sessions' %}active{% endif %}"
                            href="{% url 'panel:whatsapp_active_sessions' %}">
                             <i class="bi bi-chat-dots"></i>Sesiones activas WA
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'bot_management' %}active{% endif %}"
-                           href="{% url 'analytics:bot_management' %}">
-                            <i class="bi bi-robot"></i>Gestión del bot
                         </a>
                     </li>
                 </ul>
@@ -263,6 +267,55 @@
             </button>
             <div class="collapse sidebar-accordion-body" id="acc-administracion">
                 <ul class="nav flex-column ps-3">
+                    {# Orden alfabético dentro de la sección (a petición de #}
+                    {# Miguel Ángel, 2026-07-15). Los gates de cada ítem no #}
+                    {# han cambiado, solo el orden.                         #}
+                    {# Calendario -- H24. Aquí para ADMIN/SUPERVISOR/       #}
+                    {# WORKSHOPBOSS (mismo gate que el resto de esta        #}
+                    {# sección, sin guardia propia adicional); para         #}
+                    {# WORKSHOP/DRIVER vive en Mi perfil (mismo enlace,     #}
+                    {# mismo active_nav) -- a petición explícita de Miguel  #}
+                    {# Ángel, 2026-07-15.                                   #}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'vacation_calendar' %}active{% endif %}"
+                           href="{% url 'hr_calendar:calendar' %}">
+                            <i class="bi bi-calendar3"></i>Calendario
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'absence_categories' %}active{% endif %}"
+                           href="{% url 'panel:absence_category_list' %}">
+                            <i class="bi bi-journal-x"></i>Categorías de ausencia
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'contacts' %}active{% endif %}"
+                           href="{% url 'panel:contact_list' %}">
+                            <i class="bi bi-person-lines-fill"></i>Contactos
+                        </a>
+                    </li>
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'analytics_costs' %}active{% endif %}"
+                               href="{% url 'analytics:analytics_costs' %}">
+                                <i class="bi bi-cash-coin"></i>Costes de operarios
+                            </a>
+                        </li>
+                    {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'workday_schedule' %}active{% endif %}"
+                           href="{% url 'panel:workday_schedule' %}">
+                            <i class="bi bi-calendar-week"></i>Horarios de jornada
+                        </a>
+                    </li>
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'analytics_lab' %}active{% endif %}"
+                               href="{% url 'analytics:analytics_lab' %}">
+                                <i class="bi bi-pie-chart-fill"></i>Laboratorio de Análisis
+                            </a>
+                        </li>
+                    {% endif %}
                     {# PDFs — trasladado aquí desde el subgrupo Taller (Taller Mecánico),  #}
                     {# eliminado 2026-07-10 a petición de Miguel Ángel. Mismo gate que      #}
                     {# tenía allí (coincide con el de esta sección, ADMIN/SUPERVISOR/       #}
@@ -278,33 +331,15 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
-                           href="{% url 'panel:user_list' %}">
-                            <i class="bi bi-people"></i>Usuarios
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'contacts' %}active{% endif %}"
-                           href="{% url 'panel:contact_list' %}">
-                            <i class="bi bi-person-lines-fill"></i>Contactos
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'sections' %}active{% endif %}"
                            href="{% url 'panel:section_list' %}">
                             <i class="bi bi-diagram-3"></i>Secciones
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'workday_schedule' %}active{% endif %}"
-                           href="{% url 'panel:workday_schedule' %}">
-                            <i class="bi bi-calendar-week"></i>Horarios de jornada
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'absence_categories' %}active{% endif %}"
-                           href="{% url 'panel:absence_category_list' %}">
-                            <i class="bi bi-journal-x"></i>Categorías de ausencia
+                        <a class="nav-link {% if active_nav == 'users' %}active{% endif %}"
+                           href="{% url 'panel:user_list' %}">
+                            <i class="bi bi-people"></i>Usuarios
                         </a>
                     </li>
                     {# Vacaciones -- H24. Gate propio ADMIN/SUPERVISOR         #}
@@ -324,26 +359,6 @@
                             <a class="nav-link {% if active_nav == 'vacation_periods' %}active{% endif %}"
                                href="{% url 'hr_calendar:vacation_period_list' %}">
                                 <i class="bi bi-airplane"></i>Vacaciones
-                            </a>
-                        </li>
-                    {% endif %}
-                    {# Laboratorio de Análisis — movido aquí desde la sección propia #}
-                    {# "Analítica" (2026-07-08). Solo ADMIN, gate sin cambios.       #}
-                    {# Analytics Lab — moved here from its own standalone            #}
-                    {# "Analítica" section (2026-07-08). Opened to SUPERVISOR/       #}
-                    {# WORKSHOPBOSS alongside ADMIN (2026-07-09), together with the  #}
-                    {# Costes de operarios page below.                              #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'analytics_lab' %}active{% endif %}"
-                               href="{% url 'analytics:analytics_lab' %}">
-                                <i class="bi bi-pie-chart-fill"></i>Laboratorio de Análisis
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'analytics_costs' %}active{% endif %}"
-                               href="{% url 'analytics:analytics_costs' %}">
-                                <i class="bi bi-cash-coin"></i>Costes de operarios
                             </a>
                         </li>
                     {% endif %}
@@ -462,29 +477,16 @@
                     {% endif %}
 
                     {# --- Subgrupo: Almacén (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 4 ítems, cada uno con su propio gate interior sin cambios) --- #}
+                    {# Orden alfabético dentro del subgrupo (a petición de Miguel Ángel, 2026-07-15). #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
                         <li class="nav-item px-2 pt-2">
                             <small class="sidebar-subgroup-label">Almacén</small>
                         </li>
                         {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
-                                <a class="nav-link {% if active_nav == 'suppliers' %}active{% endif %}"
-                                   href="{% url 'spare_parts:supplier_list' %}">
-                                    <i class="bi bi-shop"></i>Proveedores
-                                </a>
-                            </li>
-                            <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'delivery_notes_admin' %}active{% endif %}"
                                    href="{% url 'delivery_notes:list' %}">
                                     <i class="bi bi-receipt"></i>Albaranes
-                                </a>
-                            </li>
-                        {% endif %}
-                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
-                            <li class="nav-item">
-                                <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
-                                   href="{% url 'workorder_spare_parts:catalog_list' %}">
-                                    <i class="bi bi-boxes"></i>Catálogo de repuestos
                                 </a>
                             </li>
                         {% endif %}
@@ -496,12 +498,29 @@
                                 </a>
                             </li>
                         {% endif %}
+                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
+                                   href="{% url 'workorder_spare_parts:catalog_list' %}">
+                                    <i class="bi bi-boxes"></i>Catálogo de repuestos
+                                </a>
+                            </li>
+                        {% endif %}
+                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'suppliers' %}active{% endif %}"
+                                   href="{% url 'spare_parts:supplier_list' %}">
+                                    <i class="bi bi-shop"></i>Proveedores
+                                </a>
+                            </li>
+                        {% endif %}
                     {% endif %}
 
                     {# --- Subgrupo: Taller (renombrado desde "Mecánicos" 2026-07-10 a       #}
                     {# petición de Miguel Ángel; sin gate propio en su cabecera -- coincide  #}
                     {# con el exterior != ASSISTANCE, ya que "Nuevo parte" es visible a      #}
                     {# todos, DRIVER incluido) --- #}
+                    {# Orden alfabético dentro del subgrupo (a petición de Miguel Ángel, 2026-07-15). #}
                     <li class="nav-item px-2 pt-2">
                         <small class="sidebar-subgroup-label">Taller</small>
                     </li>
@@ -511,16 +530,6 @@
                             <i class="bi bi-tools"></i>Nuevo parte
                         </a>
                     </li>
-                    {# Subir albarán de proveedor — WORKSHOP y ADMIN (Hito 10, S003).      #}
-                    {# Upload supplier delivery note — WORKSHOP and ADMIN (Hito 10, S003). #}
-                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'spare_parts_upload' %}active{% endif %}"
-                               href="{% url 'spare_parts:delivery_note_upload' %}">
-                                <i class="bi bi-box-seam"></i>Subir albarán
-                            </a>
-                        </li>
-                    {% endif %}
                     {# Partes Digitales — vista única (Hito 17 / S012): sustituye a las    #}
                     {# antiguas Partes Digitales, Mis partes e Historial de operario,      #}
                     {# eliminadas 2026-07-10 por decisión expresa de Miguel Ángel (no      #}
@@ -534,6 +543,16 @@
                             <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
                                href="{% url 'panel:work_order_admin_history' %}">
                                 <i class="bi bi-tablet"></i>Partes Digitales
+                            </a>
+                        </li>
+                    {% endif %}
+                    {# Subir albarán de proveedor — WORKSHOP y ADMIN (Hito 10, S003).      #}
+                    {# Upload supplier delivery note — WORKSHOP and ADMIN (Hito 10, S003). #}
+                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'spare_parts_upload' %}active{% endif %}"
+                               href="{% url 'spare_parts:delivery_note_upload' %}">
+                                <i class="bi bi-box-seam"></i>Subir albarán
                             </a>
                         </li>
                     {% endif %}
@@ -577,28 +596,19 @@
             </button>
             <div class="collapse sidebar-accordion-body" id="acc-asistencia">
                 <ul class="nav flex-column ps-3">
+                    {# Orden alfabético dentro de la sección (a petición de #}
+                    {# Miguel Ángel, 2026-07-15). Los gates de cada ítem no #}
+                    {# han cambiado, solo el orden.                         #}
+                    {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
+                    {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
                     <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
-                           href="{% url 'budgets:wizard' %}">
-                            <i class="bi bi-calculator"></i>Nuevo presupuesto
+                        <a class="nav-link {% if active_nav == 'albaran_demo' %}active{% endif %}"
+                           href="{% url 'budgets:albaran_demo' %}">
+                            <i class="bi bi-file-earmark-text"></i>Albarán (demo)
                         </a>
                     </li>
-                    {# Historial — ADMIN, o ASSISTANCE con el flag por usuario  #}
-                    {# can_view_budget_breakdown (usuarios especiales de       #}
-                    {# auditoría, ej. juan.vazquez).                           #}
-                    {# History — ADMIN, or ASSISTANCE with the per-user flag   #}
-                    {# can_view_budget_breakdown (special audit users, e.g.    #}
-                    {# juan.vazquez).                                          #}
-                    {% if company_user.role == 'ADMIN' or company_user.can_view_budget_breakdown %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'budgets_history' %}active{% endif %}"
-                               href="{% url 'budgets:history' %}">
-                                <i class="bi bi-clock-history"></i>Historial presupuestos
-                            </a>
-                        </li>
-                    {% endif %}
-                    {# Aseguradoras / Bases / Conceptos / Calendarios — solo ADMIN. #}
-                    {# Insurers / Bases / Concepts / Calendars — ADMIN only.       #}
+                    {# Aseguradoras / Bases / Conceptos / Calendarios / Franja nocturna — solo ADMIN. #}
+                    {# Insurers / Bases / Concepts / Calendars / Night-shift window — ADMIN only.     #}
                     {% if company_user.role == 'ADMIN' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'budgets_insurers' %}active{% endif %}"
@@ -613,15 +623,15 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if active_nav == 'budgets_concepts' %}active{% endif %}"
-                               href="{% url 'budgets:tariff_concept_list' %}">
-                                <i class="bi bi-tag-fill"></i>Conceptos de tarifa
-                            </a>
-                        </li>
-                        <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'budgets_calendars' %}active{% endif %}"
                                href="{% url 'budgets:base_calendar_list' %}">
                                 <i class="bi bi-calendar3"></i>Calendarios laborales
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_concepts' %}active{% endif %}"
+                               href="{% url 'budgets:tariff_concept_list' %}">
+                                <i class="bi bi-tag-fill"></i>Conceptos de tarifa
                             </a>
                         </li>
                         {# Franja nocturna — NightSchedule con is_default=True, movida  #}
@@ -639,12 +649,24 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
-                    {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
+                    {# Historial — ADMIN, o ASSISTANCE con el flag por usuario  #}
+                    {# can_view_budget_breakdown (usuarios especiales de       #}
+                    {# auditoría, ej. juan.vazquez).                           #}
+                    {# History — ADMIN, or ASSISTANCE with the per-user flag   #}
+                    {# can_view_budget_breakdown (special audit users, e.g.    #}
+                    {# juan.vazquez).                                          #}
+                    {% if company_user.role == 'ADMIN' or company_user.can_view_budget_breakdown %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_history' %}active{% endif %}"
+                               href="{% url 'budgets:history' %}">
+                                <i class="bi bi-clock-history"></i>Historial presupuestos
+                            </a>
+                        </li>
+                    {% endif %}
                     <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'albaran_demo' %}active{% endif %}"
-                           href="{% url 'budgets:albaran_demo' %}">
-                            <i class="bi bi-file-earmark-text"></i>Albarán (demo)
+                        <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
+                           href="{% url 'budgets:wizard' %}">
+                            <i class="bi bi-calculator"></i>Nuevo presupuesto
                         </a>
                     </li>
                     {% if company_user.role == 'ADMIN' %}
@@ -709,6 +731,15 @@
         'absence_categories':       'acc-administracion',
         'analytics_lab':            'acc-administracion',
         'work_orders':              'acc-administracion',
+        // vacation_calendar vive en dos sitios segun rol (Administracion
+        // para ADMIN/SUPERVISOR/WORKSHOPBOSS, Mi perfil para WORKSHOP/
+        // DRIVER) -- este mapa solo admite un acordeon por clave, así que
+        // apunta al principal (Administracion). Para WORKSHOP/DRIVER el
+        // acordeon Mi perfil simplemente no se auto-abre al entrar en
+        // Calendario (getElementById no encuentra 'acc-administracion' en
+        // su sidebar y el guard `if (accEl)` de mas abajo lo ignora sin
+        // error) -- inconveniente menor, no bloqueante.
+        'vacation_calendar':        'acc-administracion',
         'breakdown_ticket_list':    'acc-taller-mecanico',
         'fleet':                    'acc-taller-mecanico',
         'fleet_analytics':          'acc-taller-mecanico',
