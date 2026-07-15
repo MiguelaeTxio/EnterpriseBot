@@ -2985,14 +2985,41 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     f"{blk}: la H.F. debe ser posterior a la H.C. "
                     f"(Delta horas calculado: {ld['delta_hours']})."
                     )
-            if not ld ["fault_description"]:
+            if not ld ["fault_description"]and ld .get ("absence_category")is None :
                 integrity_errors .append (
                 f"{blk}: la descripcion de la averia es obligatoria."
                 )
-            if not ld ["repair_notes"]:
-                integrity_errors .append (
-                f"{blk}: la descripcion de la reparacion realizada es obligatoria."
-                )
+            # H24 (S019) — bloque de ausencia (PERSONAL): la descripcion de
+            # avería no es obligatoria (se autorrellena con la etiqueta de
+            # la categoria), y repair_notes solo es obligatoria si la
+            # categoria concreta lo requiere (requires_note=True) -- misma
+            # rama que ya tenia WorkOrderEntryConfirmView.post() (linea
+            # ~1385) y que a esta segunda copia de la validacion, en
+            # WorkOrderEntryFormView, nunca se le habia anadido: exigia
+            # descripcion y reparacion SIEMPRE, para cualquier bloque,
+            # incluidos los de ausencia -- bug real detectado por Miguel
+            # Angel 2026-07-15 con el caso de Antonio Fontalba Seron
+            # (bloqueaba el flujo real completo de H24: el operario nunca
+            # podia guardar su tarea de vacaciones desde "Nuevo parte").
+            _abs_cat_2 =ld .get ("absence_category")
+            if _abs_cat_2 is not None :
+                if (getattr (_abs_cat_2 ,"requires_note",False )
+                        and not ld ["repair_notes"]):
+                    integrity_errors .append (
+                    f"{blk}: esta categoria de ausencia requiere que "
+                    f"describas brevemente el motivo."
+                    )
+                from hr_calendar .services import VACATION_ABSENCE_CODE as _VAC_CODE_GATE2 
+                if (getattr (_abs_cat_2 ,"code",None )==_VAC_CODE_GATE2 
+                        and not ld .get ("vacation_end_date")):
+                    integrity_errors .append (
+                    f"{blk}: indica la fecha de fin de tus vacaciones."
+                    )
+            else :
+                if not ld ["repair_notes"]:
+                    integrity_errors .append (
+                    f"{blk}: la descripcion de la reparacion realizada es obligatoria."
+                    )
 
 
 
@@ -4036,6 +4063,41 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     )
                     created_lines [ld ["line_number"]]=line 
                     created_line_pks .append (line .pk )
+
+                    # H24 (S019, flujo real) — si esta es la tarea de
+                    # vacaciones que el propio operario acaba de meter
+                    # (categoria VACATION + fecha de fin indicada), se
+                    # deriva el VacationPeriod real a partir de ELLA.
+                    # Enganchado aqui, tras crear la linea, y no en un
+                    # bloque de creacion de WorkdayGap como en los otros
+                    # dos caminos (save_blocks de esta misma vista,
+                    # cierre de WorkOrderEntryConfirmView) porque este
+                    # camino de cierre directo de "Nuevo parte" no crea
+                    # ningun WorkdayGap -- verificado por busqueda en
+                    # todo el archivo, unico punto de creacion de
+                    # WorkdayGap en esta clase es el de save_blocks. Ver
+                    # hr_calendar.services.register_vacation_period_from_line.
+                    _co2_abs_cat =ld .get ("absence_category")
+                    _co2_vac_end =ld .get ("vacation_end_date")
+                    if _co2_abs_cat is not None and _co2_vac_end is not None :
+                        from hr_calendar .services import VACATION_ABSENCE_CODE as _VAC_CODE_CO2 
+                        if getattr (_co2_abs_cat ,"code",None )==_VAC_CODE_CO2 :
+                            from hr_calendar .services import register_vacation_period_from_line as _reg_vac_co2 
+                            try :
+                                _reg_vac_co2 (
+                                entry_line =line ,
+                                vacation_end_date =_co2_vac_end ,
+                                operator =cu ,
+                                company =company ,
+                                created_by =cu ,
+                                )
+                            except ValueError as _vac_val_err_co2 :
+                                logger .warning (
+                                "# [FormView/close_order-directo] "
+                                "VacationPeriod no registrado (fecha "
+                                "inválida). line_pk=%r: %s",
+                                line .pk ,_vac_val_err_co2 ,
+                                )
 
                     # Resolver el ticket de avería -- H10 Paso 4-bis
                     # (revisado S007), sustituye la elección manual de
