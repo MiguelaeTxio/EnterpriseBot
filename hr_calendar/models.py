@@ -191,3 +191,35 @@ class VacationPeriod(models.Model):
 
     def __str__(self) -> str:
         return f"{self.operator} — {self.date_start:%d/%m/%Y} a {self.date_end:%d/%m/%Y}"
+
+    def save(self, *args, **kwargs):
+        """
+        On first creation, triggers the automatic generation of the
+        PERSONAL/VACATION ghost task (hr_calendar/services.py::
+        generate_vacation_task) on the last working day before date_start,
+        inside the same atomic transaction as this save -- if generation
+        fails (e.g. PERSONAL/VACATION seed data missing for the company),
+        the VacationPeriod row itself is rolled back too, so a period can
+        never exist without its ghost task once this save() returns
+        successfully. Skipped on subsequent saves (edits) -- generation is
+        create-only, see hoja de ruta H24 paso 1.
+        ---
+        En la primera creación, dispara la generación automática de la
+        tarea fantasma PERSONAL/VACACIONES (hr_calendar/services.py::
+        generate_vacation_task) en la última jornada laboral antes de
+        date_start, dentro de la misma transacción atómica que este save
+        -- si la generación falla (p. ej. faltan los datos seed de
+        PERSONAL/VACATION para la empresa), la propia fila de
+        VacationPeriod se revierte también, de forma que un periodo nunca
+        puede existir sin su tarea fantasma una vez este save() retorna
+        con éxito. Se omite en saves posteriores (ediciones) -- la
+        generación es solo-al-crear, ver hoja de ruta H24 paso 1.
+        """
+        from django.db import transaction
+
+        is_new = self._state.adding
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if is_new and self.generated_entry_line_id is None:
+                from hr_calendar.services import generate_vacation_task
+                generate_vacation_task(self)

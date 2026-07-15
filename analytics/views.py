@@ -2242,6 +2242,10 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                         entry__work_date__lte=period_end,
                         delta_hours__isnull=False,
                     )
+                    # H24 — excluye la hora fantasma de vacaciones
+                    # (VacationPeriod.generated_entry_line) del
+                    # denominador de horas del periodo.
+                    .exclude(vacation_period__isnull=False)
                     .aggregate(total=Sum("delta_hours"))["total"] or 0.0
                 )
             total_hours_for_period = total_hours_cache[cache_key]

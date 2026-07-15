@@ -1490,6 +1490,20 @@ def generate_work_order_excel(work_order_id: int) -> None:
         #   - day_net_hours : Decimal total net hours for the day (set in post-pass)
         #   - uncertain_date: bool from parent WorkOrderEntry
 
+        # H24 (S018+, paso 1 hoja de ruta) — hora fantasma de vacaciones:
+        # WorkOrderEntryLine generada automaticamente por
+        # hr_calendar.services.generate_vacation_task (VacationPeriod.
+        # generated_entry_line). Se muestra como fila normal en el Excel
+        # (no se oculta), pero no debe sumar en day_net_hours -- ver
+        # ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md seccion 5, pregunta 5.
+        # Acotado al work_order actual: consulta unica, barata.
+        from hr_calendar.models import VacationPeriod as _VacP_ghost
+        _vacation_ghost_line_pks = set(
+            _VacP_ghost.objects.filter(
+                generated_entry_line__entry__work_order=work_order,
+            ).values_list("generated_entry_line_id", flat=True)
+        )
+
         flat_rows: list[dict] = []
 
         for entry in entries:
@@ -1509,6 +1523,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     "is_last_day":    False,
                     "day_net_hours":  None,
                     "day_shade":      False,
+                    "is_vacation_ghost": line.pk in _vacation_ghost_line_pks,
                 })
 
         # Post-pass: compute day groups, is_first_day, is_last_day,
@@ -1536,6 +1551,11 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 day_total = Decimal("0.00")
                 all_valid = True
                 for idx in indices:
+                    if flat_rows[idx]["is_vacation_ghost"]:
+                        # H24 — hora fantasma de vacaciones, excluida del
+                        # cómputo. La fila se sigue mostrando (bucle de
+                        # construcción del workbook, más abajo).
+                        continue
                     dh = flat_rows[idx]["line"].delta_hours
                     if dh is not None:
                         day_total += dh
@@ -2799,10 +2819,16 @@ def build_export_from_template(template, work_orders_qs):
         "familia":     ("Familia avería",   lambda wo, entry, line: line.fault_category or ""),
         "origen":      ("Origen",           lambda wo, entry, line: wo.source or ""),
         "horas_extra": ("H. Extra",          lambda wo, entry, line: (
+                                                # H24 — excluye la hora fantasma de
+                                                # vacaciones (VacationPeriod.
+                                                # generated_entry_line) del cómputo
+                                                # de horas extra del día.
                                                 float(max(
                                                     Decimal("0"),
                                                     sum(
-                                                        (l.delta_hours for l in entry.lines.all()
+                                                        (l.delta_hours for l in entry.lines.exclude(
+                                                            vacation_period__isnull=False,
+                                                        )
                                                          if l.delta_hours is not None),
                                                         Decimal("0"),
                                                     ) - Decimal("8")
