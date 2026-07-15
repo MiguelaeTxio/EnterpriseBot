@@ -548,6 +548,22 @@ de Gasto" (`/panel/documentacion-centros-gasto/subir/`), un usuario
 (WORKSHOP) en vez del sidebar de administrador -- no investigado
 todavía, primera tarea de la siguiente sesión.
 
+**Bug real detectado y corregido justo tras el primer cierre de esta
+sesión (commit `d27fec1`), a partir de una captura de pantalla de
+Miguel Ángel:** la pestaña Períodos de Partes Digitales mostraba
+literalmente en pantalla el texto de un comentario de template. Causa
+raíz: la sintaxis `{# ... #}` de Django solo admite una línea -- un
+comentario que ocupa varias líneas no se trata como comentario y se
+renderiza tal cual. El causante era un comentario introducido en el
+propio commit `cd5d14b` de esta sesión (`admin_history.html`).
+Corregido, y tras un barrido completo del repositorio con el mismo
+patrón (directriz de errores fuera de alcance), otros dos bugs
+preexistentes reales, no introducidos hoy: `delivery_note_detail.html`
+(S014-H10, dentro de `<head>`, no visible pero inválido) y
+`panel/templates/panel/password/_field_pw.html` (visible en la
+pantalla de cambio de contraseña). Verificado que no queda ningún
+`{# #}` multilínea más en todo el repositorio.
+
 ### Hoja de Ruta para la Siguiente Sesión
 
 **Prioridad 1 -- incidencia real de sidebar, a resolver primero:**
@@ -587,4 +603,4 @@ abordada por decisión de Miguel Ángel.
 |---|---|---|
 | S018 | 2026-07-14 | Hito creado (desvío desde H23). App `hr_calendar`, modelo `VacationPeriod`, campo `CompanyUser.base`, comando `assign_operator_bases` ejecutado en producción (14 operarios/chóferes, bases Maqueda/Huelva), onboarding WhatsApp ampliado, y las 7 preguntas de la sección 4 resueltas. Ver "COMPLETADAS EN S018" arriba para el detalle completo. Siguiente sesión: construir la generación automática de la tarea, el formulario de alta y la vista de calendario (hoja de ruta arriba). |
 | S019 | 2026-07-15 | Pasos 1-3 de la hoja de ruta construidos, con corrección de flujo a mitad de sesión (directriz 4.8): la generación automática se deriva de la tarea real del operario, no de un CRUD de supervisor. Calendario con código de colores y agrupación por `WorkPeriodGroup` construido y desplegado. Ocho incidencias reales encontradas y corregidas en producción (dos `ImportError` que tumbaron el despliegue, `FieldError`, sidebar rota, dos bugs de validación que bloqueaban el flujo real, autorrelleno de H.C./H.F., patrón de errores en crudo en 17 sitios fuera de H24). Vista de detalle de solo lectura para Partes Digitales añadida (fuera de H24). Diagnosticados con datos reales dos casos de "parte no encontrado" sin causa técnica. Decidida la migración futura de Google Drive a Google Cloud Storage (sin implementar). Detectado al cierre un bug real en `WorkPeriodGroup` (activación automática sin control) que Miguel Ángel decide abordar en sesión nueva junto con un rediseño más amplio (cálculo de periodo 21-20 al vuelo, horas extra acumuladas, visor por periodo) — ver "COMPLETADAS EN S019" y la hoja de ruta arriba para el detalle completo. |
-| S020 | 2026-07-15 | Rediseño completo de `WorkPeriodGroup` cerrado (5/5 puntos de la tarea principal, commits `cd5d14b`/`205346e`); CRUD de vacaciones comprobado y confirmado correcto sin cambios; desvío puntual a H10 por incidencia real de albaranes (commit `2aa236c`, ver anexo H10 fila S020); nueva incidencia de sidebar reportada por Miguel Ángel al cierre, sin diagnosticar todavía -- primera tarea de la siguiente sesión. Ver "COMPLETADAS EN S020" arriba para el detalle completo. |
+| S020 | 2026-07-15 | Rediseño completo de `WorkPeriodGroup` cerrado (5/5 puntos de la tarea principal, commits `cd5d14b`/`205346e`); CRUD de vacaciones comprobado y confirmado correcto sin cambios; desvío puntual a H10 por incidencia real de albaranes (commit `2aa236c`, ver anexo H10 fila S020); bug real de comentarios Django `{# #}` multilínea rotos detectado y corregido tras el primer cierre (commit `d27fec1`, 3 sitios); nueva incidencia de sidebar reportada por Miguel Ángel, sin diagnosticar todavía -- primera tarea de la siguiente sesión. Ver "COMPLETADAS EN S020" arriba para el detalle completo. |
